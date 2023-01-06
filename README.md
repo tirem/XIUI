@@ -1,5 +1,5 @@
 # ConsolidatedUI
-Ashita v4 addon containing multiple ui elements:
+(BETA) Ashita v4 addon containing multiple ui elements:
 
 1) Player Bar
 2) Target Bar
