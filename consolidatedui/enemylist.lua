@@ -6,10 +6,11 @@ local imgui = require('imgui');
 local cornerOffset = -3;
 local backgroundY = 35;
 
-
 local bgAlpha = 0.4;
 local bgRadius = 8;
 local allClaimedTargets = {};
+local frameSkip = 20;
+local currentFrame = frameSkip;
 
 local enemylist = {};
 
@@ -32,15 +33,6 @@ local function GetIsClaimed(targetIndex, partyMemberIds)
 end
 
 local function UpdatedClaimedTargets(maxEntries)
-
-	-- remove any targets that are no longer valid
-	local tempClaimedTargets = allClaimedTargets;
-	for k,_ in pairs(tempClaimedTargets) do
-		local ent = GetEntity(k);
-		if (ent == nil or ent.HPPercent == 0) then
-			table.remove(allClaimedTargets, k);
-		end
-	end
 
 	-- get all active party member server ids
 	local partyMemberIds = {};
@@ -65,7 +57,13 @@ local function UpdatedClaimedTargets(maxEntries)
 end
 
 enemylist.DrawWindow = function(settings)
-	UpdatedClaimedTargets(settings.maxEntries);
+
+	-- Throttle our entity check
+	if (currentFrame >= frameSkip) then
+		UpdatedClaimedTargets(settings.maxEntries);
+		currentFrame = 0;
+	end
+	currentFrame = currentFrame + 1;
 
 	imgui.SetNextWindowSize({ settings.barWidth, -1, }, ImGuiCond_Always);
 		-- Draw the main target window
@@ -87,10 +85,10 @@ enemylist.DrawWindow = function(settings)
 			end
 			
 
-			for k,_ in pairs(allClaimedTargets) do
+			for k,v in pairs(allClaimedTargets) do
 
 				local ent = GetEntity(k);
-				if (ent ~= nil and ent.HPPercent > 0) then
+				if (v ~= nil and ent ~= nil and ent.HPPercent > 0) then
 
 					-- Obtain and prepare target information..
 					local targetNameText = ent.Name;
@@ -127,6 +125,8 @@ enemylist.DrawWindow = function(settings)
 
 						imgui.Separator();
 					end
+				else
+					allClaimedTargets[k] = nil;
 				end
 			end
 		end
