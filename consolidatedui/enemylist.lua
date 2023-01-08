@@ -56,7 +56,7 @@ local function UpdatedClaimedTargets(maxEntries)
 
 end
 
-enemylist.DrawWindow = function(settings)
+enemylist.DrawWindow = function(settings, userSettings)
 
 	-- Throttle our entity check
 	if (currentFrame >= frameSkip) then

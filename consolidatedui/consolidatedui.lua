@@ -24,7 +24,7 @@
 
 addon.name      = 'consolidatedui';
 addon.author    = 'Tirem';
-addon.version   = '0.1';
+addon.version   = '0.3';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/ConsolidatedUI'
 
@@ -39,22 +39,58 @@ local gilTracker = require('giltracker');
 local inventoryTracker = require('inventorytracker');
 local partyList = require('partylist');
 
+local user_settings = 
+T{
+	showPlayerBar = true,
+	showTargetBar = true,
+	showEnemyList = true,
+	showExpBar = true,
+	showGilTracker = true,
+	showInventoryTracker = true,
+	showPartyList = true,
+
+	showPartyListWhenSolo = false;
+
+	playerBarScaleX = 1,
+	playerBarScaleY = 1,
+	playerBarFontScale = 1,
+
+	targetBarScaleX = 1,
+	targetBarScaleY = 1,
+	targetBarFontScale = 1,
+
+	enemyListScaleX = 1,
+	enemyListScaleY = 1,
+	enemyListFontScale = 1,
+
+	expBarScaleX = 1,
+	expBarScaleY = 1,
+	expBarFontScale = 1,
+
+	gilTrackerScale = 1,
+	gilTrackerFontScale = 1,
+
+	inventoryTrackerScaleX= 1,
+	inventoryTrackerFontScale = 1,
+
+	partyListScaleX = 1,
+	partyListScaleY = 1,
+	partyListFontScale = 1,
+};
+
+local user_settings_container = 
+T{
+	userSettings = user_settings;
+};
+
 local default_settings =
 T{
-	showPlayerBar = true;
-	showTargetBar = true;
-	showEnemyList = true;
-	showExpBar = true;
-	showGilTracker = true;
-	showInventoryTracker = true;
-	showPartyList = true;
-
 	-- settings for the targetbar
 	targetBarSettings =
 	T{
-		barWidth = 600,
-		barHeight = 20,
-		totBarHeight = 16,
+		barWidth = 500,
+		barHeight = 18,
+		totBarHeight = 14,
 		totBarOffset = 1,
 		textScale = 1.2,
 		showBarPercent = true;
@@ -65,16 +101,16 @@ T{
 	T{
 		hitAnimSpeed = 2;
 		hitDelayLength = .5;
-		barWidth = 600;
+		barWidth = 500;
 		barSpacing = 10;
-		barHeight = 25;
-		textYOffset = -3;
+		barHeight = 20;
+		textYOffset = -4;
 		font_settings = 
 		T{
 			visible = true,
 			locked = true,
 			font_family = 'Consolas',
-			font_height = 16,
+			font_height = 15,
 			color = 0xFFFFFFFF,
 			bold = true,
 			color_outline = 0xFF000000,
@@ -100,7 +136,7 @@ T{
 	-- settings for the exp bar
 	expBarSettings =
 	T{
-		barWidth = 700;
+		barWidth = 550;
 		barHeight = 10;
 		jobOffsetY = 0;
 		expOffsetY = 0;
@@ -111,7 +147,7 @@ T{
 			visible = true,
 			locked = true,
 			font_family = 'Consolas',
-			font_height = 12,
+			font_height = 11,
 			color = 0xFFFFFFFF,
 			bold = false,
 			italic = true;
@@ -128,7 +164,7 @@ T{
 			visible = true,
 			locked = true,
 			font_family = 'Consolas',
-			font_height = 12,
+			font_height = 11,
 			color = 0xFFFFFFFF,
 			bold = false,
 			italic = true;
@@ -145,7 +181,7 @@ T{
 			visible = true,
 			locked = true,
 			font_family = 'Consolas',
-			font_height = 9,
+			font_height = 8,
 			color = 0xFFFFFF00,
 			bold = false,
 			italic = true;
@@ -170,7 +206,7 @@ T{
 			visible = true,
 			locked = true,
 			font_family = 'Consolas',
-			font_height = 14,
+			font_height = 13,
 			color = 0xFFFFFFFF,
 			bold = true,
 			italic = false;
@@ -188,16 +224,16 @@ T{
 	T{
 		columnCount = 5;
 		rowCount = 6;
-		dotRadius = 6;
-		dotSpacing = 3;
+		dotRadius = 5;
+		dotSpacing = 2;
 		groupSpacing = 10;
-		textOffsetY = -5;
+		textOffsetY = -7;
 		font_settings = 
 		T{
 			visible = true,
 			locked = true,
 			font_family = 'Consolas',
-			font_height = 14,
+			font_height = 13,
 			color = 0xFFFFFFFF,
 			bold = true,
 			italic = false;
@@ -213,13 +249,12 @@ T{
 
 	partyListSettings = 
 	T{
-		hpBarWidth = 250,
-		hpBarHeight = 25,
-		mpBarWidth = 175,
+		hpBarWidth = 225,
+		hpBarHeight = 20,
 		mpBarHeight = 15,
 		tpBarWidth = 75,
 		tpBarHeight = 10,
-		entrySpacing = 15,
+		entrySpacing = 10,
 		hpTextOffsetX = -10,
 		hpTextOffsetY = -3,
 		mpTextOffsetY = -3,
@@ -231,10 +266,10 @@ T{
 		backgroundPaddingX2 = 200,
 		backgroundPaddingY1 = 20,
 		backgroundPaddingY2 = 10,
-		cursorPaddingX1 = 15,
-		cursorPaddingX2 = 10,
-		cursorPaddingY1 = 30,
-		cursorPaddingY2 = -25,
+		cursorPaddingX1 = 7,
+		cursorPaddingX2 = 7,
+		cursorPaddingY1 = 2,
+		cursorPaddingY2 = 10,
 		leaderDotRadius = 4,
 		hp_font_settings = 
 		T{
@@ -270,29 +305,12 @@ T{
 			},
 			right_justified = true;
 		};
-		zone_font_settings = 
-		T{
-			visible = true,
-			locked = true,
-			font_family = 'Consolas',
-			font_height = 16,
-			color = 0xFFFFFFFF,
-			bold = true,
-			italic = false;
-			color_outline = 0xFF000000,
-			draw_flags = 0x10,
-			background = 
-			T{
-				visible = false,
-			},
-			right_justified = true;
-		};
 		name_font_settings = 
 		T{
 			visible = true,
 			locked = true,
 			font_family = 'Consolas',
-			font_height = 16,
+			font_height = 15,
 			color = 0xFFFFFFFF,
 			bold = true,
 			italic = false;
@@ -324,16 +342,31 @@ T{
 	};
 };
 
-local config = settings.load(default_settings);
+local config = settings.load(user_settings_container);
 
-function UpdateSettings(s)
-    -- Update the settings table..
-    if (s ~= nil) then
-        config = s;
-    end
+local function CheckVisibility()
+	if (config.userSettings.showPlayerBar == false) then
+		playerBar.SetHidden(true);
+	end
+	if (config.userSettings.showExpBar == false) then
+		expBar.SetHidden(true);
+	end
+	if (config.userSettings.showGilTracker == false) then
+		gilTracker.SetHidden(true);
+	end
+	if (config.userSettings.showInventoryTracker == false) then
+		inventoryTracker.SetHidden(true);
+	end
+	if (config.userSettings.showPartyList == false) then
+		partyList.SetHidden(true);
+	end
+end
 
+function UpdateSettings()
     -- Save the current settings..
     settings.save();
+
+	CheckVisibility();
 end;
 
 settings.register('settings', 'settings_update', UpdateSettings);
@@ -344,35 +377,36 @@ settings.register('settings', 'settings_update', UpdateSettings);
 --]]
 ashita.events.register('d3d_present', 'present_cb', function ()
 
-	if (config.showPlayerBar) then
-		playerBar.DrawWindow(config.playerBarSettings);
+	if (config.userSettings.showPlayerBar) then
+		playerBar.DrawWindow(default_settings.playerBarSettings, config.userSettings);
 	end
-	if (config.showTargetBar) then
-		targetBar.DrawWindow(config.targetBarSettings);
+	if (config.userSettings.showTargetBar) then
+		targetBar.DrawWindow(default_settings.targetBarSettings, config.userSettings);
 	end
-	if (config.showEnemyList) then
-		enemyList.DrawWindow(config.enemyListSettings);
+	if (config.userSettings.showEnemyList) then
+		enemyList.DrawWindow(default_settings.enemyListSettings, config.userSettings);
 	end
-	if (config.showExpBar) then
-		expBar.DrawWindow(config.expBarSettings);
+	if (config.userSettings.showExpBar) then
+		expBar.DrawWindow(default_settings.expBarSettings, config.userSettings);
 	end
-	if (config.showGilTracker) then
-		gilTracker.DrawWindow(config.gilTrackerSettings);
+	if (config.userSettings.showGilTracker) then
+		gilTracker.DrawWindow(default_settings.gilTrackerSettings, config.userSettings);
 	end
-	if (config.showInventoryTracker) then
-		inventoryTracker.DrawWindow(config.inventoryTrackerSettings);
+	if (config.userSettings.showInventoryTracker) then
+		inventoryTracker.DrawWindow(default_settings.inventoryTrackerSettings, config.userSettings);
 	end
-	if (config.showPartyList) then
-		partyList.DrawWindow(config.partyListSettings);
+	if (config.userSettings.showPartyList) then
+		partyList.DrawWindow(default_settings.partyListSettings, config.userSettings);
 	end
 end);
 
 ashita.events.register('load', 'load_cb', function ()
-    playerBar.Initialize(config.playerBarSettings);
-	expBar.Initialize(config.expBarSettings);
-	gilTracker.Initialize(config.gilTrackerSettings);
-	inventoryTracker.Initialize(config.inventoryTrackerSettings);
-	partyList.Initialize(config.partyListSettings);
+
+    playerBar.Initialize(default_settings.playerBarSettings);
+	expBar.Initialize(default_settings.expBarSettings);
+	gilTracker.Initialize(default_settings.gilTrackerSettings);
+	inventoryTracker.Initialize(default_settings.inventoryTrackerSettings);
+	partyList.Initialize(default_settings.partyListSettings);
 end);
 
 ashita.events.register('command', 'command_cb', function (e)
@@ -381,85 +415,45 @@ ashita.events.register('command', 'command_cb', function (e)
 	local command_args = e.command:lower():args()
     if table.contains({'/consolidatedui', '/cui', '/horizonui', '/hui'}, command_args[1]) then
         if table.contains({'playerbar'}, command_args[2]) then
-			config.showPlayerBar = not config.showPlayerBar;
-			if (config.showPlayerBar == false) then
-				playerBar.SetHidden(true);
-			end
+			config.userSettings.showPlayerBar = not config.userSettings.showPlayerBar;
 			UpdateSettings();
-
-			if (config.showPlayerBar) then
-				print('CONSOLIDATED UI: Enabled PlayerBar');
-			else
-				print('CONSOLIDATED UI: Disabled PlayerBar');
-			end
+			print('CONSOLIDATED UI: Toggled PlayerBar');
 		elseif table.contains({'targetbar'}, command_args[2]) then
-			config.showTargetBar = not config.showTargetBar;
+			config.userSettings.showTargetBar = not config.userSettings.showTargetBar;
 			UpdateSettings();
-
-			if (config.showTargetBar) then
-				print('CONSOLIDATED UI: Enabled TargetBar');
-			else
-				print('CONSOLIDATED UI: Disabled TargetBar');
-			end
+			print('CONSOLIDATED UI: Toggled TargetBar');
         elseif table.contains({'enemylist'}, command_args[2]) then
-			config.showEnemyList = not config.showEnemyList;
+			config.userSettings.showEnemyList = not config.userSettings.showEnemyList;
 			UpdateSettings();
-
-			if (config.showEnemyList) then
-				print('CONSOLIDATED UI: Enabled EnemyList');
-			else
-				print('CONSOLIDATED UI: Disabled EnemyList');
-			end
+			print('CONSOLIDATED UI: Toggled EnemyList');
 		elseif table.contains({'expbar'}, command_args[2]) then
-			config.showExpBar = not config.showExpBar;
-			if (config.showExpBar == false) then
-				expBar.SetHidden(true);
-			end
+			config.userSettings.showExpBar = not config.userSettings.showExpBar;
 			UpdateSettings();
-
-			if (config.showExpBar) then
-				print('CONSOLIDATED UI: Enabled EXPBar');
-			else
-				print('CONSOLIDATED UI: Disabled EXPBar');
-			end
+			print('CONSOLIDATED UI: Toggled ExpBar');
 		elseif table.contains({'giltracker'}, command_args[2]) then
-			config.showGilTracker = not config.showGilTracker;
-			if (config.showGilTracker == false) then
-				gilTracker.SetHidden(true);
-			end
+			config.userSettings.showGilTracker = not config.userSettings.showGilTracker;
 			UpdateSettings();
-
-			if (config.showGilTracker) then
-				print('CONSOLIDATED UI: Enabled GilTracker');
-			else
-				print('CONSOLIDATED UI: Disabled GilTracker');
-			end
+			print('CONSOLIDATED UI: Toggled GilTracker');
 		elseif table.contains({'inventorytracker'}, command_args[2]) then
-			config.showInventoryTracker = not config.showInventoryTracker;
-			if (config.showInventoryTracker == false) then
-				inventoryTracker.SetHidden(true);
-			end
+			config.userSettings.showInventoryTracker = not config.userSettings.showInventoryTracker;
 			UpdateSettings();
-
-			if (config.showInventoryTracker) then
-				print('CONSOLIDATED UI: Enabled InventoryTracker');
-			else
-				print('CONSOLIDATED UI: Disabled InventoryTracker');
-			end
+			print('CONSOLIDATED UI: Toggled InventoryTracker');
 		elseif table.contains({'partylist'}, command_args[2]) then
-			config.showPartyList = not config.showPartyList;
-			if (config.showPartyList == false) then
-				partyList.SetHidden(true);
-			end
+			config.userSettings.showPartyList = not config.userSettings.showPartyList;
 			UpdateSettings();
-
-			if (config.showPartyList) then
-				print('CONSOLIDATED UI: Enabled PartyList');
-			else
-				print('CONSOLIDATED UI: Disabled PartyList');
-			end
+			print('CONSOLIDATED UI: Toggled PartyList');
+		elseif table.contains({'reset'}, command_args[2]) then
+			config.userSettings = user_settings;
+			UpdateSettings();
+			print('CONSOLIDATED UI: Configuration Reset');
+		elseif table.contains({'solopartylist'}, command_args[2]) then
+			config.userSettings.showPartyListWhenSolo = not config.userSettings.showPartyListWhenSolo;
+			UpdateSettings();
+			print('CONSOLIDATED UI: PartyList when solo toggled');
 		else
 			print('CONSOLIDATED UI: HELP /consolidatedui /cui');
+			print('CONSOLIDATED UI: /cui reset - Reset all configs');
+			print('CONSOLIDATED UI: /cui solopartylist - Show/Hide party list when solo');
 			print('CONSOLIDATED UI: Toggle elements with the following commands');
 			print('CONSOLIDATED UI: /cui playerbar');
 			print('CONSOLIDATED UI: /cui targetbar');

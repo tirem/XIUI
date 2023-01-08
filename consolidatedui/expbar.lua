@@ -18,7 +18,7 @@ end
 * event: d3d_present
 * desc : Event called when the Direct3D device is presenting a scene.
 --]]
-expbar.DrawWindow = function(settings)
+expbar.DrawWindow = function(settings, userSettings)
     -- Obtain the player entity..
     local player    = AshitaCore:GetMemoryManager():GetPlayer();
 
@@ -53,8 +53,8 @@ expbar.DrawWindow = function(settings)
 		local hpLocX, hpLocY = imgui.GetCursorScreenPos();
 		
 		-- Update our text objects
-		local mainJobString = AshitaCore:GetResourceManager():GetString("jobs.names_abbr", mainJob);;
-		local SubJobString = AshitaCore:GetResourceManager():GetString("jobs.names_abbr", subJob);;
+		local mainJobString = AshitaCore:GetResourceManager():GetString("jobs.names_abbr", mainJob);
+		local SubJobString = AshitaCore:GetResourceManager():GetString("jobs.names_abbr", subJob);
 		local jobString = mainJobString..' '..jobLevel..' / '..SubJobString..' '..subJobLevel;
 		jobText:SetPositionX(startX);
 		jobText:SetPositionY(startY + settings.barHeight + settings.jobOffsetY);

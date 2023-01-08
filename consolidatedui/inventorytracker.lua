@@ -26,7 +26,7 @@ end
 * event: d3d_present
 * desc : Event called when the Direct3D device is presenting a scene.
 --]]
-inventoryTracker.DrawWindow = function(settings)
+inventoryTracker.DrawWindow = function(settings, userSettings)
     -- Obtain the player entity..
 
     local player = AshitaCore:GetMemoryManager():GetPlayer();

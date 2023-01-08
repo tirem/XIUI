@@ -16,7 +16,7 @@ end
 * event: d3d_present
 * desc : Event called when the Direct3D device is presenting a scene.
 --]]
-giltracker.DrawWindow = function(settings)
+giltracker.DrawWindow = function(settings, userSettings)
     -- Obtain the player entity..
     local player = AshitaCore:GetMemoryManager():GetPlayer();
 
@@ -47,7 +47,7 @@ giltracker.DrawWindow = function(settings)
 		
     if (imgui.Begin('GilTracker', true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
 		local cursorX, cursorY  = imgui.GetCursorScreenPos();
-		imgui.Image(tonumber(ffi.cast("uint32_t", gilTexture.image)), { 32, 32 });
+		imgui.Image(tonumber(ffi.cast("uint32_t", gilTexture.image)), { 30, 30 });
 
 		gilText:SetText(FormatInt(gilAmount.Count));
 		gilText:SetPositionX(cursorX + settings.offsetX);

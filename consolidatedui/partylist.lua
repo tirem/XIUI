@@ -38,9 +38,10 @@ end
 local function GetMemberInformation(memIdx)
 
     local party = AshitaCore:GetMemoryManager():GetParty();
+    local player = AshitaCore:GetMemoryManager():GetPlayer();
 
 	local playerTarget = AshitaCore:GetMemoryManager():GetTarget();
-    if (party == nil or party:GetMemberIsActive(memIdx) == 0) then
+    if (player == nil or party == nil or party:GetMemberIsActive(memIdx) == 0) then
         return nil;
     end
 
@@ -117,13 +118,13 @@ local function DrawMember(memIdx, settings)
     end
     imgui.PopStyleColor(1);
     imgui.SameLine();
-    local hpX, hpY = imgui.GetCursorScreenPos();
 
     -- Draw the MP bar
-    imgui.SetCursorScreenPos({hpX - (settings.hpBarWidth * mpOffsetPercentX), hpY + (settings.hpBarHeight * mpOffsetPercentY)});
+    local mpBarWidth = settings.hpBarWidth * mpOffsetPercentX;
+    imgui.SetCursorScreenPos({hpStartX + (settings.hpBarWidth * (1 - mpOffsetPercentX)), hpStartY + (settings.hpBarHeight * mpOffsetPercentY)});
     local mpStartX, mpStartY = imgui.GetCursorScreenPos();
     imgui.PushStyleColor(ImGuiCol_PlotHistogram, {.9, 1, .5, 1});
-    imgui.ProgressBar(memInfo.mpp, { settings.mpBarWidth, settings.mpBarHeight }, '');
+    imgui.ProgressBar(memInfo.mpp, {  mpBarWidth, settings.mpBarHeight }, '');
     imgui.PopStyleColor(1);
     imgui.SameLine();
 
@@ -153,7 +154,7 @@ local function DrawMember(memIdx, settings)
     end
 
     -- Update the MP text
-    memberText[memIdx].mp:SetPositionX(mpStartX + settings.mpBarWidth);
+    memberText[memIdx].mp:SetPositionX(mpStartX + mpBarWidth);
     memberText[memIdx].mp:SetPositionY(mpStartY + settings.mpBarHeight + settings.mpTextOffsetY);
     memberText[memIdx].mp:SetText(tostring(memInfo.mp));
     memberText[memIdx].mp:SetVisible(memInfo.inzone);
@@ -163,23 +164,19 @@ local function DrawMember(memIdx, settings)
         memberText[memIdx].mp:SetColor(0xFFFFFFFF);
     end
 
-    if (memIdx == 0) then
-        singleEntrySizeX, singleEntrySizeY = imgui.GetWindowSize();
-    end
-
-    if (memInfo.targeted == true and singleEntrySizeX ~= nil and singleEntrySizeY ~= nil) then
+    if (memInfo.targeted == true) then
         selectionPrim.visible = true;
         selectionPrim.position_x = startX - settings.cursorPaddingX1;
         selectionPrim.position_y = startY - settings.cursorPaddingY1;
-        selectionPrim.scale_x = (singleEntrySizeX + settings.cursorPaddingX1 + settings.cursorPaddingX2)/ 390;
-        selectionPrim.scale_y = (singleEntrySizeY - settings.cursorPaddingY1 + settings.cursorPaddingY2) / 60;
+        selectionPrim.scale_x = (settings.nameSpacing + settings.cursorPaddingX1 + settings.cursorPaddingX2)/ 390;
+        selectionPrim.scale_y = (memberText[memIdx].name.GetFontHeight() + settings.cursorPaddingY1 + settings.cursorPaddingY2) / 60;
         partyTargeted = true;
     end
 
     imgui.Dummy({0, settings.entrySpacing});
 end
 
-partyList.DrawWindow = function(settings)
+partyList.DrawWindow = function(settings, userSettings)
 
     -- Obtain the player entity..
     local party = AshitaCore:GetMemoryManager():GetParty();
@@ -190,7 +187,7 @@ partyList.DrawWindow = function(settings)
 		return;
 	end
 	local currJob = player:GetMainJob();
-    if (player.isZoning or currJob == 0 or (not settings.showWhenSolo and party:GetMemberIsActive(1) == 0)) then
+    if (player.isZoning or currJob == 0 or (not userSettings.showPartyListWhenSolo and party:GetMemberIsActive(1) == 0)) then
 		UpdateTextVisibility(false);
         return;
 	end
@@ -229,10 +226,12 @@ partyList.Initialize = function(settings)
     backgroundPrim = primitives:new(settings.primData);
     backgroundPrim.color = 0xC0FFFFFF;
     backgroundPrim.texture = string.format('%s/assets/partybg.png', addon.path);
-    
+    backgroundPrim.visible = false;
+
     selectionPrim = primitives.new(settings.primData);
-    selectionPrim.color = 0xC0FFFFFF;
+    selectionPrim.color = 0xFFFFFFFF;
     selectionPrim.texture = string.format('%s/assets/cursor.png', addon.path);
+    selectionPrim.visible = false;
 end
 
 partyList.SetHidden = function(hidden)
