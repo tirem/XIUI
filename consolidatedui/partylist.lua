@@ -123,7 +123,7 @@ local function DrawMember(memIdx, settings, userSettings)
     local mpBarWidth = settings.hpBarWidth * mpOffsetPercentX;
     imgui.SetCursorScreenPos({hpStartX + (settings.hpBarWidth * (1 - mpOffsetPercentX)), hpStartY + (settings.hpBarHeight * mpOffsetPercentY)});
     local mpStartX, mpStartY = imgui.GetCursorScreenPos();
-    if (memInfo.inZone) then
+    if (memInfo.inzone) then
         imgui.PushStyleColor(ImGuiCol_PlotHistogram, {.9, 1, .5, 1});
         imgui.ProgressBar(memInfo.mpp, {  mpBarWidth, settings.mpBarHeight }, '');
         imgui.PopStyleColor(1);
