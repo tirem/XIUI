@@ -114,7 +114,7 @@ local function DrawMember(memIdx, settings, userSettings)
     if (memInfo.inzone) then
         imgui.ProgressBar(memInfo.hpp, { settings.hpBarWidth, settings.hpBarHeight }, '');
     else
-        imgui.ProgressBar(0, { settings.hpBarWidth, settings.hpBarHeight }, AshitaCore:GetResourceManager():GetString("zones.names", memInfo.zone));
+        imgui.ProgressBar(0, { settings.hpBarWidth, settings.hpBarHeight + (settings.mpBarHeight * mpOffsetPercentY)}, AshitaCore:GetResourceManager():GetString("zones.names", memInfo.zone));
     end
     imgui.PopStyleColor(1);
     imgui.SameLine();
@@ -123,10 +123,12 @@ local function DrawMember(memIdx, settings, userSettings)
     local mpBarWidth = settings.hpBarWidth * mpOffsetPercentX;
     imgui.SetCursorScreenPos({hpStartX + (settings.hpBarWidth * (1 - mpOffsetPercentX)), hpStartY + (settings.hpBarHeight * mpOffsetPercentY)});
     local mpStartX, mpStartY = imgui.GetCursorScreenPos();
-    imgui.PushStyleColor(ImGuiCol_PlotHistogram, {.9, 1, .5, 1});
-    imgui.ProgressBar(memInfo.mpp, {  mpBarWidth, settings.mpBarHeight }, '');
-    imgui.PopStyleColor(1);
-    imgui.SameLine();
+    if (memInfo.inZone) then
+        imgui.PushStyleColor(ImGuiCol_PlotHistogram, {.9, 1, .5, 1});
+        imgui.ProgressBar(memInfo.mpp, {  mpBarWidth, settings.mpBarHeight }, '');
+        imgui.PopStyleColor(1);
+        imgui.SameLine();
+    end
 
     -- Draw the TP bar
     imgui.SetCursorScreenPos({startX + (settings.nameSpacing / 2) - (settings.tpBarWidth / 2), startY + settings.name_font_settings.font_height + settings.tpBarOffsetY});
