@@ -402,9 +402,9 @@ local function UpdateUserSettings()
     adjustedSettings.partyListSettings.tpBarHeight = ns.partyListSettings.tpBarHeight * us.partyListScaleY;
     adjustedSettings.partyListSettings.entrySpacing = ns.partyListSettings.entrySpacing * us.partyListScaleY;
 	adjustedSettings.partyListSettings.nameSpacing = ns.partyListSettings.nameSpacing * us.partyListScaleX;
-    adjustedSettings.partyListSettings.hp_font_settings.font_height = ns.partyListSettings.hp_font_settings.font_height + us.partyListFontOffset;
-    adjustedSettings.partyListSettings.mp_font_settings.font_height = ns.partyListSettings.mp_font_settings.font_height + us.partyListFontOffset;
-    adjustedSettings.partyListSettings.name_font_settings.font_height = ns.partyListSettings.name_font_settings.font_height + us.partyListFontOffset;
+    adjustedSettings.partyListSettings.hp_font_settings.font_height = math.max(ns.partyListSettings.hp_font_settings.font_height + us.partyListFontOffset, 1);
+    adjustedSettings.partyListSettings.mp_font_settings.font_height = math.max(ns.partyListSettings.mp_font_settings.font_height + us.partyListFontOffset, 1);
+    adjustedSettings.partyListSettings.name_font_settings.font_height = math.max(ns.partyListSettings.name_font_settings.font_height + us.partyListFontOffset, 1);
 	adjustedSettings.partyListSettings.backgroundPaddingX1 = ns.partyListSettings.backgroundPaddingX1 * us.partyListScaleX;
 	adjustedSettings.partyListSettings.backgroundPaddingX2 = ns.partyListSettings.backgroundPaddingX2 * us.partyListScaleX;
 	adjustedSettings.partyListSettings.backgroundPaddingY1 = ns.partyListSettings.backgroundPaddingY1 * us.partyListScaleY;
@@ -418,24 +418,24 @@ local function UpdateUserSettings()
 	adjustedSettings.playerBarSettings.barWidth = ns.playerBarSettings.barWidth * us.playerBarScaleX;
 	adjustedSettings.playerBarSettings.barSpacing = ns.playerBarSettings.barSpacing * us.playerBarScaleX;
 	adjustedSettings.playerBarSettings.barHeight = ns.playerBarSettings.barHeight * us.playerBarScaleY;
-	adjustedSettings.playerBarSettings.font_settings.font_height = ns.playerBarSettings.font_settings.font_height + us.playerBarFontOffset;
+	adjustedSettings.playerBarSettings.font_settings.font_height = math.max(ns.playerBarSettings.font_settings.font_height + us.playerBarFontOffset, 1);
 
 	-- Exp Bar
 	adjustedSettings.expBarSettings.barWidth = ns.expBarSettings.barWidth * us.expBarScaleX;
 	adjustedSettings.expBarSettings.barHeight = ns.expBarSettings.barHeight * us.expBarScaleY;
-	adjustedSettings.expBarSettings.job_font_settings.font_height = ns.expBarSettings.job_font_settings.font_height + us.expBarFontOffset;
-	adjustedSettings.expBarSettings.exp_font_settings.font_height = ns.expBarSettings.exp_font_settings.font_height + us.expBarFontOffset;
-	adjustedSettings.expBarSettings.percent_font_settings.font_height = ns.expBarSettings.percent_font_settings.font_height + us.expBarFontOffset;
+	adjustedSettings.expBarSettings.job_font_settings.font_height = math.max(ns.expBarSettings.job_font_settings.font_height + us.expBarFontOffset, 1);
+	adjustedSettings.expBarSettings.exp_font_settings.font_height = math.max(ns.expBarSettings.exp_font_settings.font_height + us.expBarFontOffset, 1);
+	adjustedSettings.expBarSettings.percent_font_settings.font_height = math.max(ns.expBarSettings.percent_font_settings.font_height + us.expBarFontOffset, 1);
 
 	-- Gil Tracker
 	adjustedSettings.gilTrackerSettings.iconScale = ns.gilTrackerSettings.iconScale * us.gilTrackerScale;
-	adjustedSettings.gilTrackerSettings.font_settings.font_height = ns.gilTrackerSettings.font_settings.font_height + us.gilTrackerFontOffset;
+	adjustedSettings.gilTrackerSettings.font_settings.font_height = math.max(ns.gilTrackerSettings.font_settings.font_height + us.gilTrackerFontOffset, 1);
 	
 	-- Inventory Tracker
 	adjustedSettings.inventoryTrackerSettings.dotRadius = ns.inventoryTrackerSettings.dotRadius * us.inventoryTrackerScale;
 	adjustedSettings.inventoryTrackerSettings.dotSpacing = ns.inventoryTrackerSettings.dotSpacing * us.inventoryTrackerScale;
 	adjustedSettings.inventoryTrackerSettings.groupSpacing = ns.inventoryTrackerSettings.groupSpacing * us.inventoryTrackerScale;
-	adjustedSettings.inventoryTrackerSettings.font_settings.font_height = ns.inventoryTrackerSettings.font_settings.font_height + us.inventoryTrackerFontOffset;
+	adjustedSettings.inventoryTrackerSettings.font_settings.font_height = math.max(ns.inventoryTrackerSettings.font_settings.font_height + us.inventoryTrackerFontOffset, 1);
 
 	-- Enemy List
 	adjustedSettings.enemyListSettings.barWidth = ns.enemyListSettings.barWidth * us.enemyListScaleX;

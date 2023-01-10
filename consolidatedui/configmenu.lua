@@ -19,12 +19,12 @@ config.DrawWindow = function(us)
                     UpdateSettings();
                 end
                 local scaleX = { us.playerBarScaleX };
-                if (imgui.SliderFloat('Scale X', scaleX, 0.1, 3.0, '"%.1f"')) then
+                if (imgui.SliderFloat('Scale X', scaleX, 0.1, 3.0, '%.1f')) then
                     us.playerBarScaleX = scaleX[1];
                     UpdateSettings();
                 end
                 local scaleY = { us.playerBarScaleY };
-                if (imgui.SliderFloat('Scale Y', scaleY, 0.1, 3.0, '"%.1f"')) then
+                if (imgui.SliderFloat('Scale Y', scaleY, 0.1, 3.0, '%.1f')) then
                     us.playerBarScaleY = scaleY[1];
                     UpdateSettings();
                 end
@@ -56,7 +56,7 @@ config.DrawWindow = function(us)
                 UpdateSettings();
             end
             local fontScale = { us.targetBarFontScale };
-            if (imgui.SliderFloat('Font Offset', fontScale, 0.1, 3.0)) then
+            if (imgui.SliderFloat('Font Scale', fontScale, 0.1, 3.0, '%.1f')) then
                 us.targetBarFontScale = fontScale[1];
                 UpdateSettings();
             end
@@ -79,7 +79,7 @@ config.DrawWindow = function(us)
                 UpdateSettings();
             end
             local fontScale = { us.enemyListFontScale };
-            if (imgui.SliderFloat('Font Offset', fontScale, 0.1, 3.0)) then
+            if (imgui.SliderFloat('Font Scale', fontScale, 0.1, 3.0, '%.1f')) then
                 us.enemyListFontScale = fontScale[1];
                 UpdateSettings();
             end
