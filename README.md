@@ -1,4 +1,4 @@
-# ConsolidatedUI
+# ConsolidatedUI aka HXUI
 (BETA) Ashita v4 addon containing multiple ui elements:
 
 1) Player Bar
