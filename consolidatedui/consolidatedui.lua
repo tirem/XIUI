@@ -23,7 +23,7 @@
 ]]--
 
 addon.name      = 'consolidatedui';
-addon.author    = 'Tirem';
+addon.author    = 'Tirem (Programmer) & Shuu (Designer)';
 addon.version   = '0.3';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/ConsolidatedUI'
