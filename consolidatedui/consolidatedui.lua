@@ -396,15 +396,15 @@ local function UpdateUserSettings()
 	ns.partyListSettings.nameSpacing = ns.partyListSettings.nameSpacing * us.partyListScaleY;
     ns.partyListSettings.hp_font_settings.font_height = ns.partyListSettings.hp_font_settings.font_height + us.partyListFontOffset;
     ns.partyListSettings.mp_font_settings.font_height = ns.partyListSettings.mp_font_settings.font_height + us.partyListFontOffset;
-    ns.partyListSettings.mp_font_settings.font_height = ns.partyListSettings.mp_font_settings.font_height + us.partyListFontOffset;
-	ns.partyListSettingsbackgroundPaddingX1 = ns.partyListSettings.backgroundPaddingX1 * us.partyListScaleX;
-	ns.partyListSettingsbackgroundPaddingX2 = ns.partyListSettings.backgroundPaddingX2 * us.partyListScaleX;
-	ns.partyListSettingsbackgroundPaddingY1 = ns.partyListSettings.backgroundPaddingY1 * us.partyListScaleY;
-	ns.partyListSettingsbackgroundPaddingY2 = ns.partyListSettings.backgroundPaddingY2 * us.partyListScaleY;
-	ns.partyListSettingscursorPaddingX1 = ns.partyListSettings.cursorPaddingX1 * us.partyListScaleX;
-	ns.partyListSettingscursorPaddingX2 = ns.partyListSettings.cursorPaddingX2 * us.partyListScaleX;
-	ns.partyListSettingscursorPaddingY1 = ns.partyListSettings.cursorPaddingY1 * us.partyListScaleY;
-	ns.partyListSettingscursorPaddingY2 = ns.partyListSettings.cursorPaddingY2 * us.partyListScaleY;
+    ns.partyListSettings.name_font_settings.font_height = ns.partyListSettings.name_font_settings.font_height + us.partyListFontOffset;
+	ns.partyListSettings.backgroundPaddingX1 = ns.partyListSettings.backgroundPaddingX1 * us.partyListScaleX;
+	ns.partyListSettings.backgroundPaddingX2 = ns.partyListSettings.backgroundPaddingX2 * us.partyListScaleX;
+	ns.partyListSettings.backgroundPaddingY1 = ns.partyListSettings.backgroundPaddingY1 * us.partyListScaleY;
+	ns.partyListSettings.backgroundPaddingY2 = ns.partyListSettings.backgroundPaddingY2 * us.partyListScaleY;
+	ns.partyListSettings.cursorPaddingX1 = ns.partyListSettings.cursorPaddingX1 * us.partyListScaleX;
+	ns.partyListSettings.cursorPaddingX2 = ns.partyListSettings.cursorPaddingX2 * us.partyListScaleX;
+	ns.partyListSettings.cursorPaddingY1 = ns.partyListSettings.cursorPaddingY1 * us.partyListScaleY;
+	ns.partyListSettings.cursorPaddingY2 = ns.partyListSettings.cursorPaddingY2 * us.partyListScaleY;
 
 	-- Player Bar
 	ns.playerBarSettings.barWidth = ns.playerBarSettings.barWidth * us.playerBarScaleX;
@@ -545,4 +545,22 @@ ashita.events.register('command', 'command_cb', function (e)
 	e.blocked = true;
     end
 
+end);
+
+-- Track our packets
+ashita.events.register('packet_in', 'packet_in_cb', function (e)
+	if (e.id == 0x0028) then
+		local actionPacket = ParseActionPacket(e);
+		if (config.userSettings.showTargetBar) then
+			targetBar.HandleActionPacket(actionPacket);
+		end
+		if (config.userSettings.showEnemyList) then
+			enemyList.HandleActionPacket(actionPacket);
+		end
+	elseif (e.id == 0x00E) then
+		local mobUpdatePacket = ParseMobUpdatePacket(e);
+		if (config.userSettings.showEnemyList) then
+			enemyList.HandleMobUpdatePacket(mobUpdatePacket);
+		end
+	end
 end);

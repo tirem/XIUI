@@ -90,6 +90,10 @@ function GetIsMob(targetEntity)
 	return isMob;
 end
 
+function GetIsMobByIndex(index)
+	return (bit.band(AshitaCore:GetMemoryManager():GetEntity():GetSpawnFlags(index), 0x10) ~= 0);
+end
+
 function SeparateNumbers(val, sep)
     local separated = string.gsub(val, "(%d)(%d%d%d)$", "%1" .. sep .. "%2", 1)
     local found = 0;
@@ -139,4 +143,107 @@ function LimitStringLength(string, length)
 		end
 	end
 	return output;
+end
+
+local bitData;
+local bitOffset;
+local function UnpackBits(length)
+    local value = ashita.bits.unpack_be(bitData, 0, bitOffset, length);
+    bitOffset = bitOffset + length;
+    return value;
+end
+
+function ParseActionPacket(e)
+    if (e.id == 0x0028) then
+		local actionPacket = T{};
+		bitData = e.data_raw;
+		bitOffset = 40;
+		actionPacket.UserId = UnpackBits(32);
+		actionPacket.UserIndex = GetIndexFromId(actionPacket.UserId);
+		local targetCount = UnpackBits(6);
+		--Unknown 4 bits
+		bitOffset = bitOffset + 4;
+		actionPacket.Type = UnpackBits(4);
+		actionPacket.Id = UnpackBits(32);
+		--Unknown 32 bits
+		bitOffset = bitOffset + 32;
+
+		actionPacket.Targets = T{};
+		for i = 1,targetCount do
+			local target = T{};
+			target.Id = UnpackBits(32);
+			local actionCount = UnpackBits(4);
+			target.Actions = T{};
+			for j = 1,actionCount do
+				local action = {};
+				action.Reaction = UnpackBits(5);
+				action.Animation = UnpackBits(12);
+				action.SpecialEffect = UnpackBits(7);
+				action.Knockback = UnpackBits(3);
+				action.Param = UnpackBits(17);
+				action.Message = UnpackBits(10);
+				action.Flags = UnpackBits(31);
+
+				local hasAdditionalEffect = (UnpackBits(1) == 1);
+				if hasAdditionalEffect then
+					local additionalEffect = {};
+					additionalEffect.Damage = UnpackBits(10);
+					additionalEffect.Param = UnpackBits(17);
+					additionalEffect.Message = UnpackBits(10);
+					action.AdditionalEffect = additionalEffect;
+				end
+
+				local hasSpikesEffect = (UnpackBits(1) == 1);
+				if hasSpikesEffect then
+					local spikesEffect = {};
+					spikesEffect.Damage = UnpackBits(10);
+					spikesEffect.Param = UnpackBits(14);
+					spikesEffect.Message = UnpackBits(10);
+					action.SpikesEffect = spikesEffect;
+				end
+
+				target.Actions:append(action);
+			end
+			actionPacket.Targets:append(target);
+		end
+		
+		return actionPacket;
+	end
+end
+
+function ParseMobUpdatePacket(e)
+	if (e.id == 0x00E) then
+		local mobPacket = T{};
+		mobPacket.monsterId = struct.unpack('L', e.data, 0x04 + 1);
+		mobPacket.monsterIndex = struct.unpack('H', e.data, 0x08 + 1);
+		mobPacket.updateFlags = struct.unpack('B', e.data, 0x0A + 1);
+		if (bit.band(mobPacket.updateFlags, 0x02) == 0x02) then
+			mobPacket.newClaimId = struct.unpack('L', e.data, 0x2C + 1);
+		end
+		return mobPacket;
+	end
+end
+
+function GetIndexFromId(serverId)
+    local index = bit.band(serverId, 0x7FF);
+    local entMgr = AshitaCore:GetMemoryManager():GetEntity();
+    if (entMgr:GetServerId(index) == serverId) then
+        return index;
+    end
+    for i = 1,2303 do
+        if entMgr:GetServerId(i) == serverId then
+            return i;
+        end
+    end
+    return 0;
+end
+
+function has_value (tab, val)
+    for index, value in ipairs(tab) do
+        if value == val then
+            return true
+        end
+    end
+
+    return false
 end

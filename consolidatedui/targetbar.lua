@@ -107,4 +107,8 @@ targetbar.DrawWindow = function(settings, userSettings)
     imgui.End();
 end
 
+targetbar.HandleActionPacket = function(e)
+
+end
+
 return targetbar;

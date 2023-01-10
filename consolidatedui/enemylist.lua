@@ -6,32 +6,19 @@ local imgui = require('imgui');
 local bgAlpha = 0.4;
 local bgRadius = 3;
 local allClaimedTargets = {};
-local frameSkip = 20;
-local currentFrame = frameSkip;
-local actionPackets = {};
 local enemylist = {};
 
-local function GetIsClaimed(targetIndex, partyMemberIds)
+local function GetIsValidMob(mobIdx)
+	-- Check if we are valid, are above 0 hp, and are rendered
 
-	local entMgr = AshitaCore:GetMemoryManager():GetEntity();
-	local claimStatus = entMgr:GetClaimStatus(targetIndex);
-	local claimId = bit.band(claimStatus, 0xFFFF);
-
-	if (claimId == 0) then
-		return false;
-	else
-		for i = 0, #partyMemberIds do
-			if (partyMemberIds[i] == claimId) then
-				return true;
-			end;
-		end
-	end
-	return false;
+    local renderflags = AshitaCore:GetMemoryManager():GetEntity():GetRenderFlags0(mobIdx);
+    if bit.band(renderflags, 0x200) ~= 0x200 or bit.band(renderflags, 0x4000) ~= 0 then
+        return false;
+    end
+	return true;
 end
 
-local function UpdatedClaimedTargets()
-
-	-- get all active party member server ids
+local function GetPartyMemberIds()
 	local partyMemberIds = {};
 	local party = AshitaCore:GetMemoryManager():GetParty();
 	for i = 0, 17 do
@@ -39,25 +26,10 @@ local function UpdatedClaimedTargets()
 			table.insert(partyMemberIds, party:GetMemberServerId(i));
 		end
 	end
-
-	-- get entites with a claimid from our party
-	local newClaimedTargets = {};
-	for x = 0, 2303 do
-        if (GetIsClaimed(x, partyMemberIds)) then
-            allClaimedTargets[x] = 1;
-		end
-    end
-
+	return partyMemberIds;
 end
 
 enemylist.DrawWindow = function(settings, userSettings)
-
-	-- Throttle our entity check
-	if (currentFrame >= frameSkip) then
-		UpdatedClaimedTargets();
-		currentFrame = 0;
-	end
-	currentFrame = currentFrame + 1;
 
 	imgui.SetNextWindowSize({ settings.barWidth, -1, }, ImGuiCond_Always);
 	-- Draw the main target window
@@ -80,10 +52,8 @@ enemylist.DrawWindow = function(settings, userSettings)
 		
 		local numTargets = 0;
 		for k,v in pairs(allClaimedTargets) do
-
 			local ent = GetEntity(k);
-			if (v ~= nil and ent ~= nil and ent.HPPercent > 0) then
-
+			if (v ~= nil and ent ~= nil and GetIsValidMob(k)) then
 				-- Obtain and prepare target information..
 				local targetNameText = ent.Name;
 				if (targetNameText ~= nil) then
@@ -140,6 +110,28 @@ enemylist.DrawWindow = function(settings, userSettings)
 		end
 	end
 	imgui.End();
+end
+
+-- If a mob performns an action on us or a party member add it to the list
+enemylist.HandleActionPacket = function(e)
+	if (GetIsMobByIndex(e.UserIndex) and GetIsValidMob(e.UserIndex)) then
+		local partyMemberIds = GetPartyMemberIds();
+		for i = 0, #e.Targets do
+			if (e.Targets[i] ~= nil and has_value(partyMemberIds, e.Targets[i].Id)) then
+				allClaimedTargets[e.UserIndex] = 1;
+			end
+		end
+	end
+end
+
+-- if a mob updates its claimid to be us or a party member add it to the list
+enemylist.HandleMobUpdatePacket = function(e)
+	if (e.newClaimId ~= nil and GetIsValidMob(e.monsterIndex)) then	
+		local partyMemberIds = GetPartyMemberIds();
+		if (has_value(partyMemberIds, e.newClaimId)) then
+			allClaimedTargets[e.monsterIndex] = 1;
+		end
+	end
 end
 
 return enemylist;
