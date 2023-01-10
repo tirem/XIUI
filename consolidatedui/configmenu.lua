@@ -6,8 +6,6 @@ local config = {};
 
 config.DrawWindow = function(us)
     imgui.SetNextWindowSize({ 500, 500 }, ImGuiCond_FirstUseEver);
-    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 10, 10 });
-    imgui.PushStyleColor(ImGuiCol_Text, { 1.0, 1.0, 1.0, 1.0 });
     if(showConfig[1] and imgui.Begin(("HXUI Config"):fmt(addon.version), showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
         if(imgui.Button("Restore Defaults", { 130, 20 })) then
             ResetSettings();
