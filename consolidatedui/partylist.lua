@@ -72,6 +72,7 @@ local function GetMemberInformation(memIdx)
         memberInfo.tp = 0;
         memberInfo.job = '';
         memberInfo.level = '';
+        memberInfo.targeted = false;
     end
 
     return memberInfo;
@@ -84,6 +85,11 @@ local function DrawMember(memIdx, settings, userSettings)
         UpdateTextVisibilityByMember(memIdx, false);
         return;
     end
+
+    local nameSize = SIZE.new();
+    local hpSize = SIZE.new();
+    memberText[memIdx].name:GetTextSize(nameSize);
+    memberText[memIdx].hp:GetTextSize(hpSize);
 
     -- Get the hp color for bars and text
     local hpNameColor;
@@ -102,34 +108,51 @@ local function DrawMember(memIdx, settings, userSettings)
         hpBarColor = {1, .4, .4, 1};
     end
 
-    local allBarsLengths = settings.hpBarWidth + settings.mpBarWidth + settings.tpBarWidth + (settings.barSpacing * 2);
+    local allBarsLengths = settings.hpBarWidth + settings.mpBarWidth + settings.tpBarWidth + (settings.barSpacing * 2) + (imgui.GetStyle().FramePadding.x * 4);
+
+
+    local hpStartX, hpStartY = imgui.GetCursorScreenPos();
+
+    -- Update the hp text
+    memberText[memIdx].hp:SetColor(hpNameColor);
+    memberText[memIdx].hp:SetPositionX(hpStartX + settings.hpBarWidth + settings.hpTextOffsetX);
+    memberText[memIdx].hp:SetPositionY(hpStartY + settings.barHeight + settings.hpTextOffsetY);
+    memberText[memIdx].hp:SetText(tostring(memInfo.hp));
 
     -- Draw the HP bar
-    local hpStartX, hpStartY = imgui.GetCursorScreenPos();
     memberText[memIdx].hp:SetColor(hpNameColor);
     imgui.PushStyleColor(ImGuiCol_PlotHistogram, hpBarColor);
     if (memInfo.inzone) then
         imgui.ProgressBar(memInfo.hpp, { settings.hpBarWidth, settings.barHeight }, '');
     else
-        imgui.ProgressBar(0, { allBarsLengths, settings.barHeight + memberText[memIdx].hp:GetFontHeight()}, AshitaCore:GetResourceManager():GetString("zones.names", memInfo.zone));
+        imgui.ProgressBar(0, { allBarsLengths, settings.barHeight + hpSize.cy + settings.hpTextOffsetY}, AshitaCore:GetResourceManager():GetString("zones.names", memInfo.zone));
     end
     imgui.PopStyleColor(1);
-    imgui.SameLine();
+
+    -- Draw the leader icon
+    if (memInfo.leader == true) then
+        draw_circle({hpStartX + settings.leaderDotRadius/2, hpStartY + settings.leaderDotRadius/2}, settings.leaderDotRadius, {1, 1, 0, 1}, settings.leaderDotRadius * 3, true);
+    end
+
+    -- Update the name text
+    memberText[memIdx].name:SetColor(0xFFFFFFFF);
+    memberText[memIdx].name:SetPositionX(hpStartX + settings.nameTextOffsetX);
+    memberText[memIdx].name:SetPositionY(hpStartY - nameSize.cy - settings.nameTextOffsetY);
+    memberText[memIdx].name:SetText(tostring(memInfo.name));
 
     -- Draw the MP bar
-    local mpStartX, mpStartY; 
     if (memInfo.inzone) then
+        imgui.SameLine();
+        local mpStartX, mpStartY; 
         imgui.SetCursorPosX(imgui.GetCursorPosX() + settings.barSpacing);
         mpStartX, mpStartY = imgui.GetCursorScreenPos();
         imgui.PushStyleColor(ImGuiCol_PlotHistogram, {.9, 1, .5, 1});
         imgui.ProgressBar(memInfo.mpp, {  settings.mpBarWidth, settings.barHeight }, '');
         imgui.PopStyleColor(1);
         imgui.SameLine();
-    end
 
-    -- Draw the TP bar
-    local tpStartX, tpStartY;
-    if (memInfo.inzone) then
+        -- Draw the TP bar
+        local tpStartX, tpStartY;
         imgui.SetCursorPosX(imgui.GetCursorPosX() + settings.barSpacing);
         tpStartX, tpStartY = imgui.GetCursorScreenPos();
         if (memInfo.tp > 1000) then
@@ -146,55 +169,46 @@ local function DrawMember(memIdx, settings, userSettings)
             imgui.ProgressBar((memInfo.tp - 1000) / 2000, { settings.tpBarWidth, settings.barHeight * 3/5 }, '');
             imgui.PopStyleColor(1);
         end
+
+        -- Update the mp text
+        if (memInfo.mpp >= 1) then 
+            memberText[memIdx].mp:SetColor(0xFFCFFBCF);
+        else
+            memberText[memIdx].mp:SetColor(0xFFFFFFFF);
+        end
+        memberText[memIdx].mp:SetPositionX(mpStartX + settings.mpBarWidth + settings.mpTextOffsetX);
+        memberText[memIdx].mp:SetPositionY(mpStartY + settings.barHeight + settings.mpTextOffsetY);
+        memberText[memIdx].mp:SetText(tostring(memInfo.mp));
+
+        -- Update the tp text
+        if (memInfo.tp > 1000) then 
+            memberText[memIdx].tp:SetColor(0xFF5b97cf);
+        else
+            memberText[memIdx].tp:SetColor(0xFFD1EDF2);
+        end	
+        memberText[memIdx].tp:SetPositionX(tpStartX + settings.tpBarWidth + settings.tpTextOffsetX);
+        memberText[memIdx].tp:SetPositionY(tpStartY + settings.barHeight + settings.tpTextOffsetY);
+        memberText[memIdx].tp:SetText(tostring(memInfo.tp));
+
+        if (memInfo.targeted == true) then
+            selectionPrim.visible = true;
+            selectionPrim.position_x = hpStartX - settings.cursorPaddingX1;
+            selectionPrim.position_y = hpStartY - nameSize.cy - settings.nameTextOffsetY - settings.cursorPaddingY1;
+            selectionPrim.scale_x = (allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2) / 276;
+            selectionPrim.scale_y = (hpSize.cy + nameSize.cy + settings.hpTextOffsetY + settings.nameTextOffsetY + settings.barHeight + settings.cursorPaddingY1 + settings.cursorPaddingY2) / 58;
+            partyTargeted = true;
+        end
     end
 
-    -- Draw the leader icon
-    if (memInfo.leader == true) then
-        draw_circle({hpStartX + settings.leaderDotRadius/2, hpStartY + settings.leaderDotRadius/2}, settings.leaderDotRadius, {1, 1, 0, 1}, settings.leaderDotRadius * 3, true);
-     end
+    memberText[memIdx].hp:SetVisible(memInfo.inzone);
+    memberText[memIdx].mp:SetVisible(memInfo.inzone);
+    memberText[memIdx].tp:SetVisible(memInfo.inzone);
 
-    -- Update the hp text
-    memberText[memIdx].hp:SetColor(hpNameColor);
-    memberText[memIdx].hp:SetPositionX(hpStartX + settings.hpBarWidth + settings.hpTextOffsetX);
-    memberText[memIdx].hp:SetPositionY(hpStartY + settings.barHeight + settings.hpTextOffsetY);
-    memberText[memIdx].hp:SetText(tostring(memInfo.hp));
-
-    -- Update the mp text
-    if (memInfo.mpp >= 1) then 
-        memberText[memIdx].mp:SetColor(0xFFCFFBCF);
+    if (memInfo.inzone) then
+        imgui.Dummy({0, settings.entrySpacing + hpSize.cy + settings.hpTextOffsetY + settings.nameTextOffsetY + nameSize.cy});
     else
-        memberText[memIdx].mp:SetColor(0xFFFFFFFF);
+        imgui.Dummy({0, settings.entrySpacing + settings.nameTextOffsetY + nameSize.cy});
     end
-    memberText[memIdx].mp:SetPositionX(mpStartX + settings.mpBarWidth + settings.mpTextOffsetX);
-    memberText[memIdx].mp:SetPositionY(mpStartY + settings.barHeight + settings.mpTextOffsetY);
-    memberText[memIdx].mp:SetText(tostring(memInfo.mp));
-
-    -- Update the tp text
-    if (memInfo.tp > 1000) then 
-        memberText[memIdx].tp:SetColor(0xFF5b97cf);
-    else
-        memberText[memIdx].tp:SetColor(0xFFD1EDF2);
-    end	
-    memberText[memIdx].tp:SetPositionX(tpStartX + settings.tpBarWidth + settings.tpTextOffsetX);
-    memberText[memIdx].tp:SetPositionY(tpStartY + settings.barHeight + settings.tpTextOffsetY);
-    memberText[memIdx].tp:SetText(tostring(memInfo.tp));
-
-    -- Update the name text
-    memberText[memIdx].name:SetColor(0xFFFFFFFF);
-    memberText[memIdx].name:SetPositionX(hpStartX + settings.nameTextOffsetX);
-    memberText[memIdx].name:SetPositionY(hpStartY - settings.barHeight + settings.nameTextOffsetY);
-    memberText[memIdx].name:SetText(tostring(memInfo.name));
-
-    if (memInfo.targeted == true) then
-        selectionPrim.visible = true;
-        selectionPrim.position_x = hpStartX - settings.cursorPaddingX1;
-        selectionPrim.position_y = hpStartY - memberText[memIdx].name:GetFontHeight() - settings.cursorPaddingY1;
-        selectionPrim.scale_x = (allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2) / 276;
-        selectionPrim.scale_y = (memberText[memIdx].hp:GetFontHeight() + (memberText[memIdx].name:GetFontHeight()) + settings.barHeight + settings.cursorPaddingY1 + settings.cursorPaddingY2) / 58;
-        partyTargeted = true;
-    end
-
-    imgui.Dummy({0, settings.entrySpacing + memberText[memIdx].hp:GetFontHeight() + memberText[memIdx].name:GetFontHeight()});
 end
 
 partyList.DrawWindow = function(settings, userSettings)
@@ -217,19 +231,23 @@ partyList.DrawWindow = function(settings, userSettings)
         if (fullMenuSizeX ~= nil and fullMenuSizeY ~= nil) then
             backgroundPrim.visible = true;
             local imguiPosX, imguiPosY = imgui.GetWindowPos();
+            local nameSize = SIZE.new();
+            local hpSize = SIZE.new();
+            memberText[0].name:GetTextSize(nameSize);
+            memberText[0].hp:GetTextSize(hpSize);
             backgroundPrim.position_x = imguiPosX - settings.backgroundPaddingX1;
-            backgroundPrim.position_y = imguiPosY - settings.backgroundPaddingY1;
+            backgroundPrim.position_y = imguiPosY - settings.nameTextOffsetY - nameSize.cy - settings.backgroundPaddingY1;
             backgroundPrim.scale_x = (fullMenuSizeX + settings.backgroundPaddingX1 + settings.backgroundPaddingX2) / 284;
             backgroundPrim.scale_y = (fullMenuSizeY - settings.entrySpacing + settings.backgroundPaddingY1 + settings.backgroundPaddingY2) / 368;
         end
         partyTargeted = false;
+        UpdateTextVisibility(true);
         for i = 0, 5 do
             DrawMember(i, settings, userSettings);
         end
         if (partyTargeted == false) then
             selectionPrim.visible = false;
         end
-        UpdateTextVisibility(true);
     end
 
     fullMenuSizeX, fullMenuSizeY = imgui.GetWindowSize();
