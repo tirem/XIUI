@@ -2,13 +2,13 @@
 (BETA) Ashita v4 addon containing multiple ui elements:
 
 1) Player Bar
-2) Target Bar
-3) Party List
+2) Target Bar (w/ Target of Target)
+3) Party List (w/ Buffs & Debuffs)
 4) Enemy List
 5) Exp Bar
 6) Inventory Tracker
 7) Gil Tracker
-8) Configuration UI
+8) Configuration UI for all elements
 
 Configuration UI Command: /cui, /consolidatedui, /hxui, /hui, /horixonui, /horizonxiui
 
