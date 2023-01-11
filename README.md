@@ -12,4 +12,4 @@
 
 Configuration UI Command: /cui, /consolidatedui, /hxui, /hui, /horixonui, /horizonxiui
 
-![alt text](https://user-images.githubusercontent.com/7691562/211183288-43163fc6-2f11-4b20-b1af-338f9d383fd1.png)
+![alt text](https://user-images.githubusercontent.com/7691562/211737344-f5faa93e-7876-48d0-abfb-8f37902268f6.png)
