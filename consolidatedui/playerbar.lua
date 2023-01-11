@@ -136,7 +136,7 @@ playerbar.DrawWindow = function(settings, userSettings)
 		if (SelfTP > 1000) then
 			imgui.SameLine();
 			imgui.SetCursorPosX(tpX + settings.barSpacing);
-			imgui.PushStyleColor(ImGuiCol_PlotHistogram, { 0.2, 0.4, 1.0, 1.0});
+			imgui.PushStyleColor(ImGuiCol_PlotHistogram, { 0.3, 0.7, 1.0, 1.0});
 			imgui.ProgressBar((SelfTP - 1000) / 2000, { barSize, settings.barHeight * 3/5 }, '');
 			imgui.PopStyleColor(1);
 		end

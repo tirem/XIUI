@@ -166,6 +166,7 @@ local function DrawMember(memIdx, settings, userSettings)
         local tpStartX, tpStartY;
         imgui.SetCursorPosX(imgui.GetCursorPosX() + settings.barSpacing);
         tpStartX, tpStartY = imgui.GetCursorScreenPos();
+        local tpX = imgui.GetCursorPosX();
         if (memInfo.tp > 1000) then
             imgui.PushStyleColor(ImGuiCol_PlotHistogram, { 0.2, 0.4, 1.0, 1.0});
         else
@@ -175,7 +176,7 @@ local function DrawMember(memIdx, settings, userSettings)
         imgui.PopStyleColor(1);
         if (memInfo.tp > 1000) then
             imgui.SameLine();
-            imgui.SetCursorPosX(tpStartX);
+            imgui.SetCursorPosX(tpX);
             imgui.PushStyleColor(ImGuiCol_PlotHistogram, { 0.3, 0.7, 1.0, 1.0});
             imgui.ProgressBar((memInfo.tp - 1000) / 2000, { settings.tpBarWidth, settings.barHeight * 3/5 }, '');
             imgui.PopStyleColor(1);

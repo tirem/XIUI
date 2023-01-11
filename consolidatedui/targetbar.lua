@@ -55,7 +55,7 @@ targetbar.DrawWindow = function(settings, userSettings)
         imgui.SetCursorPosX(imgui.GetCursorPosX() + imgui.GetColumnWidth() - x - imgui.GetStyle().FramePadding.x);
         imgui.Text(dist);
 
-		if (settings.showBarPercent == true) then
+		if (userSettings.showTargetBarPercent == true) then
 			imgui.ProgressBar(targetEntity.HPPercent / 100, { -1, settings.barHeight});
 		else
 			imgui.ProgressBar(targetEntity.HPPercent / 100, { -1, settings.barHeight}, '');
