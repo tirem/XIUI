@@ -486,7 +486,12 @@ function UpdateSettings()
 	UpdateFonts();
 end;
 
-settings.register('settings', 'settings_update', UpdateSettings);
+settings.register('settings', 'settings_update', function (s)
+    if (s ~= nil) then
+        config = s;
+		UpdateSettings();
+    end
+end);
 
 --[[
 * event: d3d_present
