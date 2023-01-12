@@ -101,7 +101,7 @@ playerbar.DrawWindow = function(settings, userSettings)
 		-- Draw HP Bar (two bars to fake animation
 		local hpX = imgui.GetCursorPosX();
 		local barSize = (settings.barWidth / 3) - settings.barSpacing;
-		imgui.PushStyleColor(ImGuiCol_PlotHistogram, hpBarColor);
+		imgui.PushStyleColor(ImGuiCol_PlotHistogram, {1,0,0,1});
 		imgui.ProgressBar(interpHP, { barSize, settings.barHeight }, '');
 		imgui.PopStyleColor(1);
 		imgui.SameLine();
@@ -109,7 +109,7 @@ playerbar.DrawWindow = function(settings, userSettings)
 		local hpLocX, hpLocY = imgui.GetCursorScreenPos();	
 		if (SelfHPPercent > 0) then
 			imgui.SetCursorPosX(hpX);
-			imgui.PushStyleColor(ImGuiCol_PlotHistogram, { 1.0, 0.5, 0.5, 1.0});
+			imgui.PushStyleColor(ImGuiCol_PlotHistogram, hpBarColor);
 			imgui.ProgressBar(1, { barSize * SelfHPPercent, settings.barHeight }, '');
 			imgui.PopStyleColor(1);
 			imgui.SameLine();
