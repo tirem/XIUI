@@ -74,27 +74,9 @@ targetbar.DrawWindow = function(settings, userSettings)
 	else
 		buffIds = debuffHandler.GetActiveDebuffs(playerTarget:GetServerId(0));
 	end
-	
-	DrawStatusIcons(buffIds, settings.iconSize, false, settings.maxIconColumns, 3);
-	--[[
-	if (buffIds ~= nil and #buffIds > 0) then
-		local currentRow = 0;
-		for i = 0,#buffIds do
-			local icon = statusHandler.get_icon_image(buffIds[i]);
-			if (icon ~= nil) then
-				imgui.Image(icon, { settings.iconSize, settings.iconSize }, { 0, 0 }, { 1, 1 });
-				currentRow = currentRow + 1;
-				-- Handle multiple rows
-				if (currentRow < settings.maxIconColumns) then
-					imgui.SameLine();
-				else
-					currentRow = 0;
-				end
-			end
-		end
-	end
-	--]]
+	DrawStatusIcons(buffIds, settings.iconSize, settings.maxIconColumns, 3);
 
+	-- End our main bar
 	local winPosX, winPosY = imgui.GetWindowPos();
     imgui.End();
 	

@@ -145,7 +145,7 @@ T{
 		bgTopPadding = -3;
 		maxIcons = 5;
 		iconSize = 18;
-		debuffOffsetX = -15;
+		debuffOffsetX = -10;
 		debuffOffsetY = 0;
 	};
 

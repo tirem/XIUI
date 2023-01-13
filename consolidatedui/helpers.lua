@@ -382,21 +382,12 @@ function IsMemberOfParty(targetIndex)
 	return false;
 end
 
-function DrawStatusIcons(statusIds, iconSize, drawBg, maxColumns, maxRows)
+function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows)
 	if (statusIds ~= nil and #statusIds > 0) then
 		local currentRow = 1;
         local currentColumn = 0;
 
 		for i = 0,#statusIds do
-            if (drawBg) then
-                local resetX = imgui.GetCursorPosX();
-                local bgIcon;
-                local isBuff = buffTable.IsBuff(statusIds[i]);
-                bgIcon = statusHandler.GetBackground(isBuff);
-                imgui.Image(bgIcon, { iconSize, iconSize / .75});
-                imgui.SameLine();
-                imgui.SetCursorPosX(resetX);
-            end
 			local icon = statusHandler.get_icon_image(statusIds[i]);
 			if (icon ~= nil) then
 				imgui.Image(icon, { iconSize, iconSize }, { 0, 0 }, { 1, 1 });

@@ -98,19 +98,7 @@ enemylist.DrawWindow = function(settings, userSettings)
 					if (buffIds ~= nil and #buffIds > 0) then
 						imgui.SetNextWindowPos({winStartX + settings.barWidth + settings.debuffOffsetX, winY + settings.debuffOffsetY});
 						if (imgui.Begin('EnemyDebuffs'..k, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
-							local currentRow = 0;
-							for i = 0,#buffIds do
-								local icon = statusHandler.get_icon_image(buffIds[i]);
-								if (icon ~= nil) then
-									imgui.SameLine();
-									imgui.Image(icon, { settings.iconSize, settings.iconSize }, { 0, 0 }, { 1, 1 });
-									currentRow = currentRow + 1;
-									-- Handle multiple rows
-									if (i + 1 >= settings.maxIcons) then
-										break;
-									end
-								end
-							end
+							DrawStatusIcons(buffIds, settings.iconSize, settings.maxIcons, 1);
 						end 
 						imgui.End();
 					end

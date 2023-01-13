@@ -186,7 +186,7 @@ config.DrawWindow = function(us)
             end
             imgui.EndChild();
         end
-    imgui.EndChild();
+        imgui.EndChild();
     end
 	imgui.End();
 end

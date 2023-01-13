@@ -241,20 +241,7 @@ local function DrawMember(memIdx, settings, userSettings)
                 imgui.SetNextWindowPos({hpStartX - buffWindowX[memIdx] - settings.buffSpacing , hpStartY - settings.iconSize});
             end
             if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
-                local currentRow = 0;
-                for i = 0,#memInfo.buffs do
-                    local icon = statusHandler.get_icon_image(memInfo.buffs[i]);
-                    if (icon ~= nil) then
-                        imgui.Image(icon, { settings.iconSize, settings.iconSize }, { 0, 0 }, { 1, 1 });
-                        currentRow = currentRow + 1;
-                        -- Handle multiple rows
-                        if (currentRow < settings.maxIconColumns) then
-                            imgui.SameLine();
-                        else
-                            currentRow = 0;
-                        end
-                    end
-                end
+                DrawStatusIcons(memInfo.buffs, settings.iconSize, settings.maxIconColumns, 2);
             end
             local buffWindowSizeX, buffWindowSizeY = imgui.GetWindowSize();
             buffWindowX[memIdx] = buffWindowSizeX;

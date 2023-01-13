@@ -25,7 +25,7 @@ giltracker.DrawWindow = function(settings, userSettings)
 		return;
 	end
 
-    if (player.isZoning or mainJob == 0) then
+    if (player.isZoning) then
 		UpdateTextVisibility(false);	
         return;
 	end
