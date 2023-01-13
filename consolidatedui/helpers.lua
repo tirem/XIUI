@@ -5,7 +5,6 @@ local d3d       = require('d3d8');
 local C         = ffi.C;
 local d3d8dev   = d3d.get_device();
 local statusHandler = require('statushandler');
-local buffTable = require('bufftable');
 
 function draw_rect(top_left, bot_right, color, radius, fill)
     local color = imgui.GetColorU32(color);
@@ -398,7 +397,7 @@ function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows)
 					imgui.SameLine();
 				else
 					currentRow = currentRow + 1;
-                    if (currentRow >= maxRows) then
+                    if (currentRow > maxRows) then
                         return;
                     end
                     currentColumn = 0;
