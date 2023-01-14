@@ -1,8 +1,7 @@
 # ConsolidatedUI aka HXUI (BETA)
 ![alt text](https://user-images.githubusercontent.com/7691562/212447541-a5d00d47-4113-4850-978c-7f1db3bef868.png)
 
-Ashita v4 addon containing multiple ui elements:
-
+Contains the following elements:
 1) Player Bar
 2) Target Bar (w/ Target of Target and Buffs & Debuffs)
 3) Party List (w/ Buffs & Debuffs)
