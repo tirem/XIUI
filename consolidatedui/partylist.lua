@@ -270,7 +270,7 @@ local function DrawMember(memIdx, settings, userSettings)
                     end
                     if (imgui.Begin('PlayerDebuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
                         imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {5, 1});
-                        DrawStatusIcons(debuffs, settings.iconSize, 32, 1, 5,1, true);
+                        DrawStatusIcons(debuffs, settings.iconSize, 32, 1, true);
                         imgui.PopStyleVar(1);
                     end
                     local buffWindowSizeX, buffWindowSizeY = imgui.GetWindowSize();
@@ -296,7 +296,7 @@ local function DrawMember(memIdx, settings, userSettings)
                 end
                 if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
                     imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {1, 3});
-                    DrawStatusIcons(memInfo.buffs, settings.iconSize, 7, 3, 1,3);
+                    DrawStatusIcons(memInfo.buffs, settings.iconSize, 7, 3);
                     imgui.PopStyleVar(1);
                 end
                 local buffWindowSizeX, buffWindowSizeY = imgui.GetWindowSize();
