@@ -5,6 +5,7 @@ local d3d       = require('d3d8');
 local C         = ffi.C;
 local d3d8dev   = d3d.get_device();
 local statusHandler = require('statushandler');
+local buffTable = require('bufftable');
 
 function draw_rect(top_left, bot_right, color, radius, fill)
     local color = imgui.GetColorU32(color);
@@ -381,28 +382,43 @@ function IsMemberOfParty(targetIndex)
 	return false;
 end
 
-function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows)
+function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg)
 	if (statusIds ~= nil and #statusIds > 0) then
 		local currentRow = 1;
         local currentColumn = 0;
 
 		for i = 0,#statusIds do
-			local icon = statusHandler.get_icon_from_theme("icons",statusIds[i]);
-			if (icon ~= nil) then
-				imgui.Image(icon, { iconSize, iconSize }, { 0, 0 }, { 1, 1 });
+            local icon = statusHandler.get_icon_from_theme("icons",statusIds[i]);
+            if (icon ~= nil) then
+                if (drawBg == true) then
+                    local resetX, resetY = imgui.GetCursorScreenPos();
+                    local bgIcon;
+                    local isBuff = buffTable.IsBuff(statusIds[i]);
+                    local bgSize = iconSize * 1.2;
+                    local yOffset = bgSize * -0.1;
+                    if (isBuff) then
+                        yOffset = bgSize * -0.35;
+                    end
+                    imgui.SetCursorScreenPos({resetX - ((bgSize - iconSize) / 1.5), resetY + yOffset})
+                    bgIcon = statusHandler.GetBackground(isBuff);
+                    imgui.Image(bgIcon, { bgSize + 1, bgSize  / .75});
+                    imgui.SameLine();
+                    imgui.SetCursorScreenPos({resetX, resetY});
+                end
+                imgui.Image(icon, { iconSize, iconSize }, { 0, 0 }, { 1, 1 });
 
-				currentColumn = currentColumn + 1;
-				-- Handle multiple rows
-				if (currentColumn < maxColumns) then
-					imgui.SameLine();
-				else
-					currentRow = currentRow + 1;
+                currentColumn = currentColumn + 1;
+                -- Handle multiple rows
+                if (currentColumn < maxColumns) then
+                    imgui.SameLine();
+                else
+                    currentRow = currentRow + 1;
                     if (currentRow > maxRows) then
                         return;
                     end
                     currentColumn = 0;
-				end
-			end
+                end
+            end
 		end
 	end
 end

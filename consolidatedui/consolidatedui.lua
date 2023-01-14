@@ -83,6 +83,7 @@ T{
 	partyListScaleY = 1,
 	partyListBuffScale = 1,
 	partyListFontOffset = 0,
+	partyListStatusTheme = 0;
 };
 
 local user_settings_container = 
@@ -104,7 +105,7 @@ T{
 		nameXOffset = 12,
 		nameYOffset = 9,
 		iconSize = 22,
-		maxIconColumns = 9,
+		maxIconColumns = 12,
 	};
 
 	-- settings for the playerbar
@@ -296,7 +297,8 @@ T{
 
 		iconSize = 20,
 		maxIconColumns = 6,
-		buffSpacing = 5,
+		buffOffset = 10,
+		xivBuffOffsetY = 5;
 
 		hp_font_settings = 
 		T{
@@ -453,7 +455,6 @@ local function UpdateUserSettings()
 	adjustedSettings.partyListSettings.cursorPaddingY1 = ns.partyListSettings.cursorPaddingY1 * us.partyListScaleY;
 	adjustedSettings.partyListSettings.cursorPaddingY2 = ns.partyListSettings.cursorPaddingY2 * us.partyListScaleY;
 	adjustedSettings.partyListSettings.iconSize = ns.partyListSettings.iconSize * us.partyListBuffScale;
-	adjustedSettings.partyListSettings.buffSpacing = ns.partyListSettings.buffSpacing * us.partyListBuffScale;
 
 	-- Player Bar
 	adjustedSettings.playerBarSettings.barWidth = ns.playerBarSettings.barWidth * us.playerBarScaleX;

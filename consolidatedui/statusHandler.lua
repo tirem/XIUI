@@ -15,6 +15,9 @@ local d3d8_device = d3d8.get_device();
 local icon_cache = T{
 };
 
+local buffIcon = nil;
+local debuffIcon = nil;
+
 -- this table implements overrides for certain icons to handle
 -- local buffs_table = nil;
 local id_overrides = T{
@@ -204,6 +207,20 @@ statusHandler.get_member_status = function(server_id)
         end
     end
     return nil;
+end
+
+statusHandler.GetBackground = function(isBuff)
+    if (isBuff) then
+        if (buffIcon == nil) then
+            buffIcon = LoadTexture("BuffIcon")
+        end
+        return tonumber(ffi.cast("uint32_t", buffIcon.image));
+    else
+        if (debuffIcon == nil) then
+            debuffIcon = LoadTexture("DebuffIcon")
+        end
+        return tonumber(ffi.cast("uint32_t", debuffIcon.image));
+    end
 end
 
 return statusHandler;

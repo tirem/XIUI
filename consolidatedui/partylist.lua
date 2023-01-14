@@ -3,11 +3,12 @@ local imgui = require('imgui');
 local fonts = require('fonts');
 local primitives = require('primitives');
 local statusHandler = require('statushandler');
+local buffTable = require('bufftable');
 
 local fullMenuSizeX;
 local fullMenuSizeY;
 local buffWindowX = {};
-local buffWindowY = {};
+local debuffWindowX = {};
 local backgroundPrim;
 local selectionPrim;
 local arrowPrim;
@@ -220,8 +221,8 @@ local function DrawMember(memIdx, settings, userSettings)
             selectionPrim.visible = true;
             selectionPrim.position_x = hpStartX - settings.cursorPaddingX1;
             selectionPrim.position_y = hpStartY - nameSize.cy - settings.nameTextOffsetY - settings.cursorPaddingY1;
-            selectionPrim.scale_x = (allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2) / 276;
-            selectionPrim.scale_y = (hpSize.cy + nameSize.cy + settings.hpTextOffsetY + settings.nameTextOffsetY + settings.barHeight + settings.cursorPaddingY1 + settings.cursorPaddingY2) / 58;
+            selectionPrim.scale_x = (allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2) / 280;
+            selectionPrim.scale_y = (hpSize.cy + nameSize.cy + settings.hpTextOffsetY + settings.nameTextOffsetY + settings.barHeight + settings.cursorPaddingY1 + settings.cursorPaddingY2) / 66;
             partyTargeted = true;
         end
 
@@ -235,18 +236,74 @@ local function DrawMember(memIdx, settings, userSettings)
             partySubTargeted = true;
         end
 
-        -- Draw the status icons
-        if (memInfo.buffs ~= nil) then
-            if (buffWindowX[memIdx] ~= nil and buffWindowY[memIdx] ~= nil) then
-                imgui.SetNextWindowPos({hpStartX - buffWindowX[memIdx] - settings.buffSpacing , hpStartY - settings.iconSize});
+        -- Draw the different party list buff / debuff themes
+        if (memInfo.buffs ~= nil and #memInfo.buffs > 0) then
+            if (userSettings.partyListStatusTheme == 0) then
+                local buffs = {};
+                local debuffs = {};
+                for i = 0, #memInfo.buffs do
+                    if (buffTable.IsBuff(memInfo.buffs[i])) then
+                        table.insert(buffs, memInfo.buffs[i]);
+                    else
+                        table.insert(debuffs, memInfo.buffs[i]);
+                    end
+                end
+
+                if (buffs ~= nil and #buffs > 0) then
+                    if (buffWindowX[memIdx] ~= nil) then
+                        imgui.SetNextWindowPos({hpStartX - buffWindowX[memIdx] - settings.buffOffset , memberText[memIdx].name:GetPositionY() - settings.iconSize/2});
+                    end
+                    if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
+                        imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {5, 1});
+                        DrawStatusIcons(buffs, settings.iconSize, 32, 1, true);
+                        imgui.PopStyleVar(1);
+                    end
+                    local buffWindowSizeX, buffWindowSizeY = imgui.GetWindowSize();
+                    buffWindowX[memIdx] = buffWindowSizeX;
+    
+                    imgui.End();
+                end
+
+                if (debuffs ~= nil and #debuffs > 0) then
+                    if (debuffWindowX[memIdx] ~= nil) then
+                        imgui.SetNextWindowPos({hpStartX - debuffWindowX[memIdx] - settings.buffOffset , memberText[memIdx].name:GetPositionY() + settings.iconSize});
+                    end
+                    if (imgui.Begin('PlayerDebuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
+                        imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {5, 1});
+                        DrawStatusIcons(debuffs, settings.iconSize, 32, 1, 5,1, true);
+                        imgui.PopStyleVar(1);
+                    end
+                    local buffWindowSizeX, buffWindowSizeY = imgui.GetWindowSize();
+                    debuffWindowX[memIdx] = buffWindowSizeX;
+                    imgui.End();
+                end
+            elseif (userSettings.partyListStatusTheme == 1) then
+                -- Draw FFXIV theme
+                local resetX, resetY = imgui.GetCursorScreenPos();
+                imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0} );
+                imgui.SetNextWindowPos({mpStartX, mpStartY - settings.iconSize - settings.xivBuffOffsetY})
+                if (imgui.Begin('XIVStatus'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
+                    imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {1, 1});
+                    DrawStatusIcons(memInfo.buffs, settings.iconSize, 32, 1);
+                    imgui.PopStyleVar(1);
+                end
+                imgui.PopStyleVar(1);
+                imgui.End();
+                imgui.SetCursorScreenPos({resetX, resetY});
+            else
+                if (buffWindowX[memIdx] ~= nil) then
+                    imgui.SetNextWindowPos({hpStartX - buffWindowX[memIdx] - settings.buffOffset , memberText[memIdx].name:GetPositionY() - settings.iconSize/2});
+                end
+                if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
+                    imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {1, 3});
+                    DrawStatusIcons(memInfo.buffs, settings.iconSize, 7, 3, 1,3);
+                    imgui.PopStyleVar(1);
+                end
+                local buffWindowSizeX, buffWindowSizeY = imgui.GetWindowSize();
+                buffWindowX[memIdx] = buffWindowSizeX;
+
+                imgui.End();
             end
-            if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
-                DrawStatusIcons(memInfo.buffs, settings.iconSize, settings.maxIconColumns, 2);
-            end
-            local buffWindowSizeX, buffWindowSizeY = imgui.GetWindowSize();
-            buffWindowX[memIdx] = buffWindowSizeX;
-            buffWindowY[memIdx] = buffWindowSizeY;
-            imgui.End();
         end
     end
 
@@ -282,17 +339,18 @@ partyList.DrawWindow = function(settings, userSettings)
 	end
 
     if (imgui.Begin('PartyList', true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
+        local nameSize = SIZE.new();
+        local hpSize = SIZE.new();
+        memberText[0].name:GetTextSize(nameSize);
+        memberText[0].hp:GetTextSize(hpSize);
+        imgui.Dummy({0, settings.nameTextOffsetY + nameSize.cy});
         if (fullMenuSizeX ~= nil and fullMenuSizeY ~= nil) then
             backgroundPrim.visible = true;
             local imguiPosX, imguiPosY = imgui.GetWindowPos();
-            local nameSize = SIZE.new();
-            local hpSize = SIZE.new();
-            memberText[0].name:GetTextSize(nameSize);
-            memberText[0].hp:GetTextSize(hpSize);
             backgroundPrim.position_x = imguiPosX - settings.backgroundPaddingX1;
-            backgroundPrim.position_y = imguiPosY - settings.nameTextOffsetY - nameSize.cy - settings.backgroundPaddingY1;
-            backgroundPrim.scale_x = (fullMenuSizeX + settings.backgroundPaddingX1 + settings.backgroundPaddingX2) / 284;
-            backgroundPrim.scale_y = (fullMenuSizeY - settings.entrySpacing + settings.backgroundPaddingY1 + settings.backgroundPaddingY2) / 368;
+            backgroundPrim.position_y = imguiPosY - settings.backgroundPaddingY1;
+            backgroundPrim.scale_x = (fullMenuSizeX + settings.backgroundPaddingX1 + settings.backgroundPaddingX2) / 280;
+            backgroundPrim.scale_y = (fullMenuSizeY - settings.entrySpacing + settings.backgroundPaddingY1 + settings.backgroundPaddingY2 - (settings.nameTextOffsetY + nameSize.cy)) / 384;
         end
         partyTargeted = false;
         partySubTargeted = false;

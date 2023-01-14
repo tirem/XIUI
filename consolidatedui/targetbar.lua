@@ -74,7 +74,9 @@ targetbar.DrawWindow = function(settings, userSettings)
 	else
 		buffIds = debuffHandler.GetActiveDebuffs(playerTarget:GetServerId(0));
 	end
+	imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {1, 3});
 	DrawStatusIcons(buffIds, settings.iconSize, settings.maxIconColumns, 3);
+	imgui.PopStyleVar(1);
 
 	-- End our main bar
 	local winPosX, winPosY = imgui.GetWindowPos();

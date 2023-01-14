@@ -115,6 +115,25 @@ config.DrawWindow = function(us)
                 us.partyListScaleY = scaleY[1];
                 UpdateSettings();
             end
+            local comboBoxItems = {};
+            comboBoxItems[0] = 'HorizonXI';
+            comboBoxItems[1] = 'FFXIV';
+            comboBoxItems[2] = 'FFXI';
+            us.partyListStatusTheme = math.clamp(us.partyListStatusTheme, 0, 2);
+            if(imgui.BeginCombo('Status Theme', comboBoxItems[us.partyListStatusTheme])) then
+                for i = 0,#comboBoxItems do
+                    local is_selected = i == us.partyListStatusTheme;
+
+                    if (imgui.Selectable(comboBoxItems[i], is_selected) and us.partyListStatusTheme ~= i) then
+                        us.partyListStatusTheme = i;
+                        UpdateSettings();
+                    end
+                    if(is_selected) then
+                        imgui.SetItemDefaultFocus();
+                    end
+                end
+                imgui.EndCombo();
+            end
             local buffScale = { us.partyListBuffScale };
             if (imgui.SliderFloat('Buff Scale', buffScale, 0.1, 3.0, '%.1f')) then
                 us.partyListBuffScale = buffScale[1];
