@@ -103,51 +103,9 @@ local function ClearMessage(debuffs, basic)
             return
         end
 
-        -- find the buffId we want to clear
-        local buffId;
-        if basic.param == 2 or basic.param == 19 then
-            buffId = buffTable.GetBuffIdBySpellName("sleep");
-        elseif basic.param == 3 or basic.param == 540 then
-            buffId = buffTable.GetBuffIdBySpellName("poison");
-        elseif basic.param == 4 or basic.param == 566 then
-            buffId = buffTable.GetBuffIdBySpellName("para");
-        elseif basic.param == 5 then
-            buffId = buffTable.GetBuffIdBySpellName("blind");
-        elseif basic.param == 6 then
-            buffId = buffTable.GetBuffIdBySpellName("silence");
-        elseif basic.param == 8 then
-            buffId = buffTable.GetBuffIdBySpellName("virus");
-        elseif basic.param == 9 or basic.param == 20 then
-            buffId = buffTable.GetBuffIdBySpellName("curse");
-        elseif basic.param == 10 then
-            buffId = buffTable.GetBuffIdBySpellName("stun");
-        elseif basic.param == 11 then
-            buffId = buffTable.GetBuffIdBySpellName("bind");
-        elseif basic.param == 12 or basic.param == 567 then
-            buffId = buffTable.GetBuffIdBySpellName("gravity");
-        elseif basic.param == 13 or basic.param == 565 then
-            buffId = buffTable.GetBuffIdBySpellName("slow");
-        elseif basic.param == 128 then
-            buffId = buffTable.GetBuffIdBySpellName("burn");
-        elseif basic.param == 129 then
-            buffId = buffTable.GetBuffIdBySpellName("frost");
-        elseif basic.param == 130 then
-            buffId = buffTable.GetBuffIdBySpellName("choke");
-        elseif basic.param == 131 then
-            buffId = buffTable.GetBuffIdBySpellName("rasp");
-        elseif basic.param == 132 then
-            buffId = buffTable.GetBuffIdBySpellName("shock");
-        elseif basic.param == 133 then
-            buffId = buffTable.GetBuffIdBySpellName("drown");
-        elseif basic.param == 134 then
-            buffId = buffTable.GetBuffIdBySpellName("dia");
-        elseif basic.param == 135 then
-            buffId = buffTable.GetBuffIdBySpellName("bio");
-        end
-
-        -- Clear this buff id
-        if (buffId ~= nil) then
-            debuffs[basic.target][buffId] = nil;
+        -- Clear the buffid that just wore off
+        if (basic.param ~= nil) then
+            debuffs[basic.target][basic.param] = nil;
         end
     end
 end
