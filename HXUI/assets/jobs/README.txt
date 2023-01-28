@@ -1,0 +1,1 @@
+icons copyright Final Fantasy XIV (SquareEnix) and Tylas11 [https://github.com/Tylas11]

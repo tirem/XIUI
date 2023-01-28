@@ -50,8 +50,9 @@ playerbar.DrawWindow = function(settings, userSettings)
     -- Obtain the player entity..
     local party = AshitaCore:GetMemoryManager():GetParty();
     local player = AshitaCore:GetMemoryManager():GetPlayer();
+	local playerEnt = GetPlayerEntity();
 	
-	if (party == nil or player == nil) then
+	if (party == nil or player == nil or playerEnt == nil) then
 		UpdateTextVisibility(false);
 		return;
 	end
@@ -75,11 +76,11 @@ playerbar.DrawWindow = function(settings, userSettings)
 
 		local SelfHP = party:GetMemberHP(0);
 		local SelfHPMax = player:GetHPMax();
-		local SelfHPPercent = math.clamp(SelfHP / SelfHPMax, 0, 1);
-		local interpHP = math.clamp(interpolatedHP / SelfHPMax, 0, 1);
+		local SelfHPPercent = math.clamp(party:GetMemberHPPercent(0) / 100, 0, 1);
+		local interpHP = math.clamp(interpolatedHP / (SelfHP / SelfHPPercent), 0, 1);
 		local SelfMP = party:GetMemberMP(0);
 		local SelfMPMax = player:GetMPMax();
-		local SelfMPPercent = math.clamp(SelfMP / SelfMPMax, 0, 1);
+		local SelfMPPercent = math.clamp(party:GetMemberMPPercent(0) / 100, 0, 1);
 		local SelfTP = party:GetMemberTP(0);
 
 		local hpNameColor;

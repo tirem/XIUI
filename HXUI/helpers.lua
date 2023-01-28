@@ -147,85 +147,115 @@ function LimitStringLength(string, length)
 	return output;
 end
 
-local bitData;
-local bitOffset;
-local function UnpackBits(length)
-    local value = ashita.bits.unpack_be(bitData, 0, bitOffset, length);
-    bitOffset = bitOffset + length;
-    return value;
+function GetIndexFromId(serverId)
+    local index = bit.band(serverId, 0x7FF);
+    local entMgr = AshitaCore:GetMemoryManager():GetEntity();
+    if (entMgr:GetServerId(index) == serverId) then
+        return index;
+    end
+    for i = 1,2303 do
+        if entMgr:GetServerId(i) == serverId then
+            return i;
+        end
+    end
+    return 0;
 end
 
 function ParseActionPacket(e)
-    if (e.id == 0x0028) then
-		local actionPacket = T{};
-		bitData = e.data_raw;
-		bitOffset = 40;
-		actionPacket.UserId = UnpackBits(32);
-		actionPacket.UserIndex = GetIndexFromId(actionPacket.UserId);
-		local targetCount = UnpackBits(6);
-		--Unknown 4 bits
-		bitOffset = bitOffset + 4;
-		actionPacket.Type = UnpackBits(4);
-		actionPacket.Id = UnpackBits(32);
-		--Unknown 32 bits
-		bitOffset = bitOffset + 32;
+    local bitData;
+    local bitOffset;
+    local maxLength = e.size * 8;
+    local function UnpackBits(length)
+        if ((bitOffset + length) > maxLength) then
+            maxLength = 0; --Using this as a flag since any malformed fields mean the data is trash anyway.
+            return 0;
+        end
+        local value = ashita.bits.unpack_be(bitData, 0, bitOffset, length);
+        bitOffset = bitOffset + length;
+        return value;
+    end
 
-		actionPacket.Targets = T{};
-		for i = 1,targetCount do
-			local target = T{};
-			target.Id = UnpackBits(32);
-			local actionCount = UnpackBits(4);
-			target.Actions = T{};
-			for j = 1,actionCount do
-				local action = {};
-				action.Reaction = UnpackBits(5);
-				action.Animation = UnpackBits(12);
-				action.SpecialEffect = UnpackBits(7);
-				action.Knockback = UnpackBits(3);
-				action.Param = UnpackBits(17);
-				action.Message = UnpackBits(10);
-				action.Flags = UnpackBits(31);
+    local actionPacket = T{};
+    bitData = e.data_raw;
+    bitOffset = 40;
+    actionPacket.UserId = UnpackBits(32);
+    actionPacket.UserIndex = GetIndexFromId(actionPacket.UserId); --Many implementations of this exist, or you can comment it out if not needed.  It can be costly.
+    local targetCount = UnpackBits(6);
+    --Unknown 4 bits
+    bitOffset = bitOffset + 4;
+    actionPacket.Type = UnpackBits(4);
+    actionPacket.Id = UnpackBits(32);
+    actionPacket.Recast = UnpackBits(32);
 
-				local hasAdditionalEffect = (UnpackBits(1) == 1);
-				if hasAdditionalEffect then
-					local additionalEffect = {};
-					additionalEffect.Damage = UnpackBits(10);
-					additionalEffect.Param = UnpackBits(17);
-					additionalEffect.Message = UnpackBits(10);
-					action.AdditionalEffect = additionalEffect;
-				end
+    actionPacket.Targets = T{};
+    if (targetCount > 0) then
+        for i = 1,targetCount do
+            local target = T{};
+            target.Id = UnpackBits(32);
+            local actionCount = UnpackBits(4);
+            target.Actions = T{};
+            if (actionCount > 0) then
+                for j = 1,actionCount do
+                    local action = {};
+                    action.Reaction = UnpackBits(5);
+                    action.Animation = UnpackBits(12);
+                    action.SpecialEffect = UnpackBits(7);
+                    action.Knockback = UnpackBits(3);
+                    action.Param = UnpackBits(17);
+                    action.Message = UnpackBits(10);
+                    action.Flags = UnpackBits(31);
 
-				local hasSpikesEffect = (UnpackBits(1) == 1);
-				if hasSpikesEffect then
-					local spikesEffect = {};
-					spikesEffect.Damage = UnpackBits(10);
-					spikesEffect.Param = UnpackBits(14);
-					spikesEffect.Message = UnpackBits(10);
-					action.SpikesEffect = spikesEffect;
-				end
+                    local hasAdditionalEffect = (UnpackBits(1) == 1);
+                    if hasAdditionalEffect then
+                        local additionalEffect = {};
+                        additionalEffect.Damage = UnpackBits(10);
+                        additionalEffect.Param = UnpackBits(17);
+                        additionalEffect.Message = UnpackBits(10);
+                        action.AdditionalEffect = additionalEffect;
+                    end
 
-				target.Actions:append(action);
-			end
-			actionPacket.Targets:append(target);
-		end
-		
-		return actionPacket;
-	end
+                    local hasSpikesEffect = (UnpackBits(1) == 1);
+                    if hasSpikesEffect then
+                        local spikesEffect = {};
+                        spikesEffect.Damage = UnpackBits(10);
+                        spikesEffect.Param = UnpackBits(14);
+                        spikesEffect.Message = UnpackBits(10);
+                        action.SpikesEffect = spikesEffect;
+                    end
+
+                    target.Actions:append(action);
+                end
+            end
+            actionPacket.Targets:append(target);
+        end
+    end
+    
+    return actionPacket;
 end
 
-function ParseActionPacketAlt(packet)
+function ParseActionPacketAlt(e)
     -- Collect top-level metadata. The category field will provide the context
     -- for the rest of the packet - that should be enough information to figure
     -- out what each target and action field are used for.
+    local maxLength = e.size * 8;
+    local packet = e.data_raw;
+    local function UnpackBits_Safe(bitData, bitOffset, length)
+        if ((bitOffset + length) > maxLength) then
+            maxLength = 0; --Using this as a flag since any malformed fields mean the data is trash anyway.
+            return 0;
+        end
+        return ashita.bits.unpack_be(bitData, 0, bitOffset, length);
+    end
+
     ---@type ActionPacket
     local action = {
         -- Windower code leads me to believe param and recast might be at
         -- different indices - 102 and 134, respectively. Confusing.
-        actor_id     = ashita.bits.unpack_be(packet,  40, 32),
-        target_count = ashita.bits.unpack_be(packet,  72,  8),
-        category     = ashita.bits.unpack_be(packet,  82,  4),
-        param        = ashita.bits.unpack_be(packet,  86, 10),
-        recast       = ashita.bits.unpack_be(packet, 118, 10),
+        actor_id     = UnpackBits_Safe(packet,  40, 32),
+        target_count = UnpackBits_Safe(packet,  72,  8),
+        category     = UnpackBits_Safe(packet,  82,  4),
+        param        = UnpackBits_Safe(packet,  86, 10),
+        recast       = UnpackBits_Safe(packet, 118, 10),
         unknown      = 0,
         targets      = {}
     }
@@ -235,8 +265,8 @@ function ParseActionPacketAlt(packet)
     -- Collect target information. The ID is the server ID, not the entity idx.
     for i = 1, action.target_count do
         action.targets[i] = {
-            id           = ashita.bits.unpack_be(packet, bit_offset,      32),
-            action_count = ashita.bits.unpack_be(packet, bit_offset + 32,  4),
+            id           = UnpackBits_Safe(packet, bit_offset,      32),
+            action_count = UnpackBits_Safe(packet, bit_offset + 32,  4),
             actions      = {}
         }
 
@@ -245,24 +275,24 @@ function ParseActionPacketAlt(packet)
         -- purpose. Otherwise the message may be what you want.
         for j = 1, action.targets[i].action_count do
             action.targets[i].actions[j] = {
-                reaction  = ashita.bits.unpack_be(packet, bit_offset + 36,  5),
-                animation = ashita.bits.unpack_be(packet, bit_offset + 41, 11),
-                effect    = ashita.bits.unpack_be(packet, bit_offset + 53,  2),
-                stagger   = ashita.bits.unpack_be(packet, bit_offset + 55,  7),
-                param     = ashita.bits.unpack_be(packet, bit_offset + 63, 17),
-                message   = ashita.bits.unpack_be(packet, bit_offset + 80, 10),
-                unknown   = ashita.bits.unpack_be(packet, bit_offset + 90, 31)
+                reaction  = UnpackBits_Safe(packet, bit_offset + 36,  5),
+                animation = UnpackBits_Safe(packet, bit_offset + 41, 11),
+                effect    = UnpackBits_Safe(packet, bit_offset + 53,  2),
+                stagger   = UnpackBits_Safe(packet, bit_offset + 55,  7),
+                param     = UnpackBits_Safe(packet, bit_offset + 63, 17),
+                message   = UnpackBits_Safe(packet, bit_offset + 80, 10),
+                unknown   = UnpackBits_Safe(packet, bit_offset + 90, 31)
             }
 
             -- Collect additional effect information for the action. This is
             -- where you'll find information about skillchains, enspell damage,
             -- et cetera.
-            if ashita.bits.unpack_be(packet, bit_offset + 121, 1) == 1 then
+            if UnpackBits_Safe(packet, bit_offset + 121, 1) == 1 then
                 action.targets[i].actions[j].has_add_effect       = true
-                action.targets[i].actions[j].add_effect_animation = ashita.bits.unpack_be(packet, bit_offset + 122, 10)
+                action.targets[i].actions[j].add_effect_animation = UnpackBits_Safe(packet, bit_offset + 122, 10)
                 action.targets[i].actions[j].add_effect_effect    = nil -- unknown value
-                action.targets[i].actions[j].add_effect_param     = ashita.bits.unpack_be(packet, bit_offset + 132, 17)
-                action.targets[i].actions[j].add_effect_message   = ashita.bits.unpack_be(packet, bit_offset + 149, 10)
+                action.targets[i].actions[j].add_effect_param     = UnpackBits_Safe(packet, bit_offset + 132, 17)
+                action.targets[i].actions[j].add_effect_message   = UnpackBits_Safe(packet, bit_offset + 149, 10)
 
                 bit_offset = bit_offset + 37
             else
@@ -276,10 +306,10 @@ function ParseActionPacketAlt(packet)
             -- Collect spike effect information for the action.
             if ashita.bits.unpack_be(packet, bit_offset + 122, 1) == 1 then
                 action.targets[i].actions[j].has_spike_effect       = true
-                action.targets[i].actions[j].spike_effect_animation = ashita.bits.unpack_be(packet, bit_offset + 123, 10)
+                action.targets[i].actions[j].spike_effect_animation = UnpackBits_Safe(packet, bit_offset + 123, 10)
                 action.targets[i].actions[j].spike_effect_effect    = nil -- unknown value
-                action.targets[i].actions[j].spike_effect_param     = ashita.bits.unpack_be(packet, bit_offset + 133, 14)
-                action.targets[i].actions[j].spike_effect_message   = ashita.bits.unpack_be(packet, bit_offset + 147, 10)
+                action.targets[i].actions[j].spike_effect_param     = UnpackBits_Safe(packet, bit_offset + 133, 14)
+                action.targets[i].actions[j].spike_effect_message   = UnpackBits_Safe(packet, bit_offset + 147, 10)
 
                 bit_offset = bit_offset + 34
             else

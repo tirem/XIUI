@@ -22,11 +22,11 @@
 * SOFTWARE.
 ]]--
 
-addon.name      = 'consolidatedui';
+addon.name      = 'HXUI';
 addon.author    = 'Tirem (Programmer) & Shuu (Designer)';
-addon.version   = '0.3';
+addon.version   = '0.1.0';
 addon.desc      = 'Multiple UI elements with manager';
-addon.link      = 'https://github.com/tirem/ConsolidatedUI'
+addon.link      = 'https://github.com/tirem/HXUI'
 
 require('common');
 local imgui = require('imgui');
@@ -552,7 +552,7 @@ ashita.events.register('command', 'command_cb', function (e)
    
 	-- Parse the command arguments
 	local command_args = e.command:lower():args()
-    if table.contains({'/consolidatedui', '/cui', '/horizonui', '/hui', '/hxui', '/horizonxiui'}, command_args[1]) then
+    if table.contains({'/horizonui', '/hui', '/hxui', '/horizonxiui'}, command_args[1]) then
 		-- Toggle the config menu
 		showConfig[1] = not showConfig[1];
 		e.blocked = true;

@@ -60,7 +60,7 @@ local function GetMemberInformation(memIdx)
         memberInfo.mpp = party:GetMemberMPPercent(memIdx) / 100;
         memberInfo.maxmp = memberInfo.mp / memberInfo.mpp;
         memberInfo.tp = party:GetMemberTP(memIdx);
-        memberInfo.job = AshitaCore:GetResourceManager():GetString("jobs.names_abbr", party:GetMemberMainJob(memIdx));
+        memberInfo.job = party:GetMemberMainJob(memIdx);
         memberInfo.level = party:GetMemberMainJobLevel(memIdx);
         memberInfo.serverid = party:GetMemberServerId(memIdx);
         if (playerTarget ~= nil) then
@@ -137,6 +137,18 @@ local function DrawMember(memIdx, settings, userSettings)
 
     local hpStartX, hpStartY = imgui.GetCursorScreenPos();
 
+    -- Draw the job icon in the FFXIV theme before we draw anything else
+    local namePosX = hpStartX + settings.nameTextOffsetX;
+    if (memInfo.inzone) then
+        imgui.SetCursorScreenPos({namePosX, hpStartY - settings.iconSize - settings.nameTextOffsetY});
+        namePosX = namePosX + settings.iconSize;
+        local jobIcon = statusHandler.GetJobIcon(memInfo.job);
+        if (jobIcon ~= nil) then
+            imgui.Image(jobIcon, {settings.iconSize, settings.iconSize});
+        end
+        imgui.SetCursorScreenPos({hpStartX, hpStartY});
+    end
+
     -- Update the hp text
     memberText[memIdx].hp:SetColor(hpNameColor);
     memberText[memIdx].hp:SetPositionX(hpStartX + settings.hpBarWidth + settings.hpTextOffsetX);
@@ -160,7 +172,7 @@ local function DrawMember(memIdx, settings, userSettings)
 
     -- Update the name text
     memberText[memIdx].name:SetColor(0xFFFFFFFF);
-    memberText[memIdx].name:SetPositionX(hpStartX + settings.nameTextOffsetX);
+    memberText[memIdx].name:SetPositionX(namePosX);
     memberText[memIdx].name:SetPositionY(hpStartY - nameSize.cy - settings.nameTextOffsetY);
     memberText[memIdx].name:SetText(tostring(memInfo.name));
 
@@ -228,7 +240,9 @@ local function DrawMember(memIdx, settings, userSettings)
         -- Draw subtargeted
         if ((memInfo.targeted == true and not subTargetActive) or memInfo.subTargeted) then
             arrowPrim.visible = true;
-            arrowPrim.position_x = memberText[memIdx].name:GetPositionX() - arrowPrim:GetWidth();
+            local newArrowX =  memberText[memIdx].name:GetPositionX() - arrowPrim:GetWidth();
+            newArrowX = newArrowX - settings.iconSize;
+            arrowPrim.position_x = newArrowX;
             arrowPrim.position_y = memberText[memIdx].name:GetPositionY();
             arrowPrim.scale_x = settings.arrowSize;
             arrowPrim.scale_y = settings.arrowSize;

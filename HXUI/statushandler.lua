@@ -18,6 +18,8 @@ local icon_cache = T{
 local buffIcon = nil;
 local debuffIcon = nil;
 
+local jobIcons = T{};
+
 -- this table implements overrides for certain icons to handle
 -- local buffs_table = nil;
 local id_overrides = T{
@@ -158,6 +160,9 @@ end
 -- reset the icon cache and release all resources
 statusHandler.clear_cache = function()
     icon_cache = T{};
+    buffIcon = nil;
+    debuffIcon = nil;
+    jobIcons = T{};
 end;
 
 
@@ -221,6 +226,22 @@ statusHandler.GetBackground = function(isBuff)
         end
         return tonumber(ffi.cast("uint32_t", debuffIcon.image));
     end
+end
+
+
+statusHandler.GetJobIcon = function(jobIdx)
+
+    if (jobIdx == nil or jobIdx == 0 or jobIdx == -1) then
+        return nil;
+    end
+
+    local jobStr = AshitaCore:GetResourceManager():GetString("jobs.names_abbr", jobIdx);
+
+    if (jobIcons[jobStr] == nil) then
+        jobIcons[jobStr] = LoadTexture(string.format('%s/%s', 'jobs', jobStr))
+    end
+
+    return tonumber(ffi.cast("uint32_t", jobIcons[jobStr].image));
 end
 
 return statusHandler;
