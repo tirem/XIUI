@@ -10,6 +10,11 @@ T{
 };
 
 local function ApplyMessage(debuffs, action)
+
+    if (action == nil) then
+        return;
+    end
+
     local now = os.time()
 
     for _, target in pairs(action.Targets) do
