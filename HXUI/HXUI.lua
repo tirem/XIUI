@@ -420,6 +420,15 @@ local function CheckVisibility()
 	end
 end
 
+local function ForceHide()
+
+	playerBar.SetHidden(true);
+	expBar.SetHidden(true);
+	gilTracker.SetHidden(true);
+	inventoryTracker.SetHidden(true);
+	partyList.SetHidden(true);
+end
+
 local function UpdateFonts()
 	playerBar.UpdateFonts(adjustedSettings.playerBarSettings);
 	expBar.UpdateFonts(adjustedSettings.expBarSettings);
@@ -505,38 +514,100 @@ settings.register('settings', 'settings_update', function (s)
     end
 end);
 
+--Thanks to Velyn for the event system and interface hidden signatures!
+local pGameMenu = ashita.memory.find('FFXiMain.dll', 0, "8B480C85C974??8B510885D274??3B05", 16, 0);
+local pEventSystem = ashita.memory.find('FFXiMain.dll', 0, "A0????????84C0741AA1????????85C0741166A1????????663B05????????0F94C0C3", 0, 0);
+local pInterfaceHidden = ashita.memory.find('FFXiMain.dll', 0, "8B4424046A016A0050B9????????E8????????F6D81BC040C3", 0, 0);
+
+local function GetMenuName()
+    local subPointer = ashita.memory.read_uint32(pGameMenu);
+    local subValue = ashita.memory.read_uint32(subPointer);
+    if (subValue == 0) then
+        return '';
+    end
+    local menuHeader = ashita.memory.read_uint32(subValue + 4);
+    local menuName = ashita.memory.read_string(menuHeader + 0x46, 16);
+    return string.gsub(menuName, '\x00', '');
+end
+
+local function GetEventSystemActive()
+    if (pEventSystem == 0) then
+        return false;
+    end
+    local ptr = ashita.memory.read_uint32(pEventSystem + 1);
+    if (ptr == 0) then
+        return false;
+    end
+
+    return (ashita.memory.read_uint8(ptr) == 1);
+
+end
+
+local function GetInterfaceHidden()
+    if (pEventSystem == 0) then
+        return false;
+    end
+    local ptr = ashita.memory.read_uint32(pInterfaceHidden + 10);
+    if (ptr == 0) then
+        return false;
+    end
+
+    return (ashita.memory.read_uint8(ptr + 0xB4) == 1);
+end
+
+function GetHidden()
+
+	if (GetEventSystemActive()) then
+		return true;
+	end
+
+	if (string.match(GetMenuName(), 'map')) then
+		return true;
+	end
+
+    if (GetInterfaceHidden()) then
+        return true;
+    end
+    
+    return false;
+end
+
 --[[
 * event: d3d_present
 * desc : Event called when the Direct3D device is presenting a scene.
 --]]
 ashita.events.register('d3d_present', 'present_cb', function ()
 
-	imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, config.userSettings.barRoundness);
-	if (config.userSettings.showPlayerBar) then
-		playerBar.DrawWindow(adjustedSettings.playerBarSettings, config.userSettings);
-	end
-	if (config.userSettings.showTargetBar) then
-		targetBar.DrawWindow(adjustedSettings.targetBarSettings, config.userSettings);
-	end
-	if (config.userSettings.showEnemyList) then
-		enemyList.DrawWindow(adjustedSettings.enemyListSettings, config.userSettings);
-	end
-	if (config.userSettings.showExpBar) then
-		expBar.DrawWindow(adjustedSettings.expBarSettings, config.userSettings);
-	end
-	if (config.userSettings.showGilTracker) then
-		gilTracker.DrawWindow(adjustedSettings.gilTrackerSettings, config.userSettings);
-	end
-	if (config.userSettings.showInventoryTracker) then
-		inventoryTracker.DrawWindow(adjustedSettings.inventoryTrackerSettings, config.userSettings);
-	end
-	if (config.userSettings.showPartyList) then
-		partyList.DrawWindow(adjustedSettings.partyListSettings, config.userSettings);
-	end
+	if (GetHidden() == false) then
+		imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, config.userSettings.barRoundness);
+		if (config.userSettings.showPlayerBar) then
+			playerBar.DrawWindow(adjustedSettings.playerBarSettings, config.userSettings);
+		end
+		if (config.userSettings.showTargetBar) then
+			targetBar.DrawWindow(adjustedSettings.targetBarSettings, config.userSettings);
+		end
+		if (config.userSettings.showEnemyList) then
+			enemyList.DrawWindow(adjustedSettings.enemyListSettings, config.userSettings);
+		end
+		if (config.userSettings.showExpBar) then
+			expBar.DrawWindow(adjustedSettings.expBarSettings, config.userSettings);
+		end
+		if (config.userSettings.showGilTracker) then
+			gilTracker.DrawWindow(adjustedSettings.gilTrackerSettings, config.userSettings);
+		end
+		if (config.userSettings.showInventoryTracker) then
+			inventoryTracker.DrawWindow(adjustedSettings.inventoryTrackerSettings, config.userSettings);
+		end
+		if (config.userSettings.showPartyList) then
+			partyList.DrawWindow(adjustedSettings.partyListSettings, config.userSettings);
+		end
 
-	configMenu.DrawWindow(config.userSettings);
+		configMenu.DrawWindow(config.userSettings);
 
-	imgui.PopStyleVar(1);
+		imgui.PopStyleVar(1);
+	else
+		ForceHide();
+	end
 end);
 
 ashita.events.register('load', 'load_cb', function ()

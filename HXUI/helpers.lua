@@ -147,17 +147,27 @@ function LimitStringLength(string, length)
 	return output;
 end
 
-function GetIndexFromId(serverId)
-    local index = bit.band(serverId, 0x7FF);
+local function GetIndexFromId(id)
     local entMgr = AshitaCore:GetMemoryManager():GetEntity();
-    if (entMgr:GetServerId(index) == serverId) then
-        return index;
+    
+    --Shortcut for monsters/static npcs..
+    if (bit.band(id, 0x1000000) ~= 0) then
+        local index = bit.band(id, 0xFFF);
+        if (index >= 0x900) then
+            index = index - 0x100;
+        end
+
+        if (index < 0x900) and (entMgr:GetServerId(index) == id) then
+            return index;
+        end
     end
-    for i = 1,2303 do
-        if entMgr:GetServerId(i) == serverId then
+
+    for i = 1,0x8FF do
+        if entMgr:GetServerId(i) == id then
             return i;
         end
     end
+
     return 0;
 end
 
@@ -348,20 +358,6 @@ function ParseMobUpdatePacket(e)
 		end
 		return mobPacket;
 	end
-end
-
-function GetIndexFromId(serverId)
-    local index = bit.band(serverId, 0x7FF);
-    local entMgr = AshitaCore:GetMemoryManager():GetEntity();
-    if (entMgr:GetServerId(index) == serverId) then
-        return index;
-    end
-    for i = 1,2303 do
-        if entMgr:GetServerId(i) == serverId then
-            return i;
-        end
-    end
-    return 0;
 end
 
 function has_value (tab, val)
