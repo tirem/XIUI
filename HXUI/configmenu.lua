@@ -214,6 +214,24 @@ config.DrawWindow = function(us)
             end
             imgui.EndChild();
         end
+        if (imgui.CollapsingHeader("Cast Bar")) then
+            imgui.BeginChild("CastBarSettings", { 0, 160 }, true);
+            if (imgui.Checkbox(' Enabled', { us.showCastBar })) then
+                us.showCastBar = not us.showCastBar;
+                UpdateSettings();
+            end
+            local scaleX = { us.castBarScaleX };
+            if (imgui.SliderFloat('Scale X', scaleX, 0.1, 3.0, '%.1f')) then
+                us.castBarScaleX = scaleX[1];
+                UpdateSettings();
+            end
+            local scaleY = { us.castBarScaleY };
+            if (imgui.SliderFloat('Scale Y', scaleY, 0.1, 3.0, '%.1f')) then
+                us.castBarScaleY = scaleY[1];
+                UpdateSettings();
+            end
+            imgui.EndChild();
+        end
         imgui.EndChild();
     end
 	imgui.End();

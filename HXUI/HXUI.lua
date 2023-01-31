@@ -38,6 +38,7 @@ local expBar = require('expbar');
 local gilTracker = require('giltracker');
 local inventoryTracker = require('inventorytracker');
 local partyList = require('partylist');
+local castBar = require('castbar');
 local configMenu = require('configmenu');
 local debuffHandler = require('debuffhandler');
 
@@ -50,6 +51,7 @@ T{
 	showGilTracker = true,
 	showInventoryTracker = true,
 	showPartyList = true,
+	showCastBar = true,
 
 	barRoundness = 6.0,
 
@@ -85,8 +87,11 @@ T{
 	partyListScaleY = 1,
 	partyListBuffScale = 1,
 	partyListFontOffset = 0,
-	partyListStatusTheme = 0;
-	partyListTheme = 0; -- 0: HorizonXI, 1: XIV1.0, 2: XIV
+	partyListStatusTheme = 0,
+	partyListTheme = 0, -- 0: HorizonXI, 1: XIV1.0, 2: XIV
+
+	castBarScaleX = 1,
+	castBarScaleY = 1,
 };
 
 local user_settings_container = 
@@ -389,6 +394,50 @@ T{
 			height          = 0.0,
 		};
 	};
+
+	castBarSettings =
+	T{
+		barWidth = 500,
+		barHeight = 20,
+		spellOffsetY = 0;
+		spellOffsetY = 0;
+		percentOffsetY = 2;
+		percentOffsetX = -10;
+		spell_font_settings = 
+		T{
+			visible = true,
+			locked = true,
+			font_family = 'Consolas',
+			font_height = 11,
+			color = 0xFFFFFFFF,
+			bold = false,
+			italic = true;
+			color_outline = 0xFF000000,
+			draw_flags = 0x10,
+			background = 
+			T{
+				visible = false,
+			},
+			right_justified = false;
+		};
+		percent_font_settings = 
+		T{
+			visible = true,
+			locked = true,
+			font_family = 'Consolas',
+			font_height = 11,
+			color = 0xFFFFFFFF,
+			bold = false,
+			italic = true;
+			color_outline = 0xFF000000,
+			draw_flags = 0x10,
+			background = 
+			T{
+				visible = false,
+			},
+			right_justified = true;
+		};
+	};
 };
 
 local adjustedSettings = deep_copy_table(default_settings);
@@ -418,6 +467,9 @@ local function CheckVisibility()
 	if (config.userSettings.showPartyList == false) then
 		partyList.SetHidden(true);
 	end
+	if (config.userSettings.showCastBar == false) then
+		castBar.SetHidden(true);
+	end
 end
 
 local function ForceHide()
@@ -427,6 +479,7 @@ local function ForceHide()
 	gilTracker.SetHidden(true);
 	inventoryTracker.SetHidden(true);
 	partyList.SetHidden(true);
+	castBar.SetHidden(true);
 end
 
 local function UpdateFonts()
@@ -435,6 +488,7 @@ local function UpdateFonts()
 	gilTracker.UpdateFonts(adjustedSettings.gilTrackerSettings);
 	inventoryTracker.UpdateFonts(adjustedSettings.inventoryTrackerSettings);
 	partyList.UpdateFonts(adjustedSettings.partyListSettings);
+	castBar.UpdateFonts(adjustedSettings.castBarSettings);
 end
 
 local function UpdateUserSettings()
@@ -496,6 +550,10 @@ local function UpdateUserSettings()
 	adjustedSettings.enemyListSettings.barHeight = ns.enemyListSettings.barHeight * us.enemyListScaleY;
 	adjustedSettings.enemyListSettings.textScale = ns.enemyListSettings.textScale * us.enemyListFontScale;
 	adjustedSettings.enemyListSettings.iconSize = ns.enemyListSettings.iconSize * us.enemyListIconScale;
+
+	-- Cast Bar
+	adjustedSettings.castBarSettings.barWidth = ns.castBarSettings.barWidth * us.castBarScaleX;
+	adjustedSettings.castBarSettings.barHeight = ns.castBarSettings.barHeight * us.castBarScaleY;
 end
 
 function UpdateSettings()
@@ -601,6 +659,9 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 		if (config.userSettings.showPartyList) then
 			partyList.DrawWindow(adjustedSettings.partyListSettings, config.userSettings);
 		end
+		if (config.userSettings.showCastBar) then
+			castBar.DrawWindow(adjustedSettings.castBarSettings, config.userSettings);
+		end
 
 		configMenu.DrawWindow(config.userSettings);
 
@@ -618,6 +679,7 @@ ashita.events.register('load', 'load_cb', function ()
 	gilTracker.Initialize(adjustedSettings.gilTrackerSettings);
 	inventoryTracker.Initialize(adjustedSettings.inventoryTrackerSettings);
 	partyList.Initialize(adjustedSettings.partyListSettings);
+	castBar.Initialize(adjustedSettings.castBarSettings);
 end);
 
 ashita.events.register('command', 'command_cb', function (e)
@@ -638,6 +700,9 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
 		local actionPacket = ParseActionPacket(e);
 		if (config.userSettings.showEnemyList) then
 			enemyList.HandleActionPacket(actionPacket);
+		end
+		if (config.userSettings.showCastBar) then
+			castBar.HandleActionPacket(e);
 		end
 	elseif (e.id == 0x00E) then
 		local mobUpdatePacket = ParseMobUpdatePacket(e);
