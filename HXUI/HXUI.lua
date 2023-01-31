@@ -163,7 +163,7 @@ T{
 	expBarSettings =
 	T{
 		barWidth = 550;
-		barHeight = 10;
+		barHeight = 12;
 		jobOffsetY = 0;
 		expOffsetY = 0;
 		percentOffsetY = 2;

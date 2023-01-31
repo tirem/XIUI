@@ -1,6 +1,7 @@
 require('common');
 local imgui = require('imgui');
 local fonts = require('fonts');
+local progressbar = require('progressbar');
 
 local jobText;
 local expText;
@@ -46,9 +47,12 @@ expbar.DrawWindow = function(settings, userSettings)
 		-- Draw HP Bar (two bars to fake animation
 		local expPercent = currentExp / totalExp;
 		local startX, startY = imgui.GetCursorScreenPos();
-		imgui.PushStyleColor(ImGuiCol_PlotHistogram, {1, 1, .5, 1});
-		imgui.ProgressBar(expPercent, { -1, settings.barHeight }, '');
-		imgui.PopStyleColor(1);
+		-- imgui.PushStyleColor(ImGuiCol_PlotHistogram, {1, 1, .5, 1});
+		-- imgui.ProgressBar(expPercent, { -1, settings.barHeight }, '');
+		-- imgui.PopStyleColor(1);
+
+		progressbar.ProgressBar(expPercent, {-1, settings.barHeight}, '#c39040', '#e9c466');
+
 		imgui.SameLine();
 		
 		-- Update our text objects
