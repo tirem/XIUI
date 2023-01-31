@@ -1,6 +1,7 @@
 require('common');
 local imgui = require('imgui');
 local fonts = require('fonts');
+local progressbar = require('progressbar');
 
 local spellText;
 local percentText;
@@ -44,11 +45,15 @@ castbar.DrawWindow = function(settings, userSettings)
 			local startX, startY = imgui.GetCursorScreenPos();
 
 			-- Create progress bar
+			--[[
 			imgui.PushStyleColor(ImGuiCol_PlotHistogram, {0.2, 0.75, 1, 1});
 
 			imgui.ProgressBar(showConfig[1] and 0.5 or percent, {-1, settings.barHeight}, '');
 
 			imgui.PopStyleColor(1);
+			]]--
+
+			progressbar.ProgressBar(showConfig[1] and 0.5 or percent, {-1, settings.barHeight}, '#3798ce', '#78c5ee');
 
 			-- Draw Spell/Item name
 			imgui.SameLine();
