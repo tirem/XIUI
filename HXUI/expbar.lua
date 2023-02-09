@@ -51,7 +51,7 @@ expbar.DrawWindow = function(settings, userSettings)
 		-- imgui.ProgressBar(expPercent, { -1, settings.barHeight }, '');
 		-- imgui.PopStyleColor(1);
 
-		progressbar.ProgressBar(expPercent, {-1, settings.barHeight}, '#c39040', '#e9c466');
+		progressbar.ProgressBar({{expPercent, {'#c39040', '#e9c466'}}}, {-1, settings.barHeight});
 
 		imgui.SameLine();
 		

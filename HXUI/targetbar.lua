@@ -65,8 +65,8 @@ targetbar.DrawWindow = function(settings, userSettings)
 			imgui.ProgressBar(targetEntity.HPPercent / 100, { -1, settings.barHeight}, '');
 		end
 		]]--
-
-		progressbar.ProgressBar(targetEntity.HPPercent / 100, {-1, settings.barHeight}, '#e16c6c', '#fb9494');
+		
+		progressbar.ProgressBar({{targetEntity.HPPercent / 100, {'#e16c6c', '#fb9494'}}}, {-1, settings.barHeight});
     end
 
 	-- Draw buffs and debuffs
@@ -124,7 +124,7 @@ targetbar.DrawWindow = function(settings, userSettings)
 		-- Display the targets information..
 		imgui.TextColored(totColor, targetNameText);
 		--imgui.ProgressBar(totEntity.HPPercent / 100, { -1, settings.totBarHeight }, '');
-		progressbar.ProgressBar(totEntity.HPPercent / 100, {-1, settings.totBarHeight}, '#e16c6c', '#fb9494');
+		progressbar.ProgressBar({{totEntity.HPPercent / 100, {'#e16c6c', '#fb9494'}}}, {-1, settings.totBarHeight});
     end
     imgui.End();
 end

@@ -21,7 +21,7 @@ local progressbar = {
 	foregroundRounding = 3,
 	foregroundPadding = 5,
 
-	textures = {}
+	gradientTextures = {}
 };
 
 function hex2rgb(hex)
@@ -56,7 +56,7 @@ end
 function GetGradient(startColor, endColor)
 	local texture;
 
-	for i, existingTexture in ipairs(progressbar.textures) do
+	for i, existingTexture in ipairs(progressbar.gradientTextures) do
 		if (existingTexture.startColor == startColor and existingTexture.endColor == endColor) then
 			texture = existingTexture;
 			break;
@@ -82,7 +82,7 @@ function GetGradient(startColor, endColor)
 
 	    d3d.gc_safe_release(texture.texture);
 
-	    table.insert(progressbar.textures, texture);
+	    table.insert(progressbar.gradientTextures, texture);
 	end
 
 	return tonumber(ffi.cast("uint32_t", texture.texture));
@@ -97,53 +97,107 @@ function GetBookendTexture()
 end
 
 progressbar.DrawBar = function(startPosition, endPosition, gradientStart, gradientEnd, rounding)
+	if not rounding then
+		rounding = 0;
+	end
+
 	local gradient = GetGradient(gradientStart, gradientEnd);
 
 	imgui.GetWindowDrawList():AddImageRounded(gradient, startPosition, endPosition, {0, 0}, {1, 1}, IMGUI_COL_WHITE, rounding);
 end
 
-progressbar.ProgressBar = function(percent, dimensions, fgGradStart, fgGradEnd)
-	local width = dimensions[1];
+progressbar.DrawBookends = function(positionStartX, positionStartY, width, height)
+	local bookendTexture = GetBookendTexture();
+	
+	local bookendWidth = height / 2;
+	
+	-- Draw the left bookend
+	imgui.GetWindowDrawList():AddImage(bookendTexture, {positionStartX, positionStartY}, {positionStartX + bookendWidth, positionStartY + height}, {0, 0}, {1, 1}, IMGUI_COL_WHITE);
+	
+	-- Draw the right bookend
+	imgui.GetWindowDrawList():AddImage(bookendTexture, {positionStartX + width - bookendWidth, positionStartY}, {positionStartX + width, positionStartY + height}, {1, 1}, {0, 0}, IMGUI_COL_WHITE);
+end
 
-	if width < 0 then
+progressbar.ProgressBar  = function(percentList, dimensions, decorate, overlayBar)
+	-- Decorate by default
+	if decorate == nil then
+		decorate = true;
+	end
+	
+	local positionStartX, positionStartY = imgui.GetCursorScreenPos();
+	
+	local width = dimensions[1];
+	local height = dimensions[2];
+	
+	-- If our width is 0 or less, we instead get the content region's available space
+	-- which allows us to stretch the progress bar to fit the content region.
+	if width <= 0 then
 		width = imgui.GetContentRegionAvail();
 	end
-
-	local height = dimensions[2];
-
-	local positionStartX, positionStartY = imgui.GetCursorScreenPos();
-
-	-- Draw the left bookend
-	local bookendTexture = GetBookendTexture();
-
-	local bookendWidth = height / 2;
-	local bookendHeight = height;
-
-	imgui.GetWindowDrawList():AddImage(bookendTexture, {positionStartX, positionStartY}, {positionStartX + bookendWidth, positionStartY + bookendHeight}, {0, 0}, {1, 1}, IMGUI_COL_WHITE);
-
-	positionStartX = positionStartX + bookendWidth;
-
+	
+	local contentWidth = width;
+	local contentPositionStartX = positionStartX;
+	local contentPositionStartY = positionStartY;
+	
+	-- Draw the bookends!
+	if decorate then
+		local bookendWidth = height / 2;
+		
+		contentWidth = width - (bookendWidth * 2);
+		contentPositionStartX = contentPositionStartX + bookendWidth;
+		
+		progressbar.DrawBookends(positionStartX, positionStartY, width, height);
+	end
+	
 	-- Draw the background
-	local positionEndX = positionStartX + width - (height / 2) - bookendWidth;
-	local positionEndY = positionStartY + height;
-
-	progressbar.DrawBar({positionStartX, positionStartY}, {positionEndX, positionEndY}, progressbar.backgroundGradientStartColor, progressbar.backgroundGradientEndColor, progressbar.backgroundRounding);
-
-	-- Draw the foreground
-	if (percent > 0) then
-		local paddingHalf = progressbar.foregroundPadding / 2;
-
-		local progressPositionStartX = positionStartX + paddingHalf;
-		local progressPositionEndX = positionStartX + paddingHalf + ((width - progressbar.foregroundPadding - (bookendWidth * 2)) * percent);
-		local progressPositionStartY = positionStartY + paddingHalf;
-		local progressPositionEndY = positionEndY - paddingHalf;
-
-		progressbar.DrawBar({progressPositionStartX, progressPositionStartY}, {progressPositionEndX, progressPositionEndY}, fgGradStart, fgGradEnd, progressbar.foregroundRounding);
+	progressbar.DrawBar({contentPositionStartX, contentPositionStartY}, {contentPositionStartX + contentWidth, contentPositionStartY + height}, progressbar.backgroundGradientStartColor, progressbar.backgroundGradientEndColor, progressbar.backgroundRounding);
+	
+	-- Compute the actual progress bar's width and height
+	local paddingHalf = progressbar.foregroundPadding / 2;
+	
+	local progressPositionStartX = contentPositionStartX + paddingHalf;
+	local progressPositionStartY = contentPositionStartY + paddingHalf;
+	
+	local progressTotalWidth = contentWidth - progressbar.foregroundPadding;
+	local progressHeight = height - progressbar.foregroundPadding;
+	
+	-- Draw the progress bar(s)
+	local progressOffset = 0;
+	
+	for i, percentData in ipairs(percentList) do
+		local percent = math.clamp(percentData[1], 0, 1);
+		
+		if percent > 0 then
+			local startColor = percentData[2][1];
+			local endColor = percentData[2][2];
+			
+			local progressWidth = progressTotalWidth * percent;
+			
+			progressbar.DrawBar({progressPositionStartX + progressOffset, progressPositionStartY}, {progressPositionStartX + progressOffset + progressWidth, progressPositionStartY + progressHeight}, startColor, endColor, progressbar.foregroundRounding);
+			
+			progressOffset = progressOffset + progressWidth;
+		end
 	end
 
-	-- Draw the right bookend
-	imgui.GetWindowDrawList():AddImage(bookendTexture, {positionEndX, positionEndY}, {positionEndX + bookendWidth, positionEndY - bookendHeight}, {1, 1}, {0, 0}, IMGUI_COL_WHITE);
+	-- Draw the optional overlay bar (used for TP)
+	if overlayBar then
+		local overlayPercent = overlayBar[1][1];
+		local overlayGradientStart = overlayBar[1][2][1];
+		local overlayGradientEnd = overlayBar[1][2][2];
+		local overlayHeight = overlayBar[2];
+		local overlayTopPadding = overlayBar[3];
 
+		local overlayWidth = progressTotalWidth;
+
+		-- Draw the overlay background
+		progressbar.DrawBar({progressPositionStartX, progressPositionStartY + progressHeight - overlayHeight}, {progressPositionStartX + overlayWidth, progressPositionStartY + progressHeight}, progressbar.backgroundGradientStartColor, progressbar.backgroundGradientEndColor, progressbar.backgroundRounding);
+
+		-- Draw the overlay progress bar
+		local overlayProgressWidth = overlayWidth * overlayPercent;
+
+		progressbar.DrawBar({progressPositionStartX, progressPositionStartY + progressHeight - overlayHeight + overlayTopPadding}, {progressPositionStartX + overlayProgressWidth, progressPositionStartY + progressHeight}, overlayGradientStart, overlayGradientEnd, progressbar.foregroundRounding);
+	end
+	
 	imgui.Dummy({width, height});
 end
 
