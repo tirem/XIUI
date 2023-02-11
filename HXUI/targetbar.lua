@@ -12,7 +12,7 @@ local bgRadius = 3;
 
 local targetbar = {};
 
-targetbar.DrawWindow = function(settings, userSettings)
+targetbar.DrawWindow = function(settings)
     -- Obtain the player entity..
     local playerEnt = GetPlayerEntity();
 	local player = AshitaCore:GetMemoryManager():GetPlayer();

@@ -53,7 +53,8 @@ T{
 	showPartyList = true,
 	showCastBar = true,
 
-	barRoundness = 6.0,
+	statusIconTheme = 'XIView';
+	jobIconTheme = 'FFXI',
 
 	showPartyListWhenSolo = false,
 	maxEnemyListEntries = 8,
@@ -400,10 +401,10 @@ T{
 	T{
 		barWidth = 500,
 		barHeight = 20,
-		spellOffsetY = 0;
-		spellOffsetY = 0;
-		percentOffsetY = 2;
-		percentOffsetX = -10;
+		spellOffsetY = 0,
+		spellOffsetY = 0,
+		percentOffsetY = 2,
+		percentOffsetX = -10,
 		spell_font_settings = 
 		T{
 			visible = true,
@@ -445,30 +446,31 @@ local adjustedSettings = deep_copy_table(default_settings);
 local defaultUserSettings = deep_copy_table(user_settings);
 
 local config = settings.load(user_settings_container);
+gConfig = config.userSettings;
 
 showConfig = { false };
 
 function ResetSettings()
-	config.userSettings = deep_copy_table(defaultUserSettings);
+	gConfig = deep_copy_table(defaultUserSettings);
 end
 
 local function CheckVisibility()
-	if (config.userSettings.showPlayerBar == false) then
+	if (gConfig.showPlayerBar == false) then
 		playerBar.SetHidden(true);
 	end
-	if (config.userSettings.showExpBar == false) then
+	if (gConfig.showExpBar == false) then
 		expBar.SetHidden(true);
 	end
-	if (config.userSettings.showGilTracker == false) then
+	if (gConfig.showGilTracker == false) then
 		gilTracker.SetHidden(true);
 	end
-	if (config.userSettings.showInventoryTracker == false) then
+	if (gConfig.showInventoryTracker == false) then
 		inventoryTracker.SetHidden(true);
 	end
-	if (config.userSettings.showPartyList == false) then
+	if (gConfig.showPartyList == false) then
 		partyList.SetHidden(true);
 	end
-	if (config.userSettings.showCastBar == false) then
+	if (gConfig.showCastBar == false) then
 		castBar.SetHidden(true);
 	end
 end
@@ -494,7 +496,7 @@ end
 
 local function UpdateUserSettings()
     local ns = default_settings;
-	local us = config.userSettings;
+	local us = gConfig;
 
 	-- Target Bar
 	adjustedSettings.targetBarSettings.barWidth = ns.targetBarSettings.barWidth * us.targetBarScaleX;
@@ -640,35 +642,32 @@ end
 ashita.events.register('d3d_present', 'present_cb', function ()
 
 	if (GetHidden() == false) then
-		imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, config.userSettings.barRoundness);
-		if (config.userSettings.showPlayerBar) then
-			playerBar.DrawWindow(adjustedSettings.playerBarSettings, config.userSettings);
+		if (gConfig.showPlayerBar) then
+			playerBar.DrawWindow(adjustedSettings.playerBarSettings);
 		end
-		if (config.userSettings.showTargetBar) then
-			targetBar.DrawWindow(adjustedSettings.targetBarSettings, config.userSettings);
+		if (gConfig.showTargetBar) then
+			targetBar.DrawWindow(adjustedSettings.targetBarSettings);
 		end
-		if (config.userSettings.showEnemyList) then
-			enemyList.DrawWindow(adjustedSettings.enemyListSettings, config.userSettings);
+		if (gConfig.showEnemyList) then
+			enemyList.DrawWindow(adjustedSettings.enemyListSettings);
 		end
-		if (config.userSettings.showExpBar) then
-			expBar.DrawWindow(adjustedSettings.expBarSettings, config.userSettings);
+		if (gConfig.showExpBar) then
+			expBar.DrawWindow(adjustedSettings.expBarSettings);
 		end
-		if (config.userSettings.showGilTracker) then
-			gilTracker.DrawWindow(adjustedSettings.gilTrackerSettings, config.userSettings);
+		if (gConfig.showGilTracker) then
+			gilTracker.DrawWindow(adjustedSettings.gilTrackerSettings);
 		end
-		if (config.userSettings.showInventoryTracker) then
-			inventoryTracker.DrawWindow(adjustedSettings.inventoryTrackerSettings, config.userSettings);
+		if (gConfig.showInventoryTracker) then
+			inventoryTracker.DrawWindow(adjustedSettings.inventoryTrackerSettings);
 		end
-		if (config.userSettings.showPartyList) then
-			partyList.DrawWindow(adjustedSettings.partyListSettings, config.userSettings);
+		if (gConfig.showPartyList) then
+			partyList.DrawWindow(adjustedSettings.partyListSettings);
 		end
-		if (config.userSettings.showCastBar) then
-			castBar.DrawWindow(adjustedSettings.castBarSettings, config.userSettings);
+		if (gConfig.showCastBar) then
+			castBar.DrawWindow(adjustedSettings.castBarSettings);
 		end
 
-		configMenu.DrawWindow(config.userSettings);
-
-		imgui.PopStyleVar(1);
+		configMenu.DrawWindow();
 	else
 		ForceHide();
 	end
@@ -703,17 +702,17 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
 		local actionPacket = ParseActionPacket(e);
 		
 		if actionPacket then
-			if (config.userSettings.showEnemyList) then
+			if (gConfig.showEnemyList) then
 				enemyList.HandleActionPacket(actionPacket);
 			end
 	
-			if (config.userSettings.showCastBar) then
+			if (gConfig.showCastBar) then
 				castBar.HandleActionPacket(actionPacket);
 			end
 		end
 	elseif (e.id == 0x00E) then
 		local mobUpdatePacket = ParseMobUpdatePacket(e);
-		if (config.userSettings.showEnemyList) then
+		if (gConfig.showEnemyList) then
 			enemyList.HandleMobUpdatePacket(mobUpdatePacket);
 		end
 	elseif (e.id == 0x00A) then

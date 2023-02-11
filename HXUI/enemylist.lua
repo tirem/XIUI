@@ -32,7 +32,7 @@ local function GetPartyMemberIds()
 	return partyMemberIds;
 end
 
-enemylist.DrawWindow = function(settings, userSettings)
+enemylist.DrawWindow = function(settings)
 
 	imgui.SetNextWindowSize({ settings.barWidth, -1, }, ImGuiCond_Always);
 	-- Draw the main target window
@@ -117,7 +117,7 @@ enemylist.DrawWindow = function(settings, userSettings)
 					imgui.Separator();
 
 					numTargets = numTargets + 1;
-					if (numTargets >= userSettings.maxEnemyListEntries) then
+					if (numTargets >= gConfig.maxEnemyListEntries) then
 						break;
 					end
 				end

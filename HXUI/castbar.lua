@@ -35,7 +35,7 @@ castbar.GetLabelText = function()
 	end
 end
 
-castbar.DrawWindow = function(settings, userSettings)
+castbar.DrawWindow = function(settings)
 	local percent = AshitaCore:GetMemoryManager():GetCastBar():GetPercent();
 
 	if ((percent < 1 and percent ~= castbar.previousPercent) or showConfig[1]) then

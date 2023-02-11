@@ -116,7 +116,8 @@ function LoadTexture(textureName)
     local texture_ptr = ffi.new('IDirect3DTexture8*[1]');
     local res = C.D3DXCreateTextureFromFileA(d3d8dev, string.format('%s/assets/%s.png', addon.path, textureName), texture_ptr);
     if (res ~= C.S_OK) then
-        error(('Failed to load image texture: %08X (%s)'):fmt(res, d3d.get_error(res)));
+--      error(('Failed to load image texture: %08X (%s)'):fmt(res, d3d.get_error(res)));
+        return nil;
     end;
     textures.image = ffi.new('IDirect3DTexture8*', texture_ptr[0]);
     d3d.gc_safe_release(textures.image);
@@ -430,7 +431,7 @@ function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg)
         local currentColumn = 0;
 
 		for i = 0,#statusIds do
-            local icon = statusHandler.get_icon_from_theme("hd",statusIds[i]);
+            local icon = statusHandler.get_icon_from_theme(gConfig.statusIconTheme, statusIds[i]);
             if (icon ~= nil) then
                 if (drawBg == true) then
                     local resetX, resetY = imgui.GetCursorScreenPos();

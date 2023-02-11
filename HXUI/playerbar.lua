@@ -47,7 +47,7 @@ local function UpdateHealthValue(settings)
 	end
 end
 
-playerbar.DrawWindow = function(settings, userSettings)
+playerbar.DrawWindow = function(settings)
     -- Obtain the player entity..
     local party = AshitaCore:GetMemoryManager():GetParty();
     local player = AshitaCore:GetMemoryManager():GetPlayer();

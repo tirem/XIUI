@@ -81,7 +81,7 @@ local function load_status_icon_from_theme(theme, status_id)
         end
 
         supports_alpha = ext == '.png';
-        icon_path = ('%s\\assets\\%s\\%d'):append(ext):fmt(addon.path, theme, status_id);
+        icon_path = ('%s\\assets\\status\\%s\\%d'):append(ext):fmt(addon.path, theme, status_id);
         local handle = io.open(icon_path, 'r');
         if (handle ~= nil) then
             handle.close();
@@ -116,6 +116,30 @@ end
 -------------------------------------------------------------------------------
 local statusHandler = {};
 
+-- return a list of all sub directories
+---@return table theme_paths
+statusHandler.get_job_theme_paths = function()
+    local path = ('%s\\addons\\%s\\assets\\jobs\\'):fmt(AshitaCore:GetInstallPath(), 'HXUI');
+    local directories = ashita.fs.get_directory(path);
+    if (directories ~= nil) then
+        directories[#directories+1] = '-None-';
+        return directories;
+    end
+    return T{'-None-'};
+end
+
+-- return a list of all sub directories
+---@return table theme_paths
+statusHandler.get_status_theme_paths = function()
+    local path = ('%s\\addons\\%s\\assets\\status\\'):fmt(AshitaCore:GetInstallPath(), 'HXUI');
+    local directories = ashita.fs.get_directory(path);
+    if (directories ~= nil) then
+        directories[#directories+1] = '-Default-';
+        return directories;
+    end
+    return T{'-Default-'};
+end 
+
 -- return an image pointer for a status_id for use with imgui.Image
 ---@param status_id number the status id number of the requested icon
 ---@return number texture_ptr_id a number representing the texture_ptr or nil
@@ -148,7 +172,7 @@ end
 -- return index of the currently active theme in module.get_theme_paths()
 ---@return number theme_index
 statusHandler.get_theme_index = function(theme)
-    local paths = module.get_theme_paths();
+    local paths = statusHandler.get_theme_paths();
     for i = 1,#paths,1 do
         if (paths[i] == theme) then
             return i;
@@ -238,9 +262,11 @@ statusHandler.GetJobIcon = function(jobIdx)
     local jobStr = AshitaCore:GetResourceManager():GetString("jobs.names_abbr", jobIdx);
 
     if (jobIcons[jobStr] == nil) then
-        jobIcons[jobStr] = LoadTexture(string.format('%s/%s', 'jobs', jobStr))
+        jobIcons[jobStr] = LoadTexture(string.format('jobs/%s/%s', gConfig.jobIconTheme, jobStr))
     end
-
+    if (jobIcons[jobStr] == nil) then
+        return nil;
+    end
     return tonumber(ffi.cast("uint32_t", jobIcons[jobStr].image));
 end
 

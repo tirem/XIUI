@@ -101,7 +101,7 @@ local function GetMemberInformation(memIdx)
     return memberInfo;
 end
 
-local function DrawMember(memIdx, settings, userSettings)
+local function DrawMember(memIdx, settings)
 
     local memInfo = GetMemberInformation(memIdx);
     local playerTarget = AshitaCore:GetMemoryManager():GetTarget();
@@ -162,9 +162,9 @@ local function DrawMember(memIdx, settings, userSettings)
         -- imgui.ProgressBar(memInfo.hpp, { settings.hpBarWidth, settings.barHeight }, '');
         progressbar.ProgressBar({{memInfo.hpp, {'#e16c6c', '#fb9494'}}}, {settings.hpBarWidth, settings.barHeight});
     else
-        imgui.PushStyleColor(ImGuiCol_PlotHistogram, hpBarColor);
+--        imgui.PushStyleColor(ImGuiCol_PlotHistogram, hpBarColor);
         imgui.ProgressBar(0, { allBarsLengths, settings.barHeight + hpSize.cy + settings.hpTextOffsetY}, AshitaCore:GetResourceManager():GetString("zones.names", memInfo.zone));
-        imgui.PopStyleColor(1);
+--        imgui.PopStyleColor(1);
     end
 
     -- Draw the leader icon
@@ -265,7 +265,7 @@ local function DrawMember(memIdx, settings, userSettings)
 
         -- Draw the different party list buff / debuff themes
         if (memInfo.buffs ~= nil and #memInfo.buffs > 0) then
-            if (userSettings.partyListStatusTheme == 0) then
+            if (gConfig.partyListStatusTheme == 0) then
                 local buffs = {};
                 local debuffs = {};
                 for i = 0, #memInfo.buffs do
@@ -304,7 +304,7 @@ local function DrawMember(memIdx, settings, userSettings)
                     debuffWindowX[memIdx] = buffWindowSizeX;
                     imgui.End();
                 end
-            elseif (userSettings.partyListStatusTheme == 1) then
+            elseif (gConfig.partyListStatusTheme == 1) then
                 -- Draw FFXIV theme
                 local resetX, resetY = imgui.GetCursorScreenPos();
                 imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0} );
@@ -349,7 +349,7 @@ local function DrawMember(memIdx, settings, userSettings)
     end
 end
 
-partyList.DrawWindow = function(settings, userSettings)
+partyList.DrawWindow = function(settings)
 
     -- Obtain the player entity..
     local party = AshitaCore:GetMemoryManager():GetParty();
@@ -360,7 +360,7 @@ partyList.DrawWindow = function(settings, userSettings)
 		return;
 	end
 	local currJob = player:GetMainJob();
-    if (player.isZoning or currJob == 0 or (not userSettings.showPartyListWhenSolo and party:GetMemberIsActive(1) == 0)) then
+    if (player.isZoning or currJob == 0 or (not gConfig.showPartyListWhenSolo and party:GetMemberIsActive(1) == 0)) then
 		UpdateTextVisibility(false);
         return;
 	end
@@ -383,7 +383,7 @@ partyList.DrawWindow = function(settings, userSettings)
         partySubTargeted = false;
         UpdateTextVisibility(true);
         for i = 0, 5 do
-            DrawMember(i, settings, userSettings);
+            DrawMember(i, settings);
         end
         if (partyTargeted == false) then
             selectionPrim.visible = false;

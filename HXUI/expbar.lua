@@ -19,7 +19,7 @@ end
 * event: d3d_present
 * desc : Event called when the Direct3D device is presenting a scene.
 --]]
-expbar.DrawWindow = function(settings, userSettings)
+expbar.DrawWindow = function(settings)
     -- Obtain the player entity..
     local player    = AshitaCore:GetMemoryManager():GetPlayer();
 
