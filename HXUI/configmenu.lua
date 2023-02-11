@@ -22,9 +22,10 @@ config.DrawWindow = function(us)
                 for i = 1,#status_theme_paths,1 do
                     local is_selected = i == gConfig.statusIconTheme;
 
-                    if (imgui.Selectable(status_theme_paths[i], is_selected)) then
+                    if (imgui.Selectable(status_theme_paths[i], is_selected) and status_theme_paths[i] ~= gConfig.statusIconTheme) then
                         gConfig.statusIconTheme = status_theme_paths[i];
                         statusHandler.clear_cache();
+                        UpdateSettings();
                     end
 
                     if (is_selected) then
@@ -41,9 +42,10 @@ config.DrawWindow = function(us)
                 for i = 1,#job_theme_paths,1 do
                     local is_selected = i == gConfig.jobIconTheme;
 
-                    if (imgui.Selectable(job_theme_paths[i], is_selected)) then
+                    if (imgui.Selectable(job_theme_paths[i], is_selected) and job_theme_paths[i] ~= gConfig.jobIconTheme) then
                         gConfig.jobIconTheme = job_theme_paths[i];
                         statusHandler.clear_cache();
+                        UpdateSettings();
                     end
 
                     if (is_selected) then
