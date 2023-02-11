@@ -127,6 +127,7 @@ T{
 		barSpacing = 10,
 		barHeight = 20,
 		textYOffset = -3,
+		showMpBar = true,
 		font_settings = 
 		T{
 			visible = true,
@@ -526,6 +527,7 @@ local function UpdateUserSettings()
 	adjustedSettings.partyListSettings.iconSize = ns.partyListSettings.iconSize * us.partyListBuffScale;
 
 	-- Player Bar
+	adjustedSettings.playerBarSettings.showMpBar = us.showPlayerMpBar;
 	adjustedSettings.playerBarSettings.barWidth = ns.playerBarSettings.barWidth * us.playerBarScaleX;
 	adjustedSettings.playerBarSettings.barSpacing = ns.playerBarSettings.barSpacing * us.playerBarScaleX;
 	adjustedSettings.playerBarSettings.barHeight = ns.playerBarSettings.barHeight * us.playerBarScaleY;

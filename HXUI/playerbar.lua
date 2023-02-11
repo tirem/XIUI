@@ -97,9 +97,15 @@ playerbar.DrawWindow = function(settings)
 			hpNameColor = 0xFFfdf4f4;
 		end
 
+		local barCount = 3;
+
+		if not settings.showMpBar then
+			barCount = 2;
+		end
+
 		-- Draw HP Bar (two bars to fake animation
 		local hpX = imgui.GetCursorPosX();
-		local barSize = (settings.barWidth / 3) - settings.barSpacing;
+		local barSize = (settings.barWidth / barCount) - settings.barSpacing;
 		-- imgui.PushStyleColor(ImGuiCol_PlotHistogram, {1,0,0,1});
 		-- imgui.ProgressBar(interpHP, { barSize, settings.barHeight }, '');
 		-- imgui.PopStyleColor(1);
@@ -122,15 +128,20 @@ playerbar.DrawWindow = function(settings)
 			-- imgui.PopStyleColor(1);
 			imgui.SameLine();
 		end
+
+		local mpLocX
+		local mpLocY;
 		
-		-- Draw MP Bar
-		imgui.SetCursorPosX(hpEndX + settings.barSpacing);
-		-- imgui.PushStyleColor(ImGuiCol_PlotHistogram, { 0.9, 1.0, 0.5, 1.0});
-		-- imgui.ProgressBar(SelfMPPercent, { barSize, settings.barHeight }, '');
-		progressbar.ProgressBar({{SelfMPPercent, {'#9abb5a', '#bfe07d'}}}, {barSize, settings.barHeight});
-		-- imgui.PopStyleColor(1);
-		imgui.SameLine();
-		local mpLocX, mpLocY  = imgui.GetCursorScreenPos()
+		if settings.showMpBar then
+			-- Draw MP Bar
+			imgui.SetCursorPosX(hpEndX + settings.barSpacing);
+			-- imgui.PushStyleColor(ImGuiCol_PlotHistogram, { 0.9, 1.0, 0.5, 1.0});
+			-- imgui.ProgressBar(SelfMPPercent, { barSize, settings.barHeight }, '');
+			progressbar.ProgressBar({{SelfMPPercent, {'#9abb5a', '#bfe07d'}}}, {barSize, settings.barHeight});
+			-- imgui.PopStyleColor(1);
+			imgui.SameLine();
+			mpLocX, mpLocY  = imgui.GetCursorScreenPos()
+		end
 		
 		-- Draw TP Bars
 		local tpX = imgui.GetCursorPosX();
@@ -174,17 +185,19 @@ playerbar.DrawWindow = function(settings)
 		hpText:SetText(tostring(SelfHP));
 		hpText:SetColor(hpNameColor);
 		
-		-- Update our MP Text
-		mpText:SetPositionX(mpLocX - settings.barSpacing - settings.barHeight / 2);
-		mpText:SetPositionY(mpLocY + settings.barHeight + settings.textYOffset);
-		mpText:SetText(tostring(SelfMP));
+		if settings.showMpBar then
+			-- Update our MP Text
+			mpText:SetPositionX(mpLocX - settings.barSpacing - settings.barHeight / 2);
+			mpText:SetPositionY(mpLocY + settings.barHeight + settings.textYOffset);
+			mpText:SetText(tostring(SelfMP));
 
-		if (SelfMPPercent >= 1 or SelfMPMax == 0) then 
-			mpText:SetColor(0xFFCBDFA1);
-		else
-			mpText:SetColor(0xFFE8F1D7);
-	    end
-		
+			if (SelfMPPercent >= 1 or SelfMPMax == 0) then 
+				mpText:SetColor(0xFFCBDFA1);
+			else
+				mpText:SetColor(0xFFE8F1D7);
+		    end
+		end
+			
 		-- Update our TP Text
 		tpText:SetPositionX(tpLocX - settings.barSpacing - settings.barHeight / 2);
 		tpText:SetPositionY(tpLocY + settings.barHeight + settings.textYOffset);
@@ -198,7 +211,11 @@ playerbar.DrawWindow = function(settings)
 			tpText:SetColor(0xFF8FC7E6);
 	    end
 
-		UpdateTextVisibility(true);	
+		UpdateTextVisibility(true);
+
+		if not settings.showMpBar then
+			mpText:SetVisible(false);
+		end
 	
     end
 	imgui.End();

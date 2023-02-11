@@ -63,6 +63,10 @@ config.DrawWindow = function(us)
                 gConfig.showPlayerBar = not gConfig.showPlayerBar;
                 UpdateSettings();
             end
+            if (imgui.Checkbox(' Show MP Bar', { gConfig.showPlayerMpBar })) then
+                gConfig.showPlayerMpBar = not gConfig.showPlayerMpBar;
+                UpdateSettings();
+            end
             local scaleX = { gConfig.playerBarScaleX };
             if (imgui.SliderFloat('Scale X', scaleX, 0.1, 3.0, '%.1f')) then
                 gConfig.playerBarScaleX = scaleX[1];
