@@ -578,6 +578,17 @@ settings.register('settings', 'settings_update', function (s)
     end
 end);
 
+-- Get if we are logged in right when the addon loads
+bLoggedIn = false;
+local playerIndex = AshitaCore:GetMemoryManager():GetParty():GetMemberTargetIndex(0);
+if playerIndex ~= 0 then
+    local entity = AshitaCore:GetMemoryManager():GetEntity();
+    local flags = entity:GetRenderFlags0(playerIndex);
+    if (bit.band(flags, 0x200) == 0x200) and (bit.band(flags, 0x4000) == 0) then
+        bLoggedIn = true;
+	end
+end
+
 --Thanks to Velyn for the event system and interface hidden signatures!
 local pGameMenu = ashita.memory.find('FFXiMain.dll', 0, "8B480C85C974??8B510885D274??3B05", 16, 0);
 local pEventSystem = ashita.memory.find('FFXiMain.dll', 0, "A0????????84C0741AA1????????85C0741166A1????????663B05????????0F94C0C3", 0, 0);
@@ -632,6 +643,10 @@ function GetHidden()
     if (GetInterfaceHidden()) then
         return true;
     end
+
+	if (bLoggedIn == false) then
+		return true;
+	end
     
     return false;
 end
@@ -722,10 +737,13 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
 		enemyList.HandleZonePacket(e);
 		partyList.HandleZonePacket(e);
 		debuffHandler.HandleZonePacket(e);
+		bLoggedIn = true;
 	elseif (e.id == 0x0029) then
 		local messagePacket = ParseMessagePacket(e.data);
 		if (messagePacket) then
 			debuffHandler.HandleMessagePacket(messagePacket);
 		end
+	elseif (e.id == 0x00B) then
+		bLoggedIn = false;
 	end
 end);
