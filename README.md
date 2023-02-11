@@ -13,4 +13,6 @@ Contains the following elements:
 Configuration UI Command: /hxui, /hui, /horixonui, /horizonxiui
 ![HXUI Screenshot](https://user-images.githubusercontent.com/7691562/212527266-cc67e8b4-0f03-4d4b-9903-226922fb0ca2.png)
 
-*NOTE: This addon has been renamed from ConsolidatedUI to HXUI. If you would like to keep your old config from before please rename the folder "consolidatedui" in game/config/addons/ to "hxui"
+***UPDATING NOTES***
+1) This addon has been recently renamed from ConsolidatedUI to HXUI. If you are upgrading from ConsolidatedUI and would like to keep your old config from before please rename the folder "consolidatedui" in game/config/addons/ to "hxui"
+2) It is recommended to delete the "HXUI" folder in game/addons before upgrading to a new version as asset directories may change during development
