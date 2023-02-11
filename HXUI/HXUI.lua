@@ -573,6 +573,7 @@ end;
 settings.register('settings', 'settings_update', function (s)
     if (s ~= nil) then
         config = s;
+		gConfig = config.userSettings;
 		UpdateSettings();
     end
 end);
