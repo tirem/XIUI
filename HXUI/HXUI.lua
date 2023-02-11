@@ -23,7 +23,7 @@
 ]]--
 
 addon.name      = 'HXUI';
-addon.author    = 'Tirem (Programmer) & Shuu (Designer)';
+addon.author    = 'Tirem (Programmer) & Shuu (Designer) & Extrasupervery (Programmer)';
 addon.version   = '0.1.1';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/HXUI'
