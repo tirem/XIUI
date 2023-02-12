@@ -92,9 +92,9 @@ playerbar.DrawWindow = function(settings)
 		local SelfSubJob = GetJobStr(party:GetMemberSubJob(0));
 		local bShowMp = buffTable.IsSpellcaster(SelfJob) or buffTable.IsSpellcaster(SelfSubJob) or gConfig.alwaysShowMpBar;
 
-		if (SelfHPPercent == 1) then
-			hpNameColor = 0xFFFEBCBC;
-			hpGradient = {"#eb7373", "#fa9c9c"};
+		if (SelfHPPercent == 0) then
+			hpNameColor = 0xFFfdf4f4;
+			hpGradient = {"#fdf4f4", "#fdf4f4"};
 		elseif (SelfHPPercent < .25) then 
 			hpNameColor = 0xFFFF0000;
 			hpGradient = {"#ec3232", "#f16161"};
@@ -105,8 +105,8 @@ playerbar.DrawWindow = function(settings)
 			hpNameColor = 0xFFFFFF00;
 			hpGradient = {"#ffff0c", "#ffff97"};
 		else
-			hpNameColor = 0xFFfdf4f4;
-			hpGradient = {"#fdf4f4", "#fdf4f4"};
+			hpNameColor = 0xFFFEBCBC;
+			hpGradient = {"#eb7373", "#fa9c9c"};
 		end
 
 		-- Draw HP Bar (two bars to fake animation
@@ -119,7 +119,7 @@ playerbar.DrawWindow = function(settings)
 		local hpPercentData = {{SelfHPPercent, hpGradient}};
 
 		if interpHP > 0 then
-			table.insert(hpPercentData, {interpHP - SelfHPPercent, {'#FF0000', '#FF0000'}});
+			table.insert(hpPercentData, {interpHP - SelfHPPercent, {'#cf3437', '#c54d4d'}});
 		end
 
 		if (bShowMp == false) then

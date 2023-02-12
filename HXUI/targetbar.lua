@@ -32,6 +32,39 @@ targetbar.DrawWindow = function(settings)
         return;
     end
 
+    local currentTime = os.clock();
+
+    if targetbar.currentTargetId == targetIndex then
+    	if targetEntity.HPPercent < targetbar.currentHPP then
+    		targetbar.previousHPP = targetbar.currentHPP;
+    		targetbar.currentHPP = targetEntity.HPPercent;
+    		targetbar.lastHitTime = currentTime;
+    	end
+    else
+    	targetbar.currentTargetId = targetIndex;
+    	targetbar.currentHPP = targetEntity.HPPercent;
+    	targetbar.previousHPP = targetEntity.HPPercent;
+    end
+
+    local interpolationPercent;
+
+    if targetbar.currentHPP < targetbar.previousHPP then
+    	local hppDelta = targetbar.previousHPP - targetbar.currentHPP;
+
+    	if currentTime > targetbar.lastHitTime + settings.hitDelayLength then
+    		local interpolationTimeTotal = settings.hitInterpolationMaxTime * (hppDelta / 100);
+    		local interpolationTimeElapsed = currentTime - targetbar.lastHitTime - settings.hitDelayLength;
+
+    		if interpolationTimeElapsed <= interpolationTimeTotal then
+    			local interpolationTimeElapsedPercent = interpolationTimeElapsed / interpolationTimeTotal;
+
+    			interpolationPercent = hppDelta * (1 - interpolationTimeElapsedPercent);
+    		end
+    	elseif currentTime - targetbar.lastHitTime <= settings.hitDelayLength then
+    		interpolationPercent = hppDelta;
+    	end
+    end
+
 	local color = GetColorOfTarget(targetEntity, targetIndex);
 	local showTargetId = GetIsMob(targetEntity);
 
@@ -45,7 +78,10 @@ targetbar.DrawWindow = function(settings)
         local x, _  = imgui.CalcTextSize(dist);
 		local targetNameText = targetEntity.Name;
 		if (showTargetId) then
-			targetNameText = targetNameText.." ["..targetIndex.."]";
+			local targetServerId = AshitaCore:GetMemoryManager():GetEntity():GetServerId(targetIndex);
+			local targetServerIdHex = string.format('0x%X', targetServerId);
+
+			targetNameText = targetNameText .. " [ID: ".. string.sub(targetServerIdHex, -3) .."]";
 		end
 		local nameX, nameY = imgui.CalcTextSize(targetNameText);
 
@@ -65,8 +101,17 @@ targetbar.DrawWindow = function(settings)
 			imgui.ProgressBar(targetEntity.HPPercent / 100, { -1, settings.barHeight}, '');
 		end
 		]]--
+
+		local hpGradientStart = '#e16c6c';
+		local hpGradientEnd = '#fb9494';
+
+		local hpPercentData = {{targetEntity.HPPercent / 100, {hpGradientStart, hpGradientEnd}}};
+
+		if interpolationPercent then
+			table.insert(hpPercentData, {interpolationPercent / 100, {'#cf3437', '#c54d4d'}});
+		end
 		
-		progressbar.ProgressBar({{targetEntity.HPPercent / 100, {'#e16c6c', '#fb9494'}}}, {-1, settings.barHeight});
+		progressbar.ProgressBar(hpPercentData, {-1, settings.barHeight});
     end
 
 	-- Draw buffs and debuffs

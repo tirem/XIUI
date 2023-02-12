@@ -25,13 +25,23 @@ local progressbar = {
 };
 
 function hex2rgb(hex)
-    local hex = hex:gsub("#","")
+	local hex = hex:gsub("#","")
+	
+	return {tonumber("0x"..hex:sub(1,2)), tonumber("0x"..hex:sub(3,4)), tonumber("0x"..hex:sub(5,6))}
+end
 
-    if hex:len() == 3 then
-      return {(tonumber("0x"..hex:sub(1,1))*17), (tonumber("0x"..hex:sub(2,2))*17), (tonumber("0x"..hex:sub(3,3))*17)}
-    else
-      return {tonumber("0x"..hex:sub(1,2)), tonumber("0x"..hex:sub(3,4)), tonumber("0x"..hex:sub(5,6))}
-    end
+function rgb2hex(red, green, blue)
+	return string.format('#%02x%02x%02x', red, green, blue);
+end
+
+function multiplyHexColor(hex, percent)
+	local rgb = hex2rgb(hex);
+
+	local red = math.min(rgb[1] * percent, 255);
+	local blue = math.min(rgb[2] * percent, 255);
+	local green = math.min(rgb[3] * percent, 255);
+
+	return(rgb2hex(red, green, blue));
 end
 
 function MakeGradientBitmap(startColor, endColor)
