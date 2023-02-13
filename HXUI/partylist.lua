@@ -368,8 +368,8 @@ partyList.DrawWindow = function(settings)
             local imguiPosX, imguiPosY = imgui.GetWindowPos();
             backgroundPrim.position_x = imguiPosX - settings.backgroundPaddingX1;
             backgroundPrim.position_y = imguiPosY - settings.backgroundPaddingY1;
-            backgroundPrim.scale_x = (fullMenuSizeX + settings.backgroundPaddingX1 + settings.backgroundPaddingX2) / 280;
-            backgroundPrim.scale_y = (fullMenuSizeY - settings.entrySpacing + settings.backgroundPaddingY1 + settings.backgroundPaddingY2 - (settings.nameTextOffsetY + nameSize.cy)) / 384;
+            backgroundPrim.scale_x = (fullMenuSizeX + settings.backgroundPaddingX1 + settings.backgroundPaddingX2) / 408;
+            backgroundPrim.scale_y = (fullMenuSizeY - settings.entrySpacing + settings.backgroundPaddingY1 + settings.backgroundPaddingY2 - (settings.nameTextOffsetY + nameSize.cy)) / 408;
         end
         partyTargeted = false;
         partySubTargeted = false;
@@ -401,7 +401,7 @@ partyList.Initialize = function(settings)
     end
     
     backgroundPrim = primitives:new(settings.primData);
-    backgroundPrim.color = 0xFFFFFFFF;
+    backgroundPrim.color = tonumber(string.format('%02x%02x%02x%02x', gConfig.partyListBgOpacity, 255, 255, 255), 16);
     backgroundPrim.texture = string.format('%s/assets/plist_bg.png', addon.path);
     backgroundPrim.visible = false;
 
@@ -424,6 +424,7 @@ partyList.UpdateFonts = function(settings)
         memberText[i].mp:SetFontHeight(settings.mp_font_settings.font_height);
         memberText[i].tp:SetFontHeight(settings.tp_font_settings.font_height);
     end
+    backgroundPrim.color = tonumber(string.format('%02x%02x%02x%02x', gConfig.partyListBgOpacity, 255, 255, 255), 16);
 end
 
 partyList.SetHidden = function(hidden)

@@ -170,6 +170,11 @@ config.DrawWindow = function(us)
                 gConfig.partyListScaleY = scaleY[1];
                 UpdateSettings();
             end
+            local bgOpacity = { gConfig.partyListBgOpacity };
+            if (imgui.SliderFloat('Background Opacity', bgOpacity, 0, 255, '%.f')) then
+                gConfig.partyListBgOpacity = bgOpacity[1];
+                UpdateSettings();
+            end
             local comboBoxItems = {};
             comboBoxItems[0] = 'HorizonXI';
             comboBoxItems[1] = 'FFXIV';

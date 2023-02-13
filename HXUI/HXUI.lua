@@ -147,6 +147,7 @@ T{
 	partyListFontOffset = 0,
 	partyListStatusTheme = 0,
 	partyListTheme = 0, -- 0: HorizonXI, 1: XIV1.0, 2: XIV
+	partyListBgOpacity = 255;
 
 	castBarScaleX = 1,
 	castBarScaleY = 1,
@@ -432,9 +433,9 @@ T{
 		backgroundPaddingY2 = 0,
 
 		cursorPaddingX1 = 3,
-		cursorPaddingX2 = 3,
+		cursorPaddingX2 = -3,
 		cursorPaddingY1 = 3,
-		cursorPaddingY2 = 3,
+		cursorPaddingY2 = 0,
 		dotRadius = 3,
 
 		arrowSize = 1;
