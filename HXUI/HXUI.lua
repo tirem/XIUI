@@ -169,7 +169,7 @@ T{
 	targetBarSettings =
 	T{
 		hitInterpolationMaxTime = 0.5,
-		hitDelayLength = 0.4,
+		hitDelayLength = 0.5,
 		barWidth = 500,
 		barHeight = 18,
 		totBarHeight = 14,
@@ -256,7 +256,7 @@ T{
 	playerBarSettings =
 	T{
 		hitInterpolationMaxTime = 0.5,
-		hitDelayLength = 0.4,
+		hitDelayLength = 0.5,
 		barWidth = 500,
 		barSpacing = 10,
 		barHeight = 20,
