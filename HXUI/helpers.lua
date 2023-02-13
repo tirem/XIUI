@@ -513,3 +513,20 @@ function GetJobStr(jobIdx)
 
     return AshitaCore:GetResourceManager():GetString("jobs.names_abbr", jobIdx);
 end
+
+-- Easing function for HP bar interpolation
+-- Reference: https://easings.net/
+function easeOutPercent(percent)
+    -- Ease out exponential
+    if percent < 1 then
+        return 1 - math.pow(2, -10 * percent);
+    else
+        return percent;
+    end
+
+    -- Ease out quart
+    -- return 1 - math.pow(1 - percent, 4);
+
+    -- Ease out quint
+    -- return 1 - math.pow(1 - percent, 5);
+end

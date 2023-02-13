@@ -179,8 +179,8 @@ T{
 	-- settings for the playerbar
 	playerBarSettings =
 	T{
-		hitAnimSpeed = 2,
-		hitDelayLength = .5,
+		hitInterpolationMaxTime = 0.5,
+		hitDelayLength = 0.5,
 		barWidth = 500,
 		barSpacing = 10,
 		barHeight = 20,

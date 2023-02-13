@@ -12,23 +12,6 @@ local bgRadius = 3;
 
 local targetbar = {};
 
--- Easing function for HP bar interpolation
--- Reference: https://easings.net/
-function easeOutPercent(percent)
-	-- Ease out exponential
-	if percent < 1 then
-		return 1 - math.pow(2, -10 * percent);
-	else
-		return percent;
-	end
-
-	-- Ease out quart
-	-- return 1 - math.pow(1 - percent, 4);
-
-	-- Ease out quint
-	-- return 1 - math.pow(1 - percent, 5);
-end
-
 local _HXUI_DEV_DEBUG_INTERPOLATION = false;
 local _HXUI_DEV_DEBUG_INTERPOLATION_DELAY, _HXUI_DEV_DEBUG_INTERPOLATION_NEXT_TIME;
 
