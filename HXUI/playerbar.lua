@@ -177,7 +177,7 @@ playerbar.DrawWindow = function(settings)
 				math.ceil(settings.barHeight * 2/7), -- overlay height
 				1, -- overlay vertical padding
 				{
-					'#0096ff', -- overlay pulse color
+					'#2fa9ff', -- overlay pulse color
 					1 -- overlay pulse seconds
 				}
 			};
