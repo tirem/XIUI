@@ -6,9 +6,6 @@ local ffi = require('ffi');
 local d3d = require('d3d8');
 local d3d8dev = d3d.get_device();
 
-local IMGUI_COL_WHITE = imgui.GetColorU32({1, 1, 1, 1});
-local IMGUI_COL_BLACK = imgui.GetColorU32({0, 0, 0, 1});
-
 local progressbar = {
 	-- Bookend
 	bookendFilename = 'bookend',
@@ -87,22 +84,22 @@ function GetBookendTexture()
 	return tonumber(ffi.cast("uint32_t", progressbar.bookendTexture));
 end
 
-progressbar.DrawBar = function(startPosition, endPosition, gradientStart, gradientEnd, rounding)
+progressbar.DrawBar = function(startPosition, endPosition, gradientStart, gradientEnd, rounding, cornerFlags)
 	if not rounding then
 		rounding = 0;
 	end
 
 	local gradient = GetGradient(gradientStart, gradientEnd);
 
-	imgui.GetWindowDrawList():AddImageRounded(gradient, startPosition, endPosition, {0, 0}, {1, 1}, IMGUI_COL_WHITE, rounding);
+	imgui.GetWindowDrawList():AddImageRounded(gradient, startPosition, endPosition, {0, 0}, {1, 1}, IM_COL32_WHITE, rounding, cornerFlags);
 end
 
-progressbar.DrawColoredBar = function(startPosition, endPosition, color, rounding)
+progressbar.DrawColoredBar = function(startPosition, endPosition, color, rounding, cornerFlags)
 	if not rounding then
 		rounding = 0;
 	end
 
-	imgui.GetWindowDrawList():AddRectFilled(startPosition, endPosition, color, rounding);
+	imgui.GetWindowDrawList():AddRectFilled(startPosition, endPosition, color, rounding, cornerFlags);
 end
 
 progressbar.DrawBookends = function(positionStartX, positionStartY, width, height)
@@ -111,10 +108,10 @@ progressbar.DrawBookends = function(positionStartX, positionStartY, width, heigh
 	local bookendWidth = height / 2;
 	
 	-- Draw the left bookend
-	imgui.GetWindowDrawList():AddImage(bookendTexture, {positionStartX, positionStartY}, {positionStartX + bookendWidth, positionStartY + height}, {0, 0}, {1, 1}, IMGUI_COL_WHITE);
+	imgui.GetWindowDrawList():AddImage(bookendTexture, {positionStartX, positionStartY}, {positionStartX + bookendWidth, positionStartY + height}, {0, 0}, {1, 1}, IM_COL32_WHITE);
 	
 	-- Draw the right bookend
-	imgui.GetWindowDrawList():AddImage(bookendTexture, {positionStartX + width - bookendWidth, positionStartY}, {positionStartX + width, positionStartY + height}, {1, 1}, {0, 0}, IMGUI_COL_WHITE);
+	imgui.GetWindowDrawList():AddImage(bookendTexture, {positionStartX + width - bookendWidth, positionStartY}, {positionStartX + width, positionStartY + height}, {1, 1}, {0, 0}, IM_COL32_WHITE);
 end
 
 progressbar.ProgressBar  = function(percentList, dimensions, decorate, overlayBar)
@@ -165,6 +162,18 @@ progressbar.ProgressBar  = function(percentList, dimensions, decorate, overlayBa
 	
 	for i, percentData in ipairs(percentList) do
 		local percent = math.clamp(percentData[1], 0, 1);
+
+		local cornerFlags = ImDrawCornerFlags_All;
+
+		if #percentList > 1 then
+			if i == 1 then
+				cornerFlags = ImDrawCornerFlags_Left;
+			elseif i == #percentList then
+				cornerFlags = ImDrawCornerFlags_Right;
+			else
+				cornerFlags = ImDrawCornerFlags_None;
+			end
+		end
 		
 		if percent > 0 then
 			local startColor = percentData[2][1];
@@ -173,7 +182,7 @@ progressbar.ProgressBar  = function(percentList, dimensions, decorate, overlayBa
 			
 			local progressWidth = progressTotalWidth * percent;
 			
-			progressbar.DrawBar({progressPositionStartX + progressOffset, progressPositionStartY}, {progressPositionStartX + progressOffset + progressWidth, progressPositionStartY + progressHeight}, startColor, endColor, progressbar.foregroundRounding);
+			progressbar.DrawBar({progressPositionStartX + progressOffset, progressPositionStartY}, {progressPositionStartX + progressOffset + progressWidth, progressPositionStartY + progressHeight}, startColor, endColor, progressbar.foregroundRounding, cornerFlags);
 
 			if overlayConfiguration then
 				local overlayColor = overlayConfiguration[1];
@@ -182,7 +191,7 @@ progressbar.ProgressBar  = function(percentList, dimensions, decorate, overlayBa
 
 				local overlayBarColor = imgui.GetColorU32({red / 255, green / 255, blue / 255, overlayAlpha});
 
-				progressbar.DrawColoredBar({progressPositionStartX + progressOffset, progressPositionStartY}, {progressPositionStartX + progressOffset + progressWidth, progressPositionStartY + progressHeight}, overlayBarColor, 0);
+				progressbar.DrawColoredBar({progressPositionStartX + progressOffset, progressPositionStartY}, {progressPositionStartX + progressOffset + progressWidth, progressPositionStartY + progressHeight}, overlayBarColor, 0, cornerFlags);
 			end
 			
 			progressOffset = progressOffset + progressWidth;
