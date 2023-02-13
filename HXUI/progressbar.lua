@@ -1,5 +1,6 @@
 require('common');
 require('libs/bitmap');
+require('libs/color');
 local imgui = require('imgui');
 local ffi = require('ffi');
 local d3d = require('d3d8');
@@ -24,33 +25,13 @@ local progressbar = {
 	gradientTextures = {}
 };
 
-function hex2rgb(hex)
-	local hex = hex:gsub("#","")
-	
-	return {tonumber("0x"..hex:sub(1,2)), tonumber("0x"..hex:sub(3,4)), tonumber("0x"..hex:sub(5,6))}
-end
-
-function rgb2hex(red, green, blue)
-	return string.format('#%02x%02x%02x', red, green, blue);
-end
-
-function multiplyHexColor(hex, percent)
-	local rgb = hex2rgb(hex);
-
-	local red = math.min(rgb[1] * percent, 255);
-	local blue = math.min(rgb[2] * percent, 255);
-	local green = math.min(rgb[3] * percent, 255);
-
-	return(rgb2hex(red, green, blue));
-end
-
 function MakeGradientBitmap(startColor, endColor)
 	local height = 100;
 
 	local image = bitmap:new(1, height);
 
-	startColor = hex2rgb(startColor);
-	endColor = hex2rgb(endColor);
+	startColor = table.pack(hex2rgb(startColor));
+	endColor = table.pack(hex2rgb(endColor));
 
 	for pixel = 1, height  do
 		local red = startColor[1] + (endColor[1] - startColor[1]) * (pixel / height);
@@ -229,9 +210,9 @@ progressbar.ProgressBar  = function(percentList, dimensions, decorate, overlayBa
 			end
 
 			local pulseColor = pulseConfiguration[1];
-			pulseColor = hex2rgb(pulseColor);
+			local red, green, blue = hex2rgb(pulseColor);
 
-			local flashColor = imgui.GetColorU32({pulseColor[1] / 255, pulseColor[2] / 255, pulseColor[3] / 255, pulseAlpha});
+			local flashColor = imgui.GetColorU32({red / 255, green / 255, blue / 255, pulseAlpha});
 
 			progressbar.DrawColoredBar({progressPositionStartX, progressPositionStartY + progressHeight - overlayHeight + overlayTopPadding}, {progressPositionStartX + overlayProgressWidth, progressPositionStartY + progressHeight}, flashColor, progressbar.foregroundRounding);
 		end

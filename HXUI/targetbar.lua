@@ -15,8 +15,26 @@ local targetbar = {};
 -- Easing function for HP bar interpolation
 -- Reference: https://easings.net/
 function easeInterpolationPercent(percent)
-	-- Cubic easing out
-	return 1 - math.pow(1 - percent, 3);
+	-- Ease out exponential
+	if percent < 1 then
+		return 1 - math.pow(2, -10 * percent);
+	else
+		return percent;
+	end
+
+	-- Ease out quart
+	-- return 1 - math.pow(1 - percent, 4);
+
+	-- Ease out quint
+	-- return 1 - math.pow(1 - percent, 5);
+end
+
+local _HXUI_DEV_DEBUG_INTERPOLATION = false;
+local _HXUI_DEV_DEBUG_INTERPOLATION_DELAY, _HXUI_DEV_DEBUG_INTERPOLATION_NEXT_TIME;
+
+if _HXUI_DEV_DEBUG_INTERPOLATION then
+	_HXUI_DEV_DEBUG_INTERPOLATION_DELAY = 2;
+	_HXUI_DEV_DEBUG_INTERPOLATION_NEXT_TIME = os.time() + _HXUI_DEV_DEBUG_INTERPOLATION_DELAY;
 end
 
 targetbar.DrawWindow = function(settings)
@@ -52,6 +70,16 @@ targetbar.DrawWindow = function(settings)
     	targetbar.currentHPP = targetEntity.HPPercent;
     	targetbar.previousHPP = targetEntity.HPPercent;
     end
+
+    if _HXUI_DEV_DEBUG_INTERPOLATION then
+	    if os.time() > _HXUI_DEV_DEBUG_INTERPOLATION_NEXT_TIME then
+	    	targetbar.previousHPP = 75;
+	    	targetbar.currentHPP = 50;
+			targetbar.lastHitTime = currentTime;
+
+			_HXUI_DEV_DEBUG_INTERPOLATION_NEXT_TIME = os.time() + 2;
+	    end
+	end
 
     local interpolationPercent;
 
@@ -114,6 +142,10 @@ targetbar.DrawWindow = function(settings)
 		local hpGradientEnd = '#fb9494';
 
 		local hpPercentData = {{targetEntity.HPPercent / 100, {hpGradientStart, hpGradientEnd}}};
+
+		if _HXUI_DEV_DEBUG_INTERPOLATION then
+			hpPercentData[1][1] = 0.5;
+		end
 
 		if interpolationPercent then
 			table.insert(hpPercentData, {interpolationPercent / 100, {'#cf3437', '#c54d4d'}});

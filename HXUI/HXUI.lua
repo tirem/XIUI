@@ -162,8 +162,8 @@ T{
 	-- settings for the targetbar
 	targetBarSettings =
 	T{
-		hitInterpolationMaxTime = 0.25,
-		hitDelayLength = 0.75,
+		hitInterpolationMaxTime = 0.5,
+		hitDelayLength = 0.5,
 		barWidth = 500,
 		barHeight = 18,
 		totBarHeight = 14,
