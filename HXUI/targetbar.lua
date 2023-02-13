@@ -14,7 +14,7 @@ local targetbar = {};
 
 -- Easing function for HP bar interpolation
 -- Reference: https://easings.net/
-function easeInterpolationPercent(percent)
+function easeOutPercent(percent)
 	-- Ease out exponential
 	if percent < 1 then
 		return 1 - math.pow(2, -10 * percent);
@@ -82,6 +82,7 @@ targetbar.DrawWindow = function(settings)
 	end
 
     local interpolationPercent;
+    local interpolationOverlayAlpha = 0;
 
     if targetbar.currentHPP < targetbar.previousHPP then
     	local hppDelta = targetbar.previousHPP - targetbar.currentHPP;
@@ -92,12 +93,21 @@ targetbar.DrawWindow = function(settings)
     		local interpolationTimeElapsed = currentTime - targetbar.lastHitTime - settings.hitDelayLength;
 
     		if interpolationTimeElapsed <= interpolationTimeTotal then
-    			local interpolationTimeElapsedPercent = easeInterpolationPercent(interpolationTimeElapsed / interpolationTimeTotal);
+    			local interpolationTimeElapsedPercent = easeOutPercent(interpolationTimeElapsed / interpolationTimeTotal);
 
     			interpolationPercent = hppDelta * (1 - interpolationTimeElapsedPercent);
     		end
     	elseif currentTime - targetbar.lastHitTime <= settings.hitDelayLength then
     		interpolationPercent = hppDelta;
+
+    		local hitDelayTime = currentTime - targetbar.lastHitTime;
+    		local hitDelayHalfDuration = settings.hitDelayLength / 2;
+
+    		if hitDelayTime > hitDelayHalfDuration then
+    			interpolationOverlayAlpha = 1 - ((hitDelayTime - hitDelayHalfDuration) / hitDelayHalfDuration);
+    		else
+    			interpolationOverlayAlpha = hitDelayTime / hitDelayHalfDuration;
+    		end
     	end
     end
 
@@ -148,7 +158,17 @@ targetbar.DrawWindow = function(settings)
 		end
 
 		if interpolationPercent then
-			table.insert(hpPercentData, {interpolationPercent / 100, {'#cf3437', '#c54d4d'}});
+			table.insert(
+				hpPercentData,
+				{
+					interpolationPercent / 100, -- interpolation percent
+					{'#cf3437', '#c54d4d'}, -- interpolation gradient
+					{
+						'#ffacae', -- overlay color,
+						interpolationOverlayAlpha -- overlay alpha
+					}
+				}
+			);
 		end
 		
 		progressbar.ProgressBar(hpPercentData, {-1, settings.barHeight});

@@ -169,10 +169,21 @@ progressbar.ProgressBar  = function(percentList, dimensions, decorate, overlayBa
 		if percent > 0 then
 			local startColor = percentData[2][1];
 			local endColor = percentData[2][2];
+			local overlayConfiguration = percentData[3];
 			
 			local progressWidth = progressTotalWidth * percent;
 			
 			progressbar.DrawBar({progressPositionStartX + progressOffset, progressPositionStartY}, {progressPositionStartX + progressOffset + progressWidth, progressPositionStartY + progressHeight}, startColor, endColor, progressbar.foregroundRounding);
+
+			if overlayConfiguration then
+				local overlayColor = overlayConfiguration[1];
+				local overlayAlpha = overlayConfiguration[2];
+				local red, green, blue = hex2rgb(overlayColor);
+
+				local overlayBarColor = imgui.GetColorU32({red / 255, green / 255, blue / 255, overlayAlpha});
+
+				progressbar.DrawColoredBar({progressPositionStartX + progressOffset, progressPositionStartY}, {progressPositionStartX + progressOffset + progressWidth, progressPositionStartY + progressHeight}, overlayBarColor, 0);
+			end
 			
 			progressOffset = progressOffset + progressWidth;
 		end
@@ -212,9 +223,9 @@ progressbar.ProgressBar  = function(percentList, dimensions, decorate, overlayBa
 			local pulseColor = pulseConfiguration[1];
 			local red, green, blue = hex2rgb(pulseColor);
 
-			local flashColor = imgui.GetColorU32({red / 255, green / 255, blue / 255, pulseAlpha});
+			local pulseBarColor = imgui.GetColorU32({red / 255, green / 255, blue / 255, pulseAlpha});
 
-			progressbar.DrawColoredBar({progressPositionStartX, progressPositionStartY + progressHeight - overlayHeight + overlayTopPadding}, {progressPositionStartX + overlayProgressWidth, progressPositionStartY + progressHeight}, flashColor, progressbar.foregroundRounding);
+			progressbar.DrawColoredBar({progressPositionStartX, progressPositionStartY + progressHeight - overlayHeight + overlayTopPadding}, {progressPositionStartX + overlayProgressWidth, progressPositionStartY + progressHeight}, pulseBarColor, progressbar.foregroundRounding);
 		end
 	end
 	
