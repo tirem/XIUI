@@ -37,7 +37,6 @@ config.DrawWindow = function(us)
 
             -- Job Icon Theme
             local job_theme_paths = statusHandler.get_job_theme_paths();
-
             if (imgui.BeginCombo('Job Icon Theme', gConfig.jobIconTheme)) then
                 for i = 1,#job_theme_paths,1 do
                     local is_selected = i == gConfig.jobIconTheme;
@@ -91,10 +90,16 @@ config.DrawWindow = function(us)
                 gConfig.showTargetBar = not gConfig.showTargetBar;
                 UpdateSettings();
             end
-            if (imgui.Checkbox('Show Percent', { gConfig.showTargetBarPercent })) then
-                gConfig.showTargetBarPercent = not gConfig.showTargetBarPercent;
+            if (imgui.Checkbox('Show Enemy Id', { gConfig.showEnemyId })) then
+                gConfig.showEnemyId = not gConfig.showEnemyId;
                 UpdateSettings();
             end
+            imgui.ShowHelp('Display the internal ID of the monster next to its name.'); 
+            if (imgui.Checkbox('Always Show Health Percent', { gConfig.alwaysShowHealthPercent })) then
+                gConfig.alwaysShowHealthPercent = not gConfig.alwaysShowHealthPercent;
+                UpdateSettings();
+            end
+            imgui.ShowHelp('Always display the percent of HP remanining regardless if the target is an enemy or not.'); 
             local scaleX = { gConfig.targetBarScaleX };
             if (imgui.SliderFloat('Scale X', scaleX, 0.1, 3.0, '%.1f')) then
                 gConfig.targetBarScaleX = scaleX[1];
@@ -105,9 +110,9 @@ config.DrawWindow = function(us)
                 gConfig.targetBarScaleY = scaleY[1];
                 UpdateSettings();
             end
-            local fontScale = { gConfig.targetBarFontScale };
-            if (imgui.SliderFloat('Font Scale', fontScale, 0.1, 3.0, '%.1f')) then
-                gConfig.targetBarFontScale = fontScale[1];
+            local fontOffset = { gConfig.targetBarFontOffset };
+            if (imgui.SliderInt('Font Offset', fontOffset, -5, 10)) then
+                gConfig.targetBarFontOffset = fontOffset[1];
                 UpdateSettings();
             end
             local iconScale = { gConfig.targetBarIconScale };
@@ -163,6 +168,11 @@ config.DrawWindow = function(us)
             local scaleY = { gConfig.partyListScaleY };
             if (imgui.SliderFloat('Scale Y', scaleY, 0.1, 3.0, '%.1f')) then
                 gConfig.partyListScaleY = scaleY[1];
+                UpdateSettings();
+            end
+            local bgOpacity = { gConfig.partyListBgOpacity };
+            if (imgui.SliderFloat('Background Opacity', bgOpacity, 0, 255, '%.f')) then
+                gConfig.partyListBgOpacity = bgOpacity[1];
                 UpdateSettings();
             end
             local comboBoxItems = {};

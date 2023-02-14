@@ -33,6 +33,52 @@ end
 function GetColorOfTarget(targetEntity, targetIndex)
     -- Obtain the entity spawn flags..
 
+	local color = 0xFFFFFFFF;
+	if (targetIndex == nil) then
+		return color;
+	end
+    local flag = targetEntity.SpawnFlags;
+
+    -- Determine the entity type and apply the proper color
+    if (bit.band(flag, 0x0001) == 0x0001) then --players
+		local party = AshitaCore:GetMemoryManager():GetParty();
+		for i = 0, 17 do
+			if (party:GetMemberIsActive(i) == 1) then
+				if (party:GetMemberTargetIndex(i) == targetIndex) then
+					color = 0xFF00FFFF;
+					break;
+				end
+			end
+		end
+    elseif (bit.band(flag, 0x0002) == 0x0002) then --npc
+        color = 0xFF66FF66;
+    else --mob
+		local entMgr = AshitaCore:GetMemoryManager():GetEntity();
+		local claimStatus = entMgr:GetClaimStatus(targetIndex);
+		local claimId = bit.band(claimStatus, 0xFFFF);
+--		local isClaimed = (bit.band(claimStatus, 0xFFFF0000) ~= 0);
+
+		if (claimId == 0) then
+			color = 0xFFFFFF66;
+		else
+			color = 0xFFFF66FF;
+			local party = AshitaCore:GetMemoryManager():GetParty();
+			for i = 0, 17 do
+				if (party:GetMemberIsActive(i) == 1) then
+					if (party:GetMemberServerId(i) == claimId) then
+						color = 0xFFFF6666;
+						break;
+					end;
+				end
+			end
+		end
+	end
+	return color;
+end
+
+function GetColorOfTargetRGBA(targetEntity, targetIndex)
+    -- Obtain the entity spawn flags..
+
 	local color = {1,1,1,1};
 	if (targetIndex == nil) then
 		return color;
@@ -425,11 +471,13 @@ function IsMemberOfParty(targetIndex)
 	return false;
 end
 
-function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg)
+function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset)
 	if (statusIds ~= nil and #statusIds > 0) then
 		local currentRow = 1;
         local currentColumn = 0;
-
+        if (xOffset ~= nil) then
+            imgui.SetCursorPosX(imgui.GetCursorPosX() + xOffset);
+        end
 		for i = 0,#statusIds do
             local icon = statusHandler.get_icon_from_theme(gConfig.statusIconTheme, statusIds[i]);
             if (icon ~= nil) then
@@ -458,6 +506,9 @@ function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg)
                     currentRow = currentRow + 1;
                     if (currentRow > maxRows) then
                         return;
+                    end
+                    if (xOffset ~= nil) then
+                        imgui.SetCursorPosX(imgui.GetCursorPosX() + xOffset);
                     end
                     currentColumn = 0;
                 end
@@ -529,4 +580,24 @@ function easeOutPercent(percent)
 
     -- Ease out quint
     -- return 1 - math.pow(1 - percent, 5);
+end
+
+function GetHpColors(hpPercent)
+    local hpNameColor;
+    local hpGradient;
+    if (hpPercent < .25) then 
+        hpNameColor = 0xFFFF0000;
+        hpGradient = {"#ec3232", "#f16161"};
+    elseif (hpPercent < .50) then;
+        hpNameColor = 0xFFFFA500;
+        hpGradient = {"#ee9c06", "#ecb44e"};
+    elseif (hpPercent < .75) then
+        hpNameColor = 0xFFFFFF00;
+        hpGradient = {"#ffff0c", "#ffff97"};
+    else
+        hpNameColor = 0xFFFFFFFF;
+        hpGradient = {"#eb7373", "#fa9c9c"};
+    end
+
+    return hpNameColor, hpGradient;
 end

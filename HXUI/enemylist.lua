@@ -61,7 +61,7 @@ enemylist.DrawWindow = function(settings)
 				local targetNameText = ent.Name;
 				if (targetNameText ~= nil) then
 
-					local color = GetColorOfTarget(ent, k);
+					local color = GetColorOfTargetRGBA(ent, k);
 					local y, _  = imgui.CalcTextSize(targetNameText);
 
 					imgui.Dummy({0,settings.entrySpacing});

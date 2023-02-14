@@ -4,13 +4,27 @@ local imgui = require('imgui');
 local statusHandler = require('statushandler');
 local debuffHandler = require('debuffhandler');
 local progressbar = require('progressbar');
+local fonts = require('fonts');
+local ffi = require("ffi");
 
 -- TODO: Calculate these instead of manually setting them
 
 local bgAlpha = 0.4;
 local bgRadius = 3;
 
+local arrowTexture;
+local percentText;
+local nameText;
+local totNameText;
+local distText;
 local targetbar = {};
+
+local function UpdateTextVisibility(visible)
+	percentText:SetVisible(visible);
+	nameText:SetVisible(visible);
+	totNameText:SetVisible(visible);
+	distText:SetVisible(visible);
+end
 
 local _HXUI_DEV_DEBUG_INTERPOLATION = false;
 local _HXUI_DEV_DEBUG_INTERPOLATION_DELAY, _HXUI_DEV_DEBUG_INTERPOLATION_NEXT_TIME;
@@ -25,6 +39,7 @@ targetbar.DrawWindow = function(settings)
     local playerEnt = GetPlayerEntity();
 	local player = AshitaCore:GetMemoryManager():GetPlayer();
     if (playerEnt == nil or player == nil) then
+		UpdateTextVisibility(false);
         return;
     end
 
@@ -37,6 +52,7 @@ targetbar.DrawWindow = function(settings)
 		targetEntity = GetEntity(targetIndex);
 	end
     if (targetEntity == nil or targetEntity.Name == nil) then
+		UpdateTextVisibility(false);
         return;
     end
 
@@ -95,41 +111,22 @@ targetbar.DrawWindow = function(settings)
     end
 
 	local color = GetColorOfTarget(targetEntity, targetIndex);
-	local showTargetId = GetIsMob(targetEntity);
+	local isMonster = GetIsMob(targetEntity);
 
-    imgui.SetNextWindowSize({ settings.barWidth, -1, }, ImGuiCond_Always);
-	
 	-- Draw the main target window
     if (imgui.Begin('TargetBar', true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
-		imgui.SetWindowFontScale(settings.textScale);
-        -- Obtain and prepare target information..
+        
+		-- Obtain and prepare target information..
         local dist  = ('%.1f'):fmt(math.sqrt(targetEntity.Distance));
-        local x, _  = imgui.CalcTextSize(dist);
 		local targetNameText = targetEntity.Name;
-		if (showTargetId) then
+		local targetHpPercent = targetEntity.HPPercent..'%';
+
+		if (gConfig.showEnemyId and isMonster) then
 			local targetServerId = AshitaCore:GetMemoryManager():GetEntity():GetServerId(targetIndex);
 			local targetServerIdHex = string.format('0x%X', targetServerId);
 
-			targetNameText = targetNameText .. " [ID: ".. string.sub(targetServerIdHex, -3) .."]";
+			targetNameText = targetNameText .. " [".. string.sub(targetServerIdHex, -3) .."]";
 		end
-		local nameX, nameY = imgui.CalcTextSize(targetNameText);
-
-		local winX, winY = imgui.GetWindowPos();
-		draw_rect({winX + settings.cornerOffset , winY + settings.cornerOffset}, {winX + nameX + settings.nameXOffset, winY + nameY + settings.nameYOffset}, {0,0,0,bgAlpha}, bgRadius, true);
-
-        -- Display the targets information..
-        imgui.TextColored(color, targetNameText);
-        imgui.SameLine();
-        imgui.SetCursorPosX(imgui.GetCursorPosX() + imgui.GetColumnWidth() - x - imgui.GetStyle().FramePadding.x);
-        imgui.Text(dist);
-
-        --[[
-		if (userSettings.showTargetBarPercent == true) then
-			imgui.ProgressBar(targetEntity.HPPercent / 100, { -1, settings.barHeight});
-		else
-			imgui.ProgressBar(targetEntity.HPPercent / 100, { -1, settings.barHeight}, '');
-		end
-		]]--
 
 		local hpGradientStart = '#e16c6c';
 		local hpGradientEnd = '#fb9494';
@@ -154,68 +151,118 @@ targetbar.DrawWindow = function(settings)
 			);
 		end
 		
-		progressbar.ProgressBar(hpPercentData, {-1, settings.barHeight});
+		local startX, startY = imgui.GetCursorScreenPos();
+		progressbar.ProgressBar(hpPercentData, {settings.barWidth, settings.barHeight});
+
+		local nameSize = SIZE.new();
+		nameText:GetTextSize(nameSize);
+
+		nameText:SetPositionX(startX + settings.barHeight / 2 + settings.topTextXOffset);
+		nameText:SetPositionY(startY - settings.topTextYOffset - nameSize.cy);
+		nameText:SetColor(color);
+		nameText:SetText(targetNameText);
+		nameText:SetVisible(true);
+
+		local distSize = SIZE.new();
+		distText:GetTextSize(distSize);
+
+		distText:SetPositionX(startX + settings.barWidth - settings.barHeight / 2 - settings.topTextXOffset);
+		distText:SetPositionY(startY - settings.topTextYOffset - distSize.cy);
+		distText:SetText(tostring(dist));
+		distText:SetVisible(true);
+
+		if (isMonster or gConfig.alwaysShowHealthPercent) then
+			percentText:SetPositionX(startX + settings.barWidth - settings.barHeight / 2 - settings.bottomTextXOffset);
+			percentText:SetPositionY(startY + settings.barHeight + settings.bottomTextYOffset);
+			percentText:SetText(tostring(targetHpPercent));
+			percentText:SetVisible(true);
+			local hpColor, _ = GetHpColors(targetEntity.HPPercent / 100);
+			percentText:SetColor(hpColor);
+		else
+			percentText:SetVisible(false);
+		end
+
+		-- Draw buffs and debuffs
+		imgui.SameLine();
+		local preBuffX, preBuffY = imgui.GetCursorScreenPos();
+		local buffIds;
+		if (targetEntity == playerEnt) then
+			buffIds = player:GetBuffs();
+		elseif (IsMemberOfParty(targetIndex)) then
+			buffIds = statusHandler.get_member_status(playerTarget:GetServerId(0));
+		else
+			buffIds = debuffHandler.GetActiveDebuffs(playerTarget:GetServerId(0));
+		end
+		imgui.NewLine();
+		imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {1, 3});
+		DrawStatusIcons(buffIds, settings.iconSize, settings.maxIconColumns, 3, false, settings.barHeight/2);
+		imgui.PopStyleVar(1);
+
+		-- Obtain our target of target (not always accurate)
+		local totEntity;
+		local totIndex
+		if (targetEntity == playerEnt) then
+			totIndex = targetIndex
+			totEntity = targetEntity;
+		end
+		if (totEntity == nil) then
+			totIndex = targetEntity.TargetedIndex;
+			if (totIndex ~= nil) then
+				totEntity = GetEntity(totIndex);
+			end
+		end
+		if (totEntity ~= nil and totEntity.Name ~= nil) then
+
+			imgui.SetCursorScreenPos({preBuffX, preBuffY});
+			local totX, totY = imgui.GetCursorScreenPos();
+			local totColor = GetColorOfTarget(totEntity, totIndex);
+			imgui.SetCursorScreenPos({totX, totY + settings.barHeight/2 - settings.arrowSize/2});
+			imgui.Image(tonumber(ffi.cast("uint32_t", arrowTexture.image)), { settings.arrowSize, settings.arrowSize });
+			imgui.SameLine();
+
+			totX, _ = imgui.GetCursorScreenPos();
+			imgui.SetCursorScreenPos({totX, totY - (settings.totBarHeight / 2) + (settings.barHeight/2) + settings.totBarOffset});
+
+			local totStartX, totStartY = imgui.GetCursorScreenPos();
+			progressbar.ProgressBar({{totEntity.HPPercent / 100, {'#e16c6c', '#fb9494'}}}, {settings.barWidth / 3, settings.totBarHeight});
+
+			local totNameSize = SIZE.new();
+			totNameText:GetTextSize(totNameSize);
+
+			totNameText:SetPositionX(totStartX + settings.barHeight / 2);
+			totNameText:SetPositionY(totStartY - totNameSize.cy);
+			totNameText:SetColor(totColor);
+			totNameText:SetText(totEntity.Name);
+			totNameText:SetVisible(true);
+		else
+			totNameText:SetVisible(false);
+		end
     end
-
-	-- Draw buffs and debuffs
-	local buffIds;
-	if (targetEntity == playerEnt) then
-		buffIds = player:GetBuffs();
-	elseif (IsMemberOfParty(targetIndex)) then
-		buffIds = statusHandler.get_member_status(playerTarget:GetServerId(0));
-	else
-		buffIds = debuffHandler.GetActiveDebuffs(playerTarget:GetServerId(0));
-	end
-	imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {1, 3});
-	DrawStatusIcons(buffIds, settings.iconSize, settings.maxIconColumns, 3);
-	imgui.PopStyleVar(1);
-
-	-- End our main bar
 	local winPosX, winPosY = imgui.GetWindowPos();
     imgui.End();
-	
-	
-	-- Obtain our target of target (not always accurate)
-	local totEntity;
-	local totIndex
-	if (targetEntity == playerEnt) then
-		totIndex = targetIndex
-		totEntity = targetEntity;
-	end
-	if (totEntity == nil) then
-		totIndex = targetEntity.TargetedIndex;
-		if (totIndex ~= nil) then
-			totEntity = GetEntity(totIndex);
-		end
-	end
-	if (totEntity == nil) then
-		return;
-	end;
-	local targetNameText = totEntity.Name;
-	if (targetNameText == nil) then
-		return;
-	end;
-	
-	local totColor = GetColorOfTarget(totEntity, totIndex);
-	imgui.SetNextWindowPos({winPosX + settings.barWidth, winPosY + settings.totBarOffset});
-    imgui.SetNextWindowSize({ settings.barWidth / 3, -1, }, ImGuiCond_Always);
-	
-	if (imgui.Begin('TargetOfTargetBar', true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings))) then
-        -- Obtain and prepare target information.
-		imgui.SetWindowFontScale(settings.textScale);
-		
-		local totNameX, totNameY = imgui.CalcTextSize(targetNameText);
-
-		local totwinX, totwinY = imgui.GetWindowPos();
-		draw_rect({totwinX + settings.cornerOffset, totwinY + settings.cornerOffset}, {totwinX + totNameX + settings.nameXOffset, totwinY + totNameY + settings.nameYOffset}, {0,0,0,bgAlpha}, bgRadius, true);
-
-		-- Display the targets information..
-		imgui.TextColored(totColor, targetNameText);
-		--imgui.ProgressBar(totEntity.HPPercent / 100, { -1, settings.totBarHeight }, '');
-		progressbar.ProgressBar({{totEntity.HPPercent / 100, {'#e16c6c', '#fb9494'}}}, {-1, settings.totBarHeight});
-    end
-    imgui.End();
 end
+
+targetbar.Initialize = function(settings)
+    percentText = fonts.new(settings.percent_font_settings);
+	nameText = fonts.new(settings.name_font_settings);
+	totNameText = fonts.new(settings.totName_font_settings);
+	distText = fonts.new(settings.distance_font_settings);
+	arrowTexture = 	LoadTexture("arrow");
+end
+
+targetbar.UpdateFonts = function(settings)
+    percentText:SetFontHeight(settings.percent_font_settings.font_height);
+	nameText:SetFontHeight(settings.name_font_settings.font_height);
+	distText:SetFontHeight(settings.distance_font_settings.font_height);
+	totNameText:SetFontHeight(settings.totName_font_settings.font_height);
+end
+
+targetbar.SetHidden = function(hidden)
+	if (hidden == true) then
+		UpdateTextVisibility(false);
+	end
+end
+
 
 
 return targetbar;

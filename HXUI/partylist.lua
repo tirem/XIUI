@@ -117,25 +117,7 @@ local function DrawMember(memIdx, settings)
     memberText[memIdx].hp:GetTextSize(hpSize);
 
     -- Get the hp color for bars and text
-    local hpNameColor;
-    local hpGradient;
-
-    if (memInfo.hpp == 0) then
-        hpNameColor = 0xFFfdf4f4;
-        hpGradient = {"#fdf4f4", "#fdf4f4"};
-    elseif (memInfo.hpp < .25) then 
-        hpNameColor = 0xFFFF0000;
-        hpGradient = {"#ec3232", "#f16161"};
-    elseif (memInfo.hpp < .50) then;
-        hpNameColor = 0xFFFFA500;
-        hpGradient = {"#ee9c06", "#ecb44e"};
-    elseif (memInfo.hpp < .75) then
-        hpNameColor = 0xFFFFFF00;
-        hpGradient = {"#ffff0c", "#ffff97"};
-    else
-        hpNameColor = 0xFFFEBCBC;
-        hpGradient = {"#eb7373", "#fa9c9c"};
-    end
+    local hpNameColor, hpGradient = GetHpColors(memInfo.hpp);
 
     local allBarsLengths = settings.hpBarWidth + settings.mpBarWidth + settings.tpBarWidth + (settings.barSpacing * 2) + (imgui.GetStyle().FramePadding.x * 4);
 
@@ -236,20 +218,16 @@ local function DrawMember(memIdx, settings)
 		progressbar.ProgressBar({{mainPercent, tpGradient}}, {settings.tpBarWidth, settings.barHeight}, true, tpOverlay);
 
         -- Update the mp text
-        if (memInfo.mpp >= 1) then 
-            memberText[memIdx].mp:SetColor(0xFFCBDFA1);
-        else
-            memberText[memIdx].mp:SetColor(0xFFE8F1D7);
-        end
+        memberText[memIdx].mp:SetColor(gAdjustedSettings.mpColor);
         memberText[memIdx].mp:SetPositionX(mpStartX + settings.mpBarWidth + settings.mpTextOffsetX);
         memberText[memIdx].mp:SetPositionY(mpStartY + settings.barHeight + settings.mpTextOffsetY);
         memberText[memIdx].mp:SetText(tostring(memInfo.mp));
 
         -- Update the tp text
         if (memInfo.tp >= 1000) then 
-            memberText[memIdx].tp:SetColor(0xFF0096ff);
+            memberText[memIdx].tp:SetColor(gAdjustedSettings.tpFullColor);
         else
-            memberText[memIdx].tp:SetColor(0xFF8FC7E6);
+            memberText[memIdx].tp:SetColor(gAdjustedSettings.tpEmptyColor);
         end	
         memberText[memIdx].tp:SetPositionX(tpStartX + settings.tpBarWidth + settings.tpTextOffsetX);
         memberText[memIdx].tp:SetPositionY(tpStartY + settings.barHeight + settings.tpTextOffsetY);
@@ -390,8 +368,8 @@ partyList.DrawWindow = function(settings)
             local imguiPosX, imguiPosY = imgui.GetWindowPos();
             backgroundPrim.position_x = imguiPosX - settings.backgroundPaddingX1;
             backgroundPrim.position_y = imguiPosY - settings.backgroundPaddingY1;
-            backgroundPrim.scale_x = (fullMenuSizeX + settings.backgroundPaddingX1 + settings.backgroundPaddingX2) / 280;
-            backgroundPrim.scale_y = (fullMenuSizeY - settings.entrySpacing + settings.backgroundPaddingY1 + settings.backgroundPaddingY2 - (settings.nameTextOffsetY + nameSize.cy)) / 384;
+            backgroundPrim.scale_x = (fullMenuSizeX + settings.backgroundPaddingX1 + settings.backgroundPaddingX2) / 408;
+            backgroundPrim.scale_y = (fullMenuSizeY - settings.entrySpacing + settings.backgroundPaddingY1 + settings.backgroundPaddingY2 - (settings.nameTextOffsetY + nameSize.cy)) / 408;
         end
         partyTargeted = false;
         partySubTargeted = false;
@@ -423,7 +401,7 @@ partyList.Initialize = function(settings)
     end
     
     backgroundPrim = primitives:new(settings.primData);
-    backgroundPrim.color = 0xFFFFFFFF;
+    backgroundPrim.color = tonumber(string.format('%02x%02x%02x%02x', gConfig.partyListBgOpacity, 255, 255, 255), 16);
     backgroundPrim.texture = string.format('%s/assets/plist_bg.png', addon.path);
     backgroundPrim.visible = false;
 
@@ -446,6 +424,7 @@ partyList.UpdateFonts = function(settings)
         memberText[i].mp:SetFontHeight(settings.mp_font_settings.font_height);
         memberText[i].tp:SetFontHeight(settings.tp_font_settings.font_height);
     end
+    backgroundPrim.color = tonumber(string.format('%02x%02x%02x%02x', gConfig.partyListBgOpacity, 255, 255, 255), 16);
 end
 
 partyList.SetHidden = function(hidden)

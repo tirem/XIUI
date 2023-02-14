@@ -118,29 +118,12 @@ playerbar.DrawWindow = function(settings)
     imgui.SetNextWindowSize({ settings.barWidth + settings.barSpacing * 2, -1, }, ImGuiCond_Always);
 		
     if (imgui.Begin('PlayerBar', true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
-		local hpNameColor;
-		local hpGradient;
+
+		local hpNameColor, hpGradient = GetHpColors(SelfHPPercent);
 
 		local SelfJob = GetJobStr(party:GetMemberMainJob(0));
 		local SelfSubJob = GetJobStr(party:GetMemberSubJob(0));
 		local bShowMp = buffTable.IsSpellcaster(SelfJob) or buffTable.IsSpellcaster(SelfSubJob) or gConfig.alwaysShowMpBar;
-
-		if (SelfHPPercent == 0) then
-			hpNameColor = 0xFFfdf4f4;
-			hpGradient = {"#fdf4f4", "#fdf4f4"};
-		elseif (SelfHPPercent < 25) then 
-			hpNameColor = 0xFFFF0000;
-			hpGradient = {"#ec3232", "#f16161"};
-		elseif (SelfHPPercent < 50) then;
-			hpNameColor = 0xFFFFA500;
-			hpGradient = {"#ee9c06", "#ecb44e"};
-		elseif (SelfHPPercent < 75) then
-			hpNameColor = 0xFFFFFF00;
-			hpGradient = {"#ffff0c", "#ffff97"};
-		else
-			hpNameColor = 0xFFFEBCBC;
-			hpGradient = {"#eb7373", "#fa9c9c"};
-		end
 
 		-- Draw HP Bar (two bars to fake animation
 		local hpX = imgui.GetCursorPosX();
@@ -242,12 +225,7 @@ playerbar.DrawWindow = function(settings)
 			mpText:SetPositionX(mpLocX - settings.barSpacing - settings.barHeight / 2);
 			mpText:SetPositionY(mpLocY + settings.barHeight + settings.textYOffset);
 			mpText:SetText(tostring(SelfMP));
-
-			if (SelfMPPercent / 100 >= 1 or SelfMPMax == 0) then 
-				mpText:SetColor(0xFFCBDFA1);
-			else
-				mpText:SetColor(0xFFE8F1D7);
-		    end
+			mpText:SetColor(gAdjustedSettings.mpColor);
 		end
 
 		mpText:SetVisible(bShowMp);
@@ -258,9 +236,9 @@ playerbar.DrawWindow = function(settings)
 		tpText:SetText(tostring(SelfTP));
 
 		if (SelfTP >= 1000) then 
-			tpText:SetColor(0xFF0096ff);
+			tpText:SetColor(gAdjustedSettings.tpFullColor);
 		else
-			tpText:SetColor(0xFF8FC7E6);
+			tpText:SetColor(gAdjustedSettings.tpEmptyColor);
 	    end
 
 		tpText:SetVisible(true);
