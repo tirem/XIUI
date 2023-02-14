@@ -236,12 +236,13 @@ local function DrawMember(memIdx, settings)
         memberText[memIdx].tp:SetText(tostring(memInfo.tp));
 
         -- Draw targeted
+        local entrySize = hpSize.cy + nameSize.cy + settings.hpTextOffsetY + settings.nameTextOffsetY + settings.barHeight + settings.cursorPaddingY1 + settings.cursorPaddingY2;
         if (memInfo.targeted == true) then
             selectionPrim.visible = true;
             selectionPrim.position_x = hpStartX - settings.cursorPaddingX1;
             selectionPrim.position_y = hpStartY - nameSize.cy - settings.nameTextOffsetY - settings.cursorPaddingY1;
-            selectionPrim.scale_x = (allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2) / 280;
-            selectionPrim.scale_y = (hpSize.cy + nameSize.cy + settings.hpTextOffsetY + settings.nameTextOffsetY + settings.barHeight + settings.cursorPaddingY1 + settings.cursorPaddingY2) / 66;
+            selectionPrim.scale_x = (allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2) / 173;
+            selectionPrim.scale_y = entrySize / 54;
             partyTargeted = true;
         end
 
@@ -251,7 +252,7 @@ local function DrawMember(memIdx, settings)
             local newArrowX =  memberText[memIdx].name:GetPositionX() - arrowPrim:GetWidth();
             newArrowX = newArrowX - settings.iconSize;
             arrowPrim.position_x = newArrowX;
-            arrowPrim.position_y = memberText[memIdx].name:GetPositionY();
+            arrowPrim.position_y = (hpStartY - nameSize.cy - settings.nameTextOffsetY - settings.cursorPaddingY1) + (entrySize/2) - arrowPrim:GetHeight()/2;
             arrowPrim.scale_x = settings.arrowSize;
             arrowPrim.scale_y = settings.arrowSize;
             partySubTargeted = true;
