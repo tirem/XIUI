@@ -209,7 +209,7 @@ config.DrawWindow = function(us)
                 end
                 imgui.EndCombo();
             end
-            imgui.ShowHelp('The image to use for the party list background. [Resolution: 408x408 @ HXUI\\assets\\backgrounds]'); 
+            imgui.ShowHelp('The image to use for the party list background. [Resolution: 512x512 @ HXUI\\assets\\backgrounds]'); 
             
             -- Arrow
             local cursor_paths = statusHandler.get_cursor_paths();
