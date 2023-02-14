@@ -437,9 +437,9 @@ T{
 		backgroundPaddingY2 = 0,
 
 		cursorPaddingX1 = 3,
-		cursorPaddingX2 = -3,
+		cursorPaddingX2 = 3,
 		cursorPaddingY1 = 3,
-		cursorPaddingY2 = 0,
+		cursorPaddingY2 = 3,
 		dotRadius = 3,
 
 		arrowSize = 1;
