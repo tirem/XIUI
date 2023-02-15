@@ -48,7 +48,7 @@ patchNotes.DrawWindow = function()
 	imgui.PushStyleColor(ImGuiCol_TitleBg, {0,0.06,.16, .7});
 	imgui.PushStyleColor(ImGuiCol_TitleBgActive, {0,0.06,.16, .9});
 	imgui.PushStyleColor(ImGuiCol_TitleBgCollapsed, {0,0.06,.16, .5});
-    if (gShowPatchNotes[1] and imgui.Begin('HXUI_PatchNotes', gShowPatchNotes, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
+    if (gShowPatchNotes[1] and imgui.Begin('HXUI PatchNotes', gShowPatchNotes, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
 		imgui.Image(tonumber(ffi.cast("uint32_t", HXUITexture.image)), { 83, 53});
 		imgui.SameLine()
 		imgui.Image(tonumber(ffi.cast("uint32_t", PatchVerTexture.image)), { 130, 21});
