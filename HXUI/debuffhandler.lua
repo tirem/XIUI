@@ -9,6 +9,7 @@ T{
     enemies = T{};
 };
 
+-- TO DO: Audit these messages for which ones are actually useful
 local statusOnMes = T{166, 186, 194, 205, 230, 236, 266, 267, 268, 269, 237, 271, 272, 277, 278, 279, 280, 319, 320, 375, 412, 754, 755, 804};
 local statusOffMes = T{206, 64, 159, 168, 321, 322, 341, 342, 343, 344, 350, 378, 531, 647, 805, 806};
 local deathMes = T{6, 20, 113, 406, 605, 646};
