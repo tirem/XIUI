@@ -13,6 +13,7 @@ T{
 local statusOnMes = T{166, 186, 194, 205, 230, 236, 266, 267, 268, 269, 237, 271, 272, 277, 278, 279, 280, 319, 320, 375, 412, 754, 755, 804};
 local statusOffMes = T{206, 64, 159, 168, 321, 322, 341, 342, 343, 344, 350, 378, 531, 647, 805, 806};
 local deathMes = T{6, 20, 113, 406, 605, 646};
+local spellDamageMes = T{2, 252, 264, 265};
 
 local function ApplyMessage(debuffs, action)
 
@@ -33,7 +34,7 @@ local function ApplyMessage(debuffs, action)
                 end
                 
                 -- Bio and Dia
-                if action.Type == 4 and T{2, 264}:contains(message) then
+                if action.Type == 4 and spellDamageMes:contains(message) then
                     local expiry = nil
 
                     if spell == 23 or spell == 33 or spell == 230 then
