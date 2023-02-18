@@ -153,7 +153,7 @@ T{
 	partyListTheme = 0, -- 0: HorizonXI, 1: XIV1.0, 2: XIV
 	partyListBgOpacity = 255;
 	partyListCursor = 'BlueArrow.png',
-	partyListBackground = 'BlueGradient.png',
+	partyListBackground = 'GreyGradient.png',
 
 	castBarScaleX = 1,
 	castBarScaleY = 1,
@@ -440,12 +440,14 @@ T{
 		backgroundPaddingY2 = 0,
 
 		cursorPaddingX1 = 4,
-		cursorPaddingX2 = 4,
+		cursorPaddingX2 = 0,
 		cursorPaddingY1 = 6,
 		cursorPaddingY2 = 6,
 		dotRadius = 3,
 
 		arrowSize = 1;
+
+		subtargetArrowTint = 0xFFfdd017,
 
 		iconSize = 20,
 		maxIconColumns = 6,

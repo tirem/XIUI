@@ -241,8 +241,8 @@ local function DrawMember(memIdx, settings)
             selectionPrim.visible = true;
             selectionPrim.position_x = hpStartX - settings.cursorPaddingX1;
             selectionPrim.position_y = hpStartY - nameSize.cy - settings.nameTextOffsetY - settings.cursorPaddingY1;
-            selectionPrim.scale_x = (allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2) / 173;
-            selectionPrim.scale_y = entrySize / 54;
+            selectionPrim.scale_x = (allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2) / 356;
+            selectionPrim.scale_y = entrySize / 108;
             partyTargeted = true;
         end
 
@@ -255,6 +255,11 @@ local function DrawMember(memIdx, settings)
             arrowPrim.position_y = (hpStartY - nameSize.cy - settings.nameTextOffsetY - settings.cursorPaddingY1) + (entrySize/2) - arrowPrim:GetHeight()/2;
             arrowPrim.scale_x = settings.arrowSize;
             arrowPrim.scale_y = settings.arrowSize;
+            if (memInfo.targeted == false) then
+                arrowPrim.color = settings.subtargetArrowTint;
+            else
+                arrowPrim.color = 0xFFFFFFFF;
+            end
             partySubTargeted = true;
         end
 
