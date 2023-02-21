@@ -14,7 +14,7 @@ config.DrawWindow = function(us)
     imgui.PushStyleColor(ImGuiCol_HeaderHovered, {0,0.06,.16, .9});
     imgui.PushStyleColor(ImGuiCol_HeaderActive, {0,0.06,.16, 1});
     imgui.PushStyleColor(ImGuiCol_FrameBg, {0,0.06,.16, 1});
-    imgui.SetNextWindowSize({ 500, 500 }, ImGuiCond_FirstUseEver);
+    imgui.SetNextWindowSize({ 550, 600 }, ImGuiCond_FirstUseEver);
     if(showConfig[1] and imgui.Begin(("HXUI Config"):fmt(addon.version), showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
         if(imgui.Button("Restore Defaults", { 130, 20 })) then
             ResetSettings();
@@ -48,6 +48,7 @@ config.DrawWindow = function(us)
                 end
                 imgui.EndCombo();
             end
+            imgui.ShowHelp('The folder to pull status icons from. [HXUI\\assets\\status]');
 
             -- Job Icon Theme
             local job_theme_paths = statusHandler.get_job_theme_paths();
@@ -67,6 +68,7 @@ config.DrawWindow = function(us)
                 end
                 imgui.EndCombo();
             end
+            imgui.ShowHelp('The folder to pull job icons from. [HXUI\\assets\\jobs]');
 
             imgui.EndChild();
         end
