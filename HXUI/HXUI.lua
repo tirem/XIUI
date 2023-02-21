@@ -177,9 +177,9 @@ T{
 	targetBarSettings =
 	T{
 		-- Damage interpolation
-		hitInterpolationDecayPercentPerSecond = 75,
-		hitDelayDuration = 0.6,
-		hitFlashDuration = 1,
+		hitInterpolationDecayPercentPerSecond = 150,
+		hitDelayDuration = 0.5,
+		hitFlashDuration = 0.4,
 
 		-- Everything else
 		barWidth = 500,

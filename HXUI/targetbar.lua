@@ -77,8 +77,8 @@ targetbar.DrawWindow = function(settings)
 			local totalDamageInstances = 10;
 
 			for i = 1, totalDamageInstances do
-				local hitDelay = math.random(0.25 * 100, 1.5 * 100) / 100;
-				local damageAmount = math.random(5, 20);
+				local hitDelay = math.random(0.25 * 100, 1.25 * 100) / 100;
+				local damageAmount = math.random(1, 20);
 
 				if i > 1 and i < totalDamageInstances then
 					previousHp = math.max(previousHp - damageAmount, 0);
@@ -112,13 +112,22 @@ targetbar.DrawWindow = function(settings)
 
 		targetbar.interpolation.interpolationDamagePercent = targetbar.interpolation.interpolationDamagePercent + damageAmount;
 
-		targetbar.interpolation.lastHitTime = currentTime;
+		if previousInterpolationDamagePercent > 0 and targetbar.interpolation.lastHitAmount and damageAmount > targetbar.interpolation.lastHitAmount then
+			targetbar.interpolation.lastHitTime = currentTime;
+			targetbar.interpolation.lastHitAmount = damageAmount;
+		elseif previousInterpolationDamagePercent == 0 then
+			targetbar.interpolation.lastHitTime = currentTime;
+			targetbar.interpolation.lastHitAmount = damageAmount;
+		end
+
+		if not targetbar.interpolation.lastHitTime or currentTime > targetbar.interpolation.lastHitTime + (settings.hitFlashDuration * 0.25) then
+			targetbar.interpolation.lastHitTime = currentTime;
+			targetbar.interpolation.lastHitAmount = damageAmount;
+		end
 
 		-- If we previously were interpolating with an empty bar, reset the hit delay effect
 		if previousInterpolationDamagePercent == 0 then
-			if not targetbar.interpolation.hitDelayStartTime or currentTime > targetbar.interpolation.hitDelayStartTime + settings.hitDelayDuration then
-				targetbar.interpolation.hitDelayStartTime = currentTime;
-			end
+			targetbar.interpolation.hitDelayStartTime = currentTime;
 		end
 	elseif hppPercent > targetbar.interpolation.currentHpp then
 		-- If the target heals
@@ -133,7 +142,7 @@ targetbar.DrawWindow = function(settings)
 		if targetbar.interpolation.lastFrameTime then
 			local deltaTime = currentTime - targetbar.interpolation.lastFrameTime;
 
-			local animSpeed = 0.4 + (0.6 * (targetbar.interpolation.interpolationDamagePercent / 100));
+			local animSpeed = 0.1 + (0.9 * (targetbar.interpolation.interpolationDamagePercent / 100));
 
 			-- animSpeed = math.max(settings.hitDelayMinAnimSpeed, animSpeed);
 
@@ -148,7 +157,12 @@ targetbar.DrawWindow = function(settings)
 		local hitFlashTime = currentTime - targetbar.interpolation.lastHitTime;
 		local hitFlashTimePercent = hitFlashTime / settings.hitFlashDuration;
 
-		targetbar.interpolation.overlayAlpha = math.pow(1 - hitFlashTimePercent, 3);
+		local maxAlphaHitPercent = 20;
+		local maxAlpha = math.min(targetbar.interpolation.lastHitAmount, maxAlphaHitPercent) / maxAlphaHitPercent;
+
+		maxAlpha = math.max(maxAlpha * 0.75, 0.4);
+
+		targetbar.interpolation.overlayAlpha = math.pow(1 - hitFlashTimePercent, 2) * maxAlpha;
 	end
 
 	targetbar.interpolation.lastFrameTime = currentTime;
@@ -188,7 +202,7 @@ targetbar.DrawWindow = function(settings)
 					{'#cf3437', '#c54d4d'}, -- interpolation gradient
 					{
 						'#FFFFFF', -- overlay color,
-						targetbar.interpolation.overlayAlpha * 0.5 -- overlay alpha,
+						targetbar.interpolation.overlayAlpha -- overlay alpha,
 					}
 				}
 			);
