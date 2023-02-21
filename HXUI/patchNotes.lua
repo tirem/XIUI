@@ -73,6 +73,8 @@ patchNotes.DrawWindow = function()
 		imgui.NewLine();
 		imgui.BulletText('Better tracking for buffs/debuffs (includes more bard songs!)');
 		imgui.NewLine();
+		imgui.BulletText('General performance improvements');
+		imgui.NewLine();
     end
 	imgui.PopStyleColor(4);
 	imgui.End();

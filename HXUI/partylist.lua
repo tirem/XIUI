@@ -297,7 +297,7 @@ local function DrawMember(memIdx, settings)
                 end
 
                 if (debuffs ~= nil and #debuffs > 0) then
-                    if (gConfig.partyListStatusTheme == 0 and buffWindowX[memIdx] ~= nil) then
+                    if (gConfig.partyListStatusTheme == 0 and debuffWindowX[memIdx] ~= nil) then
                         imgui.SetNextWindowPos({hpStartX - debuffWindowX[memIdx] - settings.buffOffset , memberText[memIdx].name:GetPositionY() + settings.iconSize});
                     elseif (gConfig.partyListStatusTheme == 1 and fullMenuSizeX ~= nil) then
                         local thisPosX, _ = imgui.GetWindowPos();
