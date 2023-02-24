@@ -41,7 +41,11 @@ castbar.DrawWindow = function(settings)
 	if ((percent < 1 and percent ~= castbar.previousPercent) or showConfig[1]) then
 		imgui.SetNextWindowSize({settings.barWidth, -1});
 
-		if (imgui.Begin('CastBar', true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
+		local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+		if (gConfig.lockPositions) then
+			windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
+		end
+		if (imgui.Begin('CastBar', true, windowFlags)) then
 			local startX, startY = imgui.GetCursorScreenPos();
 
 			-- Create progress bar

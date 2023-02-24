@@ -28,8 +28,11 @@ config.DrawWindow = function(us)
         end
         imgui.BeginChild("Config Options", { 0, 0 }, true);
         if (imgui.CollapsingHeader("General")) then
-            imgui.BeginChild("GeneralSettings", { 0, 100 }, true);
-            
+            imgui.BeginChild("GeneralSettings", { 0, 200 }, true);
+            if (imgui.Checkbox('Lock HUD Position', { gConfig.lockPositions })) then
+                gConfig.lockPositions = not gConfig.lockPositions;
+                UpdateSettings();
+            end
             -- Status Icon Theme
             local status_theme_paths = statusHandler.get_status_theme_paths();
             if (imgui.BeginCombo('Status Icon Theme', gConfig.statusIconTheme)) then

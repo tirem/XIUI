@@ -41,8 +41,11 @@ expbar.DrawWindow = function(settings)
 	end
 	
     imgui.SetNextWindowSize({ settings.barWidth, -1, }, ImGuiCond_Always);
-		
-    if (imgui.Begin('ExpBar', true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
+	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+	if (gConfig.lockPositions) then
+		windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
+	end
+    if (imgui.Begin('ExpBar', true, windowFlags)) then
 
 		-- Draw HP Bar (two bars to fake animation
 		local expPercent = currentExp / totalExp;

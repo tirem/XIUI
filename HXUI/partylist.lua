@@ -373,7 +373,11 @@ partyList.DrawWindow = function(settings)
         return;
 	end
 
-    if (imgui.Begin('PartyList', true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus))) then
+    local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+    if (gConfig.lockPositions) then
+        windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
+    end
+    if (imgui.Begin('PartyList', true, windowFlags)) then
         local nameSize = SIZE.new();
         local hpSize = SIZE.new();
         memberText[0].name:GetTextSize(nameSize);

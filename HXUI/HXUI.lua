@@ -103,6 +103,8 @@ T{
 	patchNotesVer = -1,
 
 	noBookendRounding = 4,
+	lockPositions = false,
+
 
 	showPlayerBar = true,
 	showTargetBar = true,

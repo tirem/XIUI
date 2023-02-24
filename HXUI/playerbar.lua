@@ -119,7 +119,11 @@ playerbar.DrawWindow = function(settings)
 	
     imgui.SetNextWindowSize({ settings.barWidth + settings.barSpacing * 2, -1, }, ImGuiCond_Always);
 		
-    if (imgui.Begin('PlayerBar', true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
+	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+	if (gConfig.lockPositions) then
+		windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
+	end
+    if (imgui.Begin('PlayerBar', true, windowFlags)) then
 
 		local hpNameColor, hpGradient = GetHpColors(SelfHPPercent/100);
 

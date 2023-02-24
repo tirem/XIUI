@@ -36,7 +36,11 @@ enemylist.DrawWindow = function(settings)
 
 	imgui.SetNextWindowSize({ settings.barWidth, -1, }, ImGuiCond_Always);
 	-- Draw the main target window
-	if (imgui.Begin('EnemyList', true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground))) then
+	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+	if (gConfig.lockPositions) then
+		windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
+	end
+	if (imgui.Begin('EnemyList', true, windowFlags)) then
 		imgui.SetWindowFontScale(settings.textScale);
 		local winStartX, winStartY = imgui.GetWindowPos();
 		local playerTarget = AshitaCore:GetMemoryManager():GetTarget();
@@ -62,8 +66,6 @@ enemylist.DrawWindow = function(settings)
 				if (targetNameText ~= nil) then
 
 					local color = GetColorOfTargetRGBA(ent, k);
-					local y, _  = imgui.CalcTextSize(targetNameText);
-
 					imgui.Dummy({0,settings.entrySpacing});
 					local rectLength = imgui.GetColumnWidth() + imgui.GetStyle().FramePadding.x;
 					
@@ -72,7 +74,7 @@ enemylist.DrawWindow = function(settings)
 
 					-- Figure out sizing on the background
 					local cornerOffset = settings.bgTopPadding;
-					local xDist, yDist = imgui.CalcTextSize(targetNameText);
+					local _, yDist = imgui.CalcTextSize(targetNameText);
 					if (yDist > settings.barHeight) then
 						yDist = yDist + yDist;
 					else
@@ -111,7 +113,6 @@ enemylist.DrawWindow = function(settings)
 					imgui.SameLine();
 					imgui.SetCursorPosX(imgui.GetCursorPosX() - 3);
 					-- imgui.ProgressBar(ent.HPPercent / 100, { -1, settings.barHeight}, '');
-					local options 
 					progressbar.ProgressBar({{ent.HPPercent / 100, {'#e16c6c', '#fb9494'}}}, {-1, settings.barHeight}, {decorate = gConfig.showEnemyListBookends});
 					imgui.SameLine();
 
