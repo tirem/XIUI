@@ -53,7 +53,7 @@ castbar.DrawWindow = function(settings)
 			imgui.PopStyleColor(1);
 			]]--
 			
-			progressbar.ProgressBar({{showConfig[1] and 0.5 or percent, {'#3798ce', '#78c5ee'}}}, {-1, settings.barHeight});
+			progressbar.ProgressBar({{showConfig[1] and 0.5 or percent, {'#3798ce', '#78c5ee'}}}, {-1, settings.barHeight}, {decorate = gConfig.showCastBarBookends});
 
 			-- Draw Spell/Item name
 			imgui.SameLine();

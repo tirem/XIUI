@@ -14,7 +14,7 @@ config.DrawWindow = function(us)
     imgui.PushStyleColor(ImGuiCol_HeaderHovered, {0,0.06,.16, .9});
     imgui.PushStyleColor(ImGuiCol_HeaderActive, {0,0.06,.16, 1});
     imgui.PushStyleColor(ImGuiCol_FrameBg, {0,0.06,.16, 1});
-    imgui.SetNextWindowSize({ 550, 600 }, ImGuiCond_FirstUseEver);
+    imgui.SetNextWindowSize({ 600, 600 }, ImGuiCond_FirstUseEver);
     if(showConfig[1] and imgui.Begin(("HXUI Config"):fmt(addon.version), showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
         if(imgui.Button("Restore Defaults", { 130, 20 })) then
             ResetSettings();
@@ -75,12 +75,23 @@ config.DrawWindow = function(us)
                 UpdateSettings();
             end
 
+            local noBookendRounding = { gConfig.noBookendRounding };
+            if (imgui.SliderInt('No Bookend Rounding', noBookendRounding, 0, 10)) then
+                gConfig.noBookendRounding = noBookendRounding[1];
+                UpdateSettings();
+            end
+            imgui.ShowHelp('For bars with no decoration, how round they should be.');
+
             imgui.EndChild();
         end
         if (imgui.CollapsingHeader("Player Bar")) then
             imgui.BeginChild("PlayerBarSettings", { 0, 160 }, true);
             if (imgui.Checkbox('Enabled', { gConfig.showPlayerBar })) then
                 gConfig.showPlayerBar = not gConfig.showPlayerBar;
+                UpdateSettings();
+            end
+            if (imgui.Checkbox('Show Bookends', { gConfig.showPlayerBarBookends })) then
+                gConfig.showPlayerBarBookends = not gConfig.showPlayerBarBookends;
                 UpdateSettings();
             end
             if (imgui.Checkbox('Always Show MP Bar', { gConfig.alwaysShowMpBar })) then
@@ -109,6 +120,10 @@ config.DrawWindow = function(us)
             imgui.BeginChild("TargetBarSettings", { 0, 200 }, true);
             if (imgui.Checkbox('Enabled', { gConfig.showTargetBar })) then
                 gConfig.showTargetBar = not gConfig.showTargetBar;
+                UpdateSettings();
+            end
+            if (imgui.Checkbox('Show Bookends', { gConfig.showTargetBarBookends })) then
+                gConfig.showTargetBarBookends = not gConfig.showTargetBarBookends;
                 UpdateSettings();
             end
             if (imgui.Checkbox('Show Enemy Id', { gConfig.showEnemyId })) then
@@ -145,8 +160,12 @@ config.DrawWindow = function(us)
         end
         if (imgui.CollapsingHeader("Enemy List")) then
             imgui.BeginChild("EnemyListSettings", { 0, 160 }, true);
-            if (imgui.Checkbox(' Enabled', { gConfig.showEnemyList })) then
+            if (imgui.Checkbox('Enabled', { gConfig.showEnemyList })) then
                 gConfig.showEnemyList = not gConfig.showEnemyList;
+                UpdateSettings();
+            end
+            if (imgui.Checkbox('Show Bookends', { gConfig.showEnemyListBookends })) then
+                gConfig.showEnemyListBookends = not gConfig.showEnemyListBookends;
                 UpdateSettings();
             end
             local scaleX = { gConfig.enemyListScaleX };
@@ -175,6 +194,10 @@ config.DrawWindow = function(us)
             imgui.BeginChild("PartyListSettings", { 0, 280 }, true);
             if (imgui.Checkbox('Enabled', { gConfig.showPartyList })) then
                 gConfig.showPartyList = not gConfig.showPartyList;
+                UpdateSettings();
+            end
+            if (imgui.Checkbox('Show Bookends', { gConfig.showPartyListBookends })) then
+                gConfig.showPartyListBookends = not gConfig.showPartyListBookends;
                 UpdateSettings();
             end
             if (imgui.Checkbox('Show When Solo', { gConfig.showPartyListWhenSolo })) then
@@ -275,8 +298,12 @@ config.DrawWindow = function(us)
         end
         if (imgui.CollapsingHeader("Exp Bar")) then
             imgui.BeginChild("ExpBarSettings", { 0, 160 }, true);
-            if (imgui.Checkbox(' Enabled', { gConfig.showExpBar })) then
+            if (imgui.Checkbox('Enabled', { gConfig.showExpBar })) then
                 gConfig.showExpBar = not gConfig.showExpBar;
+                UpdateSettings();
+            end
+            if (imgui.Checkbox('Show Bookends', { gConfig.showExpBarBookends })) then
+                gConfig.showExpBarBookends = not gConfig.showExpBarBookends;
                 UpdateSettings();
             end
             local scaleX = { gConfig.expBarScaleX };
@@ -298,7 +325,7 @@ config.DrawWindow = function(us)
         end
         if (imgui.CollapsingHeader("Gil Tracker")) then
             imgui.BeginChild("GilTrackerSettings", { 0, 160 }, true);
-            if (imgui.Checkbox(' Enabled', { gConfig.showGilTracker })) then
+            if (imgui.Checkbox('Enabled', { gConfig.showGilTracker })) then
                 gConfig.showGilTracker = not gConfig.showGilTracker;
                 UpdateSettings();
             end
@@ -334,8 +361,12 @@ config.DrawWindow = function(us)
         end
         if (imgui.CollapsingHeader("Cast Bar")) then
             imgui.BeginChild("CastBarSettings", { 0, 160 }, true);
-            if (imgui.Checkbox(' Enabled', { gConfig.showCastBar })) then
+            if (imgui.Checkbox('Enabled', { gConfig.showCastBar })) then
                 gConfig.showCastBar = not gConfig.showCastBar;
+                UpdateSettings();
+            end
+            if (imgui.Checkbox('Show Bookends', { gConfig.showCastBarBookends })) then
+                gConfig.showCastBarBookends = not gConfig.showCastBarBookends;
                 UpdateSettings();
             end
             local scaleX = { gConfig.castBarScaleX };

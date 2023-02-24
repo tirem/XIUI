@@ -138,7 +138,8 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 	local contentWidth = width;
 	local contentPositionStartX = positionStartX;
 	local contentPositionStartY = positionStartY;
-	
+	local rounding;
+
 	-- Draw the bookends!
 	if options.decorate then
 		local bookendWidth = height / 2;
@@ -158,7 +159,8 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 		bgGradientEnd = options.backgroundGradientOverride[2];
 	end
 
-	progressbar.DrawBar({contentPositionStartX, contentPositionStartY}, {contentPositionStartX + contentWidth, contentPositionStartY + height}, bgGradientStart, bgGradientEnd, progressbar.backgroundRounding);
+	rounding = options.decorate and progressbar.backgroundRounding or gConfig.noBookendRounding;
+	progressbar.DrawBar({contentPositionStartX, contentPositionStartY}, {contentPositionStartX + contentWidth, contentPositionStartY + height}, bgGradientStart, bgGradientEnd, rounding);
 	
 	-- Compute the actual progress bar's width and height
 	local paddingHalf = progressbar.foregroundPadding / 2;
@@ -194,7 +196,8 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 			
 			local progressWidth = progressTotalWidth * percent;
 			
-			progressbar.DrawBar({progressPositionStartX + progressOffset, progressPositionStartY}, {progressPositionStartX + progressOffset + progressWidth, progressPositionStartY + progressHeight}, startColor, endColor, progressbar.foregroundRounding, cornerFlags);
+			rounding = options.decorate and progressbar.foregroundRounding or gConfig.noBookendRounding;
+			progressbar.DrawBar({progressPositionStartX + progressOffset, progressPositionStartY}, {progressPositionStartX + progressOffset + progressWidth, progressPositionStartY + progressHeight}, startColor, endColor, rounding, cornerFlags);
 
 			if overlayConfiguration then
 				local overlayColor = overlayConfiguration[1];
@@ -215,7 +218,8 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 
 				local overlayBarColor = imgui.GetColorU32({red / 255, green / 255, blue / 255, overlayAlpha});
 
-				progressbar.DrawColoredBar({progressPositionStartX + progressOffset, progressPositionStartY}, {progressPositionStartX + progressOffset + overlayWidth, progressPositionStartY + progressHeight}, overlayBarColor, progressbar.foregroundRounding, cornerFlags);
+				rounding = options.decorate and progressbar.foregroundRounding or gConfig.noBookendRounding;
+				progressbar.DrawColoredBar({progressPositionStartX + progressOffset, progressPositionStartY}, {progressPositionStartX + progressOffset + overlayWidth, progressPositionStartY + progressHeight}, overlayBarColor, rounding, cornerFlags);
 			end
 			
 			progressOffset = progressOffset + progressWidth;
@@ -233,12 +237,14 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 		local overlayWidth = progressTotalWidth;
 
 		-- Draw the overlay background
-		progressbar.DrawBar({progressPositionStartX, progressPositionStartY + progressHeight - overlayHeight}, {progressPositionStartX + overlayWidth, progressPositionStartY + progressHeight}, progressbar.backgroundGradientStartColor, progressbar.backgroundGradientEndColor, progressbar.backgroundRounding);
+		rounding = options.decorate and progressbar.backgroundRounding or gConfig.noBookendRounding;
+		progressbar.DrawBar({progressPositionStartX, progressPositionStartY + progressHeight - overlayHeight}, {progressPositionStartX + overlayWidth, progressPositionStartY + progressHeight}, progressbar.backgroundGradientStartColor, progressbar.backgroundGradientEndColor, rounding);
 
 		-- Draw the overlay progress bar
 		local overlayProgressWidth = overlayWidth * overlayPercent;
 
-		progressbar.DrawBar({progressPositionStartX, progressPositionStartY + progressHeight - overlayHeight + overlayTopPadding}, {progressPositionStartX + overlayProgressWidth, progressPositionStartY + progressHeight}, overlayGradientStart, overlayGradientEnd, progressbar.foregroundRounding);
+		rounding = options.decorate and progressbar.foregroundRounding or gConfig.noBookendRounding;
+		progressbar.DrawBar({progressPositionStartX, progressPositionStartY + progressHeight - overlayHeight + overlayTopPadding}, {progressPositionStartX + overlayProgressWidth, progressPositionStartY + progressHeight}, overlayGradientStart, overlayGradientEnd, rounding);
 
 		-- Allow optional pulsing of overlay bars
 		local pulseConfiguration = options.overlayBar[4];
@@ -258,15 +264,16 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 
 			local pulseBarColor = imgui.GetColorU32({red / 255, green / 255, blue / 255, pulseAlpha});
 
-			progressbar.DrawColoredBar({progressPositionStartX, progressPositionStartY + progressHeight - overlayHeight + overlayTopPadding}, {progressPositionStartX + overlayProgressWidth, progressPositionStartY + progressHeight}, pulseBarColor, progressbar.foregroundRounding);
+			rounding = options.decorate and progressbar.foregroundRounding or gConfig.noBookendRounding;
+			progressbar.DrawColoredBar({progressPositionStartX, progressPositionStartY + progressHeight - overlayHeight + overlayTopPadding}, {progressPositionStartX + overlayProgressWidth, progressPositionStartY + progressHeight}, pulseBarColor, rounding);
 		end
 	end
 
 	if options.borderConfig then
 		local borderWidth = options.borderConfig[1];
 		local borderColorRed, borderColorGreen, borderColorBlue = hex2rgb(options.borderConfig[2]);
-
-		imgui.GetWindowDrawList():AddRect({positionStartX - (borderWidth / 2), positionStartY - (borderWidth / 2)}, {positionStartX + width + (borderWidth / 2), positionStartY + height + (borderWidth / 2)}, imgui.GetColorU32({borderColorRed / 255, borderColorGreen / 255, borderColorBlue / 255, 1}), height / 2, ImDrawCornerFlags_All, borderWidth);
+		rounding = options.decorate and height/2 or gConfig.noBookendRounding;
+		imgui.GetWindowDrawList():AddRect({positionStartX - (borderWidth / 2), positionStartY - (borderWidth / 2)}, {positionStartX + width + (borderWidth / 2), positionStartY + height + (borderWidth / 2)}, imgui.GetColorU32({borderColorRed / 255, borderColorGreen / 255, borderColorBlue / 255, 1}), rounding, ImDrawCornerFlags_All, borderWidth);
 	end
 	
 	imgui.Dummy({width, height});

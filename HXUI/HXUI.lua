@@ -23,13 +23,12 @@
 ]]--
 
 addon.name      = 'HXUI';
-addon.author    = 'Team HXUI';
+addon.author    = 'Team HXUI (Tirem, Shuu, colorglut, RheaCloud)';
 addon.version   = '0.1.1';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/HXUI'
 
 require('common');
-local imgui = require('imgui');
 local settings = require('settings');
 local playerBar = require('playerbar');
 local targetBar = require('targetbar');
@@ -103,6 +102,8 @@ local user_settings =
 T{
 	patchNotesVer = -1,
 
+	noBookendRounding = 4,
+
 	showPlayerBar = true,
 	showTargetBar = true,
 	showEnemyList = true,
@@ -121,12 +122,14 @@ T{
 	playerBarScaleX = 1,
 	playerBarScaleY = 1,
 	playerBarFontOffset = 0,
+	showPlayerBarBookends = true,
 	alwaysShowMpBar = true,
 
 	targetBarScaleX = 1,
 	targetBarScaleY = 1,
 	targetBarFontOffset = 0,
 	targetBarIconScale = 1,
+	showTargetBarBookends = true,
 	showEnemyId = false;
 	alwaysShowHealthPercent = false,
 
@@ -134,9 +137,11 @@ T{
 	enemyListScaleY = 1,
 	enemyListFontScale = 1,
 	enemyListIconScale = 1,
+	showEnemyListBookends = true,
 
 	expBarScaleX = 1,
 	expBarScaleY = 1,
+	showExpBarBookends = true,
 	expBarFontOffset = 0,
 
 	gilTrackerScale = 1,
@@ -152,11 +157,13 @@ T{
 	partyListStatusTheme = 0, -- 0: HorizonXI-L, 1: HorizonXI-R 2: XIV1.0, 3: XIV, 4: Disabled
 	partyListTheme = 0, 
 	partyListBgOpacity = 255;
+	showPartyListBookends = true,
 	partyListCursor = 'BlueArrow.png',
 	partyListBackground = 'GreyGradient.png',
 
 	castBarScaleX = 1,
 	castBarScaleY = 1,
+	showCastBarBookends = true,
 	castBarFontOffset = 0,
 
 	healthBarFlashEnabled = true,
@@ -447,8 +454,8 @@ T{
 
 		cursorPaddingX1 = 4,
 		cursorPaddingX2 = 4,
-		cursorPaddingY1 = 6,
-		cursorPaddingY2 = 6,
+		cursorPaddingY1 = 8,
+		cursorPaddingY2 = 4,
 		dotRadius = 3,
 
 		arrowSize = 1;

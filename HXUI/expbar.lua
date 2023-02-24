@@ -51,7 +51,7 @@ expbar.DrawWindow = function(settings)
 		-- imgui.ProgressBar(expPercent, { -1, settings.barHeight }, '');
 		-- imgui.PopStyleColor(1);
 
-		progressbar.ProgressBar({{expPercent, {'#c39040', '#e9c466'}}}, {-1, settings.barHeight});
+		progressbar.ProgressBar({{expPercent, {'#c39040', '#e9c466'}}}, {-1, settings.barHeight}, {decorate = gConfig.showExpBarBookends});
 
 		imgui.SameLine();
 		

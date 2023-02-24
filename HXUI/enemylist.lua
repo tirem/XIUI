@@ -111,7 +111,8 @@ enemylist.DrawWindow = function(settings)
 					imgui.SameLine();
 					imgui.SetCursorPosX(imgui.GetCursorPosX() - 3);
 					-- imgui.ProgressBar(ent.HPPercent / 100, { -1, settings.barHeight}, '');
-					progressbar.ProgressBar({{ent.HPPercent / 100, {'#e16c6c', '#fb9494'}}}, {-1, settings.barHeight});
+					local options 
+					progressbar.ProgressBar({{ent.HPPercent / 100, {'#e16c6c', '#fb9494'}}}, {-1, settings.barHeight}, {decorate = gConfig.showEnemyListBookends});
 					imgui.SameLine();
 
 					imgui.Separator();

@@ -217,7 +217,7 @@ targetbar.DrawWindow = function(settings)
 		end
 		
 		local startX, startY = imgui.GetCursorScreenPos();
-		progressbar.ProgressBar(hpPercentData, {settings.barWidth, settings.barHeight});
+		progressbar.ProgressBar(hpPercentData, {settings.barWidth, settings.barHeight}, {decorate = gConfig.showTargetBarBookends});
 
 		local nameSize = SIZE.new();
 		nameText:GetTextSize(nameSize);
@@ -289,7 +289,7 @@ targetbar.DrawWindow = function(settings)
 			imgui.SetCursorScreenPos({totX, totY - (settings.totBarHeight / 2) + (settings.barHeight/2) + settings.totBarOffset});
 
 			local totStartX, totStartY = imgui.GetCursorScreenPos();
-			progressbar.ProgressBar({{totEntity.HPPercent / 100, {'#e16c6c', '#fb9494'}}}, {settings.barWidth / 3, settings.totBarHeight});
+			progressbar.ProgressBar({{totEntity.HPPercent / 100, {'#e16c6c', '#fb9494'}}}, {settings.barWidth / 3, settings.totBarHeight}, {decorate = gConfig.showTargetBarBookends});
 
 			local totNameSize = SIZE.new();
 			totNameText:GetTextSize(totNameSize);
