@@ -368,9 +368,9 @@ function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffs
                     local bgIcon;
                     local isBuff = buffTable.IsBuff(statusIds[i]);
                     local bgSize = iconSize * 1.1;
-                    local yOffset = bgSize * -0.10;
+                    local yOffset = bgSize * -0.1;
                     if (isBuff) then
-                        yOffset = bgSize * -0.30;
+                        yOffset = bgSize * -0.3;
                     end
                     imgui.SetCursorScreenPos({resetX - ((bgSize - iconSize) / 1.5), resetY + yOffset});
                     bgIcon = statusHandler.GetBackground(isBuff);

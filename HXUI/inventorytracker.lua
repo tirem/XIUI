@@ -70,7 +70,6 @@ inventoryTracker.DrawWindow = function(settings)
 
 		imgui.Dummy({winSizeX,winSizeY});
 		local locX, locY = imgui.GetWindowPos();
-		local invSlot = 0;
 
 		for i = 1, maxBagSlots do
 			local groupNum = math.ceil(i / numPerGroup);
