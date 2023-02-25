@@ -287,7 +287,7 @@ T{
     [597] = 1, -- INUNDATION',
     [630] = 1, -- TAINT',
     [631] = 1, -- HAUNT',
-    -- Buffs, unlabeled for now
+    -- Buffs
     [32] = 0, --    FLEE                    
     [33] = 0, --    HASTE                   
     [34] = 0, --    BLAZE_SPIKES            

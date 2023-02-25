@@ -24,7 +24,7 @@
 
 addon.name      = 'HXUI';
 addon.author    = 'Team HXUI (Tirem, Shuu, colorglut, RheaCloud)';
-addon.version   = '0.1.1';
+addon.version   = '1.1.1';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/HXUI'
 
@@ -180,7 +180,7 @@ T{
 local default_settings =
 T{
 	-- global settings
-	currentPatchVer = 1,
+	currentPatchVer = 2,
 	tpEmptyColor = 0xFF9acce8,
 	tpFullColor = 0xFF2fa9ff,
 	mpColor = 0xFFdef2db,

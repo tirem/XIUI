@@ -52,28 +52,28 @@ patchNotes.DrawWindow = function()
 		imgui.Image(tonumber(ffi.cast("uint32_t", HXUITexture.image)), { 83, 53});
 		imgui.SameLine()
 		imgui.Image(tonumber(ffi.cast("uint32_t", PatchVerTexture.image)), { 130, 21});
+		imgui.SameLine()
+		imgui.BulletText(' HOTFIX 1');
+		imgui.SameLine()
+		imgui.BulletText('');
 		imgui.NewLine();
 		imgui.Image(tonumber(ffi.cast("uint32_t", NewTexture.image)), { 30, 13});
 		imgui.NewLine();
-		imgui.BulletText('Themed bars across all widgets');
+		imgui.BulletText('Fixed crash with certain tooltips');
 		imgui.NewLine();
-		imgui.BulletText('Cast Bar Support: Cast spells and move the bar around!');
+		imgui.BulletText('Added more config options to the cast bar and party list');
 		imgui.NewLine();
-		imgui.BulletText('Added additional customization options. (/hxui)');
+		imgui.BulletText('Fixed issue with HorizonXI-R status theme');
 		imgui.NewLine();
-		imgui.BulletText('All menus now hide when hiding FFXI UI');
+		imgui.BulletText('Fixed issue with TP bar clipping in player bar');
 		imgui.NewLine();
-		imgui.BulletText('Additional icon themes for job icons');
+		imgui.BulletText('Added ability to lock HUD elements');
 		imgui.NewLine();
-		imgui.BulletText('Additional icon themes for buffs & debuffs');
+		imgui.BulletText('Added ability to show/hide bar bookends');
 		imgui.NewLine();
-		imgui.BulletText('Updated damage taken visuals for HP bars');
+		imgui.BulletText('Updated padding in party list for better customization at small sizes');
 		imgui.NewLine();
-		imgui.BulletText('Updated visuals for many widgets');
-		imgui.NewLine();
-		imgui.BulletText('Better buff & debuff tracking (including bard songs & pet debuffs)');
-		imgui.NewLine();
-		imgui.BulletText('Large performance improvements');
+		imgui.BulletText('Added classic Final Fantasy job icons');
 		imgui.NewLine();
     end
 	imgui.PopStyleColor(4);
