@@ -440,8 +440,8 @@ T{
 		barSpacing = 0,
 		entrySpacing = 0,
 
-		nameTextOffsetX = 0,
-		nameTextOffsetY = 5,
+		nameTextOffsetX = 1,
+		nameTextOffsetY = 0,
 		hpTextOffsetX = -2,
 		hpTextOffsetY = -3,
 		mpTextOffsetX = -2,
@@ -456,8 +456,8 @@ T{
 
 		cursorPaddingX1 = 4,
 		cursorPaddingX2 = 4,
-		cursorPaddingY1 = 8,
-		cursorPaddingY2 = 4,
+		cursorPaddingY1 = 6,
+		cursorPaddingY2 = 6,
 		dotRadius = 3,
 
 		arrowSize = 1;
@@ -467,7 +467,7 @@ T{
 		iconSize = 20,
 		maxIconColumns = 6,
 		buffOffset = 10,
-		xivBuffOffsetY = 5;
+		xivBuffOffsetY = 1;
 
 		hp_font_settings = 
 		T{

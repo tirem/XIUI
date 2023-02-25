@@ -291,106 +291,6 @@ function ParseActionPacket(e)
     end
 end
 
---[[
-function ParseActionPacket_Windower(e)
-    -- Collect top-level metadata. The category field will provide the context
-    -- for the rest of the packet - that should be enough information to figure
-    -- out what each target and action field are used for.
-    local maxLength = e.size * 8;
-    local packet = e.data_raw;
-    local function UnpackBits_Safe(bitData, bitOffset, length)
-        if ((bitOffset + length) >= maxLength) then
-            maxLength = 0; --Using this as a flag since any malformed fields mean the data is trash anyway.
-            return 0;
-        end
-        return ashita.bits.unpack_be(bitData, 0, bitOffset, length);
-    end
-
-    ---@type ActionPacket
-    local action = {
-        -- Windower code leads me to believe param and recast might be at
-        -- different indices - 102 and 134, respectively. Confusing.
-        actor_id     = UnpackBits_Safe(packet,  40, 32),
-        target_count = UnpackBits_Safe(packet,  72,  8),
-        category     = UnpackBits_Safe(packet,  82,  4),
-        param        = UnpackBits_Safe(packet,  86, 10),
-        recast       = UnpackBits_Safe(packet, 118, 10),
-        unknown      = 0,
-        targets      = {}
-    }
-
-    local bit_offset = 150
-
-    -- Collect target information. The ID is the server ID, not the entity idx.
-    for i = 1, action.target_count do
-        action.targets[i] = {
-            id           = UnpackBits_Safe(packet, bit_offset,      32),
-            action_count = UnpackBits_Safe(packet, bit_offset + 32,  4),
-            actions      = {}
-        }
-
-        -- Collect per-target action information. This is where more identifiers
-        -- for what's being used lie - often the animation can be used for that
-        -- purpose. Otherwise the message may be what you want.
-        for j = 1, action.targets[i].action_count do
-            action.targets[i].actions[j] = {
-                reaction  = UnpackBits_Safe(packet, bit_offset + 36,  5),
-                animation = UnpackBits_Safe(packet, bit_offset + 41, 11),
-                effect    = UnpackBits_Safe(packet, bit_offset + 53,  2),
-                stagger   = UnpackBits_Safe(packet, bit_offset + 55,  7),
-                param     = UnpackBits_Safe(packet, bit_offset + 63, 17),
-                message   = UnpackBits_Safe(packet, bit_offset + 80, 10),
-                unknown   = UnpackBits_Safe(packet, bit_offset + 90, 31)
-            }
-
-            -- Collect additional effect information for the action. This is
-            -- where you'll find information about skillchains, enspell damage,
-            -- et cetera.
-            if UnpackBits_Safe(packet, bit_offset + 121, 1) == 1 then
-                action.targets[i].actions[j].has_add_effect       = true
-                action.targets[i].actions[j].add_effect_animation = UnpackBits_Safe(packet, bit_offset + 122, 10)
-                action.targets[i].actions[j].add_effect_effect    = nil -- unknown value
-                action.targets[i].actions[j].add_effect_param     = UnpackBits_Safe(packet, bit_offset + 132, 17)
-                action.targets[i].actions[j].add_effect_message   = UnpackBits_Safe(packet, bit_offset + 149, 10)
-
-                bit_offset = bit_offset + 37
-            else
-                action.targets[i].actions[j].has_add_effect       = false
-                action.targets[i].actions[j].add_effect_animation = nil
-                action.targets[i].actions[j].add_effect_effect    = nil
-                action.targets[i].actions[j].add_effect_param     = nil
-                action.targets[i].actions[j].add_effect_message   = nil
-            end
-
-            -- Collect spike effect information for the action.
-            if ashita.bits.unpack_be(packet, bit_offset + 122, 1) == 1 then
-                action.targets[i].actions[j].has_spike_effect       = true
-                action.targets[i].actions[j].spike_effect_animation = UnpackBits_Safe(packet, bit_offset + 123, 10)
-                action.targets[i].actions[j].spike_effect_effect    = nil -- unknown value
-                action.targets[i].actions[j].spike_effect_param     = UnpackBits_Safe(packet, bit_offset + 133, 14)
-                action.targets[i].actions[j].spike_effect_message   = UnpackBits_Safe(packet, bit_offset + 147, 10)
-
-                bit_offset = bit_offset + 34
-            else
-                action.targets[i].actions[j].has_spike_effect       = false
-                action.targets[i].actions[j].spike_effect_animation = nil
-                action.targets[i].actions[j].spike_effect_effect    = nil
-                action.targets[i].actions[j].spike_effect_param     = nil
-                action.targets[i].actions[j].spike_effect_message   = nil
-            end
-
-            bit_offset = bit_offset + 87
-        end
-
-        bit_offset = bit_offset + 36
-    end
-
-    if (maxLength ~= 0 and action.target_count > 0) then
-        return action
-    end
-end
-]]--
-
 function ParseMobUpdatePacket(e)
 	if (e.id == 0x00E) then
 		local mobPacket = T{};
@@ -467,10 +367,10 @@ function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffs
                     local resetX, resetY = imgui.GetCursorScreenPos();
                     local bgIcon;
                     local isBuff = buffTable.IsBuff(statusIds[i]);
-                    local bgSize = iconSize * 1.2;
-                    local yOffset = bgSize * -0.15;
+                    local bgSize = iconSize * 1.1;
+                    local yOffset = bgSize * -0.10;
                     if (isBuff) then
-                        yOffset = bgSize * -0.35;
+                        yOffset = bgSize * -0.30;
                     end
                     imgui.SetCursorScreenPos({resetX - ((bgSize - iconSize) / 1.5), resetY + yOffset});
                     bgIcon = statusHandler.GetBackground(isBuff);

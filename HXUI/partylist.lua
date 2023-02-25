@@ -129,13 +129,14 @@ local function DrawMember(memIdx, settings)
     local hpStartX, hpStartY = imgui.GetCursorScreenPos();
 
     -- Draw the job icon in the FFXIV theme before we draw anything else
-    local namePosX = hpStartX + settings.nameTextOffsetX;
+    local namePosX = hpStartX;
     if (memInfo.inzone) then
-        imgui.SetCursorScreenPos({namePosX, hpStartY - settings.iconSize - settings.nameTextOffsetY});
-        namePosX = namePosX + settings.iconSize;
+        local jobIconSize = settings.iconSize * 1.1;
+        imgui.SetCursorScreenPos({namePosX, hpStartY - jobIconSize - settings.nameTextOffsetY});
+        namePosX = namePosX + jobIconSize + settings.nameTextOffsetX;
         local jobIcon = statusHandler.GetJobIcon(memInfo.job);
         if (jobIcon ~= nil) then
-            imgui.Image(jobIcon, {settings.iconSize, settings.iconSize});
+            imgui.Image(jobIcon, {jobIconSize, jobIconSize});
         end
         imgui.SetCursorScreenPos({hpStartX, hpStartY});
     end
@@ -286,7 +287,7 @@ local function DrawMember(memIdx, settings)
                         imgui.SetNextWindowPos({thisPosX + fullMenuSizeX, memberText[memIdx].name:GetPositionY() - settings.iconSize/2});
                     end
                     if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings))) then
-                        imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {5, 1});
+                        imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {3, 1});
                         DrawStatusIcons(buffs, settings.iconSize, 32, 1, true);
                         imgui.PopStyleVar(1);
                     end
@@ -304,7 +305,7 @@ local function DrawMember(memIdx, settings)
                         imgui.SetNextWindowPos({thisPosX + fullMenuSizeX , memberText[memIdx].name:GetPositionY() + settings.iconSize});
                     end
                     if (imgui.Begin('PlayerDebuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings))) then
-                        imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {5, 1});
+                        imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {3, 1});
                         DrawStatusIcons(debuffs, settings.iconSize, 32, 1, true);
                         imgui.PopStyleVar(1);
                     end
