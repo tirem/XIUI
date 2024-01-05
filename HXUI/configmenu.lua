@@ -354,6 +354,16 @@ config.DrawWindow = function(us)
                 gConfig.gilTrackerFontOffset = fontOffset[1];
                 UpdateSettings();
             end
+            if (imgui.Checkbox('Right Align', { gConfig.gilTrackerRightAlign })) then
+                gConfig.gilTrackerRightAlign = not gConfig.gilTrackerRightAlign;
+                UpdateSettings();
+            end
+            local posOffset = { gConfig.gilTrackerPosOffset[1], gConfig.gilTrackerPosOffset[2] };
+            if (imgui.InputInt2('Position Offset', posOffset)) then
+                gConfig.gilTrackerPosOffset[1] = posOffset[1];
+                gConfig.gilTrackerPosOffset[2] = posOffset[2];
+                UpdateSettings();
+            end
             imgui.EndChild();
         end
         if (imgui.CollapsingHeader("Inventory Tracker")) then

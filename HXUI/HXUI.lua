@@ -149,6 +149,8 @@ T{
 
 	gilTrackerScale = 1,
 	gilTrackerFontOffset = 0,
+    gilTrackerPosOffset = { 0, -7 },
+    gilTrackerRightAlign = true,
 
 	inventoryTrackerScale = 1,
 	inventoryTrackerFontOffset = 0,
@@ -696,6 +698,13 @@ local function UpdateUserSettings()
 	-- Gil Tracker
 	gAdjustedSettings.gilTrackerSettings.iconScale = ns.gilTrackerSettings.iconScale * us.gilTrackerScale;
 	gAdjustedSettings.gilTrackerSettings.font_settings.font_height = math.max(ns.gilTrackerSettings.font_settings.font_height + us.gilTrackerFontOffset, 1);
+    gAdjustedSettings.gilTrackerSettings.font_settings.right_justified = us.gilTrackerRightAlign;
+    if (us.gilTrackerRightAlign) then
+        gAdjustedSettings.gilTrackerSettings.offsetX = ns.gilTrackerSettings.offsetX + us.gilTrackerPosOffset[1];
+    else
+        gAdjustedSettings.gilTrackerSettings.offsetX = (ns.gilTrackerSettings.offsetX + us.gilTrackerPosOffset[1]) * -1;
+    end
+    gAdjustedSettings.gilTrackerSettings.offsetY = us.gilTrackerPosOffset[2];
 	
 	-- Inventory Tracker
 	gAdjustedSettings.inventoryTrackerSettings.dotRadius = ns.inventoryTrackerSettings.dotRadius * us.inventoryTrackerScale;

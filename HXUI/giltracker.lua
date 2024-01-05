@@ -19,8 +19,9 @@ end
 giltracker.DrawWindow = function(settings)
     -- Obtain the player entity..
     local player = AshitaCore:GetMemoryManager():GetPlayer();
+    local playerEnt = GetPlayerEntity();
 
-	if (player == nil) then
+	if (player == nil or playerEnt == nil) then
 		UpdateTextVisibility(false);
 		return;
 	end
@@ -53,14 +54,14 @@ giltracker.DrawWindow = function(settings)
 		imgui.Image(tonumber(ffi.cast("uint32_t", gilTexture.image)), { settings.iconScale, settings.iconScale });
 
 		gilText:SetText(FormatInt(gilAmount.Count));
-		gilText:SetPositionX(cursorX + settings.offsetX);
+        local posOffsetX = settings.font_settings.right_justified and settings.offsetX or settings.offsetX + settings.iconScale;
+		gilText:SetPositionX(cursorX + posOffsetX);
 		gilText:SetPositionY(cursorY + (settings.iconScale/2) + settings.offsetY);
 
-		UpdateTextVisibility(true);	
+		UpdateTextVisibility(true);
     end
 	imgui.End();
 end
-
 
 giltracker.Initialize = function(settings)
     gilText = fonts.new(settings.font_settings);
@@ -69,6 +70,7 @@ end
 
 giltracker.UpdateFonts = function(settings)
     gilText:SetFontHeight(settings.font_settings.font_height);
+    gilText:SetRightJustified(settings.font_settings.right_justified);
 end
 
 giltracker.SetHidden = function(hidden)
