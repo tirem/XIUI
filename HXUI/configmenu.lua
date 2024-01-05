@@ -158,7 +158,7 @@ config.DrawWindow = function(us)
                 gConfig.alwaysShowHealthPercent = not gConfig.alwaysShowHealthPercent;
                 UpdateSettings();
             end
-            imgui.ShowHelp('Always display the percent of HP remanining regardless if the target is an enemy or not.'); 
+            imgui.ShowHelp('Always display the percent of HP remanining regardless if the target is an enemy or not.');
             local scaleX = { gConfig.targetBarScaleX };
             if (imgui.SliderFloat('Scale X', scaleX, 0.1, 3.0, '%.1f')) then
                 gConfig.targetBarScaleX = scaleX[1];
@@ -237,6 +237,11 @@ config.DrawWindow = function(us)
             end
             if (imgui.Checkbox('Expand Height', { gConfig.partyListExpandHeight })) then
                 gConfig.partyListExpandHeight = not gConfig.partyListExpandHeight;
+                UpdateSettings();
+            end
+            local minRows = { gConfig.partyListMinRows };
+            if (imgui.SliderInt('Min Rows', minRows, 1, 6)) then
+                gConfig.partyListMinRows = minRows[1];
                 UpdateSettings();
             end
             local scaleX = { gConfig.partyListScaleX };

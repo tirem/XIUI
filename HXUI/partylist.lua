@@ -109,31 +109,26 @@ local function DrawMember(memIdx, settings)
 
     local memInfo = GetMemberInformation(memIdx);
     if (memInfo == nil) then
-        if (settings.expandHeight) then
-            -- dummy data to render an empty space
-            memInfo = {};
-            memInfo.hp = 0;
-            memInfo.hpp = 0;
-            memInfo.maxhp = 0;
-            memInfo.mp = 0;
-            memInfo.mpp = 0;
-            memInfo.maxmp = 0;
-            memInfo.tp = 0;
-            memInfo.job = '';
-            memInfo.level = '';
-            memInfo.targeted = false;
-            memInfo.serverid = 0;
-            memInfo.buffs = nil;
-            memInfo.sync = false;
-            memInfo.subTargeted = false;
-            memInfo.zone = '';
-            memInfo.inzone = false;
-            memInfo.name = '';
-            memInfo.leader = false;
-        else
-            UpdateTextVisibilityByMember(memIdx, false);
-            return;
-        end
+        -- dummy data to render an empty space
+        memInfo = {};
+        memInfo.hp = 0;
+        memInfo.hpp = 0;
+        memInfo.maxhp = 0;
+        memInfo.mp = 0;
+        memInfo.mpp = 0;
+        memInfo.maxmp = 0;
+        memInfo.tp = 0;
+        memInfo.job = '';
+        memInfo.level = '';
+        memInfo.targeted = false;
+        memInfo.serverid = 0;
+        memInfo.buffs = nil;
+        memInfo.sync = false;
+        memInfo.subTargeted = false;
+        memInfo.zone = '';
+        memInfo.inzone = false;
+        memInfo.name = '';
+        memInfo.leader = false;
     end
 
     local subTargetActive = GetSubTargetActive();
@@ -371,7 +366,15 @@ partyList.DrawWindow = function(settings)
 		return;
 	end
 	local currJob = player:GetMainJob();
-    if (player.isZoning or currJob == 0 or (not gConfig.showPartyListWhenSolo and party:GetMemberIsActive(1) == 0)) then
+    local partyMemberCount = 1;
+    for i = 1, 5 do
+        if (party:GetMemberIsActive(i) ~= 0) then
+            partyMemberCount = partyMemberCount + 1
+        else
+            break
+        end
+    end
+    if (player.isZoning or currJob == 0 or (not gConfig.showPartyListWhenSolo and partyMemberCount == 1)) then
 		UpdateTextVisibility(false);
         return;
 	end
@@ -402,8 +405,11 @@ partyList.DrawWindow = function(settings)
         partySubTargeted = false;
         UpdateTextVisibility(true);
         for i = 0, 5 do
-            -- Remove all padding and draw each member
-            DrawMember(i, settings);
+            if (settings.expandHeight or i < partyMemberCount or i < settings.minRows) then
+                DrawMember(i, settings);
+            else
+                UpdateTextVisibilityByMember(i, false);
+            end
         end
         if (partyTargeted == false) then
             selectionPrim.visible = false;

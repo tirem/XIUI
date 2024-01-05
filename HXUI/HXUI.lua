@@ -176,6 +176,7 @@ T{
     partyListHideDuringEvents = true,
     partyListExpandHeight = false,
     partyListAlignBottom = false,
+    partyListMinRows = 1,
 
 	castBarScaleX = 1,
 	castBarScaleY = 1,
@@ -484,6 +485,7 @@ T{
 		entrySpacing = 8,
         expandHeight = false,
         alignBottom = false,
+        minRows = 1,
 
 		hp_font_settings = 
 		T{
@@ -691,6 +693,7 @@ local function UpdateUserSettings()
 	gAdjustedSettings.partyListSettings.entrySpacing = ns.partyListSettings.entrySpacing + us.partyListEntrySpacing;
     gAdjustedSettings.partyListSettings.expandHeight = us.partyListExpandHeight;
     gAdjustedSettings.partyListSettings.alignBottom = us.partyListAlignBottom;
+    gAdjustedSettings.partyListSettings.minRows = us.partyListMinRows;
 
 	-- Player Bar
 	gAdjustedSettings.playerBarSettings.barWidth = ns.playerBarSettings.barWidth * us.playerBarScaleX;
