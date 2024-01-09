@@ -920,9 +920,20 @@ ashita.events.register('command', 'command_cb', function (e)
 	-- Parse the command arguments
 	local command_args = e.command:lower():args()
     if table.contains({'/horizonui', '/hui', '/hxui', '/horizonxiui'}, command_args[1]) then
-		-- Toggle the config menu
-		showConfig[1] = not showConfig[1];
 		e.blocked = true;
+
+        -- Toggle the config menu
+        if (#command_args == 1) then
+            showConfig[1] = not showConfig[1];
+            return;
+        end
+
+        -- Toggle the party list
+        if (#command_args == 2 and command_args[2]:any('partylist')) then
+            gConfig.showPartyList = not gConfig.showPartyList;
+            CheckVisibility();
+            return;
+        end
 	end
 
 end);
