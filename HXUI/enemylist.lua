@@ -60,10 +60,10 @@ enemylist.DrawWindow = function(settings)
 		local numTargets = 0;
 		for k,v in pairs(allClaimedTargets) do
 			local ent = GetEntity(k);
-			if (v ~= nil and ent ~= nil and GetIsValidMob(k)) then
+            if (v ~= nil and ent ~= nil and GetIsValidMob(k) and ent.HPPercent > 0 and ent.Name ~= nil) then
 				-- Obtain and prepare target information..
 				local targetNameText = ent.Name;
-				if (targetNameText ~= nil) then
+				-- if (targetNameText ~= nil) then
 
 					local color = GetColorOfTargetRGBA(ent, k);
 					imgui.Dummy({0,settings.entrySpacing});
@@ -122,7 +122,7 @@ enemylist.DrawWindow = function(settings)
 					if (numTargets >= gConfig.maxEnemyListEntries) then
 						break;
 					end
-				end
+				-- end
 			else
 				allClaimedTargets[k] = nil;
 			end
