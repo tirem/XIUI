@@ -145,10 +145,15 @@ T{
 	enemyListIconScale = 1,
 	showEnemyListBookends = true,
 
+    expBarTextScaleX = 1,
 	expBarScaleX = 1,
 	expBarScaleY = 1,
 	showExpBarBookends = true,
 	expBarFontOffset = 0,
+    expBarShowText = true,
+    expBarShowPercent = true,
+    expBarInlineMode = false,
+    expBarLimitPointsMode = true,
 
 	gilTrackerScale = 1,
 	gilTrackerFontOffset = 0,
@@ -340,11 +345,10 @@ T{
 	expBarSettings =
 	T{
 		barWidth = 550;
+        textWidth = 550;
 		barHeight = 12;
-		jobOffsetY = 0;
-		expOffsetY = 0;
-		percentOffsetY = 2;
-		percentOffsetX = -10;
+		textOffsetY = 5;
+		percentOffsetX = -5;
 		job_font_settings = 
 		T{
 			visible = true,
@@ -352,8 +356,8 @@ T{
 			font_family = 'Consolas',
 			font_height = 11,
 			color = 0xFFFFFFFF,
-			bold = false,
-			italic = true;
+			bold = true,
+			italic = false;
 			color_outline = 0xFF000000,
 			draw_flags = 0x10,
 			background = 
@@ -369,8 +373,8 @@ T{
 			font_family = 'Consolas',
 			font_height = 11,
 			color = 0xFFFFFFFF,
-			bold = false,
-			italic = true;
+			bold = true,
+			italic = false;
 			color_outline = 0xFF000000,
 			draw_flags = 0x10,
 			background = 
@@ -705,6 +709,7 @@ local function UpdateUserSettings()
 	gAdjustedSettings.playerBarSettings.font_settings.font_height = math.max(ns.playerBarSettings.font_settings.font_height + us.playerBarFontOffset, 1);
 
 	-- Exp Bar
+    gAdjustedSettings.expBarSettings.textWidth = ns.expBarSettings.textWidth * us.expBarTextScaleX;
 	gAdjustedSettings.expBarSettings.barWidth = ns.expBarSettings.barWidth * us.expBarScaleX;
 	gAdjustedSettings.expBarSettings.barHeight = ns.expBarSettings.barHeight * us.expBarScaleY;
 	gAdjustedSettings.expBarSettings.job_font_settings.font_height = math.max(ns.expBarSettings.job_font_settings.font_height + us.expBarFontOffset, 1);
@@ -920,9 +925,20 @@ ashita.events.register('command', 'command_cb', function (e)
 	-- Parse the command arguments
 	local command_args = e.command:lower():args()
     if table.contains({'/horizonui', '/hui', '/hxui', '/horizonxiui'}, command_args[1]) then
-		-- Toggle the config menu
-		showConfig[1] = not showConfig[1];
 		e.blocked = true;
+
+        -- Toggle the config menu
+        if (#command_args == 1) then
+            showConfig[1] = not showConfig[1];
+            return;
+        end
+
+        -- Toggle the party list
+        if (#command_args == 2 and command_args[2]:any('partylist')) then
+            gConfig.showPartyList = not gConfig.showPartyList;
+            CheckVisibility();
+            return;
+        end
 	end
 
 end);
