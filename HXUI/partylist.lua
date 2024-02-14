@@ -542,7 +542,7 @@ partyList.Initialize = function(settings)
     end
 
     bgTitlePrim = primitives.new(settings.prim_data);
-    bgTitlePrim.color = 0xFFCCCCCC;
+    bgTitlePrim.color = 0xFFC5CFDC;
     bgTitlePrim.texture = string.format('%s/assets/PartyList-Titles.png', addon.path);
     bgTitlePrim.visible = false;
     bgTitlePrim.can_focus = false;
