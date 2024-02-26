@@ -945,6 +945,8 @@ end);
 
 -- Track our packets
 ashita.events.register('packet_in', 'packet_in_cb', function (e)
+    expBar.HandlePacket(e)
+
 	if (e.id == 0x0028) then
 		local actionPacket = ParseActionPacket(e);
 		

@@ -7,7 +7,10 @@ local jobText;
 local expText;
 local percentText;
 
-local expbar = {};
+local expbar = {
+    limitPoints = {},
+    meritPoints = {},
+};
 
 local function UpdateTextVisibility(visible)
 	jobText:SetVisible(visible);
@@ -41,9 +44,9 @@ expbar.DrawWindow = function(settings)
     local expPoints = { player:GetExpCurrent(), player:GetExpNeeded() };
     local expPointsProgress = expPoints[1] / expPoints[2];
 
-    local limitPoints = { player:GetLimitPoints(), 10000 };
+    local limitPoints = expbar.limitPoints;
     local limitPointsProgress = limitPoints[1] / limitPoints[2];
-    local meritPoints = { player:GetMeritPoints(), player:GetMeritPointsMax() };
+    local meritPoints = expbar.meritPoints;
 
     local meritMode = gConfig.expBarLimitPointsMode and (expPoints[1] == 55999 or ((player:GetIsLimitModeEnabled() or player:GetIsExperiencePointsLocked()) and jobLevel >= 75));
     local progressBarProgress = meritMode and limitPointsProgress or expPointsProgress;
@@ -134,6 +137,10 @@ expbar.Initialize = function(settings)
     jobText = fonts.new(settings.job_font_settings);
 	expText = fonts.new(settings.exp_font_settings);
 	percentText = fonts.new(settings.percent_font_settings);
+
+    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    expbar.limitPoints = { player:GetLimitPoints(), 10000 };
+    expbar.meritPoints = { player:GetMeritPoints(), player:GetMeritPointsMax() };
 end
 
 expbar.UpdateFonts = function(settings)
@@ -146,6 +153,37 @@ expbar.SetHidden = function(hidden)
 	if (hidden == true) then
 		UpdateTextVisibility(false);
 	end
+end
+
+expbar.HandlePacket = function(e)
+    -- Kill Message
+    if e.id == 0x02D then
+        local pId = struct.unpack('I', e.data_modified, 0x04 + 1);
+        if pId == GetPlayerEntity().ServerId then
+            local val = struct.unpack('I', e.data_modified, 0x10 + 1);
+            -- local val2 = struct.unpack('I', e.data_modified, 0x14 + 1);
+            local msgId = struct.unpack('H', e.data_modified, 0x18 + 1) % 1024;
+
+            if msgId == 371 or msgId == 372 then
+                expbar.limitPoints[1] = expbar.limitPoints[1] + val;
+                if (expbar.limitPoints[1] > expbar.limitPoints[2]) then
+                    expbar.limitPoints[1] = expbar.limitPoints[1] - expbar.limitPoints[2];
+                end
+                -- print('Limit points: ' .. expbar.limitPoints[1] .. ' / ' .. expbar.limitPoints[2] .. ' #' .. msgId);
+            elseif (msgId == 50 or msgId == 368) then
+                expbar.meritPoints[1] = val;
+                -- print('Merit points: ' .. expbar.meritPoints[1] .. ' / ' .. expbar.meritPoints[2] .. ' #' .. msgId);
+            end
+        end
+    elseif e.id == 0x063 then
+        if (e.data_modified:byte(5) == 2) then
+            expbar.limitPoints[1] = struct.unpack('H', e.data_modified, 0x08 + 1);
+            expbar.meritPoints[1] = e.data_modified:byte(0x0A + 1) % 128;
+            expbar.meritPoints[2] = e.data_modified:byte(0x0C + 1) % 128;
+
+            -- print('Merit points: ' .. expbar.meritPoints[1] .. ' / ' .. expbar.meritPoints[2]);
+        end
+    end
 end
 
 return expbar;
