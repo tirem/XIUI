@@ -48,34 +48,73 @@ patchNotes.DrawWindow = function()
 	imgui.PushStyleColor(ImGuiCol_TitleBg, {0,0.06,.16, .7});
 	imgui.PushStyleColor(ImGuiCol_TitleBgActive, {0,0.06,.16, .9});
 	imgui.PushStyleColor(ImGuiCol_TitleBgCollapsed, {0,0.06,.16, .5});
+	imgui.PushStyleVar(ImGuiStyleVar_FramePadding, { 8, 6 });
     if (gShowPatchNotes[1] and imgui.Begin('HXUI PatchNotes', gShowPatchNotes, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
+		-- Save starting Y position for button alignment
+		local startY = imgui.GetCursorPosY();
+
+		-- Draw logo and version text
 		imgui.Image(tonumber(ffi.cast("uint32_t", HXUITexture.image)), { 83, 53});
-		imgui.SameLine()
-		imgui.Image(tonumber(ffi.cast("uint32_t", PatchVerTexture.image)), { 130, 21});
-		imgui.SameLine()
-		imgui.BulletText(' HOTFIX 1');
-		imgui.SameLine()
+		imgui.SameLine();
+		imgui.BulletText(' UPDATE 3 ');
+		imgui.SameLine();
 		imgui.BulletText('');
+
+		-- Position button in top right corner, vertically centered with the logo
+		local buttonWidth = 120;
+		local buttonHeight = 30;
+		local imageHeight = 53;
+		local contentRegionMax = imgui.GetWindowContentRegionMax();
+		local buttonX = contentRegionMax - buttonWidth;
+		local buttonY = startY + (imageHeight - buttonHeight) / 2;
+
+		imgui.SetCursorPos({ buttonX, buttonY });
+		if(imgui.Button("Open Config", { buttonWidth, buttonHeight })) then
+			showConfig[1] = true;
+			gShowPatchNotes[1] = false;
+		end
+
 		imgui.NewLine();
-		imgui.Image(tonumber(ffi.cast("uint32_t", NewTexture.image)), { 30, 13});
+		imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Special thanks to ');
+		imgui.SameLine();
+		imgui.TextColored({0.4, 0.6, 1.0, 1.0}, 'onimitch');
+		if imgui.IsItemHovered() then
+			imgui.SetMouseCursor(ImGuiMouseCursor_Hand);
+			if imgui.IsItemClicked() then
+				os.execute('start https://github.com/onimitch');
+			end
+		end
+		imgui.SameLine();
+		imgui.TextColored({0.8, 0.8, 0.8, 1.0}, ' for this massive update!');
 		imgui.NewLine();
-		imgui.BulletText('Fixed crash with certain tooltips');
+		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Party List');
+		imgui.BulletText('New tiled backgrounds: 8 window themes (Windows 1-8) plus Plain background');
+		imgui.BulletText('Party list titles with option to toggle them on/off');
+		imgui.BulletText('Preview dummy party data when config is open');
+		imgui.BulletText('Added Min Rows, Expand Height, and Align Bottom options');
+		imgui.BulletText('Command support: /hxui partylist to toggle party window visibility');
 		imgui.NewLine();
-		imgui.BulletText('Added more config options to the cast bar and party list');
+		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'ExpBar');
+		imgui.BulletText('Added Limit Points mode to track limit points instead of experience');
+		imgui.BulletText('Added inline mode for compact display');
+		imgui.BulletText('Added options to show/hide text and percentage');
+		imgui.BulletText('Improved text positioning');
+		imgui.BulletText('Fixed ExpBar not updating immediately after kills in limit mode');
 		imgui.NewLine();
-		imgui.BulletText('Fixed issue with HorizonXI-R status theme');
+		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Japanese Text Support');
+		imgui.BulletText('Cast bar now uses Thorny gdifonts to properly render Japanese text');
+		imgui.BulletText('Fixed Japanese Spell and Ability names appearing as garbled characters');
+		imgui.BulletText('Fixed Japanese text rendering in status icon tooltips');
 		imgui.NewLine();
-		imgui.BulletText('Fixed issue with TP bar clipping in player bar');
-		imgui.NewLine();
-		imgui.BulletText('Added ability to lock HUD elements');
-		imgui.NewLine();
-		imgui.BulletText('Added ability to show/hide bar bookends');
-		imgui.NewLine();
-		imgui.BulletText('Updated padding in party list for better customization at small sizes');
-		imgui.NewLine();
-		imgui.BulletText('Added classic Final Fantasy job icons');
-		imgui.NewLine();
+		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Other Improvements');
+		imgui.BulletText('Hide during events option for global, player bar, target bar, and party list');
+		imgui.BulletText('Gil Tracker: Added Position Offset and Right Align options');
+		imgui.BulletText('Inventory Tracker: Added Rows, Columns, Opacity, and Show Count Text options');
+		imgui.BulletText('Enemy List: Enemies now hidden from list once HP reaches 0');
+		imgui.BulletText('Status Handler: Added Tooltip scale config');
+		imgui.BulletText('Fixed addon error when alignBottom is enabled on first load');
     end
+	imgui.PopStyleVar(1);
 	imgui.PopStyleColor(4);
 	imgui.End();
 end
