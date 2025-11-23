@@ -10,6 +10,8 @@ local percentText;
 local expbar = {
     limitPoints = {},
     meritPoints = {},
+    capacityPoints = {},
+    jobPoints = {},
 };
 
 local function UpdateTextVisibility(visible)
@@ -48,8 +50,27 @@ expbar.DrawWindow = function(settings)
     local limitPointsProgress = limitPoints[1] / limitPoints[2];
     local meritPoints = expbar.meritPoints;
 
+    -- expbar.capacityPoints[1] = player:GetCapacityPoints(mainJob);
+    -- expbar.jobPoints[1] = player:GetJobPoints(mainJob);
+    local capPoints = expbar.capacityPoints;
+    local capPointsProgress = expbar.capacityPoints[1] / expbar.capacityPoints[2];
+    local jobPoints = expbar.jobPoints;
+
     local meritMode = gConfig.expBarLimitPointsMode and (expPoints[1] == 55999 or ((player:GetIsLimitModeEnabled() or player:GetIsExperiencePointsLocked()) and jobLevel >= 75));
-    local progressBarProgress = meritMode and limitPointsProgress or expPointsProgress;
+    -- If player is a max level then only enable meritMode in the xp bar if limit mode is specifically enabled
+    -- this is so we display capacity points by default
+    -- TODO: Tapping on Exp bar switches between merit mode and capacity points
+    if jobLevel >= 99 and not player:GetIsLimitModeEnabled() then
+        meritMode = false
+    end
+    local progressBarProgress = 0
+    if meritMode then
+        progressBarProgress = limitPointsProgress;
+    elseif jobLevel >= 99 then
+        progressBarProgress = capPointsProgress;
+    else
+        progressBarProgress = expPointsProgress
+    end
 
     local inlineMode = gConfig.expBarInlineMode;
     local windowSize = inlineMode and settings.barWidth + settings.textWidth or math.max(settings.barWidth, settings.textWidth);
@@ -90,7 +111,15 @@ expbar.DrawWindow = function(settings)
 
             -- Exp Text
             if meritMode then
-                local expString = 'MERIT (' .. meritPoints[1] .. ' / ' .. meritPoints[2] .. ')' .. ' LIMIT (' .. limitPoints[1] .. ' / ' .. limitPoints[2] .. ')';
+                if jobLevel >= 99 then
+                    local expString = 'JP (' .. jobPoints[1] .. ' / ' .. jobPoints[2] .. ')' .. ' MP (' .. meritPoints[1] .. ' / ' .. meritPoints[2] .. ')' .. ' LP (' .. limitPoints[1] .. ' / ' .. limitPoints[2] .. ')';
+                    expText:SetText(expString);
+                else
+                    local expString = 'MP (' .. meritPoints[1] .. ' / ' .. meritPoints[2] .. ')' .. ' LP (' .. limitPoints[1] .. ' / ' .. limitPoints[2] .. ')';
+                    expText:SetText(expString);
+                end
+            elseif jobLevel >= 99 then
+                local expString = 'JP (' .. jobPoints[1] .. ' / ' .. jobPoints[2] .. ')' .. ' MP (' .. meritPoints[1] .. ' / ' .. meritPoints[2] .. ')' .. ' CP (' .. capPoints[1] .. ' / ' .. capPoints[2] .. ')';
                 expText:SetText(expString);
             else
                 local expString = 'EXP (' .. expPoints[1] .. ' / ' .. expPoints[2] .. ')';
@@ -141,6 +170,10 @@ expbar.Initialize = function(settings)
     local player = AshitaCore:GetMemoryManager():GetPlayer();
     expbar.limitPoints = { player:GetLimitPoints(), 10000 };
     expbar.meritPoints = { player:GetMeritPoints(), player:GetMeritPointsMax() };
+    local currJob = player:GetMainJob();
+    expbar.capacityPoints = { player:GetCapacityPoints(currJob), 30000 };
+    expbar.jobPoints = { player:GetJobPoints(currJob), 500 };
+    -- expbar.mastery = { player:GetMasteryExp(), player:GetMasteryExpNeeded() };
 end
 
 expbar.UpdateFonts = function(settings)
@@ -169,19 +202,30 @@ expbar.HandlePacket = function(e)
                 if (expbar.limitPoints[1] > expbar.limitPoints[2]) then
                     expbar.limitPoints[1] = expbar.limitPoints[1] - expbar.limitPoints[2];
                 end
-                -- print('Limit points: ' .. expbar.limitPoints[1] .. ' / ' .. expbar.limitPoints[2] .. ' #' .. msgId);
-            elseif (msgId == 50 or msgId == 368) then
+                -- print('Limit points A: ' .. expbar.limitPoints[1] .. ' / ' .. expbar.limitPoints[2] .. ' #' .. msgId);
+            elseif msgId == 718 or msgId == 735 then
+                expbar.capacityPoints[1] = expbar.capacityPoints[1] + val;
+                if (expbar.capacityPoints[1] > expbar.capacityPoints[2]) then
+                    expbar.capacityPoints[1] = expbar.capacityPoints[1] - expbar.capacityPoints[2];
+                end
+            elseif msgId == 50 or msgId == 368 then
                 expbar.meritPoints[1] = val;
                 -- print('Merit points: ' .. expbar.meritPoints[1] .. ' / ' .. expbar.meritPoints[2] .. ' #' .. msgId);
+            elseif msgId == 719 then
+                expbar.jobPoints[1] = val;
             end
         end
     elseif e.id == 0x063 then
-        if (e.data_modified:byte(5) == 2) then
+        if e.data_modified:byte(5) == 2 then
             expbar.limitPoints[1] = struct.unpack('H', e.data_modified, 0x08 + 1);
             expbar.meritPoints[1] = e.data_modified:byte(0x0A + 1) % 128;
             expbar.meritPoints[2] = e.data_modified:byte(0x0C + 1) % 128;
-
-            -- print('Merit points: ' .. expbar.meritPoints[1] .. ' / ' .. expbar.meritPoints[2]);
+            -- print('Limit points B: ' .. expbar.limitPoints[1] .. ' / ' .. expbar.limitPoints[2]);
+        elseif e.data_modified:byte(5) == 5 then
+            local player = AshitaCore:GetMemoryManager():GetPlayer();
+            local jobOffset = player:GetMainJob() * 6 + 13;
+            expbar.capacityPoints[1] = struct.unpack('H', e.data_modified, jobOffset);
+            expbar.jobPoints[1] = struct.unpack('H', e.data_modified, jobOffset + 2);
         end
     end
 end

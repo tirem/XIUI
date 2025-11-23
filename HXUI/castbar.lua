@@ -40,6 +40,26 @@ end
 castbar.DrawWindow = function(settings)
 	local percent = AshitaCore:GetMemoryManager():GetCastBar():GetPercent();
 
+	local totalCast = 1
+
+	if (gConfig.castBarFastCastEnabled) then
+		local player = AshitaCore:GetMemoryManager():GetPlayer()
+		local MID = player:GetMainJob()
+		local SID = player:GetSubJob()
+
+		local fastCast = 0
+		if (gConfig.castBarFastCast[MID]) then
+			fastCast = fastCast + tonumber(string.format("%.2f", gConfig.castBarFastCast[MID]))
+		end
+		if (SID == 5 and gConfig.castBarFastCastRDMSJ) then -- if RDM SJ
+			fastCast = fastCast + tonumber(string.format("%.2f", gConfig.castBarFastCastRDMSJ))
+		end
+
+		totalCast = (1 - fastCast) * 0.75
+	end
+
+	percent = percent / totalCast
+
 	if ((percent < 1 and percent ~= castbar.previousPercent) or showConfig[1]) then
 		imgui.SetNextWindowSize({settings.barWidth, -1});
 

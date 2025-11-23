@@ -1,11 +1,31 @@
 require('common');
 local imgui = require('imgui');
+local fonts = require('fonts');
 local ffi       = require('ffi');
 local d3d       = require('d3d8');
 local C         = ffi.C;
 local d3d8dev   = d3d.get_device();
 local statusHandler = require('statushandler');
 local buffTable = require('bufftable');
+
+debuffTable = T{};
+
+local debuff_font_settings = T{
+	visible = true,
+	locked = true,
+	font_family = 'Consolas',
+	font_height = 8,
+	color = 0xFFFFFFFF,
+	bold = true,
+	italic = false;
+	color_outline = 0xFF000000,
+	draw_flags = 0x10,
+	background = 
+	T{
+		visible = false,
+	},
+	right_justified = false;
+};
 
 function draw_rect(top_left, bot_right, color, radius, fill)
     local color = imgui.GetColorU32(color);
@@ -349,7 +369,7 @@ function IsMemberOfParty(targetIndex)
 	return false;
 end
 
-function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset)
+function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset, buffTimes, settings)
 	if (statusIds ~= nil and #statusIds > 0) then
 		local currentRow = 1;
         local currentColumn = 0;
@@ -379,6 +399,35 @@ function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffs
                     imgui.SetCursorScreenPos({resetX, resetY});
                 end
                 imgui.Image(icon, { iconSize, iconSize }, { 0, 0 }, { 1, 1 });
+                local textObjName = "debuffText" .. tostring(i)
+                if buffTimes ~= nil then
+                    local startX, startY = imgui.GetCursorScreenPos();
+                    local textPosX = startX + (i-1)*iconSize + iconSize/2 + i - 1
+                    local textPosY = startY
+					
+                    local textObj = debuffTable[textObjName]
+                    if (textObj == nil) then
+                        textObj = fonts.new(debuff_font_settings)
+                        debuffTable[textObjName] = textObj
+                    end
+                    textObj:SetFontHeight(debuff_font_settings.font_height + gConfig.targetBarIconFontOffset)
+                    textObj:SetText('')
+                    if buffTimes[i] ~= nil then
+                        local timeString = tostring(buffTimes[i])
+                        if (string.len(timeString) == 2) then
+                            textObj:SetPositionX(textPosX + 2.5 - gConfig.targetBarIconFontOffset)
+                            textObj:SetPositionY(textPosY)
+                        elseif (string.len(timeString) == 1) then
+                            textObj:SetPositionX(textPosX + 5 - gConfig.targetBarIconFontOffset)
+                            textObj:SetPositionY(textPosY)
+                        else
+                            textObj:SetPositionX(textPosX - gConfig.targetBarIconFontOffset)
+                            textObj:SetPositionY(textPosY)
+                        end
+                        textObj:SetText(tostring(buffTimes[i]))
+                        textObj:SetVisible(true);
+                    end
+                end
                 if (imgui.IsItemHovered()) then
                     statusHandler.render_tooltip(statusIds[i]);
                 end
