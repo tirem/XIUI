@@ -14,14 +14,15 @@ config.DrawWindow = function(us)
     imgui.PushStyleColor(ImGuiCol_HeaderHovered, {0,0.06,.16, .9});
     imgui.PushStyleColor(ImGuiCol_HeaderActive, {0,0.06,.16, 1});
     imgui.PushStyleColor(ImGuiCol_FrameBg, {0,0.06,.16, 1});
+    imgui.PushStyleVar(ImGuiStyleVar_FramePadding, { 8, 6 });
     imgui.SetNextWindowSize({ 600, 600 }, ImGuiCond_FirstUseEver);
     if(showConfig[1] and imgui.Begin(("HXUI Config"):fmt(addon.version), showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
-        if(imgui.Button("Restore Defaults", { 130, 20 })) then
+        if(imgui.Button("Restore Defaults", { 140, 30 })) then
             ResetSettings();
             UpdateSettings();
         end
         imgui.SameLine();
-        if(imgui.Button("Patch Notes", { 130, 20 })) then
+        if(imgui.Button("Patch Notes", { 120, 30 })) then
             gConfig.patchNotesVer = -1;
             gShowPatchNotes = { true; }
             UpdateSettings();
@@ -510,6 +511,7 @@ config.DrawWindow = function(us)
         end
         imgui.EndChild();
     end
+    imgui.PopStyleVar(1);
     imgui.PopStyleColor(8);
 	imgui.End();
 end

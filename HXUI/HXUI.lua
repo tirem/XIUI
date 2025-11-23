@@ -23,8 +23,8 @@
 ]]--
 
 addon.name      = 'HXUI';
-addon.author    = 'Team HXUI (Tirem, Shuu, colorglut, RheaCloud)';
-addon.version   = '1.1.1';
+addon.author    = 'HXUI Team';
+addon.version   = '1.3';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/HXUI'
 
@@ -48,7 +48,7 @@ local gdi = require('gdifonts.include');
 -- = HXUI DEV ONLY =
 -- =================
 -- Hot reloading of development files functionality
-local _HXUI_DEV_HOT_RELOADING_ENABLED = false;
+local _HXUI_DEV_HOT_RELOADING_ENABLED = true;
 local _HXUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS = 1;
 local _HXUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME;
 local _HXUI_DEV_HOT_RELOAD_FILES = {};
@@ -203,7 +203,7 @@ T{
 local default_settings =
 T{
 	-- global settings
-	currentPatchVer = 2,
+	currentPatchVer = 3,
 	tpEmptyColor = 0xFF9acce8,
 	tpFullColor = 0xFF2fa9ff,
 	mpColor = 0xFFdef2db,
