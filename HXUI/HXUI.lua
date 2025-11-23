@@ -23,8 +23,8 @@
 ]]--
 
 addon.name      = 'HXUI';
-addon.author    = 'HXUI Team';
-addon.version   = '1.3';
+addon.author    = 'Team HXUI (Tirem, Shuu, colorglut, RheaCloud)';
+addon.version   = '1.1.1-rag5';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/HXUI'
 
@@ -134,6 +134,8 @@ T{
 	targetBarScaleY = 1,
 	targetBarFontOffset = 0,
 	targetBarIconScale = 1,
+	targetBarIconFontOffset = 0,
+	showTargetDistance = true,
 	showTargetBarBookends = true,
 	showEnemyId = false;
 	alwaysShowHealthPercent = false,
@@ -143,6 +145,8 @@ T{
 	enemyListScaleY = 1,
 	enemyListFontScale = 1,
 	enemyListIconScale = 1,
+	showEnemyDistance = false,
+	showEnemyHPPText = true,
 	showEnemyListBookends = true,
 
     expBarTextScaleX = 1,
@@ -167,17 +171,38 @@ T{
     inventoryTrackerRowCount = 6,
     inventoryShowCount = true,
 
+	partyListDistanceHighlight = 0,
 	partyListScaleX = 1,
 	partyListScaleY = 1,
+    partyListFontOffset = 0,
+    partyListJobIconScale = 1,
+    partyListEntrySpacing = 0,
+    partyListTP = true,
+
+    partyList2ScaleX = 0.7,
+    partyList2ScaleY = 0.7,
+    partyList2FontOffset = -2,
+    partyList2JobIconScale = 0.8,
+    partyList2EntrySpacing = -20,
+    partyList2TP = false,
+
+    partyList3ScaleX = 0.7,
+    partyList3ScaleY = 0.7,
+    partyList3FontOffset = -2,
+    partyList3JobIconScale = 0.8,
+    partyList3EntrySpacing = -20,
+    partyList3TP = false,
+
 	partyListBuffScale = 1,
-	partyListFontOffset = 0,
 	partyListStatusTheme = 0, -- 0: HorizonXI-L, 1: HorizonXI-R 2: XIV1.0, 3: XIV, 4: Disabled
 	partyListTheme = 0, 
+	partyListFlashTP = false,
 	showPartyListBookends = true,
     showPartyListTitle = true,
+	showPartyListDistance = false,
 	partyListCursor = 'GreyArrow.png',
 	partyListBackgroundName = 'Window1',
-	partyListEntrySpacing = 0,
+
     partyListHideDuringEvents = true,
     partyListExpandHeight = false,
     partyListAlignBottom = false,
@@ -186,11 +211,38 @@ T{
     partyListBgColor = { 255, 255, 255, 255 },
     partyListBorderColor = { 255, 255, 255, 255 },
     partyListPreview = true,
+    partyListAlliance = true,
 
 	castBarScaleX = 1,
 	castBarScaleY = 1,
 	showCastBarBookends = true,
 	castBarFontOffset = 0,
+	castBarFastCastEnabled = false,
+	castBarFastCastRDMSJ = 0.17,
+	castBarFastCast = {
+		[1] = 0.02,
+		[2] = 0.02,
+		[3] = 0.04,
+		[4] = 0.04,
+		[5] = 0.42,
+		[6] = 0.07,
+		[7] = 0.07,
+		[8] = 0.07,
+		[9] = 0.02,
+		[10] = 0.04,
+		[11] = 0.02,
+		[12] = 0.02,
+		[13] = 0.02,
+		[14] = 0.07,
+		[15] = 0.04,
+		[16] = 0.07,
+		[17] = 0.02,
+		[18] = 0.04,
+		[19] = 0.02,
+		[20] = 0.02,
+		[21] = 0.02,
+		[22] = 0.02,
+	},
 
 	healthBarFlashEnabled = true,
 };
@@ -203,7 +255,7 @@ T{
 local default_settings =
 T{
 	-- global settings
-	currentPatchVer = 3,
+	currentPatchVer = 2,
 	tpEmptyColor = 0xFF9acce8,
 	tpFullColor = 0xFF2fa9ff,
 	mpColor = 0xFFdef2db,
@@ -672,82 +724,87 @@ local function UpdateFonts()
 end
 
 local function UpdateUserSettings()
-    local ns = default_settings;
+    local ds = default_settings;
 	local us = gConfig;
 
 	-- Target Bar
-	gAdjustedSettings.targetBarSettings.barWidth = ns.targetBarSettings.barWidth * us.targetBarScaleX;
-	gAdjustedSettings.targetBarSettings.barHeight = ns.targetBarSettings.barHeight * us.targetBarScaleY;
-	gAdjustedSettings.targetBarSettings.totBarHeight = ns.targetBarSettings.totBarHeight * us.targetBarScaleY;
-	gAdjustedSettings.targetBarSettings.name_font_settings.font_height = math.max(ns.targetBarSettings.name_font_settings.font_height + us.targetBarFontOffset, 1);
-    gAdjustedSettings.targetBarSettings.totName_font_settings.font_height = math.max(ns.targetBarSettings.totName_font_settings.font_height + us.targetBarFontOffset, 1);
-	gAdjustedSettings.targetBarSettings.distance_font_settings.font_height = math.max(ns.targetBarSettings.distance_font_settings.font_height + us.targetBarFontOffset, 1);
-    gAdjustedSettings.targetBarSettings.percent_font_settings.font_height = math.max(ns.targetBarSettings.percent_font_settings.font_height + us.targetBarFontOffset, 1);
-	gAdjustedSettings.targetBarSettings.iconSize = ns.targetBarSettings.iconSize * us.targetBarIconScale;
-	gAdjustedSettings.targetBarSettings.arrowSize = ns.targetBarSettings.arrowSize * us.targetBarScaleY;
+	gAdjustedSettings.targetBarSettings.barWidth = ds.targetBarSettings.barWidth * us.targetBarScaleX;
+	gAdjustedSettings.targetBarSettings.barHeight = ds.targetBarSettings.barHeight * us.targetBarScaleY;
+	gAdjustedSettings.targetBarSettings.totBarHeight = ds.targetBarSettings.totBarHeight * us.targetBarScaleY;
+	gAdjustedSettings.targetBarSettings.name_font_settings.font_height = math.max(ds.targetBarSettings.name_font_settings.font_height + us.targetBarFontOffset, 1);
+    gAdjustedSettings.targetBarSettings.totName_font_settings.font_height = math.max(ds.targetBarSettings.totName_font_settings.font_height + us.targetBarFontOffset, 1);
+	gAdjustedSettings.targetBarSettings.distance_font_settings.font_height = math.max(ds.targetBarSettings.distance_font_settings.font_height + us.targetBarFontOffset, 1);
+    gAdjustedSettings.targetBarSettings.percent_font_settings.font_height = math.max(ds.targetBarSettings.percent_font_settings.font_height + us.targetBarFontOffset, 1);
+	gAdjustedSettings.targetBarSettings.iconSize = ds.targetBarSettings.iconSize * us.targetBarIconScale;
+	gAdjustedSettings.targetBarSettings.arrowSize = ds.targetBarSettings.arrowSize * us.targetBarScaleY;
 
 	-- Party List
-    gAdjustedSettings.partyListSettings.hpBarWidth = ns.partyListSettings.hpBarWidth * us.partyListScaleX;
-    gAdjustedSettings.partyListSettings.barHeight = ns.partyListSettings.barHeight * us.partyListScaleY;
-    gAdjustedSettings.partyListSettings.tpBarWidth = ns.partyListSettings.tpBarWidth * us.partyListScaleX;
-	gAdjustedSettings.partyListSettings.mpBarWidth = ns.partyListSettings.mpBarWidth * us.partyListScaleX;
-	gAdjustedSettings.partyListSettings.barSpacing = ns.partyListSettings.barSpacing * us.partyListScaleX;
-    gAdjustedSettings.partyListSettings.hp_font_settings.font_height = math.max(ns.partyListSettings.hp_font_settings.font_height + us.partyListFontOffset, 1);
-    gAdjustedSettings.partyListSettings.mp_font_settings.font_height = math.max(ns.partyListSettings.mp_font_settings.font_height + us.partyListFontOffset, 1);
-	gAdjustedSettings.partyListSettings.tp_font_settings.font_height = math.max(ns.partyListSettings.tp_font_settings.font_height + us.partyListFontOffset, 1);
-    gAdjustedSettings.partyListSettings.name_font_settings.font_height = math.max(ns.partyListSettings.name_font_settings.font_height + us.partyListFontOffset, 1);
-	gAdjustedSettings.partyListSettings.iconSize = ns.partyListSettings.iconSize * us.partyListBuffScale;
-	gAdjustedSettings.partyListSettings.entrySpacing = ns.partyListSettings.entrySpacing + us.partyListEntrySpacing;
+    gAdjustedSettings.partyListSettings.iconSize = ds.partyListSettings.iconSize * us.partyListBuffScale;
     gAdjustedSettings.partyListSettings.expandHeight = us.partyListExpandHeight;
     gAdjustedSettings.partyListSettings.alignBottom = us.partyListAlignBottom;
     gAdjustedSettings.partyListSettings.minRows = us.partyListMinRows;
 
+    -- gAdjustedSettings.partyListSettings.hpBarWidth = ds.partyListSettings.hpBarWidth * us.partyListScaleX;
+    -- gAdjustedSettings.partyListSettings.barHeight = ds.partyListSettings.barHeight * us.partyListScaleY;
+    -- gAdjustedSettings.partyListSettings.tpBarWidth = ds.partyListSettings.tpBarWidth * us.partyListScaleX;
+	-- gAdjustedSettings.partyListSettings.mpBarWidth = ds.partyListSettings.mpBarWidth * us.partyListScaleX;
+	-- gAdjustedSettings.partyListSettings.barSpacing = ds.partyListSettings.barSpacing * us.partyListScaleX;
+    -- gAdjustedSettings.partyListSettings.hp_font_settings.font_height = math.max(ds.partyListSettings.hp_font_settings.font_height + us.partyListFontOffset, 1);
+    -- gAdjustedSettings.partyListSettings.mp_font_settings.font_height = math.max(ds.partyListSettings.mp_font_settings.font_height + us.partyListFontOffset, 1);
+	-- gAdjustedSettings.partyListSettings.tp_font_settings.font_height = math.max(ds.partyListSettings.tp_font_settings.font_height + us.partyListFontOffset, 1);
+    -- gAdjustedSettings.partyListSettings.name_font_settings.font_height = math.max(ds.partyListSettings.name_font_settings.font_height + us.partyListFontOffset, 1);
+	gAdjustedSettings.partyListSettings.entrySpacing = {
+        ds.partyListSettings.entrySpacing + us.partyListEntrySpacing,
+        ds.partyListSettings.entrySpacing + us.partyList2EntrySpacing,
+        ds.partyListSettings.entrySpacing + us.partyList3EntrySpacing,
+    };
+
 	-- Player Bar
-	gAdjustedSettings.playerBarSettings.barWidth = ns.playerBarSettings.barWidth * us.playerBarScaleX;
-	gAdjustedSettings.playerBarSettings.barSpacing = ns.playerBarSettings.barSpacing * us.playerBarScaleX;
-	gAdjustedSettings.playerBarSettings.barHeight = ns.playerBarSettings.barHeight * us.playerBarScaleY;
-	gAdjustedSettings.playerBarSettings.font_settings.font_height = math.max(ns.playerBarSettings.font_settings.font_height + us.playerBarFontOffset, 1);
+	gAdjustedSettings.playerBarSettings.barWidth = ds.playerBarSettings.barWidth * us.playerBarScaleX;
+	gAdjustedSettings.playerBarSettings.barSpacing = ds.playerBarSettings.barSpacing * us.playerBarScaleX;
+	gAdjustedSettings.playerBarSettings.barHeight = ds.playerBarSettings.barHeight * us.playerBarScaleY;
+	gAdjustedSettings.playerBarSettings.font_settings.font_height = math.max(ds.playerBarSettings.font_settings.font_height + us.playerBarFontOffset, 1);
 
 	-- Exp Bar
-    gAdjustedSettings.expBarSettings.textWidth = ns.expBarSettings.textWidth * us.expBarTextScaleX;
-	gAdjustedSettings.expBarSettings.barWidth = ns.expBarSettings.barWidth * us.expBarScaleX;
-	gAdjustedSettings.expBarSettings.barHeight = ns.expBarSettings.barHeight * us.expBarScaleY;
-	gAdjustedSettings.expBarSettings.job_font_settings.font_height = math.max(ns.expBarSettings.job_font_settings.font_height + us.expBarFontOffset, 1);
-	gAdjustedSettings.expBarSettings.exp_font_settings.font_height = math.max(ns.expBarSettings.exp_font_settings.font_height + us.expBarFontOffset, 1);
-	gAdjustedSettings.expBarSettings.percent_font_settings.font_height = math.max(ns.expBarSettings.percent_font_settings.font_height + us.expBarFontOffset, 1);
+    gAdjustedSettings.expBarSettings.textWidth = ds.expBarSettings.textWidth * us.expBarTextScaleX;
+	gAdjustedSettings.expBarSettings.barWidth = ds.expBarSettings.barWidth * us.expBarScaleX;
+	gAdjustedSettings.expBarSettings.barHeight = ds.expBarSettings.barHeight * us.expBarScaleY;
+	gAdjustedSettings.expBarSettings.job_font_settings.font_height = math.max(ds.expBarSettings.job_font_settings.font_height + us.expBarFontOffset, 1);
+	gAdjustedSettings.expBarSettings.exp_font_settings.font_height = math.max(ds.expBarSettings.exp_font_settings.font_height + us.expBarFontOffset, 1);
+	gAdjustedSettings.expBarSettings.percent_font_settings.font_height = math.max(ds.expBarSettings.percent_font_settings.font_height + us.expBarFontOffset, 1);
 
 	-- Gil Tracker
-	gAdjustedSettings.gilTrackerSettings.iconScale = ns.gilTrackerSettings.iconScale * us.gilTrackerScale;
-	gAdjustedSettings.gilTrackerSettings.font_settings.font_height = math.max(ns.gilTrackerSettings.font_settings.font_height + us.gilTrackerFontOffset, 1);
+	gAdjustedSettings.gilTrackerSettings.iconScale = ds.gilTrackerSettings.iconScale * us.gilTrackerScale;
+	gAdjustedSettings.gilTrackerSettings.font_settings.font_height = math.max(ds.gilTrackerSettings.font_settings.font_height + us.gilTrackerFontOffset, 1);
     gAdjustedSettings.gilTrackerSettings.font_settings.right_justified = us.gilTrackerRightAlign;
     if (us.gilTrackerRightAlign) then
-        gAdjustedSettings.gilTrackerSettings.offsetX = ns.gilTrackerSettings.offsetX + us.gilTrackerPosOffset[1];
+        gAdjustedSettings.gilTrackerSettings.offsetX = ds.gilTrackerSettings.offsetX + us.gilTrackerPosOffset[1];
     else
-        gAdjustedSettings.gilTrackerSettings.offsetX = (ns.gilTrackerSettings.offsetX + us.gilTrackerPosOffset[1]) * -1;
+        gAdjustedSettings.gilTrackerSettings.offsetX = (ds.gilTrackerSettings.offsetX + us.gilTrackerPosOffset[1]) * -1;
     end
     gAdjustedSettings.gilTrackerSettings.offsetY = us.gilTrackerPosOffset[2];
 	
 	-- Inventory Tracker
-	gAdjustedSettings.inventoryTrackerSettings.dotRadius = ns.inventoryTrackerSettings.dotRadius * us.inventoryTrackerScale;
-	gAdjustedSettings.inventoryTrackerSettings.dotSpacing = ns.inventoryTrackerSettings.dotSpacing * us.inventoryTrackerScale;
-	gAdjustedSettings.inventoryTrackerSettings.groupSpacing = ns.inventoryTrackerSettings.groupSpacing * us.inventoryTrackerScale;
-	gAdjustedSettings.inventoryTrackerSettings.font_settings.font_height = math.max(ns.inventoryTrackerSettings.font_settings.font_height + us.inventoryTrackerFontOffset, 1);
+	gAdjustedSettings.inventoryTrackerSettings.dotRadius = ds.inventoryTrackerSettings.dotRadius * us.inventoryTrackerScale;
+	gAdjustedSettings.inventoryTrackerSettings.dotSpacing = ds.inventoryTrackerSettings.dotSpacing * us.inventoryTrackerScale;
+	gAdjustedSettings.inventoryTrackerSettings.groupSpacing = ds.inventoryTrackerSettings.groupSpacing * us.inventoryTrackerScale;
+	gAdjustedSettings.inventoryTrackerSettings.font_settings.font_height = math.max(ds.inventoryTrackerSettings.font_settings.font_height + us.inventoryTrackerFontOffset, 1);
     gAdjustedSettings.inventoryTrackerSettings.columnCount = us.inventoryTrackerColumnCount;
     gAdjustedSettings.inventoryTrackerSettings.rowCount = us.inventoryTrackerRowCount;
     gAdjustedSettings.inventoryTrackerSettings.opacity = us.inventoryTrackerOpacity;
     gAdjustedSettings.inventoryTrackerSettings.showText = us.inventoryShowCount;
 
 	-- Enemy List
-	gAdjustedSettings.enemyListSettings.barWidth = ns.enemyListSettings.barWidth * us.enemyListScaleX;
-	gAdjustedSettings.enemyListSettings.barHeight = ns.enemyListSettings.barHeight * us.enemyListScaleY;
-	gAdjustedSettings.enemyListSettings.textScale = ns.enemyListSettings.textScale * us.enemyListFontScale;
-	gAdjustedSettings.enemyListSettings.iconSize = ns.enemyListSettings.iconSize * us.enemyListIconScale;
+	gAdjustedSettings.enemyListSettings.barWidth = ds.enemyListSettings.barWidth * us.enemyListScaleX;
+	gAdjustedSettings.enemyListSettings.barHeight = ds.enemyListSettings.barHeight * us.enemyListScaleY;
+	gAdjustedSettings.enemyListSettings.textScale = ds.enemyListSettings.textScale * us.enemyListFontScale;
+	gAdjustedSettings.enemyListSettings.iconSize = ds.enemyListSettings.iconSize * us.enemyListIconScale;
 
 	-- Cast Bar
-	gAdjustedSettings.castBarSettings.barWidth = ns.castBarSettings.barWidth * us.castBarScaleX;
-	gAdjustedSettings.castBarSettings.barHeight = ns.castBarSettings.barHeight * us.castBarScaleY;
-	gAdjustedSettings.castBarSettings.spell_font_settings.font_height = math.max(ns.castBarSettings.spell_font_settings.font_height + us.castBarFontOffset, 1);
-	gAdjustedSettings.castBarSettings.percent_font_settings.font_height = math.max(ns.castBarSettings.percent_font_settings.font_height + us.castBarFontOffset, 1);
+	gAdjustedSettings.castBarSettings.barWidth = ds.castBarSettings.barWidth * us.castBarScaleX;
+	gAdjustedSettings.castBarSettings.barHeight = ds.castBarSettings.barHeight * us.castBarScaleY;
+	gAdjustedSettings.castBarSettings.spell_font_settings.font_height = math.max(ds.castBarSettings.spell_font_settings.font_height + us.castBarFontOffset, 1);
+	gAdjustedSettings.castBarSettings.percent_font_settings.font_height = math.max(ds.castBarSettings.percent_font_settings.font_height + us.castBarFontOffset, 1);
 end
 
 function UpdateSettings()
