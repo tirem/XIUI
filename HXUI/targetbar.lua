@@ -298,35 +298,113 @@ targetbar.DrawWindow = function(settings)
 				totEntity = GetEntity(totIndex);
 			end
 		end
-		if (totEntity ~= nil and totEntity.Name ~= nil) then
 
-			imgui.SetCursorScreenPos({preBuffX, preBuffY});
-			local totX, totY = imgui.GetCursorScreenPos();
-			local totColor = GetColorOfTarget(totEntity, totIndex);
-			imgui.SetCursorScreenPos({totX, totY + settings.barHeight/2 - settings.arrowSize/2});
-			imgui.Image(tonumber(ffi.cast("uint32_t", arrowTexture.image)), { settings.arrowSize, settings.arrowSize });
-			imgui.SameLine();
+		-- Draw Target of Target bar based on split setting
+		if (not gConfig.splitTargetOfTarget) then
+			-- Draw ToT in same window (original behavior)
+			if (totEntity ~= nil and totEntity.Name ~= nil) then
+				-- Reset font height to regular ToT settings when not split
+				totNameText:SetFontHeight(settings.totName_font_settings.font_height);
 
-			totX, _ = imgui.GetCursorScreenPos();
-			imgui.SetCursorScreenPos({totX, totY - (settings.totBarHeight / 2) + (settings.barHeight/2) + settings.totBarOffset});
+				imgui.SetCursorScreenPos({preBuffX, preBuffY});
+				local totX, totY = imgui.GetCursorScreenPos();
+				local totColor = GetColorOfTarget(totEntity, totIndex);
+				imgui.SetCursorScreenPos({totX, totY + settings.barHeight/2 - settings.arrowSize/2});
+				imgui.Image(tonumber(ffi.cast("uint32_t", arrowTexture.image)), { settings.arrowSize, settings.arrowSize });
+				imgui.SameLine();
 
-			local totStartX, totStartY = imgui.GetCursorScreenPos();
-			progressbar.ProgressBar({{totEntity.HPPercent / 100, {'#e16c6c', '#fb9494'}}}, {settings.barWidth / 3, settings.totBarHeight}, {decorate = gConfig.showTargetBarBookends});
+				totX, _ = imgui.GetCursorScreenPos();
+				imgui.SetCursorScreenPos({totX, totY - (settings.totBarHeight / 2) + (settings.barHeight/2) + settings.totBarOffset});
 
-			local totNameSize = SIZE.new();
-			totNameText:GetTextSize(totNameSize);
+				local totStartX, totStartY = imgui.GetCursorScreenPos();
+				progressbar.ProgressBar({{totEntity.HPPercent / 100, {'#e16c6c', '#fb9494'}}}, {settings.barWidth / 3, settings.totBarHeight}, {decorate = gConfig.showTargetBarBookends});
 
-			totNameText:SetPositionX(totStartX + settings.barHeight / 2);
-			totNameText:SetPositionY(totStartY - totNameSize.cy);
-			totNameText:SetColor(totColor);
-			totNameText:SetText(totEntity.Name);
-			totNameText:SetVisible(true);
+				local totNameSize = SIZE.new();
+				totNameText:GetTextSize(totNameSize);
+
+				totNameText:SetPositionX(totStartX + settings.barHeight / 2);
+				totNameText:SetPositionY(totStartY - totNameSize.cy);
+				totNameText:SetColor(totColor);
+				totNameText:SetText(totEntity.Name);
+				totNameText:SetVisible(true);
+			else
+				totNameText:SetVisible(false);
+			end
 		else
+			-- When split is enabled, hide the totName text here (it will be shown in separate window)
 			totNameText:SetVisible(false);
 		end
     end
 	local winPosX, winPosY = imgui.GetWindowPos();
     imgui.End();
+
+	-- Draw separate Target of Target window if split is enabled
+	if (gConfig.splitTargetOfTarget) then
+		-- Obtain the player entity
+		local playerEnt = GetPlayerEntity();
+		local player = AshitaCore:GetMemoryManager():GetPlayer();
+		if (playerEnt == nil or player == nil) then
+			totNameText:SetVisible(false);
+			return;
+		end
+
+		-- Obtain the player target entity
+		local playerTarget = AshitaCore:GetMemoryManager():GetTarget();
+		local targetIndex;
+		local targetEntity;
+		if (playerTarget ~= nil) then
+			targetIndex, _ = GetTargets();
+			targetEntity = GetEntity(targetIndex);
+		end
+		if (targetEntity == nil or targetEntity.Name == nil) then
+			totNameText:SetVisible(false);
+			return;
+		end
+
+		-- Obtain target of target
+		local totEntity;
+		local totIndex;
+		if (targetEntity == playerEnt) then
+			totIndex = targetIndex;
+			totEntity = targetEntity;
+		end
+		if (totEntity == nil) then
+			totIndex = targetEntity.TargetedIndex;
+			if (totIndex ~= nil) then
+				totEntity = GetEntity(totIndex);
+			end
+		end
+
+		if (totEntity ~= nil and totEntity.Name ~= nil) then
+			local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+			if (gConfig.lockPositions) then
+				windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
+			end
+
+			if (imgui.Begin('TargetOfTargetBar', true, windowFlags)) then
+				local totColor = GetColorOfTarget(totEntity, totIndex);
+				local totStartX, totStartY = imgui.GetCursorScreenPos();
+
+				-- Use adjusted ToT settings for split bar
+				progressbar.ProgressBar({{totEntity.HPPercent / 100, {'#e16c6c', '#fb9494'}}}, {settings.totBarWidth, settings.totBarHeightSplit}, {decorate = gConfig.showTargetBarBookends});
+
+				-- Set font height for split ToT bar
+				totNameText:SetFontHeight(settings.totName_font_settings_split.font_height);
+
+				local totNameSize = SIZE.new();
+				totNameText:GetTextSize(totNameSize);
+
+				totNameText:SetPositionX(totStartX + settings.barHeight / 2);
+				totNameText:SetPositionY(totStartY - totNameSize.cy);
+				totNameText:SetColor(totColor);
+				totNameText:SetText(totEntity.Name);
+				totNameText:SetVisible(true);
+			end
+			imgui.End();
+		else
+			totNameText:SetVisible(false);
+		end
+	end
 end
 
 targetbar.Initialize = function(settings)
