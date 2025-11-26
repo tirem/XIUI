@@ -56,7 +56,7 @@ patchNotes.DrawWindow = function()
 		-- Draw logo and version text
 		imgui.Image(tonumber(ffi.cast("uint32_t", HXUITexture.image)), { 83, 53});
 		imgui.SameLine();
-		imgui.BulletText(' UPDATE 1.3.7 ');
+		imgui.BulletText(' UPDATE 1.3.8 ');
 		imgui.SameLine();
 		imgui.BulletText('');
 
