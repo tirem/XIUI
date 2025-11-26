@@ -48,7 +48,7 @@ local gdi = require('gdifonts.include');
 -- = HXUI DEV ONLY =
 -- =================
 -- Hot reloading of development files functionality
-local _HXUI_DEV_HOT_RELOADING_ENABLED = false;
+local _HXUI_DEV_HOT_RELOADING_ENABLED = true;
 local _HXUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS = 1;
 local _HXUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME;
 local _HXUI_DEV_HOT_RELOAD_FILES = {};
@@ -140,6 +140,10 @@ T{
 	showEnemyId = false;
 	alwaysShowHealthPercent = false,
     targetBarHideDuringEvents = true,
+	splitTargetOfTarget = false,
+	totBarScaleX = 1,
+	totBarScaleY = 1,
+	totBarFontOffset = 0,
 
 	enemyListScaleX = 1,
 	enemyListScaleY = 1,
@@ -739,6 +743,22 @@ local function UpdateUserSettings()
     gAdjustedSettings.targetBarSettings.percent_font_settings.font_height = math.max(ds.targetBarSettings.percent_font_settings.font_height + us.targetBarFontOffset, 1);
 	gAdjustedSettings.targetBarSettings.iconSize = ds.targetBarSettings.iconSize * us.targetBarIconScale;
 	gAdjustedSettings.targetBarSettings.arrowSize = ds.targetBarSettings.arrowSize * us.targetBarScaleY;
+
+	-- Target of Target Bar (separate scaling when split is enabled)
+	gAdjustedSettings.targetBarSettings.totBarWidth = (ds.targetBarSettings.barWidth / 3) * us.totBarScaleX;
+	gAdjustedSettings.targetBarSettings.totBarHeightSplit = ds.targetBarSettings.totBarHeight * us.totBarScaleY;
+	gAdjustedSettings.targetBarSettings.totName_font_settings_split = {
+		visible = ds.targetBarSettings.totName_font_settings.visible,
+		locked = ds.targetBarSettings.totName_font_settings.locked,
+		font_family = ds.targetBarSettings.totName_font_settings.font_family,
+		font_height = math.max(ds.targetBarSettings.totName_font_settings.font_height + us.totBarFontOffset, 1),
+		color = ds.targetBarSettings.totName_font_settings.color,
+		bold = ds.targetBarSettings.totName_font_settings.bold,
+		color_outline = ds.targetBarSettings.totName_font_settings.color_outline,
+		draw_flags = ds.targetBarSettings.totName_font_settings.draw_flags,
+		background = ds.targetBarSettings.totName_font_settings.background,
+		right_justified = ds.targetBarSettings.totName_font_settings.right_justified,
+	};
 
 	-- Party List
     gAdjustedSettings.partyListSettings.iconSize = ds.partyListSettings.iconSize * us.partyListBuffScale;

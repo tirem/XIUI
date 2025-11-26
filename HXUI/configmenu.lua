@@ -16,7 +16,7 @@ config.DrawWindow = function(us)
     imgui.PushStyleColor(ImGuiCol_FrameBg, {0,0.06,.16, 1});
     imgui.SetNextWindowSize({ 600, 600 }, ImGuiCond_FirstUseEver);
     if(showConfig[1] and imgui.Begin(("HXUI Config"):fmt(addon.version), showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
-        if(imgui.Button("Restore Defaults", { 130, 20 })) then
+        if(imgui.Button("Restore Defaults", { 160, 20 })) then
             ResetSettings();
             UpdateSettings();
         end
@@ -163,6 +163,11 @@ config.DrawWindow = function(us)
                 UpdateSettings();
             end
             imgui.ShowHelp('Always display the percent of HP remanining regardless if the target is an enemy or not.');
+            if (imgui.Checkbox('Split Target of Target Bar', { gConfig.splitTargetOfTarget })) then
+                gConfig.splitTargetOfTarget = not gConfig.splitTargetOfTarget;
+                UpdateSettings();
+            end
+            imgui.ShowHelp('Separate the Target of Target bar into its own window that can be moved independently.');
             local scaleX = { gConfig.targetBarScaleX };
             if (imgui.SliderFloat('Scale X', scaleX, 0.1, 3.0, '%.1f')) then
                 gConfig.targetBarScaleX = scaleX[1];
@@ -189,6 +194,28 @@ config.DrawWindow = function(us)
                 UpdateSettings();
             end
             imgui.EndChild();
+
+            -- Target of Target Bar settings (only show when split is enabled)
+            if (gConfig.splitTargetOfTarget) then
+                imgui.BeginChild("TargetOfTargetSettings", { 0, 150 }, true);
+                imgui.Text('Target of Target Bar');
+                local totScaleX = { gConfig.totBarScaleX };
+                if (imgui.SliderFloat('Scale X', totScaleX, 0.1, 3.0, '%.1f')) then
+                    gConfig.totBarScaleX = totScaleX[1];
+                    UpdateSettings();
+                end
+                local totScaleY = { gConfig.totBarScaleY };
+                if (imgui.SliderFloat('Scale Y', totScaleY, 0.1, 3.0, '%.1f')) then
+                    gConfig.totBarScaleY = totScaleY[1];
+                    UpdateSettings();
+                end
+                local totFontOffset = { gConfig.totBarFontOffset };
+                if (imgui.SliderInt('Font Scale', totFontOffset, -5, 10)) then
+                    gConfig.totBarFontOffset = totFontOffset[1];
+                    UpdateSettings();
+                end
+                imgui.EndChild();
+            end
         end
         if (imgui.CollapsingHeader("Enemy List")) then
             imgui.BeginChild("EnemyListSettings", { 0, 180 }, true);
