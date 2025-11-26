@@ -163,7 +163,7 @@ config.DrawWindow = function(us)
                 UpdateSettings();
             end
             imgui.ShowHelp('Always display the percent of HP remanining regardless if the target is an enemy or not.');
-            if (imgui.Checkbox('Split Target of Target Bar', { gConfig.splitTargetOfTarget })) then
+            if (imgui.Checkbox('Split Target Bars', { gConfig.splitTargetOfTarget })) then
                 gConfig.splitTargetOfTarget = not gConfig.splitTargetOfTarget;
                 UpdateSettings();
             end
