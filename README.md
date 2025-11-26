@@ -17,8 +17,8 @@ Contains the following elements:
 ***INSTALLATION***
 * Download the latest release of HXUI by [visiting our release page](https://github.com/tirem/HXUI/releases).
 * Extract the downloaded **HXUI-release.zip** file.
-* Once extracted, you will have a directory called HXUI-main.  Open up this directory, and inside of it will be a directory called HXUI.
-* Copy the HXUI directory to your Ashita addons folder, located at `HorizonXI\Game\addons`.
+* Once extracted, you will have a directory called HXUI-release.  Open up this directory, and inside of it will be a directory called HXUI.
+* Copy the HXUI directory to your Ashita addons folder, located at `..\addons`.
 * To manually load HXUI, type `/addon load HXUI` in the Final Fantasy XI client.
 * To configure HXUI, type `/hxui`.
 
