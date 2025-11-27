@@ -138,13 +138,13 @@ local function GetMemberInformation(memIdx)
         return memInfo
     end
 
-    local party = AshitaCore:GetMemoryManager():GetParty();
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    local party = GetPartySafe();
+    local player = GetPlayerSafe();
     if (player == nil or party == nil or party:GetMemberIsActive(memIdx) == 0) then
         return nil;
     end
 
-    local playerTarget = AshitaCore:GetMemoryManager():GetTarget();
+    local playerTarget = GetTargetSafe();
 
     local partyIndex = math.ceil((memIdx + 1) / partyMaxSize);
     local partyLeaderId = nil
@@ -307,14 +307,16 @@ local function DrawMember(memIdx, settings)
     local highlightDistance = false
     if (gConfig.showPartyListDistance) then
         if (memInfo.inzone and memInfo.index) then
-            local entity = AshitaCore:GetMemoryManager():GetEntity()
-            local distance = math.sqrt(entity:GetDistance(memInfo.index))
-            if (distance > 0 and distance <= 50) then
-                local percentText  = ('%.1f'):fmt(distance);
-                distanceText = ' - ' .. percentText
+            local entity = GetEntitySafe()
+            if entity ~= nil then
+                local distance = math.sqrt(entity:GetDistance(memInfo.index))
+                if (distance > 0 and distance <= 50) then
+                    local percentText  = ('%.1f'):fmt(distance);
+                    distanceText = ' - ' .. percentText
 
-                if (gConfig.partyListDistanceHighlight > 0 and distance <= gConfig.partyListDistanceHighlight) then
-                    highlightDistance = true
+                    if (gConfig.partyListDistanceHighlight > 0 and distance <= gConfig.partyListDistanceHighlight) then
+                        highlightDistance = true
+                    end
                 end
             end
         end
@@ -521,8 +523,8 @@ end
 partyList.DrawWindow = function(settings)
 
     -- Obtain the player entity..
-    local party = AshitaCore:GetMemoryManager():GetParty();
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    local party = GetPartySafe();
+    local player = GetPlayerSafe();
 
 	if (party == nil or player == nil or player.isZoning or player:GetMainJob() == 0) then
 		UpdateTextVisibility(false);
@@ -888,6 +890,42 @@ end
 
 partyList.HandleZonePacket = function(e)
     statusHandler.clear_cache();
+end
+
+partyList.Cleanup = function()
+	-- Destroy all member text font objects
+	for i = 0, memberTextCount - 1 do
+		if (memberText[i] ~= nil) then
+			if (memberText[i].name ~= nil) then memberText[i].name:destroy(); end
+			if (memberText[i].hp ~= nil) then memberText[i].hp:destroy(); end
+			if (memberText[i].mp ~= nil) then memberText[i].mp:destroy(); end
+			if (memberText[i].tp ~= nil) then memberText[i].tp:destroy(); end
+		end
+	end
+
+	-- Destroy primitives
+	if (selectionPrim ~= nil) then selectionPrim:destroy(); selectionPrim = nil; end
+	if (arrowPrim ~= nil) then arrowPrim:destroy(); arrowPrim = nil; end
+
+	-- Destroy party window primitives
+	for i = 1, 3 do
+		if (partyWindowPrim[i] ~= nil) then
+			if (partyWindowPrim[i].bgTitle ~= nil) then
+				partyWindowPrim[i].bgTitle:destroy();
+			end
+			if (partyWindowPrim[i].background ~= nil) then
+				for _, k in ipairs(bgImageKeys) do
+					if (partyWindowPrim[i].background[k] ~= nil) then
+						partyWindowPrim[i].background[k]:destroy();
+					end
+				end
+			end
+		end
+	end
+
+	-- Clear tables
+	memberText = {};
+	partyWindowPrim = {{background = {}}, {background = {}}, {background = {}}};
 end
 
 return partyList;

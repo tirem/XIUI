@@ -10,6 +10,80 @@ local buffTable = require('bufftable');
 
 debuffTable = T{};
 
+-- Entity spawn flags constants
+local SPAWN_FLAG_PLAYER = 0x0001;  -- Entity is a player character
+local SPAWN_FLAG_NPC = 0x0002;     -- Entity is an NPC
+
+-- Render flags constants
+local RENDER_FLAG_VISIBLE = 0x200;  -- Entity is visible and rendered
+local RENDER_FLAG_HIDDEN = 0x4000;  -- Entity is hidden (cutscene, menu, etc.)
+
+-- Party member cache for performance optimization
+-- Caches party member target indices and server IDs to avoid O(n) lookups every frame
+local partyMemberIndices = {};
+local partyMemberServerIds = {};
+local partyMemberIndicesDirty = true;
+
+-- ========================================
+-- Safe Memory Access Functions
+-- ========================================
+-- These functions provide consistent error handling when accessing game objects
+
+-- Safe accessor for memory manager
+local function GetMemoryManager()
+    if AshitaCore == nil then return nil end
+    return AshitaCore:GetMemoryManager();
+end
+
+-- Safe accessor for player object
+function GetPlayerSafe()
+    local memMgr = GetMemoryManager();
+    if memMgr == nil then return nil end
+    return memMgr:GetPlayer();
+end
+
+-- Safe accessor for party object
+function GetPartySafe()
+    local memMgr = GetMemoryManager();
+    if memMgr == nil then return nil end
+    return memMgr:GetParty();
+end
+
+-- Safe accessor for entity object
+function GetEntitySafe()
+    local memMgr = GetMemoryManager();
+    if memMgr == nil then return nil end
+    return memMgr:GetEntity();
+end
+
+-- Safe accessor for target object
+function GetTargetSafe()
+    local memMgr = GetMemoryManager();
+    if memMgr == nil then return nil end
+    return memMgr:GetTarget();
+end
+
+-- Safe accessor for inventory object
+function GetInventorySafe()
+    local memMgr = GetMemoryManager();
+    if memMgr == nil then return nil end
+    return memMgr:GetInventory();
+end
+
+-- Safe accessor for castbar object
+function GetCastBarSafe()
+    local memMgr = GetMemoryManager();
+    if memMgr == nil then return nil end
+    return memMgr:GetCastBar();
+end
+
+-- Safe accessor for recast object
+function GetRecastSafe()
+    local memMgr = GetMemoryManager();
+    if memMgr == nil then return nil end
+    return memMgr:GetRecast();
+end
+
 local debuff_font_settings = T{
 	visible = true,
 	locked = true,
@@ -63,57 +137,36 @@ function draw_circle(center, radius, color, segments, fill)
 	end
 end
 
-function GetColorOfTarget(targetEntity, targetIndex)
-    -- Obtain the entity spawn flags..
-
-	-- Default to other player color
-	local color = gConfig and gConfig.colorCustomization and gConfig.colorCustomization.targetBar.playerOtherTextColor or 0xFFFFFFFF;
-	if (targetIndex == nil) then
-		return color;
+-- Party member cache functions for performance optimization
+local function UpdatePartyCache()
+	local party = AshitaCore:GetMemoryManager():GetParty();
+	if party == nil then
+		partyMemberIndices = {};
+		partyMemberServerIds = {};
+		partyMemberIndicesDirty = false;
+		return;
 	end
-    local flag = targetEntity.SpawnFlags;
 
-    -- Determine the entity type and apply the proper color
-    if (bit.band(flag, 0x0001) == 0x0001) then --players
-		-- Default: other player
-		color = gConfig.colorCustomization.targetBar.playerOtherTextColor;
-		-- Check if party/alliance member
-		local party = AshitaCore:GetMemoryManager():GetParty();
-		for i = 0, 17 do
-			if (party:GetMemberIsActive(i) == 1) then
-				if (party:GetMemberTargetIndex(i) == targetIndex) then
-					color = gConfig.colorCustomization.targetBar.playerPartyTextColor;
-					break;
-				end
+	partyMemberIndices = {};
+	partyMemberServerIds = {};
+	for i = 0, 17 do
+		if (party:GetMemberIsActive(i) == 1) then
+			local idx = party:GetMemberTargetIndex(i);
+			local serverId = party:GetMemberServerId(i);
+			if idx ~= 0 then
+				partyMemberIndices[idx] = true;
 			end
-		end
-    elseif (bit.band(flag, 0x0002) == 0x0002) then --npc
-        color = gConfig.colorCustomization.targetBar.npcTextColor;
-    else --mob
-		local entMgr = AshitaCore:GetMemoryManager():GetEntity();
-		local claimStatus = entMgr:GetClaimStatus(targetIndex);
-		local claimId = bit.band(claimStatus, 0xFFFF);
---		local isClaimed = (bit.band(claimStatus, 0xFFFF0000) ~= 0);
-
-		if (claimId == 0) then
-			-- Unclaimed mob
-			color = gConfig.colorCustomization.targetBar.mobUnclaimedTextColor;
-		else
-			-- Claimed by someone
-			color = gConfig.colorCustomization.targetBar.mobOtherClaimedTextColor;
-			local party = AshitaCore:GetMemoryManager():GetParty();
-			for i = 0, 17 do
-				if (party:GetMemberIsActive(i) == 1) then
-					if (party:GetMemberServerId(i) == claimId) then
-						-- Claimed by party member
-						color = gConfig.colorCustomization.targetBar.mobPartyClaimedTextColor;
-						break;
-					end;
-				end
+			if serverId ~= 0 then
+				partyMemberServerIds[serverId] = true;
 			end
 		end
 	end
-	return color;
+	partyMemberIndicesDirty = false;
+end
+
+-- Mark party cache as dirty (to be called when party changes)
+function MarkPartyCacheDirty()
+	partyMemberIndicesDirty = true;
 end
 
 -- Helper to convert ARGB (0xAARRGGBB) to RGBA table {R, G, B, A}
@@ -125,6 +178,16 @@ local function ARGBToRGBA(argb)
 	return {r, g, b, a};
 end
 
+-- Helper to convert RGBA table {R, G, B, A} to ARGB (0xAARRGGBB)
+local function RGBAToARGB(rgba)
+	return bit.bor(
+		bit.lshift(math.floor(rgba[4] * 255), 24), -- Alpha
+		bit.lshift(math.floor(rgba[1] * 255), 16), -- Red
+		bit.lshift(math.floor(rgba[2] * 255), 8),  -- Green
+		math.floor(rgba[3] * 255)                   -- Blue
+	);
+end
+
 function GetColorOfTargetRGBA(targetEntity, targetIndex)
     -- Obtain the entity spawn flags..
 
@@ -133,26 +196,29 @@ function GetColorOfTargetRGBA(targetEntity, targetIndex)
 	if gConfig and gConfig.colorCustomization then
 		color = ARGBToRGBA(gConfig.colorCustomization.targetBar.playerOtherTextColor);
 	end
+
+	-- Validate entity and index are not nil
+	if (targetEntity == nil) then
+		return color; -- Default white RGBA
+	end
 	if (targetIndex == nil) then
 		return color;
 	end
+
     local flag = targetEntity.SpawnFlags;
 
     -- Determine the entity type and apply the proper color
-    if (bit.band(flag, 0x0001) == 0x0001) then --players
+    if (bit.band(flag, SPAWN_FLAG_PLAYER) == SPAWN_FLAG_PLAYER) then --players
 		-- Default: other player
 		color = ARGBToRGBA(gConfig.colorCustomization.targetBar.playerOtherTextColor);
-		-- Check if party/alliance member
-		local party = AshitaCore:GetMemoryManager():GetParty();
-		for i = 0, 17 do
-			if (party:GetMemberIsActive(i) == 1) then
-				if (party:GetMemberTargetIndex(i) == targetIndex) then
-					color = ARGBToRGBA(gConfig.colorCustomization.targetBar.playerPartyTextColor);
-					break;
-				end
-			end
+		-- Check if party/alliance member using cache
+		if partyMemberIndicesDirty then
+			UpdatePartyCache();
 		end
-    elseif (bit.band(flag, 0x0002) == 0x0002) then --npc
+		if (partyMemberIndices[targetIndex]) then
+			color = ARGBToRGBA(gConfig.colorCustomization.targetBar.playerPartyTextColor);
+		end
+    elseif (bit.band(flag, SPAWN_FLAG_NPC) == SPAWN_FLAG_NPC) then --npc
         color = ARGBToRGBA(gConfig.colorCustomization.targetBar.npcTextColor);
     else --mob
 		local entMgr = AshitaCore:GetMemoryManager():GetEntity();
@@ -166,19 +232,23 @@ function GetColorOfTargetRGBA(targetEntity, targetIndex)
 		else
 			-- Claimed by someone
 			color = ARGBToRGBA(gConfig.colorCustomization.targetBar.mobOtherClaimedTextColor);
-			local party = AshitaCore:GetMemoryManager():GetParty();
-			for i = 0, 17 do
-				if (party:GetMemberIsActive(i) == 1) then
-					if (party:GetMemberServerId(i) == claimId) then
-						-- Claimed by party member
-						color = ARGBToRGBA(gConfig.colorCustomization.targetBar.mobPartyClaimedTextColor);
-						break;
-					end;
-				end
+			-- Check if claimed by party member using cache
+			if partyMemberIndicesDirty then
+				UpdatePartyCache();
+			end
+			if (partyMemberServerIds[claimId]) then
+				-- Claimed by party member
+				color = ARGBToRGBA(gConfig.colorCustomization.targetBar.mobPartyClaimedTextColor);
 			end
 		end
 	end
 	return color;
+end
+
+-- Wrapper function that returns ARGB format (for backwards compatibility)
+function GetColorOfTarget(targetEntity, targetIndex)
+	local rgba = GetColorOfTargetRGBA(targetEntity, targetIndex);
+	return RGBAToARGB(rgba);
 end
 
 function GetIsMob(targetEntity)
@@ -189,7 +259,7 @@ function GetIsMob(targetEntity)
     local flag = targetEntity.SpawnFlags;
     -- Determine the entity type
 	local isMob;
-    if (bit.band(flag, 0x0001) == 0x0001 or bit.band(flag, 0x0002) == 0x0002) then --players and npcs
+    if (bit.band(flag, SPAWN_FLAG_PLAYER) == SPAWN_FLAG_PLAYER or bit.band(flag, SPAWN_FLAG_NPC) == SPAWN_FLAG_NPC) then --players and npcs
         isMob = false;
     else --mob
 		isMob = true;

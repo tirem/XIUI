@@ -33,10 +33,10 @@ end
 
 playerbar.DrawWindow = function(settings)
     -- Obtain the player entity..
-    local party = AshitaCore:GetMemoryManager():GetParty();
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    local party = GetPartySafe();
+    local player = GetPlayerSafe();
 	local playerEnt = GetPlayerEntity();
-	
+
 	if (party == nil or player == nil or playerEnt == nil) then
 		UpdateTextVisibility(false);
 		return;
@@ -298,6 +298,13 @@ playerbar.SetHidden = function(hidden)
 	if (hidden == true) then
 		UpdateTextVisibility(false);
 	end
+end
+
+playerbar.Cleanup = function()
+	-- Destroy all font objects on unload
+	if (hpText ~= nil) then hpText:destroy(); hpText = nil; end
+	if (mpText ~= nil) then mpText:destroy(); mpText = nil; end
+	if (tpText ~= nil) then tpText:destroy(); tpText = nil; end
 end
 
 return playerbar;

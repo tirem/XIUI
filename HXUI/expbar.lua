@@ -26,7 +26,7 @@ end
 --]]
 expbar.DrawWindow = function(settings)
     -- Obtain the player entity..
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    local player = GetPlayerSafe();
 
 	if (player == nil) then
 		UpdateTextVisibility(false);
@@ -168,12 +168,14 @@ expbar.Initialize = function(settings)
 	expText = fonts.new(settings.exp_font_settings);
 	percentText = fonts.new(settings.percent_font_settings);
 
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
-    expbar.limitPoints = { player:GetLimitPoints(), 10000 };
-    expbar.meritPoints = { player:GetMeritPoints(), player:GetMeritPointsMax() };
-    local currJob = player:GetMainJob();
-    expbar.capacityPoints = { player:GetCapacityPoints(currJob), 30000 };
-    expbar.jobPoints = { player:GetJobPoints(currJob), 500 };
+    local player = GetPlayerSafe();
+    if player ~= nil then
+        expbar.limitPoints = { player:GetLimitPoints(), 10000 };
+        expbar.meritPoints = { player:GetMeritPoints(), player:GetMeritPointsMax() };
+        local currJob = player:GetMainJob();
+        expbar.capacityPoints = { player:GetCapacityPoints(currJob), 30000 };
+        expbar.jobPoints = { player:GetJobPoints(currJob), 500 };
+    end
     -- expbar.mastery = { player:GetMasteryExp(), player:GetMasteryExpNeeded() };
 end
 
@@ -229,10 +231,12 @@ expbar.HandlePacket = function(e)
             expbar.meritPoints[2] = e.data_modified:byte(0x0C + 1) % 128;
             -- print('Limit points B: ' .. expbar.limitPoints[1] .. ' / ' .. expbar.limitPoints[2]);
         elseif e.data_modified:byte(5) == 5 then
-            local player = AshitaCore:GetMemoryManager():GetPlayer();
-            local jobOffset = player:GetMainJob() * 6 + 13;
-            expbar.capacityPoints[1] = struct.unpack('H', e.data_modified, jobOffset);
-            expbar.jobPoints[1] = struct.unpack('H', e.data_modified, jobOffset + 2);
+            local player = GetPlayerSafe();
+            if player ~= nil then
+                local jobOffset = player:GetMainJob() * 6 + 13;
+                expbar.capacityPoints[1] = struct.unpack('H', e.data_modified, jobOffset);
+                expbar.jobPoints[1] = struct.unpack('H', e.data_modified, jobOffset + 2);
+            end
         end
     end
 end

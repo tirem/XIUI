@@ -45,11 +45,15 @@ local patchNotes = require('patchNotes');
 local statusHandler = require('statushandler');
 local gdi = require('gdifonts.include');
 
+-- Render flags constants
+local RENDER_FLAG_VISIBLE = 0x200;  -- Entity is visible and rendered
+local RENDER_FLAG_HIDDEN = 0x4000;  -- Entity is hidden (cutscene, menu, etc.)
+
 -- =================
 -- = HXUI DEV ONLY =
 -- =================
 -- Hot reloading of development files functionality
-local _HXUI_DEV_HOT_RELOADING_ENABLED = true;
+local _HXUI_DEV_HOT_RELOADING_ENABLED = false;
 local _HXUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS = 1;
 local _HXUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME;
 local _HXUI_DEV_HOT_RELOAD_FILES = {};
@@ -1097,7 +1101,7 @@ local playerIndex = AshitaCore:GetMemoryManager():GetParty():GetMemberTargetInde
 if playerIndex ~= 0 then
     local entity = AshitaCore:GetMemoryManager():GetEntity();
     local flags = entity:GetRenderFlags0(playerIndex);
-    if (bit.band(flags, 0x200) == 0x200) and (bit.band(flags, 0x4000) == 0) then
+    if (bit.band(flags, RENDER_FLAG_VISIBLE) == RENDER_FLAG_VISIBLE) and (bit.band(flags, RENDER_FLAG_HIDDEN) == 0) then
         bLoggedIn = true;
 	end
 end
@@ -1254,7 +1258,38 @@ ashita.events.register('load', 'load_cb', function ()
 end);
 
 ashita.events.register('unload', 'unload_cb', function ()
-    gdi:destroy_interface()
+    -- Unregister all events
+    ashita.events.unregister('d3d_present', 'present_cb');
+    ashita.events.unregister('packet_in', 'packet_in_cb');
+    ashita.events.unregister('command', 'command_cb');
+
+    -- Cleanup module caches
+    statusHandler.clear_cache();
+
+    -- Cleanup debuff font cache if function exists
+    if ClearDebuffFontCache then
+        ClearDebuffFontCache();
+    end
+
+    -- Cleanup module font objects and primitives
+    if playerBar and playerBar.Cleanup then
+        playerBar.Cleanup();
+    end
+    if targetBar and targetBar.Cleanup then
+        targetBar.Cleanup();
+    end
+    if partyList and partyList.Cleanup then
+        partyList.Cleanup();
+    end
+    if enemyList and enemyList.Cleanup then
+        enemyList.Cleanup();
+    end
+    if castBar and castBar.Cleanup then
+        castBar.Cleanup();
+    end
+
+    -- Cleanup GDI interface last
+    gdi:destroy_interface();
 end);
 
 ashita.events.register('command', 'command_cb', function (e)
@@ -1313,6 +1348,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
 		enemyList.HandleZonePacket(e);
 		partyList.HandleZonePacket(e);
 		debuffHandler.HandleZonePacket(e);
+		MarkPartyCacheDirty(); -- Invalidate party cache on zone
 		bLoggedIn = true;
 	elseif (e.id == 0x0029) then
 		local messagePacket = ParseMessagePacket(e.data);
@@ -1323,5 +1359,8 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
 		bLoggedIn = false;
 	elseif (e.id == 0x076) then
 		statusHandler.ReadPartyBuffsFromPacket(e);
+	elseif (e.id == 0x0DD) then
+		-- Party member update packet - invalidate party cache
+		MarkPartyCacheDirty();
 	end
 end);

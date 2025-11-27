@@ -41,14 +41,14 @@ local _HXUI_DEV_DAMAGE_SET_TIMES = {};
 targetbar.DrawWindow = function(settings)
     -- Obtain the player entity..
     local playerEnt = GetPlayerEntity();
-	local player = AshitaCore:GetMemoryManager():GetPlayer();
+	local player = GetPlayerSafe();
     if (playerEnt == nil or player == nil) then
 		UpdateTextVisibility(false);
         return;
     end
 
     -- Obtain the player target entity (account for subtarget)
-	local playerTarget = AshitaCore:GetMemoryManager():GetTarget();
+	local playerTarget = GetTargetSafe();
 	local targetIndex;
 	local targetEntity;
 	if (playerTarget ~= nil) then
@@ -196,10 +196,12 @@ targetbar.DrawWindow = function(settings)
 		local targetHpPercent = targetEntity.HPPercent..'%';
 
 		if (gConfig.showEnemyId and isMonster) then
-			local targetServerId = AshitaCore:GetMemoryManager():GetEntity():GetServerId(targetIndex);
-			local targetServerIdHex = string.format('0x%X', targetServerId);
-
-			targetNameText = targetNameText .. " [".. string.sub(targetServerIdHex, -3) .."]";
+			local entity = GetEntitySafe();
+			if entity ~= nil then
+				local targetServerId = entity:GetServerId(targetIndex);
+				local targetServerIdHex = string.format('0x%X', targetServerId);
+				targetNameText = targetNameText .. " [".. string.sub(targetServerIdHex, -3) .."]";
+			end
 		end
 
 		local targetGradient = GetCustomGradient(gConfig.colorCustomization.targetBar, 'hpGradient') or {'#e26c6c', '#fb9494'};
@@ -361,14 +363,14 @@ targetbar.DrawWindow = function(settings)
 	if (gConfig.splitTargetOfTarget) then
 		-- Obtain the player entity
 		local playerEnt = GetPlayerEntity();
-		local player = AshitaCore:GetMemoryManager():GetPlayer();
+		local player = GetPlayerSafe();
 		if (playerEnt == nil or player == nil) then
 			totNameText:SetVisible(false);
 			return;
 		end
 
 		-- Obtain the player target entity
-		local playerTarget = AshitaCore:GetMemoryManager():GetTarget();
+		local playerTarget = GetTargetSafe();
 		local targetIndex;
 		local targetEntity;
 		if (playerTarget ~= nil) then
@@ -462,6 +464,14 @@ targetbar.SetHidden = function(hidden)
 	if (hidden == true) then
 		UpdateTextVisibility(false);
 	end
+end
+
+targetbar.Cleanup = function()
+	-- Destroy all font objects on unload
+	if (percentText ~= nil) then percentText:destroy(); percentText = nil; end
+	if (nameText ~= nil) then nameText:destroy(); nameText = nil; end
+	if (totNameText ~= nil) then totNameText:destroy(); totNameText = nil; end
+	if (distText ~= nil) then distText:destroy(); distText = nil; end
 end
 
 return targetbar;

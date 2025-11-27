@@ -29,7 +29,7 @@ end
 inventoryTracker.DrawWindow = function(settings)
     -- Obtain the player entity..
 
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    local player = GetPlayerSafe();
 	if (player == nil) then
 		UpdateTextVisibility(false);
 		return;
@@ -37,11 +37,11 @@ inventoryTracker.DrawWindow = function(settings)
 
 	local mainJob = player:GetMainJob();
     if (player.isZoning or mainJob == 0) then
-		UpdateTextVisibility(false);	
+		UpdateTextVisibility(false);
         return;
 	end
 
-	local inventory = AshitaCore:GetMemoryManager():GetInventory();
+	local inventory = GetInventorySafe();
 	if (inventory == nil) then
 		UpdateTextVisibility(false);
 		return;
@@ -55,10 +55,29 @@ inventoryTracker.DrawWindow = function(settings)
 	groupOffsetX = groupOffsetX + settings.groupSpacing;
 	local numPerGroup = settings.rowCount * settings.columnCount;
 	local totalGroups = math.ceil(maxBagSlots / numPerGroup);
-	local winSizeX = (groupOffsetX * totalGroups);
 
-	--Get max Y size
-	local winSizeY = groupOffsetY;
+	-- Window size calculation:
+	-- - groupOffsetX gives us spacing between groups (includes last dot center + group spacing)
+	-- - Multiply by totalGroups and subtract extra groupSpacing to get last dot center
+	-- - Add dotRadius to get to the edge of the last dot
+	-- - Add FramePadding.x since we offset all dots by this amount when drawing
+	-- - Add extra dotRadius to account for the first dot's offset (dots start at 2*dotRadius center, not 0)
+	-- - Add 1 pixel for outline thickness (unfilled circles have 1px outline extending beyond radius)
+	local style = imgui.GetStyle();
+	local framePaddingX = style.FramePadding.x;
+	local windowPaddingX = style.WindowPadding.x;
+	local windowPaddingY = style.WindowPadding.y;
+	local outlineThickness = 1; -- draw_circle uses thickness of 1 for outlines
+
+	local winSizeX = (groupOffsetX * totalGroups) - settings.groupSpacing + settings.dotRadius + framePaddingX + windowPaddingX + outlineThickness;
+
+	-- Get max Y size
+	-- - groupOffsetY gives us the center of the last row dot
+	-- - Add dotRadius to get to the bottom edge of the last dot
+	-- - Add extra dotRadius to account for the first dot's offset
+	-- - Add windowPaddingY to account for ImGui's internal window padding
+	-- - Add 1 pixel for outline thickness (unfilled circles have 1px outline extending beyond radius)
+	local winSizeY = groupOffsetY + settings.dotRadius + windowPaddingY + outlineThickness;
 
     imgui.SetNextWindowSize({-1, -1}, ImGuiCond_Always);
 		

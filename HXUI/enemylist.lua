@@ -7,6 +7,10 @@ local debuffHandler = require('debuffhandler');
 local statusHandler = require('statushandler');
 local progressbar = require('progressbar');
 
+-- Render flags constants
+local RENDER_FLAG_VISIBLE = 0x200;  -- Entity is visible and rendered
+local RENDER_FLAG_HIDDEN = 0x4000;  -- Entity is hidden (cutscene, menu, etc.)
+
 -- Background rendering constants
 local bgAlpha = 0.4;
 local bgRadius = 3;
@@ -32,8 +36,13 @@ local enemyBackgrounds = {};  -- Background rectangles for each enemy entry
 local function GetIsValidMob(mobIdx)
 	-- Check if we are valid, are above 0 hp, and are rendered
 
-    local renderflags = AshitaCore:GetMemoryManager():GetEntity():GetRenderFlags0(mobIdx);
-    if bit.band(renderflags, 0x200) ~= 0x200 or bit.band(renderflags, 0x4000) ~= 0 then
+    local entity = GetEntitySafe();
+    if entity == nil then
+        return false;
+    end
+
+    local renderflags = entity:GetRenderFlags0(mobIdx);
+    if bit.band(renderflags, RENDER_FLAG_VISIBLE) ~= RENDER_FLAG_VISIBLE or bit.band(renderflags, RENDER_FLAG_HIDDEN) ~= 0 then
         return false;
     end
 	return true;
@@ -41,7 +50,10 @@ end
 
 local function GetPartyMemberIds()
 	local partyMemberIds = T{};
-	local party = AshitaCore:GetMemoryManager():GetParty();
+	local party = GetPartySafe();
+	if party == nil then
+		return partyMemberIds;
+	end
 	for i = 0, 17 do
 		if (party:GetMemberIsActive(i) == 1) then
 			table.insert(partyMemberIds, party:GetMemberServerId(i));
@@ -101,7 +113,7 @@ enemylist.DrawWindow = function(settings)
 		-- Add top margin
 		imgui.Dummy({0, windowMargin});
 		local winStartX, winStartY = imgui.GetWindowPos();
-		local playerTarget = AshitaCore:GetMemoryManager():GetTarget();
+		local playerTarget = GetTargetSafe();
 		local targetIndex;
 		local subTargetIndex;
 		local subTargetActive = false;
@@ -297,7 +309,11 @@ enemylist.DrawWindow = function(settings)
 
 				-- ===== DEBUFF ICONS =====
 				-- Positioned to the right of the entry in a separate window
-				local buffIds = debuffHandler.GetActiveDebuffs(AshitaCore:GetMemoryManager():GetEntity():GetServerId(k));
+				local buffIds = nil;
+				local entity = GetEntitySafe();
+				if entity ~= nil then
+					buffIds = debuffHandler.GetActiveDebuffs(entity:GetServerId(k));
+				end
 				if (buffIds ~= nil and #buffIds > 0) then
 					-- Position debuffs to the right of the entry (accounting for window margin)
 					local debuffX = entryStartX + entryWidth + settings.debuffOffsetX;
@@ -433,6 +449,31 @@ enemylist.UpdateFonts = function(settings)
 	enemyHPFonts = {};
 
 	-- Reset cached colors when fonts are recreated
+	enemyNameColorCache = {};
+end
+
+enemylist.Cleanup = function()
+	-- Destroy all font objects
+	for k, v in pairs(enemyNameFonts) do
+		if (v ~= nil) then v:destroy(); end
+	end
+	for k, v in pairs(enemyDistanceFonts) do
+		if (v ~= nil) then v:destroy(); end
+	end
+	for k, v in pairs(enemyHPFonts) do
+		if (v ~= nil) then v:destroy(); end
+	end
+
+	-- Destroy all background primitives
+	for k, v in pairs(enemyBackgrounds) do
+		if (v ~= nil) then v:destroy(); end
+	end
+
+	-- Clear all tables
+	enemyNameFonts = {};
+	enemyDistanceFonts = {};
+	enemyHPFonts = {};
+	enemyBackgrounds = {};
 	enemyNameColorCache = {};
 end
 

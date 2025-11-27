@@ -18,7 +18,7 @@ end
 --]]
 giltracker.DrawWindow = function(settings)
     -- Obtain the player entity..
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    local player = GetPlayerSafe();
     local playerEnt = GetPlayerEntity();
 
 	if (player == nil or playerEnt == nil) then
@@ -27,12 +27,12 @@ giltracker.DrawWindow = function(settings)
 	end
 
     if (player.isZoning) then
-		UpdateTextVisibility(false);	
+		UpdateTextVisibility(false);
         return;
 	end
-	
+
 	local gilAmount
-	local inventory = AshitaCore:GetMemoryManager():GetInventory();
+	local inventory = GetInventorySafe();
 	if (inventory ~= nil) then
 		gilAmount = inventory:GetContainerItem(0, 0);
 		if (gilAmount == nil) then

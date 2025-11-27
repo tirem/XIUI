@@ -44,12 +44,19 @@ castbar.GetLabelText = function()
 end
 
 castbar.DrawWindow = function(settings)
-	local percent = AshitaCore:GetMemoryManager():GetCastBar():GetPercent();
+	local castBar = GetCastBarSafe();
+	if castBar == nil then
+		return;
+	end
+	local percent = castBar:GetPercent();
 
 	local totalCast = 1
 
 	if (gConfig.castBarFastCastEnabled) then
-		local player = AshitaCore:GetMemoryManager():GetPlayer()
+		local player = GetPlayerSafe();
+		if player == nil then
+			return;
+		end
 		local MID = player:GetMainJob()
 		local SID = player:GetSubJob()
 
@@ -143,7 +150,11 @@ castbar.Initialize = function(settings)
 end
 
 castbar.HandleActionPacket = function(actionPacket)
-	local localPlayerId = AshitaCore:GetMemoryManager():GetParty():GetMemberServerId(0);
+	local party = GetPartySafe();
+	if party == nil then
+		return;
+	end
+	local localPlayerId = party:GetMemberServerId(0);
 
 	-- We only care about:
 	-- - Actions originating from the player
