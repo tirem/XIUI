@@ -98,20 +98,13 @@ function GetRecastSafe()
 end
 
 local debuff_font_settings = T{
-	visible = true,
-	locked = true,
+	font_alignment = gdi.Alignment.Center,
 	font_family = 'Consolas',
-	font_height = 8,
-	color = 0xFFFFFFFF,
-	bold = true,
-	italic = false;
-	color_outline = 0xFF000000,
-	draw_flags = 0x10,
-	background = 
-	T{
-		visible = false,
-	},
-	right_justified = false;
+	font_height = 14,
+	font_color = 0xFFFFFFFF,
+	font_flags = gdi.FontFlags.Bold,
+	outline_color = 0xFF000000,
+	outline_width = 2,
 };
 
 function draw_rect(top_left, bot_right, color, radius, fill, shadowConfig)
@@ -602,47 +595,40 @@ function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffs
                     imgui.SameLine();
                     imgui.SetCursorScreenPos({resetX, resetY});
                 end
+                -- Capture position BEFORE drawing icon to get accurate position
+                local iconPosX, iconPosY = imgui.GetCursorScreenPos();
                 imgui.Image(icon, { iconSize, iconSize }, { 0, 0 }, { 1, 1 });
                 local textObjName = "debuffText" .. tostring(i)
                 if buffTimes ~= nil then
-                    local startX, startY = imgui.GetCursorScreenPos();
-                    local textPosX = startX + (i-1)*iconSize + iconSize/2 + i - 1
-                    local textPosY = startY
+                    -- Calculate center of the icon for text positioning
+                    local textPosX = iconPosX + iconSize / 2
+                    local textPosY = iconPosY + iconSize  -- Move text below the icon
 					
                     local textObj = debuffTable[textObjName]
+                    -- Use passed settings if available, otherwise use default
+                    local font_base = settings or debuff_font_settings;
                     if (textObj == nil) then
                         local font_settings = T{
-                            visible = debuff_font_settings.visible,
-                            locked = debuff_font_settings.locked,
+                            font_alignment = font_base.font_alignment,
                             font_family = gConfig.fontFamily,
-                            font_height = debuff_font_settings.font_height,
-                            color = debuff_font_settings.color,
-                            bold = debuff_font_settings.bold,
-                            italic = debuff_font_settings.italic,
-                            color_outline = debuff_font_settings.color_outline,
-                            draw_flags = debuff_font_settings.draw_flags,
-                            background = debuff_font_settings.background,
-                            right_justified = debuff_font_settings.right_justified,
+                            font_height = font_base.font_height,
+                            font_color = font_base.font_color,
+                            font_flags = font_base.font_flags,
+                            outline_color = font_base.outline_color,
+                            outline_width = font_base.outline_width,
                         };
-                        textObj = fonts.new(font_settings)
+                        textObj = gdi:create_object(font_settings)
                         debuffTable[textObjName] = textObj
                     end
-                    textObj:SetFontHeight(debuff_font_settings.font_height + gConfig.targetBarIconFontOffset)
-                    textObj:SetText('')
+                    local scaledFontHeight = math.floor(font_base.font_height * gConfig.targetBarIconFontScale);
+                    textObj:set_font_height(scaledFontHeight)
+                    textObj:set_text('')
                     if buffTimes[i] ~= nil then
-                        local timeString = tostring(buffTimes[i])
-                        if (string.len(timeString) == 2) then
-                            textObj:SetPositionX(textPosX + 2.5 - gConfig.targetBarIconFontOffset)
-                            textObj:SetPositionY(textPosY)
-                        elseif (string.len(timeString) == 1) then
-                            textObj:SetPositionX(textPosX + 5 - gConfig.targetBarIconFontOffset)
-                            textObj:SetPositionY(textPosY)
-                        else
-                            textObj:SetPositionX(textPosX - gConfig.targetBarIconFontOffset)
-                            textObj:SetPositionY(textPosY)
-                        end
-                        textObj:SetText(tostring(buffTimes[i]))
-                        textObj:SetVisible(true);
+                        -- Text is center-aligned, so just use the calculated center position
+                        textObj:set_position_x(textPosX)
+                        textObj:set_position_y(textPosY)
+                        textObj:set_text(tostring(buffTimes[i]))
+                        textObj:set_visible(true);
                     end
                 end
                 if (imgui.IsItemHovered()) then
@@ -874,6 +860,12 @@ function GetCustomGradient(moduleSettings, gradientName)
 end
 
 function ClearDebuffFontCache()
+    -- Destroy all gdi font objects before clearing
+    for key, textObj in pairs(debuffTable) do
+        if textObj ~= nil then
+            gdi:destroy_object(textObj);
+        end
+    end
     debuffTable = T{};
 end
 
@@ -882,158 +874,21 @@ end
 -- ========================================
 
 --[[
-    Drop shadow support for text (font objects) and primitives.
-    Font shadows work by wrapping font methods to automatically update a paired shadow font.
-]]--
+    NOTE: gdifonts has NATIVE outline/shadow support built-in!
 
--- Table to store shadow data for fonts
-local fontShadowData = {};
-
---[[
-    Applies a drop shadow to a font object. After calling this, use the font normally
-    and the shadow will automatically follow all changes.
-
-    @param mainFont: The font object to add shadow to
-    @param shadowConfig: Table with shadow properties:
-        - offsetX: number - X offset for shadow (default: 2)
-        - offsetY: number - Y offset for shadow (default: 2)
-        - color: number - ARGB color for shadow (default: 0xFF000000 black)
-        - alpha: number - Override alpha channel 0-1 (optional)
+    Use the font settings properties to configure shadows:
+        - outline_color: ARGB color for the outline/shadow (e.g., 0xFF000000 for black)
+        - outline_width: Width in pixels (e.g., 2 for a nice shadow effect)
 
     Example:
-        myFont = fonts.new(settings);
-        ApplyFontShadow(myFont, {offsetX = 2, offsetY = 2, alpha = 0.7});
-        -- Now use font normally:
-        myFont:SetText("Hello");
-        myFont:SetPositionX(100);
-        myFont:SetVisible(true);
+        local font_settings = T{
+            font_family = 'Arial',
+            font_height = 12,
+            font_color = 0xFFFFFFFF,
+            outline_color = 0xFF000000,  -- Black shadow
+            outline_width = 2,            -- 2px shadow
+        };
+        myFont = gdi:create_object(font_settings);
+
+    The old ApplyFontShadow() function is deprecated and not needed with gdifonts.
 ]]--
-function ApplyFontShadow(mainFont, shadowConfig)
-    if mainFont == nil then
-        return;
-    end
-
-    -- If already has shadow, clean it up first
-    if fontShadowData[mainFont] then
-        CleanupFont(mainFont);
-    end
-
-    -- Set default shadow config
-    shadowConfig = shadowConfig or {};
-    shadowConfig.offsetX = shadowConfig.offsetX or 2;
-    shadowConfig.offsetY = shadowConfig.offsetY or 2;
-    shadowConfig.color = shadowConfig.color or 0xFF000000;
-
-    -- Apply alpha override if specified
-    local shadowColor = shadowConfig.color;
-    if shadowConfig.alpha then
-        local baseColor = bit.band(shadowColor, 0x00FFFFFF);
-        local alpha = math.floor(math.clamp(shadowConfig.alpha, 0, 1) * 255);
-        shadowColor = bit.bor(baseColor, bit.lshift(alpha, 24));
-    end
-
-    -- Create shadow font with same settings as main font
-    local shadowSettings = T{
-        visible = false,
-        locked = true,
-        font_family = mainFont.settings.font_family or 'Arial',
-        font_height = mainFont.settings.font_height or 12,
-        color = shadowColor,
-        bold = mainFont.settings.bold or false,
-        italic = mainFont.settings.italic or false,
-        color_outline = 0x00000000, -- No outline on shadow
-        draw_flags = 0x00,
-        background = T{ visible = false },
-        right_justified = mainFont.settings.right_justified or false,
-    };
-
-    local shadowFont = fonts.new(shadowSettings);
-
-    -- Store shadow data
-    fontShadowData[mainFont] = {
-        shadowFont = shadowFont,
-        config = shadowConfig,
-        originalMethods = {}
-    };
-
-    local data = fontShadowData[mainFont];
-
-    -- Wrap SetText to update shadow
-    data.originalMethods.SetText = mainFont.SetText;
-    mainFont.SetText = function(self, text)
-        data.originalMethods.SetText(self, text);
-        shadowFont:SetText(text);
-    end
-
-    -- Wrap SetPositionX to update shadow with offset
-    data.originalMethods.SetPositionX = mainFont.SetPositionX;
-    mainFont.SetPositionX = function(self, x)
-        data.originalMethods.SetPositionX(self, x);
-        shadowFont:SetPositionX(x + shadowConfig.offsetX);
-    end
-
-    -- Wrap SetPositionY to update shadow with offset
-    data.originalMethods.SetPositionY = mainFont.SetPositionY;
-    mainFont.SetPositionY = function(self, y)
-        data.originalMethods.SetPositionY(self, y);
-        shadowFont:SetPositionY(y + shadowConfig.offsetY);
-    end
-
-    -- Wrap SetVisible to update shadow
-    data.originalMethods.SetVisible = mainFont.SetVisible;
-    mainFont.SetVisible = function(self, visible)
-        data.originalMethods.SetVisible(self, visible);
-        shadowFont:SetVisible(visible);
-    end
-
-    -- Wrap SetFontHeight to update shadow
-    data.originalMethods.SetFontHeight = mainFont.SetFontHeight;
-    mainFont.SetFontHeight = function(self, height)
-        data.originalMethods.SetFontHeight(self, height);
-        shadowFont:SetFontHeight(height);
-    end
-
-    -- Wrap SetColor (shadow keeps its own color)
-    data.originalMethods.SetColor = mainFont.SetColor;
-    mainFont.SetColor = function(self, color)
-        data.originalMethods.SetColor(self, color);
-        -- Shadow keeps its configured color
-    end
-
-    -- Wrap destroy to clean up shadow
-    data.originalMethods.destroy = mainFont.destroy;
-    mainFont.destroy = function(self)
-        CleanupFont(self);
-    end
-end
-
---[[
-    Cleans up a font and its shadow (if it has one).
-    Call this instead of font:destroy() if the font might have a shadow.
-
-    @param mainFont: The font object to clean up
-]]--
-function CleanupFont(mainFont)
-    if mainFont == nil then
-        return;
-    end
-
-    local data = fontShadowData[mainFont];
-    if data then
-        -- Restore original methods
-        for methodName, originalMethod in pairs(data.originalMethods) do
-            mainFont[methodName] = originalMethod;
-        end
-
-        -- Destroy shadow font
-        if data.shadowFont then
-            data.shadowFont:destroy();
-        end
-
-        -- Remove from tracking
-        fontShadowData[mainFont] = nil;
-    end
-
-    -- Destroy main font (using original or current destroy method)
-    mainFont:destroy();
-end

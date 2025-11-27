@@ -6,6 +6,9 @@ local ffi = require("ffi");
 local gilTexture;
 local gilText;
 
+-- Cached color to avoid expensive set_font_color calls every frame
+local lastGilTextColor;
+
 local giltracker = {};
 
 local function UpdateTextVisibility(visible)
@@ -53,10 +56,18 @@ giltracker.DrawWindow = function(settings)
 		local cursorX, cursorY  = imgui.GetCursorScreenPos();
 		imgui.Image(tonumber(ffi.cast("uint32_t", gilTexture.image)), { settings.iconScale, settings.iconScale });
 
+		-- Dynamically set font height based on settings (avoids expensive font recreation)
+		gilText:set_font_height(settings.font_settings.font_height);
+
 		gilText:set_text(FormatInt(gilAmount.Count));
         local posOffsetX = (settings.font_settings.font_alignment == gdi.Alignment.Right) and settings.offsetX or settings.offsetX + settings.iconScale;
 		gilText:set_position_x(cursorX + posOffsetX);
 		gilText:set_position_y(cursorY + (settings.iconScale/2) + settings.offsetY);
+		-- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
+		if (lastGilTextColor ~= gConfig.colorCustomization.gilTracker.textColor) then
+			gilText:set_font_color(gConfig.colorCustomization.gilTracker.textColor);
+			lastGilTextColor = gConfig.colorCustomization.gilTracker.textColor;
+		end
 
 		UpdateTextVisibility(true);
     end
@@ -74,6 +85,9 @@ giltracker.UpdateFonts = function(settings)
 
 	-- Recreate font object with new settings
     gilText = gdi:create_object(settings.font_settings);
+
+	-- Reset cached color when font is recreated
+	lastGilTextColor = nil;
 end
 
 giltracker.SetHidden = function(hidden)

@@ -227,7 +227,12 @@ playerbar.DrawWindow = function(settings)
 		imgui.SameLine();
 
 		local tpLocX, tpLocY  = imgui.GetCursorScreenPos();
-		
+
+		-- Dynamically set font heights based on settings (avoids expensive font recreation)
+		hpText:set_font_height(settings.font_settings.font_height);
+		mpText:set_font_height(settings.font_settings.font_height);
+		tpText:set_font_height(settings.font_settings.font_height);
+
 		-- Update our HP Text
 		hpText:set_position_x(hpLocX - settings.barSpacing - settings.barHeight / 2);
 		hpText:set_position_y(hpLocY + settings.barHeight + settings.textYOffset);

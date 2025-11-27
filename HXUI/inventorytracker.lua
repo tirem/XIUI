@@ -4,6 +4,9 @@ local gdi = require('gdifonts.include');
 
 local inventoryText;
 
+-- Cached color to avoid expensive set_font_color calls every frame
+local lastInventoryTextColor;
+
 local inventoryTracker = {};
 
 local function UpdateTextVisibility(visible)
@@ -114,10 +117,18 @@ inventoryTracker.DrawWindow = function(settings)
 		end
 
         if (settings.showText) then
+			-- Dynamically set font height based on settings (avoids expensive font recreation)
+			inventoryText:set_font_height(settings.font_settings.font_height);
+
             inventoryText:set_text(usedBagSlots.. '/'..maxBagSlots);
             local textWidth, textHeight = inventoryText:get_text_size();
             inventoryText:set_position_x(locX + winSizeX);
 		    inventoryText:set_position_y(locY + settings.textOffsetY - textHeight);
+		    -- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
+		    if (lastInventoryTextColor ~= gConfig.colorCustomization.inventoryTracker.textColor) then
+			    inventoryText:set_font_color(gConfig.colorCustomization.inventoryTracker.textColor);
+			    lastInventoryTextColor = gConfig.colorCustomization.inventoryTracker.textColor;
+		    end
             UpdateTextVisibility(true);
         else
             UpdateTextVisibility(false);
@@ -137,6 +148,9 @@ inventoryTracker.UpdateFonts = function(settings)
 
 	-- Recreate font object with new settings
     inventoryText = gdi:create_object(settings.font_settings);
+
+	-- Reset cached color when font is recreated
+	lastInventoryTextColor = nil;
 end
 
 

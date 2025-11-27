@@ -7,6 +7,11 @@ local jobText;
 local expText;
 local percentText;
 
+-- Cached colors to avoid expensive set_font_color calls every frame
+local lastJobTextColor;
+local lastExpTextColor;
+local lastPercentTextColor;
+
 local expbar = {
     limitPoints = {},
     meritPoints = {},
@@ -100,6 +105,11 @@ expbar.DrawWindow = function(settings)
 
 		-- Update our text objects
 
+		-- Dynamically set font heights based on settings (avoids expensive font recreation)
+		jobText:set_font_height(settings.job_font_settings.font_height);
+		expText:set_font_height(settings.exp_font_settings.font_height);
+		percentText:set_font_height(settings.percent_font_settings.font_height);
+
         if gConfig.expBarShowText then
             -- Job Text
             local mainJobString = AshitaCore:GetResourceManager():GetString('jobs.names_abbr', mainJob);
@@ -109,6 +119,11 @@ expbar.DrawWindow = function(settings)
             local textWidth, textHeight = jobText:get_text_size();
             jobText:set_position_x(startX);
             jobText:set_position_y(inlineMode and textY + (settings.barHeight - textHeight) / 2 - 1 or textY);
+            -- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
+            if (lastJobTextColor ~= gConfig.colorCustomization.expBar.jobTextColor) then
+                jobText:set_font_color(gConfig.colorCustomization.expBar.jobTextColor);
+                lastJobTextColor = gConfig.colorCustomization.expBar.jobTextColor;
+            end
 
             -- Exp Text
             if meritMode then
@@ -129,6 +144,11 @@ expbar.DrawWindow = function(settings)
             local expTextWidth, expTextHeight = expText:get_text_size();
             expText:set_position_x(textXRightAlign);
             expText:set_position_y(inlineMode and textY + (settings.barHeight - expTextHeight) / 2 - 1 or textY);
+            -- Only call set_font_color if the color has changed
+            if (lastExpTextColor ~= gConfig.colorCustomization.expBar.expTextColor) then
+                expText:set_font_color(gConfig.colorCustomization.expBar.expTextColor);
+                lastExpTextColor = gConfig.colorCustomization.expBar.expTextColor;
+            end
 
             jobText:set_visible(true);
             expText:set_visible(true);
@@ -149,6 +169,11 @@ expbar.DrawWindow = function(settings)
             local percentTextY = inlineMode and textY + (settings.barHeight - percentTextHeight) / 2 - 1 or startY - settings.textOffsetY;
             percentText:set_position_x(percentTextX + settings.percentOffsetX);
             percentText:set_position_y(percentTextY);
+            -- Only call set_font_color if the color has changed
+            if (lastPercentTextColor ~= gConfig.colorCustomization.expBar.percentTextColor) then
+                percentText:set_font_color(gConfig.colorCustomization.expBar.percentTextColor);
+                lastPercentTextColor = gConfig.colorCustomization.expBar.percentTextColor;
+            end
 
             percentText:set_visible(true);
         else
@@ -187,6 +212,11 @@ expbar.UpdateFonts = function(settings)
     jobText = gdi:create_object(settings.job_font_settings);
 	expText = gdi:create_object(settings.exp_font_settings);
 	percentText = gdi:create_object(settings.percent_font_settings);
+
+	-- Reset cached colors when fonts are recreated
+	lastJobTextColor = nil;
+	lastExpTextColor = nil;
+	lastPercentTextColor = nil;
 end
 
 expbar.SetHidden = function(hidden)

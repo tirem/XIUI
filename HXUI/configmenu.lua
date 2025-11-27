@@ -152,7 +152,7 @@ local function DrawPlayerBarSettings()
 
         DrawSlider('Scale X', 'playerBarScaleX', 0.1, 3.0, '%.1f');
         DrawSlider('Scale Y', 'playerBarScaleY', 0.1, 3.0, '%.1f');
-        DrawSlider('Font Scale', 'playerBarFontOffset', -5, 10, nil, UpdatePlayerBarFonts);
+        DrawSlider('Font Size', 'playerBarFontSize', 6, 36);
 
         imgui.EndChild();
     end
@@ -161,7 +161,7 @@ end
 -- Section: Target Bar Settings
 local function DrawTargetBarSettings()
     if (imgui.CollapsingHeader("Target Bar")) then
-        imgui.BeginChild("TargetBarSettings", { 0, 270 }, true);
+        imgui.BeginChild("TargetBarSettings", { 0, 320 }, true);
 
         DrawCheckbox('Enabled', 'showTargetBar', CheckVisibility);
         DrawCheckbox('Show Distance', 'showTargetDistance');
@@ -178,9 +178,11 @@ local function DrawTargetBarSettings()
 
         DrawSlider('Scale X', 'targetBarScaleX', 0.1, 3.0, '%.1f');
         DrawSlider('Scale Y', 'targetBarScaleY', 0.1, 3.0, '%.1f');
-        DrawSlider('Font Scale', 'targetBarFontOffset', -5, 10, nil, UpdateTargetBarFonts);
+        DrawSlider('Name Font Size', 'targetBarNameFontSize', 6, 36);
+        DrawSlider('Distance Font Size', 'targetBarDistanceFontSize', 6, 36);
+        DrawSlider('HP% Font Size', 'targetBarPercentFontSize', 6, 36);
         DrawSlider('Icon Scale', 'targetBarIconScale', 0.1, 3.0, '%.1f');
-        DrawSlider('Icon Font Scale', 'targetBarIconFontOffset', -5, 10, nil, UpdateTargetBarFonts);
+        DrawSlider('Icon Font Size', 'targetBarIconFontSize', 6, 36);
 
         imgui.EndChild();
 
@@ -191,7 +193,7 @@ local function DrawTargetBarSettings()
 
             DrawSlider('Scale X', 'totBarScaleX', 0.1, 3.0, '%.1f');
             DrawSlider('Scale Y', 'totBarScaleY', 0.1, 3.0, '%.1f');
-            DrawSlider('Font Scale', 'totBarFontOffset', -5, 10, nil, UpdateTargetBarFonts);
+            DrawSlider('Font Size', 'totBarFontSize', 6, 36);
 
             imgui.EndChild();
         end
@@ -210,7 +212,7 @@ local function DrawEnemyListSettings()
 
         DrawSlider('Scale X', 'enemyListScaleX', 0.1, 3.0, '%.1f');
         DrawSlider('Scale Y', 'enemyListScaleY', 0.1, 3.0, '%.1f');
-        DrawSlider('Font Scale', 'enemyListFontScale', 0.1, 3.0, '%.1f', UpdateEnemyListFonts);
+        DrawSlider('Font Size', 'enemyListFontSize', 6, 36);
         DrawSlider('Icon Scale', 'enemyListIconScale', 0.1, 3.0, '%.1f');
 
         imgui.EndChild();
@@ -310,7 +312,7 @@ local function DrawPartyListSettings()
             DrawSlider('Min Rows', 'partyListMinRows', 1, 6);
             DrawSlider('Scale X', 'partyListScaleX', 0.1, 3.0, '%.2f');
             DrawSlider('Scale Y', 'partyListScaleY', 0.1, 3.0, '%.2f');
-            DrawSlider('Font Scale', 'partyListFontOffset', -5, 10, nil, UpdatePartyListFonts);
+            DrawSlider('Font Size', 'partyListFontSize', 6, 36);
             DrawSlider('Job Icon Scale', 'partyListJobIconScale', 0.1, 3.0, '%.1f');
             DrawSlider('Entry Spacing', 'partyListEntrySpacing', -20, 20);
 
@@ -325,7 +327,7 @@ local function DrawPartyListSettings()
             DrawCheckbox('Show TP', 'partyList2TP');
             DrawSlider('Scale X', 'partyList2ScaleX', 0.1, 3.0, '%.2f');
             DrawSlider('Scale Y', 'partyList2ScaleY', 0.1, 3.0, '%.2f');
-            DrawSlider('Font Scale', 'partyList2FontOffset', -5, 10, nil, UpdatePartyListFonts);
+            DrawSlider('Font Size', 'partyList2FontSize', 6, 36);
             DrawSlider('Job Icon Scale', 'partyList2JobIconScale', 0.1, 3.0, '%.1f');
             DrawSlider('Entry Spacing', 'partyList2EntrySpacing', -20, 20);
 
@@ -340,7 +342,7 @@ local function DrawPartyListSettings()
             DrawCheckbox('Show TP', 'partyList3TP');
             DrawSlider('Scale X', 'partyList3ScaleX', 0.1, 3.0, '%.2f');
             DrawSlider('Scale Y', 'partyList3ScaleY', 0.1, 3.0, '%.2f');
-            DrawSlider('Font Scale', 'partyList3FontOffset', -5, 10, nil, UpdatePartyListFonts);
+            DrawSlider('Font Size', 'partyList3FontSize', 6, 36);
             DrawSlider('Job Icon Scale', 'partyList3JobIconScale', 0.1, 3.0, '%.1f');
             DrawSlider('Entry Spacing', 'partyList3EntrySpacing', -20, 20);
 
@@ -366,7 +368,7 @@ local function DrawExpBarSettings()
         DrawSlider('Scale X', 'expBarScaleX', 0.1, 3.0, '%.2f');
         DrawSlider('Scale Y', 'expBarScaleY', 0.1, 3.0, '%.2f');
         DrawSlider('Text Scale X', 'expBarTextScaleX', 0.1, 3.0, '%.2f');
-        DrawSlider('Font Height', 'expBarFontOffset', -5, 10, nil, UpdateExpBarFonts);
+        DrawSlider('Font Size', 'expBarFontSize', 6, 36);
 
         imgui.EndChild();
     end
@@ -379,7 +381,7 @@ local function DrawGilTrackerSettings()
 
         DrawCheckbox('Enabled', 'showGilTracker', CheckVisibility);
         DrawSlider('Scale', 'gilTrackerScale', 0.1, 3.0, '%.1f');
-        DrawSlider('Font Scale', 'gilTrackerFontOffset', -5, 10, nil, UpdateGilTrackerFonts);
+        DrawSlider('Font Size', 'gilTrackerFontSize', 6, 36);
         DrawCheckbox('Right Align', 'gilTrackerRightAlign');
 
         local posOffset = { gConfig.gilTrackerPosOffset[1], gConfig.gilTrackerPosOffset[2] };
@@ -422,7 +424,7 @@ local function DrawInventoryTrackerSettings()
 
         DrawSlider('Opacity', 'inventoryTrackerOpacity', 0, 1.0, '%.2f');
         DrawSlider('Scale', 'inventoryTrackerScale', 0.1, 3.0, '%.1f');
-        DrawSlider('Font Scale', 'inventoryTrackerFontOffset', -5, 10, nil, UpdateInventoryTrackerFonts);
+        DrawSlider('Font Size', 'inventoryTrackerFontSize', 6, 36);
 
         imgui.EndChild();
     end
@@ -449,7 +451,7 @@ local function DrawCastBarSettings()
 
         DrawSlider('Scale X', 'castBarScaleX', 0.1, 3.0, '%.1f');
         DrawSlider('Scale Y', 'castBarScaleY', 0.1, 3.0, '%.1f');
-        DrawSlider('Font Scale', 'castBarFontOffset', -5, 10, nil, UpdateCastBarFonts);
+        DrawSlider('Font Size', 'castBarFontSize', 6, 36);
 
         DrawCheckbox('Enable Fast Cast / True Display', 'castBarFastCastEnabled');
 

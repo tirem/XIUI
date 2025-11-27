@@ -36,8 +36,8 @@ local memberTextCount = partyMaxSize * 3;
 -- Cache last set colors to avoid expensive SetColor() calls every frame
 local memberTextColorCache = {};
 
--- Cache last used font offsets to avoid unnecessary font recreation
-local cachedFontOffsets = {0, 0, 0};
+-- Cache last used font sizes to avoid unnecessary font recreation
+local cachedFontSizes = {12, 12, 12};
 
 local borderConfig = {1, '#243e58'};
 
@@ -274,6 +274,14 @@ local function DrawMember(memIdx, settings)
         imgui.Image(jobIcon, {jobIconSize, jobIconSize});
     end
     imgui.SetCursorScreenPos({hpStartX, hpStartY});
+
+    -- Dynamically set font heights based on settings (avoids expensive font recreation)
+    local partyIndex = math.ceil((memIdx + 1) / partyMaxSize);
+    local fontSize = settings.fontSizes[partyIndex];
+    memberText[memIdx].hp:set_font_height(fontSize);
+    memberText[memIdx].mp:set_font_height(fontSize);
+    memberText[memIdx].tp:set_font_height(fontSize);
+    memberText[memIdx].name:set_font_height(fontSize);
 
     -- Update the hp text
     -- Only call set_color if the color has changed (expensive operation for GDI fonts)
@@ -716,27 +724,27 @@ partyList.DrawPartyWindow = function(settings, party, partyIndex)
 end
 
 partyList.Initialize = function(settings)
-    -- Cache the initial font offsets
-    cachedFontOffsets = {
-		settings.fontOffsets[1],
-		settings.fontOffsets[2],
-		settings.fontOffsets[3],
+    -- Cache the initial font sizes
+    cachedFontSizes = {
+		settings.fontSizes[1],
+		settings.fontSizes[2],
+		settings.fontSizes[3],
 	};
 
     -- Initialize all our font objects we need
     for i = 0, memberTextCount-1 do
         local partyIndex = math.ceil((i + 1) / partyMaxSize);
-		local fontOffset = settings.fontOffsets[partyIndex];
+		local fontSize = settings.fontSizes[partyIndex];
 
         local name_font_settings = deep_copy_table(settings.name_font_settings);
         local hp_font_settings = deep_copy_table(settings.hp_font_settings);
         local mp_font_settings = deep_copy_table(settings.mp_font_settings);
         local tp_font_settings = deep_copy_table(settings.tp_font_settings);
 
-        name_font_settings.font_height = math.max(settings.name_font_settings.font_height + fontOffset, 1);
-        hp_font_settings.font_height = math.max(settings.hp_font_settings.font_height + fontOffset, 1);
-        mp_font_settings.font_height = math.max(settings.mp_font_settings.font_height + fontOffset, 1);
-        tp_font_settings.font_height = math.max(settings.tp_font_settings.font_height + fontOffset, 1);
+        name_font_settings.font_height = math.max(fontSize, 6);
+        hp_font_settings.font_height = math.max(fontSize, 6);
+        mp_font_settings.font_height = math.max(fontSize, 6);
+        tp_font_settings.font_height = math.max(fontSize, 6);
 
         memberText[i] = {};
         memberText[i].name = gdi:create_object(name_font_settings);
@@ -786,36 +794,36 @@ partyList.Initialize = function(settings)
 end
 
 partyList.UpdateFonts = function(settings)
-    -- Check which party font offsets changed
-    local offsetsChanged = {false, false, false};
+    -- Check which party font sizes changed
+    local sizesChanged = {false, false, false};
     for partyIndex = 1, 3 do
-        if settings.fontOffsets[partyIndex] ~= cachedFontOffsets[partyIndex] then
-            offsetsChanged[partyIndex] = true;
-            cachedFontOffsets[partyIndex] = settings.fontOffsets[partyIndex];
+        if settings.fontSizes[partyIndex] ~= cachedFontSizes[partyIndex] then
+            sizesChanged[partyIndex] = true;
+            cachedFontSizes[partyIndex] = settings.fontSizes[partyIndex];
         end
     end
 
-    -- Only recreate fonts for members of parties whose offset changed
+    -- Only recreate fonts for members of parties whose size changed
     for i = 0, memberTextCount-1 do
         local partyIndex = math.ceil((i + 1) / partyMaxSize);
 
-        -- Skip if this party's offset didn't change
-        if not offsetsChanged[partyIndex] then
+        -- Skip if this party's size didn't change
+        if not sizesChanged[partyIndex] then
             goto continue
         end
 
-		local fontOffset = settings.fontOffsets[partyIndex];
+		local fontSize = settings.fontSizes[partyIndex];
 
-        -- Create font settings with proper height offset
+        -- Create font settings with proper height
         local name_font_settings = deep_copy_table(settings.name_font_settings);
         local hp_font_settings = deep_copy_table(settings.hp_font_settings);
         local mp_font_settings = deep_copy_table(settings.mp_font_settings);
         local tp_font_settings = deep_copy_table(settings.tp_font_settings);
 
-        name_font_settings.font_height = math.max(settings.name_font_settings.font_height + fontOffset, 1);
-        hp_font_settings.font_height = math.max(settings.hp_font_settings.font_height + fontOffset, 1);
-        mp_font_settings.font_height = math.max(settings.mp_font_settings.font_height + fontOffset, 1);
-        tp_font_settings.font_height = math.max(settings.tp_font_settings.font_height + fontOffset, 1);
+        name_font_settings.font_height = math.max(fontSize, 6);
+        hp_font_settings.font_height = math.max(fontSize, 6);
+        mp_font_settings.font_height = math.max(fontSize, 6);
+        tp_font_settings.font_height = math.max(fontSize, 6);
 
         -- Destroy old font objects
         if (memberText[i] ~= nil) then
@@ -836,7 +844,7 @@ partyList.UpdateFonts = function(settings)
 
     -- Reset cached colors for parties that changed
     for partyIndex = 1, 3 do
-        if offsetsChanged[partyIndex] then
+        if sizesChanged[partyIndex] then
             for i = (partyIndex - 1) * partyMaxSize, (partyIndex * partyMaxSize) - 1 do
                 memberTextColorCache[i] = nil;
             end

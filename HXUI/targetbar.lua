@@ -61,7 +61,7 @@ targetbar.DrawWindow = function(settings)
             local textObjName = "debuffText" .. tostring(i)
             textObj = debuffTable[textObjName]
             if textObj then
-                textObj:SetVisible(false)
+                textObj:set_visible(false)
             end
         end
 		targetbar.interpolation.interpolationDamagePercent = 0;
@@ -233,9 +233,14 @@ targetbar.DrawWindow = function(settings)
 				}
 			);
 		end
-		
+
 		local startX, startY = imgui.GetCursorScreenPos();
 		progressbar.ProgressBar(hpPercentData, {settings.barWidth, settings.barHeight}, {decorate = gConfig.showTargetBarBookends});
+
+		-- Dynamically set font heights based on settings (avoids expensive font recreation)
+		nameText:set_font_height(settings.name_font_settings.font_height);
+		percentText:set_font_height(settings.percent_font_settings.font_height);
+		distText:set_font_height(settings.distance_font_settings.font_height);
 
 		local nameWidth, nameHeight = nameText:get_text_size();
 
@@ -293,10 +298,10 @@ targetbar.DrawWindow = function(settings)
             local textObjName = "debuffText" .. tostring(i)
             textObj = debuffTable[textObjName]
             if textObj then
-                textObj:SetVisible(false)
+                textObj:set_visible(false)
             end
         end
-		DrawStatusIcons(buffIds, settings.iconSize, settings.maxIconColumns, 3, false, settings.barHeight/2, buffTimes, settings.distance_font_settings);
+		DrawStatusIcons(buffIds, settings.iconSize, settings.maxIconColumns, 3, false, settings.barHeight/2, buffTimes, nil);
 		imgui.PopStyleVar(1);
 
 		-- Obtain our target of target (not always accurate)
@@ -333,6 +338,9 @@ targetbar.DrawWindow = function(settings)
 				local totStartX, totStartY = imgui.GetCursorScreenPos();
 				local totGradient = GetCustomGradient(gConfig.colorCustomization.totBar, 'hpGradient') or {'#e16c6c', '#fb9494'};
 				progressbar.ProgressBar({{totEntity.HPPercent / 100, totGradient}}, {settings.barWidth / 3, settings.totBarHeight}, {decorate = gConfig.showTargetBarBookends});
+
+				-- Dynamically set font height for ToT text
+				totNameText:set_font_height(settings.totName_font_settings.font_height);
 
 				local totNameWidth, totNameHeight = totNameText:get_text_size();
 

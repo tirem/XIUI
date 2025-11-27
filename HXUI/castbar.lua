@@ -109,6 +109,10 @@ castbar.DrawWindow = function(settings)
 			-- Draw Spell/Item name
 			imgui.SameLine();
 
+			-- Dynamically set font heights based on settings (avoids expensive font recreation)
+			spellText:set_font_height(settings.spell_font_settings.font_height);
+			percentText:set_font_height(settings.percent_font_settings.font_height);
+
 			spellText:set_position_x(startX);
 			spellText:set_position_y(startY + settings.barHeight + settings.spellOffsetY);
 			spellText:set_text(showConfig[1] and 'Configuration Mode' or castbar.GetLabelText());

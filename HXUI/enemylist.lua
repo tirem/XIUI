@@ -236,6 +236,8 @@ enemylist.DrawWindow = function(settings)
 					enemyNameFonts[nameFontKey] = gdi:create_object(settings.name_font_settings);
 				end
 				local nameFont = enemyNameFonts[nameFontKey];
+				-- Dynamically set font height based on settings (avoids expensive font recreation)
+				nameFont:set_font_height(settings.name_font_settings.font_height);
 				nameFont:set_position_x(nameX);
 				nameFont:set_position_y(nameY);
 
@@ -280,6 +282,8 @@ enemylist.DrawWindow = function(settings)
 							enemyDistanceFonts[distanceFontKey] = gdi:create_object(settings.info_font_settings);
 						end
 						local distanceFont = enemyDistanceFonts[distanceFontKey];
+						-- Dynamically set font height based on settings (avoids expensive font recreation)
+						distanceFont:set_font_height(settings.info_font_settings.font_height);
 						distanceFont:set_position_x(entryStartX + padding);
 						distanceFont:set_position_y(row3Y);
 						distanceFont:set_text(distanceText);
@@ -293,6 +297,8 @@ enemylist.DrawWindow = function(settings)
 							enemyHPFonts[hpFontKey] = gdi:create_object(settings.info_font_settings);
 						end
 						local hpFont = enemyHPFonts[hpFontKey];
+						-- Dynamically set font height based on settings (avoids expensive font recreation)
+						hpFont:set_font_height(settings.info_font_settings.font_height);
 						hpFont:set_text(hpText);
 
 						-- Calculate text width for right-alignment
