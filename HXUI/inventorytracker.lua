@@ -112,8 +112,11 @@ inventoryTracker.Initialize = function(settings)
 end
 
 inventoryTracker.UpdateFonts = function(settings)
-    inventoryText:SetFontHeight(settings.font_settings.font_height);
-    inventoryText:SetColor(settings.font_settings.color);
+	-- Destroy old font object
+	if (inventoryText ~= nil) then inventoryText:destroy(); end
+
+	-- Recreate font object with new settings
+    inventoryText = fonts.new(settings.font_settings);
 end
 
 

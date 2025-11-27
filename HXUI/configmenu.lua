@@ -5,6 +5,21 @@ local imgui = require("imgui");
 
 local config = {};
 
+-- List of common Windows fonts
+local available_fonts = {
+    'Arial',
+    'Calibri',
+    'Consolas',
+    'Courier New',
+    'Georgia',
+    'Lucida Console',
+    'Microsoft Sans Serif',
+    'Tahoma',
+    'Times New Roman',
+    'Trebuchet MS',
+    'Verdana',
+};
+
 config.DrawWindow = function(us)
     imgui.PushStyleColor(ImGuiCol_WindowBg, {0,0.06,.16,.9});
 	imgui.PushStyleColor(ImGuiCol_TitleBg, {0,0.06,.16, .7});
@@ -72,6 +87,25 @@ config.DrawWindow = function(us)
                 imgui.EndCombo();
             end
             imgui.ShowHelp('The folder to pull job icons from. [HXUI\\assets\\jobs]');
+
+            -- Font Family Selector
+            if (imgui.BeginCombo('Font Family', gConfig.fontFamily)) then
+                for i = 1,#available_fonts,1 do
+                    local is_selected = available_fonts[i] == gConfig.fontFamily;
+
+                    if (imgui.Selectable(available_fonts[i], is_selected) and available_fonts[i] ~= gConfig.fontFamily) then
+                        gConfig.fontFamily = available_fonts[i];
+                        ClearDebuffFontCache();
+                        UpdateSettings();
+                    end
+
+                    if (is_selected) then
+                        imgui.SetItemDefaultFocus();
+                    end
+                end
+                imgui.EndCombo();
+            end
+            imgui.ShowHelp('The font family to use for all text in HXUI. Fonts must be installed on your system.');
 
             if (imgui.Checkbox('Show Health Bar Flash Effects', { gConfig.healthBarFlashEnabled })) then
                 gConfig.healthBarFlashEnabled = not gConfig.healthBarFlashEnabled;
@@ -322,7 +356,10 @@ config.DrawWindow = function(us)
                 gConfig.partyListBgColor[2] = bgColor[2] * 255;
                 gConfig.partyListBgColor[3] = bgColor[3] * 255;
                 gConfig.partyListBgColor[4] = bgColor[4] * 255;
-                UpdateSettings();
+            end
+            -- Only save settings when user finishes editing (not on every frame while dragging)
+            if (imgui.IsItemDeactivatedAfterEdit()) then
+                SaveSettingsOnly();
             end
 
             local borderColor = { gConfig.partyListBorderColor[1] / 255, gConfig.partyListBorderColor[2] / 255, gConfig.partyListBorderColor[3] / 255, gConfig.partyListBorderColor[4] / 255 };
@@ -331,7 +368,10 @@ config.DrawWindow = function(us)
                 gConfig.partyListBorderColor[2] = borderColor[2] * 255;
                 gConfig.partyListBorderColor[3] = borderColor[3] * 255;
                 gConfig.partyListBorderColor[4] = borderColor[4] * 255;
-                UpdateSettings();
+            end
+            -- Only save settings when user finishes editing
+            if (imgui.IsItemDeactivatedAfterEdit()) then
+                SaveSettingsOnly();
             end
 
             local bg_theme_paths = statusHandler.get_background_paths();

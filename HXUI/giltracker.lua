@@ -69,9 +69,11 @@ giltracker.Initialize = function(settings)
 end
 
 giltracker.UpdateFonts = function(settings)
-    gilText:SetFontHeight(settings.font_settings.font_height);
-    gilText:SetRightJustified(settings.font_settings.right_justified);
-    gilText:SetColor(settings.font_settings.color);
+	-- Destroy old font object
+	if (gilText ~= nil) then gilText:destroy(); end
+
+	-- Recreate font object with new settings
+    gilText = fonts.new(settings.font_settings);
 end
 
 giltracker.SetHidden = function(hidden)

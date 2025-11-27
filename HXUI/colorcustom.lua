@@ -15,7 +15,7 @@ local function DrawGradientPicker(label, gradientTable, helpText)
     local enabled = { gradientTable.enabled };
     if (imgui.Checkbox('Use Gradient##'..label, enabled)) then
         gradientTable.enabled = enabled[1];
-        UpdateSettings();
+        SaveSettingsOnly();
     end
     imgui.ShowHelp('Enable gradient (2 colors) or use static color (single color)');
 
@@ -23,7 +23,10 @@ local function DrawGradientPicker(label, gradientTable, helpText)
     local startColor = HexToImGui(gradientTable.start);
     if (imgui.ColorEdit4(label..' Start##'..label, startColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
         gradientTable.start = ImGuiToHex(startColor);
-        UpdateSettings();
+    end
+    -- Only save settings when user finishes editing (not on every frame while dragging)
+    if (imgui.IsItemDeactivatedAfterEdit()) then
+        SaveSettingsOnly();
     end
 
     -- Stop color picker (only if gradient is enabled)
@@ -31,7 +34,10 @@ local function DrawGradientPicker(label, gradientTable, helpText)
         local stopColor = HexToImGui(gradientTable.stop);
         if (imgui.ColorEdit4(label..' End##'..label, stopColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
             gradientTable.stop = ImGuiToHex(stopColor);
-            UpdateSettings();
+        end
+        -- Only save settings when user finishes editing
+        if (imgui.IsItemDeactivatedAfterEdit()) then
+            SaveSettingsOnly();
         end
     end
 
@@ -41,17 +47,20 @@ local function DrawGradientPicker(label, gradientTable, helpText)
 end
 
 -- Helper function to draw text color picker (with alpha)
-local function DrawTextColorPicker(label, colorRef, helpText)
-    if not colorRef or not colorRef[1] then
+local function DrawTextColorPicker(label, parentTable, key, helpText)
+    if not parentTable or not parentTable[key] then
         return;
     end
 
-    local colorValue = colorRef[1];
+    local colorValue = parentTable[key];
     local colorRGBA = ARGBToImGui(colorValue);
 
     if (imgui.ColorEdit4(label, colorRGBA, bit.bor(ImGuiColorEditFlags_AlphaBar, ImGuiColorEditFlags_NoInputs))) then
-        colorRef[1] = ImGuiToARGB(colorRGBA);
-        UpdateSettings();
+        parentTable[key] = ImGuiToARGB(colorRGBA);
+    end
+    -- Only save settings when user finishes editing (not on every frame while dragging)
+    if (imgui.IsItemDeactivatedAfterEdit()) then
+        SaveSettingsOnly();
     end
 
     if helpText then
@@ -105,27 +114,37 @@ colorcustom.DrawWindow = function()
             imgui.Separator();
             imgui.Text("Text Colors:");
             imgui.Separator();
-            DrawTextColorPicker("HP Text", { gConfig.colorCustomization.playerBar.hpTextColor }, "Color of HP number text");
-            DrawTextColorPicker("MP Text", { gConfig.colorCustomization.playerBar.mpTextColor }, "Color of MP number text");
-            DrawTextColorPicker("TP Text", { gConfig.colorCustomization.playerBar.tpTextColor }, "Color of TP number text");
+            DrawTextColorPicker("HP Text", gConfig.colorCustomization.playerBar, 'hpTextColor', "Color of HP number text");
+            DrawTextColorPicker("MP Text", gConfig.colorCustomization.playerBar, 'mpTextColor', "Color of MP number text");
+            DrawTextColorPicker("TP Text (Empty, <1000)", gConfig.colorCustomization.playerBar, 'tpEmptyTextColor', "Color of TP number text when below 1000");
+            DrawTextColorPicker("TP Text (Full, >=1000)", gConfig.colorCustomization.playerBar, 'tpFullTextColor', "Color of TP number text when 1000 or higher");
 
             imgui.EndChild();
         end
 
         -- Target Bar
         if (imgui.CollapsingHeader("Target Bar")) then
-            imgui.BeginChild("TargetBarColors", { 0, 300 }, true);
+            imgui.BeginChild("TargetBarColors", { 0, 500 }, true);
 
             imgui.Text("HP Bar Color:");
             imgui.Separator();
             DrawGradientPicker("Target HP Bar", gConfig.colorCustomization.targetBar.hpGradient, "Target HP bar color");
 
             imgui.Separator();
-            imgui.Text("Text Colors:");
+            imgui.Text("Target Name Colors (by type):");
             imgui.Separator();
-            DrawTextColorPicker("Name Text", { gConfig.colorCustomization.targetBar.nameTextColor }, "Color of target name text");
-            DrawTextColorPicker("Distance Text", { gConfig.colorCustomization.targetBar.distanceTextColor }, "Color of distance text");
-            DrawTextColorPicker("HP Percent Text", { gConfig.colorCustomization.targetBar.percentTextColor }, "Color of HP percentage text");
+            DrawTextColorPicker("Party/Alliance Player", gConfig.colorCustomization.targetBar, 'playerPartyTextColor', "Color for party/alliance member names");
+            DrawTextColorPicker("Other Player", gConfig.colorCustomization.targetBar, 'playerOtherTextColor', "Color for other player names");
+            DrawTextColorPicker("NPC", gConfig.colorCustomization.targetBar, 'npcTextColor', "Color for NPC names");
+            DrawTextColorPicker("Unclaimed Mob", gConfig.colorCustomization.targetBar, 'mobUnclaimedTextColor', "Color for unclaimed mob names");
+            DrawTextColorPicker("Party-Claimed Mob", gConfig.colorCustomization.targetBar, 'mobPartyClaimedTextColor', "Color for mobs claimed by your party");
+            DrawTextColorPicker("Other-Claimed Mob", gConfig.colorCustomization.targetBar, 'mobOtherClaimedTextColor', "Color for mobs claimed by others");
+
+            imgui.Separator();
+            imgui.Text("Other Text Colors:");
+            imgui.Separator();
+            DrawTextColorPicker("Distance Text", gConfig.colorCustomization.targetBar, 'distanceTextColor', "Color of distance text");
+            imgui.ShowHelp("HP Percent text color is set dynamically based on HP amount");
 
             imgui.EndChild();
         end
@@ -141,7 +160,7 @@ colorcustom.DrawWindow = function()
             imgui.Separator();
             imgui.Text("Text Colors:");
             imgui.Separator();
-            DrawTextColorPicker("Name Text", { gConfig.colorCustomization.totBar.nameTextColor }, "Color of target of target name text");
+            DrawTextColorPicker("Name Text", gConfig.colorCustomization.totBar, 'nameTextColor', "Color of target of target name text");
 
             imgui.EndChild();
         end
@@ -178,10 +197,11 @@ colorcustom.DrawWindow = function()
             imgui.Separator();
             imgui.Text("Text Colors:");
             imgui.Separator();
-            DrawTextColorPicker("Name Text", { gConfig.colorCustomization.partyList.nameTextColor }, "Color of party member name");
-            DrawTextColorPicker("HP Text", { gConfig.colorCustomization.partyList.hpTextColor }, "Color of HP numbers");
-            DrawTextColorPicker("MP Text", { gConfig.colorCustomization.partyList.mpTextColor }, "Color of MP numbers");
-            DrawTextColorPicker("TP Text", { gConfig.colorCustomization.partyList.tpTextColor }, "Color of TP numbers");
+            DrawTextColorPicker("Name Text", gConfig.colorCustomization.partyList, 'nameTextColor', "Color of party member name");
+            DrawTextColorPicker("HP Text", gConfig.colorCustomization.partyList, 'hpTextColor', "Color of HP numbers");
+            DrawTextColorPicker("MP Text", gConfig.colorCustomization.partyList, 'mpTextColor', "Color of MP numbers");
+            DrawTextColorPicker("TP Text (Empty, <1000)", gConfig.colorCustomization.partyList, 'tpEmptyTextColor', "Color of TP numbers when below 1000");
+            DrawTextColorPicker("TP Text (Full, >=1000)", gConfig.colorCustomization.partyList, 'tpFullTextColor', "Color of TP numbers when 1000 or higher");
 
             imgui.EndChild();
         end
@@ -197,9 +217,9 @@ colorcustom.DrawWindow = function()
             imgui.Separator();
             imgui.Text("Text Colors:");
             imgui.Separator();
-            DrawTextColorPicker("Job Text", { gConfig.colorCustomization.expBar.jobTextColor }, "Color of job level text");
-            DrawTextColorPicker("Exp Text", { gConfig.colorCustomization.expBar.expTextColor }, "Color of experience numbers");
-            DrawTextColorPicker("Percent Text", { gConfig.colorCustomization.expBar.percentTextColor }, "Color of percentage text");
+            DrawTextColorPicker("Job Text", gConfig.colorCustomization.expBar, 'jobTextColor', "Color of job level text");
+            DrawTextColorPicker("Exp Text", gConfig.colorCustomization.expBar, 'expTextColor', "Color of experience numbers");
+            DrawTextColorPicker("Percent Text", gConfig.colorCustomization.expBar, 'percentTextColor', "Color of percentage text");
 
             imgui.EndChild();
         end
@@ -210,7 +230,7 @@ colorcustom.DrawWindow = function()
 
             imgui.Text("Text Color:");
             imgui.Separator();
-            DrawTextColorPicker("Gil Text", { gConfig.colorCustomization.gilTracker.textColor }, "Color of gil amount text");
+            DrawTextColorPicker("Gil Text", gConfig.colorCustomization.gilTracker, 'textColor', "Color of gil amount text");
 
             imgui.EndChild();
         end
@@ -221,7 +241,7 @@ colorcustom.DrawWindow = function()
 
             imgui.Text("Text Color:");
             imgui.Separator();
-            DrawTextColorPicker("Count Text", { gConfig.colorCustomization.inventoryTracker.textColor }, "Color of inventory count text");
+            DrawTextColorPicker("Count Text", gConfig.colorCustomization.inventoryTracker, 'textColor', "Color of inventory count text");
 
             imgui.Separator();
             imgui.Text("Dot Colors:");
@@ -238,7 +258,10 @@ colorcustom.DrawWindow = function()
                 gConfig.colorCustomization.inventoryTracker.emptySlotColor.g = emptySlot[2];
                 gConfig.colorCustomization.inventoryTracker.emptySlotColor.b = emptySlot[3];
                 gConfig.colorCustomization.inventoryTracker.emptySlotColor.a = emptySlot[4];
-                UpdateSettings();
+            end
+            -- Only save settings when user finishes editing
+            if (imgui.IsItemDeactivatedAfterEdit()) then
+                SaveSettingsOnly();
             end
             imgui.ShowHelp('Color for empty inventory slots');
 
@@ -253,7 +276,10 @@ colorcustom.DrawWindow = function()
                 gConfig.colorCustomization.inventoryTracker.usedSlotColor.g = usedSlot[2];
                 gConfig.colorCustomization.inventoryTracker.usedSlotColor.b = usedSlot[3];
                 gConfig.colorCustomization.inventoryTracker.usedSlotColor.a = usedSlot[4];
-                UpdateSettings();
+            end
+            -- Only save settings when user finishes editing
+            if (imgui.IsItemDeactivatedAfterEdit()) then
+                SaveSettingsOnly();
             end
             imgui.ShowHelp('Color for used inventory slots');
 
@@ -271,8 +297,8 @@ colorcustom.DrawWindow = function()
             imgui.Separator();
             imgui.Text("Text Colors:");
             imgui.Separator();
-            DrawTextColorPicker("Spell Text", { gConfig.colorCustomization.castBar.spellTextColor }, "Color of spell/ability name");
-            DrawTextColorPicker("Percent Text", { gConfig.colorCustomization.castBar.percentTextColor }, "Color of cast percentage");
+            DrawTextColorPicker("Spell Text", gConfig.colorCustomization.castBar, 'spellTextColor', "Color of spell/ability name");
+            DrawTextColorPicker("Percent Text", gConfig.colorCustomization.castBar, 'percentTextColor', "Color of cast percentage");
 
             imgui.EndChild();
         end

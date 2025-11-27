@@ -10,6 +10,11 @@ local mpText;
 local tpText;
 local resetPosNextFrame = false;
 
+-- Cache last set colors to avoid expensive SetColor() calls every frame
+local lastHpTextColor;
+local lastMpTextColor;
+local lastTpTextColor;
+
 local playerbar = {};
 
 local _HXUI_DEV_DEBUG_INTERPOLATION = false;
@@ -227,8 +232,12 @@ playerbar.DrawWindow = function(settings)
 		hpText:SetPositionX(hpLocX - settings.barSpacing - settings.barHeight / 2);
 		hpText:SetPositionY(hpLocY + settings.barHeight + settings.textYOffset);
 		hpText:SetText(tostring(SelfHP));
-		hpText:SetColor(hpNameColor);
-		
+		-- Only call SetColor if the color has changed (expensive operation for GDI fonts)
+		if (lastHpTextColor ~= gConfig.colorCustomization.playerBar.hpTextColor) then
+			hpText:SetColor(gConfig.colorCustomization.playerBar.hpTextColor);
+			lastHpTextColor = gConfig.colorCustomization.playerBar.hpTextColor;
+		end
+
 		hpText:SetVisible(true);
 
 		if (bShowMp) then
@@ -236,7 +245,11 @@ playerbar.DrawWindow = function(settings)
 			mpText:SetPositionX(mpLocX - settings.barSpacing - settings.barHeight / 2);
 			mpText:SetPositionY(mpLocY + settings.barHeight + settings.textYOffset);
 			mpText:SetText(tostring(SelfMP));
-			mpText:SetColor(gConfig.colorCustomization.playerBar.mpTextColor);
+			-- Only call SetColor if the color has changed
+			if (lastMpTextColor ~= gConfig.colorCustomization.playerBar.mpTextColor) then
+				mpText:SetColor(gConfig.colorCustomization.playerBar.mpTextColor);
+				lastMpTextColor = gConfig.colorCustomization.playerBar.mpTextColor;
+			end
 		end
 
 		mpText:SetVisible(bShowMp);
@@ -245,7 +258,12 @@ playerbar.DrawWindow = function(settings)
 		tpText:SetPositionX(tpLocX - settings.barSpacing - settings.barHeight / 2);
 		tpText:SetPositionY(tpLocY + settings.barHeight + settings.textYOffset);
 		tpText:SetText(tostring(SelfTP));
-		tpText:SetColor(gConfig.colorCustomization.playerBar.tpTextColor);
+		local desiredTpColor = (SelfTP >= 1000) and gConfig.colorCustomization.playerBar.tpFullTextColor or gConfig.colorCustomization.playerBar.tpEmptyTextColor;
+		-- Only call SetColor if the color has changed
+		if (lastTpTextColor ~= desiredTpColor) then
+			tpText:SetColor(desiredTpColor);
+			lastTpTextColor = desiredTpColor;
+		end
 
 		tpText:SetVisible(true);
     end
@@ -260,9 +278,20 @@ playerbar.Initialize = function(settings)
 end
 
 playerbar.UpdateFonts = function(settings)
-    hpText:SetFontHeight(settings.font_settings.font_height);
-	mpText:SetFontHeight(settings.font_settings.font_height);
-	tpText:SetFontHeight(settings.font_settings.font_height);
+	-- Destroy old font objects
+	if (hpText ~= nil) then hpText:destroy(); end
+	if (mpText ~= nil) then mpText:destroy(); end
+	if (tpText ~= nil) then tpText:destroy(); end
+
+	-- Recreate font objects with new settings
+    hpText = fonts.new(settings.font_settings);
+	mpText = fonts.new(settings.font_settings);
+	tpText = fonts.new(settings.font_settings);
+
+	-- Reset cached colors when fonts are recreated
+	lastHpTextColor = nil;
+	lastMpTextColor = nil;
+	lastTpTextColor = nil;
 end
 
 playerbar.SetHidden = function(hidden)

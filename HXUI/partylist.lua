@@ -33,6 +33,9 @@ local memberText = {};
 local partyMaxSize = 6;
 local memberTextCount = partyMaxSize * 3;
 
+-- Cache last set colors to avoid expensive SetColor() calls every frame
+local memberTextColorCache = {};
+
 local borderConfig = {1, '#243e58'};
 
 local bgImageKeys = { 'bg', 'tl', 'tr', 'br', 'bl' };
@@ -272,7 +275,12 @@ local function DrawMember(memIdx, settings)
     imgui.SetCursorScreenPos({hpStartX, hpStartY});
 
     -- Update the hp text
-    memberText[memIdx].hp:SetColor(hpNameColor);
+    -- Only call SetColor if the color has changed (expensive operation for GDI fonts)
+    if not memberTextColorCache[memIdx] then memberTextColorCache[memIdx] = {}; end
+    if (memberTextColorCache[memIdx].hp ~= gConfig.colorCustomization.partyList.hpTextColor) then
+        memberText[memIdx].hp:SetColor(gConfig.colorCustomization.partyList.hpTextColor);
+        memberTextColorCache[memIdx].hp = gConfig.colorCustomization.partyList.hpTextColor;
+    end
     memberText[memIdx].hp:SetPositionX(hpStartX + hpBarWidth + settings.hpTextOffsetX);
     memberText[memIdx].hp:SetPositionY(hpStartY + barHeight + settings.hpTextOffsetY);
     memberText[memIdx].hp:SetText(tostring(memInfo.hp));
@@ -309,10 +317,11 @@ local function DrawMember(memIdx, settings)
         end
     end
 
-    if (highlightDistance) then
-        memberText[memIdx].name:SetColor(0xFF00FFFF);
-    else
-        memberText[memIdx].name:SetColor(0xFFFFFFFF);
+    local desiredNameColor = highlightDistance and 0xFF00FFFF or gConfig.colorCustomization.partyList.nameTextColor;
+    -- Only call SetColor if the color has changed
+    if (memberTextColorCache[memIdx].name ~= desiredNameColor) then
+        memberText[memIdx].name:SetColor(desiredNameColor);
+        memberTextColorCache[memIdx].name = desiredNameColor;
     end
     memberText[memIdx].name:SetPositionX(namePosX);
     memberText[memIdx].name:SetPositionY(hpStartY - nameSize.cy - settings.nameTextOffsetY);
@@ -333,7 +342,11 @@ local function DrawMember(memIdx, settings)
         progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, barHeight}, {borderConfig=borderConfig, backgroundGradientOverride=bgGradientOverride, decorate = gConfig.showPartyListBookends});
 
         -- Update the mp text
-        memberText[memIdx].mp:SetColor(gConfig.colorCustomization.partyList.mpTextColor);
+        -- Only call SetColor if the color has changed
+        if (memberTextColorCache[memIdx].mp ~= gConfig.colorCustomization.partyList.mpTextColor) then
+            memberText[memIdx].mp:SetColor(gConfig.colorCustomization.partyList.mpTextColor);
+            memberTextColorCache[memIdx].mp = gConfig.colorCustomization.partyList.mpTextColor;
+        end
         memberText[memIdx].mp:SetPositionX(mpStartX + mpBarWidth + settings.mpTextOffsetX);
         memberText[memIdx].mp:SetPositionY(mpStartY + barHeight + settings.mpTextOffsetY);
         memberText[memIdx].mp:SetText(tostring(memInfo.mp));
@@ -364,10 +377,11 @@ local function DrawMember(memIdx, settings)
             progressbar.ProgressBar({{mainPercent, tpGradient}}, {tpBarWidth, barHeight}, {overlayBar=tpOverlay, borderConfig=borderConfig, backgroundGradientOverride=bgGradientOverride, decorate = gConfig.showPartyListBookends});
 
             -- Update the tp text
-            if (memInfo.tp >= 1000) then
-                memberText[memIdx].tp:SetColor(gAdjustedSettings.tpFullColor);
-            else
-                memberText[memIdx].tp:SetColor(gAdjustedSettings.tpEmptyColor);
+            local desiredTpColor = (memInfo.tp >= 1000) and gConfig.colorCustomization.partyList.tpFullTextColor or gConfig.colorCustomization.partyList.tpEmptyTextColor;
+            -- Only call SetColor if the color has changed
+            if (memberTextColorCache[memIdx].tp ~= desiredTpColor) then
+                memberText[memIdx].tp:SetColor(desiredTpColor);
+                memberTextColorCache[memIdx].tp = desiredTpColor;
             end
             memberText[memIdx].tp:SetPositionX(tpStartX + tpBarWidth + settings.tpTextOffsetX);
             memberText[memIdx].tp:SetPositionY(tpStartY + barHeight + settings.tpTextOffsetY);
@@ -770,7 +784,7 @@ partyList.Initialize = function(settings)
 end
 
 partyList.UpdateFonts = function(settings)
-    -- Update fonts
+    -- Destroy and recreate fonts
     for i = 0, memberTextCount-1 do
         local partyIndex = math.ceil((i + 1) / partyMaxSize);
 
@@ -781,16 +795,78 @@ partyList.UpdateFonts = function(settings)
             partyListFontOffset = gConfig.partyList3FontOffset;
         end
 
-        local name_font_settings_font_height = math.max(settings.name_font_settings.font_height + partyListFontOffset, 1);
-        local hp_font_settings_font_height = math.max(settings.hp_font_settings.font_height + partyListFontOffset, 1);
-        local mp_font_settings_font_height = math.max(settings.mp_font_settings.font_height + partyListFontOffset, 1);
-        local tp_font_settings_font_height = math.max(settings.tp_font_settings.font_height + partyListFontOffset, 1);
+        -- Create font settings with proper height offset
+        local name_font_settings = {
+            visible = settings.name_font_settings.visible,
+            locked = settings.name_font_settings.locked,
+            font_family = settings.name_font_settings.font_family,
+            font_height = math.max(settings.name_font_settings.font_height + partyListFontOffset, 1),
+            color = settings.name_font_settings.color,
+            bold = settings.name_font_settings.bold,
+            italic = settings.name_font_settings.italic,
+            color_outline = settings.name_font_settings.color_outline,
+            draw_flags = settings.name_font_settings.draw_flags,
+            background = settings.name_font_settings.background,
+            right_justified = settings.name_font_settings.right_justified,
+        };
+        local hp_font_settings = {
+            visible = settings.hp_font_settings.visible,
+            locked = settings.hp_font_settings.locked,
+            font_family = settings.hp_font_settings.font_family,
+            font_height = math.max(settings.hp_font_settings.font_height + partyListFontOffset, 1),
+            color = settings.hp_font_settings.color,
+            bold = settings.hp_font_settings.bold,
+            italic = settings.hp_font_settings.italic,
+            color_outline = settings.hp_font_settings.color_outline,
+            draw_flags = settings.hp_font_settings.draw_flags,
+            background = settings.hp_font_settings.background,
+            right_justified = settings.hp_font_settings.right_justified,
+        };
+        local mp_font_settings = {
+            visible = settings.mp_font_settings.visible,
+            locked = settings.mp_font_settings.locked,
+            font_family = settings.mp_font_settings.font_family,
+            font_height = math.max(settings.mp_font_settings.font_height + partyListFontOffset, 1),
+            color = settings.mp_font_settings.color,
+            bold = settings.mp_font_settings.bold,
+            italic = settings.mp_font_settings.italic,
+            color_outline = settings.mp_font_settings.color_outline,
+            draw_flags = settings.mp_font_settings.draw_flags,
+            background = settings.mp_font_settings.background,
+            right_justified = settings.mp_font_settings.right_justified,
+        };
+        local tp_font_settings = {
+            visible = settings.tp_font_settings.visible,
+            locked = settings.tp_font_settings.locked,
+            font_family = settings.tp_font_settings.font_family,
+            font_height = math.max(settings.tp_font_settings.font_height + partyListFontOffset, 1),
+            color = settings.tp_font_settings.color,
+            bold = settings.tp_font_settings.bold,
+            italic = settings.tp_font_settings.italic,
+            color_outline = settings.tp_font_settings.color_outline,
+            draw_flags = settings.tp_font_settings.draw_flags,
+            background = settings.tp_font_settings.background,
+            right_justified = settings.tp_font_settings.right_justified,
+        };
 
-        memberText[i].name:SetFontHeight(name_font_settings_font_height);
-        memberText[i].hp:SetFontHeight(hp_font_settings_font_height);
-        memberText[i].mp:SetFontHeight(mp_font_settings_font_height);
-        memberText[i].tp:SetFontHeight(tp_font_settings_font_height);
+        -- Destroy old font objects
+        if (memberText[i] ~= nil) then
+            if (memberText[i].name ~= nil) then memberText[i].name:destroy(); end
+            if (memberText[i].hp ~= nil) then memberText[i].hp:destroy(); end
+            if (memberText[i].mp ~= nil) then memberText[i].mp:destroy(); end
+            if (memberText[i].tp ~= nil) then memberText[i].tp:destroy(); end
+        end
+
+        -- Recreate font objects with new settings
+        memberText[i].name = fonts.new(name_font_settings);
+        memberText[i].hp = fonts.new(hp_font_settings);
+        memberText[i].mp = fonts.new(mp_font_settings);
+        memberText[i].tp = fonts.new(tp_font_settings);
+        -- Note: All text colors are set dynamically in DrawWindow every frame
     end
+
+    -- Reset cached colors when fonts are recreated
+    memberTextColorCache = {};
 
     -- Update images
     local bgChanged = gConfig.partyListBackgroundName ~= loadedBg;

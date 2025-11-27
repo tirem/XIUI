@@ -120,6 +120,7 @@ T{
 
 	statusIconTheme = 'XIView';
 	jobIconTheme = 'FFXI',
+	fontFamily = 'Consolas',
 
 	showPartyListWhenSolo = false,
 	maxEnemyListEntries = 8,
@@ -268,15 +269,22 @@ T{
 			tpGradient = T{ enabled = true, start = '#3898ce', stop = '#78c4ee' },
 			hpTextColor = 0xFFFFFFFF,
 			mpTextColor = 0xFFdef2db,
-			tpTextColor = 0xFF2fa9ff,
+			tpEmptyTextColor = 0xFF9acce8,  -- TP < 1000
+			tpFullTextColor = 0xFF2fa9ff,   -- TP >= 1000
 		},
 
 		-- Target Bar
 		targetBar = T{
 			hpGradient = T{ enabled = true, start = '#e26c6c', stop = '#fb9494' },
-			nameTextColor = 0xFFFFFFFF,
+			-- Target name colors by entity type
+			playerPartyTextColor = 0xFF00FFFF,     -- cyan - party/alliance members
+			playerOtherTextColor = 0xFFFFFFFF,     -- white - other players
+			npcTextColor = 0xFF66FF66,             -- green - NPCs
+			mobUnclaimedTextColor = 0xFFFFFF66,    -- yellow - unclaimed mobs
+			mobPartyClaimedTextColor = 0xFFFF6666, -- red - mobs claimed by party
+			mobOtherClaimedTextColor = 0xFFFF66FF, -- magenta - mobs claimed by others
 			distanceTextColor = 0xFFFFFFFF,
-			percentTextColor = 0xFFFFFFFF,
+			-- Note: HP percent text color is set dynamically based on HP amount
 		},
 
 		-- Target of Target Bar
@@ -304,7 +312,8 @@ T{
 			nameTextColor = 0xFFFFFFFF,
 			hpTextColor = 0xFFFFFFFF,
 			mpTextColor = 0xFFFFFFFF,
-			tpTextColor = 0xFFFFFFFF,
+			tpEmptyTextColor = 0xFF9acce8,  -- TP < 1000
+			tpFullTextColor = 0xFF2fa9ff,   -- TP >= 1000
 		},
 
 		-- Exp Bar
@@ -473,7 +482,7 @@ T{
 	};
 
 	-- settings for enemy list
-	enemyListSettings = 
+	enemyListSettings =
 	T{
 		barWidth = 125;
 		barHeight = 10;
@@ -485,6 +494,58 @@ T{
 		iconSize = 18;
 		debuffOffsetX = -10;
 		debuffOffsetY = 0;
+		name_font_settings =
+		T{
+			visible = true,
+			locked = true,
+			font_family = 'Consolas',
+			font_height = 11,  -- Reduced from 13 for smaller enemy name
+			color = 0xFFFFFFFF,
+			bold = true,
+			italic = false;
+			color_outline = 0xFF000000,
+			draw_flags = 0x10,
+			background =
+			T{
+				visible = false,
+			},
+			right_justified = false;
+		};
+		info_font_settings =
+		T{
+			visible = true,
+			locked = true,
+			font_family = 'Consolas',
+			font_height = 9,  -- Reduced from 11 for smaller HP% text
+			color = 0xFFFFFFFF,
+			bold = true,
+			italic = false;
+			color_outline = 0xFF000000,
+			draw_flags = 0x10,
+			background =
+			T{
+				visible = false,
+			},
+			right_justified = false;
+		};
+		prim_data = {
+			texture_offset_x= 0.0,
+			texture_offset_y= 0.0,
+			border_visible  = false,
+			border_flags    = FontBorderFlags.None,
+			border_sizes    = '0,0,0,0',
+			visible         = false,
+			position_x      = 0,
+			position_y      = 0,
+			can_focus       = true,
+			locked          = false,
+			lockedz         = false,
+			scale_x         = 1.0,
+			scale_y         = 1.0,
+			width           = 0.0,
+			height          = 0.0,
+			color           = 0xFFFFFFFF,
+		};
 	};
 
 	-- settings for the exp bar
@@ -815,20 +876,45 @@ local function UpdateFonts()
 	inventoryTracker.UpdateFonts(gAdjustedSettings.inventoryTrackerSettings);
 	partyList.UpdateFonts(gAdjustedSettings.partyListSettings);
 	castBar.UpdateFonts(gAdjustedSettings.castBarSettings);
+	enemyList.UpdateFonts(gAdjustedSettings.enemyListSettings);
 end
 
 local function UpdateUserSettings()
     local ds = default_settings;
 	local us = gConfig;
 
+	-- Apply global font family to all font settings
+	gAdjustedSettings.targetBarSettings.name_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.targetBarSettings.totName_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.targetBarSettings.distance_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.targetBarSettings.percent_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.playerBarSettings.font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.expBarSettings.job_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.expBarSettings.exp_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.expBarSettings.percent_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.gilTrackerSettings.font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.inventoryTrackerSettings.font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.partyListSettings.hp_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.partyListSettings.mp_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.partyListSettings.tp_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.partyListSettings.name_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.castBarSettings.spell_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.castBarSettings.percent_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.enemyListSettings.name_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.enemyListSettings.info_font_settings.font_family = us.fontFamily;
+
 	-- Target Bar
 	gAdjustedSettings.targetBarSettings.barWidth = ds.targetBarSettings.barWidth * us.targetBarScaleX;
 	gAdjustedSettings.targetBarSettings.barHeight = ds.targetBarSettings.barHeight * us.targetBarScaleY;
 	gAdjustedSettings.targetBarSettings.totBarHeight = ds.targetBarSettings.totBarHeight * us.targetBarScaleY;
 	gAdjustedSettings.targetBarSettings.name_font_settings.font_height = math.max(ds.targetBarSettings.name_font_settings.font_height + us.targetBarFontOffset, 1);
+	-- Note: name_font_settings.color is set dynamically by GetColorOfTarget() based on entity type
     gAdjustedSettings.targetBarSettings.totName_font_settings.font_height = math.max(ds.targetBarSettings.totName_font_settings.font_height + us.targetBarFontOffset, 1);
+	gAdjustedSettings.targetBarSettings.totName_font_settings.color = us.colorCustomization.totBar.nameTextColor;
 	gAdjustedSettings.targetBarSettings.distance_font_settings.font_height = math.max(ds.targetBarSettings.distance_font_settings.font_height + us.targetBarFontOffset, 1);
+	gAdjustedSettings.targetBarSettings.distance_font_settings.color = us.colorCustomization.targetBar.distanceTextColor;
     gAdjustedSettings.targetBarSettings.percent_font_settings.font_height = math.max(ds.targetBarSettings.percent_font_settings.font_height + us.targetBarFontOffset, 1);
+	-- Note: percent_font_settings.color is set dynamically in targetbar.DrawWindow based on HP amount
 	gAdjustedSettings.targetBarSettings.iconSize = ds.targetBarSettings.iconSize * us.targetBarIconScale;
 	gAdjustedSettings.targetBarSettings.arrowSize = ds.targetBarSettings.arrowSize * us.targetBarScaleY;
 
@@ -838,9 +924,9 @@ local function UpdateUserSettings()
 	gAdjustedSettings.targetBarSettings.totName_font_settings_split = {
 		visible = ds.targetBarSettings.totName_font_settings.visible,
 		locked = ds.targetBarSettings.totName_font_settings.locked,
-		font_family = ds.targetBarSettings.totName_font_settings.font_family,
+		font_family = us.fontFamily,
 		font_height = math.max(ds.targetBarSettings.totName_font_settings.font_height + us.totBarFontOffset, 1),
-		color = ds.targetBarSettings.totName_font_settings.color,
+		color = us.colorCustomization.totBar.nameTextColor,
 		bold = ds.targetBarSettings.totName_font_settings.bold,
 		color_outline = ds.targetBarSettings.totName_font_settings.color_outline,
 		draw_flags = ds.targetBarSettings.totName_font_settings.draw_flags,
@@ -868,12 +954,14 @@ local function UpdateUserSettings()
         ds.partyListSettings.entrySpacing + us.partyList2EntrySpacing,
         ds.partyListSettings.entrySpacing + us.partyList3EntrySpacing,
     };
+	-- Note: All party list text colors are set dynamically in partylist.DrawWindow every frame
 
 	-- Player Bar
 	gAdjustedSettings.playerBarSettings.barWidth = ds.playerBarSettings.barWidth * us.playerBarScaleX;
 	gAdjustedSettings.playerBarSettings.barSpacing = ds.playerBarSettings.barSpacing * us.playerBarScaleX;
 	gAdjustedSettings.playerBarSettings.barHeight = ds.playerBarSettings.barHeight * us.playerBarScaleY;
 	gAdjustedSettings.playerBarSettings.font_settings.font_height = math.max(ds.playerBarSettings.font_settings.font_height + us.playerBarFontOffset, 1);
+	-- Note: HP, MP, TP text colors are set dynamically in playerbar.DrawWindow
 
 	-- Exp Bar
     gAdjustedSettings.expBarSettings.textWidth = ds.expBarSettings.textWidth * us.expBarTextScaleX;
@@ -914,26 +1002,35 @@ local function UpdateUserSettings()
 	gAdjustedSettings.enemyListSettings.barHeight = ds.enemyListSettings.barHeight * us.enemyListScaleY;
 	gAdjustedSettings.enemyListSettings.textScale = ds.enemyListSettings.textScale * us.enemyListFontScale;
 	gAdjustedSettings.enemyListSettings.iconSize = ds.enemyListSettings.iconSize * us.enemyListIconScale;
+	gAdjustedSettings.enemyListSettings.name_font_settings.font_height = math.max(math.floor(ds.enemyListSettings.name_font_settings.font_height * us.enemyListFontScale), 1);
+	gAdjustedSettings.enemyListSettings.info_font_settings.font_height = math.max(math.floor(ds.enemyListSettings.info_font_settings.font_height * us.enemyListFontScale), 1);
 
 	-- Cast Bar
 	gAdjustedSettings.castBarSettings.barWidth = ds.castBarSettings.barWidth * us.castBarScaleX;
 	gAdjustedSettings.castBarSettings.barHeight = ds.castBarSettings.barHeight * us.castBarScaleY;
 	gAdjustedSettings.castBarSettings.spell_font_settings.font_height = math.max(ds.castBarSettings.spell_font_settings.font_height + us.castBarFontOffset, 1);
-	gAdjustedSettings.castBarSettings.spell_font_settings.color = us.colorCustomization.castBar.spellTextColor;
+	gAdjustedSettings.castBarSettings.spell_font_settings.font_color = us.colorCustomization.castBar.spellTextColor;
 	gAdjustedSettings.castBarSettings.percent_font_settings.font_height = math.max(ds.castBarSettings.percent_font_settings.font_height + us.castBarFontOffset, 1);
-	gAdjustedSettings.castBarSettings.percent_font_settings.color = us.colorCustomization.castBar.percentTextColor;
+	gAdjustedSettings.castBarSettings.percent_font_settings.font_color = us.colorCustomization.castBar.percentTextColor;
 end
 
-function UpdateSettings()
+-- Lightweight settings save that doesn't recreate fonts (for color changes, etc.)
+function SaveSettingsOnly()
     -- Ensure colorCustomization exists with defaults for existing users
     if gConfig.colorCustomization == nil then
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
 
-    -- Save the current settings..
+    -- Save the current settings to disk
     settings.save();
 
-	UpdateUserSettings();
+    -- Update adjusted settings (scales, offsets, etc.)
+    UpdateUserSettings();
+end
+
+-- Full settings update including font recreation (for font changes, visibility, etc.)
+function UpdateSettings()
+    SaveSettingsOnly();
 	CheckVisibility();
 	UpdateFonts();
 end;
@@ -1102,6 +1199,7 @@ ashita.events.register('load', 'load_cb', function ()
 	inventoryTracker.Initialize(gAdjustedSettings.inventoryTrackerSettings);
 	partyList.Initialize(gAdjustedSettings.partyListSettings);
 	castBar.Initialize(gAdjustedSettings.castBarSettings);
+	enemyList.Initialize(gAdjustedSettings.enemyListSettings);
 
 	-- Mark initialization as complete to allow rendering
 	bInitialized = true;

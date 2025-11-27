@@ -122,7 +122,11 @@ castbar.DrawWindow = function(settings)
 end
 
 castbar.UpdateFonts = function(settings)
-	-- Recreate font objects to apply color changes
+	-- Destroy old font objects
+	if (spellText ~= nil) then gdi:destroy_object(spellText); end
+	if (percentText ~= nil) then gdi:destroy_object(percentText); end
+
+	-- Recreate font objects with new settings
 	spellText = gdi:create_object(settings.spell_font_settings);
 	percentText = gdi:create_object(settings.percent_font_settings);
 end

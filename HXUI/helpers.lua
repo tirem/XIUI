@@ -40,6 +40,19 @@ function draw_rect(top_left, bot_right, color, radius, fill)
 	end
 end
 
+function draw_rect_background(top_left, bot_right, color, radius, fill)
+    local color = imgui.GetColorU32(color);
+    local dimensions = {
+        { top_left[1], top_left[2] },
+        { bot_right[1], bot_right[2] }
+    };
+	if (fill == true) then
+   		imgui.GetBackgroundDrawList():AddRectFilled(dimensions[1], dimensions[2], color, radius, ImDrawCornerFlags_All);
+	else
+		imgui.GetBackgroundDrawList():AddRect(dimensions[1], dimensions[2], color, radius, ImDrawCornerFlags_All, 1);
+	end
+end
+
 function draw_circle(center, radius, color, segments, fill)
     local color = imgui.GetColorU32(color);
 
@@ -53,7 +66,8 @@ end
 function GetColorOfTarget(targetEntity, targetIndex)
     -- Obtain the entity spawn flags..
 
-	local color = 0xFFFFFFFF;
+	-- Default to other player color
+	local color = gConfig and gConfig.colorCustomization and gConfig.colorCustomization.targetBar.playerOtherTextColor or 0xFFFFFFFF;
 	if (targetIndex == nil) then
 		return color;
 	end
@@ -61,17 +75,20 @@ function GetColorOfTarget(targetEntity, targetIndex)
 
     -- Determine the entity type and apply the proper color
     if (bit.band(flag, 0x0001) == 0x0001) then --players
+		-- Default: other player
+		color = gConfig.colorCustomization.targetBar.playerOtherTextColor;
+		-- Check if party/alliance member
 		local party = AshitaCore:GetMemoryManager():GetParty();
 		for i = 0, 17 do
 			if (party:GetMemberIsActive(i) == 1) then
 				if (party:GetMemberTargetIndex(i) == targetIndex) then
-					color = 0xFF00FFFF;
+					color = gConfig.colorCustomization.targetBar.playerPartyTextColor;
 					break;
 				end
 			end
 		end
     elseif (bit.band(flag, 0x0002) == 0x0002) then --npc
-        color = 0xFF66FF66;
+        color = gConfig.colorCustomization.targetBar.npcTextColor;
     else --mob
 		local entMgr = AshitaCore:GetMemoryManager():GetEntity();
 		local claimStatus = entMgr:GetClaimStatus(targetIndex);
@@ -79,14 +96,17 @@ function GetColorOfTarget(targetEntity, targetIndex)
 --		local isClaimed = (bit.band(claimStatus, 0xFFFF0000) ~= 0);
 
 		if (claimId == 0) then
-			color = 0xFFFFFF66;
+			-- Unclaimed mob
+			color = gConfig.colorCustomization.targetBar.mobUnclaimedTextColor;
 		else
-			color = 0xFFFF66FF;
+			-- Claimed by someone
+			color = gConfig.colorCustomization.targetBar.mobOtherClaimedTextColor;
 			local party = AshitaCore:GetMemoryManager():GetParty();
 			for i = 0, 17 do
 				if (party:GetMemberIsActive(i) == 1) then
 					if (party:GetMemberServerId(i) == claimId) then
-						color = 0xFFFF6666;
+						-- Claimed by party member
+						color = gConfig.colorCustomization.targetBar.mobPartyClaimedTextColor;
 						break;
 					end;
 				end
@@ -96,10 +116,23 @@ function GetColorOfTarget(targetEntity, targetIndex)
 	return color;
 end
 
+-- Helper to convert ARGB (0xAARRGGBB) to RGBA table {R, G, B, A}
+local function ARGBToRGBA(argb)
+	local a = bit.band(bit.rshift(argb, 24), 0xFF) / 255.0;
+	local r = bit.band(bit.rshift(argb, 16), 0xFF) / 255.0;
+	local g = bit.band(bit.rshift(argb, 8), 0xFF) / 255.0;
+	local b = bit.band(argb, 0xFF) / 255.0;
+	return {r, g, b, a};
+end
+
 function GetColorOfTargetRGBA(targetEntity, targetIndex)
     -- Obtain the entity spawn flags..
 
+	-- Default to other player color
 	local color = {1,1,1,1};
+	if gConfig and gConfig.colorCustomization then
+		color = ARGBToRGBA(gConfig.colorCustomization.targetBar.playerOtherTextColor);
+	end
 	if (targetIndex == nil) then
 		return color;
 	end
@@ -107,17 +140,20 @@ function GetColorOfTargetRGBA(targetEntity, targetIndex)
 
     -- Determine the entity type and apply the proper color
     if (bit.band(flag, 0x0001) == 0x0001) then --players
+		-- Default: other player
+		color = ARGBToRGBA(gConfig.colorCustomization.targetBar.playerOtherTextColor);
+		-- Check if party/alliance member
 		local party = AshitaCore:GetMemoryManager():GetParty();
 		for i = 0, 17 do
 			if (party:GetMemberIsActive(i) == 1) then
 				if (party:GetMemberTargetIndex(i) == targetIndex) then
-					color = {0,1,1,1};
+					color = ARGBToRGBA(gConfig.colorCustomization.targetBar.playerPartyTextColor);
 					break;
 				end
 			end
 		end
     elseif (bit.band(flag, 0x0002) == 0x0002) then --npc
-        color = {.4,1,.4,1};
+        color = ARGBToRGBA(gConfig.colorCustomization.targetBar.npcTextColor);
     else --mob
 		local entMgr = AshitaCore:GetMemoryManager():GetEntity();
 		local claimStatus = entMgr:GetClaimStatus(targetIndex);
@@ -125,14 +161,17 @@ function GetColorOfTargetRGBA(targetEntity, targetIndex)
 --		local isClaimed = (bit.band(claimStatus, 0xFFFF0000) ~= 0);
 
 		if (claimId == 0) then
-			color = {1,1,.4,1};
+			-- Unclaimed mob
+			color = ARGBToRGBA(gConfig.colorCustomization.targetBar.mobUnclaimedTextColor);
 		else
-			color = {1,.4,1,1};
+			-- Claimed by someone
+			color = ARGBToRGBA(gConfig.colorCustomization.targetBar.mobOtherClaimedTextColor);
 			local party = AshitaCore:GetMemoryManager():GetParty();
 			for i = 0, 17 do
 				if (party:GetMemberIsActive(i) == 1) then
 					if (party:GetMemberServerId(i) == claimId) then
-						color = {1,.4,.4,1};
+						-- Claimed by party member
+						color = ARGBToRGBA(gConfig.colorCustomization.targetBar.mobPartyClaimedTextColor);
 						break;
 					end;
 				end
@@ -407,7 +446,20 @@ function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffs
 					
                     local textObj = debuffTable[textObjName]
                     if (textObj == nil) then
-                        textObj = fonts.new(debuff_font_settings)
+                        local font_settings = T{
+                            visible = debuff_font_settings.visible,
+                            locked = debuff_font_settings.locked,
+                            font_family = gConfig.fontFamily,
+                            font_height = debuff_font_settings.font_height,
+                            color = debuff_font_settings.color,
+                            bold = debuff_font_settings.bold,
+                            italic = debuff_font_settings.italic,
+                            color_outline = debuff_font_settings.color_outline,
+                            draw_flags = debuff_font_settings.draw_flags,
+                            background = debuff_font_settings.background,
+                            right_justified = debuff_font_settings.right_justified,
+                        };
+                        textObj = fonts.new(font_settings)
                         debuffTable[textObjName] = textObj
                     end
                     textObj:SetFontHeight(debuff_font_settings.font_height + gConfig.targetBarIconFontOffset)
@@ -654,4 +706,8 @@ function GetCustomGradient(moduleSettings, gradientName)
         -- Static color (both same)
         return {gradient.start, gradient.start};
     end
+end
+
+function ClearDebuffFontCache()
+    debuffTable = T{};
 end

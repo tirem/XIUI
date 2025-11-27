@@ -21,6 +21,11 @@ local targetbar = {
 	interpolation = {}
 };
 
+-- Cache last set colors to avoid expensive SetColor() calls every frame
+local lastNameTextColor;
+local lastPercentTextColor;
+local lastTotNameTextColor;
+
 local function UpdateTextVisibility(visible)
 	percentText:SetVisible(visible);
 	nameText:SetVisible(visible);
@@ -235,7 +240,11 @@ targetbar.DrawWindow = function(settings)
 
 		nameText:SetPositionX(startX + settings.barHeight / 2 + settings.topTextXOffset);
 		nameText:SetPositionY(startY - settings.topTextYOffset - nameSize.cy);
-		nameText:SetColor(color);
+		-- Only call SetColor if the color has changed (expensive operation for GDI fonts)
+		if (lastNameTextColor ~= color) then
+			nameText:SetColor(color);
+			lastNameTextColor = color;
+		end
 		nameText:SetText(targetNameText);
 		nameText:SetVisible(true);
 
@@ -257,7 +266,11 @@ targetbar.DrawWindow = function(settings)
 			percentText:SetText(tostring(targetHpPercent));
 			percentText:SetVisible(true);
 			local hpColor, _ = GetHpColors(targetEntity.HPPercent / 100);
-			percentText:SetColor(hpColor);
+			-- Only call SetColor if the color has changed
+			if (lastPercentTextColor ~= hpColor) then
+				percentText:SetColor(hpColor);
+				lastPercentTextColor = hpColor;
+			end
 		else
 			percentText:SetVisible(false);
 		end
@@ -326,7 +339,11 @@ targetbar.DrawWindow = function(settings)
 
 				totNameText:SetPositionX(totStartX + settings.barHeight / 2);
 				totNameText:SetPositionY(totStartY - totNameSize.cy);
-				totNameText:SetColor(totColor);
+				-- Only call SetColor if the color has changed
+				if (lastTotNameTextColor ~= totColor) then
+					totNameText:SetColor(totColor);
+					lastTotNameTextColor = totColor;
+				end
 				totNameText:SetText(totEntity.Name);
 				totNameText:SetVisible(true);
 			else
@@ -399,7 +416,11 @@ targetbar.DrawWindow = function(settings)
 
 				totNameText:SetPositionX(totStartX + settings.barHeight / 2);
 				totNameText:SetPositionY(totStartY - totNameSize.cy);
-				totNameText:SetColor(totColor);
+				-- Only call SetColor if the color has changed
+				if (lastTotNameTextColor ~= totColor) then
+					totNameText:SetColor(totColor);
+					lastTotNameTextColor = totColor;
+				end
 				totNameText:SetText(totEntity.Name);
 				totNameText:SetVisible(true);
 			end
@@ -419,10 +440,22 @@ targetbar.Initialize = function(settings)
 end
 
 targetbar.UpdateFonts = function(settings)
-    percentText:SetFontHeight(settings.percent_font_settings.font_height);
-	nameText:SetFontHeight(settings.name_font_settings.font_height);
-	totNameText:SetFontHeight(settings.totName_font_settings.font_height);
-	distText:SetFontHeight(settings.distance_font_settings.font_height);
+	-- Destroy old font objects
+	if (percentText ~= nil) then percentText:destroy(); end
+	if (nameText ~= nil) then nameText:destroy(); end
+	if (totNameText ~= nil) then totNameText:destroy(); end
+	if (distText ~= nil) then distText:destroy(); end
+
+	-- Recreate font objects with new settings
+    percentText = fonts.new(settings.percent_font_settings);
+
+	-- Reset cached colors when fonts are recreated
+	lastNameTextColor = nil;
+	lastPercentTextColor = nil;
+	lastTotNameTextColor = nil;
+	nameText = fonts.new(settings.name_font_settings);
+	totNameText = fonts.new(settings.totName_font_settings);
+	distText = fonts.new(settings.distance_font_settings);
 end
 
 targetbar.SetHidden = function(hidden)

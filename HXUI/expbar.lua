@@ -178,12 +178,15 @@ expbar.Initialize = function(settings)
 end
 
 expbar.UpdateFonts = function(settings)
-    jobText:SetFontHeight(settings.job_font_settings.font_height);
-    jobText:SetColor(settings.job_font_settings.color);
-	expText:SetFontHeight(settings.exp_font_settings.font_height);
-	expText:SetColor(settings.exp_font_settings.color);
-	percentText:SetFontHeight(settings.percent_font_settings.font_height);
-	percentText:SetColor(settings.percent_font_settings.color);
+	-- Destroy old font objects
+	if (jobText ~= nil) then jobText:destroy(); end
+	if (expText ~= nil) then expText:destroy(); end
+	if (percentText ~= nil) then percentText:destroy(); end
+
+	-- Recreate font objects with new settings
+    jobText = fonts.new(settings.job_font_settings);
+	expText = fonts.new(settings.exp_font_settings);
+	percentText = fonts.new(settings.percent_font_settings);
 end
 
 expbar.SetHidden = function(hidden)
