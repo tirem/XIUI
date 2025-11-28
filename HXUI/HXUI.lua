@@ -321,6 +321,8 @@ T{
 			mpTextColor = 0xFFFFFFFF,
 			tpEmptyTextColor = 0xFF9acce8,  -- TP < 1000
 			tpFullTextColor = 0xFF2fa9ff,   -- TP >= 1000
+			bgColor = 0xFFFFFFFF,           -- Background color
+			borderColor = 0xFFFFFFFF,       -- Border color
 		},
 
 		-- Exp Bar
@@ -607,6 +609,7 @@ T{
 
 		borderSize = 21,
         bgPadding = 5,
+        bgPaddingY = 10,
         bgOffset = 1,
 
 		cursorPaddingX1 = 5,

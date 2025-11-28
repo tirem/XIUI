@@ -87,6 +87,7 @@ local function UpdateTextVisibilityByMember(memIdx, visible)
     memberText[memIdx].mp:set_visible(visible);
     memberText[memIdx].tp:set_visible(visible);
     memberText[memIdx].name:set_visible(visible);
+    memberText[memIdx].distance:set_visible(visible);
 end
 
 local function UpdateTextVisibility(visible, partyIndex)
@@ -212,7 +213,7 @@ local function GetMemberInformation(memIdx)
     return memberInfo;
 end
 
-local function DrawMember(memIdx, settings)
+local function DrawMember(memIdx, settings, isLastVisibleMember)
 
     local memInfo = GetMemberInformation(memIdx);
     if (memInfo == nil) then
@@ -282,6 +283,7 @@ local function DrawMember(memIdx, settings)
     memberText[memIdx].mp:set_font_height(fontSize);
     memberText[memIdx].tp:set_font_height(fontSize);
     memberText[memIdx].name:set_font_height(fontSize);
+    memberText[memIdx].distance:set_font_height(fontSize);
 
     -- Update the hp text
     -- Only call set_color if the color has changed (expensive operation for GDI fonts)
@@ -308,27 +310,12 @@ local function DrawMember(memIdx, settings)
         draw_circle({hpStartX + settings.dotRadius/2, hpStartY + settings.dotRadius/2}, settings.dotRadius, {1, 1, .5, 1}, settings.dotRadius * 3, true);
     end
 
-    -- Update the name text
-    local distanceText = ''
-    local highlightDistance = false
-    if (gConfig.showPartyListDistance) then
-        if (memInfo.inzone and memInfo.index) then
-            local entity = GetEntitySafe()
-            if entity ~= nil then
-                local distance = math.sqrt(entity:GetDistance(memInfo.index))
-                if (distance > 0 and distance <= 50) then
-                    local percentText  = ('%.1f'):fmt(distance);
-                    distanceText = ' - ' .. percentText
+    -- Update the name text (without distance)
+    memberText[memIdx].name:set_text(tostring(memInfo.name));
+    local nameWidth, nameHeight = memberText[memIdx].name:get_text_size();
+    local offsetSize = nameHeight > settings.iconSize and nameHeight or settings.iconSize;
 
-                    if (gConfig.partyListDistanceHighlight > 0 and distance <= gConfig.partyListDistanceHighlight) then
-                        highlightDistance = true
-                    end
-                end
-            end
-        end
-    end
-
-    local desiredNameColor = highlightDistance and 0xFF00FFFF or gConfig.colorCustomization.partyList.nameTextColor;
+    local desiredNameColor = gConfig.colorCustomization.partyList.nameTextColor;
     -- Only call set_color if the color has changed
     if (memberTextColorCache[memIdx].name ~= desiredNameColor) then
         memberText[memIdx].name:set_font_color(desiredNameColor);
@@ -336,10 +323,40 @@ local function DrawMember(memIdx, settings)
     end
     memberText[memIdx].name:set_position_x(namePosX);
     memberText[memIdx].name:set_position_y(hpStartY - nameHeight - settings.nameTextOffsetY);
-    memberText[memIdx].name:set_text(tostring(memInfo.name) .. distanceText);
 
-    nameWidth, nameHeight = memberText[memIdx].name:get_text_size();
-    local offsetSize = nameHeight > settings.iconSize and nameHeight or settings.iconSize;
+    -- Update the distance text (separate from name)
+    local showDistance = false;
+    local highlightDistance = false;
+    if (gConfig.showPartyListDistance and memInfo.inzone and memInfo.index) then
+        local entity = GetEntitySafe()
+        if entity ~= nil then
+            local distance = math.sqrt(entity:GetDistance(memInfo.index))
+            if (distance > 0 and distance <= 50) then
+                local distanceText = ('%.1f'):fmt(distance);
+                memberText[memIdx].distance:set_text(' - ' .. distanceText);
+
+                local distancePosX = namePosX + nameWidth;
+                memberText[memIdx].distance:set_position_x(distancePosX);
+                memberText[memIdx].distance:set_position_y(hpStartY - nameHeight - settings.nameTextOffsetY);
+
+                showDistance = true;
+
+                if (gConfig.partyListDistanceHighlight > 0 and distance <= gConfig.partyListDistanceHighlight) then
+                    highlightDistance = true;
+                end
+            end
+        end
+    end
+
+    -- Update distance visibility and color
+    memberText[memIdx].distance:set_visible(showDistance);
+    if showDistance then
+        local desiredDistanceColor = highlightDistance and 0xFF00FFFF or gConfig.colorCustomization.partyList.nameTextColor;
+        if (memberTextColorCache[memIdx].distance ~= desiredDistanceColor) then
+            memberText[memIdx].distance:set_font_color(desiredDistanceColor);
+            memberTextColorCache[memIdx].distance = desiredDistanceColor;
+        end
+    end
 
     if (memInfo.inzone) then
         imgui.SameLine();
@@ -403,7 +420,7 @@ local function DrawMember(memIdx, settings)
         if (memInfo.targeted == true) then
             selectionPrim.visible = true;
             selectionPrim.position_x = hpStartX - settings.cursorPaddingX1;
-            selectionPrim.position_y = hpStartY - offsetSize - settings.cursorPaddingY1;
+            selectionPrim.position_y = hpStartY - offsetSize - settings.cursorPaddingY1 + 3;
             selectionPrim.scale_x = (allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2) / 346;
             selectionPrim.scale_y = entrySize / 108;
             partyTargeted = true;
@@ -519,8 +536,8 @@ local function DrawMember(memIdx, settings)
     --    imgui.Dummy({0, settings.entrySpacing[partyIndex] + settings.nameTextOffsetY});
     --end
 
-    local lastPlayerIndex = (partyIndex * 6) - 1;
-    if (memIdx + 1 <= lastPlayerIndex) then
+    -- Only add spacing between members if this isn't the last visible member
+    if (not isLastVisibleMember) then
         imgui.Dummy({0, offsetSize});
     end
 end
@@ -624,10 +641,20 @@ partyList.DrawPartyWindow = function(settings, party, partyIndex)
 
         UpdateTextVisibility(true, partyIndex);
 
+        -- Calculate which is the last member that will be drawn
+        local lastVisibleMemberIdx = firstPlayerIndex;
         for i = firstPlayerIndex, lastPlayerIndex do
             local relIndex = i - firstPlayerIndex
             if ((partyIndex == 1 and settings.expandHeight) or relIndex < partyMemberCount or relIndex < settings.minRows) then
-                DrawMember(i, settings);
+                lastVisibleMemberIdx = i;
+            end
+        end
+
+        -- Draw all members
+        for i = firstPlayerIndex, lastPlayerIndex do
+            local relIndex = i - firstPlayerIndex
+            if ((partyIndex == 1 and settings.expandHeight) or relIndex < partyMemberCount or relIndex < settings.minRows) then
+                DrawMember(i, settings, i == lastVisibleMemberIdx);
             else
                 UpdateTextVisibilityByMember(i, false);
             end
@@ -641,40 +668,46 @@ partyList.DrawPartyWindow = function(settings, party, partyIndex)
 
     -- if (fullMenuWidth[partyIndex] ~= nil and fullMenuHeight[partyIndex] ~= nil) then
         local bgWidth = fullMenuWidth[partyIndex] + (settings.bgPadding * 2);
-        local bgHeight = fullMenuHeight[partyIndex];
-        if (partyIndex > 1) then
-            bgHeight = bgHeight + (settings.bgPadding * 2)
-        end
+        local bgHeight = fullMenuHeight[partyIndex] + (settings.bgPaddingY * 2);
+
+        -- Apply colors from colorCustomization every frame (for real-time updates)
+        local bgColor = gConfig.colorCustomization.partyList.bgColor;
+        local borderColor = gConfig.colorCustomization.partyList.borderColor;
 
         backgroundPrim.bg.visible = backgroundPrim.bg.exists;
         backgroundPrim.bg.position_x = imguiPosX - settings.bgPadding;
-        backgroundPrim.bg.position_y = imguiPosY - settings.bgPadding;
+        backgroundPrim.bg.position_y = imguiPosY - settings.bgPaddingY;
         backgroundPrim.bg.width = math.ceil(bgWidth / gConfig.partyListBgScale);
         backgroundPrim.bg.height = math.ceil(bgHeight / gConfig.partyListBgScale);
+        backgroundPrim.bg.color = bgColor;
 
         backgroundPrim.br.visible = backgroundPrim.br.exists;
         backgroundPrim.br.position_x = backgroundPrim.bg.position_x + bgWidth - math.floor((settings.borderSize * gConfig.partyListBgScale) - (settings.bgOffset * gConfig.partyListBgScale));
         backgroundPrim.br.position_y = backgroundPrim.bg.position_y + bgHeight - math.floor((settings.borderSize * gConfig.partyListBgScale) - (settings.bgOffset * gConfig.partyListBgScale));
         backgroundPrim.br.width = settings.borderSize;
         backgroundPrim.br.height = settings.borderSize;
+        backgroundPrim.br.color = borderColor;
 
         backgroundPrim.tr.visible = backgroundPrim.tr.exists;
         backgroundPrim.tr.position_x = backgroundPrim.br.position_x;
         backgroundPrim.tr.position_y = backgroundPrim.bg.position_y - settings.bgOffset * gConfig.partyListBgScale;
         backgroundPrim.tr.width = backgroundPrim.br.width;
         backgroundPrim.tr.height = math.ceil((backgroundPrim.br.position_y - backgroundPrim.tr.position_y) / gConfig.partyListBgScale);
+        backgroundPrim.tr.color = borderColor;
 
         backgroundPrim.tl.visible = backgroundPrim.tl.exists;
         backgroundPrim.tl.position_x = backgroundPrim.bg.position_x - settings.bgOffset * gConfig.partyListBgScale;
         backgroundPrim.tl.position_y = backgroundPrim.tr.position_y
         backgroundPrim.tl.width = math.ceil((backgroundPrim.tr.position_x - backgroundPrim.tl.position_x) / gConfig.partyListBgScale);
         backgroundPrim.tl.height = backgroundPrim.tr.height;
+        backgroundPrim.tl.color = borderColor;
 
         backgroundPrim.bl.visible = backgroundPrim.bl.exists;
         backgroundPrim.bl.position_x = backgroundPrim.tl.position_x;
         backgroundPrim.bl.position_y = backgroundPrim.br.position_y;
         backgroundPrim.bl.width = backgroundPrim.tl.width;
         backgroundPrim.bl.height = backgroundPrim.br.height;
+        backgroundPrim.bl.color = borderColor;
 
         bgTitlePrim.visible = gConfig.showPartyListTitle;
         bgTitlePrim.position_x = imguiPosX + math.floor((bgWidth / 2) - (bgTitlePrim.width * bgTitlePrim.scale_x / 2));
@@ -740,17 +773,20 @@ partyList.Initialize = function(settings)
         local hp_font_settings = deep_copy_table(settings.hp_font_settings);
         local mp_font_settings = deep_copy_table(settings.mp_font_settings);
         local tp_font_settings = deep_copy_table(settings.tp_font_settings);
+        local distance_font_settings = deep_copy_table(settings.name_font_settings);
 
         name_font_settings.font_height = math.max(fontSize, 6);
         hp_font_settings.font_height = math.max(fontSize, 6);
         mp_font_settings.font_height = math.max(fontSize, 6);
         tp_font_settings.font_height = math.max(fontSize, 6);
+        distance_font_settings.font_height = math.max(fontSize, 6);
 
         memberText[i] = {};
         memberText[i].name = gdi:create_object(name_font_settings);
         memberText[i].hp = gdi:create_object(hp_font_settings);
         memberText[i].mp = gdi:create_object(mp_font_settings);
         memberText[i].tp = gdi:create_object(tp_font_settings);
+        memberText[i].distance = gdi:create_object(distance_font_settings);
     end
 
     -- Initialize images
@@ -819,11 +855,13 @@ partyList.UpdateVisuals = function(settings)
         local hp_font_settings = deep_copy_table(settings.hp_font_settings);
         local mp_font_settings = deep_copy_table(settings.mp_font_settings);
         local tp_font_settings = deep_copy_table(settings.tp_font_settings);
+        local distance_font_settings = deep_copy_table(settings.name_font_settings);
 
         name_font_settings.font_height = math.max(fontSize, 6);
         hp_font_settings.font_height = math.max(fontSize, 6);
         mp_font_settings.font_height = math.max(fontSize, 6);
         tp_font_settings.font_height = math.max(fontSize, 6);
+        distance_font_settings.font_height = math.max(fontSize, 6);
 
         -- Destroy old font objects
         if (memberText[i] ~= nil) then
@@ -831,6 +869,7 @@ partyList.UpdateVisuals = function(settings)
             if (memberText[i].hp ~= nil) then gdi:destroy_object(memberText[i].hp); end
             if (memberText[i].mp ~= nil) then gdi:destroy_object(memberText[i].mp); end
             if (memberText[i].tp ~= nil) then gdi:destroy_object(memberText[i].tp); end
+            if (memberText[i].distance ~= nil) then gdi:destroy_object(memberText[i].distance); end
         end
 
         -- Recreate font objects with new settings
@@ -838,6 +877,7 @@ partyList.UpdateVisuals = function(settings)
         memberText[i].hp = gdi:create_object(hp_font_settings);
         memberText[i].mp = gdi:create_object(mp_font_settings);
         memberText[i].tp = gdi:create_object(tp_font_settings);
+        memberText[i].distance = gdi:create_object(distance_font_settings);
 
         ::continue::
     end
@@ -855,9 +895,6 @@ partyList.UpdateVisuals = function(settings)
     local bgChanged = gConfig.partyListBackgroundName ~= loadedBg;
     loadedBg = gConfig.partyListBackgroundName;
 
-    local bgColor = tonumber(string.format('%02x%02x%02x%02x', gConfig.partyListBgColor[4], gConfig.partyListBgColor[1], gConfig.partyListBgColor[2], gConfig.partyListBgColor[3]), 16);
-    local borderColor = tonumber(string.format('%02x%02x%02x%02x', gConfig.partyListBorderColor[4], gConfig.partyListBorderColor[1], gConfig.partyListBorderColor[2], gConfig.partyListBorderColor[3]), 16);
-
     for i = 1, 3 do
         partyWindowPrim[i].bgTitle.scale_x = gConfig.partyListBgScale / 2.30;
         partyWindowPrim[i].bgTitle.scale_y = gConfig.partyListBgScale / 2.30;
@@ -866,7 +903,7 @@ partyList.UpdateVisuals = function(settings)
 
         for _, k in ipairs(bgImageKeys) do
             local file_name = string.format('%s-%s.png', gConfig.partyListBackgroundName, k);
-            backgroundPrim[k].color = k == 'bg' and bgColor or borderColor;
+            -- Note: colors are now applied every frame in DrawPartyWindow for real-time updates
             if (bgChanged) then
                 -- Keep width/height to prevent flicker when switching to new texture
                 local width, height = backgroundPrim[k].width, backgroundPrim[k].height;
@@ -904,6 +941,7 @@ partyList.Cleanup = function()
 			if (memberText[i].hp ~= nil) then gdi:destroy_object(memberText[i].hp); end
 			if (memberText[i].mp ~= nil) then gdi:destroy_object(memberText[i].mp); end
 			if (memberText[i].tp ~= nil) then gdi:destroy_object(memberText[i].tp); end
+			if (memberText[i].distance ~= nil) then gdi:destroy_object(memberText[i].distance); end
 		end
 	end
 

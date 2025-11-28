@@ -242,28 +242,6 @@ local function DrawPartyListSettings()
         -- Background
         DrawSlider('Background Scale', 'partyListBgScale', 0.1, 3.0, '%.2f');
 
-        local bgColor = { gConfig.partyListBgColor[1] / 255, gConfig.partyListBgColor[2] / 255, gConfig.partyListBgColor[3] / 255, gConfig.partyListBgColor[4] / 255 };
-        if (imgui.ColorEdit4('Background Color', bgColor, ImGuiColorEditFlags_AlphaBar)) then
-            gConfig.partyListBgColor[1] = bgColor[1] * 255;
-            gConfig.partyListBgColor[2] = bgColor[2] * 255;
-            gConfig.partyListBgColor[3] = bgColor[3] * 255;
-            gConfig.partyListBgColor[4] = bgColor[4] * 255;
-        end
-        if (imgui.IsItemDeactivatedAfterEdit()) then
-            SaveSettingsOnly();
-        end
-
-        local borderColor = { gConfig.partyListBorderColor[1] / 255, gConfig.partyListBorderColor[2] / 255, gConfig.partyListBorderColor[3] / 255, gConfig.partyListBorderColor[4] / 255 };
-        if (imgui.ColorEdit4('Border Color', borderColor, ImGuiColorEditFlags_AlphaBar)) then
-            gConfig.partyListBorderColor[1] = borderColor[1] * 255;
-            gConfig.partyListBorderColor[2] = borderColor[2] * 255;
-            gConfig.partyListBorderColor[3] = borderColor[3] * 255;
-            gConfig.partyListBorderColor[4] = borderColor[4] * 255;
-        end
-        if (imgui.IsItemDeactivatedAfterEdit()) then
-            SaveSettingsOnly();
-        end
-
         local bg_theme_paths = statusHandler.get_background_paths();
         DrawComboBox('Background', gConfig.partyListBackgroundName, bg_theme_paths, function(newValue)
             gConfig.partyListBackgroundName = newValue;
