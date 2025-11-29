@@ -91,7 +91,7 @@ end
 -- Section: General Settings
 local function DrawGeneralSettings()
     if (imgui.CollapsingHeader("General")) then
-        imgui.BeginChild("GeneralSettings", { 0, 240 }, true);
+        imgui.BeginChild("GeneralSettings", { 0, 180 }, true);
 
         DrawCheckbox('Lock HUD Position', 'lockPositions');
 
@@ -112,6 +112,24 @@ local function DrawGeneralSettings()
             DeferredUpdateVisuals();
         end);
         imgui.ShowHelp('The folder to pull job icons from. [HXUI\\assets\\jobs]');
+
+        DrawCheckbox('Show Health Bar Flash Effects', 'healthBarFlashEnabled');
+        DrawSlider('Basic Bar Roundness', 'noBookendRounding', 0, 10);
+        imgui.ShowHelp('For bars with no bookends, how round they should be.');
+
+        DrawSlider('Tooltip Scale', 'tooltipScale', 0.1, 3.0, '%.2f');
+        imgui.ShowHelp('Scales the size of the tooltip. Note that text may appear blured if scaled too large.');
+
+        DrawCheckbox('Hide During Events', 'hideDuringEvents');
+
+        imgui.EndChild();
+    end
+end
+
+-- Section: Font Settings
+local function DrawFontSettings()
+    if (imgui.CollapsingHeader("Fonts")) then
+        imgui.BeginChild("FontSettings", { 0, 180 }, true);
 
         -- Font Family Selector
         DrawComboBox('Font Family', gConfig.fontFamily, available_fonts, function(newValue)
@@ -135,15 +153,6 @@ local function DrawGeneralSettings()
             DeferredUpdateVisuals(); -- Tell all modules to recreate fonts with new outline width
         end);
         imgui.ShowHelp('The thickness of the text outline/stroke for all text in HXUI.');
-
-        DrawCheckbox('Show Health Bar Flash Effects', 'healthBarFlashEnabled');
-        DrawSlider('Basic Bar Roundness', 'noBookendRounding', 0, 10);
-        imgui.ShowHelp('For bars with no bookends, how round they should be.');
-
-        DrawSlider('Tooltip Scale', 'tooltipScale', 0.1, 3.0, '%.2f');
-        imgui.ShowHelp('Scales the size of the tooltip. Note that text may appear blured if scaled too large.');
-
-        DrawCheckbox('Hide During Events', 'hideDuringEvents');
 
         imgui.EndChild();
     end
@@ -542,6 +551,7 @@ config.DrawWindow = function(us)
 
         -- Draw all configuration sections
         DrawGeneralSettings();
+        DrawFontSettings();
         DrawPlayerBarSettings();
         DrawTargetBarSettings();
         DrawEnemyListSettings();
