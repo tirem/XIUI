@@ -1013,8 +1013,14 @@ partyList.UpdateVisuals = function(settings)
 
                 backgroundPrim[k].exists = ashita.fs.exists(filepath);
             end
-            backgroundPrim[k].scale_x = gConfig.partyListBgScale;
-            backgroundPrim[k].scale_y = gConfig.partyListBgScale;
+            -- Only scale the main background, not the borders
+            if k == 'bg' then
+                backgroundPrim[k].scale_x = gConfig.partyListBgScale;
+                backgroundPrim[k].scale_y = gConfig.partyListBgScale;
+            else
+                backgroundPrim[k].scale_x = 1.0;
+                backgroundPrim[k].scale_y = 1.0;
+            end
         end
     end
 
