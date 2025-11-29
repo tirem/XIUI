@@ -258,8 +258,6 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     local showTP = showPartyTP(partyIndex);
 
     local subTargetActive = GetSubTargetActive();
-    local nameWidth, nameHeight = memberText[memIdx].name:get_text_size();
-    local hpWidth, hpHeight = memberText[memIdx].hp:get_text_size();
 
     -- Get the hp color for bars and text
     local hpNameColor, hpGradient = GetCustomHpColors(memInfo.hpp, gConfig.colorCustomization.partyList);
@@ -287,7 +285,8 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     -- Calculate text sizes
     memberText[memIdx].name:set_text(tostring(memInfo.name));
     local nameWidth, nameHeight = memberText[memIdx].name:get_text_size();
-    local hpHeight = memberText[memIdx].hp:get_text_size();
+    memberText[memIdx].hp:set_text(tostring(memInfo.hp));
+    local _, hpHeight = memberText[memIdx].hp:get_text_size();
 
     -- Calculate layout dimensions
     local jobIconSize = settings.iconSize * 1.1 * scale.icon;
@@ -296,8 +295,9 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     -- Calculate the actual topmost point of the member (where name/icon are drawn)
     local nameIconAreaHeight = math.max(jobIconSize, nameHeight);
 
-    -- entrySize includes the full member entry: name/icon area + bars + text below bars
-    local entrySize = nameIconAreaHeight + settings.nameTextOffsetY + barHeight + hpHeight + settings.entrySpacing[partyIndex] - 6;
+    -- entrySize includes the full member entry: name text + bars + hp text (plus offsets between them)
+    -- Note: entrySpacing is spacing BETWEEN members, not part of a single member's height
+    local entrySize = nameHeight + settings.nameTextOffsetY + barHeight + settings.hpTextOffsetY + hpHeight;
 
     -- DRAW SELECTION BOX using GetBackgroundDrawList (renders behind everything with rounded corners)
     if (memInfo.targeted == true) then
@@ -376,7 +376,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     memberText[memIdx].tp:set_font_height(fontSize);
     memberText[memIdx].distance:set_font_height(fontSize);
 
-    -- Update the hp text
+    -- Update the hp text (text already set earlier for measurement)
     if not memberTextColorCache[memIdx] then memberTextColorCache[memIdx] = {}; end
     if (memberTextColorCache[memIdx].hp ~= gConfig.colorCustomization.partyList.hpTextColor) then
         memberText[memIdx].hp:set_font_color(gConfig.colorCustomization.partyList.hpTextColor);
@@ -384,7 +384,6 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     end
     memberText[memIdx].hp:set_position_x(hpStartX + hpBarWidth + settings.hpTextOffsetX);
     memberText[memIdx].hp:set_position_y(hpStartY + barHeight + settings.hpTextOffsetY);
-    memberText[memIdx].hp:set_text(tostring(memInfo.hp));
 
     -- Draw the HP bar
     if (memInfo.inzone) then
@@ -625,14 +624,15 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     memberText[memIdx].tp:set_visible(memInfo.inzone and showTP);
 
     -- Reserve space in ImGui layout for the text below bars (which is rendered with absolute positioning)
-    -- Include hpHeight to account for the text size so background grows with font size changes
+    -- Match the selection box calculation: hpTextOffsetY + hpHeight (no entrySpacing since selection box subtracts it)
     -- Don't include cursorPadding here - that's only for the selection box visual padding
-    local bottomSpacing = hpHeight / 3 + settings.entrySpacing[partyIndex];
+    local bottomSpacing = settings.hpTextOffsetY + hpHeight;
     imgui.Dummy({0, bottomSpacing});
 
-    -- Only add spacing between members if this isn't the last visible member
+    -- Add spacing between members: fixed base spacing + user-customizable entrySpacing (if not last visible member)
     if (not isLastVisibleMember) then
-        imgui.Dummy({0, offsetSize});
+        local BASE_MEMBER_SPACING = 6; -- Fixed 6px spacing between members
+        imgui.Dummy({0, BASE_MEMBER_SPACING + settings.entrySpacing[partyIndex]});
     end
 end
 

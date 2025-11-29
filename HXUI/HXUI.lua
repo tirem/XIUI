@@ -641,8 +641,8 @@ T{
 
 		cursorPaddingX1 = 8,
 		cursorPaddingX2 = 8,
-		cursorPaddingY1 = 6,
-		cursorPaddingY2 = -10,
+		cursorPaddingY1 = 7,
+		cursorPaddingY2 = 10,
 		dotRadius = 3,
 
 		arrowSize = 1;
