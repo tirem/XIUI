@@ -394,6 +394,7 @@ local function DrawInventoryTrackerSettings()
         local columnCount = { gConfig.inventoryTrackerColumnCount };
         if (imgui.SliderInt('Columns', columnCount, 1, 80)) then
             gConfig.inventoryTrackerColumnCount = columnCount[1];
+            UpdateUserSettings(); -- Update visuals in real-time
         end
         if (imgui.IsItemDeactivatedAfterEdit()) then
             SaveSettingsOnly();
@@ -402,6 +403,7 @@ local function DrawInventoryTrackerSettings()
         local rowCount = { gConfig.inventoryTrackerRowCount };
         if (imgui.SliderInt('Rows', rowCount, 1, 80)) then
             gConfig.inventoryTrackerRowCount = rowCount[1];
+            UpdateUserSettings(); -- Update visuals in real-time
         end
         if (imgui.IsItemDeactivatedAfterEdit()) then
             SaveSettingsOnly();

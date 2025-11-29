@@ -132,7 +132,12 @@ inventoryTracker.DrawWindow = function(settings)
 
             inventoryText:set_text(usedBagSlots.. '/'..maxBagSlots);
             local textWidth, textHeight = inventoryText:get_text_size();
-            inventoryText:set_position_x(locX + winSizeX);
+
+            -- Calculate the actual right edge of the inventory dots (without window padding)
+            local inventoryWidth = (groupOffsetX * totalGroups) - settings.groupSpacing + settings.dotRadius;
+
+            -- Position text at right edge of dots (text is right-aligned, so X position is the right edge)
+            inventoryText:set_position_x(locX + framePaddingX + inventoryWidth);
 		    inventoryText:set_position_y(locY + settings.textOffsetY - textHeight);
 		    -- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
 		    if (lastInventoryTextColor ~= gConfig.colorCustomization.inventoryTracker.textColor) then
