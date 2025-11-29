@@ -686,7 +686,7 @@ T{
 			font_family = 'Consolas',
 			font_height = 14,
 			font_color = 0xFFC5CFDC,
-			font_flags = gdi.FontFlags.None,
+			font_flags = gdi.FontFlags.Italic,
 			outline_color = 0xFF000000,
 			outline_width = 2,
 		};
@@ -872,7 +872,7 @@ function UpdateUserSettings()
 	gAdjustedSettings.partyListSettings.name_font_settings.font_flags = fontWeightFlags;
 	gAdjustedSettings.partyListSettings.name_font_settings.outline_width = us.fontOutlineWidth;
 	gAdjustedSettings.partyListSettings.title_font_settings.font_family = us.fontFamily;
-	gAdjustedSettings.partyListSettings.title_font_settings.font_flags = fontWeightFlags;
+	gAdjustedSettings.partyListSettings.title_font_settings.font_flags = bit.bor(fontWeightFlags, gdi.FontFlags.Italic);
 	gAdjustedSettings.partyListSettings.title_font_settings.outline_width = us.fontOutlineWidth;
 
 	-- Cast Bar
