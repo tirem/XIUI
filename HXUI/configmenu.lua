@@ -181,7 +181,7 @@ local function DrawTargetBarSettings()
         imgui.ShowHelp('Always display the percent of HP remanining regardless if the target is an enemy or not.');
 
         DrawCheckbox('Split Target Bars', 'splitTargetOfTarget');
-        imgui.ShowHelp('Separate the Target of Target bar into its own window that can be moved independently.');
+        imgui.ShowHelp('Separate the Target of Target bar into its own window that can be moved independently.\nNote: Target of Target only works for players and NPCs, not enemies.');
 
         DrawSlider('Scale X', 'targetBarScaleX', 0.1, 3.0, '%.1f');
         DrawSlider('Scale Y', 'targetBarScaleY', 0.1, 3.0, '%.1f');

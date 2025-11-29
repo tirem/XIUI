@@ -183,6 +183,8 @@ T{
     inventoryTrackerOpacity = 1.0,
     inventoryTrackerColumnCount = 5,
     inventoryTrackerRowCount = 6,
+    inventoryTrackerColorThreshold1 = 15,
+    inventoryTrackerColorThreshold2 = 29,
     inventoryShowCount = true,
 
 	partyListDistanceHighlight = 0,
@@ -346,7 +348,9 @@ T{
 		inventoryTracker = T{
 			textColor = 0xFFFFFFFF,
 			emptySlotColor = T{ r = 0, g = 0.07, b = 0.17, a = 1 },
-			usedSlotColor = T{ r = 0.37, g = 0.7, b = 0.88, a = 1 },
+			usedSlotColor = T{ r = 0.37, g = 0.7, b = 0.88, a = 1 },        -- Normal (white/blue)
+			usedSlotColorThreshold1 = T{ r = 1.0, g = 1.0, b = 0, a = 1 },  -- Warning (yellow)
+			usedSlotColorThreshold2 = T{ r = 1.0, g = 0, b = 0, a = 1 },    -- Critical (red)
 		},
 
 		-- Cast Bar

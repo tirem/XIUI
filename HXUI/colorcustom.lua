@@ -254,7 +254,7 @@ colorcustom.DrawWindow = function()
 
         -- Inventory Tracker
         if (imgui.CollapsingHeader("Inventory Tracker")) then
-            imgui.BeginChild("InventoryTrackerColors", { 0, 250 }, true);
+            imgui.BeginChild("InventoryTrackerColors", { 0, 450 }, true);
 
             imgui.Text("Text Color:");
             imgui.Separator();
@@ -270,7 +270,7 @@ colorcustom.DrawWindow = function()
                 gConfig.colorCustomization.inventoryTracker.emptySlotColor.b,
                 gConfig.colorCustomization.inventoryTracker.emptySlotColor.a
             };
-            if (imgui.ColorEdit4('Empty Slot', emptySlot, ImGuiColorEditFlags_AlphaBar)) then
+            if (imgui.ColorEdit4('Empty Slot', emptySlot, bit.bor(ImGuiColorEditFlags_AlphaBar, ImGuiColorEditFlags_NoInputs))) then
                 gConfig.colorCustomization.inventoryTracker.emptySlotColor.r = emptySlot[1];
                 gConfig.colorCustomization.inventoryTracker.emptySlotColor.g = emptySlot[2];
                 gConfig.colorCustomization.inventoryTracker.emptySlotColor.b = emptySlot[3];
@@ -288,7 +288,7 @@ colorcustom.DrawWindow = function()
                 gConfig.colorCustomization.inventoryTracker.usedSlotColor.b,
                 gConfig.colorCustomization.inventoryTracker.usedSlotColor.a
             };
-            if (imgui.ColorEdit4('Used Slot', usedSlot, ImGuiColorEditFlags_AlphaBar)) then
+            if (imgui.ColorEdit4('Used Slot (Normal)', usedSlot, bit.bor(ImGuiColorEditFlags_AlphaBar, ImGuiColorEditFlags_NoInputs))) then
                 gConfig.colorCustomization.inventoryTracker.usedSlotColor.r = usedSlot[1];
                 gConfig.colorCustomization.inventoryTracker.usedSlotColor.g = usedSlot[2];
                 gConfig.colorCustomization.inventoryTracker.usedSlotColor.b = usedSlot[3];
@@ -298,7 +298,65 @@ colorcustom.DrawWindow = function()
             if (imgui.IsItemDeactivatedAfterEdit()) then
                 SaveSettingsOnly();
             end
-            imgui.ShowHelp('Color for used inventory slots');
+            imgui.ShowHelp('Color for used inventory slots (normal)');
+
+            local usedSlotThreshold1 = {
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold1.r,
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold1.g,
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold1.b,
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold1.a
+            };
+            if (imgui.ColorEdit4('Used Slot (Warning)', usedSlotThreshold1, bit.bor(ImGuiColorEditFlags_AlphaBar, ImGuiColorEditFlags_NoInputs))) then
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold1.r = usedSlotThreshold1[1];
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold1.g = usedSlotThreshold1[2];
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold1.b = usedSlotThreshold1[3];
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold1.a = usedSlotThreshold1[4];
+            end
+            -- Only save settings when user finishes editing
+            if (imgui.IsItemDeactivatedAfterEdit()) then
+                SaveSettingsOnly();
+            end
+            imgui.ShowHelp('Color for used inventory slots when at warning threshold');
+
+            local usedSlotThreshold2 = {
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold2.r,
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold2.g,
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold2.b,
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold2.a
+            };
+            if (imgui.ColorEdit4('Used Slot (Full)', usedSlotThreshold2, bit.bor(ImGuiColorEditFlags_AlphaBar, ImGuiColorEditFlags_NoInputs))) then
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold2.r = usedSlotThreshold2[1];
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold2.g = usedSlotThreshold2[2];
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold2.b = usedSlotThreshold2[3];
+                gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold2.a = usedSlotThreshold2[4];
+            end
+            -- Only save settings when user finishes editing
+            if (imgui.IsItemDeactivatedAfterEdit()) then
+                SaveSettingsOnly();
+            end
+            imgui.ShowHelp('Color for used inventory slots when at critical threshold');
+
+            imgui.Separator();
+            imgui.Text("Color Thresholds:");
+            imgui.Separator();
+
+            local threshold1 = { gConfig.inventoryTrackerColorThreshold1 };
+            if (imgui.SliderInt('Warning Threshold', threshold1, 0, 30)) then
+                gConfig.inventoryTrackerColorThreshold1 = threshold1[1];
+            end
+            if (imgui.IsItemDeactivatedAfterEdit()) then
+                SaveSettingsOnly();
+            end
+            imgui.ShowHelp('Inventory count at which dots turn to warning color');
+
+            local threshold2 = { gConfig.inventoryTrackerColorThreshold2 };
+            if (imgui.SliderInt('Critical Threshold', threshold2, 0, 30)) then
+                gConfig.inventoryTrackerColorThreshold2 = threshold2[1];
+            end
+            if (imgui.IsItemDeactivatedAfterEdit()) then
+                SaveSettingsOnly();
+            end
+            imgui.ShowHelp('Inventory count at which dots turn to critical color');
 
             imgui.EndChild();
         end

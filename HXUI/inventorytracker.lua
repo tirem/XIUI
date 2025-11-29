@@ -95,7 +95,17 @@ inventoryTracker.DrawWindow = function(settings)
 
 		-- Get custom colors
 		local emptyColor = gConfig.colorCustomization.inventoryTracker.emptySlotColor;
-		local usedColor = gConfig.colorCustomization.inventoryTracker.usedSlotColor;
+
+		-- Determine used slot color based on inventory usage thresholds
+		local usedColor;
+		if (usedBagSlots >= gConfig.inventoryTrackerColorThreshold2) then
+			usedColor = gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold2;
+		elseif (usedBagSlots >= gConfig.inventoryTrackerColorThreshold1) then
+			usedColor = gConfig.colorCustomization.inventoryTracker.usedSlotColorThreshold1;
+		else
+			usedColor = gConfig.colorCustomization.inventoryTracker.usedSlotColor;
+		end
+
 		local emptyColorWithOpacity = {emptyColor.r, emptyColor.g, emptyColor.b, emptyColor.a * settings.opacity};
 		local usedColorWithOpacity = {usedColor.r, usedColor.g, usedColor.b, usedColor.a * settings.opacity};
 
