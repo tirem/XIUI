@@ -78,7 +78,59 @@ expbar.DrawWindow = function(settings)
     end
 
     local inlineMode = gConfig.expBarInlineMode;
-    local windowSize = inlineMode and settings.barWidth + settings.textWidth or math.max(settings.barWidth, settings.textWidth);
+    local framePadding = imgui.GetStyle().FramePadding.x * 2;
+
+    -- Calculate text width for inline mode positioning BEFORE setting window size
+    local actualTextWidth = 0;
+    if inlineMode then
+        -- Pre-calculate text sizes to determine actual width needed
+        local mainJobString = AshitaCore:GetResourceManager():GetString('jobs.names_abbr', player:GetMainJob());
+        local subJobString = AshitaCore:GetResourceManager():GetString('jobs.names_abbr', player:GetSubJob());
+        local jobString = mainJobString .. ' ' .. player:GetMainJobLevel() .. ' / ' .. subJobString .. ' ' .. player:GetSubJobLevel();
+        jobText:set_text(jobString);
+        local jobWidth = jobText:get_text_size();
+        actualTextWidth = actualTextWidth + jobWidth;
+
+        if gConfig.expBarShowText then
+            -- Calculate exp text width
+            local separator = ' - ';
+            local expTestString;
+            if meritMode then
+                if player:GetMainJobLevel() >= 99 then
+                    expTestString = separator .. 'JP (' .. jobPoints[1] .. '/' .. jobPoints[2] .. ') MP (' .. meritPoints[1] .. '/' .. meritPoints[2] .. ') LP (' .. limitPoints[1] .. '/' .. limitPoints[2] .. ')';
+                else
+                    expTestString = separator .. 'MP (' .. meritPoints[1] .. '/' .. meritPoints[2] .. ') LP (' .. limitPoints[1] .. '/' .. limitPoints[2] .. ')';
+                end
+            elseif player:GetMainJobLevel() >= 99 then
+                expTestString = separator .. 'JP (' .. jobPoints[1] .. '/' .. jobPoints[2] .. ') MP (' .. meritPoints[1] .. '/' .. meritPoints[2] .. ') CP (' .. capPoints[1] .. '/' .. capPoints[2] .. ')';
+            else
+                expTestString = separator .. 'EXP (' .. expPoints[1] .. '/' .. expPoints[2] .. ')';
+            end
+            expText:set_text(expTestString);
+            local expWidth = expText:get_text_size();
+            actualTextWidth = actualTextWidth + expWidth;
+        end
+
+        if gConfig.expBarShowPercent then
+            local expPercentString = ('%.f'):fmt(progressBarProgress * 100);
+            local percentSeparator = ' - ';
+            local percentString = percentSeparator .. expPercentString .. '%';
+            percentText:set_text(percentString);
+            local percentWidth = percentText:get_text_size();
+            actualTextWidth = actualTextWidth + percentWidth;
+        end
+
+        -- Add spacing between text and bar
+        actualTextWidth = actualTextWidth + 16;
+    end
+
+    -- Calculate window size based on actual content width
+    local windowSize;
+    if inlineMode then
+        windowSize = actualTextWidth + settings.barWidth + framePadding;
+    else
+        windowSize = math.max(settings.barWidth, settings.textWidth) + framePadding;
+    end
 
     imgui.SetNextWindowSize({ windowSize, -1 }, ImGuiCond_Always);
 	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
@@ -89,7 +141,8 @@ expbar.DrawWindow = function(settings)
 
 		-- Draw HP Bar
 		local startX, startY = imgui.GetCursorScreenPos();
-        local col2X = startX + settings.textWidth - imgui.GetStyle().FramePadding.x * 2;
+
+        local col2X = inlineMode and (startX + actualTextWidth) or (startX + settings.textWidth - imgui.GetStyle().FramePadding.x * 2);
 
         local progressBarWidth = settings.barWidth - imgui.GetStyle().FramePadding.x * 2;
         if inlineMode then
@@ -100,8 +153,32 @@ expbar.DrawWindow = function(settings)
 
 		imgui.SameLine();
 
+        -- Calculate bar position and text padding
+        local barStartX = inlineMode and col2X or startX;
+        local bookendWidth = gConfig.showExpBarBookends and (settings.barHeight / 2) or 0;
+        local textPadding = 8;
+
         local textY = inlineMode and startY or startY + settings.barHeight + settings.textOffsetY;
-        local textXRightAlign = startX + settings.textWidth - imgui.GetStyle().FramePadding.x * 4;
+
+        -- Left-aligned text position (job text)
+        local leftTextX;
+        if inlineMode then
+            -- In inline mode, text is in the left column area, 8px from left edge
+            leftTextX = startX + textPadding;
+        else
+            -- In non-inline mode, text is on the bar, 8px from left edge (after bookend)
+            leftTextX = startX + bookendWidth + textPadding;
+        end
+
+        -- Right-aligned text position (exp text)
+        local rightTextX;
+        if inlineMode then
+            -- In inline mode, text is in the left column area, 8px from right edge of text column
+            rightTextX = col2X - textPadding;
+        else
+            -- In non-inline mode, text is on the bar, 8px from right edge (before bookend)
+            rightTextX = startX + progressBarWidth - bookendWidth - textPadding;
+        end
 
 		-- Update our text objects
 
@@ -110,14 +187,18 @@ expbar.DrawWindow = function(settings)
 		expText:set_font_height(settings.exp_font_settings.font_height);
 		percentText:set_font_height(settings.percent_font_settings.font_height);
 
+        -- Declare width variables in wider scope for use in percent text positioning
+        local textWidth, textHeight = 0, 0;
+        local expTextWidth, expTextHeight = 0, 0;
+
         if gConfig.expBarShowText then
             -- Job Text
             local mainJobString = AshitaCore:GetResourceManager():GetString('jobs.names_abbr', mainJob);
             local subJobString = AshitaCore:GetResourceManager():GetString('jobs.names_abbr', subJob);
             local jobString = mainJobString .. ' ' .. jobLevel .. ' / ' .. subJobString .. ' ' .. subJobLevel;
             jobText:set_text(jobString);
-            local textWidth, textHeight = jobText:get_text_size();
-            jobText:set_position_x(startX);
+            textWidth, textHeight = jobText:get_text_size();
+            jobText:set_position_x(leftTextX);
             jobText:set_position_y(inlineMode and textY + (settings.barHeight - textHeight) / 2 - 1 or textY);
             -- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
             if (lastJobTextColor ~= gConfig.colorCustomization.expBar.jobTextColor) then
@@ -125,24 +206,31 @@ expbar.DrawWindow = function(settings)
                 lastJobTextColor = gConfig.colorCustomization.expBar.jobTextColor;
             end
 
-            -- Exp Text
+            -- Exp Text (with separator in inline mode)
+            local expString;
+            local separator = inlineMode and ' - ' or '';
             if meritMode then
                 if jobLevel >= 99 then
-                    local expString = 'JP (' .. jobPoints[1] .. ' / ' .. jobPoints[2] .. ')' .. ' MP (' .. meritPoints[1] .. ' / ' .. meritPoints[2] .. ')' .. ' LP (' .. limitPoints[1] .. ' / ' .. limitPoints[2] .. ')';
-                    expText:set_text(expString);
+                    expString = separator .. 'JP (' .. jobPoints[1] .. '/' .. jobPoints[2] .. ') MP (' .. meritPoints[1] .. '/' .. meritPoints[2] .. ') LP (' .. limitPoints[1] .. '/' .. limitPoints[2] .. ')';
                 else
-                    local expString = 'MP (' .. meritPoints[1] .. ' / ' .. meritPoints[2] .. ')' .. ' LP (' .. limitPoints[1] .. ' / ' .. limitPoints[2] .. ')';
-                    expText:set_text(expString);
+                    expString = separator .. 'MP (' .. meritPoints[1] .. '/' .. meritPoints[2] .. ') LP (' .. limitPoints[1] .. '/' .. limitPoints[2] .. ')';
                 end
             elseif jobLevel >= 99 then
-                local expString = 'JP (' .. jobPoints[1] .. ' / ' .. jobPoints[2] .. ')' .. ' MP (' .. meritPoints[1] .. ' / ' .. meritPoints[2] .. ')' .. ' CP (' .. capPoints[1] .. ' / ' .. capPoints[2] .. ')';
-                expText:set_text(expString);
+                expString = separator .. 'JP (' .. jobPoints[1] .. '/' .. jobPoints[2] .. ') MP (' .. meritPoints[1] .. '/' .. meritPoints[2] .. ') CP (' .. capPoints[1] .. '/' .. capPoints[2] .. ')';
             else
-                local expString = 'EXP (' .. expPoints[1] .. ' / ' .. expPoints[2] .. ')';
-                expText:set_text(expString);
+                expString = separator .. 'EXP (' .. expPoints[1] .. '/' .. expPoints[2] .. ')';
             end
-            local expTextWidth, expTextHeight = expText:get_text_size();
-            expText:set_position_x(textXRightAlign);
+            expText:set_text(expString);
+            expTextWidth, expTextHeight = expText:get_text_size();
+
+            -- Position exp text after job text in inline mode, or at right edge in non-inline mode
+            if inlineMode then
+                -- Exp text is right-aligned, so X position is the RIGHT edge
+                -- Position it so the right edge is at: leftTextX + jobWidth + expWidth
+                expText:set_position_x(leftTextX + textWidth + expTextWidth);
+            else
+                expText:set_position_x(rightTextX);
+            end
             expText:set_position_y(inlineMode and textY + (settings.barHeight - expTextHeight) / 2 - 1 or textY);
             -- Only call set_font_color if the color has changed
             if (lastExpTextColor ~= gConfig.colorCustomization.expBar.expTextColor) then
@@ -162,12 +250,30 @@ expbar.DrawWindow = function(settings)
         -- Percent Text
         if gConfig.expBarShowPercent then
             local expPercentString = ('%.f'):fmt(progressBarProgress * 100);
-            local percentString = expPercentString .. '%';
+            local percentSeparator = inlineMode and ' - ' or '';
+            local percentString = percentSeparator .. expPercentString .. '%';
             percentText:set_text(percentString);
             local percentTextWidth, percentTextHeight = percentText:get_text_size();
-            local percentTextX = inlineMode and startX + windowSize or textXRightAlign;
-            local percentTextY = inlineMode and textY + (settings.barHeight - percentTextHeight) / 2 - 1 or startY - settings.textOffsetY;
-            percentText:set_position_x(percentTextX + settings.percentOffsetX);
+
+            -- Position percent text
+            local percentTextX, percentTextY;
+            if inlineMode then
+                -- In inline mode, position after exp text on the same line
+                if gConfig.expBarShowText then
+                    -- Percent text is right-aligned, so X position is the RIGHT edge
+                    -- Position it so the right edge is at: leftTextX + jobWidth + expWidth + percentWidth
+                    percentTextX = leftTextX + textWidth + expTextWidth + percentTextWidth;
+                else
+                    percentTextX = leftTextX + percentTextWidth;
+                end
+                percentTextY = textY + (settings.barHeight - percentTextHeight) / 2 - 1;
+            else
+                -- In non-inline mode, position above the bar, right-aligned with 8px padding
+                percentTextX = barStartX + progressBarWidth - bookendWidth - textPadding;
+                percentTextY = startY - percentTextHeight - settings.textOffsetY;
+            end
+
+            percentText:set_position_x(percentTextX);
             percentText:set_position_y(percentTextY);
             -- Only call set_font_color if the color has changed
             if (lastPercentTextColor ~= gConfig.colorCustomization.expBar.percentTextColor) then
