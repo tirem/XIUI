@@ -5,6 +5,9 @@ local imgui = require("imgui");
 local colorcustom = {};
 gShowColorCustom = { false };
 
+-- State for confirmation dialogs
+local showRestoreColorsConfirm = false;
+
 -- Helper function to draw gradient color pickers
 local function DrawGradientPicker(label, gradientTable, helpText)
     if not gradientTable then
@@ -39,6 +42,44 @@ local function DrawGradientPicker(label, gradientTable, helpText)
         if (imgui.IsItemDeactivatedAfterEdit()) then
             SaveSettingsOnly();
         end
+    end
+
+    if helpText then
+        imgui.ShowHelp(helpText);
+    end
+end
+
+-- Helper function to draw 3-step gradient color pickers (for bookends)
+local function DrawThreeStepGradientPicker(label, gradientTable, helpText)
+    if not gradientTable then
+        return;
+    end
+
+    -- Start color picker (top)
+    local startColor = HexToImGui(gradientTable.start);
+    if (imgui.ColorEdit4(label..' Top##'..label, startColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
+        gradientTable.start = ImGuiToHex(startColor);
+    end
+    if (imgui.IsItemDeactivatedAfterEdit()) then
+        SaveSettingsOnly();
+    end
+
+    -- Mid color picker (middle)
+    local midColor = HexToImGui(gradientTable.mid);
+    if (imgui.ColorEdit4(label..' Middle##'..label, midColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
+        gradientTable.mid = ImGuiToHex(midColor);
+    end
+    if (imgui.IsItemDeactivatedAfterEdit()) then
+        SaveSettingsOnly();
+    end
+
+    -- Stop color picker (bottom)
+    local stopColor = HexToImGui(gradientTable.stop);
+    if (imgui.ColorEdit4(label..' Bottom##'..label, stopColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
+        gradientTable.stop = ImGuiToHex(stopColor);
+    end
+    if (imgui.IsItemDeactivatedAfterEdit()) then
+        SaveSettingsOnly();
     end
 
     if helpText then
@@ -90,12 +131,40 @@ colorcustom.DrawWindow = function()
     imgui.SetNextWindowSize({ 700, 600 }, ImGuiCond_FirstUseEver);
     if (imgui.Begin("HXUI Color Customization", gShowColorCustom, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
 
-        if (imgui.Button("Restore Default Colors", { 240, 20 })) then
-            -- Reset all colors to defaults
-            gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
-            UpdateSettings();
+        if (imgui.Button("Open Config", { 160, 20 })) then
+            showConfig[1] = true;
         end
-        imgui.ShowHelp('Reset all custom colors back to default values');
+        imgui.SameLine();
+
+        if (imgui.Button("Restore Default Colors", { 240, 20 })) then
+            showRestoreColorsConfirm = true;
+            imgui.OpenPopup("Confirm Restore Colors");
+        end
+
+        -- Restore Default Colors confirmation popup
+        if (showRestoreColorsConfirm) then
+            imgui.OpenPopup("Confirm Restore Colors");
+            showRestoreColorsConfirm = false;
+        end
+
+        if (imgui.BeginPopupModal("Confirm Restore Colors", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+            imgui.Text("Are you sure you want to restore all colors to defaults?");
+            imgui.Text("This will reset all your custom colors.");
+            imgui.NewLine();
+
+            if (imgui.Button("Confirm", { 120, 0 })) then
+                -- Reset all colors to defaults
+                gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
+                UpdateSettings();
+                imgui.CloseCurrentPopup();
+            end
+            imgui.SameLine();
+            if (imgui.Button("Cancel", { 120, 0 })) then
+                imgui.CloseCurrentPopup();
+            end
+
+            imgui.EndPopup();
+        end
 
         imgui.BeginChild("Color Options", { 0, 0 }, true);
 
@@ -380,11 +449,16 @@ colorcustom.DrawWindow = function()
 
         -- Global
         if (imgui.CollapsingHeader("Global")) then
-            imgui.BeginChild("GlobalColors", { 0, 150 }, true);
+            imgui.BeginChild("GlobalColors", { 0, 300 }, true);
 
             imgui.Text("Background Color:");
             imgui.Separator();
             DrawGradientPicker("Bar Background", gConfig.colorCustomization.shared.backgroundGradient, "Background color for all progress bars");
+
+            imgui.Separator();
+            imgui.Text("Bookend Gradient:");
+            imgui.Separator();
+            DrawThreeStepGradientPicker("Bookend", gConfig.colorCustomization.shared.bookendGradient, "3-step gradient for progress bar bookends (top -> middle -> bottom)");
 
             imgui.EndChild();
         end

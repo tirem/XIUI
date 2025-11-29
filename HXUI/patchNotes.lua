@@ -75,6 +75,7 @@ patchNotes.DrawWindow = function()
 
 		imgui.NewLine();
 		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'New Feature: Color Customizer');
+		imgui.BulletText('Use "/hxui color" (or colour..) to open the color customizer');
 		imgui.BulletText('Added comprehensive color customization system');
 		imgui.BulletText('Customize all text colors (HP, MP, TP, distance, etc.)');
 		imgui.BulletText('Customize bar gradient colors or use solid colors');

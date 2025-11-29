@@ -5,6 +5,9 @@ local imgui = require("imgui");
 
 local config = {};
 
+-- State for confirmation dialogs
+local showRestoreDefaultsConfirm = false;
+
 -- List of common Windows fonts
 local available_fonts = {
     'Arial',
@@ -159,7 +162,7 @@ local function DrawPlayerBarSettings()
 
         DrawSlider('Scale X', 'playerBarScaleX', 0.1, 3.0, '%.1f');
         DrawSlider('Scale Y', 'playerBarScaleY', 0.1, 3.0, '%.1f');
-        DrawSlider('Font Size', 'playerBarFontSize', 6, 36);
+        DrawSlider('Font Size', 'playerBarFontSize', 8, 36);
 
         imgui.EndChild();
     end
@@ -185,11 +188,11 @@ local function DrawTargetBarSettings()
 
         DrawSlider('Scale X', 'targetBarScaleX', 0.1, 3.0, '%.1f');
         DrawSlider('Scale Y', 'targetBarScaleY', 0.1, 3.0, '%.1f');
-        DrawSlider('Name Font Size', 'targetBarNameFontSize', 6, 36);
-        DrawSlider('Distance Font Size', 'targetBarDistanceFontSize', 6, 36);
-        DrawSlider('HP% Font Size', 'targetBarPercentFontSize', 6, 36);
+        DrawSlider('Name Font Size', 'targetBarNameFontSize', 8, 36);
+        DrawSlider('Distance Font Size', 'targetBarDistanceFontSize', 8, 36);
+        DrawSlider('HP% Font Size', 'targetBarPercentFontSize', 8, 36);
         DrawSlider('Icon Scale', 'targetBarIconScale', 0.1, 3.0, '%.1f');
-        DrawSlider('Icon Font Size', 'targetBarIconFontSize', 6, 36);
+        DrawSlider('Icon Font Size', 'targetBarIconFontSize', 8, 36);
 
         imgui.EndChild();
 
@@ -200,7 +203,7 @@ local function DrawTargetBarSettings()
 
             DrawSlider('Scale X', 'totBarScaleX', 0.1, 3.0, '%.1f');
             DrawSlider('Scale Y', 'totBarScaleY', 0.1, 3.0, '%.1f');
-            DrawSlider('Font Size', 'totBarFontSize', 6, 36);
+            DrawSlider('Font Size', 'totBarFontSize', 8, 36);
 
             imgui.EndChild();
         end
@@ -219,7 +222,7 @@ local function DrawEnemyListSettings()
 
         DrawSlider('Scale X', 'enemyListScaleX', 0.1, 3.0, '%.1f');
         DrawSlider('Scale Y', 'enemyListScaleY', 0.1, 3.0, '%.1f');
-        DrawSlider('Font Size', 'enemyListFontSize', 6, 36);
+        DrawSlider('Font Size', 'enemyListFontSize', 8, 36);
         DrawSlider('Icon Scale', 'enemyListIconScale', 0.1, 3.0, '%.1f');
 
         imgui.EndChild();
@@ -297,7 +300,7 @@ local function DrawPartyListSettings()
             DrawSlider('Min Rows', 'partyListMinRows', 1, 6);
             DrawSlider('Scale X', 'partyListScaleX', 0.1, 3.0, '%.2f');
             DrawSlider('Scale Y', 'partyListScaleY', 0.1, 3.0, '%.2f');
-            DrawSlider('Font Size', 'partyListFontSize', 6, 36);
+            DrawSlider('Font Size', 'partyListFontSize', 8, 36);
             DrawSlider('Job Icon Scale', 'partyListJobIconScale', 0.1, 3.0, '%.1f');
             DrawSlider('Entry Spacing', 'partyListEntrySpacing', -20, 20);
 
@@ -312,7 +315,7 @@ local function DrawPartyListSettings()
             DrawCheckbox('Show TP', 'partyList2TP');
             DrawSlider('Scale X', 'partyList2ScaleX', 0.1, 3.0, '%.2f');
             DrawSlider('Scale Y', 'partyList2ScaleY', 0.1, 3.0, '%.2f');
-            DrawSlider('Font Size', 'partyList2FontSize', 6, 36);
+            DrawSlider('Font Size', 'partyList2FontSize', 8, 36);
             DrawSlider('Job Icon Scale', 'partyList2JobIconScale', 0.1, 3.0, '%.1f');
             DrawSlider('Entry Spacing', 'partyList2EntrySpacing', -20, 20);
 
@@ -327,7 +330,7 @@ local function DrawPartyListSettings()
             DrawCheckbox('Show TP', 'partyList3TP');
             DrawSlider('Scale X', 'partyList3ScaleX', 0.1, 3.0, '%.2f');
             DrawSlider('Scale Y', 'partyList3ScaleY', 0.1, 3.0, '%.2f');
-            DrawSlider('Font Size', 'partyList3FontSize', 6, 36);
+            DrawSlider('Font Size', 'partyList3FontSize', 8, 36);
             DrawSlider('Job Icon Scale', 'partyList3JobIconScale', 0.1, 3.0, '%.1f');
             DrawSlider('Entry Spacing', 'partyList3EntrySpacing', -20, 20);
 
@@ -353,7 +356,7 @@ local function DrawExpBarSettings()
         DrawSlider('Scale X', 'expBarScaleX', 0.1, 3.0, '%.2f');
         DrawSlider('Scale Y', 'expBarScaleY', 0.1, 3.0, '%.2f');
         DrawSlider('Text Scale X', 'expBarTextScaleX', 0.1, 3.0, '%.2f');
-        DrawSlider('Font Size', 'expBarFontSize', 6, 36);
+        DrawSlider('Font Size', 'expBarFontSize', 8, 36);
 
         imgui.EndChild();
     end
@@ -366,7 +369,7 @@ local function DrawGilTrackerSettings()
 
         DrawCheckbox('Enabled', 'showGilTracker', CheckVisibility);
         DrawSlider('Scale', 'gilTrackerScale', 0.1, 3.0, '%.1f');
-        DrawSlider('Font Size', 'gilTrackerFontSize', 6, 36);
+        DrawSlider('Font Size', 'gilTrackerFontSize', 8, 36);
         DrawCheckbox('Right Align', 'gilTrackerRightAlign');
 
         local posOffset = { gConfig.gilTrackerPosOffset[1], gConfig.gilTrackerPosOffset[2] };
@@ -409,9 +412,8 @@ local function DrawInventoryTrackerSettings()
             SaveSettingsOnly();
         end
 
-        DrawSlider('Opacity', 'inventoryTrackerOpacity', 0, 1.0, '%.2f');
-        DrawSlider('Scale', 'inventoryTrackerScale', 0.1, 3.0, '%.1f');
-        DrawSlider('Font Size', 'inventoryTrackerFontSize', 6, 36);
+        DrawSlider('Scale', 'inventoryTrackerScale', 0.5, 3.0, '%.1f');
+        DrawSlider('Font Size', 'inventoryTrackerFontSize', 8, 36);
 
         imgui.EndChild();
     end
@@ -438,7 +440,7 @@ local function DrawCastBarSettings()
 
         DrawSlider('Scale X', 'castBarScaleX', 0.1, 3.0, '%.1f');
         DrawSlider('Scale Y', 'castBarScaleY', 0.1, 3.0, '%.1f');
-        DrawSlider('Font Size', 'castBarFontSize', 6, 36);
+        DrawSlider('Font Size', 'castBarFontSize', 8, 36);
 
         DrawCheckbox('Enable Fast Cast / True Display', 'castBarFastCastEnabled');
 
@@ -494,9 +496,13 @@ config.DrawWindow = function(us)
 
     imgui.SetNextWindowSize({ 600, 600 }, ImGuiCond_FirstUseEver);
     if(showConfig[1] and imgui.Begin(("HXUI Config"):fmt(addon.version), showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
-        if(imgui.Button("Restore Defaults", { 160, 20 })) then
-            ResetSettings();
-            UpdateSettings();
+        if(imgui.Button("Color Config", { 160, 20 })) then
+            gShowColorCustom[1] = true;
+        end
+        imgui.SameLine();
+        if(imgui.Button("Reset Settings", { 160, 20 })) then
+            showRestoreDefaultsConfirm = true;
+            imgui.OpenPopup("Confirm Reset Settings");
         end
         imgui.SameLine();
         if(imgui.Button("Patch Notes", { 130, 20 })) then
@@ -504,6 +510,34 @@ config.DrawWindow = function(us)
             gShowPatchNotes = { true; }
             UpdateSettings();
         end
+
+        -- Reset Settings confirmation popup
+        if (showRestoreDefaultsConfirm) then
+            imgui.OpenPopup("Confirm Reset Settings");
+            showRestoreDefaultsConfirm = false;
+        end
+
+        if (imgui.BeginPopupModal("Confirm Reset Settings", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+            imgui.Text("Are you sure you want to reset all settings to defaults?");
+            imgui.Text("This will reset all your customizations including:");
+            imgui.BulletText("UI positions, scales, and visibility");
+            imgui.BulletText("Font settings");
+            imgui.BulletText("Color customizations");
+            imgui.NewLine();
+
+            if (imgui.Button("Confirm", { 120, 0 })) then
+                ResetSettings();
+                UpdateSettings();
+                imgui.CloseCurrentPopup();
+            end
+            imgui.SameLine();
+            if (imgui.Button("Cancel", { 120, 0 })) then
+                imgui.CloseCurrentPopup();
+            end
+
+            imgui.EndPopup();
+        end
+
         imgui.BeginChild("Config Options", { 0, 0 }, true);
 
         -- Draw all configuration sections

@@ -1,4 +1,6 @@
 require('common');
+local ffi = require('ffi');
+local d3d8 = require('d3d8');
 local imgui = require('imgui');
 local gdi = require('gdifonts.include');
 local primitives = require('primitives');
@@ -25,7 +27,8 @@ partyWindowPrim[3] = {
     background = {},
 }
 
-local arrowPrim;
+local cursorTextures = T{}; -- Cache for cursor textures (like jobIcons)
+local currentCursorName = nil; -- Track which cursor is loaded
 local partyTargeted;
 local partySubTargeted;
 local memberText = {};
@@ -257,8 +260,6 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     -- Get the hp color for bars and text
     local hpNameColor, hpGradient = GetCustomHpColors(memInfo.hpp, gConfig.colorCustomization.partyList);
 
-    local bgGradientOverride = {'#000813', '#000813'};
-
     local hpBarWidth = settings.hpBarWidth * scale.x;
     local mpBarWidth = settings.mpBarWidth * scale.x;
     local tpBarWidth = settings.tpBarWidth * scale.x;
@@ -372,7 +373,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Draw the HP bar
     if (memInfo.inzone) then
-        progressbar.ProgressBar({{memInfo.hpp, hpGradient}}, {hpBarWidth, barHeight}, {borderConfig=borderConfig, backgroundGradientOverride=bgGradientOverride, decorate = gConfig.showPartyListBookends});
+        progressbar.ProgressBar({{memInfo.hpp, hpGradient}}, {hpBarWidth, barHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends});
     elseif (memInfo.zone == '' or memInfo.zone == nil) then
         imgui.Dummy({allBarsLengths, barHeight});
     else
@@ -435,7 +436,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
         imgui.SetCursorPosX(imgui.GetCursorPosX());
         mpStartX, mpStartY = imgui.GetCursorScreenPos();
         local mpGradient = GetCustomGradient(gConfig.colorCustomization.partyList, 'mpGradient') or {'#9abb5a', '#bfe07d'};
-        progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, barHeight}, {borderConfig=borderConfig, backgroundGradientOverride=bgGradientOverride, decorate = gConfig.showPartyListBookends});
+        progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, barHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends});
 
         -- Update the mp text
         -- Only call set_color if the color has changed
@@ -470,7 +471,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                 mainPercent = memInfo.tp / 1000;
             end
             
-            progressbar.ProgressBar({{mainPercent, tpGradient}}, {tpBarWidth, barHeight}, {overlayBar=tpOverlay, borderConfig=borderConfig, backgroundGradientOverride=bgGradientOverride, decorate = gConfig.showPartyListBookends});
+            progressbar.ProgressBar({{mainPercent, tpGradient}}, {tpBarWidth, barHeight}, {overlayBar=tpOverlay, borderConfig=borderConfig, decorate = gConfig.showPartyListBookends});
 
             -- Update the tp text
             local desiredTpColor = (memInfo.tp >= 1000) and gConfig.colorCustomization.partyList.tpFullTextColor or gConfig.colorCustomization.partyList.tpEmptyTextColor;
@@ -484,23 +485,43 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
             memberText[memIdx].tp:set_text(tostring(memInfo.tp));
         end
 
-        -- Draw subtargeted
+        -- Draw cursor using ImGui (like job icons)
         if ((memInfo.targeted == true and not subTargetActive) or memInfo.subTargeted) then
-            arrowPrim.visible = true;
-            local newArrowX =  memberText[memIdx].name.settings.position_x - arrowPrim:GetWidth();
-            if (jobIcon ~= nil) then
-                newArrowX = newArrowX - jobIconSize;
+            local cursorTexture = cursorTextures[gConfig.partyListCursor];
+            if (cursorTexture ~= nil) then
+                local cursorImage = tonumber(ffi.cast("uint32_t", cursorTexture.image));
+
+                -- Calculate cursor size based on settings.arrowSize
+                local cursorWidth = cursorTexture.width * settings.arrowSize;
+                local cursorHeight = cursorTexture.height * settings.arrowSize;
+
+                -- Calculate position (left of name text, centered vertically)
+                local cursorX = memberText[memIdx].name.settings.position_x - cursorWidth;
+                if (jobIcon ~= nil) then
+                    cursorX = cursorX - jobIconSize;
+                end
+                local cursorY = (hpStartY - offsetSize - settings.cursorPaddingY1) + (entrySize/2) - cursorHeight/2;
+
+                -- Determine tint color
+                local tintColor;
+                if (subTargetActive) then
+                    tintColor = imgui.GetColorU32(settings.subtargetArrowTint);
+                else
+                    tintColor = IM_COL32_WHITE;
+                end
+
+                -- Draw using foreground draw list
+                local draw_list = imgui.GetForegroundDrawList();
+                draw_list:AddImage(
+                    cursorImage,
+                    {cursorX, cursorY},
+                    {cursorX + cursorWidth, cursorY + cursorHeight},
+                    {0, 0}, {1, 1},
+                    tintColor
+                );
+
+                partySubTargeted = true;
             end
-            arrowPrim.position_x = newArrowX;
-            arrowPrim.position_y = (hpStartY - offsetSize - settings.cursorPaddingY1) + (entrySize/2) - arrowPrim:GetHeight()/2;
-            arrowPrim.scale_x = settings.arrowSize;
-            arrowPrim.scale_y = settings.arrowSize;
-            if (subTargetActive) then
-                arrowPrim.color = settings.subtargetArrowTint;
-            else
-                arrowPrim.color = 0xFFFFFFFF;
-            end
-            partySubTargeted = true;
         end
 
         -- Draw the different party list buff / debuff themes
@@ -625,7 +646,7 @@ partyList.DrawWindow = function(settings)
         UpdateTextVisibility(false, 3);
     end
 
-    arrowPrim.visible = partySubTargeted;
+    -- Cursor is now drawn directly in DrawMember using ImGui, no visibility flag needed
 end
 
 partyList.DrawPartyWindow = function(settings, party, partyIndex)
@@ -882,11 +903,7 @@ partyList.Initialize = function(settings)
         partyWindowPrim[i].background = backgroundPrim;
     end
 
-    arrowPrim = primitives.new(settings.prim_data);
-    arrowPrim.color = 0xFFFFFFFF;
-    arrowPrim.visible = false;
-    arrowPrim.can_focus = false;
-
+    -- Load cursor textures (handled in UpdateVisuals)
     partyList.UpdateVisuals(settings);
 end
 
@@ -1001,13 +1018,39 @@ partyList.UpdateVisuals = function(settings)
         end
     end
 
-    arrowPrim.texture = string.format('%s/assets/cursors/%s', addon.path, gConfig.partyListCursor);
+    -- Load cursor texture (like job icons)
+    if (gConfig.partyListCursor ~= currentCursorName) then
+        -- Cursor changed, clear cache and load new texture
+        cursorTextures = T{};
+        currentCursorName = gConfig.partyListCursor;
+
+        if (gConfig.partyListCursor ~= nil and gConfig.partyListCursor ~= '') then
+            local cursorTexture = LoadTexture(string.format('cursors/%s', gConfig.partyListCursor:gsub('%.png$', '')));
+            if (cursorTexture ~= nil) then
+                -- Query actual texture dimensions using d3d8 library's interface
+                local texture_ptr = ffi.cast('IDirect3DTexture8*', cursorTexture.image);
+                local res, desc = texture_ptr:GetLevelDesc(0);
+
+                if (desc ~= nil) then
+                    cursorTexture.width = desc.Width;
+                    cursorTexture.height = desc.Height;
+                else
+                    -- Fallback to reasonable default if query fails
+                    cursorTexture.width = 32;
+                    cursorTexture.height = 32;
+                    print(string.format('[HXUI] Warning: Failed to query cursor texture dimensions for %s, using default 32x32', gConfig.partyListCursor));
+                end
+
+                cursorTextures[gConfig.partyListCursor] = cursorTexture;
+            end
+        end
+    end
 end
 
 partyList.SetHidden = function(hidden)
 	if (hidden == true) then
         UpdateTextVisibility(false);
-        arrowPrim.visible = false;
+        -- Cursor is now drawn directly in DrawMember, no visibility flag needed
 	end
 end
 
@@ -1034,8 +1077,9 @@ partyList.Cleanup = function()
 		end
 	end
 
-	-- Destroy primitives
-	if (arrowPrim ~= nil) then arrowPrim:destroy(); arrowPrim = nil; end
+	-- Clear cursor texture cache (textures are GC'd automatically via gc_safe_release)
+	cursorTextures = T{};
+	currentCursorName = nil;
 
 	-- Destroy party window primitives
 	for i = 1, 3 do

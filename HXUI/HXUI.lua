@@ -124,8 +124,8 @@ T{
 
 	statusIconTheme = 'XIView';
 	jobIconTheme = 'FFXI',
-	fontFamily = 'Consolas',
-	fontWeight = 'Normal', -- Options: 'Normal', 'Bold'
+	fontFamily = 'Tahoma',
+	fontWeight = 'Bold', -- Options: 'Normal', 'Bold'
 	fontOutlineWidth = 2, -- Global outline width for all text (range: 0-5)
 
 	showPartyListWhenSolo = false,
@@ -363,6 +363,7 @@ T{
 		-- Global/Shared
 		shared = T{
 			backgroundGradient = T{ enabled = true, start = '#01122b', stop = '#061c39' },
+			bookendGradient = T{ start = '#576C92', mid = '#B7C9FF', stop = '#576C92' },
 		},
 	},
 };
@@ -744,6 +745,14 @@ defaultUserSettings = deep_copy_table(user_settings);
 local config = settings.load(user_settings_container);
 gConfig = config.userSettings;
 
+-- Migrate existing users to new settings (add missing fields from defaults)
+if gConfig.colorCustomization and gConfig.colorCustomization.shared then
+	-- Add bookend gradient if missing
+	if not gConfig.colorCustomization.shared.bookendGradient then
+		gConfig.colorCustomization.shared.bookendGradient = deep_copy_table(defaultUserSettings.colorCustomization.shared.bookendGradient);
+	end
+end
+
 showConfig = { false };
 local pendingVisualUpdate = false;
 
@@ -886,11 +895,11 @@ function UpdateUserSettings()
 	gAdjustedSettings.targetBarSettings.barWidth = ds.targetBarSettings.barWidth * us.targetBarScaleX;
 	gAdjustedSettings.targetBarSettings.barHeight = ds.targetBarSettings.barHeight * us.targetBarScaleY;
 	gAdjustedSettings.targetBarSettings.totBarHeight = ds.targetBarSettings.totBarHeight * us.targetBarScaleY;
-	gAdjustedSettings.targetBarSettings.name_font_settings.font_height = math.max(us.targetBarNameFontSize, 6);
+	gAdjustedSettings.targetBarSettings.name_font_settings.font_height = math.max(us.targetBarNameFontSize, 8);
 	-- Note: name_font_settings.color is set dynamically by GetColorOfTarget() based on entity type
-    gAdjustedSettings.targetBarSettings.totName_font_settings.font_height = math.max(us.targetBarNameFontSize, 6);
-	gAdjustedSettings.targetBarSettings.distance_font_settings.font_height = math.max(us.targetBarDistanceFontSize, 6);
-    gAdjustedSettings.targetBarSettings.percent_font_settings.font_height = math.max(us.targetBarPercentFontSize, 6);
+    gAdjustedSettings.targetBarSettings.totName_font_settings.font_height = math.max(us.targetBarNameFontSize, 8);
+	gAdjustedSettings.targetBarSettings.distance_font_settings.font_height = math.max(us.targetBarDistanceFontSize, 8);
+    gAdjustedSettings.targetBarSettings.percent_font_settings.font_height = math.max(us.targetBarPercentFontSize, 8);
 	-- Note: percent_font_settings.color is set dynamically in targetbar.DrawWindow based on HP amount
 	gAdjustedSettings.targetBarSettings.iconSize = ds.targetBarSettings.iconSize * us.targetBarIconScale;
 	gAdjustedSettings.targetBarSettings.arrowSize = ds.targetBarSettings.arrowSize * us.targetBarScaleY;
@@ -902,7 +911,7 @@ function UpdateUserSettings()
 		visible = ds.targetBarSettings.totName_font_settings.visible,
 		locked = ds.targetBarSettings.totName_font_settings.locked,
 		font_family = us.fontFamily,
-		font_height = math.max(us.totBarFontSize, 6),
+		font_height = math.max(us.totBarFontSize, 8),
 		color = us.colorCustomization.totBar.nameTextColor,
 		bold = ds.targetBarSettings.totName_font_settings.bold,
 		color_outline = ds.targetBarSettings.totName_font_settings.color_outline,
@@ -923,7 +932,7 @@ function UpdateUserSettings()
 		us.partyList2FontSize,  -- Party 2
 		us.partyList3FontSize,  -- Party 3
 	};
-	gAdjustedSettings.partyListSettings.title_font_settings.font_height = math.max(us.partyListTitleFontSize, 6);
+	gAdjustedSettings.partyListSettings.title_font_settings.font_height = math.max(us.partyListTitleFontSize, 8);
 
 	gAdjustedSettings.partyListSettings.entrySpacing = {
         ds.partyListSettings.entrySpacing + us.partyListEntrySpacing,
@@ -936,20 +945,20 @@ function UpdateUserSettings()
 	gAdjustedSettings.playerBarSettings.barWidth = ds.playerBarSettings.barWidth * us.playerBarScaleX;
 	gAdjustedSettings.playerBarSettings.barSpacing = ds.playerBarSettings.barSpacing * us.playerBarScaleX;
 	gAdjustedSettings.playerBarSettings.barHeight = ds.playerBarSettings.barHeight * us.playerBarScaleY;
-	gAdjustedSettings.playerBarSettings.font_settings.font_height = math.max(us.playerBarFontSize, 6);
+	gAdjustedSettings.playerBarSettings.font_settings.font_height = math.max(us.playerBarFontSize, 8);
 	-- Note: HP, MP, TP text colors are set dynamically in playerbar.DrawWindow
 
 	-- Exp Bar
     gAdjustedSettings.expBarSettings.textWidth = ds.expBarSettings.textWidth * us.expBarTextScaleX;
 	gAdjustedSettings.expBarSettings.barWidth = ds.expBarSettings.barWidth * us.expBarScaleX;
 	gAdjustedSettings.expBarSettings.barHeight = ds.expBarSettings.barHeight * us.expBarScaleY;
-	gAdjustedSettings.expBarSettings.job_font_settings.font_height = math.max(us.expBarFontSize, 6);
-	gAdjustedSettings.expBarSettings.exp_font_settings.font_height = math.max(us.expBarFontSize, 6);
-	gAdjustedSettings.expBarSettings.percent_font_settings.font_height = math.max(us.expBarFontSize, 6);
+	gAdjustedSettings.expBarSettings.job_font_settings.font_height = math.max(us.expBarFontSize, 8);
+	gAdjustedSettings.expBarSettings.exp_font_settings.font_height = math.max(us.expBarFontSize, 8);
+	gAdjustedSettings.expBarSettings.percent_font_settings.font_height = math.max(us.expBarFontSize, 8);
 
 	-- Gil Tracker
 	gAdjustedSettings.gilTrackerSettings.iconScale = ds.gilTrackerSettings.iconScale * us.gilTrackerScale;
-	gAdjustedSettings.gilTrackerSettings.font_settings.font_height = math.max(us.gilTrackerFontSize, 6);
+	gAdjustedSettings.gilTrackerSettings.font_settings.font_height = math.max(us.gilTrackerFontSize, 8);
     gAdjustedSettings.gilTrackerSettings.font_settings.right_justified = us.gilTrackerRightAlign;
     if (us.gilTrackerRightAlign) then
         gAdjustedSettings.gilTrackerSettings.offsetX = ds.gilTrackerSettings.offsetX + us.gilTrackerPosOffset[1];
@@ -962,10 +971,9 @@ function UpdateUserSettings()
 	gAdjustedSettings.inventoryTrackerSettings.dotRadius = ds.inventoryTrackerSettings.dotRadius * us.inventoryTrackerScale;
 	gAdjustedSettings.inventoryTrackerSettings.dotSpacing = ds.inventoryTrackerSettings.dotSpacing * us.inventoryTrackerScale;
 	gAdjustedSettings.inventoryTrackerSettings.groupSpacing = ds.inventoryTrackerSettings.groupSpacing * us.inventoryTrackerScale;
-	gAdjustedSettings.inventoryTrackerSettings.font_settings.font_height = math.max(us.inventoryTrackerFontSize, 6);
+	gAdjustedSettings.inventoryTrackerSettings.font_settings.font_height = math.max(us.inventoryTrackerFontSize, 8);
     gAdjustedSettings.inventoryTrackerSettings.columnCount = us.inventoryTrackerColumnCount;
     gAdjustedSettings.inventoryTrackerSettings.rowCount = us.inventoryTrackerRowCount;
-    gAdjustedSettings.inventoryTrackerSettings.opacity = us.inventoryTrackerOpacity;
     gAdjustedSettings.inventoryTrackerSettings.showText = us.inventoryShowCount;
 
 	-- Enemy List
@@ -973,15 +981,15 @@ function UpdateUserSettings()
 	gAdjustedSettings.enemyListSettings.barHeight = ds.enemyListSettings.barHeight * us.enemyListScaleY;
 	gAdjustedSettings.enemyListSettings.textScale = ds.enemyListSettings.textScale * us.enemyListFontSize;
 	gAdjustedSettings.enemyListSettings.iconSize = ds.enemyListSettings.iconSize * us.enemyListIconScale;
-	gAdjustedSettings.enemyListSettings.name_font_settings.font_height = math.max(us.enemyListFontSize, 6);
-	gAdjustedSettings.enemyListSettings.info_font_settings.font_height = math.max(us.enemyListFontSize, 6);
+	gAdjustedSettings.enemyListSettings.name_font_settings.font_height = math.max(us.enemyListFontSize, 8);
+	gAdjustedSettings.enemyListSettings.info_font_settings.font_height = math.max(us.enemyListFontSize, 8);
 
 	-- Cast Bar
 	gAdjustedSettings.castBarSettings.barWidth = ds.castBarSettings.barWidth * us.castBarScaleX;
 	gAdjustedSettings.castBarSettings.barHeight = ds.castBarSettings.barHeight * us.castBarScaleY;
-	gAdjustedSettings.castBarSettings.spell_font_settings.font_height = math.max(us.castBarFontSize, 6);
+	gAdjustedSettings.castBarSettings.spell_font_settings.font_height = math.max(us.castBarFontSize, 8);
 	gAdjustedSettings.castBarSettings.spell_font_settings.font_color = us.colorCustomization.castBar.spellTextColor;
-	gAdjustedSettings.castBarSettings.percent_font_settings.font_height = math.max(us.castBarFontSize, 6);
+	gAdjustedSettings.castBarSettings.percent_font_settings.font_height = math.max(us.castBarFontSize, 8);
 	gAdjustedSettings.castBarSettings.percent_font_settings.font_color = us.colorCustomization.castBar.percentTextColor;
 end
 

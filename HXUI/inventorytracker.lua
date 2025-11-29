@@ -106,8 +106,8 @@ inventoryTracker.DrawWindow = function(settings)
 			usedColor = gConfig.colorCustomization.inventoryTracker.usedSlotColor;
 		end
 
-		local emptyColorWithOpacity = {emptyColor.r, emptyColor.g, emptyColor.b, emptyColor.a * settings.opacity};
-		local usedColorWithOpacity = {usedColor.r, usedColor.g, usedColor.b, usedColor.a * settings.opacity};
+		local emptyColorArray = {emptyColor.r, emptyColor.g, emptyColor.b, emptyColor.a};
+		local usedColorArray = {usedColor.r, usedColor.g, usedColor.b, usedColor.a};
 
 		for i = 1, maxBagSlots do
 			local groupNum = math.ceil(i / numPerGroup);
@@ -119,10 +119,10 @@ inventoryTracker.DrawWindow = function(settings)
 			x = x + ((groupNum - 1) * groupOffsetX);
 
 			if (i > usedBagSlots) then
-				draw_circle({x + locX + imgui.GetStyle().FramePadding.x, y + locY}, settings.dotRadius, emptyColorWithOpacity, settings.dotRadius * 3, true)
+				draw_circle({x + locX + imgui.GetStyle().FramePadding.x, y + locY}, settings.dotRadius, emptyColorArray, settings.dotRadius * 3, true)
 			else
-				draw_circle({x + locX + imgui.GetStyle().FramePadding.x, y + locY}, settings.dotRadius, usedColorWithOpacity, settings.dotRadius * 3, true)
-				draw_circle({x + locX + imgui.GetStyle().FramePadding.x, y + locY}, settings.dotRadius, emptyColorWithOpacity, settings.dotRadius * 3, false)
+				draw_circle({x + locX + imgui.GetStyle().FramePadding.x, y + locY}, settings.dotRadius, usedColorArray, settings.dotRadius * 3, true)
+				draw_circle({x + locX + imgui.GetStyle().FramePadding.x, y + locY}, settings.dotRadius, emptyColorArray, settings.dotRadius * 3, false)
 			end
 		end
 

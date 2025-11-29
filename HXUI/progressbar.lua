@@ -55,11 +55,46 @@ function MakeGradientBitmap(startColor, endColor)
 	return image;
 end
 
+function MakeThreeStepGradientBitmap(startColor, midColor, endColor)
+	local height = 100;
+
+	local image = bitmap:new(1, height);
+
+	local sr, sg, sb, sa = hex2rgba(startColor);
+	local mr, mg, mb, ma = hex2rgba(midColor);
+	local er, eg, eb, ea = hex2rgba(endColor);
+
+	for pixel = 1, height do
+		local red, green, blue, alpha;
+		local progress = pixel / height;
+
+		if progress <= 0.5 then
+			-- First half: interpolate from start to mid
+			local t = progress * 2; -- 0 to 1
+			red = sr + (mr - sr) * t;
+			green = sg + (mg - sg) * t;
+			blue = sb + (mb - sb) * t;
+			alpha = sa + (ma - sa) * t;
+		else
+			-- Second half: interpolate from mid to end
+			local t = (progress - 0.5) * 2; -- 0 to 1
+			red = mr + (er - mr) * t;
+			green = mg + (eg - mg) * t;
+			blue = mb + (eb - mb) * t;
+			alpha = ma + (ea - ma) * t;
+		end
+
+		image:setPixelColor(1, (height - pixel) + 1, {red, green, blue, alpha});
+	end
+
+	return image;
+end
+
 function GetGradient(startColor, endColor)
 	local texture;
 
 	for i, existingTexture in ipairs(progressbar.gradientTextures) do
-		if (existingTexture.startColor == startColor and existingTexture.endColor == endColor) then
+		if (existingTexture.startColor == startColor and existingTexture.endColor == endColor and existingTexture.midColor == nil) then
 			texture = existingTexture;
 			break;
 		end
@@ -79,12 +114,49 @@ function GetGradient(startColor, endColor)
     texture = {
     	startColor = startColor,
     	endColor = endColor,
+    	midColor = nil,
     	texture = ffi.new('IDirect3DTexture8*', texture_ptr[0])
     }
 
     d3d.gc_safe_release(texture.texture);
 
     table.insert(progressbar.gradientTextures, texture);
+	end
+
+	return tonumber(ffi.cast("uint32_t", texture.texture));
+end
+
+function GetThreeStepGradient(startColor, midColor, endColor)
+	local texture;
+
+	for i, existingTexture in ipairs(progressbar.gradientTextures) do
+		if (existingTexture.startColor == startColor and existingTexture.midColor == midColor and existingTexture.endColor == endColor) then
+			texture = existingTexture;
+			break;
+		end
+	end
+
+	if not texture then
+		local image = MakeThreeStepGradientBitmap(startColor, midColor, endColor);
+
+		local texture_ptr = ffi.new('IDirect3DTexture8*[1]');
+
+		local res = ffi.C.D3DXCreateTextureFromFileInMemory(d3d8dev, image:binary(), #image:binary(), texture_ptr);
+
+		if (res ~= ffi.C.S_OK) then
+			error(('%08X (%s)'):fmt(res, d3d.get_error(res)));
+		end
+
+		texture = {
+			startColor = startColor,
+			midColor = midColor,
+			endColor = endColor,
+			texture = ffi.new('IDirect3DTexture8*', texture_ptr[0])
+		}
+
+		d3d.gc_safe_release(texture.texture);
+
+		table.insert(progressbar.gradientTextures, texture);
 	end
 
 	return tonumber(ffi.cast("uint32_t", texture.texture));
@@ -117,15 +189,81 @@ progressbar.DrawColoredBar = function(startPosition, endPosition, color, roundin
 end
 
 progressbar.DrawBookends = function(positionStartX, positionStartY, width, height)
-	local bookendTexture = GetBookendTexture();
-	
 	local bookendWidth = height / 2;
-	
-	-- Draw the left bookend
-	imgui.GetWindowDrawList():AddImage(bookendTexture, {positionStartX, positionStartY}, {positionStartX + bookendWidth, positionStartY + height}, {0, 0}, {1, 1}, IM_COL32_WHITE);
-	
-	-- Draw the right bookend
-	imgui.GetWindowDrawList():AddImage(bookendTexture, {positionStartX + width - bookendWidth, positionStartY}, {positionStartX + width, positionStartY + height}, {1, 1}, {0, 0}, IM_COL32_WHITE);
+	local radius = height / 2;
+	local draw_list = imgui.GetWindowDrawList();
+	local outlineThickness = 1;
+
+	-- Get bookend gradient colors (default: dark blue gradient)
+	local gradientStart = '#1a2a4a';
+	local gradientMid = '#2d4a7c';
+	local gradientEnd = '#1a2a4a';
+
+	-- Get outline color (default: match background)
+	local outlineColor = progressbar.backgroundGradientStartColor;
+
+	-- Apply custom colors if available from global config
+	if gConfig and gConfig.colorCustomization and gConfig.colorCustomization.shared then
+		if gConfig.colorCustomization.shared.bookendGradient then
+			local bookendSettings = gConfig.colorCustomization.shared.bookendGradient;
+			gradientStart = bookendSettings.start or gradientStart;
+			gradientMid = bookendSettings.mid or gradientMid;
+			gradientEnd = bookendSettings.stop or gradientEnd;
+		end
+
+		if gConfig.colorCustomization.shared.backgroundGradient then
+			outlineColor = gConfig.colorCustomization.shared.backgroundGradient.start;
+		end
+	end
+
+	-- Get the 3-step gradient texture
+	local gradientTexture = GetThreeStepGradient(gradientStart, gradientMid, gradientEnd);
+
+	-- Prepare outline color
+	local outlineR, outlineG, outlineB, outlineA = hex2rgba(outlineColor);
+	local outlineColorU32 = imgui.GetColorU32({outlineR / 255, outlineG / 255, outlineB / 255, outlineA / 255});
+
+	-- Draw left bookend (rounded rectangle on left side)
+	draw_list:AddImageRounded(
+		gradientTexture,
+		{positionStartX, positionStartY},
+		{positionStartX + bookendWidth, positionStartY + height},
+		{0, 0}, {1, 1},
+		IM_COL32_WHITE,
+		radius,
+		ImDrawCornerFlags_Left
+	);
+
+	-- Draw left bookend outline
+	draw_list:AddRect(
+		{positionStartX, positionStartY},
+		{positionStartX + bookendWidth, positionStartY + height},
+		outlineColorU32,
+		radius,
+		ImDrawCornerFlags_Left,
+		outlineThickness
+	);
+
+	-- Draw right bookend (rounded rectangle on right side)
+	draw_list:AddImageRounded(
+		gradientTexture,
+		{positionStartX + width - bookendWidth, positionStartY},
+		{positionStartX + width, positionStartY + height},
+		{0, 0}, {1, 1},
+		IM_COL32_WHITE,
+		radius,
+		ImDrawCornerFlags_Right
+	);
+
+	-- Draw right bookend outline
+	draw_list:AddRect(
+		{positionStartX + width - bookendWidth, positionStartY},
+		{positionStartX + width, positionStartY + height},
+		outlineColorU32,
+		radius,
+		ImDrawCornerFlags_Right,
+		outlineThickness
+	);
 end
 
 progressbar.ProgressBar  = function(percentList, dimensions, options)
