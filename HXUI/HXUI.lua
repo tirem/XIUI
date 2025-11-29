@@ -224,7 +224,7 @@ T{
     partyListExpandHeight = false,
     partyListAlignBottom = false,
     partyListMinRows = 1,
-    partyListBgScale = 1.8,
+    partyListBgScale = 1.0,
     partyListBgColor = { 255, 255, 255, 255 },
     partyListBorderColor = { 255, 255, 255, 255 },
     partyListPreview = true,
@@ -621,10 +621,10 @@ T{
         bgPaddingY = 5,
         bgOffset = 1,
 
-		cursorPaddingX1 = 5,
-		cursorPaddingX2 = 5,
-		cursorPaddingY1 = 4,
-		cursorPaddingY2 = 4,
+		cursorPaddingX1 = 8,
+		cursorPaddingX2 = 8,
+		cursorPaddingY1 = 6,
+		cursorPaddingY2 = -10,
 		dotRadius = 3,
 
 		arrowSize = 1;

@@ -289,14 +289,14 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     local jobIconSize = settings.iconSize * 1.1 * scale.icon;
     local offsetSize = nameHeight > settings.iconSize and nameHeight or settings.iconSize;
     -- entrySize includes the full member entry: name/icon area + bars + text below bars + padding
-    local entrySize = hpHeight + barHeight + 10;
+    local entrySize = hpHeight + barHeight + settings.entrySpacing[partyIndex] + -6;
 
     -- DRAW SELECTION BOX using GetBackgroundDrawList (renders behind everything with rounded corners)
     if (memInfo.targeted == true) then
         local drawList = imgui.GetBackgroundDrawList();
 
         local selectionWidth = allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2;
-        local selectionHeight = entrySize;
+        local selectionHeight = entrySize + settings.cursorPaddingY1 + settings.cursorPaddingY2;
         local selectionTL = {hpStartX - settings.cursorPaddingX1, hpStartY - offsetSize - settings.cursorPaddingY1 + 3};
         local selectionBR = {selectionTL[1] + selectionWidth, selectionTL[2] + selectionHeight};
 
@@ -777,16 +777,16 @@ partyList.DrawPartyWindow = function(settings, party, partyIndex)
 
         backgroundPrim.tl.visible = backgroundPrim.tl.exists;
         backgroundPrim.tl.position_x = backgroundPrim.bg.position_x - settings.bgOffset;
-        backgroundPrim.tl.position_y = backgroundPrim.tr.position_y
+        backgroundPrim.tl.position_y = backgroundPrim.bg.position_y - settings.bgOffset;
         backgroundPrim.tl.width = backgroundPrim.tr.position_x - backgroundPrim.tl.position_x;
-        backgroundPrim.tl.height = settings.borderSize;
+        backgroundPrim.tl.height = backgroundPrim.br.position_y - backgroundPrim.tl.position_y;
         backgroundPrim.tl.color = borderColor;
 
         backgroundPrim.bl.visible = backgroundPrim.bl.exists;
         backgroundPrim.bl.position_x = backgroundPrim.tl.position_x;
-        backgroundPrim.bl.position_y = backgroundPrim.br.position_y;
-        backgroundPrim.bl.width = backgroundPrim.tl.width;
-        backgroundPrim.bl.height = backgroundPrim.br.height;
+        backgroundPrim.bl.position_y = backgroundPrim.bg.position_y + bgHeight - settings.borderSize + settings.bgOffset;
+        backgroundPrim.bl.width = backgroundPrim.br.position_x - backgroundPrim.bl.position_x;
+        backgroundPrim.bl.height = settings.borderSize;
         backgroundPrim.bl.color = borderColor;
 
         -- Position title text centered above the window

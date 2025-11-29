@@ -250,7 +250,7 @@ local function DrawPartyListSettings()
         DrawCheckbox('Alliance Windows', 'partyListAlliance');
 
         -- Background
-        DrawSlider('Background Scale', 'partyListBgScale', 0.1, 3.0, '%.2f');
+        DrawSlider('Background Scale', 'partyListBgScale', 0.1, 3.0, '%.2f', UpdatePartyListVisuals);
 
         local bg_theme_paths = statusHandler.get_background_paths();
         DrawComboBox('Background', gConfig.partyListBackgroundName, bg_theme_paths, function(newValue)
@@ -302,7 +302,7 @@ local function DrawPartyListSettings()
             DrawSlider('Scale Y', 'partyListScaleY', 0.1, 3.0, '%.2f');
             DrawSlider('Font Size', 'partyListFontSize', 8, 36);
             DrawSlider('Job Icon Scale', 'partyListJobIconScale', 0.1, 3.0, '%.1f');
-            DrawSlider('Entry Spacing', 'partyListEntrySpacing', -20, 20);
+            DrawSlider('Entry Spacing', 'partyListEntrySpacing', -4, 16);
 
             imgui.EndChild();
         end
@@ -317,7 +317,7 @@ local function DrawPartyListSettings()
             DrawSlider('Scale Y', 'partyList2ScaleY', 0.1, 3.0, '%.2f');
             DrawSlider('Font Size', 'partyList2FontSize', 8, 36);
             DrawSlider('Job Icon Scale', 'partyList2JobIconScale', 0.1, 3.0, '%.1f');
-            DrawSlider('Entry Spacing', 'partyList2EntrySpacing', -20, 20);
+            DrawSlider('Entry Spacing', 'partyList2EntrySpacing', -4, 16);
 
             imgui.EndChild();
         end
@@ -332,7 +332,7 @@ local function DrawPartyListSettings()
             DrawSlider('Scale Y', 'partyList3ScaleY', 0.1, 3.0, '%.2f');
             DrawSlider('Font Size', 'partyList3FontSize', 8, 36);
             DrawSlider('Job Icon Scale', 'partyList3JobIconScale', 0.1, 3.0, '%.1f');
-            DrawSlider('Entry Spacing', 'partyList3EntrySpacing', -20, 20);
+            DrawSlider('Entry Spacing', 'partyList3EntrySpacing', -4, 16);
 
             imgui.EndChild();
         end
