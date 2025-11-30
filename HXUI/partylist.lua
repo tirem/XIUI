@@ -38,6 +38,7 @@ local memberTextCount = partyMaxSize * 3;
 
 -- Reference text height for baseline alignment (prevents text jumping)
 local referenceTextHeight = 0;
+local referenceFontSize = 0;
 
 -- UV coordinates for partylist titles atlas (4 titles stacked vertically)
 local titleUVs = {
@@ -399,10 +400,11 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     memberText[memIdx].tp:set_font_height(fontSizes.tp);
 
     -- Calculate reference height for baseline alignment (only once per font height change)
-    if referenceTextHeight == 0 or referenceTextHeight ~= fontSizes.hp then
+    if referenceTextHeight == 0 or referenceFontSize ~= fontSizes.hp then
         memberText[memIdx].hp:set_text("0123456789");
         local _, refHeight = memberText[memIdx].hp:get_text_size();
         referenceTextHeight = refHeight;
+        referenceFontSize = fontSizes.hp;
     end
 
     -- Calculate text sizes
@@ -1575,6 +1577,7 @@ partyList.UpdateVisuals = function(settings)
     -- Reset reference height so it gets recalculated with new font
     if fontFamilyChanged or fontFlagsChanged or outlineWidthChanged or sizesChanged[1] or sizesChanged[2] or sizesChanged[3] then
         referenceTextHeight = 0;
+        referenceFontSize = 0;
     end
 
     -- Reset cached colors for parties that changed
