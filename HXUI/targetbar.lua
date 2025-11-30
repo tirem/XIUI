@@ -364,9 +364,8 @@ targetbar.DrawWindow = function(settings)
 
 		-- Left-aligned text position (target name) - 8px from left edge (after bookend) + lock icon offset
 		local leftTextX = startX + bookendWidth + textPadding + lockIconOffset;
-		local nameWidth, nameHeight = nameText:get_text_size();
 		nameText:set_position_x(leftTextX);
-		nameText:set_position_y(startY - settings.topTextYOffset - nameHeight);
+		nameText:set_position_y(startY - settings.topTextYOffset - settings.name_font_settings.font_height);
 		-- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
 		if (lastNameTextColor ~= color) then
 			nameText:set_font_color(color);
@@ -394,9 +393,9 @@ targetbar.DrawWindow = function(settings)
 
 		if (combinedText ~= "") then
 			distText:set_text(combinedText);
-			local distWidth, distHeight = distText:get_text_size();
+			local distWidth, _ = distText:get_text_size();
 			distText:set_position_x(rightTextX);
-			distText:set_position_y(topTextY - distHeight);
+			distText:set_position_y(topTextY - settings.distance_font_settings.font_height);
 
 			-- Use HP color if showing HP%, otherwise white
 			if (showHpPercent) then
@@ -556,12 +555,10 @@ targetbar.DrawWindow = function(settings)
 				-- Dynamically set font height for ToT text
 				totNameText:set_font_height(settings.totName_font_settings.font_height);
 
-				local totNameWidth, totNameHeight = totNameText:get_text_size();
-
 				-- Left-aligned text position (ToT name) - 8px from left edge (after bookend)
 				local totLeftTextX = totStartX + totBookendWidth + totTextPadding;
 				totNameText:set_position_x(totLeftTextX);
-				totNameText:set_position_y(totStartY - totNameHeight - 4);
+				totNameText:set_position_y(totStartY - settings.totName_font_settings.font_height - 4);
 				-- Only call set_font_color if the color has changed
 				if (lastTotNameTextColor ~= totColor) then
 					totNameText:set_font_color(totColor);
@@ -651,12 +648,10 @@ targetbar.DrawWindow = function(settings)
 				-- Set font height for split ToT bar
 				totNameText:set_font_height(settings.totName_font_settings_split.font_height);
 
-				local totNameWidth, totNameHeight = totNameText:get_text_size();
-
 				-- Left-aligned text position (ToT name) - 8px from left edge (after bookend)
 				local totLeftTextXSplit = totStartX + totBookendWidthSplit + totTextPaddingSplit;
 				totNameText:set_position_x(totLeftTextXSplit);
-				totNameText:set_position_y(totStartY - totNameHeight - 4);
+				totNameText:set_position_y(totStartY - settings.totName_font_settings_split.font_height - 4);
 				-- Only call set_font_color if the color has changed
 				if (lastTotNameTextColor ~= totColor) then
 					totNameText:set_font_color(totColor);
