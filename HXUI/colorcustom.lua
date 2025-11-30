@@ -234,6 +234,7 @@ colorcustom.DrawWindow = function()
             imgui.Text("Text Colors:");
             imgui.Separator();
             DrawTextColorPicker("Distance Text", gConfig.colorCustomization.targetBar, 'distanceTextColor', "Color of distance text");
+            DrawTextColorPicker("Cast Text", gConfig.colorCustomization.targetBar, 'castTextColor', "Color of enemy cast text");
             imgui.ShowHelp("Target name colors are in the Global section\nHP Percent text color is set dynamically based on HP amount");
 
             imgui.EndChild();

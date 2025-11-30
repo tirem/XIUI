@@ -510,7 +510,7 @@ function FormatInt(number)
 	return minus .. int:reverse():gsub("^,", "") .. fraction
 end
 
-local function GetIndexFromId(id)
+function GetIndexFromId(id)
     local entMgr = AshitaCore:GetMemoryManager():GetEntity();
     
     --Shortcut for monsters/static npcs..

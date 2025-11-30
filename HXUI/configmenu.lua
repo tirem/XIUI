@@ -239,6 +239,8 @@ local function DrawTargetBarSettings()
         DrawSlider('Name Font Size', 'targetBarNameFontSize', 8, 36);
         DrawSlider('Distance Font Size', 'targetBarDistanceFontSize', 8, 36);
         DrawSlider('HP% Font Size', 'targetBarPercentFontSize', 8, 36);
+        DrawSlider('Cast Font Size', 'targetBarCastFontSize', 8, 36);
+        imgui.ShowHelp('Font size for enemy cast text that appears under the HP bar.');
         DrawSlider('Icon Scale', 'targetBarIconScale', 0.1, 3.0, '%.1f');
         DrawSlider('Icon Font Size', 'targetBarIconFontSize', 8, 36);
 

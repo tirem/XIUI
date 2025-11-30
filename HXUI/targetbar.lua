@@ -3,8 +3,10 @@ require('helpers');
 local imgui = require('imgui');
 local statusHandler = require('statushandler');
 local debuffHandler = require('debuffhandler');
+local actionTracker = require('actiontracker');
 local progressbar = require('progressbar');
 local gdi = require('gdifonts.include');
+local encoding = require('gdifonts.encoding');
 local ffi = require("ffi");
 
 -- TODO: Calculate these instead of manually setting them
@@ -17,15 +19,18 @@ local percentText;
 local nameText;
 local totNameText;
 local distText;
+local castText;
 local allFonts; -- Table for batch visibility operations
 local targetbar = {
-	interpolation = {}
+	interpolation = {},
+	enemyCasts = {} -- Track enemy casting: [serverId] = {spellName, timestamp}
 };
 
 -- Cache last set colors to avoid expensive SetColor() calls every frame
 local lastNameTextColor;
 local lastPercentTextColor;
 local lastTotNameTextColor;
+local lastCastTextColor;
 
 local _HXUI_DEV_DEBUG_INTERPOLATION = false;
 local _HXUI_DEV_DEBUG_INTERPOLATION_DELAY = 1;
@@ -282,6 +287,27 @@ targetbar.DrawWindow = function(settings)
 			percentText:set_visible(false);
 		end
 
+		-- Draw enemy cast text if casting
+		local castData = targetbar.enemyCasts[targetEntity.ServerId];
+		if (castData ~= nil and castData.spellName ~= nil) then
+			castText:set_font_height(settings.cast_font_settings.font_height);
+			local castWidth, castHeight = castText:get_text_size();
+			-- Center the text under the HP bar
+			local centerX = startX + (settings.barWidth / 2);
+			castText:set_position_x(centerX);
+			castText:set_position_y(startY + settings.barHeight + 2);
+			castText:set_text(castData.spellName);
+			-- Get custom cast text color
+			local castColor = GetColorSetting('targetBar', 'castTextColor', 0xFFFFAA00);
+			if (lastCastTextColor ~= castColor) then
+				castText:set_font_color(castColor);
+				lastCastTextColor = castColor;
+			end
+			castText:set_visible(true);
+		else
+			castText:set_visible(false);
+		end
+
 		-- Draw buffs and debuffs
 		imgui.SameLine();
 		local preBuffX, preBuffY = imgui.GetCursorScreenPos();
@@ -306,7 +332,7 @@ targetbar.DrawWindow = function(settings)
 		DrawStatusIcons(buffIds, settings.iconSize, settings.maxIconColumns, 3, false, settings.barHeight/2, buffTimes, nil);
 		imgui.PopStyleVar(1);
 
-		-- Obtain our target of target (not always accurate)
+		-- Obtain our target of target using action-based tracking (more reliable)
 		local totEntity;
 		local totIndex
 		if (targetEntity == playerEnt) then
@@ -314,7 +340,12 @@ targetbar.DrawWindow = function(settings)
 			totEntity = targetEntity;
 		end
 		if (totEntity == nil) then
-			totIndex = targetEntity.TargetedIndex;
+			-- Try action-based tracking first (more reliable)
+			totIndex = actionTracker.GetLastTarget(targetEntity.ServerId);
+			-- Fallback to TargetedIndex if no recent actions
+			if (totIndex == nil) then
+				totIndex = targetEntity.TargetedIndex;
+			end
 			if (totIndex ~= nil) then
 				totEntity = GetEntity(totIndex);
 			end
@@ -396,7 +427,7 @@ targetbar.DrawWindow = function(settings)
 			return;
 		end
 
-		-- Obtain target of target
+		-- Obtain target of target using action-based tracking (more reliable)
 		local totEntity;
 		local totIndex;
 		if (targetEntity == playerEnt) then
@@ -404,7 +435,12 @@ targetbar.DrawWindow = function(settings)
 			totEntity = targetEntity;
 		end
 		if (totEntity == nil) then
-			totIndex = targetEntity.TargetedIndex;
+			-- Try action-based tracking first (more reliable)
+			totIndex = actionTracker.GetLastTarget(targetEntity.ServerId);
+			-- Fallback to TargetedIndex if no recent actions
+			if (totIndex == nil) then
+				totIndex = targetEntity.TargetedIndex;
+			end
 			if (totIndex ~= nil) then
 				totEntity = GetEntity(totIndex);
 			end
@@ -458,7 +494,8 @@ targetbar.Initialize = function(settings)
 	nameText = FontManager.create(settings.name_font_settings);
 	totNameText = FontManager.create(settings.totName_font_settings);
 	distText = FontManager.create(settings.distance_font_settings);
-	allFonts = {percentText, nameText, totNameText, distText};
+	castText = FontManager.create(settings.cast_font_settings);
+	allFonts = {percentText, nameText, totNameText, distText, castText};
 	arrowTexture = 	LoadTexture("arrow");
 end
 
@@ -468,12 +505,14 @@ targetbar.UpdateVisuals = function(settings)
 	nameText = FontManager.recreate(nameText, settings.name_font_settings);
 	totNameText = FontManager.recreate(totNameText, settings.totName_font_settings);
 	distText = FontManager.recreate(distText, settings.distance_font_settings);
-	allFonts = {percentText, nameText, totNameText, distText};
+	castText = FontManager.recreate(castText, settings.cast_font_settings);
+	allFonts = {percentText, nameText, totNameText, distText, castText};
 
 	-- Reset cached colors when fonts are recreated
 	lastNameTextColor = nil;
 	lastPercentTextColor = nil;
 	lastTotNameTextColor = nil;
+	lastCastTextColor = nil;
 end
 
 targetbar.SetHidden = function(hidden)
@@ -488,7 +527,44 @@ targetbar.Cleanup = function()
 	nameText = FontManager.destroy(nameText);
 	totNameText = FontManager.destroy(totNameText);
 	distText = FontManager.destroy(distText);
+	castText = FontManager.destroy(castText);
 	allFonts = nil;
+end
+
+targetbar.HandleActionPacket = function(actionPacket)
+	if (actionPacket == nil or actionPacket.UserId == nil) then
+		return;
+	end
+
+	-- Type 8 = Magic (Start) - Enemy begins casting
+	if (actionPacket.Type == 8) then
+		-- Get the spell ID from the action
+		if (actionPacket.Targets and #actionPacket.Targets > 0 and
+		    actionPacket.Targets[1].Actions and #actionPacket.Targets[1].Actions > 0) then
+			local spellId = actionPacket.Targets[1].Actions[1].Param;
+			local spell = AshitaCore:GetResourceManager():GetSpellById(spellId);
+			if (spell ~= nil and spell.Name[1] ~= nil) then
+				local spellName = encoding:ShiftJIS_To_UTF8(spell.Name[1], true);
+				targetbar.enemyCasts[actionPacket.UserId] = T{
+					spellName = spellName,
+					timestamp = os.time()
+				};
+			end
+		end
+	-- Type 4 = Magic (Finish) - Cast completed
+	-- Type 11 = Monster Skill (Finish) - Some abilities
+	elseif (actionPacket.Type == 4 or actionPacket.Type == 11) then
+		-- Clear the cast for this enemy
+		targetbar.enemyCasts[actionPacket.UserId] = nil;
+	end
+
+	-- Cleanup stale casts (older than 30 seconds)
+	local now = os.time();
+	for serverId, data in pairs(targetbar.enemyCasts) do
+		if (data.timestamp + 30 < now) then
+			targetbar.enemyCasts[serverId] = nil;
+		end
+	end
 end
 
 return targetbar;

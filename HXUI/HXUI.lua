@@ -41,6 +41,7 @@ local castBar = require('castbar');
 local configMenu = require('configmenu');
 local colorCustom = require('colorcustom');
 local debuffHandler = require('debuffhandler');
+local actionTracker = require('actiontracker');
 local patchNotes = require('patchNotes');
 local statusHandler = require('statushandler');
 local gdi = require('gdifonts.include');
@@ -143,6 +144,7 @@ T{
 	targetBarNameFontSize = 16,
 	targetBarDistanceFontSize = 16,
 	targetBarPercentFontSize = 16,
+	targetBarCastFontSize = 16,
 	targetBarIconScale = 1,
 	targetBarIconFontSize = 16,
 	showTargetDistance = true,
@@ -388,6 +390,7 @@ T{
 		targetBar = T{
 			hpGradient = T{ enabled = true, start = '#e26c6c', stop = '#fb9494' },
 			distanceTextColor = 0xFFFFFFFF,
+			castTextColor = 0xFFFFAA00,  -- Orange color for enemy casting
 			-- Note: HP percent text color is set dynamically based on HP amount
 			-- Note: Entity name colors are in shared section
 		},
@@ -547,6 +550,16 @@ T{
 			font_family = 'Consolas',
 			font_height = 11,
 			font_color = 0xFFFFFFFF,
+			font_flags = gdi.FontFlags.None,
+			outline_color = 0xFF000000,
+			outline_width = 2,
+		};
+		cast_font_settings =
+		T{
+			font_alignment = gdi.Alignment.Center,
+			font_family = 'Consolas',
+			font_height = 12,
+			font_color = 0xFFFFAA00,
 			font_flags = gdi.FontFlags.None,
 			outline_color = 0xFF000000,
 			outline_width = 2,
@@ -1033,6 +1046,9 @@ function UpdateUserSettings()
 	gAdjustedSettings.targetBarSettings.percent_font_settings.font_family = us.fontFamily;
 	gAdjustedSettings.targetBarSettings.percent_font_settings.font_flags = fontWeightFlags;
 	gAdjustedSettings.targetBarSettings.percent_font_settings.outline_width = us.fontOutlineWidth;
+	gAdjustedSettings.targetBarSettings.cast_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.targetBarSettings.cast_font_settings.font_flags = fontWeightFlags;
+	gAdjustedSettings.targetBarSettings.cast_font_settings.outline_width = us.fontOutlineWidth;
 
 	-- Player Bar
 	gAdjustedSettings.playerBarSettings.font_settings.font_family = us.fontFamily;
@@ -1105,6 +1121,7 @@ function UpdateUserSettings()
     gAdjustedSettings.targetBarSettings.totName_font_settings.font_height = math.max(us.targetBarNameFontSize, 8);
 	gAdjustedSettings.targetBarSettings.distance_font_settings.font_height = math.max(us.targetBarDistanceFontSize, 8);
     gAdjustedSettings.targetBarSettings.percent_font_settings.font_height = math.max(us.targetBarPercentFontSize, 8);
+	gAdjustedSettings.targetBarSettings.cast_font_settings.font_height = math.max(us.targetBarCastFontSize, 8);
 	-- Note: percent_font_settings.color is set dynamically in targetbar.DrawWindow based on HP amount
 	gAdjustedSettings.targetBarSettings.iconSize = ds.targetBarSettings.iconSize * us.targetBarIconScale;
 	gAdjustedSettings.targetBarSettings.arrowSize = ds.targetBarSettings.arrowSize * us.targetBarScaleY;
@@ -1556,17 +1573,22 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
 
 	if (e.id == 0x0028) then
 		local actionPacket = ParseActionPacket(e);
-		
+
 		if actionPacket then
 			if (gConfig.showEnemyList) then
 				enemyList.HandleActionPacket(actionPacket);
 			end
-	
+
 			if (gConfig.showCastBar) then
 				castBar.HandleActionPacket(actionPacket);
 			end
 
+			if (gConfig.showTargetBar) then
+				targetBar.HandleActionPacket(actionPacket);
+			end
+
 			debuffHandler.HandleActionPacket(actionPacket);
+			actionTracker.HandleActionPacket(actionPacket);
 		end
 	elseif (e.id == 0x00E) then
 		local mobUpdatePacket = ParseMobUpdatePacket(e);
@@ -1577,6 +1599,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
 		enemyList.HandleZonePacket(e);
 		partyList.HandleZonePacket(e);
 		debuffHandler.HandleZonePacket(e);
+		actionTracker.HandleZonePacket();
 		MarkPartyCacheDirty(); -- Invalidate party cache on zone
 		bLoggedIn = true;
 	elseif (e.id == 0x0029) then
