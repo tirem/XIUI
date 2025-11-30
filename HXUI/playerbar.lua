@@ -16,6 +16,9 @@ local lastHpTextColor;
 local lastMpTextColor;
 local lastTpTextColor;
 
+-- Reference text height for baseline alignment (prevents text jumping)
+local referenceTextHeight = 0;
+
 local playerbar = {
 	interpolation = {}
 };
@@ -344,12 +347,22 @@ playerbar.DrawWindow = function(settings)
 		mpText:set_font_height(settings.font_settings.font_height);
 		tpText:set_font_height(settings.font_settings.font_height);
 
+		-- Calculate reference height for baseline alignment (only once per font height change)
+		if referenceTextHeight == 0 or referenceTextHeight ~= settings.font_settings.font_height then
+			hpText:set_text("0123456789");
+			local _, refHeight = hpText:get_text_size();
+			referenceTextHeight = refHeight;
+		end
+
 		-- Update our HP Text (using proper padding like exp bar)
 		local hpTextX = hpBarStartX + barSize - bookendWidth - textPadding;
 		local hpTextY = hpBarStartY + settings.barHeight + settings.textYOffset;
-		hpText:set_position_x(hpTextX);
-		hpText:set_position_y(hpTextY);
 		hpText:set_text(tostring(SelfHP));
+		-- Apply baseline offset to keep text baseline consistent
+		local _, hpTextHeight = hpText:get_text_size();
+		local hpBaselineOffset = referenceTextHeight - hpTextHeight;
+		hpText:set_position_x(hpTextX);
+		hpText:set_position_y(hpTextY + hpBaselineOffset);
 		-- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
 		if (lastHpTextColor ~= gConfig.colorCustomization.playerBar.hpTextColor) then
 			hpText:set_font_color(gConfig.colorCustomization.playerBar.hpTextColor);
@@ -362,9 +375,12 @@ playerbar.DrawWindow = function(settings)
 			-- Update our MP Text (using proper padding like exp bar)
 			local mpTextX = mpBarStartX + barSize - bookendWidth - textPadding;
 			local mpTextY = mpBarStartY + settings.barHeight + settings.textYOffset;
-			mpText:set_position_x(mpTextX);
-			mpText:set_position_y(mpTextY);
 			mpText:set_text(tostring(SelfMP));
+			-- Apply baseline offset to keep text baseline consistent
+			local _, mpTextHeight = mpText:get_text_size();
+			local mpBaselineOffset = referenceTextHeight - mpTextHeight;
+			mpText:set_position_x(mpTextX);
+			mpText:set_position_y(mpTextY + mpBaselineOffset);
 			-- Only call set_font_color if the color has changed
 			if (lastMpTextColor ~= gConfig.colorCustomization.playerBar.mpTextColor) then
 				mpText:set_font_color(gConfig.colorCustomization.playerBar.mpTextColor);
@@ -377,9 +393,12 @@ playerbar.DrawWindow = function(settings)
 		-- Update our TP Text (using proper padding like exp bar)
 		local tpTextX = tpBarStartX + barSize - bookendWidth - textPadding;
 		local tpTextY = tpBarStartY + settings.barHeight + settings.textYOffset;
-		tpText:set_position_x(tpTextX);
-		tpText:set_position_y(tpTextY);
 		tpText:set_text(tostring(SelfTP));
+		-- Apply baseline offset to keep text baseline consistent
+		local _, tpTextHeight = tpText:get_text_size();
+		local tpBaselineOffset = referenceTextHeight - tpTextHeight;
+		tpText:set_position_x(tpTextX);
+		tpText:set_position_y(tpTextY + tpBaselineOffset);
 		local desiredTpColor = (SelfTP >= 1000) and gConfig.colorCustomization.playerBar.tpFullTextColor or gConfig.colorCustomization.playerBar.tpEmptyTextColor;
 		-- Only call set_font_color if the color has changed
 		if (lastTpTextColor ~= desiredTpColor) then
@@ -412,6 +431,9 @@ playerbar.UpdateVisuals = function(settings)
 	lastHpTextColor = nil;
 	lastMpTextColor = nil;
 	lastTpTextColor = nil;
+
+	-- Reset reference height so it gets recalculated with new font
+	referenceTextHeight = 0;
 end
 
 playerbar.SetHidden = function(hidden)

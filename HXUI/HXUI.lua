@@ -1609,6 +1609,10 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
 				targetBar.HandleActionPacket(actionPacket);
 			end
 
+			if (gConfig.showPartyList) then
+				partyList.HandleActionPacket(actionPacket);
+			end
+
 			debuffHandler.HandleActionPacket(actionPacket);
 			actionTracker.HandleActionPacket(actionPacket);
 		end

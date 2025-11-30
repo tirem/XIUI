@@ -397,8 +397,8 @@ targetbar.DrawWindow = function(settings)
 			distText:set_position_x(rightTextX);
 			distText:set_position_y(topTextY - settings.distance_font_settings.font_height);
 
-			-- Use HP color if showing HP%, otherwise white
-			if (showHpPercent) then
+			-- Use HP color only when showing HP% alone, otherwise use white
+			if (showHpPercent and not showDistance) then
 				local hpColor, _ = GetHpColors(targetEntity.HPPercent / 100);
 				if (lastPercentTextColor ~= hpColor) then
 					distText:set_font_color(hpColor);
@@ -431,6 +431,18 @@ targetbar.DrawWindow = function(settings)
 
 		if (gConfig.showTargetBarCastBar and castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
 			-- Calculate cast progress
+			local elapsed = os.clock() - castData.startTime;
+			local progress = math.min(elapsed / castData.castTime, 1.0);
+
+			-- Auto-clear cast if it's exceeded expected time by 0.2 seconds (likely interrupted/failed)
+			if (not inConfigMode and elapsed > castData.castTime + 0.2) then
+				targetbar.enemyCasts[targetEntity.ServerId] = nil;
+				castData = nil;
+			end
+		end
+
+		if (gConfig.showTargetBarCastBar and castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
+			-- Calculate cast progress (again, after timeout check)
 			local elapsed = os.clock() - castData.startTime;
 			local progress = math.min(elapsed / castData.castTime, 1.0);
 
@@ -718,15 +730,35 @@ targetbar.HandleActionPacket = function(actionPacket)
 
 	-- Type 8 = Magic (Start) - Enemy begins casting
 	if (actionPacket.Type == 8) then
+		-- According to XiPackets: interrupted casts send ANOTHER Type 8 with "sp" prefix (vs "ca" for normal start)
+		-- We can't parse the prefix directly, but if we get Type 8 for the SAME spell that's already active,
+		-- it's likely the interruption packet - clear the cast instead of restarting it
+
 		-- Get the spell ID from the action
 		if (actionPacket.Targets and #actionPacket.Targets > 0 and
 		    actionPacket.Targets[1].Actions and #actionPacket.Targets[1].Actions > 0) then
 			local spellId = actionPacket.Targets[1].Actions[1].Param;
+			local existingCast = targetbar.enemyCasts[actionPacket.UserId];
+
+			-- If we already have an active cast for THE SAME spell, this is likely the interruption packet
+			if (existingCast ~= nil and existingCast.spellId == spellId) then
+				-- Second Type 8 for same spell = interruption signal, clear the cast
+				targetbar.enemyCasts[actionPacket.UserId] = nil;
+				return; -- Don't create new cast data
+			end
+
+			-- If we have a cast for a DIFFERENT spell, clear it (new cast started)
+			if (existingCast ~= nil and existingCast.spellId ~= spellId) then
+				targetbar.enemyCasts[actionPacket.UserId] = nil;
+			end
+
+			-- Create new cast data (first Type 8 for this spell)
 			local spell = AshitaCore:GetResourceManager():GetSpellById(spellId);
 			if (spell ~= nil and spell.Name[1] ~= nil) then
 				local spellName = encoding:ShiftJIS_To_UTF8(spell.Name[1], true);
 				-- Cast time is in quarter seconds (e.g., 40 = 10 seconds)
 				local castTime = spell.CastTime / 4.0;
+
 				targetbar.enemyCasts[actionPacket.UserId] = T{
 					spellName = spellName,
 					spellId = spellId,

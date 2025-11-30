@@ -36,6 +36,9 @@ local partyTitlesTexture = nil; -- Texture atlas for party titles (Solo, Party, 
 local partyMaxSize = 6;
 local memberTextCount = partyMaxSize * 3;
 
+-- Reference text height for baseline alignment (prevents text jumping)
+local referenceTextHeight = 0;
+
 -- UV coordinates for partylist titles atlas (4 titles stacked vertically)
 local titleUVs = {
     solo = {0, 0, 1, 0.25},      -- Solo (top 25% of texture)
@@ -68,7 +71,9 @@ local borderConfig = {1, '#243e58'};
 local bgImageKeys = { 'bg', 'tl', 'tr', 'br', 'bl' };
 local loadedBg = nil;
 
-local partyList = {};
+local partyList = {
+	partyCasts = {} -- Track party member casting: [serverId] = {spellName, castTime, startTime, timestamp}
+};
 
 
 local function getScale(partyIndex)
@@ -392,6 +397,13 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     memberText[memIdx].mp:set_font_height(fontSizes.mp);
     memberText[memIdx].name:set_font_height(fontSizes.name);
     memberText[memIdx].tp:set_font_height(fontSizes.tp);
+
+    -- Calculate reference height for baseline alignment (only once per font height change)
+    if referenceTextHeight == 0 or referenceTextHeight ~= fontSizes.hp then
+        memberText[memIdx].hp:set_text("0123456789");
+        local _, refHeight = memberText[memIdx].hp:get_text_size();
+        referenceTextHeight = refHeight;
+    end
 
     -- Calculate text sizes
     memberText[memIdx].name:set_text(tostring(memInfo.name));
@@ -793,14 +805,16 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     end
 
     -- Position HP text based on layout
+    -- Calculate baseline offset to keep text baseline consistent
+    local hpBaselineOffset = referenceTextHeight - hpHeight;
     if layout == 1 then
         -- Layout 2: HP text on same row as name, right-aligned to bar
         memberText[memIdx].hp:set_position_x(hpStartX + hpBarWidth + 4);  -- 4px to the right of bar
-        memberText[memIdx].hp:set_position_y(hpStartY - nameHeight - settings.nameTextOffsetY);  -- Same row as name
+        memberText[memIdx].hp:set_position_y(hpStartY - nameHeight - settings.nameTextOffsetY + hpBaselineOffset);  -- Same row as name
     else
         -- Layout 1: HP text below bar with standard offset
         memberText[memIdx].hp:set_position_x(hpStartX + hpBarWidth + settings.hpTextOffsetX);
-        memberText[memIdx].hp:set_position_y(hpStartY + barHeight + settings.hpTextOffsetY);
+        memberText[memIdx].hp:set_position_y(hpStartY + barHeight + settings.hpTextOffsetY + hpBaselineOffset);
     end
 
     -- Draw the leader icon
@@ -817,10 +831,63 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     memberText[memIdx].name:set_position_x(namePosX);
     memberText[memIdx].name:set_position_y(hpStartY - nameHeight - settings.nameTextOffsetY);
 
-    -- Update the distance text (separate from name)
+    -- Check if member is casting and show cast bar if so
+    local castData = nil;
+    local isCasting = false;
+    if (memInfo.inzone and memInfo.serverid ~= nil) then
+        castData = partyList.partyCasts[memInfo.serverid];
+        if (castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
+            -- Calculate cast progress
+            local elapsed = os.clock() - castData.startTime;
+            local progress = math.min(elapsed / castData.castTime, 1.0);
+
+            -- Auto-clear cast if it's exceeded expected time by 0.2 seconds (likely interrupted/failed)
+            if (elapsed > castData.castTime + 0.2) then
+                partyList.partyCasts[memInfo.serverid] = nil;
+                castData = nil;
+            end
+        end
+
+        if (castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
+            isCasting = true;
+
+            -- Replace name text with spell name
+            memberText[memIdx].name:set_text(castData.spellName);
+            local spellNameWidth, _ = memberText[memIdx].name:get_text_size();
+
+            -- Calculate cast progress (again, after timeout check)
+            local elapsed = os.clock() - castData.startTime;
+            local progress = math.min(elapsed / castData.castTime, 1.0);
+
+            -- Draw cast bar to the right of spell name
+            local castBarWidth = hpBarWidth * 0.6; -- 60% of HP bar width
+            local castBarHeight = nameHeight * 0.8; -- 80% of name height
+            local castBarX = namePosX + spellNameWidth + 4; -- 4px spacing after spell name
+            local castBarY = hpStartY - nameHeight - settings.nameTextOffsetY + (nameHeight - castBarHeight) / 2; -- Vertically center with text
+
+            -- Get cast bar gradient from config
+            local castGradient = GetCustomGradient(gConfig.colorCustomization.partyList, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
+
+            -- Draw cast bar with absolute positioning
+            progressbar.ProgressBar(
+                {{progress, castGradient}},
+                {castBarWidth, castBarHeight},
+                {
+                    decorate = false,
+                    absolutePosition = {castBarX, castBarY}
+                }
+            );
+        end
+    end
+
+    -- Update the distance text (separate from name) - hide when casting
     local showDistance = false;
     local highlightDistance = false;
-    if (gConfig.showPartyListDistance and memInfo.inzone and memInfo.index) then
+    if (not isCasting) then
+        -- Restore original name text when not casting
+        memberText[memIdx].name:set_text(tostring(memInfo.name));
+    end
+    if (not isCasting and gConfig.showPartyListDistance and memInfo.inzone and memInfo.index) then
         local entity = GetEntitySafe()
         if entity ~= nil then
             local distance = math.sqrt(entity:GetDistance(memInfo.index))
@@ -872,8 +939,10 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
             end
 
             -- Position TP text at row start + 4px offset (LEFT of MP bar)
+            -- Calculate baseline offset to keep text baseline consistent
+            local tpBaselineOffset = referenceTextHeight - tpHeight;
             memberText[memIdx].tp:set_position_x(rowStartX + 4);
-            memberText[memIdx].tp:set_position_y(rowStartY);
+            memberText[memIdx].tp:set_position_y(rowStartY + tpBaselineOffset);
 
             -- === MP BAR ===
             -- Position MP bar at a fixed offset based on max TP text width to prevent shifting
@@ -896,8 +965,10 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
             memberText[memIdx].mp:set_text(tostring(memInfo.mp));
 
             -- Position MP text (RIGHT of MP bar, vertically centered with bar)
+            -- Calculate baseline offset to keep text baseline consistent
+            local mpBaselineOffset = referenceTextHeight - mpHeight;
             memberText[memIdx].mp:set_position_x(mpStartX + mpBarWidth + 4);  -- 4px spacing after MP bar
-            memberText[memIdx].mp:set_position_y(mpStartY + (mpBarHeight - mpHeight) / 2);
+            memberText[memIdx].mp:set_position_y(mpStartY + (mpBarHeight - mpHeight) / 2 + mpBaselineOffset);
 
         else
             -- ========== LAYOUT 1: Horizontal ==========
@@ -917,8 +988,10 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
             end
             memberText[memIdx].mp:set_text(tostring(memInfo.mp));
             -- MP font is left-aligned, so position RIGHT edge by subtracting text width
+            -- Calculate baseline offset to keep text baseline consistent
+            local mpBaselineOffset = referenceTextHeight - mpHeight;
             memberText[memIdx].mp:set_position_x(mpStartX + mpBarWidth - mpTextWidth);
-            memberText[memIdx].mp:set_position_y(mpStartY + mpBarHeight + settings.mpTextOffsetY);
+            memberText[memIdx].mp:set_position_y(mpStartY + mpBarHeight + settings.mpTextOffsetY + mpBaselineOffset);
 
             -- Draw the TP bar
             if (showTP) then
@@ -954,8 +1027,10 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                 end
                 memberText[memIdx].tp:set_text(tostring(memInfo.tp));
                 -- TP font is left-aligned, so position RIGHT edge by subtracting text width
+                -- Calculate baseline offset to keep text baseline consistent
+                local tpBaselineOffset = referenceTextHeight - tpHeight;
                 memberText[memIdx].tp:set_position_x(tpStartX + tpBarWidth - tpTextWidth);
-                memberText[memIdx].tp:set_position_y(tpStartY + barHeight + settings.tpTextOffsetY);
+                memberText[memIdx].tp:set_position_y(tpStartY + barHeight + settings.tpTextOffsetY + tpBaselineOffset);
             end
         end
 
@@ -1509,6 +1584,11 @@ partyList.UpdateVisuals = function(settings)
         ::continue::
     end
 
+    -- Reset reference height so it gets recalculated with new font
+    if fontFamilyChanged or fontFlagsChanged or outlineWidthChanged or sizesChanged[1] or sizesChanged[2] or sizesChanged[3] then
+        referenceTextHeight = 0;
+    end
+
     -- Reset cached colors for parties that changed
     for partyIndex = 1, 3 do
         if sizesChanged[partyIndex] then
@@ -1586,6 +1666,8 @@ end
 
 partyList.HandleZonePacket = function(e)
     statusHandler.clear_cache();
+    -- Clear all party casts when zoning
+    partyList.partyCasts = {};
 end
 
 partyList.Cleanup = function()
@@ -1624,6 +1706,64 @@ partyList.Cleanup = function()
 	-- Clear tables
 	memberText = {};
 	partyWindowPrim = {{background = {}}, {background = {}}, {background = {}}};
+end
+
+partyList.HandleActionPacket = function(actionPacket)
+	if (actionPacket == nil or actionPacket.UserId == nil) then
+		return;
+	end
+
+	-- Type 8 = Magic (Start) - Party member begins casting
+	if (actionPacket.Type == 8) then
+		-- Get the spell ID from the action
+		if (actionPacket.Targets and #actionPacket.Targets > 0 and
+		    actionPacket.Targets[1].Actions and #actionPacket.Targets[1].Actions > 0) then
+			local spellId = actionPacket.Targets[1].Actions[1].Param;
+			local existingCast = partyList.partyCasts[actionPacket.UserId];
+
+			-- According to XiPackets: interrupted casts send ANOTHER Type 8 with "sp" prefix (vs "ca" for normal start)
+			-- If we already have an active cast for THE SAME spell, this is likely the interruption packet
+			if (existingCast ~= nil and existingCast.spellId == spellId) then
+				-- Second Type 8 for same spell = interruption signal, clear the cast
+				partyList.partyCasts[actionPacket.UserId] = nil;
+				return; -- Don't create new cast data
+			end
+
+			-- If we have a cast for a DIFFERENT spell, clear it (new cast started)
+			if (existingCast ~= nil and existingCast.spellId ~= spellId) then
+				partyList.partyCasts[actionPacket.UserId] = nil;
+			end
+
+			-- Create new cast data (first Type 8 for this spell)
+			local spell = AshitaCore:GetResourceManager():GetSpellById(spellId);
+			if (spell ~= nil and spell.Name[1] ~= nil) then
+				local spellName = encoding:ShiftJIS_To_UTF8(spell.Name[1], true);
+				-- Cast time is in quarter seconds (e.g., 40 = 10 seconds)
+				local castTime = spell.CastTime / 4.0;
+
+				partyList.partyCasts[actionPacket.UserId] = T{
+					spellName = spellName,
+					spellId = spellId,
+					castTime = castTime,
+					startTime = os.clock(),  -- High precision timestamp
+					timestamp = os.time()    -- For cleanup
+				};
+			end
+		end
+	-- Type 4 = Magic (Finish) - Cast completed
+	-- Type 11 = Monster Skill (Finish) - Some abilities
+	elseif (actionPacket.Type == 4 or actionPacket.Type == 11) then
+		-- Clear the cast for this party member
+		partyList.partyCasts[actionPacket.UserId] = nil;
+	end
+
+	-- Cleanup stale casts (older than 30 seconds)
+	local now = os.time();
+	for serverId, data in pairs(partyList.partyCasts) do
+		if (data.timestamp + 30 < now) then
+			partyList.partyCasts[serverId] = nil;
+		end
+	end
 end
 
 return partyList;
