@@ -275,8 +275,15 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 	if options.decorate == nil then
 		options.decorate = true;
 	end
-	
-	local positionStartX, positionStartY = imgui.GetCursorScreenPos();
+
+	-- Get position from options or cursor
+	local positionStartX, positionStartY;
+	if options.absolutePosition then
+		positionStartX = options.absolutePosition[1];
+		positionStartY = options.absolutePosition[2];
+	else
+		positionStartX, positionStartY = imgui.GetCursorScreenPos();
+	end
 	
 	local width = dimensions[1];
 	local height = dimensions[2];
@@ -435,8 +442,75 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 		rounding = options.decorate and height/2 or gConfig.noBookendRounding;
 		imgui.GetWindowDrawList():AddRect({positionStartX - (borderWidth / 2), positionStartY - (borderWidth / 2)}, {positionStartX + width + (borderWidth / 2), positionStartY + height + (borderWidth / 2)}, imgui.GetColorU32({borderColorRed / 255, borderColorGreen / 255, borderColorBlue / 255, 1}), rounding, ImDrawCornerFlags_All, borderWidth);
 	end
-	
-	imgui.Dummy({width, height});
+
+	-- Draw default border and optional enhanced border
+	-- All progress bars get a 2px background-colored border by default
+	-- Enhanced border adds a middle colored layer and outer background layer (for lock-on, etc.)
+	local baseRounding = options.decorate and (height / 2) or (gConfig.noBookendRounding or 0);
+
+	-- Get background color from global config
+	local bgColor = progressbar.backgroundGradientStartColor;
+	if gConfig and gConfig.colorCustomization and gConfig.colorCustomization.shared and gConfig.colorCustomization.shared.backgroundGradient then
+		bgColor = gConfig.colorCustomization.shared.backgroundGradient.start;
+	end
+	local bgR, bgG, bgB = hex2rgba(bgColor);
+	local bgColorU32 = imgui.GetColorU32({bgR / 255, bgG / 255, bgB / 255, 1.0});
+
+	local draw_list = imgui.GetForegroundDrawList();
+
+	-- Draw enhanced border if specified (middle and outer layers)
+	if options.enhancedBorder then
+		local accentColor = options.enhancedBorder; -- ARGB color
+		local accentColorU32 = imgui.GetColorU32(ARGBToImGui(accentColor));
+
+		-- Border thickness values
+		local innerBorderThickness = 2;
+		local middleBorderThickness = 2;
+		local outerBorderThickness = 1;
+
+		-- Calculate offsets
+		local innerOffset = innerBorderThickness / 2;
+		local middleOffset = innerOffset + innerBorderThickness;
+		local outerOffset = middleOffset + middleBorderThickness / 2;
+
+		-- Draw outermost background border (1px)
+		draw_list:AddRect(
+			{positionStartX - outerOffset, positionStartY - outerOffset},
+			{positionStartX + width + outerOffset, positionStartY + height + outerOffset},
+			bgColorU32,
+			baseRounding + outerOffset,
+			15, -- all corners
+			outerBorderThickness
+		);
+
+		-- Draw middle accent color border (2px)
+		draw_list:AddRect(
+			{positionStartX - middleOffset, positionStartY - middleOffset},
+			{positionStartX + width + middleOffset, positionStartY + height + middleOffset},
+			accentColorU32,
+			baseRounding + middleOffset,
+			15, -- all corners
+			middleBorderThickness
+		);
+	end
+
+	-- Draw default inner background border (2px) - always drawn for all bars
+	local innerBorderThickness = 2;
+	local innerOffset = innerBorderThickness / 2;
+	draw_list:AddRect(
+		{positionStartX - innerOffset, positionStartY - innerOffset},
+		{positionStartX + width + innerOffset, positionStartY + height + innerOffset},
+		bgColorU32,
+		baseRounding + innerOffset,
+		15, -- all corners
+		innerBorderThickness
+	);
+
+	-- Only call Dummy if we're using cursor positioning (affects layout)
+	-- Skip Dummy when using absolute positioning (doesn't affect layout)
+	if not options.absolutePosition then
+		imgui.Dummy({width, height});
+	end
 end
 
 return progressbar;

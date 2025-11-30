@@ -219,11 +219,15 @@ end
 -- Section: Target Bar Settings
 local function DrawTargetBarSettings()
     if (imgui.CollapsingHeader("Target Bar")) then
-        imgui.BeginChild("TargetBarSettings", { 0, 320 }, true);
+        imgui.BeginChild("TargetBarSettings", { 0, 420 }, true);
 
         DrawCheckbox('Enabled', 'showTargetBar', CheckVisibility);
         DrawCheckbox('Show Distance', 'showTargetDistance');
         DrawCheckbox('Show Bookends', 'showTargetBarBookends');
+        DrawCheckbox('Show Lock On', 'showTargetBarLockOnBorder');
+        imgui.ShowHelp('Display the lock icon and colored border when locked on to a target.');
+        DrawCheckbox('Show Cast Bar', 'showTargetBarCastBar');
+        imgui.ShowHelp('Display the enemy cast bar under the HP bar when the target is casting.');
         DrawCheckbox('Hide During Events', 'targetBarHideDuringEvents');
         DrawCheckbox('Show Enemy Id', 'showEnemyId');
         imgui.ShowHelp('Display the internal ID of the monster next to its name.');
@@ -239,8 +243,21 @@ local function DrawTargetBarSettings()
         DrawSlider('Name Font Size', 'targetBarNameFontSize', 8, 36);
         DrawSlider('Distance Font Size', 'targetBarDistanceFontSize', 8, 36);
         DrawSlider('HP% Font Size', 'targetBarPercentFontSize', 8, 36);
-        DrawSlider('Cast Font Size', 'targetBarCastFontSize', 8, 36);
-        imgui.ShowHelp('Font size for enemy cast text that appears under the HP bar.');
+
+        -- Cast bar settings (only show if cast bar is enabled)
+        if (gConfig.showTargetBarCastBar) then
+            DrawSlider('Cast Font Size', 'targetBarCastFontSize', 8, 36);
+            imgui.ShowHelp('Font size for enemy cast text that appears under the HP bar.');
+
+            imgui.Text('Cast Bar Position & Scale:');
+            DrawSlider('Cast Bar Offset Y', 'targetBarCastBarOffsetY', 0, 50, '%.0f');
+            imgui.ShowHelp('Vertical distance below the HP bar (in pixels).');
+            DrawSlider('Cast Bar Scale X', 'targetBarCastBarScaleX', 0.1, 3.0, '%.1f');
+            imgui.ShowHelp('Horizontal scale multiplier for cast bar width.');
+            DrawSlider('Cast Bar Scale Y', 'targetBarCastBarScaleY', 0.1, 3.0, '%.1f');
+            imgui.ShowHelp('Vertical scale multiplier for cast bar height.');
+        end
+
         DrawSlider('Icon Scale', 'targetBarIconScale', 0.1, 3.0, '%.1f');
         DrawSlider('Icon Font Size', 'targetBarIconFontSize', 8, 36);
 
@@ -488,7 +505,6 @@ local function DrawExpBarSettings()
 
         DrawSlider('Scale X', 'expBarScaleX', 0.1, 3.0, '%.2f');
         DrawSlider('Scale Y', 'expBarScaleY', 0.1, 3.0, '%.2f');
-        DrawSlider('Text Scale X', 'expBarTextScaleX', 0.1, 3.0, '%.2f');
         DrawSlider('Font Size', 'expBarFontSize', 8, 36);
 
         imgui.EndChild();
@@ -498,22 +514,12 @@ end
 -- Section: Gil Tracker Settings
 local function DrawGilTrackerSettings()
     if (imgui.CollapsingHeader("Gil Tracker")) then
-        imgui.BeginChild("GilTrackerSettings", { 0, 160 }, true);
+        imgui.BeginChild("GilTrackerSettings", { 0, 120 }, true);
 
         DrawCheckbox('Enabled', 'showGilTracker', CheckVisibility);
         DrawSlider('Scale', 'gilTrackerScale', 0.1, 3.0, '%.1f');
         DrawSlider('Font Size', 'gilTrackerFontSize', 8, 36);
-        DrawCheckbox('Right Align', 'gilTrackerRightAlign');
-
-        local posOffset = { gConfig.gilTrackerPosOffset[1], gConfig.gilTrackerPosOffset[2] };
-        if (imgui.InputInt2('Position Offset', posOffset)) then
-            gConfig.gilTrackerPosOffset[1] = posOffset[1];
-            gConfig.gilTrackerPosOffset[2] = posOffset[2];
-            UpdateUserSettings();
-        end
-        if (imgui.IsItemDeactivatedAfterEdit()) then
-            SaveSettingsToDisk();
-        end
+        DrawCheckbox('Right Align', 'gilTrackerRightAlign', UpdateGilTrackerVisuals);
 
         imgui.EndChild();
     end

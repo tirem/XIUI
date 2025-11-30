@@ -74,9 +74,8 @@ expbar.DrawWindow = function(settings)
     end
 
     local inlineMode = gConfig.expBarInlineMode;
-    local framePadding = imgui.GetStyle().FramePadding.x * 2;
 
-    -- Calculate text width for inline mode positioning BEFORE setting window size
+    -- Calculate text width for inline mode positioning
     local actualTextWidth = 0;
     if inlineMode then
         -- Pre-calculate text sizes to determine actual width needed
@@ -109,7 +108,7 @@ expbar.DrawWindow = function(settings)
 
         if gConfig.expBarShowPercent then
             local expPercentString = ('%.f'):fmt(progressBarProgress * 100);
-            local percentSeparator = ' - ';
+            local percentSeparator = '  -  ';
             local percentString = percentSeparator .. expPercentString .. '%';
             percentText:set_text(percentString);
             local percentWidth = percentText:get_text_size();
@@ -120,37 +119,30 @@ expbar.DrawWindow = function(settings)
         actualTextWidth = actualTextWidth + 16;
     end
 
-    -- Calculate window size based on actual content width
-    local windowSize;
-    if inlineMode then
-        windowSize = actualTextWidth + settings.barWidth + framePadding;
-    else
-        windowSize = math.max(settings.barWidth, settings.textWidth) + framePadding;
-    end
-
-    imgui.SetNextWindowSize({ windowSize, -1 }, ImGuiCond_Always);
+    -- Let ImGui auto-size the window based on content (Dummy call in progressbar)
+    imgui.SetNextWindowSize({ -1, -1 }, ImGuiCond_Always);
 	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
 	if (gConfig.lockPositions) then
 		windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
 	end
     if (imgui.Begin('ExpBar', true, windowFlags)) then
 
-		-- Draw HP Bar
+		-- Draw the progress bar
 		local startX, startY = imgui.GetCursorScreenPos();
 
-        local col2X = inlineMode and (startX + actualTextWidth) or (startX + settings.textWidth - imgui.GetStyle().FramePadding.x * 2);
-
-        local progressBarWidth = settings.barWidth - imgui.GetStyle().FramePadding.x * 2;
+        local progressBarWidth = settings.barWidth;
+        local barStartX = startX; -- Default to window start
         if inlineMode then
-            imgui.SetCursorScreenPos({col2X, startY});
+            -- Position the bar after the text in inline mode
+            barStartX = startX + actualTextWidth;
+            imgui.SetCursorScreenPos({barStartX, startY});
         end
 		local expGradient = GetCustomGradient(gConfig.colorCustomization.expBar, 'barGradient') or {'#c39040', '#e9c466'};
 		progressbar.ProgressBar({{progressBarProgress, expGradient}}, {progressBarWidth, settings.barHeight}, {decorate = gConfig.showExpBarBookends});
 
 		imgui.SameLine();
 
-        -- Calculate bar position and text padding
-        local barStartX = inlineMode and col2X or startX;
+        -- Calculate text padding
         local bookendWidth = gConfig.showExpBarBookends and (settings.barHeight / 2) or 0;
         local textPadding = 8;
 
@@ -170,7 +162,7 @@ expbar.DrawWindow = function(settings)
         local rightTextX;
         if inlineMode then
             -- In inline mode, text is in the left column area, 8px from right edge of text column
-            rightTextX = col2X - textPadding;
+            rightTextX = barStartX - textPadding;
         else
             -- In non-inline mode, text is on the bar, 8px from right edge (before bookend)
             rightTextX = startX + progressBarWidth - bookendWidth - textPadding;

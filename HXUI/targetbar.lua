@@ -15,6 +15,7 @@ local bgAlpha = 0.4;
 local bgRadius = 3;
 
 local arrowTexture;
+local lockTexture;
 local percentText;
 local nameText;
 local totNameText;
@@ -235,19 +236,47 @@ targetbar.DrawWindow = function(settings)
 
 		local startX, startY = imgui.GetCursorScreenPos();
 
+		-- Check if target is locked on (needed for both border and icon)
+		local isLockedOn = GetIsTargetLockedOn();
+
 		-- Calculate bookend width and text padding (same as exp bar)
 		local bookendWidth = gConfig.showTargetBarBookends and (settings.barHeight / 2) or 0;
 		local textPadding = 8;
 
-		progressbar.ProgressBar(hpPercentData, {settings.barWidth, settings.barHeight}, {decorate = gConfig.showTargetBarBookends});
+		-- Build progress bar options with optional enhanced border for lock-on
+		local progressBarOptions = {decorate = gConfig.showTargetBarBookends};
+		if (isLockedOn and gConfig.showTargetBarLockOnBorder) then
+			progressBarOptions.enhancedBorder = color; -- Pass target color for enhanced border
+		end
+
+		progressbar.ProgressBar(hpPercentData, {settings.barWidth, settings.barHeight}, progressBarOptions);
 
 		-- Dynamically set font heights based on settings (avoids expensive font recreation)
 		nameText:set_font_height(settings.name_font_settings.font_height);
 		percentText:set_font_height(settings.percent_font_settings.font_height);
 		distText:set_font_height(settings.distance_font_settings.font_height);
 
-		-- Left-aligned text position (target name) - 8px from left edge (after bookend)
-		local leftTextX = startX + bookendWidth + textPadding;
+		-- Draw lock icon if locked on (using draw list to avoid affecting cursor position)
+		local lockIconSize = settings.name_font_settings.font_height;  -- Match name font height
+		local lockIconOffset = 0;
+		if (isLockedOn and gConfig.showTargetBarLockOnBorder and lockTexture ~= nil) then
+			local lockX = startX + bookendWidth + textPadding;
+			local lockY = startY - settings.topTextYOffset - lockIconSize;
+
+			-- Draw using foreground draw list (doesn't affect ImGui cursor)
+			local draw_list = imgui.GetForegroundDrawList();
+			draw_list:AddImage(
+				tonumber(ffi.cast("uint32_t", lockTexture.image)),
+				{lockX, lockY},
+				{lockX + lockIconSize, lockY + lockIconSize},
+				{0, 0}, {1, 1},
+				IM_COL32_WHITE
+			);
+			lockIconOffset = lockIconSize + 4;  -- Icon size + 4px spacing
+		end
+
+		-- Left-aligned text position (target name) - 8px from left edge (after bookend) + lock icon offset
+		local leftTextX = startX + bookendWidth + textPadding + lockIconOffset;
 		local nameWidth, nameHeight = nameText:get_text_size();
 		nameText:set_position_x(leftTextX);
 		nameText:set_position_y(startY - settings.topTextYOffset - nameHeight);
@@ -301,7 +330,7 @@ targetbar.DrawWindow = function(settings)
 		-- Hide the separate percentText since we're combining them
 		percentText:set_visible(false);
 
-		-- Draw enemy cast bar and text if casting (or in config mode)
+		-- Draw enemy cast bar and text if casting (or in config mode) and if enabled
 		local castData = targetbar.enemyCasts[targetEntity.ServerId];
 		local inConfigMode = showConfig and showConfig[1];
 
@@ -314,26 +343,34 @@ targetbar.DrawWindow = function(settings)
 			};
 		end
 
-		if (castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
+		if (gConfig.showTargetBarCastBar and castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
 			-- Calculate cast progress
 			local elapsed = os.clock() - castData.startTime;
 			local progress = math.min(elapsed / castData.castTime, 1.0);
 
-			-- Draw cast bar under HP bar
-			local castBarY = startY + settings.barHeight + 2;
-			imgui.SetCursorScreenPos({startX, castBarY});
+			-- Draw cast bar under HP bar using user-configurable offsets and scaling
+			local castBarY = startY + settings.barHeight + settings.castBarOffsetY;
+			local castBarX = startX + settings.castBarOffsetX;
 
-			-- Cast bar settings
-			local castBarHeight = 8;
-			local castBarWidth = settings.barWidth;
+			-- Cast bar settings (using adjusted settings)
+			local castBarHeight = settings.castBarHeight;
+			local castBarWidth = settings.castBarWidth;
 			local castGradient = GetCustomGradient(gConfig.colorCustomization.targetBar, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
 
-			progressbar.ProgressBar({{progress, castGradient}}, {castBarWidth, castBarHeight}, {decorate = gConfig.showTargetBarBookends});
+			-- Draw cast bar with absolute positioning (doesn't affect ImGui layout)
+			progressbar.ProgressBar(
+				{{progress, castGradient}},
+				{castBarWidth, castBarHeight},
+				{
+					decorate = gConfig.showTargetBarBookends,
+					absolutePosition = {castBarX, castBarY}
+				}
+			);
 
-			-- Draw cast text below the cast bar
+			-- Draw cast text below the cast bar (centered on cast bar)
 			castText:set_font_height(settings.cast_font_settings.font_height);
 			local castWidth, castHeight = castText:get_text_size();
-			local centerX = startX + (settings.barWidth / 2);
+			local centerX = castBarX + (castBarWidth / 2);
 			castText:set_position_x(centerX);
 			castText:set_position_y(castBarY + castBarHeight + 2);
 			castText:set_text(inConfigMode and "Fire III (Demo)" or castData.spellName);
@@ -432,7 +469,7 @@ targetbar.DrawWindow = function(settings)
 				-- Left-aligned text position (ToT name) - 8px from left edge (after bookend)
 				local totLeftTextX = totStartX + totBookendWidth + totTextPadding;
 				totNameText:set_position_x(totLeftTextX);
-				totNameText:set_position_y(totStartY - totNameHeight);
+				totNameText:set_position_y(totStartY - totNameHeight - 4);
 				-- Only call set_font_color if the color has changed
 				if (lastTotNameTextColor ~= totColor) then
 					totNameText:set_font_color(totColor);
@@ -446,6 +483,14 @@ targetbar.DrawWindow = function(settings)
 		else
 			-- When split is enabled, hide the totName text here (it will be shown in separate window)
 			totNameText:set_visible(false);
+		end
+
+		-- Reserve space for cast bar at bottom of window to prevent clipping
+		-- Calculate total height needed: offset Y + bar height + text spacing + text height
+		if (gConfig.showTargetBarCastBar and castData ~= nil and castData.spellName ~= nil) then
+			local castTextHeight = settings.cast_font_settings.font_height;
+			local totalCastBarSpace = settings.castBarOffsetY + settings.castBarHeight + 2 + castTextHeight;
+			imgui.Dummy({0, totalCastBarSpace});
 		end
     end
 	local winPosX, winPosY = imgui.GetWindowPos();
@@ -519,7 +564,7 @@ targetbar.DrawWindow = function(settings)
 				-- Left-aligned text position (ToT name) - 8px from left edge (after bookend)
 				local totLeftTextXSplit = totStartX + totBookendWidthSplit + totTextPaddingSplit;
 				totNameText:set_position_x(totLeftTextXSplit);
-				totNameText:set_position_y(totStartY - totNameHeight);
+				totNameText:set_position_y(totStartY - totNameHeight - 4);
 				-- Only call set_font_color if the color has changed
 				if (lastTotNameTextColor ~= totColor) then
 					totNameText:set_font_color(totColor);
@@ -543,7 +588,8 @@ targetbar.Initialize = function(settings)
 	distText = FontManager.create(settings.distance_font_settings);
 	castText = FontManager.create(settings.cast_font_settings);
 	allFonts = {percentText, nameText, totNameText, distText, castText};
-	arrowTexture = 	LoadTexture("arrow");
+	arrowTexture = LoadTexture("arrow");
+	lockTexture = LoadTexture("lock");
 end
 
 targetbar.UpdateVisuals = function(settings)

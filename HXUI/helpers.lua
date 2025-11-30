@@ -803,6 +803,23 @@ function GetTargets()
     return mainTarget, secondaryTarget;
 end
 
+function GetIsTargetLockedOn()
+    local playerTarget = AshitaCore:GetMemoryManager():GetTarget();
+    if (playerTarget == nil) then
+        return false;
+    end
+
+    -- Check if the target window is locked on using GetLockedOnFlags
+    if (playerTarget.GetLockedOnFlags ~= nil) then
+        local flags = playerTarget:GetLockedOnFlags();
+        -- If flags is non-zero, target is locked on
+        return flags ~= 0;
+    end
+
+    -- Fallback: method not available
+    return false;
+end
+
 function GetJobStr(jobIdx)
     if (jobIdx == nil or jobIdx == 0 or jobIdx == -1) then
         return '';

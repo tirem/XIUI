@@ -148,8 +148,13 @@ T{
 	targetBarCastFontSize = 16,
 	targetBarIconScale = 1,
 	targetBarIconFontSize = 16,
+	targetBarCastBarOffsetY = 10,
+	targetBarCastBarScaleX = 1,
+	targetBarCastBarScaleY = 1,
 	showTargetDistance = true,
 	showTargetBarBookends = true,
+	showTargetBarLockOnBorder = true,
+	showTargetBarCastBar = true,
 	showEnemyId = false;
 	alwaysShowHealthPercent = false,
     targetBarHideDuringEvents = true,
@@ -168,7 +173,6 @@ T{
 	showEnemyHPPText = true,
 	showEnemyListBookends = true,
 
-    expBarTextScaleX = 1,
 	expBarScaleX = 1,
 	expBarScaleY = 1,
 	showExpBarBookends = true,
@@ -180,7 +184,6 @@ T{
 
 	gilTrackerScale = 1,
 	gilTrackerFontSize = 16,
-    gilTrackerPosOffset = { 0, -7 },
     gilTrackerRightAlign = true,
 
 	inventoryTrackerScale = 1,
@@ -512,10 +515,14 @@ T{
 		iconSize = 22,
 		arrowSize = 30,
 		maxIconColumns = 12,
-		topTextYOffset = 2,
+		topTextYOffset = 6,
 		topTextXOffset = 5,
 		bottomTextYOffset = 0,
 		bottomTextXOffset = 15,
+		-- Cast bar positioning and scaling
+		castBarOffsetY = 10,
+		castBarOffsetX = 12,
+		castBarWidth = 500,  -- Base width (will be adjusted by scale and inset)
 		name_font_settings =
 		T{
 			font_alignment = gdi.Alignment.Left,
@@ -656,7 +663,6 @@ T{
 	expBarSettings =
 	T{
 		barWidth = 550;
-        textWidth = 550;
 		barHeight = 12;
 		textOffsetY = 4;
 		percentOffsetX = -5;
@@ -693,14 +699,11 @@ T{
 	};
 
 	-- settings for gil tracker
-	gilTrackerSettings = 
+	gilTrackerSettings =
 	T{
 		iconScale = 30;
-		offsetX = -5;
-		offsetY = -7;
 		font_settings =
 		T{
-			font_alignment = gdi.Alignment.Right,
 			font_family = 'Consolas',
 			font_height = 13,
 			font_color = 0xFFFFFFFF,
@@ -1127,6 +1130,11 @@ function UpdateUserSettings()
 	-- Note: percent_font_settings.color is set dynamically in targetbar.DrawWindow based on HP amount
 	gAdjustedSettings.targetBarSettings.iconSize = ds.targetBarSettings.iconSize * us.targetBarIconScale;
 	gAdjustedSettings.targetBarSettings.arrowSize = ds.targetBarSettings.arrowSize * us.targetBarScaleY;
+	-- Cast bar positioning and scaling (use adjusted barWidth, not default)
+	gAdjustedSettings.targetBarSettings.castBarOffsetY = us.targetBarCastBarOffsetY;
+	gAdjustedSettings.targetBarSettings.castBarOffsetX = ds.targetBarSettings.castBarOffsetX; -- Fixed offset from default settings
+	gAdjustedSettings.targetBarSettings.castBarWidth = (gAdjustedSettings.targetBarSettings.barWidth - (ds.targetBarSettings.castBarOffsetX * 2)) * us.targetBarCastBarScaleX;
+	gAdjustedSettings.targetBarSettings.castBarHeight = 8 * us.targetBarCastBarScaleY;
 
 	-- Target of Target Bar (separate scaling when split is enabled)
 	gAdjustedSettings.targetBarSettings.totBarWidth = (ds.targetBarSettings.barWidth / 3) * us.totBarScaleX;
@@ -1197,7 +1205,6 @@ function UpdateUserSettings()
 	-- Note: HP, MP, TP text colors are set dynamically in playerbar.DrawWindow
 
 	-- Exp Bar
-    gAdjustedSettings.expBarSettings.textWidth = ds.expBarSettings.textWidth * us.expBarTextScaleX;
 	gAdjustedSettings.expBarSettings.barWidth = ds.expBarSettings.barWidth * us.expBarScaleX;
 	gAdjustedSettings.expBarSettings.barHeight = ds.expBarSettings.barHeight * us.expBarScaleY;
 	gAdjustedSettings.expBarSettings.job_font_settings.font_height = math.max(us.expBarFontSize, 8);
@@ -1207,13 +1214,10 @@ function UpdateUserSettings()
 	-- Gil Tracker
 	gAdjustedSettings.gilTrackerSettings.iconScale = ds.gilTrackerSettings.iconScale * us.gilTrackerScale;
 	gAdjustedSettings.gilTrackerSettings.font_settings.font_height = math.max(us.gilTrackerFontSize, 8);
-    gAdjustedSettings.gilTrackerSettings.font_settings.right_justified = us.gilTrackerRightAlign;
-    if (us.gilTrackerRightAlign) then
-        gAdjustedSettings.gilTrackerSettings.offsetX = ds.gilTrackerSettings.offsetX + us.gilTrackerPosOffset[1];
-    else
-        gAdjustedSettings.gilTrackerSettings.offsetX = (ds.gilTrackerSettings.offsetX + us.gilTrackerPosOffset[1]) * -1;
-    end
-    gAdjustedSettings.gilTrackerSettings.offsetY = us.gilTrackerPosOffset[2];
+	-- Set font alignment based on text position (right align = text on right = left-aligned font)
+	gAdjustedSettings.gilTrackerSettings.font_settings.font_alignment = us.gilTrackerRightAlign and gdi.Alignment.Left or gdi.Alignment.Right;
+	-- Pass through the alignment setting
+	gAdjustedSettings.gilTrackerSettings.rightAlign = us.gilTrackerRightAlign;
 	
 	-- Inventory Tracker
 	gAdjustedSettings.inventoryTrackerSettings.dotRadius = ds.inventoryTrackerSettings.dotRadius * us.inventoryTrackerScale;
@@ -1293,7 +1297,7 @@ function UpdateExpBarVisuals()
 end
 
 function UpdateGilTrackerVisuals()
-	SaveSettingsOnly();
+	UpdateUserSettings();
 	gilTracker.UpdateVisuals(gAdjustedSettings.gilTrackerSettings);
 end
 

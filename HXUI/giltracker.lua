@@ -58,9 +58,21 @@ giltracker.DrawWindow = function(settings)
 		gilText:set_font_height(settings.font_settings.font_height);
 
 		gilText:set_text(FormatInt(gilAmount.Count));
-        local posOffsetX = (settings.font_settings.font_alignment == gdi.Alignment.Right) and settings.offsetX or settings.offsetX + settings.iconScale;
-		gilText:set_position_x(cursorX + posOffsetX);
-		gilText:set_position_y(cursorY + (settings.iconScale/2) + settings.offsetY);
+
+		-- Clean positioning logic:
+		-- rightAlign = true: text positioned to the RIGHT of the icon (left-aligned text)
+		-- rightAlign = false: text positioned to the LEFT of the icon (right-aligned text)
+		local textPadding = 5; -- Standard spacing between icon and text
+		if (settings.rightAlign) then
+			-- Text on RIGHT side of icon
+			gilText:set_position_x(cursorX + settings.iconScale + textPadding);
+		else
+			-- Text on LEFT side of icon
+			gilText:set_position_x(cursorX - textPadding);
+		end
+		-- Vertically center the text with the icon (offset upward to account for font baseline)
+		gilText:set_position_y(cursorY + (settings.iconScale / 2) - (settings.font_settings.font_height / 2));
+
 		-- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
 		if (lastGilTextColor ~= gConfig.colorCustomization.gilTracker.textColor) then
 			gilText:set_font_color(gConfig.colorCustomization.gilTracker.textColor);
