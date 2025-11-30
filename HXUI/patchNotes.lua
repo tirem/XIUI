@@ -116,6 +116,24 @@ patchNotes.DrawWindow = function()
 		imgui.NewLine();
 		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Enemy List');
 		imgui.BulletText('Updated spacing and layout for better readability');
+		imgui.BulletText('Separate font size controls for distance and HP percentage text');
+		imgui.BulletText('Customizable border colors for target and subtarget selection');
+		imgui.BulletText('Improved entity name colors based on type and claim status');
+		imgui.BulletText('Enhanced border rendering options');
+		imgui.NewLine();
+		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Target Bar');
+		imgui.BulletText('NEW: Enemy cast bars - see when your target is casting!');
+		imgui.BulletText('Cast bar shows progress with spell name displayed below');
+		imgui.BulletText('Customizable cast bar gradient colors');
+		imgui.BulletText('Separate font size control for cast text');
+		imgui.BulletText('Improved target-of-target detection using action tracking');
+		imgui.BulletText('More reliable combat targeting information');
+		imgui.NewLine();
+		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Action Tracker System');
+		imgui.BulletText('NEW: Advanced enemy action tracking system');
+		imgui.BulletText('Tracks enemy combat actions for better target-of-target detection');
+		imgui.BulletText('Monitors basic attacks, magic casts, and weapon skills');
+		imgui.BulletText('30-second action history for improved accuracy');
     end
 	imgui.PopStyleVar(1);
 	imgui.PopStyleColor(4);

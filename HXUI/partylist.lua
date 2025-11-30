@@ -32,9 +32,17 @@ local currentCursorName = nil; -- Track which cursor is loaded
 local partyTargeted;
 local partySubTargeted;
 local memberText = {};
-local titleText = {}; -- GDI font objects for party titles
+local partyTitlesTexture = nil; -- Texture atlas for party titles (Solo, Party, Party B, Party C)
 local partyMaxSize = 6;
 local memberTextCount = partyMaxSize * 3;
+
+-- UV coordinates for partylist titles atlas (4 titles stacked vertically)
+local titleUVs = {
+    solo = {0, 0, 1, 0.25},      -- Solo (top 25% of texture)
+    party = {0, 0.25, 1, 0.5},    -- Party (second 25%)
+    partyB = {0, 0.5, 1, 0.75},   -- Party B (third 25%)
+    partyC = {0, 0.75, 1, 1.0},   -- Party C (bottom 25%)
+}
 
 
 -- Cache last set colors to avoid expensive SetColor() calls every frame
@@ -202,10 +210,7 @@ local function UpdateTextVisibility(visible, partyIndex)
 
     for i = 1, 3 do
         if (partyIndex == nil or i == partyIndex) then
-            -- Update title text visibility
-            if (titleText[i] ~= nil) then
-                titleText[i]:set_visible(visible and gConfig.showPartyListTitle);
-            end
+            -- Title is now rendered via ImGui image, no visibility management needed
             local backgroundPrim = partyWindowPrim[i].background;
             for _, k in ipairs(bgImageKeys) do
                 backgroundPrim[k].visible = visible and backgroundPrim[k].exists;
@@ -422,8 +427,8 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     end
 
     -- Calculate layout dimensions
-    local jobIconSize = settings.iconSize * 1.1 * scale.icon;
-    local offsetSize = nameHeight > settings.iconSize and nameHeight or settings.iconSize;
+    local jobIconSize = settings.baseIconSize * 1.1 * scale.icon;  -- Use baseIconSize (not affected by status icon scale)
+    local offsetSize = nameHeight > settings.baseIconSize and nameHeight or settings.baseIconSize;
 
     -- Calculate the actual topmost point of the member (where name/icon are drawn)
     local nameIconAreaHeight = math.max(jobIconSize, nameHeight);
@@ -980,19 +985,14 @@ partyList.DrawPartyWindow = function(settings, party, partyIndex)
 
     local backgroundPrim = partyWindowPrim[partyIndex].background;
 
-    -- Determine title text based on party index and member count
-    local titleString;
+    -- Determine which title texture to use based on party index and member count
+    local titleUV;
     if (partyIndex == 1) then
-        titleString = partyMemberCount == 1 and "Solo" or "Party A";
+        titleUV = partyMemberCount == 1 and titleUVs.solo or titleUVs.party;
     elseif (partyIndex == 2) then
-        titleString = "Party B";
+        titleUV = titleUVs.partyB;
     else
-        titleString = "Party C";
-    end
-
-    -- Update title text
-    if (titleText[partyIndex] ~= nil) then
-        titleText[partyIndex]:set_text(titleString);
+        titleUV = titleUVs.partyC;
     end
 
     local imguiPosX, imguiPosY;
@@ -1090,14 +1090,32 @@ partyList.DrawPartyWindow = function(settings, party, partyIndex)
         backgroundPrim.bl.height = settings.borderSize;
         backgroundPrim.bl.color = borderColor;
 
-        -- Position title text centered above the window
-        if (titleText[partyIndex] ~= nil) then
-            titleText[partyIndex]:set_visible(gConfig.showPartyListTitle);
-            local titleWidth, titleHeight = titleText[partyIndex]:get_text_size();
+        -- Draw title image centered above the window
+        if (gConfig.showPartyListTitle and partyTitlesTexture ~= nil) then
+            local titleImage = tonumber(ffi.cast("uint32_t", partyTitlesTexture.image));
+
+            -- Calculate title dimensions from texture
+            -- Each title is 1/4 of the total texture height (4 titles stacked vertically)
+            local titleWidth = partyTitlesTexture.width;
+            local titleHeight = partyTitlesTexture.height / 4;
+
+            -- Apply scale factor (1.5x to make it more visible)
+            titleWidth = titleWidth * 1;
+            titleHeight = titleHeight * 1;
+
+            -- Center the title above the window
             local titlePosX = imguiPosX + math.floor((bgWidth / 2) - (titleWidth / 2));
-            local titlePosY = imguiPosY - math.floor(titleHeight);
-            titleText[partyIndex]:set_position_x(titlePosX);
-            titleText[partyIndex]:set_position_y(titlePosY);
+            local titlePosY = imguiPosY - titleHeight + 12;  -- 2px gap
+
+            -- Draw using foreground draw list
+            local draw_list = imgui.GetForegroundDrawList();
+            draw_list:AddImage(
+                titleImage,
+                {titlePosX, titlePosY},
+                {titlePosX + titleWidth, titlePosY + titleHeight},
+                {titleUV[1], titleUV[2]}, {titleUV[3], titleUV[4]},
+                IM_COL32_WHITE
+            );
         end
     -- end
 
@@ -1185,12 +1203,22 @@ partyList.Initialize = function(settings)
         memberText[i].zone = FontManager.create(zone_font_settings);
     end
 
-    -- Initialize title fonts for each party (3 parties)
-    for i = 1, 3 do
-        local title_font_settings = deep_copy_table(settings.title_font_settings);
-        -- Font height is already set in the settings, no need to override
-        -- Use FontManager for cleaner font creation
-        titleText[i] = FontManager.create(title_font_settings);
+    -- Load party titles texture atlas
+    partyTitlesTexture = LoadTexture('PartyList-Titles');
+    if (partyTitlesTexture ~= nil) then
+        -- Query actual texture dimensions using d3d8 library's interface
+        local texture_ptr = ffi.cast('IDirect3DTexture8*', partyTitlesTexture.image);
+        local res, desc = texture_ptr:GetLevelDesc(0);
+
+        if (desc ~= nil) then
+            partyTitlesTexture.width = desc.Width;
+            partyTitlesTexture.height = desc.Height;
+        else
+            -- Fallback to reasonable default if query fails
+            partyTitlesTexture.width = 64;
+            partyTitlesTexture.height = 64;
+            print('[HXUI] Warning: Failed to query party titles texture dimensions, using default 64x64');
+        end
     end
 
     -- Initialize images
@@ -1379,10 +1407,8 @@ partyList.Cleanup = function()
 		end
 	end
 
-	-- Destroy title text font objects
-	for i = 1, 3 do
-		titleText[i] = FontManager.destroy(titleText[i]);
-	end
+	-- Clear party titles texture (GC'd automatically via gc_safe_release)
+	partyTitlesTexture = nil;
 
 	-- Clear cursor texture cache (textures are GC'd automatically via gc_safe_release)
 	cursorTextures = T{};
@@ -1403,7 +1429,6 @@ partyList.Cleanup = function()
 
 	-- Clear tables
 	memberText = {};
-	titleText = {};
 	partyWindowPrim = {{background = {}}, {background = {}}, {background = {}}};
 end
 

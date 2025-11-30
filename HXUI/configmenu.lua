@@ -268,6 +268,8 @@ local function DrawEnemyListSettings()
         DrawCheckbox('Enabled', 'showEnemyList', CheckVisibility);
         DrawCheckbox('Show Distance', 'showEnemyDistance');
         DrawCheckbox('Show HP% Text', 'showEnemyHPPText');
+        DrawCheckbox('Show Enemy Targets', 'showEnemyListTargets');
+        imgui.ShowHelp('Shows who each enemy is targeting based on their last action.');
         DrawCheckbox('Show Bookends', 'showEnemyListBookends');
 
         DrawSlider('Scale X', 'enemyListScaleX', 0.1, 3.0, '%.1f');

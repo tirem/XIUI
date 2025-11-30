@@ -5,6 +5,7 @@ local gdi = require('gdifonts.include');
 local primitives = require('primitives');
 local debuffHandler = require('debuffhandler');
 local statusHandler = require('statushandler');
+local actionTracker = require('actiontracker');
 local progressbar = require('progressbar');
 
 -- Note: RENDER_FLAG_VISIBLE and RENDER_FLAG_HIDDEN are now imported from helpers.lua
@@ -24,12 +25,14 @@ local enemylist = {};
 local enemyNameFonts = {};  -- Enemy name font objects
 local enemyDistanceFonts = {};  -- Distance text font objects
 local enemyHPFonts = {};  -- HP% text font objects
+local enemyTargetFonts = {};  -- Target name font objects
 
 -- Cache last set colors to avoid expensive SetColor() calls every frame
 local enemyNameColorCache = {};
 
 -- Background primitive objects (keyed by enemy index)
 local enemyBackgrounds = {};  -- Background rectangles for each enemy entry
+local enemyTargetBackgrounds = {};  -- Background rectangles for target containers
 
 local function GetIsValidMob(mobIdx)
 	-- Check if we are valid, are above 0 hp, and are rendered
@@ -332,6 +335,7 @@ enemylist.DrawWindow = function(settings)
 				if entity ~= nil then
 					buffIds = debuffHandler.GetActiveDebuffs(entity:GetServerId(k));
 				end
+				local debuffWidth = 0;
 				if (buffIds ~= nil and #buffIds > 0) then
 					-- Position debuffs to the right of the entry (accounting for window margin)
 					local debuffX = entryStartX + entryWidth + settings.debuffOffsetX;
@@ -340,8 +344,71 @@ enemylist.DrawWindow = function(settings)
 						imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {1, 1});
 						DrawStatusIcons(buffIds, settings.iconSize, settings.maxIcons, 1);
 						imgui.PopStyleVar(1);
+						-- Calculate approximate debuff width for positioning target container
+						debuffWidth = math.min(#buffIds, settings.maxIcons) * (settings.iconSize + 1) + 5;
 					end
 					imgui.End();
+				end
+
+				-- ===== ENEMY TARGET CONTAINER =====
+				-- Show target's name and HP bar in a separate container to the right
+				if (gConfig.showEnemyListTargets) then
+					local targetIndex = actionTracker.GetLastTarget(ent.ServerId);
+					if (targetIndex ~= nil) then
+						local targetEntity = GetEntity(targetIndex);
+						if (targetEntity ~= nil and targetEntity.Name ~= nil) then
+							-- Position target container below the debuff row
+							local targetContainerX = entryStartX + entryWidth + settings.debuffOffsetX + 10.;
+							-- Position Y at the bottom of the enemy entry (bottom-right)
+							local targetContainerY = entryStartY + entryHeight - ((settings.name_font_settings.font_height + 6) + 2);
+
+							-- Target container dimensions
+							local targetWidth = 100;
+							local targetPadding = 6;
+							local targetNameHeight = settings.name_font_settings.font_height;
+							local targetTotalHeight = (targetPadding * 2) + targetNameHeight;
+
+							-- ===== PRIMITIVE BACKGROUND RENDERING =====
+							-- Create/get background primitive for this target container
+							-- Primitives render in the correct layer (behind Ashita fonts)
+							local targetBgKey = 'target_bg_' .. k;
+							if (enemyTargetBackgrounds[targetBgKey] == nil and settings.prim_data) then
+								enemyTargetBackgrounds[targetBgKey] = primitives.new(settings.prim_data);
+								enemyTargetBackgrounds[targetBgKey].can_focus = false;
+								enemyTargetBackgrounds[targetBgKey].locked = true;
+							end
+
+							if (enemyTargetBackgrounds[targetBgKey] ~= nil) then
+								local targetBg = enemyTargetBackgrounds[targetBgKey];
+								targetBg.position_x = targetContainerX;
+								targetBg.position_y = targetContainerY;
+								targetBg.width = targetWidth;
+								targetBg.height = targetTotalHeight;
+								-- Semi-transparent black (0.4 alpha * 255 = 102 = 0x66)
+								targetBg.color = 0x66000000;
+								targetBg.visible = true;
+							end
+
+							-- Target name
+							local targetFontKey = 'target_' .. k;
+							if (enemyTargetFonts[targetFontKey] == nil) then
+								local targetFontSettings = deep_copy_table(settings.name_font_settings);
+								targetFontSettings.font_alignment = gdi.Alignment.Left;
+								targetFontSettings.font_color = 0xFFFFAA00;
+								enemyTargetFonts[targetFontKey] = FontManager.create(targetFontSettings);
+							end
+							local targetFont = enemyTargetFonts[targetFontKey];
+							targetFont:set_font_height(settings.name_font_settings.font_height);
+							targetFont:set_font_color(0xFFFFAA00);
+							targetFont:set_position_x(targetContainerX + targetPadding);
+							targetFont:set_position_y(targetContainerY + targetPadding);
+							-- Truncate name to fit
+							local maxTargetNameWidth = targetWidth - (targetPadding * 2);
+							local displayTargetName = TruncateTextToFit(targetFont, targetEntity.Name, maxTargetNameWidth);
+							targetFont:set_text(displayTargetName);
+							targetFont:set_visible(true);
+						end
+					end
 				end
 
 				-- Move cursor to next entry position (back to left edge before margin)
@@ -379,6 +446,18 @@ enemylist.DrawWindow = function(settings)
 			local enemyIndex = tonumber(bgKey:match('bg_(%d+)'));
 			if (enemyIndex == nil or allClaimedTargets[enemyIndex] == nil) then
 				bgObj.visible = false;
+			end
+		end
+		for targetBgKey, targetBgObj in pairs(enemyTargetBackgrounds) do
+			local enemyIndex = tonumber(targetBgKey:match('target_bg_(%d+)'));
+			if (enemyIndex == nil or allClaimedTargets[enemyIndex] == nil or not gConfig.showEnemyListTargets) then
+				targetBgObj.visible = false;
+			end
+		end
+		for fontKey, fontObj in pairs(enemyTargetFonts) do
+			local enemyIndex = tonumber(fontKey:match('target_(%d+)'));
+			if (enemyIndex == nil or allClaimedTargets[enemyIndex] == nil or not gConfig.showEnemyListTargets) then
+				fontObj:set_visible(false);
 			end
 		end
 
@@ -443,6 +522,10 @@ enemylist.HandleZonePacket = function(e)
 		if (v ~= nil) then v:destroy(); end
 	end
 	enemyBackgrounds = {};
+	for k, v in pairs(enemyTargetBackgrounds) do
+		if (v ~= nil) then v:destroy(); end
+	end
+	enemyTargetBackgrounds = {};
 end
 
 enemylist.Initialize = function(settings)
@@ -462,11 +545,15 @@ enemylist.UpdateVisuals = function(settings)
 	for k, v in pairs(enemyHPFonts) do
 		enemyHPFonts[k] = FontManager.destroy(v);
 	end
+	for k, v in pairs(enemyTargetFonts) do
+		enemyTargetFonts[k] = FontManager.destroy(v);
+	end
 
 	-- Clear the tables to force recreation with new settings
 	enemyNameFonts = {};
 	enemyDistanceFonts = {};
 	enemyHPFonts = {};
+	enemyTargetFonts = {};
 
 	-- Reset cached colors when fonts are recreated
 	enemyNameColorCache = {};
@@ -484,9 +571,15 @@ enemylist.Cleanup = function()
 	for k, v in pairs(enemyHPFonts) do
 		enemyHPFonts[k] = FontManager.destroy(v);
 	end
+	for k, v in pairs(enemyTargetFonts) do
+		enemyTargetFonts[k] = FontManager.destroy(v);
+	end
 
 	-- Destroy all background primitives
 	for k, v in pairs(enemyBackgrounds) do
+		if (v ~= nil) then v:destroy(); end
+	end
+	for k, v in pairs(enemyTargetBackgrounds) do
 		if (v ~= nil) then v:destroy(); end
 	end
 
@@ -494,7 +587,9 @@ enemylist.Cleanup = function()
 	enemyNameFonts = {};
 	enemyDistanceFonts = {};
 	enemyHPFonts = {};
+	enemyTargetFonts = {};
 	enemyBackgrounds = {};
+	enemyTargetBackgrounds = {};
 	enemyNameColorCache = {};
 end
 

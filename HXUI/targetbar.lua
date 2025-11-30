@@ -259,33 +259,47 @@ targetbar.DrawWindow = function(settings)
 		nameText:set_text(targetNameText);
 		nameText:set_visible(true);
 
-		-- Right-aligned text position (distance) - 8px from right edge (before bookend)
+		-- Right-aligned text position - combine distance and HP% on same line
 		local rightTextX = startX + settings.barWidth - bookendWidth - textPadding;
-		local distWidth, distHeight = distText:get_text_size();
-		distText:set_position_x(rightTextX);
-		distText:set_position_y(startY - settings.topTextYOffset - distHeight);
-		distText:set_text(tostring(dist));
-		if (gConfig.showTargetDistance) then
+		local topTextY = startY - settings.topTextYOffset;
+
+		-- Build combined text string: [distance] - [hp%]
+		local showDistance = gConfig.showTargetDistance;
+		local showHpPercent = isMonster or gConfig.alwaysShowHealthPercent;
+		local combinedText = "";
+
+		if (showDistance and showHpPercent) then
+			combinedText = string.format("%s - %s", tostring(dist), tostring(targetHpPercent));
+		elseif (showDistance) then
+			combinedText = tostring(dist);
+		elseif (showHpPercent) then
+			combinedText = tostring(targetHpPercent);
+		end
+
+		if (combinedText ~= "") then
+			distText:set_text(combinedText);
+			local distWidth, distHeight = distText:get_text_size();
+			distText:set_position_x(rightTextX);
+			distText:set_position_y(topTextY - distHeight);
+
+			-- Use HP color if showing HP%, otherwise white
+			if (showHpPercent) then
+				local hpColor, _ = GetHpColors(targetEntity.HPPercent / 100);
+				if (lastPercentTextColor ~= hpColor) then
+					distText:set_font_color(hpColor);
+					lastPercentTextColor = hpColor;
+				end
+			else
+				distText:set_font_color(0xFFFFFFFF);
+			end
+
 			distText:set_visible(true);
 		else
 			distText:set_visible(false);
 		end
 
-		if (isMonster or gConfig.alwaysShowHealthPercent) then
-			-- Right-aligned text position (hp percent) - 8px from right edge (before bookend)
-			percentText:set_position_x(rightTextX);
-			percentText:set_position_y(startY + settings.barHeight + settings.bottomTextYOffset);
-			percentText:set_text(tostring(targetHpPercent));
-			percentText:set_visible(true);
-			local hpColor, _ = GetHpColors(targetEntity.HPPercent / 100);
-			-- Only call set_font_color if the color has changed
-			if (lastPercentTextColor ~= hpColor) then
-				percentText:set_font_color(hpColor);
-				lastPercentTextColor = hpColor;
-			end
-		else
-			percentText:set_visible(false);
-		end
+		-- Hide the separate percentText since we're combining them
+		percentText:set_visible(false);
 
 		-- Draw enemy cast bar and text if casting (or in config mode)
 		local castData = targetbar.enemyCasts[targetEntity.ServerId];
@@ -384,15 +398,22 @@ targetbar.DrawWindow = function(settings)
 				-- Reset font height to regular ToT settings when not split
 				totNameText:set_font_height(settings.totName_font_settings.font_height);
 
-				imgui.SetCursorScreenPos({preBuffX, preBuffY});
-				local totX, totY = imgui.GetCursorScreenPos();
+				-- Use preBuffX for horizontal position, but startY for vertical alignment with HP bar
 				local totColor = GetColorOfTarget(totEntity, totIndex);
-				imgui.SetCursorScreenPos({totX, totY + settings.barHeight/2 - settings.arrowSize/2});
+
+				-- Calculate vertical center of the HP bar
+				local hpBarCenterY = startY + (settings.barHeight / 2);
+
+				-- Draw arrow vertically centered with HP bar
+				local arrowY = hpBarCenterY - (settings.arrowSize / 2);
+				imgui.SetCursorScreenPos({preBuffX, arrowY});
 				imgui.Image(tonumber(ffi.cast("uint32_t", arrowTexture.image)), { settings.arrowSize, settings.arrowSize });
 				imgui.SameLine();
 
-				totX, _ = imgui.GetCursorScreenPos();
-				imgui.SetCursorScreenPos({totX, totY - (settings.totBarHeight / 2) + (settings.barHeight/2) + settings.totBarOffset});
+				-- Draw ToT bar vertically centered with HP bar
+				local totX, _ = imgui.GetCursorScreenPos();
+				local totBarY = hpBarCenterY - (settings.totBarHeight / 2) + settings.totBarOffset;
+				imgui.SetCursorScreenPos({totX, totBarY});
 
 				local totStartX, totStartY = imgui.GetCursorScreenPos();
 

@@ -131,6 +131,7 @@ T{
 
 	showPartyListWhenSolo = false,
 	maxEnemyListEntries = 8,
+	showEnemyListTargets = false,
 
 	playerBarScaleX = 1,
 	playerBarScaleY = 1,
@@ -1146,7 +1147,8 @@ function UpdateUserSettings()
 	-- Party List (load settings from current layout)
 	local currentLayout = (us.partyListLayout == 1) and us.partyListLayout2 or us.partyListLayout1;
 
-    gAdjustedSettings.partyListSettings.iconSize = ds.partyListSettings.iconSize * us.partyListBuffScale;
+    gAdjustedSettings.partyListSettings.baseIconSize = ds.partyListSettings.iconSize;  -- Base icon size for job icons
+    gAdjustedSettings.partyListSettings.iconSize = ds.partyListSettings.iconSize * us.partyListBuffScale;  -- Scaled icon size for status icons
     gAdjustedSettings.partyListSettings.expandHeight = us.partyListExpandHeight;
     gAdjustedSettings.partyListSettings.alignBottom = us.partyListAlignBottom;
     gAdjustedSettings.partyListSettings.minRows = currentLayout.partyListMinRows or 1;
