@@ -12,8 +12,7 @@ Contains the following elements:
 * Gil Tracker
 * Configuration UI for all elements
 
-![HXUI_Screenshot](https://github.com/user-attachments/assets/15500c2c-2825-4f30-b52c-f1ad4261b36e.png)
-
+<img width="1913" height="1072" alt="image" src="https://github.com/user-attachments/assets/c0c3e8db-d0bd-4522-87ff-ebafafcfe8d8" />
 
 ***INSTALLATION***
 * Download the latest release of HXUI by [visiting our release page](https://github.com/tirem/HXUI/releases).
