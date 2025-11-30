@@ -407,11 +407,12 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     local allBarsLengths;
     if layout == 1 then
         -- Layout 2: Vertical stacking
-        -- Calculate the full width needed including text for selection box
-        local topRowWidth = hpBarWidth + 4 + hpTextWidth;
-        local tpSpaceWidth = 4 + maxTpTextWidth + 4;  -- 4px padding + max TP width + 4px gap
-        local bottomRowWidth = tpSpaceWidth + mpBarWidth + 4 + mpTextWidth;  -- TP space + MP bar + gap + MP text
-        allBarsLengths = math.max(topRowWidth, bottomRowWidth) + 4;  -- +4px extra padding on right side
+        -- Row 1: HP bar only (HP text is positioned absolutely, right-aligned to bar)
+        local row1Width = hpBarWidth;
+        -- Row 2: TP text + MP bar + MP text (with spacing)
+        local row2Width = 4 + maxTpTextWidth + 4 + mpBarWidth + 4 + mpTextWidth;
+        -- Use the larger of the two rows
+        allBarsLengths = math.max(row1Width, row2Width);
     else
         -- Layout 1: Horizontal layout
         allBarsLengths = hpBarWidth + mpBarWidth + imgui.GetStyle().FramePadding.x + imgui.GetStyle().ItemSpacing.x;
@@ -534,23 +535,48 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
         -- Hide zone text when in zone
         memberText[memIdx].zone:set_visible(false);
     elseif (memInfo.zone == '' or memInfo.zone == nil) then
-        -- Zone bar should match total vertical space: HP bar + gap + MP bar
-        local zoneBarHeight = (layout == 1) and (hpBarHeight + 1 + mpBarHeight) or barHeight;
-        imgui.Dummy({hpBarWidth, zoneBarHeight});
+        -- Calculate zone bar dimensions based on layout
+        local zoneBarWidth, zoneBarHeight;
+        if layout == 1 then
+            -- Layout 2 (vertical): zone bar width is just HP bar width, height spans HP bar + gap + MP bar
+            zoneBarWidth = hpBarWidth;
+            zoneBarHeight = hpBarHeight + 1 + mpBarHeight;
+        else
+            -- Layout 1 (horizontal): zone bar width spans HP + MP + TP bars, height is single bar height
+            zoneBarWidth = hpBarWidth + mpBarWidth;
+            if showTP then
+                zoneBarWidth = zoneBarWidth + tpBarWidth;
+            end
+            zoneBarHeight = barHeight;
+        end
+        imgui.Dummy({zoneBarWidth, zoneBarHeight});
         -- Hide zone text when no zone info
         memberText[memIdx].zone:set_visible(false);
     else
-        -- Zone bar should match total vertical space: HP bar + gap + MP bar
-        local zoneBarHeight = (layout == 1) and (hpBarHeight + 1 + mpBarHeight) or barHeight;
+        -- Calculate zone bar dimensions based on layout
+        local zoneBarWidth, zoneBarHeight;
+        if layout == 1 then
+            -- Layout 2 (vertical): zone bar width is just HP bar width, height spans HP bar + gap + MP bar
+            zoneBarWidth = hpBarWidth;
+            zoneBarHeight = hpBarHeight + 1 + mpBarHeight;
+        else
+            -- Layout 1 (horizontal): zone bar width spans HP + MP + TP bars, height is single bar height
+            zoneBarWidth = hpBarWidth + mpBarWidth;
+            if showTP then
+                zoneBarWidth = zoneBarWidth + tpBarWidth;
+            end
+            zoneBarHeight = barHeight;
+        end
+
         -- Draw zone bar with outline only
         local zoneBarStartX, zoneBarStartY = imgui.GetCursorScreenPos();
-        imgui.Dummy({hpBarWidth, zoneBarHeight});
+        imgui.Dummy({zoneBarWidth, zoneBarHeight});
 
         -- Draw outline for zone bar
         local drawList = imgui.GetWindowDrawList();
         drawList:AddRect(
             {zoneBarStartX, zoneBarStartY},
-            {zoneBarStartX + hpBarWidth, zoneBarStartY + zoneBarHeight},
+            {zoneBarStartX + zoneBarWidth, zoneBarStartY + zoneBarHeight},
             imgui.GetColorU32({0.5, 0.5, 0.5, 1.0}),  -- Gray outline
             0,
             ImDrawCornerFlags_None,
@@ -561,7 +587,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
         local zoneName = encoding:ShiftJIS_To_UTF8(AshitaCore:GetResourceManager():GetString("zones.names", memInfo.zone), true);
         memberText[memIdx].zone:set_text(zoneName);
         local zoneTextWidth, zoneTextHeight = memberText[memIdx].zone:get_text_size();
-        memberText[memIdx].zone:set_position_x(zoneBarStartX + (hpBarWidth - zoneTextWidth) / 2);  -- Center horizontally
+        memberText[memIdx].zone:set_position_x(zoneBarStartX + (zoneBarWidth - zoneTextWidth) / 2);  -- Center horizontally
         memberText[memIdx].zone:set_position_y(zoneBarStartY + (zoneBarHeight - zoneTextHeight) / 2);  -- Center vertically
         memberText[memIdx].zone:set_visible(true);
     end
@@ -866,13 +892,14 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     end
 
     -- Reserve space in ImGui layout for the text/bars (which use absolute positioning)
-    -- For Layout 2, also reserve horizontal space for text that extends beyond bars
+    -- For Layout 2, reserve horizontal space based on the larger of the two rows
     if layout == 1 and memInfo.inzone then
-        -- Calculate the full width needed including text
-        local topRowWidth = hpBarWidth + 4 + hpTextWidth;
-        local tpSpaceWidth = 4 + maxTpTextWidth + 4;  -- 4px padding + max TP width + 4px gap
-        local bottomRowWidth = tpSpaceWidth + mpBarWidth + 4 + mpTextWidth;  -- TP space + MP bar + gap + MP text
-        local fullWidth = math.max(topRowWidth, bottomRowWidth);
+        -- Row 1: HP bar only
+        local row1Width = hpBarWidth;
+        -- Row 2: TP text + MP bar + MP text (with spacing)
+        local row2Width = 4 + maxTpTextWidth + 4 + mpBarWidth + 4 + mpTextWidth;
+        -- Use the larger of the two rows
+        local fullWidth = math.max(row1Width, row2Width);
         imgui.Dummy({fullWidth, 0});
     end
 
