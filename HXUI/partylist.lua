@@ -837,25 +837,13 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     if (memInfo.inzone and memInfo.serverid ~= nil) then
         castData = partyList.partyCasts[memInfo.serverid];
         if (castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
-            -- Calculate cast progress
-            local elapsed = os.clock() - castData.startTime;
-            local progress = math.min(elapsed / castData.castTime, 1.0);
-
-            -- Auto-clear cast if it's exceeded expected time by 0.2 seconds (likely interrupted/failed)
-            if (elapsed > castData.castTime + 0.2) then
-                partyList.partyCasts[memInfo.serverid] = nil;
-                castData = nil;
-            end
-        end
-
-        if (castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
             isCasting = true;
 
             -- Replace name text with spell name
             memberText[memIdx].name:set_text(castData.spellName);
             local spellNameWidth, _ = memberText[memIdx].name:get_text_size();
 
-            -- Calculate cast progress (again, after timeout check)
+            -- Calculate cast progress
             local elapsed = os.clock() - castData.startTime;
             local progress = math.min(elapsed / castData.castTime, 1.0);
 

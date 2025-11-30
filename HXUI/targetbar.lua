@@ -434,18 +434,6 @@ targetbar.DrawWindow = function(settings)
 			local elapsed = os.clock() - castData.startTime;
 			local progress = math.min(elapsed / castData.castTime, 1.0);
 
-			-- Auto-clear cast if it's exceeded expected time by 0.2 seconds (likely interrupted/failed)
-			if (not inConfigMode and elapsed > castData.castTime + 0.2) then
-				targetbar.enemyCasts[targetEntity.ServerId] = nil;
-				castData = nil;
-			end
-		end
-
-		if (gConfig.showTargetBarCastBar and castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
-			-- Calculate cast progress (again, after timeout check)
-			local elapsed = os.clock() - castData.startTime;
-			local progress = math.min(elapsed / castData.castTime, 1.0);
-
 			-- Draw cast bar under HP bar using user-configurable offsets and scaling
 			local castBarY = startY + settings.barHeight + settings.castBarOffsetY;
 			-- Right-align the cast bar with the HP bar (accounting for bookends and 12px padding)
