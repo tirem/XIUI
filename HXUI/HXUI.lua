@@ -24,7 +24,7 @@
 
 addon.name      = 'HXUI';
 addon.author    = 'Team HXUI';
-addon.version   = '1.4.0-dev';
+addon.version   = '1.4.0 - BETA';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/HXUI'
 

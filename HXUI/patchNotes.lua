@@ -56,7 +56,7 @@ patchNotes.DrawWindow = function()
 		-- Draw logo and version text
 		imgui.Image(tonumber(ffi.cast("uint32_t", HXUITexture.image)), { 83, 53});
 		imgui.SameLine();
-		imgui.BulletText(' UPDATE 1.4.0-dev ');
+		imgui.BulletText('UPDATE 1.4.0 - BETA');
 		imgui.SameLine();
 		imgui.BulletText('');
 
@@ -73,6 +73,10 @@ patchNotes.DrawWindow = function()
 			gShowPatchNotes[1] = false;
 		end
 
+		imgui.NewLine();
+		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'KNOWN ISSUES');
+		imgui.BulletText('Enemy List may cause performance issues when showing large lists of enemies.\nDisable the enemy list if you encounter issues.');
+		imgui.NewLine();
 		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'General Improvements');
 		imgui.BulletText('Fixed texture color mixing and rendering issues');
 		imgui.BulletText('Fixed texture render path initialization');
@@ -142,8 +146,6 @@ patchNotes.DrawWindow = function()
 		imgui.BulletText('Customizable cast bar gradient colors');
 		imgui.BulletText('Toggle option to show/hide lock-on border and icon');
 		imgui.BulletText('Separate font size control for cast text');
-		imgui.BulletText('Improved target-of-target detection using action tracking');
-		imgui.BulletText('More reliable combat targeting information');
     end
 	imgui.PopStyleVar(1);
 	imgui.PopStyleColor(4);
