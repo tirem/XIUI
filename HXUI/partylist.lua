@@ -36,9 +36,9 @@ local partyTitlesTexture = nil; -- Texture atlas for party titles (Solo, Party, 
 local partyMaxSize = 6;
 local memberTextCount = partyMaxSize * 3;
 
--- Reference text height for baseline alignment (prevents text jumping)
-local referenceTextHeight = 0;
-local referenceFontSize = 0;
+-- Reference text heights for baseline alignment (prevents text jumping)
+-- Stored per font size since different text types may have different sizes
+local referenceTextHeights = {};
 
 -- UV coordinates for partylist titles atlas (4 titles stacked vertically)
 local titleUVs = {
@@ -393,19 +393,34 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     local partyIndex = math.ceil((memIdx + 1) / partyMaxSize);
     local fontSizes = getFontSizes(partyIndex);
 
-    -- Set font heights to get accurate text measurements
+    -- Set ALL font heights FIRST to ensure accurate text measurements
     memberText[memIdx].hp:set_font_height(fontSizes.hp);
     memberText[memIdx].mp:set_font_height(fontSizes.mp);
     memberText[memIdx].name:set_font_height(fontSizes.name);
     memberText[memIdx].tp:set_font_height(fontSizes.tp);
+    memberText[memIdx].distance:set_font_height(fontSizes.name);
 
-    -- Calculate reference height for baseline alignment (only once per font height change)
-    if referenceTextHeight == 0 or referenceFontSize ~= fontSizes.hp then
-        memberText[memIdx].hp:set_text("0123456789");
-        local _, refHeight = memberText[memIdx].hp:get_text_size();
-        referenceTextHeight = refHeight;
-        referenceFontSize = fontSizes.hp;
+    -- Helper function to get or calculate reference height for a given font size
+    -- Uses different reference strings for numeric vs text content
+    local function getReferenceHeight(fontSize, fontObj, isNumeric)
+        local cacheKey = isNumeric and fontSize or (fontSize .. "_text");
+        if not referenceTextHeights[cacheKey] then
+            local originalText = fontObj.settings.text;
+            -- Use digits for numeric content, letters for text content
+            local refString = isNumeric and "0123456789" or "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+            fontObj:set_text(refString);
+            local _, refHeight = fontObj:get_text_size();
+            referenceTextHeights[cacheKey] = refHeight;
+            fontObj:set_text(originalText or '');
+        end
+        return referenceTextHeights[cacheKey];
     end
+
+    -- Get reference heights for each font size used
+    local hpRefHeight = getReferenceHeight(fontSizes.hp, memberText[memIdx].hp, true);
+    local mpRefHeight = getReferenceHeight(fontSizes.mp, memberText[memIdx].mp, true);
+    local tpRefHeight = getReferenceHeight(fontSizes.tp, memberText[memIdx].tp, true);
+    local nameRefHeight = getReferenceHeight(fontSizes.name, memberText[memIdx].name, false);
 
     -- Calculate text sizes
     memberText[memIdx].name:set_text(tostring(memInfo.name));
@@ -444,22 +459,24 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     end
 
     -- Calculate layout dimensions
+    -- Use reference heights for consistent layout (prevents shifting when text content changes)
     local jobIconSize = settings.baseIconSize * 1.1 * scale.icon;  -- Use baseIconSize (not affected by status icon scale)
-    local offsetSize = nameHeight > settings.baseIconSize and nameHeight or settings.baseIconSize;
+    local offsetSize = nameRefHeight > settings.baseIconSize and nameRefHeight or settings.baseIconSize;
 
     -- Calculate the actual topmost point of the member (where name/icon are drawn)
-    local nameIconAreaHeight = math.max(jobIconSize, nameHeight);
+    local nameIconAreaHeight = math.max(jobIconSize, nameRefHeight);
 
     -- Calculate entrySize based on layout
+    -- Use reference heights (not actual heights) to prevent layout shifting when text changes
     local entrySize;
     if layout == 1 then
         -- Layout 2: Vertical layout
         -- Entry includes: name text row + HP bar + 1px gap + MP bar
-        entrySize = nameHeight + settings.nameTextOffsetY + hpBarHeight + 1 + mpBarHeight;
+        entrySize = nameRefHeight + settings.nameTextOffsetY + hpBarHeight + 1 + mpBarHeight;
     else
         -- Layout 1: Horizontal layout
         -- entrySize includes the full member entry: name text + bars + hp text (plus offsets between them)
-        entrySize = nameHeight + settings.nameTextOffsetY + hpBarHeight + settings.hpTextOffsetY + hpHeight;
+        entrySize = nameRefHeight + settings.nameTextOffsetY + hpBarHeight + settings.hpTextOffsetY + hpRefHeight;
     end
 
     -- DRAW SELECTION BOX using GetBackgroundDrawList (renders behind everything with rounded corners)
@@ -468,8 +485,8 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
         local selectionWidth = allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2;
         local selectionHeight = entrySize + settings.cursorPaddingY1 + settings.cursorPaddingY2;
-        -- Anchor selection box to the top of name text (excludes job icon)
-        local topOfMember = hpStartY - nameHeight - settings.nameTextOffsetY;
+        -- Anchor selection box to the top of name text (excludes job icon) - use reference height for consistency
+        local topOfMember = hpStartY - nameRefHeight - settings.nameTextOffsetY;
         local selectionTL = {hpStartX - settings.cursorPaddingX1, topOfMember - settings.cursorPaddingY1};
         local selectionBR = {selectionTL[1] + selectionWidth, selectionTL[2] + selectionHeight};
 
@@ -533,11 +550,6 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
         imgui.Image(jobIcon, {jobIconSize, jobIconSize});
     end
     imgui.SetCursorScreenPos({hpStartX, hpStartY});
-
-    -- Set remaining font heights
-    memberText[memIdx].mp:set_font_height(fontSizes.mp);
-    memberText[memIdx].tp:set_font_height(fontSizes.tp);
-    memberText[memIdx].distance:set_font_height(fontSizes.name);
 
     -- Update the hp text (text already set earlier for measurement)
     if not memberTextColorCache[memIdx] then memberTextColorCache[memIdx] = {}; end
@@ -808,11 +820,12 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Position HP text based on layout
     -- Calculate baseline offset to keep text baseline consistent
-    local hpBaselineOffset = referenceTextHeight - hpHeight;
+    local hpBaselineOffset = hpRefHeight - hpHeight;
+    local nameBaselineOffset = nameRefHeight - nameHeight;
     if layout == 1 then
         -- Layout 2: HP text on same row as name, right-aligned to bar
         memberText[memIdx].hp:set_position_x(hpStartX + hpBarWidth + 4);  -- 4px to the right of bar
-        memberText[memIdx].hp:set_position_y(hpStartY - nameHeight - settings.nameTextOffsetY + hpBaselineOffset);  -- Same row as name
+        memberText[memIdx].hp:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + hpBaselineOffset);  -- Same row as name
     else
         -- Layout 1: HP text below bar with standard offset
         memberText[memIdx].hp:set_position_x(hpStartX + hpBarWidth + settings.hpTextOffsetX);
@@ -831,7 +844,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
         memberTextColorCache[memIdx].name = desiredNameColor;
     end
     memberText[memIdx].name:set_position_x(namePosX);
-    memberText[memIdx].name:set_position_y(hpStartY - nameHeight - settings.nameTextOffsetY);
+    memberText[memIdx].name:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset);
 
     -- Check if member is casting and show cast bar if so
     local castData = nil;
@@ -851,9 +864,9 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
             -- Draw cast bar to the right of spell name
             local castBarWidth = hpBarWidth * 0.6; -- 60% of HP bar width
-            local castBarHeight = nameHeight * 0.8; -- 80% of name height
+            local castBarHeight = nameRefHeight * 0.8; -- 80% of reference name height for consistent sizing
             local castBarX = namePosX + spellNameWidth + 4; -- 4px spacing after spell name
-            local castBarY = hpStartY - nameHeight - settings.nameTextOffsetY + (nameHeight - castBarHeight) / 2; -- Vertically center with text
+            local castBarY = hpStartY - nameRefHeight - settings.nameTextOffsetY + (nameRefHeight - castBarHeight) / 2; -- Vertically center with text area
 
             -- Get cast bar gradient from config
             local castGradient = GetCustomGradient(gConfig.colorCustomization.partyList, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
@@ -887,7 +900,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
                 local distancePosX = namePosX + nameWidth;
                 memberText[memIdx].distance:set_position_x(distancePosX);
-                memberText[memIdx].distance:set_position_y(hpStartY - nameHeight - settings.nameTextOffsetY);
+                memberText[memIdx].distance:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset);
 
                 showDistance = true;
 
@@ -930,7 +943,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
             -- Position TP text at row start + 4px offset (LEFT of MP bar)
             -- Calculate baseline offset to keep text baseline consistent
-            local tpBaselineOffset = referenceTextHeight - tpHeight;
+            local tpBaselineOffset = tpRefHeight - tpHeight;
             memberText[memIdx].tp:set_position_x(rowStartX + 4);
             memberText[memIdx].tp:set_position_y(rowStartY + tpBaselineOffset);
 
@@ -955,10 +968,10 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
             memberText[memIdx].mp:set_text(tostring(memInfo.mp));
 
             -- Position MP text (RIGHT of MP bar, vertically centered with bar)
-            -- Calculate baseline offset to keep text baseline consistent
-            local mpBaselineOffset = referenceTextHeight - mpHeight;
+            -- Use reference height for centering to prevent layout shifting, then apply baseline offset
+            local mpBaselineOffset = mpRefHeight - mpHeight;
             memberText[memIdx].mp:set_position_x(mpStartX + mpBarWidth + 4);  -- 4px spacing after MP bar
-            memberText[memIdx].mp:set_position_y(mpStartY + (mpBarHeight - mpHeight) / 2 + mpBaselineOffset);
+            memberText[memIdx].mp:set_position_y(mpStartY + (mpBarHeight - mpRefHeight) / 2 + mpBaselineOffset);
 
         else
             -- ========== LAYOUT 1: Horizontal ==========
@@ -979,7 +992,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
             memberText[memIdx].mp:set_text(tostring(memInfo.mp));
             -- MP font is left-aligned, so position RIGHT edge by subtracting text width
             -- Calculate baseline offset to keep text baseline consistent
-            local mpBaselineOffset = referenceTextHeight - mpHeight;
+            local mpBaselineOffset = mpRefHeight - mpHeight;
             memberText[memIdx].mp:set_position_x(mpStartX + mpBarWidth - mpTextWidth);
             memberText[memIdx].mp:set_position_y(mpStartY + mpBarHeight + settings.mpTextOffsetY + mpBaselineOffset);
 
@@ -1018,7 +1031,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                 memberText[memIdx].tp:set_text(tostring(memInfo.tp));
                 -- TP font is left-aligned, so position RIGHT edge by subtracting text width
                 -- Calculate baseline offset to keep text baseline consistent
-                local tpBaselineOffset = referenceTextHeight - tpHeight;
+                local tpBaselineOffset = tpRefHeight - tpHeight;
                 memberText[memIdx].tp:set_position_x(tpStartX + tpBarWidth - tpTextWidth);
                 memberText[memIdx].tp:set_position_y(tpStartY + barHeight + settings.tpTextOffsetY + tpBaselineOffset);
             end
@@ -1171,11 +1184,11 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     local bottomSpacing;
     if layout == 1 then
         -- Layout 2: TP text and MP bar are on same row (last row)
-        -- Reserve space for whichever is taller
-        bottomSpacing = math.max(tpHeight, mpBarHeight);
+        -- Reserve space for whichever is taller (use reference height for consistent layout)
+        bottomSpacing = math.max(tpRefHeight, mpBarHeight);
     else
-        -- Layout 1: HP text is below the horizontal bars
-        bottomSpacing = settings.hpTextOffsetY + hpHeight;
+        -- Layout 1: HP text is below the horizontal bars (use reference height for consistent layout)
+        bottomSpacing = settings.hpTextOffsetY + hpRefHeight;
     end
     imgui.Dummy({0, bottomSpacing});
 
@@ -1276,8 +1289,19 @@ partyList.DrawPartyWindow = function(settings, party, partyIndex)
     if (imgui.Begin(windowName, true, windowFlags)) then
         imguiPosX, imguiPosY = imgui.GetWindowPos();
 
-        local nameWidth, nameHeight = memberText[(partyIndex - 1) * 6].name:get_text_size();
-        local offsetSize = nameHeight > iconSize and nameHeight or iconSize;
+        -- Get reference height for name text to ensure consistent layout
+        local fontSizes = getFontSizes(partyIndex);
+        local nameCacheKey = fontSizes.name .. "_text";
+        if not referenceTextHeights[nameCacheKey] then
+            local nameFont = memberText[(partyIndex - 1) * 6].name;
+            local originalText = nameFont.settings.text;
+            nameFont:set_text("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz");
+            local _, refHeight = nameFont:get_text_size();
+            referenceTextHeights[nameCacheKey] = refHeight;
+            nameFont:set_text(originalText or '');
+        end
+        local nameRefHeight = referenceTextHeights[nameCacheKey];
+        local offsetSize = nameRefHeight > iconSize and nameRefHeight or iconSize;
         imgui.Dummy({0, settings.nameTextOffsetY + offsetSize});
 
         UpdateTextVisibility(true, partyIndex);
@@ -1574,10 +1598,9 @@ partyList.UpdateVisuals = function(settings)
         ::continue::
     end
 
-    -- Reset reference height so it gets recalculated with new font
+    -- Reset reference heights so they get recalculated with new font
     if fontFamilyChanged or fontFlagsChanged or outlineWidthChanged or sizesChanged[1] or sizesChanged[2] or sizesChanged[3] then
-        referenceTextHeight = 0;
-        referenceFontSize = 0;
+        referenceTextHeights = {};
     end
 
     -- Reset cached colors for parties that changed

@@ -120,6 +120,9 @@ patchNotes.DrawWindow = function()
 		imgui.BulletText('Improved inline mode positioning logic');
 		imgui.NewLine();
 		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Party List');
+		imgui.BulletText('NEW: Party member cast bars - see when party members are casting!');
+		imgui.BulletText('Cast bars show spell name and progress bar for active casts');
+		imgui.BulletText('Customizable cast bar gradient colors');
 		imgui.BulletText('NEW: Added Compact Vertical Layout that mimics XI party style');
 		imgui.BulletText('Improved rendering performance for large parties');
 		imgui.BulletText('Enhanced readability with better spacing and layout');
