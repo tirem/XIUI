@@ -93,7 +93,7 @@ Set-Content "HXUI/HXUI.lua" -Value $hxuiContent -NoNewline
 # Update patchNotes.lua
 Write-Host "Updating patchNotes.lua..." -ForegroundColor Yellow
 $patchContent = Get-Content "HXUI/patchNotes.lua" -Raw
-$patchContent = $patchContent -replace "imgui\.BulletText\(' UPDATE [\d\.]* '\)", "imgui.BulletText(' UPDATE $Version ')"
+$patchContent = $patchContent -replace "imgui\.BulletText\('UPDATE [\d\.]+'\)", "imgui.BulletText('UPDATE $Version')"
 Set-Content "HXUI/patchNotes.lua" -Value $patchContent -NoNewline
 
 # Verify updates
@@ -104,7 +104,7 @@ Write-Host "HXUI.lua version:"
 Select-String -Path "HXUI/HXUI.lua" -Pattern "addon.version"
 Write-Host ""
 Write-Host "patchNotes.lua version (line 59):"
-Select-String -Path "HXUI/patchNotes.lua" -Pattern "imgui\.BulletText\(' UPDATE"
+Select-String -Path "HXUI/patchNotes.lua" -Pattern "imgui\.BulletText\('UPDATE"
 Write-Host ""
 
 if ($NoTag) {
