@@ -412,6 +412,18 @@ enemylist.DrawWindow = function(settings)
 				end
 
 				-- Move cursor to next entry position (back to left edge before margin)
+				-- Add a click target over the entire entry to /target that mob
+				imgui.SetCursorScreenPos({entryStartX, entryStartY});
+				if imgui.InvisibleButton('EnemyEntry' .. k, {entryWidth, entryHeight}) then
+					local entityMgr = AshitaCore:GetMemoryManager():GetEntity();
+					if entityMgr ~= nil then
+						local serverId = entityMgr:GetServerId(k);
+						if serverId ~= nil and serverId > 0 then
+							AshitaCore:GetChatManager():QueueCommand(-1, '/target ' .. serverId);
+						end
+					end
+				end
+
 				imgui.SetCursorScreenPos({cursorX, entryStartY + entryHeight});
 
 				numTargets = numTargets + 1;
