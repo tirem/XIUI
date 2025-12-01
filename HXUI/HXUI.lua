@@ -146,7 +146,7 @@ T{
 	targetBarPercentFontSize = 16,
 	targetBarCastFontSize = 16,
 	targetBarIconScale = 1,
-	targetBarIconFontSize = 16,
+	targetBarIconFontSize = 10,
 	targetBarBuffsOffsetY = 4,
 	targetBarCastBarOffsetY = 6,
 	targetBarCastBarScaleX = 0.4,

@@ -741,7 +741,7 @@ function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffs
                         textObj = gdi:create_object(font_settings)
                         debuffTable[textObjName] = textObj
                     end
-                    local scaledFontHeight = math.floor(font_base.font_height * gConfig.targetBarIconScale);
+                    local scaledFontHeight = gConfig.targetBarIconFontSize or font_base.font_height;
                     textObj:set_font_height(scaledFontHeight)
                     textObj:set_text('')
                     if buffTimes[i] ~= nil then
