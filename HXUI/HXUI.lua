@@ -184,7 +184,7 @@ T{
 
 	gilTrackerScale = 1,
 	gilTrackerFontSize = 12,
-    gilTrackerRightAlign = true,
+    gilTrackerRightAlign = false,
 
 	inventoryTrackerScale = 1,
 	inventoryTrackerFontSize = 12,
@@ -202,10 +202,13 @@ T{
 	partyListDistanceHighlight = 0,
 	partyListTitleFontSize = 12,
 	partyListBuffScale = 1,
+	partyListCastBarScaleY = 0.6,
+	partyListCastBars = true,
 	partyListStatusTheme = 0, -- 0: HorizonXI-L, 1: HorizonXI-R 2: XIV1.0, 3: XIV, 4: Disabled
 	partyListTheme = 0,
 	partyListFlashTP = false,
 	showPartyListBookends = true,
+	showPartyJobIcon = true,
     showPartyListTitle = true,
 	showPartyListDistance = false,
 	showPartyListJob = true,
@@ -231,6 +234,7 @@ T{
 		partyListEntrySpacing = 0,
 		partyListTP = true,
 		partyListMinRows = 1,
+		selectionBoxScaleY = 1,
 
 		-- Party 2 (Alliance B) settings
 		partyList2ScaleX = 0.7,
@@ -284,6 +288,7 @@ T{
 		partyListEntrySpacing = 3,
 		partyListTP = true,
 		partyListMinRows = 1,
+		selectionBoxScaleY = 1,
 
 		-- Party 2 (Alliance B) settings
 		partyList2ScaleX = 0.55,
@@ -435,6 +440,7 @@ T{
 			tpGradient = T{ enabled = true, start = '#3898ce', stop = '#78c4ee' },
 			castBarGradient = T{ enabled = true, start = '#ffaa00', stop = '#ffcc44' },  -- Party member cast bar
 			barBackgroundOverride = T{ active = false, enabled = true, start = '#01122b', stop = '#061c39' },  -- Override global bar background
+			barBorderOverride = T{ active = false, color = '#01122b' },  -- Override global bar border color
 			nameTextColor = 0xFFFFFFFF,
 			hpTextColor = 0xFFFFFFFF,
 			mpTextColor = 0xFFFFFFFF,

@@ -1178,14 +1178,22 @@ function GetCustomHpColors(hppPercent, moduleColorSettings)
         return GetHpColors(hppPercent);
     end
 
+    local selectedSettings;
     if hppPercent < 0.25 then
-        hpGradient = {hpSettings.low.start, hpSettings.low.stop};
+        selectedSettings = hpSettings.low;
     elseif hppPercent < 0.5 then
-        hpGradient = {hpSettings.medLow.start, hpSettings.medLow.stop};
+        selectedSettings = hpSettings.medLow;
     elseif hppPercent < 0.75 then
-        hpGradient = {hpSettings.medHigh.start, hpSettings.medHigh.stop};
+        selectedSettings = hpSettings.medHigh;
     else
-        hpGradient = {hpSettings.high.start, hpSettings.high.stop};
+        selectedSettings = hpSettings.high;
+    end
+
+    -- Check if gradient is enabled, otherwise use static color
+    if selectedSettings.enabled then
+        hpGradient = {selectedSettings.start, selectedSettings.stop};
+    else
+        hpGradient = {selectedSettings.start, selectedSettings.start};
     end
 
     -- Convert first gradient color to ARGB for text

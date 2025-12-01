@@ -453,12 +453,14 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 	-- Enhanced border adds a middle colored layer and outer background layer (for lock-on, etc.)
 	local baseRounding = options.decorate and (height / 2) or (gConfig.noBookendRounding or 0);
 
-	-- Get background color from global config
-	local bgColor = progressbar.backgroundGradientStartColor;
-	if gConfig and gConfig.colorCustomization and gConfig.colorCustomization.shared and gConfig.colorCustomization.shared.backgroundGradient then
-		bgColor = gConfig.colorCustomization.shared.backgroundGradient.start;
+	-- Get border color: use override if provided, otherwise fall back to background color
+	local borderColor = progressbar.backgroundGradientStartColor;
+	if options.borderColorOverride then
+		borderColor = options.borderColorOverride;
+	elseif gConfig and gConfig.colorCustomization and gConfig.colorCustomization.shared and gConfig.colorCustomization.shared.backgroundGradient then
+		borderColor = gConfig.colorCustomization.shared.backgroundGradient.start;
 	end
-	local bgR, bgG, bgB, bgA = hex2rgba(bgColor);
+	local bgR, bgG, bgB, bgA = hex2rgba(borderColor);
 	local bgColorU32 = imgui.GetColorU32({bgR / 255, bgG / 255, bgB / 255, bgA / 255});
 
 	local draw_list = GetUIDrawList();
@@ -499,17 +501,19 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 		);
 	end
 
-	-- Draw default inner background border - always drawn for all bars
+	-- Draw default inner background border - always drawn for all bars (unless thickness is 0)
 	local innerBorderThickness = gConfig.barBorderThickness or 2;
-	local innerOffset = innerBorderThickness / 2;
-	draw_list:AddRect(
-		{positionStartX - innerOffset, positionStartY - innerOffset},
-		{positionStartX + width + innerOffset, positionStartY + height + innerOffset},
-		bgColorU32,
-		baseRounding + innerOffset,
-		15, -- all corners
-		innerBorderThickness
-	);
+	if innerBorderThickness > 0 then
+		local innerOffset = innerBorderThickness / 2;
+		draw_list:AddRect(
+			{positionStartX - innerOffset, positionStartY - innerOffset},
+			{positionStartX + width + innerOffset, positionStartY + height + innerOffset},
+			bgColorU32,
+			baseRounding + innerOffset,
+			15, -- all corners
+			innerBorderThickness
+		);
+	end
 
 	-- Only call Dummy if we're using cursor positioning (affects layout)
 	-- Skip Dummy when using absolute positioning (doesn't affect layout)

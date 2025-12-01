@@ -210,7 +210,7 @@ local function DrawBarSettings()
         DrawSlider('Bar Roundness', 'noBookendRounding', 0, 10);
         imgui.ShowHelp('Corner roundness for bars without bookends (0 = square corners, 10 = very rounded).');
 
-        DrawSlider('Bar Border Thickness', 'barBorderThickness', 1, 5);
+        DrawSlider('Bar Border Thickness', 'barBorderThickness', 0, 5);
         imgui.ShowHelp('Thickness of the border around all progress bars.');
 
         imgui.EndChild();
@@ -357,6 +357,7 @@ local function DrawPartyListSettings()
         DrawCheckbox('Preview Full Party (when config open)', 'partyListPreview');
         DrawCheckbox('Flash TP at 100%', 'partyListFlashTP');
         DrawCheckbox('Show Distance', 'showPartyListDistance');
+        DrawCheckbox('Show Job Icons', 'showPartyJobIcon');
         DrawCheckbox('Show Job/Subjob', 'showPartyListJob');
         imgui.ShowHelp('Display job and subjob info on the right side of the name row (Layout 1 only).');
 
@@ -409,6 +410,10 @@ local function DrawPartyListSettings()
         end
 
         DrawSlider('Status Icon Scale', 'partyListBuffScale', 0.1, 3.0, '%.1f');
+        DrawCheckbox('Show Cast Bars', 'partyListCastBars');
+        if (gConfig.partyListCastBars) then
+            DrawSlider('Cast Bar Scale Y', 'partyListCastBarScaleY', 0.1, 3.0, '%.1f');
+        end
 
         imgui.EndChild();
 
@@ -443,8 +448,11 @@ local function DrawPartyListSettings()
             else
                 DrawPartyLayoutSlider('Font Size', 'partyListFontSize', 8, 36);
             end
-            DrawPartyLayoutSlider('Job Icon Scale', 'partyListJobIconScale', 0.1, 3.0, '%.1f');
+            if gConfig.showPartyJobIcon then
+                DrawPartyLayoutSlider('Job Icon Scale', 'partyListJobIconScale', 0.1, 3.0, '%.1f');
+            end
             DrawPartyLayoutSlider('Entry Spacing', 'partyListEntrySpacing', -4, 16);
+            DrawPartyLayoutSlider('Selection Box Scale Y', 'selectionBoxScaleY', 0.5, 2.0, '%.2f');
 
             imgui.EndChild();
         end
@@ -475,7 +483,9 @@ local function DrawPartyListSettings()
                 DrawPartyLayoutSlider('Font Size', 'partyList2FontSize', 8, 36);
             end
 
-            DrawPartyLayoutSlider('Job Icon Scale', 'partyList2JobIconScale', 0.1, 3.0, '%.1f');
+            if gConfig.showPartyJobIcon then
+                DrawPartyLayoutSlider('Job Icon Scale', 'partyList2JobIconScale', 0.1, 3.0, '%.1f');
+            end
             DrawPartyLayoutSlider('Entry Spacing', 'partyList2EntrySpacing', -4, 16);
 
             imgui.EndChild();
@@ -507,7 +517,9 @@ local function DrawPartyListSettings()
                 DrawPartyLayoutSlider('Font Size', 'partyList3FontSize', 8, 36);
             end
 
-            DrawPartyLayoutSlider('Job Icon Scale', 'partyList3JobIconScale', 0.1, 3.0, '%.1f');
+            if gConfig.showPartyJobIcon then
+                DrawPartyLayoutSlider('Job Icon Scale', 'partyList3JobIconScale', 0.1, 3.0, '%.1f');
+            end
             DrawPartyLayoutSlider('Entry Spacing', 'partyList3EntrySpacing', -4, 16);
 
             imgui.EndChild();

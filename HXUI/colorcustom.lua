@@ -317,6 +317,26 @@ colorcustom.DrawWindow = function()
             end
 
             imgui.Separator();
+            imgui.Text("Bar Border Override:");
+            imgui.Separator();
+            local borderOverrideActive = {gConfig.colorCustomization.partyList.barBorderOverride.active};
+            if (imgui.Checkbox("Enable Border Override", borderOverrideActive)) then
+                gConfig.colorCustomization.partyList.barBorderOverride.active = borderOverrideActive[1];
+                UpdateSettings();
+            end
+            imgui.ShowHelp("When enabled, uses the color below instead of the global bar background color for borders");
+            if gConfig.colorCustomization.partyList.barBorderOverride.active then
+                local borderColor = HexToImGui(gConfig.colorCustomization.partyList.barBorderOverride.color);
+                if (imgui.ColorEdit4('Border Color##barBorderOverride', borderColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
+                    gConfig.colorCustomization.partyList.barBorderOverride.color = ImGuiToHex(borderColor);
+                end
+                if (imgui.IsItemDeactivatedAfterEdit()) then
+                    SaveSettingsOnly();
+                end
+                imgui.ShowHelp("Override color for party list bar borders");
+            end
+
+            imgui.Separator();
             imgui.Text("Text Colors:");
             imgui.Separator();
             DrawTextColorPicker("Name Text", gConfig.colorCustomization.partyList, 'nameTextColor', "Color of party member name");

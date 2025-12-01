@@ -171,6 +171,18 @@ expbar.DrawWindow = function(settings)
             rightTextX = startX + progressBarWidth - bookendWidth - textPadding;
         end
 
+        -- Pre-calculate percent text width for layout purposes (needed before expText positioning)
+        local percentString = '';
+        local percentTextWidth = 0;
+        if gConfig.expBarShowPercent then
+            local expPercentString = ('%.f'):fmt(progressBarProgress * 100);
+            -- Add separator when on same line as exp text (non-inline mode with text shown, or inline mode with text shown)
+            local percentSeparator = gConfig.expBarShowText and ' - ' or '';
+            percentString = percentSeparator .. expPercentString .. '%';
+            percentText:set_text(percentString);
+            percentTextWidth = percentText:get_text_size();
+        end
+
 		-- Update our text objects
 
 		-- Dynamically set font heights based on settings (avoids expensive font recreation)
@@ -220,7 +232,12 @@ expbar.DrawWindow = function(settings)
                 -- Position it so the right edge is at: leftTextX + jobWidth + expWidth
                 expText:set_position_x(leftTextX + textWidth + expTextWidth);
             else
-                expText:set_position_x(rightTextX);
+                -- In non-inline mode, if percent is shown, leave room for it on the right
+                if gConfig.expBarShowPercent then
+                    expText:set_position_x(rightTextX - percentTextWidth);
+                else
+                    expText:set_position_x(rightTextX);
+                end
             end
             expText:set_position_y(inlineMode and textY + (settings.barHeight - expTextHeight) / 2 - 1 or textY);
             -- Only call set_font_color if the color has changed
@@ -240,12 +257,8 @@ expbar.DrawWindow = function(settings)
 
         -- Percent Text
         if gConfig.expBarShowPercent then
-            local expPercentString = ('%.f'):fmt(progressBarProgress * 100);
-            -- Only add separator if inline mode AND text is also shown
-            local percentSeparator = (inlineMode and gConfig.expBarShowText) and ' - ' or '';
-            local percentString = percentSeparator .. expPercentString .. '%';
-            percentText:set_text(percentString);
-            local percentTextWidth, percentTextHeight = percentText:get_text_size();
+            -- percentString and percentTextWidth already calculated above for layout purposes
+            local _, percentTextHeight = percentText:get_text_size();
 
             -- Position percent text
             local percentTextX, percentTextY;
@@ -260,9 +273,16 @@ expbar.DrawWindow = function(settings)
                 end
                 percentTextY = textY + (settings.barHeight - percentTextHeight) / 2 - 1;
             else
-                -- In non-inline mode, position above the bar, right-aligned with 8px padding
-                percentTextX = barStartX + progressBarWidth - bookendWidth - textPadding;
-                percentTextY = startY - percentTextHeight - settings.textOffsetY;
+                -- In non-inline mode
+                if gConfig.expBarShowText then
+                    -- Position on the same line as exp text (below bar), to the right
+                    percentTextX = rightTextX;
+                    percentTextY = textY;
+                else
+                    -- No text shown, position above the bar like before
+                    percentTextX = barStartX + progressBarWidth - bookendWidth - textPadding;
+                    percentTextY = startY - percentTextHeight - settings.textOffsetY;
+                end
             end
 
             percentText:set_position_x(percentTextX);

@@ -207,6 +207,17 @@ local function getBarBackgroundOverride()
     return nil;
 end
 
+local function getBarBorderOverride()
+    -- Check if party list has a bar border override enabled
+    if gConfig and gConfig.colorCustomization and gConfig.colorCustomization.partyList then
+        local override = gConfig.colorCustomization.partyList.barBorderOverride;
+        if override and override.active then
+            return override.color;
+        end
+    end
+    return nil;
+end
+
 local function UpdateTextVisibilityByMember(memIdx, visible)
 
     memberText[memIdx].hp:set_visible(visible);
@@ -258,7 +269,7 @@ local function GetMemberInformation(memIdx)
         memInfo.subjob = ((memIdx + 3) % 22) + 1;  -- Vary subjobs for preview
         memInfo.subjoblevel = 49;
         memInfo.targeted = memIdx == 4;
-        memInfo.serverid = 0;
+        memInfo.serverid = -memIdx - 1;  -- Unique negative IDs for preview members
         memInfo.buffs = nil;
         memInfo.sync = false;
         memInfo.subTargeted = false;
@@ -266,6 +277,21 @@ local function GetMemberInformation(memIdx)
         memInfo.inzone = memIdx % 4 ~= 0;
         memInfo.name = 'Player ' .. (memIdx + 1);
         memInfo.leader = memIdx == 0 or memIdx == 6 or memIdx == 12;
+        -- Varying preview distances for demonstration
+        memInfo.previewDistance = memIdx == 0 and 0 or memIdx == 1 and 5.2 or memIdx == 2 and 12.8 or memIdx == 3 and 21.5 or memIdx == 4 and 35.0 or 18.3;
+
+        -- Add a preview cast bar for Player 2 (memIdx 1) with looping animation
+        if (memIdx == 1) then
+            local castDuration = 5.0;  -- 5 second cast time for preview
+            local loopTime = os.clock() % castDuration;  -- Loop every 5 seconds
+            partyList.partyCasts[-2] = T{
+                spellName = 'Cure IV',
+                castTime = castDuration,
+                startTime = os.clock() - loopTime,  -- Simulate progress through the cast
+                timestamp = os.time()
+            };
+        end
+
         return memInfo
     end
 
@@ -482,7 +508,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Calculate layout dimensions
     -- Use reference heights for consistent layout (prevents shifting when text content changes)
-    local jobIconSize = settings.baseIconSize * 1.1 * scale.icon;  -- Use baseIconSize (not affected by status icon scale)
+    local jobIconSize = gConfig.showPartyJobIcon and (settings.baseIconSize * 1.1 * scale.icon) or 0;  -- Use baseIconSize (not affected by status icon scale)
     local offsetSize = nameRefHeight > settings.baseIconSize and nameRefHeight or settings.baseIconSize;
 
     -- Calculate the actual topmost point of the member (where name/icon are drawn)
@@ -506,10 +532,15 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
         local drawList = imgui.GetBackgroundDrawList();
 
         local selectionWidth = allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2;
-        local selectionHeight = entrySize + settings.cursorPaddingY1 + settings.cursorPaddingY2;
+        local currentLayout = (gConfig.partyListLayout == 1) and gConfig.partyListLayout2 or gConfig.partyListLayout1;
+        local selectionScaleY = currentLayout.selectionBoxScaleY or 1;
+        local unscaledHeight = entrySize + settings.cursorPaddingY1 + settings.cursorPaddingY2;
+        local selectionHeight = unscaledHeight * selectionScaleY;
         -- Anchor selection box to the top of name text (excludes job icon) - use reference height for consistency
         local topOfMember = hpStartY - nameRefHeight - settings.nameTextOffsetY;
-        local selectionTL = {hpStartX - settings.cursorPaddingX1, topOfMember - settings.cursorPaddingY1};
+        -- Offset top position to center the scaling (expand equally from center)
+        local centerOffsetY = (selectionHeight - unscaledHeight) / 2;
+        local selectionTL = {hpStartX - settings.cursorPaddingX1, topOfMember - settings.cursorPaddingY1 - centerOffsetY};
         local selectionBR = {selectionTL[1] + selectionWidth, selectionTL[2] + selectionHeight};
 
         -- Get selection gradient colors from config using helper
@@ -562,16 +593,18 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- NOW draw all member content (will appear on top of selection box)
 
-    -- Draw the job icon
+    -- Draw the job icon (if enabled)
     local namePosX = hpStartX;
-    local offsetStartY = hpStartY - jobIconSize - settings.nameTextOffsetY;
-    imgui.SetCursorScreenPos({namePosX, offsetStartY});
-    local jobIcon = statusHandler.GetJobIcon(memInfo.job);
-    if (jobIcon ~= nil) then
-        namePosX = namePosX + jobIconSize + settings.nameTextOffsetX;
-        imgui.Image(jobIcon, {jobIconSize, jobIconSize});
+    if gConfig.showPartyJobIcon then
+        local offsetStartY = hpStartY - jobIconSize - settings.nameTextOffsetY;
+        imgui.SetCursorScreenPos({namePosX, offsetStartY});
+        local jobIcon = statusHandler.GetJobIcon(memInfo.job);
+        if (jobIcon ~= nil) then
+            namePosX = namePosX + jobIconSize + settings.nameTextOffsetX;
+            imgui.Image(jobIcon, {jobIconSize, jobIconSize});
+        end
+        imgui.SetCursorScreenPos({hpStartX, hpStartY});
     end
-    imgui.SetCursorScreenPos({hpStartX, hpStartY});
 
     -- Update the hp text (text already set earlier for measurement)
     if not memberTextColorCache[memIdx] then memberTextColorCache[memIdx] = {}; end
@@ -779,7 +812,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     if (memInfo.inzone) then
         -- Use individual HP bar height in Layout 2
         local currentHpBarHeight = (layout == 1) and hpBarHeight or barHeight;
-        progressbar.ProgressBar(hpPercentData, {hpBarWidth, currentHpBarHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends, backgroundGradientOverride = getBarBackgroundOverride()});
+        progressbar.ProgressBar(hpPercentData, {hpBarWidth, currentHpBarHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends, backgroundGradientOverride = getBarBackgroundOverride(), borderColorOverride = getBarBorderOverride()});
         -- Hide zone text when in zone
         memberText[memIdx].zone:set_visible(false);
     elseif (memInfo.zone == '' or memInfo.zone == nil) then
@@ -868,10 +901,10 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     memberText[memIdx].name:set_position_x(namePosX);
     memberText[memIdx].name:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset);
 
-    -- Check if member is casting and show cast bar if so
+    -- Check if member is casting and show cast bar if so (only if cast bars are enabled)
     local castData = nil;
     local isCasting = false;
-    if (memInfo.inzone and memInfo.serverid ~= nil) then
+    if (gConfig.partyListCastBars and memInfo.inzone and memInfo.serverid ~= nil) then
         castData = partyList.partyCasts[memInfo.serverid];
         if (castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
             isCasting = true;
@@ -886,7 +919,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
             -- Draw cast bar to the right of spell name
             local castBarWidth = hpBarWidth * 0.6; -- 60% of HP bar width
-            local castBarHeight = nameRefHeight * 0.8; -- 80% of reference name height for consistent sizing
+            local castBarHeight = math.max(6, nameRefHeight * 0.8 * gConfig.partyListCastBarScaleY); -- 80% of reference name height, scaled by user setting (min 6px for progress bar padding)
             local castBarX = namePosX + spellNameWidth + 4; -- 4px spacing after spell name
             local castBarY = hpStartY - nameRefHeight - settings.nameTextOffsetY + (nameRefHeight - castBarHeight) / 2; -- Vertically center with text area
 
@@ -899,7 +932,8 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                 {castBarWidth, castBarHeight},
                 {
                     decorate = false,
-                    absolutePosition = {castBarX, castBarY}
+                    absolutePosition = {castBarX, castBarY},
+                    borderColorOverride = getBarBorderOverride()
                 }
             );
         end
@@ -912,23 +946,29 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
         -- Restore original name text when not casting
         memberText[memIdx].name:set_text(tostring(memInfo.name));
     end
-    if (not isCasting and gConfig.showPartyListDistance and memInfo.inzone and memInfo.index) then
-        local entity = GetEntitySafe()
-        if entity ~= nil then
-            local distance = math.sqrt(entity:GetDistance(memInfo.index))
-            if (distance > 0 and distance <= 50) then
-                local distanceText = ('%.1f'):fmt(distance);
-                memberText[memIdx].distance:set_text(' - ' .. distanceText);
+    if (not isCasting and gConfig.showPartyListDistance and memInfo.inzone) then
+        local distance = nil;
+        -- Use preview distance if available, otherwise calculate from entity
+        if memInfo.previewDistance then
+            distance = memInfo.previewDistance;
+        elseif memInfo.index then
+            local entity = GetEntitySafe()
+            if entity ~= nil then
+                distance = math.sqrt(entity:GetDistance(memInfo.index))
+            end
+        end
+        if (distance ~= nil and distance > 0 and distance <= 50) then
+            local distanceText = ('%.1f'):fmt(distance);
+            memberText[memIdx].distance:set_text('- ' .. distanceText);
 
-                local distancePosX = namePosX + nameWidth;
-                memberText[memIdx].distance:set_position_x(distancePosX);
-                memberText[memIdx].distance:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset);
+            local distancePosX = namePosX + nameWidth + 4;  -- Add spacing after name
+            memberText[memIdx].distance:set_position_x(distancePosX);
+            memberText[memIdx].distance:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset);
 
-                showDistance = true;
+            showDistance = true;
 
-                if (gConfig.partyListDistanceHighlight > 0 and distance <= gConfig.partyListDistanceHighlight) then
-                    highlightDistance = true;
-                end
+            if (gConfig.partyListDistanceHighlight > 0 and distance <= gConfig.partyListDistanceHighlight) then
+                highlightDistance = true;
             end
         end
     end
@@ -1011,7 +1051,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
             -- Draw MP bar
             local mpGradient = GetCustomGradient(gConfig.colorCustomization.partyList, 'mpGradient') or {'#9abb5a', '#bfe07d'};
-            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends, backgroundGradientOverride = getBarBackgroundOverride()});
+            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends, backgroundGradientOverride = getBarBackgroundOverride(), borderColorOverride = getBarBorderOverride()});
 
             -- === MP TEXT (RIGHT OF MP BAR) ===
             -- Prepare MP text
@@ -1035,7 +1075,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
             imgui.SetCursorPosX(imgui.GetCursorPosX());
             mpStartX, mpStartY = imgui.GetCursorScreenPos();
             local mpGradient = GetCustomGradient(gConfig.colorCustomization.partyList, 'mpGradient') or {'#9abb5a', '#bfe07d'};
-            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends, backgroundGradientOverride = getBarBackgroundOverride()});
+            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends, backgroundGradientOverride = getBarBackgroundOverride(), borderColorOverride = getBarBorderOverride()});
 
             -- Update the mp text
             -- Only call set_color if the color has changed
@@ -1073,7 +1113,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                     mainPercent = memInfo.tp / 1000;
                 end
 
-                progressbar.ProgressBar({{mainPercent, tpGradient}}, {tpBarWidth, barHeight}, {overlayBar=tpOverlay, borderConfig=borderConfig, decorate = gConfig.showPartyListBookends, backgroundGradientOverride = getBarBackgroundOverride()});
+                progressbar.ProgressBar({{mainPercent, tpGradient}}, {tpBarWidth, barHeight}, {overlayBar=tpOverlay, borderConfig=borderConfig, decorate = gConfig.showPartyListBookends, backgroundGradientOverride = getBarBackgroundOverride(), borderColorOverride = getBarBorderOverride()});
 
                 -- Update the tp text
                 local desiredTpColor = (memInfo.tp >= 1000) and gConfig.colorCustomization.partyList.tpFullTextColor or gConfig.colorCustomization.partyList.tpEmptyTextColor;
