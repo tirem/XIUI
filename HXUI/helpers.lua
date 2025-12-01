@@ -1039,8 +1039,8 @@ function GetIsTargetLockedOn()
     -- Check if the target window is locked on using GetLockedOnFlags
     if (playerTarget.GetLockedOnFlags ~= nil) then
         local flags = playerTarget:GetLockedOnFlags();
-        -- If flags is non-zero, target is locked on
-        return flags ~= 0;
+        -- Lock-on is indicated by flags value of 49
+        return flags == 49;
     end
 
     -- Fallback: method not available

@@ -304,6 +304,19 @@ colorcustom.DrawWindow = function()
             DrawGradientPicker("Party Cast Bar", gConfig.colorCustomization.partyList.castBarGradient, "Party member cast bar color (appears when casting)");
 
             imgui.Separator();
+            imgui.Text("Bar Background Override:");
+            imgui.Separator();
+            local overrideActive = {gConfig.colorCustomization.partyList.barBackgroundOverride.active};
+            if (imgui.Checkbox("Enable Background Override", overrideActive)) then
+                gConfig.colorCustomization.partyList.barBackgroundOverride.active = overrideActive[1];
+                UpdateSettings();
+            end
+            imgui.ShowHelp("When enabled, uses the colors below instead of the global bar background color");
+            if gConfig.colorCustomization.partyList.barBackgroundOverride.active then
+                DrawGradientPicker("Background Color", gConfig.colorCustomization.partyList.barBackgroundOverride, "Override color for party list bar backgrounds");
+            end
+
+            imgui.Separator();
             imgui.Text("Text Colors:");
             imgui.Separator();
             DrawTextColorPicker("Name Text", gConfig.colorCustomization.partyList, 'nameTextColor', "Color of party member name");

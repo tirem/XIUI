@@ -434,6 +434,7 @@ T{
 			mpGradient = T{ enabled = true, start = '#9abb5a', stop = '#bfe07d' },
 			tpGradient = T{ enabled = true, start = '#3898ce', stop = '#78c4ee' },
 			castBarGradient = T{ enabled = true, start = '#ffaa00', stop = '#ffcc44' },  -- Party member cast bar
+			barBackgroundOverride = T{ active = false, enabled = true, start = '#01122b', stop = '#061c39' },  -- Override global bar background
 			nameTextColor = 0xFFFFFFFF,
 			hpTextColor = 0xFFFFFFFF,
 			mpTextColor = 0xFFFFFFFF,

@@ -194,6 +194,19 @@ local function getBarScales(partyIndex)
     end
 end
 
+local function getBarBackgroundOverride()
+    -- Check if party list has a bar background override enabled
+    if gConfig and gConfig.colorCustomization and gConfig.colorCustomization.partyList then
+        local override = gConfig.colorCustomization.partyList.barBackgroundOverride;
+        if override and override.active then
+            -- If gradient enabled, use start to stop; otherwise use start for both (static color)
+            local endColor = override.enabled and override.stop or override.start;
+            return {override.start, endColor};
+        end
+    end
+    return nil;
+end
+
 local function UpdateTextVisibilityByMember(memIdx, visible)
 
     memberText[memIdx].hp:set_visible(visible);
@@ -766,7 +779,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     if (memInfo.inzone) then
         -- Use individual HP bar height in Layout 2
         local currentHpBarHeight = (layout == 1) and hpBarHeight or barHeight;
-        progressbar.ProgressBar(hpPercentData, {hpBarWidth, currentHpBarHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends});
+        progressbar.ProgressBar(hpPercentData, {hpBarWidth, currentHpBarHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends, backgroundGradientOverride = getBarBackgroundOverride()});
         -- Hide zone text when in zone
         memberText[memIdx].zone:set_visible(false);
     elseif (memInfo.zone == '' or memInfo.zone == nil) then
@@ -998,7 +1011,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
             -- Draw MP bar
             local mpGradient = GetCustomGradient(gConfig.colorCustomization.partyList, 'mpGradient') or {'#9abb5a', '#bfe07d'};
-            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends});
+            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends, backgroundGradientOverride = getBarBackgroundOverride()});
 
             -- === MP TEXT (RIGHT OF MP BAR) ===
             -- Prepare MP text
@@ -1022,7 +1035,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
             imgui.SetCursorPosX(imgui.GetCursorPosX());
             mpStartX, mpStartY = imgui.GetCursorScreenPos();
             local mpGradient = GetCustomGradient(gConfig.colorCustomization.partyList, 'mpGradient') or {'#9abb5a', '#bfe07d'};
-            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends});
+            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {borderConfig=borderConfig, decorate = gConfig.showPartyListBookends, backgroundGradientOverride = getBarBackgroundOverride()});
 
             -- Update the mp text
             -- Only call set_color if the color has changed
@@ -1060,7 +1073,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                     mainPercent = memInfo.tp / 1000;
                 end
 
-                progressbar.ProgressBar({{mainPercent, tpGradient}}, {tpBarWidth, barHeight}, {overlayBar=tpOverlay, borderConfig=borderConfig, decorate = gConfig.showPartyListBookends});
+                progressbar.ProgressBar({{mainPercent, tpGradient}}, {tpBarWidth, barHeight}, {overlayBar=tpOverlay, borderConfig=borderConfig, decorate = gConfig.showPartyListBookends, backgroundGradientOverride = getBarBackgroundOverride()});
 
                 -- Update the tp text
                 local desiredTpColor = (memInfo.tp >= 1000) and gConfig.colorCustomization.partyList.tpFullTextColor or gConfig.colorCustomization.partyList.tpEmptyTextColor;
