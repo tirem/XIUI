@@ -321,10 +321,17 @@ targetbar.DrawWindow = function(settings)
 			);
 		end
 
-		local startX, startY = imgui.GetCursorScreenPos();
-
 		-- Check if target is locked on (needed for both border and icon)
 		local isLockedOn = GetIsTargetLockedOn();
+
+		-- Reserve space above the bar for text/icons by expanding window content area upward
+		-- This prevents clipping when drawing above the progress bar
+		local lockIconSize = (lockTexture ~= nil) and lockTexture.height or 16;
+		local topReserveHeight = settings.topTextYOffset + settings.name_font_settings.font_height + lockIconSize;
+		imgui.Dummy({0, topReserveHeight});
+		imgui.SetCursorPosY(imgui.GetCursorPosY() - topReserveHeight);
+
+		local startX, startY = imgui.GetCursorScreenPos();
 
 		-- Calculate bookend width and text padding (same as exp bar)
 		local bookendWidth = gConfig.showTargetBarBookends and (settings.barHeight / 2) or 0;
@@ -344,22 +351,23 @@ targetbar.DrawWindow = function(settings)
 		distText:set_font_height(settings.distance_font_settings.font_height);
 
 		-- Draw lock icon if locked on (using draw list to avoid affecting cursor position)
-		local lockIconSize = settings.name_font_settings.font_height;  -- Match name font height
 		local lockIconOffset = 0;
 		if (isLockedOn and gConfig.showTargetBarLockOnBorder and lockTexture ~= nil) then
+			local lockWidth = lockTexture.width / 2;
+			local lockHeight = lockTexture.height / 2;
 			local lockX = startX + bookendWidth + textPadding;
-			local lockY = startY - settings.topTextYOffset - lockIconSize;
+			local lockY = startY - settings.topTextYOffset - lockHeight + 2;
 
 			-- Draw using UI draw list (doesn't affect ImGui cursor)
 			local draw_list = GetUIDrawList();
 			draw_list:AddImage(
 				tonumber(ffi.cast("uint32_t", lockTexture.image)),
 				{lockX, lockY},
-				{lockX + lockIconSize, lockY + lockIconSize},
+				{lockX + lockWidth, lockY + lockHeight},
 				{0, 0}, {1, 1},
 				IM_COL32_WHITE
 			);
-			lockIconOffset = lockIconSize + 4;  -- Icon size + 4px spacing
+			lockIconOffset = lockWidth + 4;  -- Icon width + 4px spacing
 		end
 
 		-- Left-aligned text position (target name) - 8px from left edge (after bookend) + lock icon offset
@@ -680,6 +688,19 @@ targetbar.Initialize = function(settings)
 	allFonts = {percentText, nameText, totNameText, distText, castText};
 	arrowTexture = LoadTexture("arrow");
 	lockTexture = LoadTexture("lock");
+
+	-- Query lock texture dimensions
+	if (lockTexture ~= nil) then
+		local texture_ptr = ffi.cast('IDirect3DTexture8*', lockTexture.image);
+		local res, desc = texture_ptr:GetLevelDesc(0);
+		if (desc ~= nil) then
+			lockTexture.width = desc.Width;
+			lockTexture.height = desc.Height;
+		else
+			lockTexture.width = 16;
+			lockTexture.height = 16;
+		end
+	end
 end
 
 targetbar.UpdateVisuals = function(settings)
