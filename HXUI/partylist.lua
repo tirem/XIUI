@@ -1144,12 +1144,20 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                 local cursorWidth = cursorTexture.width * settings.arrowSize;
                 local cursorHeight = cursorTexture.height * settings.arrowSize;
 
-                -- Calculate position (left of name text, centered vertically)
-                local cursorX = memberText[memIdx].name.settings.position_x - cursorWidth;
-                if (jobIcon ~= nil) then
-                    cursorX = cursorX - jobIconSize;
-                end
-                local cursorY = (hpStartY - offsetSize - settings.cursorPaddingY1) + (entrySize/2) - cursorHeight/2;
+                -- Calculate position aligned with selection container box
+                -- Recalculate selection box coordinates to match the selection box drawing logic
+                local currentLayout = (gConfig.partyListLayout == 1) and gConfig.partyListLayout2 or gConfig.partyListLayout1;
+                local selectionScaleY = currentLayout.selectionBoxScaleY or 1;
+                local unscaledHeight = entrySize + settings.cursorPaddingY1 + settings.cursorPaddingY2;
+                local selectionHeight = unscaledHeight * selectionScaleY;
+                local topOfMember = hpStartY - nameRefHeight - settings.nameTextOffsetY;
+                local centerOffsetY = (selectionHeight - unscaledHeight) / 2;
+                local selectionTL_X = hpStartX - settings.cursorPaddingX1;
+                local selectionTL_Y = topOfMember - settings.cursorPaddingY1 - centerOffsetY;
+
+                -- Position cursor to the left of the selection box, vertically centered
+                local cursorX = selectionTL_X - cursorWidth;
+                local cursorY = selectionTL_Y + (selectionHeight / 2) - (cursorHeight / 2);
 
                 -- Determine tint color
                 local tintColor;
