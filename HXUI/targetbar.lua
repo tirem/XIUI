@@ -430,7 +430,7 @@ targetbar.DrawWindow = function(settings)
 			};
 		end
 
-		if (gConfig.showTargetBarCastBar and castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
+		if (gConfig.showTargetBarCastBar and (not HXUILimitedMode) and castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
 			-- Calculate cast progress
 			local elapsed = os.clock() - castData.startTime;
 			local progress = math.min(elapsed / castData.castTime, 1.0);
@@ -581,7 +581,7 @@ targetbar.DrawWindow = function(settings)
 		--[[ DISABLED: Enemy cast bars
 		-- Reserve space for cast bar at bottom of window to prevent clipping
 		-- Calculate total height needed: offset Y + bar height + text spacing + text height
-		if (gConfig.showTargetBarCastBar and castData ~= nil and castData.spellName ~= nil) then
+		if (gConfig.showTargetBarCastBar and (not HorizonLimitedMode) and castData ~= nil and castData.spellName ~= nil) then
 			local castTextHeight = settings.cast_font_settings.font_height;
 			local totalCastBarSpace = settings.castBarOffsetY + settings.castBarHeight + 2 + castTextHeight;
 			imgui.Dummy({0, totalCastBarSpace});

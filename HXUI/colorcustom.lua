@@ -229,13 +229,17 @@ colorcustom.DrawWindow = function()
             imgui.Text("Bar Colors:");
             imgui.Separator();
             DrawGradientPicker("Target HP Bar", gConfig.colorCustomization.targetBar.hpGradient, "Target HP bar color");
-            -- DrawGradientPicker("Cast Bar", gConfig.colorCustomization.targetBar.castBarGradient, "Enemy cast bar color"); -- DISABLED: Enemy cast bars
+            if (not HXUILimitedMode) then
+                DrawGradientPicker("Cast Bar", gConfig.colorCustomization.targetBar.castBarGradient, "Enemy cast bar color");
+            end
 
             imgui.Separator();
             imgui.Text("Text Colors:");
             imgui.Separator();
             DrawTextColorPicker("Distance Text", gConfig.colorCustomization.targetBar, 'distanceTextColor', "Color of distance text");
-            -- DrawTextColorPicker("Cast Text", gConfig.colorCustomization.targetBar, 'castTextColor', "Color of enemy cast text"); -- DISABLED: Enemy cast bars
+            if (not HXUILimitedMode) then
+                DrawTextColorPicker("Cast Text", gConfig.colorCustomization.targetBar, 'castTextColor', "Color of enemy cast text");
+            end
             imgui.ShowHelp("Target name colors are in the Global section\nHP Percent text color is set dynamically based on HP amount");
 
             imgui.EndChild();
