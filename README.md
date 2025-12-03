@@ -1,5 +1,5 @@
-![XIUI Banner](https://user-images.githubusercontent.com/124013059/220467961-2bcd7ec4-02bc-4ef1-92c5-1ddd98cfc0ac.png)
-[![XIUI Discord](https://user-images.githubusercontent.com/124013059/220468014-bb680d46-3083-452e-803f-20f1385c7e72.png)](https://discord.gg/qepeymYw9y)
+<img width="800" height="200" alt="XIUIBANNER" src="https://github.com/user-attachments/assets/5a7fd14c-adb1-4a4c-8fb0-0f28c804120c" />
+<img width="800" height="133" alt="Discord" src="https://github.com/user-attachments/assets/8b11b946-7b6d-402c-b19d-a3c24021dddc" />
 
 Contains the following elements:
 * Player Bar
