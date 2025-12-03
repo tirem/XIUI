@@ -112,11 +112,22 @@ local function load_status_icon_from_theme(theme, status_id)
 end
 
 local ptrPartyBuffs = ashita.memory.find('FFXiMain.dll', 0, 'B93C0000008D7004BF????????F3A5', 9, 0);
-ptrPartyBuffs = ashita.memory.read_uint32(ptrPartyBuffs);
+if ptrPartyBuffs ~= nil and ptrPartyBuffs ~= 0 then
+	ptrPartyBuffs = ashita.memory.read_uint32(ptrPartyBuffs);
+else
+	ptrPartyBuffs = 0;
+end
 
 -- Call once at plugin load and keep reference to table
 local function ReadPartyBuffsFromMemory()
-    local ptrPartyBuffs = ashita.memory.read_uint32(AshitaCore:GetPointerManager():Get('party.statusicons'));
+    local ptr = AshitaCore:GetPointerManager():Get('party.statusicons');
+    if ptr == nil or ptr == 0 then
+        return {};
+    end
+    local ptrPartyBuffs = ashita.memory.read_uint32(ptr);
+    if ptrPartyBuffs == nil or ptrPartyBuffs == 0 then
+        return {};
+    end
     local partyBuffTable = {};
     for memberIndex = 0,4 do
         local memberPtr = ptrPartyBuffs + (0x30 * memberIndex);

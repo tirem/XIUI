@@ -103,24 +103,28 @@ function GetGradient(startColor, endColor)
 	if not texture then
 		local image = MakeGradientBitmap(startColor, endColor);
 
-    local texture_ptr = ffi.new('IDirect3DTexture8*[1]');
+		local texture_ptr = ffi.new('IDirect3DTexture8*[1]');
 
-    local res = ffi.C.D3DXCreateTextureFromFileInMemory(d3d8dev, image:binary(), #image:binary(), texture_ptr);
+		local res = ffi.C.D3DXCreateTextureFromFileInMemory(d3d8dev, image:binary(), #image:binary(), texture_ptr);
 
-    if (res ~= ffi.C.S_OK) then
-        error(('%08X (%s)'):fmt(res, d3d.get_error(res)));
-    end
+		if (res ~= ffi.C.S_OK) then
+			return nil;
+		end
 
-    texture = {
-    	startColor = startColor,
-    	endColor = endColor,
-    	midColor = nil,
-    	texture = ffi.new('IDirect3DTexture8*', texture_ptr[0])
-    }
+		texture = {
+			startColor = startColor,
+			endColor = endColor,
+			midColor = nil,
+			texture = ffi.new('IDirect3DTexture8*', texture_ptr[0])
+		}
 
-    d3d.gc_safe_release(texture.texture);
+		d3d.gc_safe_release(texture.texture);
 
-    table.insert(progressbar.gradientTextures, texture);
+		table.insert(progressbar.gradientTextures, texture);
+	end
+
+	if texture == nil or texture.texture == nil then
+		return nil;
 	end
 
 	return tonumber(ffi.cast("uint32_t", texture.texture));
@@ -144,7 +148,7 @@ function GetThreeStepGradient(startColor, midColor, endColor)
 		local res = ffi.C.D3DXCreateTextureFromFileInMemory(d3d8dev, image:binary(), #image:binary(), texture_ptr);
 
 		if (res ~= ffi.C.S_OK) then
-			error(('%08X (%s)'):fmt(res, d3d.get_error(res)));
+			return nil;
 		end
 
 		texture = {
@@ -159,12 +163,24 @@ function GetThreeStepGradient(startColor, midColor, endColor)
 		table.insert(progressbar.gradientTextures, texture);
 	end
 
+	if texture == nil or texture.texture == nil then
+		return nil;
+	end
+
 	return tonumber(ffi.cast("uint32_t", texture.texture));
 end
 
 function GetBookendTexture()
 	if not progressbar.bookendTexture then
-		progressbar.bookendTexture = LoadTexture(progressbar.bookendFilename).image;
+		local loaded = LoadTexture(progressbar.bookendFilename);
+		if loaded == nil or loaded.image == nil then
+			return nil;
+		end
+		progressbar.bookendTexture = loaded.image;
+	end
+
+	if progressbar.bookendTexture == nil then
+		return nil;
 	end
 
 	return tonumber(ffi.cast("uint32_t", progressbar.bookendTexture));
@@ -176,6 +192,9 @@ progressbar.DrawBar = function(startPosition, endPosition, gradientStart, gradie
 	end
 
 	local gradient = GetGradient(gradientStart, gradientEnd);
+	if gradient == nil then
+		return;
+	end
 
 	imgui.GetWindowDrawList():AddImageRounded(gradient, startPosition, endPosition, {0, 0}, {1, 1}, IM_COL32_WHITE, rounding, cornerFlags);
 end
@@ -218,6 +237,9 @@ progressbar.DrawBookends = function(positionStartX, positionStartY, width, heigh
 
 	-- Get the 3-step gradient texture
 	local gradientTexture = GetThreeStepGradient(gradientStart, gradientMid, gradientEnd);
+	if gradientTexture == nil then
+		return;
+	end
 
 	-- Prepare outline color
 	local outlineR, outlineG, outlineB, outlineA = hex2rgba(outlineColor);
