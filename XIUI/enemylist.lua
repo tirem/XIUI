@@ -413,7 +413,7 @@ enemylist.DrawWindow = function(settings)
 
 				-- Move cursor to next entry position (back to left edge before margin)
 				-- Add a click target over the entire entry to /target that mob (disabled in limited mode or by config)
-				if (not HXUILimitedMode and gConfig.enableEnemyListClickTarget) then
+				if (not HzLimitedMode and gConfig.enableEnemyListClickTarget) then
 					imgui.SetCursorScreenPos({entryStartX, entryStartY});
 					if imgui.InvisibleButton('EnemyEntry' .. k, {entryWidth, entryHeight}) then
 						local entityMgr = AshitaCore:GetMemoryManager():GetEntity();

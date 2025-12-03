@@ -1,4 +1,4 @@
-# HXUI Release Script (PowerShell)
+# XIUI Release Script (PowerShell)
 # Automates version updates and release tagging
 
 param(
@@ -16,19 +16,19 @@ if ($Version -notmatch '^\d+\.\d+\.\d+$') {
     exit 1
 }
 
-Write-Host "HXUI Release Script" -ForegroundColor Green
+Write-Host "XIUI Release Script" -ForegroundColor Green
 Write-Host "Version: $Version"
 Write-Host ""
 
 # Check if files exist
-if (-not (Test-Path "HXUI/HXUI.lua")) {
-    Write-Host "Error: HXUI/HXUI.lua not found" -ForegroundColor Red
+if (-not (Test-Path "XIUI/XIUI.lua")) {
+    Write-Host "Error: XIUI/XIUI.lua not found" -ForegroundColor Red
     Write-Host "Please run this script from the repository root"
     exit 1
 }
 
-if (-not (Test-Path "HXUI/patchNotes.lua")) {
-    Write-Host "Error: HXUI/patchNotes.lua not found" -ForegroundColor Red
+if (-not (Test-Path "XIUI/patchNotes.lua")) {
+    Write-Host "Error: XIUI/patchNotes.lua not found" -ForegroundColor Red
     exit 1
 }
 
@@ -84,27 +84,27 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host ""
 
-# Update HXUI.lua
-Write-Host "Updating HXUI.lua..." -ForegroundColor Yellow
-$hxuiContent = Get-Content "HXUI/HXUI.lua" -Raw
-$hxuiContent = $hxuiContent -replace "addon\.version\s*=\s*'[\d\.]*'", "addon.version   = '$Version'"
-Set-Content "HXUI/HXUI.lua" -Value $hxuiContent -NoNewline
+# Update XIUI.lua
+Write-Host "Updating XIUI.lua..." -ForegroundColor Yellow
+$xiuiContent = Get-Content "XIUI/XIUI.lua" -Raw
+$xiuiContent = $xiuiContent -replace "addon\.version\s*=\s*'[\d\.]*'", "addon.version   = '$Version'"
+Set-Content "XIUI/XIUI.lua" -Value $xiuiContent -NoNewline
 
 # Update patchNotes.lua
 Write-Host "Updating patchNotes.lua..." -ForegroundColor Yellow
-$patchContent = Get-Content "HXUI/patchNotes.lua" -Raw
+$patchContent = Get-Content "XIUI/patchNotes.lua" -Raw
 $patchContent = $patchContent -replace "imgui\.BulletText\('UPDATE [\d\.]+'\)", "imgui.BulletText('UPDATE $Version')"
-Set-Content "HXUI/patchNotes.lua" -Value $patchContent -NoNewline
+Set-Content "XIUI/patchNotes.lua" -Value $patchContent -NoNewline
 
 # Verify updates
 Write-Host ""
 Write-Host "Files updated successfully!" -ForegroundColor Green
 Write-Host ""
-Write-Host "HXUI.lua version:"
-Select-String -Path "HXUI/HXUI.lua" -Pattern "addon.version"
+Write-Host "XIUI.lua version:"
+Select-String -Path "XIUI/XIUI.lua" -Pattern "addon.version"
 Write-Host ""
 Write-Host "patchNotes.lua version (line 59):"
-Select-String -Path "HXUI/patchNotes.lua" -Pattern "imgui\.BulletText\('UPDATE"
+Select-String -Path "XIUI/patchNotes.lua" -Pattern "imgui\.BulletText\('UPDATE"
 Write-Host ""
 
 if ($NoTag) {
@@ -122,7 +122,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # Commit version changes
 Write-Host "Committing version changes..." -ForegroundColor Yellow
-git add HXUI/HXUI.lua HXUI/patchNotes.lua
+git add XIUI/XIUI.lua XIUI/patchNotes.lua
 git commit -m "Bump version to $Version"
 
 if ($LASTEXITCODE -ne 0) {
@@ -188,7 +188,7 @@ if ($push -eq 'y' -or $push -eq 'Y') {
     Write-Host "═══════════════════════════════════════════════" -ForegroundColor Green
     Write-Host ""
     Write-Host "GitHub Actions will now create the release." -ForegroundColor White
-    Write-Host "Check the Actions tab: https://github.com/tirem/HXUI/actions" -ForegroundColor Cyan
+    Write-Host "Check the Actions tab: https://github.com/tirem/XIUI/actions" -ForegroundColor Cyan
 } else {
     Write-Host ""
     Write-Host "Commit and tag created but not pushed." -ForegroundColor Yellow

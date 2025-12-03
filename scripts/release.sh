@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# HXUI Release Script
+# XIUI Release Script
 # Automates version updates and release tagging
 
 set -e  # Exit on error
@@ -37,20 +37,20 @@ if ! [[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
-echo -e "${GREEN}HXUI Release Script${NC}"
+echo -e "${GREEN}XIUI Release Script${NC}"
 echo "=================="
 echo "Version: $VERSION"
 echo ""
 
 # Check if files exist
-if [ ! -f "HXUI/HXUI.lua" ]; then
-    echo -e "${RED}Error: HXUI/HXUI.lua not found${NC}"
+if [ ! -f "XIUI/XIUI.lua" ]; then
+    echo -e "${RED}Error: XIUI/XIUI.lua not found${NC}"
     echo "Please run this script from the repository root"
     exit 1
 fi
 
-if [ ! -f "HXUI/patchNotes.lua" ]; then
-    echo -e "${RED}Error: HXUI/patchNotes.lua not found${NC}"
+if [ ! -f "XIUI/patchNotes.lua" ]; then
+    echo -e "${RED}Error: XIUI/patchNotes.lua not found${NC}"
     exit 1
 fi
 
@@ -105,23 +105,23 @@ else
 fi
 echo ""
 
-# Update HXUI.lua
-echo -e "${YELLOW}Updating HXUI.lua...${NC}"
-sed -i "s/addon\.version[[:space:]]*=[[:space:]]*'[0-9.]*'/addon.version   = '$VERSION'/" HXUI/HXUI.lua
+# Update XIUI.lua
+echo -e "${YELLOW}Updating XIUI.lua...${NC}"
+sed -i "s/addon\.version[[:space:]]*=[[:space:]]*'[0-9.]*'/addon.version   = '$VERSION'/" XIUI/XIUI.lua
 
 # Update patchNotes.lua
 echo -e "${YELLOW}Updating patchNotes.lua...${NC}"
-sed -i "s/imgui\.BulletText(' UPDATE [0-9.]* ')/imgui.BulletText(' UPDATE $VERSION ')/" HXUI/patchNotes.lua
+sed -i "s/imgui\.BulletText(' UPDATE [0-9.]* ')/imgui.BulletText(' UPDATE $VERSION ')/" XIUI/patchNotes.lua
 
 # Verify updates
 echo ""
 echo -e "${GREEN}Files updated successfully!${NC}"
 echo ""
-echo "HXUI.lua version:"
-grep "addon.version" HXUI/HXUI.lua
+echo "XIUI.lua version:"
+grep "addon.version" XIUI/XIUI.lua
 echo ""
 echo "patchNotes.lua version (line 59):"
-grep "imgui\.BulletText(' UPDATE" HXUI/patchNotes.lua
+grep "imgui\.BulletText(' UPDATE" XIUI/patchNotes.lua
 echo ""
 
 if [ "$NO_TAG" = true ]; then
@@ -138,7 +138,7 @@ fi
 
 # Commit version changes
 echo -e "${YELLOW}Committing version changes...${NC}"
-git add HXUI/HXUI.lua HXUI/patchNotes.lua
+git add XIUI/XIUI.lua XIUI/patchNotes.lua
 git commit -m "Bump version to $VERSION"
 
 if [ $? -ne 0 ]; then
@@ -206,7 +206,7 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${GREEN}═══════════════════════════════════════════════${NC}"
     echo ""
     echo "GitHub Actions will now create the release."
-    echo -e "${CYAN}Check the Actions tab: https://github.com/tirem/HXUI/actions${NC}"
+    echo -e "${CYAN}Check the Actions tab: https://github.com/tirem/XIUI/actions${NC}"
 else
     echo ""
     echo -e "${YELLOW}Commit and tag created but not pushed.${NC}"

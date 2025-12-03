@@ -129,7 +129,7 @@ colorcustom.DrawWindow = function()
     imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {8, 4});
 
     imgui.SetNextWindowSize({ 700, 600 }, ImGuiCond_FirstUseEver);
-    if (imgui.Begin("HXUI Color Customization", gShowColorCustom, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
+    if (imgui.Begin("XIUI Color Customization", gShowColorCustom, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
 
         if (imgui.Button("Open Config", { 160, 20 })) then
             showConfig[1] = true;
@@ -229,7 +229,7 @@ colorcustom.DrawWindow = function()
             imgui.Text("Bar Colors:");
             imgui.Separator();
             DrawGradientPicker("Target HP Bar", gConfig.colorCustomization.targetBar.hpGradient, "Target HP bar color");
-            if (not HXUILimitedMode) then
+            if (not HzLimitedMode) then
                 DrawGradientPicker("Cast Bar", gConfig.colorCustomization.targetBar.castBarGradient, "Enemy cast bar color");
             end
 
@@ -237,7 +237,7 @@ colorcustom.DrawWindow = function()
             imgui.Text("Text Colors:");
             imgui.Separator();
             DrawTextColorPicker("Distance Text", gConfig.colorCustomization.targetBar, 'distanceTextColor', "Color of distance text");
-            if (not HXUILimitedMode) then
+            if (not HzLimitedMode) then
                 DrawTextColorPicker("Cast Text", gConfig.colorCustomization.targetBar, 'castTextColor', "Color of enemy cast text");
             end
             imgui.ShowHelp("Target name colors are in the Global section\nHP Percent text color is set dynamically based on HP amount");

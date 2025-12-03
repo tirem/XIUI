@@ -112,11 +112,22 @@ local function load_status_icon_from_theme(theme, status_id)
 end
 
 local ptrPartyBuffs = ashita.memory.find('FFXiMain.dll', 0, 'B93C0000008D7004BF????????F3A5', 9, 0);
-ptrPartyBuffs = ashita.memory.read_uint32(ptrPartyBuffs);
+if ptrPartyBuffs ~= nil and ptrPartyBuffs ~= 0 then
+	ptrPartyBuffs = ashita.memory.read_uint32(ptrPartyBuffs);
+else
+	ptrPartyBuffs = 0;
+end
 
 -- Call once at plugin load and keep reference to table
 local function ReadPartyBuffsFromMemory()
-    local ptrPartyBuffs = ashita.memory.read_uint32(AshitaCore:GetPointerManager():Get('party.statusicons'));
+    local ptr = AshitaCore:GetPointerManager():Get('party.statusicons');
+    if ptr == nil or ptr == 0 then
+        return {};
+    end
+    local ptrPartyBuffs = ashita.memory.read_uint32(ptr);
+    if ptrPartyBuffs == nil or ptrPartyBuffs == 0 then
+        return {};
+    end
     local partyBuffTable = {};
     for memberIndex = 0,4 do
         local memberPtr = ptrPartyBuffs + (0x30 * memberIndex);
@@ -156,7 +167,7 @@ local statusHandler = {};
 -- return a list of all sub directories
 ---@return table theme_paths
 statusHandler.get_job_theme_paths = function()
-    local path = ('%s\\addons\\%s\\assets\\jobs\\'):fmt(AshitaCore:GetInstallPath(), 'HXUI');
+    local path = ('%s\\addons\\%s\\assets\\jobs\\'):fmt(AshitaCore:GetInstallPath(), 'XIUI');
     local directories = ashita.fs.get_directory(path);
     if (directories ~= nil) then
         directories[#directories+1] = '-None-';
@@ -191,7 +202,7 @@ end
 -- return a list of all sub directories
 ---@return table theme_paths
 statusHandler.get_status_theme_paths = function()
-    local path = ('%s\\addons\\%s\\assets\\status\\'):fmt(AshitaCore:GetInstallPath(), 'HXUI');
+    local path = ('%s\\addons\\%s\\assets\\status\\'):fmt(AshitaCore:GetInstallPath(), 'XIUI');
     local directories = ashita.fs.get_directory(path);
     if (directories ~= nil) then
         directories[#directories+1] = '-Default-';
@@ -203,7 +214,7 @@ end
 -- return a list of all sub directories
 ---@return table theme_paths
 statusHandler.get_background_paths = function()
-    local path = ('%s\\addons\\%s\\assets\\backgrounds\\'):fmt(AshitaCore:GetInstallPath(), 'HXUI');
+    local path = ('%s\\addons\\%s\\assets\\backgrounds\\'):fmt(AshitaCore:GetInstallPath(), 'XIUI');
     local directories = ashita.fs.get_dir(path, '.*.png', true);
     if (directories ~= nil) then
         local backgrounds = { '-None-' };
@@ -221,7 +232,7 @@ end
 -- return a list of all sub directories
 ---@return table theme_paths
 statusHandler.get_cursor_paths = function()
-    local path = ('%s\\addons\\%s\\assets\\cursors\\'):fmt(AshitaCore:GetInstallPath(), 'HXUI');
+    local path = ('%s\\addons\\%s\\assets\\cursors\\'):fmt(AshitaCore:GetInstallPath(), 'XIUI');
     local directories = ashita.fs.get_dir(path, '.*.png', true);
     if (directories ~= nil) then
         return directories;

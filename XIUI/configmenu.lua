@@ -141,7 +141,7 @@ local function DrawGeneralSettings()
             SaveSettingsOnly();
             DeferredUpdateVisuals();
         end);
-        imgui.ShowHelp('The folder to pull status icons from. [HXUI\\assets\\status]');
+        imgui.ShowHelp('The folder to pull status icons from. [XIUI\\assets\\status]');
 
         -- Job Icon Theme
         local job_theme_paths = statusHandler.get_job_theme_paths();
@@ -150,7 +150,7 @@ local function DrawGeneralSettings()
             SaveSettingsOnly();
             DeferredUpdateVisuals();
         end);
-        imgui.ShowHelp('The folder to pull job icons from. [HXUI\\assets\\jobs]');
+        imgui.ShowHelp('The folder to pull job icons from. [XIUI\\assets\\jobs]');
 
         DrawSlider('Tooltip Scale', 'tooltipScale', 0.1, 3.0, '%.2f');
         imgui.ShowHelp('Scales the size of the tooltip. Note that text may appear blured if scaled too large.');
@@ -172,7 +172,7 @@ local function DrawFontSettings()
             ClearDebuffFontCache();
             UpdateSettings();
         end);
-        imgui.ShowHelp('The font family to use for all text in HXUI. Fonts must be installed on your system.');
+        imgui.ShowHelp('The font family to use for all text in XIUI. Fonts must be installed on your system.');
 
         -- Font Weight Selector
         DrawComboBox('Font Weight', gConfig.fontWeight, {'Normal', 'Bold'}, function(newValue)
@@ -180,14 +180,14 @@ local function DrawFontSettings()
             ClearDebuffFontCache();
             UpdateSettings();
         end);
-        imgui.ShowHelp('The font weight (boldness) to use for all text in HXUI.');
+        imgui.ShowHelp('The font weight (boldness) to use for all text in XIUI.');
 
         -- Font Outline Width Slider
         DrawSlider('Font Outline Width', 'fontOutlineWidth', 0, 5, nil, function()
             ClearDebuffFontCache();
             DeferredUpdateVisuals(); -- Tell all modules to recreate fonts with new outline width
         end);
-        imgui.ShowHelp('The thickness of the text outline/stroke for all text in HXUI.');
+        imgui.ShowHelp('The thickness of the text outline/stroke for all text in XIUI.');
 
         imgui.EndChild();
     end
@@ -246,7 +246,7 @@ local function DrawTargetBarSettings()
         DrawCheckbox('Show Bookends', 'showTargetBarBookends');
         DrawCheckbox('Show Lock On', 'showTargetBarLockOnBorder');
         imgui.ShowHelp('Display the lock icon and colored border when locked on to a target.');
-        if (not HXUILimitedMode) then
+        if (not HzLimitedMode) then
             DrawCheckbox('Show Cast Bar', 'showTargetBarCastBar');
             imgui.ShowHelp('Display the enemy cast bar under the HP bar when the target is casting.');
         end
@@ -267,7 +267,7 @@ local function DrawTargetBarSettings()
         DrawSlider('HP% Font Size', 'targetBarPercentFontSize', 8, 36);
 
         -- Cast bar settings (only show if cast bar is enabled)
-        if (gConfig.showTargetBarCastBar and (not HXUILimitedMode)) then
+        if (gConfig.showTargetBarCastBar and (not HzLimitedMode)) then
             DrawSlider('Cast Font Size', 'targetBarCastFontSize', 8, 36);
             imgui.ShowHelp('Font size for enemy cast text that appears under the HP bar.');
 
@@ -314,7 +314,7 @@ local function DrawEnemyListSettings()
         DrawCheckbox('Show Enemy Targets', 'showEnemyListTargets');
         imgui.ShowHelp('Shows who each enemy is targeting based on their last action.');
         DrawCheckbox('Show Bookends', 'showEnemyListBookends');
-        if (not HXUILimitedMode) then
+        if (not HzLimitedMode) then
             DrawCheckbox('Click to Target', 'enableEnemyListClickTarget');
             imgui.ShowHelp('Click on an enemy entry to target it. Requires /shorthand to be enabled.');
         end
@@ -389,7 +389,7 @@ local function DrawPartyListSettings()
             SaveSettingsOnly();
             DeferredUpdateVisuals();
         end);
-        imgui.ShowHelp('The image to use for the party list background. [Resolution: 512x512 @ HXUI\\assets\\backgrounds]');
+        imgui.ShowHelp('The image to use for the party list background. [Resolution: 512x512 @ XIUI\\assets\\backgrounds]');
 
         -- Cursor
         local cursor_paths = statusHandler.get_cursor_paths();
@@ -398,7 +398,7 @@ local function DrawPartyListSettings()
             SaveSettingsOnly();
             DeferredUpdateVisuals();
         end);
-        imgui.ShowHelp('The image to use for the party list cursor. [@ HXUI\\assets\\cursors]');
+        imgui.ShowHelp('The image to use for the party list cursor. [@ XIUI\\assets\\cursors]');
 
         -- Status Theme
         local comboBoxItems = { [0] = 'HorizonXI', [1] = 'HorizonXI-R', [2] = 'FFXIV', [3] = 'FFXI', [4] = 'Disabled' };
@@ -681,7 +681,7 @@ config.DrawWindow = function(us)
     imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {8, 4});
 
     imgui.SetNextWindowSize({ 600, 600 }, ImGuiCond_FirstUseEver);
-    if(showConfig[1] and imgui.Begin(("HXUI Config"):fmt(addon.version), showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
+    if(showConfig[1] and imgui.Begin(("XIUI Config"):fmt(addon.version), showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
         if(imgui.Button("Color Config", { 160, 20 })) then
             gShowColorCustom[1] = true;
         end

@@ -22,11 +22,11 @@
 * SOFTWARE.
 ]]--
 
-addon.name      = 'HXUI';
-addon.author    = 'Team HXUI';
+addon.name      = 'XIUI';
+addon.author    = 'Team XIUI';
 addon.version   = '1.4.2';
 addon.desc      = 'Multiple UI elements with manager';
-addon.link      = 'https://github.com/tirem/HXUI'
+addon.link      = 'https://github.com/tirem/XIUI'
 
 require('common');
 local settings = require('settings');
@@ -51,15 +51,15 @@ local RENDER_FLAG_VISIBLE = 0x200;  -- Entity is visible and rendered
 local RENDER_FLAG_HIDDEN = 0x4000;  -- Entity is hidden (cutscene, menu, etc.)
 
 -- =================
--- = HXUI DEV ONLY =
+-- = XIUI DEV ONLY =
 -- =================
 -- Hot reloading of development files functionality
-local _HXUI_DEV_HOT_RELOADING_ENABLED = false;
-local _HXUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS = 1;
-local _HXUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME;
-local _HXUI_DEV_HOT_RELOAD_FILES = {};
+local _XIUI_DEV_HOT_RELOADING_ENABLED = false;
+local _XIUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS = 1;
+local _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME;
+local _XIUI_DEV_HOT_RELOAD_FILES = {};
 -- Global switch to hard-disable functionaliy that is limited on HX servers
-HXUILimitedMode = true;
+HzLimitedMode = true;
 
 function string:split(sep)
    local sep, fields = sep or ":", {}
@@ -86,25 +86,25 @@ function _check_hot_reload()
 
 			local fileTable = {dateModified, timeModified};
 
-			if _HXUI_DEV_HOT_RELOAD_FILES[filename] ~= nil then
-				if table.concat(_HXUI_DEV_HOT_RELOAD_FILES[filename]) ~= table.concat(fileTable) then
+			if _XIUI_DEV_HOT_RELOAD_FILES[filename] ~= nil then
+				if table.concat(_XIUI_DEV_HOT_RELOAD_FILES[filename]) ~= table.concat(fileTable) then
 					needsReload = true;
-					print("[HXUI] Development file " .. filename .. " changed, reloading HXUI.")
+					print("[XIUI] Development file " .. filename .. " changed, reloading XIUI.")
 				end
 			end
 
-			_HXUI_DEV_HOT_RELOAD_FILES[filename] = fileTable;
+			_XIUI_DEV_HOT_RELOAD_FILES[filename] = fileTable;
 		end
 	end
 
 	result:close();
 
 	if needsReload then
-		AshitaCore:GetChatManager():QueueCommand(-1, '/addon reload hxui', channelCommand);
+		AshitaCore:GetChatManager():QueueCommand(-1, '/addon reload xiui', channelCommand);
 	end
 end
 -- ==================
--- = /HXUI DEV ONLY =
+-- = /XIUI DEV ONLY =
 -- ==================
 
 local user_settings =
@@ -901,6 +901,60 @@ T{
 gAdjustedSettings = deep_copy_table(default_settings);
 defaultUserSettings = deep_copy_table(user_settings);
 
+-- Migrate settings from HXUI to XIUI (one-time migration for users upgrading from HXUI)
+local function MigrateFromHXUI()
+    local installPath = AshitaCore:GetInstallPath():gsub('\\$', ''); -- Remove trailing backslash if present
+    local oldConfigDir = installPath .. '\\config\\addons\\HXUI';
+    local newConfigDir = installPath .. '\\config\\addons\\XIUI';
+
+    -- Check if old config directory exists
+    if not ashita.fs.exists(oldConfigDir) then
+        return;
+    end
+
+    -- Get all character folders in the old config directory
+    local characterFolders = ashita.fs.get_directory(oldConfigDir);
+    if characterFolders == nil then
+        return;
+    end
+
+    local migratedCount = 0;
+
+    for _, folderName in ipairs(characterFolders) do
+        local oldSettingsPath = oldConfigDir .. '\\' .. folderName .. '\\settings.lua';
+        local newSettingsDir = newConfigDir .. '\\' .. folderName;
+        local newSettingsPath = newSettingsDir .. '\\settings.lua';
+
+        -- Only migrate if old settings exist and new settings don't
+        if ashita.fs.exists(oldSettingsPath) and not ashita.fs.exists(newSettingsPath) then
+            -- Ensure the new directory exists
+            ashita.fs.create_directory(newSettingsDir);
+
+            -- Read old settings file
+            local oldFile = io.open(oldSettingsPath, 'rb');
+            if oldFile then
+                local content = oldFile:read('*all');
+                oldFile:close();
+
+                -- Write to new settings file
+                local newFile = io.open(newSettingsPath, 'wb');
+                if newFile then
+                    newFile:write(content);
+                    newFile:close();
+                    migratedCount = migratedCount + 1;
+                end
+            end
+        end
+    end
+
+    if migratedCount > 0 then
+        print('[XIUI] Successfully migrated settings for ' .. migratedCount .. ' character(s) from HXUI.');
+    end
+end
+
+-- Run migration before loading settings
+pcall(MigrateFromHXUI);
+
 local config = settings.load(user_settings_container);
 gConfig = config.userSettings;
 
@@ -1496,18 +1550,18 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 		ForceHide();
 	end
 
-	-- HXUI DEV ONLY
-	if _HXUI_DEV_HOT_RELOADING_ENABLED then
+	-- XIUI DEV ONLY
+	if _XIUI_DEV_HOT_RELOADING_ENABLED then
 		local currentTime = os.time();
 
-		if not _HXUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME then
-			_HXUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME = currentTime;
+		if not _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME then
+			_XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME = currentTime;
 		end
 
-		if _HXUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME and currentTime - _HXUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME > _HXUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS then
+		if _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME and currentTime - _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME > _XIUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS then
 			_check_hot_reload();
 
-			_HXUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME = currentTime;
+			_XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME = currentTime;
 		end
 	end
 end);
@@ -1576,7 +1630,7 @@ ashita.events.register('command', 'command_cb', function (e)
    
 	-- Parse the command arguments
 	local command_args = e.command:lower():args()
-    if table.contains({'/horizonui', '/hui', '/hxui', '/horizonxiui'}, command_args[1]) then
+    if table.contains({'/xiui', '/hui', '/hxui', '/horizonxiui'}, command_args[1]) then
 		e.blocked = true;
 
         -- Toggle the config menu
@@ -1617,7 +1671,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
 				castBar.HandleActionPacket(actionPacket);
 			end
 
-			if (gConfig.showTargetBar and gConfig.showTargetBarCastBar and (not HXUILimitedMode)) then
+			if (gConfig.showTargetBar and gConfig.showTargetBarCastBar and (not HzLimitedMode)) then
 				targetBar.HandleActionPacket(actionPacket);
 			end
 

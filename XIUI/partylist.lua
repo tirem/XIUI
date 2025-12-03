@@ -1606,7 +1606,7 @@ partyList.Initialize = function(settings)
             -- Fallback to reasonable default if query fails
             partyTitlesTexture.width = 64;
             partyTitlesTexture.height = 64;
-            print('[HXUI] Warning: Failed to query party titles texture dimensions, using default 64x64');
+            print('[XIUI] Warning: Failed to query party titles texture dimensions, using default 64x64');
         end
     end
 
@@ -1769,7 +1769,7 @@ partyList.UpdateVisuals = function(settings)
                     -- Fallback to reasonable default if query fails
                     cursorTexture.width = 32;
                     cursorTexture.height = 32;
-                    print(string.format('[HXUI] Warning: Failed to query cursor texture dimensions for %s, using default 32x32', gConfig.partyListCursor));
+                    print(string.format('[XIUI] Warning: Failed to query cursor texture dimensions for %s, using default 32x32', gConfig.partyListCursor));
                 end
 
                 cursorTextures[gConfig.partyListCursor] = cursorTexture;

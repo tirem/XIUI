@@ -33,10 +33,10 @@ local lastPercentTextColor;
 local lastTotNameTextColor;
 local lastCastTextColor;
 
-local _HXUI_DEV_DEBUG_INTERPOLATION = false;
-local _HXUI_DEV_DEBUG_INTERPOLATION_DELAY = 1;
-local _HXUI_DEV_DEBUG_HP_PERCENT_PERSISTENT = 100;
-local _HXUI_DEV_DAMAGE_SET_TIMES = {};
+local _XIUI_DEV_DEBUG_INTERPOLATION = false;
+local _XIUI_DEV_DEBUG_INTERPOLATION_DELAY = 1;
+local _XIUI_DEV_DEBUG_HP_PERCENT_PERSISTENT = 100;
+local _XIUI_DEV_DAMAGE_SET_TIMES = {};
 
 targetbar.DrawWindow = function(settings)
     -- Obtain the player entity..
@@ -74,14 +74,14 @@ targetbar.DrawWindow = function(settings)
 	local hppPercent = targetEntity.HPPercent;
 
 	-- Mimic damage taken
-	if _HXUI_DEV_DEBUG_INTERPOLATION then
-		if _HXUI_DEV_DAMAGE_SET_TIMES[1] and currentTime > _HXUI_DEV_DAMAGE_SET_TIMES[1][1] then
-			_HXUI_DEV_DEBUG_HP_PERCENT_PERSISTENT = _HXUI_DEV_DAMAGE_SET_TIMES[1][2];
+	if _XIUI_DEV_DEBUG_INTERPOLATION then
+		if _XIUI_DEV_DAMAGE_SET_TIMES[1] and currentTime > _XIUI_DEV_DAMAGE_SET_TIMES[1][1] then
+			_XIUI_DEV_DEBUG_HP_PERCENT_PERSISTENT = _XIUI_DEV_DAMAGE_SET_TIMES[1][2];
 
-			table.remove(_HXUI_DEV_DAMAGE_SET_TIMES, 1);
+			table.remove(_XIUI_DEV_DAMAGE_SET_TIMES, 1);
 		end
 
-		if #_HXUI_DEV_DAMAGE_SET_TIMES == 0 then
+		if #_XIUI_DEV_DAMAGE_SET_TIMES == 0 then
 			local previousHitTime = currentTime + 1;
 			local previousHp = 100;
 
@@ -98,14 +98,14 @@ targetbar.DrawWindow = function(settings)
 				if i < totalDamageInstances then
 					previousHitTime = previousHitTime + hitDelay;
 				else
-					previousHitTime = previousHitTime + _HXUI_DEV_DEBUG_INTERPOLATION_DELAY;
+					previousHitTime = previousHitTime + _XIUI_DEV_DEBUG_INTERPOLATION_DELAY;
 				end
 
-				_HXUI_DEV_DAMAGE_SET_TIMES[i] = {previousHitTime, previousHp};
+				_XIUI_DEV_DAMAGE_SET_TIMES[i] = {previousHitTime, previousHp};
 			end
 		end
 
-		hppPercent = _HXUI_DEV_DEBUG_HP_PERCENT_PERSISTENT;
+		hppPercent = _XIUI_DEV_DEBUG_HP_PERCENT_PERSISTENT;
 	end
 
 	-- If we change targets, reset the interpolation
@@ -276,7 +276,7 @@ targetbar.DrawWindow = function(settings)
 
 		local hpPercentData = {{baseHpPercent / 100, {hpGradientStart, hpGradientEnd}}};
 
-		if _HXUI_DEV_DEBUG_INTERPOLATION then
+		if _XIUI_DEV_DEBUG_INTERPOLATION then
 			hpPercentData[1][1] = targetbar.interpolation.currentHpp / 100;
 		end
 
@@ -437,7 +437,7 @@ targetbar.DrawWindow = function(settings)
 			};
 		end
 
-		if (gConfig.showTargetBarCastBar and (not HXUILimitedMode) and castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
+		if (gConfig.showTargetBarCastBar and (not HzLimitedMode) and castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
 			-- Calculate cast progress
 			local elapsed = os.clock() - castData.startTime;
 			local progress = math.min(elapsed / castData.castTime, 1.0);
@@ -586,7 +586,7 @@ targetbar.DrawWindow = function(settings)
 
 		-- Reserve space for cast bar at bottom of window to prevent clipping
 		-- Calculate total height needed: offset Y + bar height + text spacing + text height
-		if (gConfig.showTargetBarCastBar and (not HXUILimitedMode) and castData ~= nil and castData.spellName ~= nil) then
+		if (gConfig.showTargetBarCastBar and (not HzLimitedMode) and castData ~= nil and castData.spellName ~= nil) then
 			local castTextHeight = settings.cast_font_settings.font_height;
 			local totalCastBarSpace = settings.castBarOffsetY + settings.castBarHeight + 2 + castTextHeight;
 			imgui.Dummy({0, totalCastBarSpace});

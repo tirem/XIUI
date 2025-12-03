@@ -26,27 +26,27 @@ jobs:
           mkdir -p release-regular
           mkdir -p release-horizon
 
-          # Copy all HXUI files to both release directories
-          cp -r HXUI release-regular/
-          cp -r HXUI release-horizon/
+          # Copy all XIUI files to both release directories
+          cp -r XIUI release-regular/
+          cp -r XIUI release-horizon/
 
-          # Set HXUILimitedMode = false for regular release
-          sed -i 's/^HXUILimitedMode = true;$/HXUILimitedMode = false;/' release-regular/HXUI/HXUI.lua
+          # Set HzLimitedMode = false for regular release
+          sed -i 's/^HzLimitedMode = true;$/HzLimitedMode = false;/' release-regular/XIUI/XIUI.lua
 
-          # Set HXUILimitedMode = true for horizon release (should already be true, but ensure it)
-          sed -i 's/^HXUILimitedMode = false;$/HXUILimitedMode = true;/' release-horizon/HXUI/HXUI.lua
+          # Set HzLimitedMode = true for horizon release (should already be true, but ensure it)
+          sed -i 's/^HzLimitedMode = false;$/HzLimitedMode = true;/' release-horizon/XIUI/XIUI.lua
 
           # Verify the changes
-          echo "Regular release HXUILimitedMode:"
-          grep "^HXUILimitedMode" release-regular/HXUI/HXUI.lua
-          echo "Horizon release HXUILimitedMode:"
-          grep "^HXUILimitedMode" release-horizon/HXUI/HXUI.lua
+          echo "Regular release HzLimitedMode:"
+          grep "^HzLimitedMode" release-regular/XIUI/XIUI.lua
+          echo "Horizon release HzLimitedMode:"
+          grep "^HzLimitedMode" release-horizon/XIUI/XIUI.lua
 
           # Create zip files with version-specific names
           cd release-regular
-          zip -r ../HXUI-${VERSION}.zip HXUI
+          zip -r ../XIUI-${VERSION}.zip XIUI
           cd ../release-horizon
-          zip -r ../HXUI-${VERSION}-horizon.zip HXUI
+          zip -r ../XIUI-${VERSION}-horizon.zip XIUI
           cd ..
 
           # Store the version for later steps
@@ -66,8 +66,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.get_release.outputs.upload_url }}
-          asset_path: ./HXUI-${{ env.VERSION }}.zip
-          asset_name: HXUI-${{ env.VERSION }}.zip
+          asset_path: ./XIUI-${{ env.VERSION }}.zip
+          asset_name: XIUI-${{ env.VERSION }}.zip
           asset_content_type: application/zip
 
       - name: Upload horizon release asset
@@ -77,8 +77,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.get_release.outputs.upload_url }}
-          asset_path: ./HXUI-${{ env.VERSION }}-horizon.zip
-          asset_name: HXUI-${{ env.VERSION }}-horizon.zip
+          asset_path: ./XIUI-${{ env.VERSION }}-horizon.zip
+          asset_name: XIUI-${{ env.VERSION }}-horizon.zip
           asset_content_type: application/zip
 
       - name: Create release from tag
@@ -86,9 +86,9 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            HXUI-${{ env.VERSION }}.zip
-            HXUI-${{ env.VERSION }}-horizon.zip
-          name: HXUI-${{ env.VERSION }}
+            XIUI-${{ env.VERSION }}.zip
+            XIUI-${{ env.VERSION }}-horizon.zip
+          name: XIUI-${{ env.VERSION }}
           draft: false
           prerelease: false
         env:
