@@ -166,7 +166,9 @@ end
 -- Helper function for party layout-specific checkbox (saves to current layout table)
 local function DrawPartyLayoutCheckbox(label, configKey, callback)
     local currentLayout = (gConfig.partyListLayout == 1) and gConfig.partyListLayout2 or gConfig.partyListLayout1;
-    if (imgui.Checkbox(label, { currentLayout[configKey] })) then
+    -- Use configKey as unique ID to prevent ImGui widget collision
+    local uniqueLabel = label .. '##' .. configKey;
+    if (imgui.Checkbox(uniqueLabel, { currentLayout[configKey] })) then
         currentLayout[configKey] = not currentLayout[configKey];
         SaveSettingsOnly();
         if callback then callback() end
@@ -178,17 +180,19 @@ local function DrawPartyLayoutSlider(label, configKey, min, max, format, callbac
     local currentLayout = (gConfig.partyListLayout == 1) and gConfig.partyListLayout2 or gConfig.partyListLayout1;
     local value = { currentLayout[configKey] };
     local changed = false;
+    -- Use configKey as unique ID to prevent ImGui widget collision
+    local uniqueLabel = label .. '##' .. configKey;
 
     -- Use SliderFloat if format is specified, otherwise check if value is integer
     if format ~= nil then
         -- Format specified, use float slider
-        changed = imgui.SliderFloat(label, value, min, max, format);
+        changed = imgui.SliderFloat(uniqueLabel, value, min, max, format);
     elseif type(currentLayout[configKey]) == 'number' and math.floor(currentLayout[configKey]) == currentLayout[configKey] then
         -- No format and value is integer, use int slider
-        changed = imgui.SliderInt(label, value, min, max);
+        changed = imgui.SliderInt(uniqueLabel, value, min, max);
     else
         -- No format but value is float, use float slider with default format
-        changed = imgui.SliderFloat(label, value, min, max, '%.2f');
+        changed = imgui.SliderFloat(uniqueLabel, value, min, max, '%.2f');
     end
 
     if changed then
@@ -568,14 +572,20 @@ local function DrawPartyListSettings()
     end
     DrawCheckbox('Show Distance', 'showPartyListDistance');
     if gConfig.showPartyListDistance then
+        imgui.SameLine();
+        imgui.PushItemWidth(120);
         DrawSlider('Distance Highlighting', 'partyListDistanceHighlight', 0.0, 50.0, '%.1f');
+        imgui.PopItemWidth();
     end
     DrawCheckbox('Show Job Icons', 'showPartyJobIcon');
     DrawCheckbox('Show Job/Subjob', 'showPartyListJob');
     imgui.ShowHelp('Display job and subjob info on the right side of the name row (Layout 1 only).');
     DrawCheckbox('Show Cast Bars', 'partyListCastBars');
     if (gConfig.partyListCastBars) then
+        imgui.SameLine();
+        imgui.PushItemWidth(120);
         DrawSlider('Cast Bar Scale Y', 'partyListCastBarScaleY', 0.1, 3.0, '%.1f');
+        imgui.PopItemWidth();
         imgui.ShowHelp('Fast cast settings are shared with Cast Bar config section.');
     end
 
@@ -650,12 +660,17 @@ local function DrawPartyListSettings()
         DrawPartyLayoutSlider('MP Bar Scale Y', 'mpBarScaleY', 0.1, 3.0, '%.2f');
     end
 
-    -- Font Size: Layout 2 has separate controls, Layout 1 has single control
-    if gConfig.partyListLayout == 1 then
+    -- Font Size: split mode has separate controls per text type
+    DrawPartyLayoutCheckbox('Split Font Sizes', 'splitFontSizes');
+    imgui.ShowHelp('When enabled, allows individual font size control for each text element.');
+    local currentLayout = (gConfig.partyListLayout == 1) and gConfig.partyListLayout2 or gConfig.partyListLayout1;
+    if currentLayout.splitFontSizes then
         DrawPartyLayoutSlider('Name Font Size', 'partyListNameFontSize', 8, 36);
         DrawPartyLayoutSlider('HP Font Size', 'partyListHpFontSize', 8, 36);
         DrawPartyLayoutSlider('MP Font Size', 'partyListMpFontSize', 8, 36);
         DrawPartyLayoutSlider('TP Font Size', 'partyListTpFontSize', 8, 36);
+        DrawPartyLayoutSlider('Distance Font Size', 'partyListDistanceFontSize', 8, 36);
+        DrawPartyLayoutSlider('Job Font Size', 'partyListJobFontSize', 8, 36);
     else
         DrawPartyLayoutSlider('Font Size', 'partyListFontSize', 8, 36);
     end
@@ -684,11 +699,14 @@ local function DrawPartyListSettings()
             DrawPartyLayoutSlider('MP Bar Scale Y', 'partyList2MpBarScaleY', 0.1, 3.0, '%.2f');
         end
 
-        -- Font Size: Layout 2 has separate controls, Layout 1 has single control
-        if gConfig.partyListLayout == 1 then
+        -- Font Size: split mode has separate controls per text type
+        if currentLayout.splitFontSizes then
             DrawPartyLayoutSlider('Name Font Size', 'partyList2NameFontSize', 8, 36);
             DrawPartyLayoutSlider('HP Font Size', 'partyList2HpFontSize', 8, 36);
             DrawPartyLayoutSlider('MP Font Size', 'partyList2MpFontSize', 8, 36);
+            DrawPartyLayoutSlider('TP Font Size', 'partyList2TpFontSize', 8, 36);
+            DrawPartyLayoutSlider('Distance Font Size', 'partyList2DistanceFontSize', 8, 36);
+            DrawPartyLayoutSlider('Job Font Size', 'partyList2JobFontSize', 8, 36);
         else
             DrawPartyLayoutSlider('Font Size', 'partyList2FontSize', 8, 36);
         end
@@ -718,11 +736,14 @@ local function DrawPartyListSettings()
             DrawPartyLayoutSlider('MP Bar Scale Y', 'partyList3MpBarScaleY', 0.1, 3.0, '%.2f');
         end
 
-        -- Font Size: Layout 2 has separate controls, Layout 1 has single control
-        if gConfig.partyListLayout == 1 then
+        -- Font Size: split mode has separate controls per text type
+        if currentLayout.splitFontSizes then
             DrawPartyLayoutSlider('Name Font Size', 'partyList3NameFontSize', 8, 36);
             DrawPartyLayoutSlider('HP Font Size', 'partyList3HpFontSize', 8, 36);
             DrawPartyLayoutSlider('MP Font Size', 'partyList3MpFontSize', 8, 36);
+            DrawPartyLayoutSlider('TP Font Size', 'partyList3TpFontSize', 8, 36);
+            DrawPartyLayoutSlider('Distance Font Size', 'partyList3DistanceFontSize', 8, 36);
+            DrawPartyLayoutSlider('Job Font Size', 'partyList3JobFontSize', 8, 36);
         else
             DrawPartyLayoutSlider('Font Size', 'partyList3FontSize', 8, 36);
         end

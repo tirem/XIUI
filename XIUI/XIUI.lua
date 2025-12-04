@@ -241,6 +241,13 @@ T{
 		partyListScaleX = 1,
 		partyListScaleY = 1,
 		partyListFontSize = 12,
+		splitFontSizes = false,
+		partyListNameFontSize = 12,
+		partyListHpFontSize = 12,
+		partyListMpFontSize = 12,
+		partyListTpFontSize = 12,
+		partyListDistanceFontSize = 12,
+		partyListJobFontSize = 12,
 		partyListJobIconScale = 1,
 		partyListEntrySpacing = 0,
 		partyListTP = true,
@@ -251,6 +258,12 @@ T{
 		partyList2ScaleX = 0.7,
 		partyList2ScaleY = 0.7,
 		partyList2FontSize = 12,
+		partyList2NameFontSize = 12,
+		partyList2HpFontSize = 12,
+		partyList2MpFontSize = 12,
+		partyList2TpFontSize = 12,
+		partyList2DistanceFontSize = 12,
+		partyList2JobFontSize = 12,
 		partyList2JobIconScale = 0.8,
 		partyList2EntrySpacing = 6,
 		partyList2TP = false,
@@ -259,6 +272,12 @@ T{
 		partyList3ScaleX = 0.7,
 		partyList3ScaleY = 0.7,
 		partyList3FontSize = 12,
+		partyList3NameFontSize = 12,
+		partyList3HpFontSize = 12,
+		partyList3MpFontSize = 12,
+		partyList3TpFontSize = 12,
+		partyList3DistanceFontSize = 12,
+		partyList3JobFontSize = 12,
 		partyList3JobIconScale = 0.8,
 		partyList3EntrySpacing = 6,
 		partyList3TP = false,
@@ -291,10 +310,13 @@ T{
 		partyListScaleX = 1,
 		partyListScaleY = 1,
 		partyListFontSize = 12,
+		splitFontSizes = true,
 		partyListNameFontSize = 12,
 		partyListHpFontSize = 12,
 		partyListMpFontSize = 12,
 		partyListTpFontSize = 12,
+		partyListDistanceFontSize = 12,
+		partyListJobFontSize = 12,
 		partyListJobIconScale = 1,
 		partyListEntrySpacing = 3,
 		partyListTP = true,
@@ -308,6 +330,9 @@ T{
 		partyList2NameFontSize = 12,
 		partyList2HpFontSize = 12,
 		partyList2MpFontSize = 12,
+		partyList2TpFontSize = 12,
+		partyList2DistanceFontSize = 12,
+		partyList2JobFontSize = 12,
 		partyList2JobIconScale = 0.65,
 		partyList2EntrySpacing = 1,
 		partyList2TP = true,
@@ -320,12 +345,15 @@ T{
 		partyList3ScaleX = 0.55,
 		partyList3ScaleY = 0.55,
 		partyList3FontSize = 12,
-		partyList3JobIconScale = 0.65,
-		partyList3EntrySpacing = 1,
-		partyList3TP = true,
 		partyList3NameFontSize = 12,
 		partyList3HpFontSize = 12,
 		partyList3MpFontSize = 12,
+		partyList3TpFontSize = 12,
+		partyList3DistanceFontSize = 12,
+		partyList3JobFontSize = 12,
+		partyList3JobIconScale = 0.65,
+		partyList3EntrySpacing = 1,
+		partyList3TP = true,
 		partyList3HpBarScaleX = 0.9,
 		partyList3MpBarScaleX = 0.6,
 		partyList3HpBarScaleY = 1,
@@ -1254,11 +1282,46 @@ function UpdateUserSettings()
     gAdjustedSettings.partyListSettings.minRows = currentLayout.partyListMinRows or 1;
 
 	-- Apply font sizes for each party (stored as arrays indexed by party)
-	gAdjustedSettings.partyListSettings.fontSizes = {
-		currentLayout.partyListFontSize or 16,   -- Party 1
-		currentLayout.partyList2FontSize or 16,  -- Party 2
-		currentLayout.partyList3FontSize or 16,  -- Party 3
-	};
+	-- When splitFontSizes is enabled, we create a composite value that changes when ANY individual size changes
+	-- This ensures UpdateVisuals detects the change and recalculates reference heights
+	local function getFontSizeHash(nameSize, hpSize, mpSize, tpSize, distSize, jobSize)
+		return nameSize + (hpSize * 100) + (mpSize * 10000) + (tpSize * 1000000) + (distSize * 100000000) + (jobSize * 10000000000);
+	end
+
+	if currentLayout.splitFontSizes then
+		gAdjustedSettings.partyListSettings.fontSizes = {
+			getFontSizeHash(
+				currentLayout.partyListNameFontSize or 12,
+				currentLayout.partyListHpFontSize or 12,
+				currentLayout.partyListMpFontSize or 12,
+				currentLayout.partyListTpFontSize or 12,
+				currentLayout.partyListDistanceFontSize or 12,
+				currentLayout.partyListJobFontSize or 12
+			),
+			getFontSizeHash(
+				currentLayout.partyList2NameFontSize or 12,
+				currentLayout.partyList2HpFontSize or 12,
+				currentLayout.partyList2MpFontSize or 12,
+				currentLayout.partyList2TpFontSize or 12,
+				currentLayout.partyList2DistanceFontSize or 12,
+				currentLayout.partyList2JobFontSize or 12
+			),
+			getFontSizeHash(
+				currentLayout.partyList3NameFontSize or 12,
+				currentLayout.partyList3HpFontSize or 12,
+				currentLayout.partyList3MpFontSize or 12,
+				currentLayout.partyList3TpFontSize or 12,
+				currentLayout.partyList3DistanceFontSize or 12,
+				currentLayout.partyList3JobFontSize or 12
+			),
+		};
+	else
+		gAdjustedSettings.partyListSettings.fontSizes = {
+			currentLayout.partyListFontSize or 12,   -- Party 1
+			currentLayout.partyList2FontSize or 12,  -- Party 2
+			currentLayout.partyList3FontSize or 12,  -- Party 3
+		};
+	end
 	gAdjustedSettings.partyListSettings.title_font_settings.font_height = math.max(us.partyListTitleFontSize, 8);
 
 	gAdjustedSettings.partyListSettings.entrySpacing = {

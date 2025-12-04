@@ -162,22 +162,28 @@ local function updatePartyConfigCache()
 
         -- FontSizes
         if cache.fontSizes == nil then cache.fontSizes = {}; end
-        if layout == 1 then
+        if currentLayout.splitFontSizes then
             if partyIndex == 3 then
                 cache.fontSizes.name = currentLayout.partyList3NameFontSize or currentLayout.partyList3FontSize;
                 cache.fontSizes.hp = currentLayout.partyList3HpFontSize or currentLayout.partyList3FontSize;
                 cache.fontSizes.mp = currentLayout.partyList3MpFontSize or currentLayout.partyList3FontSize;
-                cache.fontSizes.tp = currentLayout.partyListTpFontSize or currentLayout.partyListFontSize;
+                cache.fontSizes.tp = currentLayout.partyList3TpFontSize or currentLayout.partyList3FontSize;
+                cache.fontSizes.distance = currentLayout.partyList3DistanceFontSize or currentLayout.partyList3FontSize;
+                cache.fontSizes.job = currentLayout.partyList3JobFontSize or currentLayout.partyList3FontSize;
             elseif partyIndex == 2 then
                 cache.fontSizes.name = currentLayout.partyList2NameFontSize or currentLayout.partyList2FontSize;
                 cache.fontSizes.hp = currentLayout.partyList2HpFontSize or currentLayout.partyList2FontSize;
                 cache.fontSizes.mp = currentLayout.partyList2MpFontSize or currentLayout.partyList2FontSize;
-                cache.fontSizes.tp = currentLayout.partyListTpFontSize or currentLayout.partyListFontSize;
+                cache.fontSizes.tp = currentLayout.partyList2TpFontSize or currentLayout.partyList2FontSize;
+                cache.fontSizes.distance = currentLayout.partyList2DistanceFontSize or currentLayout.partyList2FontSize;
+                cache.fontSizes.job = currentLayout.partyList2JobFontSize or currentLayout.partyList2FontSize;
             else
                 cache.fontSizes.name = currentLayout.partyListNameFontSize or currentLayout.partyListFontSize;
                 cache.fontSizes.hp = currentLayout.partyListHpFontSize or currentLayout.partyListFontSize;
                 cache.fontSizes.mp = currentLayout.partyListMpFontSize or currentLayout.partyListFontSize;
                 cache.fontSizes.tp = currentLayout.partyListTpFontSize or currentLayout.partyListFontSize;
+                cache.fontSizes.distance = currentLayout.partyListDistanceFontSize or currentLayout.partyListFontSize;
+                cache.fontSizes.job = currentLayout.partyListJobFontSize or currentLayout.partyListFontSize;
             end
         else
             local fontSizeKey = (partyIndex == 3) and 'partyList3FontSize'
@@ -188,6 +194,8 @@ local function updatePartyConfigCache()
             cache.fontSizes.hp = fontSize;
             cache.fontSizes.mp = fontSize;
             cache.fontSizes.tp = fontSize;
+            cache.fontSizes.distance = fontSize;
+            cache.fontSizes.job = fontSize;
         end
 
         -- BarScales
@@ -494,7 +502,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     memberText[memIdx].mp:set_font_height(fontSizes.mp);
     memberText[memIdx].name:set_font_height(fontSizes.name);
     memberText[memIdx].tp:set_font_height(fontSizes.tp);
-    memberText[memIdx].distance:set_font_height(fontSizes.name);
+    memberText[memIdx].distance:set_font_height(fontSizes.distance);
 
     -- PERFORMANCE: Use pre-calculated reference heights from UpdateVisuals
     local refHeights = partyRefHeights[partyIndex];
@@ -1072,7 +1080,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
         end
 
         memberText[memIdx].job:set_text(jobStr);
-        memberText[memIdx].job:set_font_height(fontSizes.name);
+        memberText[memIdx].job:set_font_height(fontSizes.job);
         local jobTextWidth, jobTextHeight = memberText[memIdx].job:get_text_size();
 
         -- Position at far right of name row (right-aligned to allBarsLengths)
@@ -1698,13 +1706,15 @@ partyList.Initialize = function(settings)
         local tp_font_settings = deep_copy_table(settings.tp_font_settings);
         local distance_font_settings = deep_copy_table(settings.name_font_settings);
         local zone_font_settings = deep_copy_table(settings.name_font_settings);
+        local job_font_settings = deep_copy_table(settings.name_font_settings);
 
         name_font_settings.font_height = math.max(fontSizes.name, 6);
         hp_font_settings.font_height = math.max(fontSizes.hp, 6);
         mp_font_settings.font_height = math.max(fontSizes.mp, 6);
         tp_font_settings.font_height = math.max(fontSizes.tp, 6);
-        distance_font_settings.font_height = math.max(fontSizes.name, 6);
+        distance_font_settings.font_height = math.max(fontSizes.distance, 6);
         zone_font_settings.font_height = 10;  -- Fixed 10px for zone text
+        job_font_settings.font_height = math.max(fontSizes.job, 6);
 
         memberText[i] = {};
         -- Use FontManager for cleaner font creation
@@ -1714,7 +1724,7 @@ partyList.Initialize = function(settings)
         memberText[i].tp = FontManager.create(tp_font_settings);
         memberText[i].distance = FontManager.create(distance_font_settings);
         memberText[i].zone = FontManager.create(zone_font_settings);
-        memberText[i].job = FontManager.create(name_font_settings);
+        memberText[i].job = FontManager.create(job_font_settings);
     end
 
     -- Load party titles texture atlas
@@ -1846,13 +1856,15 @@ partyList.UpdateVisuals = function(settings)
         local tp_font_settings = deep_copy_table(settings.tp_font_settings);
         local distance_font_settings = deep_copy_table(settings.name_font_settings);
         local zone_font_settings = deep_copy_table(settings.name_font_settings);
+        local job_font_settings = deep_copy_table(settings.name_font_settings);
 
         name_font_settings.font_height = math.max(fontSizes.name, 6);
         hp_font_settings.font_height = math.max(fontSizes.hp, 6);
         mp_font_settings.font_height = math.max(fontSizes.mp, 6);
         tp_font_settings.font_height = math.max(fontSizes.tp, 6);
-        distance_font_settings.font_height = math.max(fontSizes.name, 6);
+        distance_font_settings.font_height = math.max(fontSizes.distance, 6);
         zone_font_settings.font_height = 10;  -- Fixed 10px for zone text
+        job_font_settings.font_height = math.max(fontSizes.job, 6);
 
         -- Use FontManager for cleaner font recreation
         if (memberText[i] ~= nil) then
@@ -1862,7 +1874,7 @@ partyList.UpdateVisuals = function(settings)
             memberText[i].tp = FontManager.recreate(memberText[i].tp, tp_font_settings);
             memberText[i].distance = FontManager.recreate(memberText[i].distance, distance_font_settings);
             memberText[i].zone = FontManager.recreate(memberText[i].zone, zone_font_settings);
-            memberText[i].job = FontManager.recreate(memberText[i].job, name_font_settings);
+            memberText[i].job = FontManager.recreate(memberText[i].job, job_font_settings);
         end
 
         ::continue::
