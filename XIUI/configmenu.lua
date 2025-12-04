@@ -2,12 +2,17 @@ require ("common");
 require('helpers');
 local statusHandler = require('statushandler');
 local imgui = require("imgui");
+local ffi = require("ffi");
 
 local config = {};
 
 -- State for confirmation dialogs
 local showRestoreDefaultsConfirm = false;
 local showRestoreColorsConfirm = false;
+
+-- Social icon textures
+local discordTexture = nil;
+local githubTexture = nil;
 
 -- Navigation state
 local selectedCategory = 1;  -- 1-indexed category selection
@@ -227,10 +232,6 @@ end
 
 -- Section: Global Settings (combines General, Font, and Bar settings)
 local function DrawGlobalSettings()
-    imgui.Text("General");
-    imgui.Separator();
-    imgui.Spacing();
-
     DrawCheckbox('Lock HUD Position', 'lockPositions');
 
     -- Status Icon Theme
@@ -309,16 +310,19 @@ end
 local function DrawGlobalColorSettings()
     imgui.Text("Background Color:");
     imgui.Separator();
+    imgui.Spacing();
     DrawGradientPicker("Bar Background", gConfig.colorCustomization.shared.backgroundGradient, "Background color for all progress bars");
 
     imgui.Spacing();
     imgui.Text("Bookend Gradient:");
     imgui.Separator();
+    imgui.Spacing();
     DrawThreeStepGradientPicker("Bookend", gConfig.colorCustomization.shared.bookendGradient, "3-step gradient for progress bar bookends (top -> middle -> bottom)");
 
     imgui.Spacing();
     imgui.Text("Entity Name Colors (by type):");
     imgui.Separator();
+    imgui.Spacing();
     DrawTextColorPicker("Party/Alliance Player", gConfig.colorCustomization.shared, 'playerPartyTextColor', "Color for party/alliance member names");
     DrawTextColorPicker("Other Player", gConfig.colorCustomization.shared, 'playerOtherTextColor', "Color for other player names");
     DrawTextColorPicker("NPC", gConfig.colorCustomization.shared, 'npcTextColor', "Color for NPC names");
@@ -329,6 +333,7 @@ local function DrawGlobalColorSettings()
     imgui.Spacing();
     imgui.Text("HP Bar Effects (Damage/Healing):");
     imgui.Separator();
+    imgui.Spacing();
     DrawGradientPicker("Damage Effect", gConfig.colorCustomization.shared.hpDamageGradient, "Color of the trailing bar when HP decreases");
     DrawHexColorPicker("Damage Flash", gConfig.colorCustomization.shared, 'hpDamageFlashColor', "Flash overlay color when taking damage");
     DrawGradientPicker("Healing Effect", gConfig.colorCustomization.shared.hpHealGradient, "Color of the leading bar when HP increases");
@@ -352,6 +357,7 @@ end
 local function DrawPlayerBarColorSettings()
     imgui.Text("HP Bar Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawGradientPicker("HP High (75-100%)", gConfig.colorCustomization.playerBar.hpGradient.high, "HP bar color when health is above 75%");
     DrawGradientPicker("HP Med-High (50-75%)", gConfig.colorCustomization.playerBar.hpGradient.medHigh, "HP bar color when health is 50-75%");
     DrawGradientPicker("HP Med-Low (25-50%)", gConfig.colorCustomization.playerBar.hpGradient.medLow, "HP bar color when health is 25-50%");
@@ -360,12 +366,14 @@ local function DrawPlayerBarColorSettings()
     imgui.Spacing();
     imgui.Text("MP/TP Bar Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawGradientPicker("MP Bar", gConfig.colorCustomization.playerBar.mpGradient, "MP bar color gradient");
     DrawGradientPicker("TP Bar", gConfig.colorCustomization.playerBar.tpGradient, "TP bar color gradient");
 
     imgui.Spacing();
     imgui.Text("Text Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawTextColorPicker("HP Text", gConfig.colorCustomization.playerBar, 'hpTextColor', "Color of HP number text");
     DrawTextColorPicker("MP Text", gConfig.colorCustomization.playerBar, 'mpTextColor', "Color of MP number text");
     DrawTextColorPicker("TP Text (Empty, <1000)", gConfig.colorCustomization.playerBar, 'tpEmptyTextColor', "Color of TP number text when below 1000");
@@ -425,6 +433,7 @@ local function DrawTargetBarSettings()
         imgui.Spacing();
         imgui.Text('Target of Target Bar');
         imgui.Separator();
+        imgui.Spacing();
 
         DrawSlider('ToT Scale X', 'totBarScaleX', 0.1, 3.0, '%.1f');
         DrawSlider('ToT Scale Y', 'totBarScaleY', 0.1, 3.0, '%.1f');
@@ -436,6 +445,7 @@ end
 local function DrawTargetBarColorSettings()
     imgui.Text("Bar Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawGradientPicker("Target HP Bar", gConfig.colorCustomization.targetBar.hpGradient, "Target HP bar color");
     if (not HzLimitedMode) then
         DrawGradientPicker("Cast Bar", gConfig.colorCustomization.targetBar.castBarGradient, "Enemy cast bar color");
@@ -444,6 +454,7 @@ local function DrawTargetBarColorSettings()
     imgui.Spacing();
     imgui.Text("Text Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawTextColorPicker("Distance Text", gConfig.colorCustomization.targetBar, 'distanceTextColor', "Color of distance text");
     if (not HzLimitedMode) then
         DrawTextColorPicker("Cast Text", gConfig.colorCustomization.targetBar, 'castTextColor', "Color of enemy cast text");
@@ -454,6 +465,7 @@ local function DrawTargetBarColorSettings()
     imgui.Spacing();
     imgui.Text("Target of Target:");
     imgui.Separator();
+    imgui.Spacing();
     DrawGradientPicker("ToT HP Bar", gConfig.colorCustomization.totBar.hpGradient, "Target of Target HP bar color");
     DrawTextColorPicker("ToT Name Text", gConfig.colorCustomization.totBar, 'nameTextColor', "Color of target of target name text");
 end
@@ -504,11 +516,13 @@ end
 local function DrawEnemyListColorSettings()
     imgui.Text("HP Bar Color:");
     imgui.Separator();
+    imgui.Spacing();
     DrawGradientPicker("Enemy HP Bar", gConfig.colorCustomization.enemyList.hpGradient, "Enemy HP bar color");
 
     imgui.Spacing();
     imgui.Text("Text Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawTextColorPicker("Distance Text", gConfig.colorCustomization.enemyList, 'distanceTextColor', "Color of distance text");
     DrawTextColorPicker("HP% Text", gConfig.colorCustomization.enemyList, 'percentTextColor', "Color of HP percentage text");
     imgui.ShowHelp("Enemy name colors are in the Global section");
@@ -516,6 +530,7 @@ local function DrawEnemyListColorSettings()
     imgui.Spacing();
     imgui.Text("Border Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawTextColorPicker("Target Border", gConfig.colorCustomization.enemyList, 'targetBorderColor', "Border color for currently targeted enemy");
     DrawTextColorPicker("Subtarget Border", gConfig.colorCustomization.enemyList, 'subtargetBorderColor', "Border color for subtargeted enemy");
 end
@@ -616,6 +631,7 @@ local function DrawPartyListSettings()
     imgui.Spacing();
     imgui.Text('Party');
     imgui.Separator();
+    imgui.Spacing();
 
     DrawPartyLayoutCheckbox('Show TP', 'partyListTP');
     DrawPartyLayoutSlider('Min Rows', 'partyListMinRows', 1, 6);
@@ -654,6 +670,7 @@ local function DrawPartyListSettings()
         imgui.Spacing();
         imgui.Text('Party B (Alliance)');
         imgui.Separator();
+        imgui.Spacing();
 
         DrawPartyLayoutCheckbox('Show TP', 'partyList2TP');
         DrawPartyLayoutSlider('Scale X', 'partyList2ScaleX', 0.1, 3.0, '%.2f');
@@ -687,6 +704,7 @@ local function DrawPartyListSettings()
         imgui.Spacing();
         imgui.Text('Party C (Alliance)');
         imgui.Separator();
+        imgui.Spacing();
 
         DrawPartyLayoutCheckbox('Show TP', 'partyList3TP');
         DrawPartyLayoutSlider('Scale X', 'partyList3ScaleX', 0.1, 3.0, '%.2f');
@@ -720,6 +738,7 @@ end
 local function DrawPartyListColorSettings()
     imgui.Text("HP Bar Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawGradientPicker("Party HP High (75-100%)", gConfig.colorCustomization.partyList.hpGradient.high, "Party member HP bar when health is above 75%");
     DrawGradientPicker("Party HP Med-High (50-75%)", gConfig.colorCustomization.partyList.hpGradient.medHigh, "Party member HP bar when health is 50-75%");
     DrawGradientPicker("Party HP Med-Low (25-50%)", gConfig.colorCustomization.partyList.hpGradient.medLow, "Party member HP bar when health is 25-50%");
@@ -728,17 +747,20 @@ local function DrawPartyListColorSettings()
     imgui.Spacing();
     imgui.Text("MP/TP Bar Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawGradientPicker("Party MP Bar", gConfig.colorCustomization.partyList.mpGradient, "Party member MP bar color");
     DrawGradientPicker("Party TP Bar", gConfig.colorCustomization.partyList.tpGradient, "Party member TP bar color");
 
     imgui.Spacing();
     imgui.Text("Cast Bar Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawGradientPicker("Party Cast Bar", gConfig.colorCustomization.partyList.castBarGradient, "Party member cast bar color (appears when casting)");
 
     imgui.Spacing();
     imgui.Text("Bar Background Override:");
     imgui.Separator();
+    imgui.Spacing();
     local overrideActive = {gConfig.colorCustomization.partyList.barBackgroundOverride.active};
     if (imgui.Checkbox("Enable Background Override", overrideActive)) then
         gConfig.colorCustomization.partyList.barBackgroundOverride.active = overrideActive[1];
@@ -752,6 +774,7 @@ local function DrawPartyListColorSettings()
     imgui.Spacing();
     imgui.Text("Bar Border Override:");
     imgui.Separator();
+    imgui.Spacing();
     local borderOverrideActive = {gConfig.colorCustomization.partyList.barBorderOverride.active};
     if (imgui.Checkbox("Enable Border Override", borderOverrideActive)) then
         gConfig.colorCustomization.partyList.barBorderOverride.active = borderOverrideActive[1];
@@ -772,6 +795,7 @@ local function DrawPartyListColorSettings()
     imgui.Spacing();
     imgui.Text("Text Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawTextColorPicker("Name Text", gConfig.colorCustomization.partyList, 'nameTextColor', "Color of party member name");
     DrawTextColorPicker("HP Text", gConfig.colorCustomization.partyList, 'hpTextColor', "Color of HP numbers");
     DrawTextColorPicker("MP Text", gConfig.colorCustomization.partyList, 'mpTextColor', "Color of MP numbers");
@@ -781,12 +805,14 @@ local function DrawPartyListColorSettings()
     imgui.Spacing();
     imgui.Text("Background Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawTextColorPicker("Background Color", gConfig.colorCustomization.partyList, 'bgColor', "Color of party list background");
     DrawTextColorPicker("Border Color", gConfig.colorCustomization.partyList, 'borderColor', "Color of party list borders");
 
     imgui.Spacing();
     imgui.Text("Selection Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawGradientPicker("Selection Box", gConfig.colorCustomization.partyList.selectionGradient, "Color gradient for the selection box around targeted party members");
     DrawTextColorPicker("Selection Border", gConfig.colorCustomization.partyList, 'selectionBorderColor', "Color of the selection box border");
 end
@@ -811,11 +837,13 @@ end
 local function DrawExpBarColorSettings()
     imgui.Text("Bar Color:");
     imgui.Separator();
+    imgui.Spacing();
     DrawGradientPicker("Exp/Merit Bar", gConfig.colorCustomization.expBar.barGradient, "Color for EXP/Merit/Capacity bar");
 
     imgui.Spacing();
     imgui.Text("Text Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawTextColorPicker("Job Text", gConfig.colorCustomization.expBar, 'jobTextColor', "Color of job level text");
     DrawTextColorPicker("Exp Text", gConfig.colorCustomization.expBar, 'expTextColor', "Color of experience numbers");
     DrawTextColorPicker("Percent Text", gConfig.colorCustomization.expBar, 'percentTextColor', "Color of percentage text");
@@ -833,6 +861,7 @@ end
 local function DrawGilTrackerColorSettings()
     imgui.Text("Text Color:");
     imgui.Separator();
+    imgui.Spacing();
     DrawTextColorPicker("Gil Text", gConfig.colorCustomization.gilTracker, 'textColor', "Color of gil amount text");
 end
 
@@ -867,11 +896,13 @@ end
 local function DrawInventoryTrackerColorSettings()
     imgui.Text("Text Color:");
     imgui.Separator();
+    imgui.Spacing();
     DrawTextColorPicker("Count Text", gConfig.colorCustomization.inventoryTracker, 'textColor', "Color of inventory count text");
 
     imgui.Spacing();
     imgui.Text("Dot Colors:");
     imgui.Separator();
+    imgui.Spacing();
 
     local emptySlot = {
         gConfig.colorCustomization.inventoryTracker.emptySlotColor.r,
@@ -936,6 +967,7 @@ local function DrawInventoryTrackerColorSettings()
     imgui.Spacing();
     imgui.Text("Color Thresholds:");
     imgui.Separator();
+    imgui.Spacing();
 
     local threshold1 = { gConfig.inventoryTrackerColorThreshold1 };
     if (imgui.SliderInt('Warning Threshold', threshold1, 0, 80)) then
@@ -974,29 +1006,31 @@ local function DrawCastBarSettings()
 
     DrawCheckbox('Enable Fast Cast / True Display', 'castBarFastCastEnabled');
 
-    -- Special fast cast sliders
-    local castBarFCRDMSJ = { gConfig.castBarFastCastRDMSJ };
-    if (imgui.SliderFloat('Fast Cast - RDM SubJob', castBarFCRDMSJ, 0.00, 1.00, '%.2f')) then
-        gConfig.castBarFastCastRDMSJ = castBarFCRDMSJ[1];
-    end
-    if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+    if gConfig.castBarFastCastEnabled then
+        -- Special fast cast sliders
+        local castBarFCRDMSJ = { gConfig.castBarFastCastRDMSJ };
+        if (imgui.SliderFloat('Fast Cast - RDM SubJob', castBarFCRDMSJ, 0.00, 1.00, '%.2f')) then
+            gConfig.castBarFastCastRDMSJ = castBarFCRDMSJ[1];
+        end
+        if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
 
-    local castBarFCWHMCureSpeed = { gConfig.castBarFastCastWHMCureSpeed };
-    if (imgui.SliderFloat('WHM Cure Speed', castBarFCWHMCureSpeed, 0.00, 1.00, '%.2f')) then
-        gConfig.castBarFastCastWHMCureSpeed = castBarFCWHMCureSpeed[1];
-    end
-    if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+        local castBarFCWHMCureSpeed = { gConfig.castBarFastCastWHMCureSpeed };
+        if (imgui.SliderFloat('WHM Cure Speed', castBarFCWHMCureSpeed, 0.00, 1.00, '%.2f')) then
+            gConfig.castBarFastCastWHMCureSpeed = castBarFCWHMCureSpeed[1];
+        end
+        if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
 
-    local castBarFCBRDSingSpeed = { gConfig.castBarFastCastBRDSingSpeed };
-    if (imgui.SliderFloat('BRD Sing Speed', castBarFCBRDSingSpeed, 0.00, 1.00, '%.2f')) then
-        gConfig.castBarFastCastBRDSingSpeed = castBarFCBRDSingSpeed[1];
-    end
-    if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+        local castBarFCBRDSingSpeed = { gConfig.castBarFastCastBRDSingSpeed };
+        if (imgui.SliderFloat('BRD Sing Speed', castBarFCBRDSingSpeed, 0.00, 1.00, '%.2f')) then
+            gConfig.castBarFastCastBRDSingSpeed = castBarFCBRDSingSpeed[1];
+        end
+        if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
 
-    -- Job-specific fast cast sliders (using helper function)
-    local jobs = { 'WAR', 'MNK', 'WHM', 'BLM', 'RDM', 'THF', 'PLD', 'DRK', 'BST', 'BRD', 'RNG', 'SAM', 'NIN', 'DRG', 'SMN', 'BLU', 'COR', 'PUP', 'DNC', 'SCH', 'GEO', 'RUN' };
-    for i = 1, #jobs do
-        DrawFastCastSlider(jobs[i], i);
+        -- Job-specific fast cast sliders (using helper function)
+        local jobs = { 'WAR', 'MNK', 'WHM', 'BLM', 'RDM', 'THF', 'PLD', 'DRK', 'BST', 'BRD', 'RNG', 'SAM', 'NIN', 'DRG', 'SMN', 'BLU', 'COR', 'PUP', 'DNC', 'SCH', 'GEO', 'RUN' };
+        for i = 1, #jobs do
+            DrawFastCastSlider(jobs[i], i);
+        end
     end
 end
 
@@ -1004,11 +1038,13 @@ end
 local function DrawCastBarColorSettings()
     imgui.Text("Bar Color:");
     imgui.Separator();
+    imgui.Spacing();
     DrawGradientPicker("Cast Bar", gConfig.colorCustomization.castBar.barGradient, "Color of casting progress bar");
 
     imgui.Spacing();
     imgui.Text("Text Colors:");
     imgui.Separator();
+    imgui.Spacing();
     DrawTextColorPicker("Spell Text", gConfig.colorCustomization.castBar, 'spellTextColor', "Color of spell/ability name");
     DrawTextColorPicker("Percent Text", gConfig.colorCustomization.castBar, 'percentTextColor', "Color of cast percentage");
 end
@@ -1039,55 +1075,181 @@ local colorSettingsDrawFunctions = {
 };
 
 config.DrawWindow = function(us)
-    -- Colors
-    local bgColor = {0.18, 0.18, 0.18, 0.95};
-    local sidebarBgColor = {0.22, 0.22, 0.22, 1.0};
-    local buttonColor = {0.25, 0.25, 0.25, 1.0};
-    local buttonHoverColor = {0.35, 0.35, 0.35, 1.0};
-    local buttonActiveColor = {0.45, 0.45, 0.45, 1.0};
-    local selectedButtonColor = {0.4, 0.4, 0.4, 1.0};
-    local tabColor = {0.25, 0.25, 0.25, 1.0};
-    local tabHoverColor = {0.35, 0.35, 0.35, 1.0};
-    local tabActiveColor = {0.3, 0.3, 0.3, 1.0};
-    local tabSelectedColor = {0.18, 0.18, 0.18, 1.0};
-    local contentBorderColor = {0.5, 0.5, 0.5, 1.0};
-    local headerTextColor = {0.9, 0.9, 0.9, 1.0};
+    -- XIUI Theme Colors (dark + gold accent)
+    -- Base colors from XIUI branding
+    local gold = {0.957, 0.855, 0.592, 1.0};           -- #F4DA97 - Primary gold accent
+    local goldDark = {0.765, 0.684, 0.474, 1.0};       -- #C3AE79 - Darker gold for hover
+    local goldDarker = {0.573, 0.512, 0.355, 1.0};     -- #92835B - Even darker gold
+    local bgDark = {0.051, 0.051, 0.051, 0.95};        -- #0D0D0D - Deep black background
+    local bgMedium = {0.098, 0.090, 0.075, 1.0};       -- #191713 - Slightly warm dark
+    local bgLight = {0.137, 0.125, 0.106, 1.0};        -- #23201B - Lighter warm dark
+    local bgLighter = {0.176, 0.161, 0.137, 1.0};      -- #2D2923 - Highlight dark
+    local textLight = {0.878, 0.855, 0.812, 1.0};      -- #E0DACF - Warm off-white text
+    local textMuted = {0.6, 0.58, 0.54, 1.0};          -- #999388 - Muted text
+    local borderDark = {0.3, 0.275, 0.235, 1.0};       -- #4D463C - Warm dark border
+
+    -- Mapped colors for UI elements
+    local bgColor = bgDark;
+    local buttonColor = bgMedium;
+    local buttonHoverColor = bgLight;
+    local buttonActiveColor = bgLighter;
+    local selectedButtonColor = {gold[1], gold[2], gold[3], 0.25};  -- Gold tinted selection
+    local tabColor = bgMedium;
+    local tabHoverColor = bgLight;
+    local tabActiveColor = bgLighter;
+    local tabSelectedColor = {0, 0, 0, 0};  -- Transparent for selected tab
+    local borderColor = borderDark;
+    local textColor = textLight;
 
     imgui.PushStyleColor(ImGuiCol_WindowBg, bgColor);
-    imgui.PushStyleColor(ImGuiCol_TitleBg, {0.15, 0.15, 0.15, 1.0});
-    imgui.PushStyleColor(ImGuiCol_TitleBgActive, {0.2, 0.2, 0.2, 1.0});
-    imgui.PushStyleColor(ImGuiCol_TitleBgCollapsed, {0.1, 0.1, 0.1, 0.8});
-    imgui.PushStyleColor(ImGuiCol_FrameBg, {0.15, 0.15, 0.15, 1.0});
-    imgui.PushStyleColor(ImGuiCol_FrameBgHovered, {0.2, 0.2, 0.2, 1.0});
-    imgui.PushStyleColor(ImGuiCol_FrameBgActive, {0.25, 0.25, 0.25, 1.0});
-    imgui.PushStyleColor(ImGuiCol_Header, {0.2, 0.2, 0.2, 1.0});
-    imgui.PushStyleColor(ImGuiCol_HeaderHovered, {0.25, 0.25, 0.25, 1.0});
-    imgui.PushStyleColor(ImGuiCol_HeaderActive, {0.3, 0.3, 0.3, 1.0});
-    imgui.PushStyleColor(ImGuiCol_Border, contentBorderColor);
-    imgui.PushStyleColor(ImGuiCol_Text, headerTextColor);
+    imgui.PushStyleColor(ImGuiCol_ChildBg, {0, 0, 0, 0});
+    imgui.PushStyleColor(ImGuiCol_TitleBg, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_TitleBgActive, bgLight);
+    imgui.PushStyleColor(ImGuiCol_TitleBgCollapsed, bgDark);
+    imgui.PushStyleColor(ImGuiCol_FrameBg, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_FrameBgHovered, bgLight);
+    imgui.PushStyleColor(ImGuiCol_FrameBgActive, bgLighter);
+    imgui.PushStyleColor(ImGuiCol_Header, bgLight);
+    imgui.PushStyleColor(ImGuiCol_HeaderHovered, bgLighter);
+    imgui.PushStyleColor(ImGuiCol_HeaderActive, {gold[1], gold[2], gold[3], 0.3});
+    imgui.PushStyleColor(ImGuiCol_Border, borderColor);
+    imgui.PushStyleColor(ImGuiCol_Text, textColor);
+    imgui.PushStyleColor(ImGuiCol_CheckMark, gold);
+    imgui.PushStyleColor(ImGuiCol_SliderGrab, goldDark);
+    imgui.PushStyleColor(ImGuiCol_SliderGrabActive, gold);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarBg, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrab, bgLighter);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabHovered, borderDark);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabActive, goldDark);
+    imgui.PushStyleColor(ImGuiCol_Separator, borderDark);
+    imgui.PushStyleColor(ImGuiCol_PopupBg, bgMedium);
 
     imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {12, 12});
     imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {6, 4});
     imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {8, 6});
+    imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0);
+    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0);
+    imgui.PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0);
+    imgui.PushStyleVar(ImGuiStyleVar_PopupRounding, 4.0);
+    imgui.PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 4.0);
+    imgui.PushStyleVar(ImGuiStyleVar_GrabRounding, 4.0);
 
     imgui.SetNextWindowSize({ 900, 650 }, ImGuiCond_FirstUseEver);
-    if(showConfig[1] and imgui.Begin("xiui config", showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
+    if(showConfig[1] and imgui.Begin("XIUI Config", showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
         local windowWidth = imgui.GetContentRegionAvail();
         local sidebarWidth = 180;
         local contentWidth = windowWidth - sidebarWidth - 20;
 
-        -- Top bar with restore defaults buttons
+        -- Top bar with reset buttons and social links
         imgui.PushStyleColor(ImGuiCol_Button, buttonColor);
         imgui.PushStyleColor(ImGuiCol_ButtonHovered, buttonHoverColor);
         imgui.PushStyleColor(ImGuiCol_ButtonActive, buttonActiveColor);
 
-        if(imgui.Button("restore defaults", { 120, 22 })) then
+        if(imgui.Button("Reset Settings")) then
             showRestoreDefaultsConfirm = true;
         end
         imgui.SameLine();
-        imgui.SetCursorPosX(windowWidth - 120);
-        if(imgui.Button("restore defaults", { 120, 22 })) then
+        if(imgui.Button("Reset Colors")) then
             showRestoreColorsConfirm = true;
+        end
+        -- Load social icon textures if not loaded
+        if discordTexture == nil then
+            discordTexture = LoadTexture("socials/discord");
+        end
+        if githubTexture == nil then
+            githubTexture = LoadTexture("socials/github");
+        end
+
+        -- Social icon buttons with square background boxes
+        local boxSize = 26;
+        local boxSpacing = 4;
+        local iconSize = 18;
+        local iconPad = (boxSize - iconSize) / 2;
+        local outlineColor = imgui.GetColorU32(borderDark);
+
+        imgui.SameLine();
+        imgui.SetCursorPosX(windowWidth - (boxSize * 2) - boxSpacing);
+
+        -- Discord button
+        if discordTexture ~= nil and discordTexture.image ~= nil then
+            local screenPosX, screenPosY = imgui.GetCursorScreenPos();
+            local isHovered = imgui.IsMouseHoveringRect({screenPosX, screenPosY}, {screenPosX + boxSize, screenPosY + boxSize});
+
+            -- Draw box background and outline
+            local draw_list = imgui.GetWindowDrawList();
+            local boxColor = isHovered and imgui.GetColorU32(bgLighter) or imgui.GetColorU32(bgLight);
+            draw_list:AddRectFilled(
+                {screenPosX, screenPosY},
+                {screenPosX + boxSize, screenPosY + boxSize},
+                boxColor,
+                4.0
+            );
+            draw_list:AddRect(
+                {screenPosX, screenPosY},
+                {screenPosX + boxSize, screenPosY + boxSize},
+                outlineColor,
+                4.0
+            );
+
+            -- Draw image centered in box
+            draw_list:AddImage(
+                tonumber(ffi.cast("uint32_t", discordTexture.image)),
+                {screenPosX + iconPad, screenPosY + iconPad},
+                {screenPosX + iconPad + iconSize, screenPosY + iconPad + iconSize},
+                {0, 0}, {1, 1},
+                IM_COL32_WHITE
+            );
+
+            -- Invisible button for interaction
+            imgui.InvisibleButton("discord_btn", { boxSize, boxSize });
+            if imgui.IsItemHovered() then
+                imgui.SetMouseCursor(ImGuiMouseCursor_Hand);
+            end
+            if imgui.IsItemClicked() then
+                ashita.misc.open_url("https://discord.gg/PDFJebrwN4");
+            end
+        end
+
+        imgui.SameLine(0, boxSpacing);
+
+        -- GitHub button
+        if githubTexture ~= nil and githubTexture.image ~= nil then
+            local screenPosX, screenPosY = imgui.GetCursorScreenPos();
+            local isHovered = imgui.IsMouseHoveringRect({screenPosX, screenPosY}, {screenPosX + boxSize, screenPosY + boxSize});
+
+            -- Draw box background and outline
+            local draw_list = imgui.GetWindowDrawList();
+            local boxColor = isHovered and imgui.GetColorU32(bgLighter) or imgui.GetColorU32(bgLight);
+            draw_list:AddRectFilled(
+                {screenPosX, screenPosY},
+                {screenPosX + boxSize, screenPosY + boxSize},
+                boxColor,
+                4.0
+            );
+            draw_list:AddRect(
+                {screenPosX, screenPosY},
+                {screenPosX + boxSize, screenPosY + boxSize},
+                outlineColor,
+                4.0
+            );
+
+            -- Draw image centered in box
+            draw_list:AddImage(
+                tonumber(ffi.cast("uint32_t", githubTexture.image)),
+                {screenPosX + iconPad, screenPosY + iconPad},
+                {screenPosX + iconPad + iconSize, screenPosY + iconPad + iconSize},
+                {0, 0}, {1, 1},
+                IM_COL32_WHITE
+            );
+
+            -- Invisible button for interaction
+            imgui.InvisibleButton("github_btn", { boxSize, boxSize });
+            if imgui.IsItemHovered() then
+                imgui.SetMouseCursor(ImGuiMouseCursor_Hand);
+            end
+            if imgui.IsItemClicked() then
+                ashita.misc.open_url("https://github.com/tirem/xiui");
+            end
         end
 
         imgui.PopStyleColor(3);
@@ -1120,11 +1282,11 @@ config.DrawWindow = function(us)
 
         -- Reset Colors confirmation popup
         if (showRestoreColorsConfirm) then
-            imgui.OpenPopup("Confirm Restore Colors");
+            imgui.OpenPopup("Confirm Reset Colors");
             showRestoreColorsConfirm = false;
         end
 
-        if (imgui.BeginPopupModal("Confirm Restore Colors", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+        if (imgui.BeginPopupModal("Confirm Reset Colors", true, ImGuiWindowFlags_AlwaysAutoResize)) then
             imgui.Text("Are you sure you want to restore all colors to defaults?");
             imgui.Text("This will reset all your custom colors.");
             imgui.NewLine();
@@ -1146,7 +1308,6 @@ config.DrawWindow = function(us)
 
         -- Main layout: sidebar + content area
         -- Left sidebar with category buttons
-        imgui.PushStyleColor(ImGuiCol_ChildBg, sidebarBgColor);
         imgui.BeginChild("Sidebar", { sidebarWidth, 0 }, false);
 
         imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {10, 8});
@@ -1164,8 +1325,22 @@ config.DrawWindow = function(us)
                 imgui.PushStyleColor(ImGuiCol_ButtonActive, buttonActiveColor);
             end
 
+            -- Get position before drawing button for accent bar
+            local btnPosX, btnPosY = imgui.GetCursorScreenPos();
+
             if (imgui.Button(category.label, { sidebarWidth - 16, 32 })) then
                 selectedCategory = i;
+            end
+
+            -- Draw gold accent bar on the left edge for selected category
+            if i == selectedCategory then
+                local draw_list = imgui.GetWindowDrawList();
+                draw_list:AddRectFilled(
+                    {btnPosX, btnPosY + 4},
+                    {btnPosX + 3, btnPosY + 28},
+                    imgui.GetColorU32(gold),
+                    1.5
+                );
             end
 
             imgui.PopStyleColor(3);
@@ -1173,7 +1348,6 @@ config.DrawWindow = function(us)
 
         imgui.PopStyleVar();
         imgui.EndChild();
-        imgui.PopStyleColor();
 
         imgui.SameLine();
 
@@ -1188,6 +1362,7 @@ config.DrawWindow = function(us)
         imgui.SetWindowFontScale(1.05);
 
         -- Settings tab
+        local tabPosX, tabPosY = imgui.GetCursorScreenPos();
         if selectedTab == 1 then
             imgui.PushStyleColor(ImGuiCol_Button, tabSelectedColor);
             imgui.PushStyleColor(ImGuiCol_ButtonHovered, tabSelectedColor);
@@ -1200,11 +1375,22 @@ config.DrawWindow = function(us)
         if (imgui.Button("settings", { tabWidth, tabHeight })) then
             selectedTab = 1;
         end
+        -- Draw gold underline for selected tab
+        if selectedTab == 1 then
+            local draw_list = imgui.GetWindowDrawList();
+            draw_list:AddRectFilled(
+                {tabPosX + 4, tabPosY + tabHeight - 3},
+                {tabPosX + tabWidth - 4, tabPosY + tabHeight},
+                imgui.GetColorU32(gold),
+                1.0
+            );
+        end
         imgui.PopStyleColor(3);
 
         imgui.SameLine();
 
         -- Color settings tab
+        local tabPos2X, tabPos2Y = imgui.GetCursorScreenPos();
         if selectedTab == 2 then
             imgui.PushStyleColor(ImGuiCol_Button, tabSelectedColor);
             imgui.PushStyleColor(ImGuiCol_ButtonHovered, tabSelectedColor);
@@ -1217,14 +1403,29 @@ config.DrawWindow = function(us)
         if (imgui.Button("color settings", { tabWidth, tabHeight })) then
             selectedTab = 2;
         end
+        -- Draw gold underline for selected tab
+        if selectedTab == 2 then
+            local draw_list = imgui.GetWindowDrawList();
+            draw_list:AddRectFilled(
+                {tabPos2X + 4, tabPos2Y + tabHeight - 3},
+                {tabPos2X + tabWidth - 4, tabPos2Y + tabHeight},
+                imgui.GetColorU32(gold),
+                1.0
+            );
+        end
         imgui.PopStyleColor(3);
 
         imgui.PopStyleVar();
 
+        -- Divider between tabs and content
+        imgui.Spacing();
+        imgui.PushStyleColor(ImGuiCol_Separator, borderDark);
+        imgui.Separator();
+        imgui.PopStyleColor();
+        imgui.Spacing();
+
         -- Content panel with border
-        imgui.PushStyleColor(ImGuiCol_ChildBg, bgColor);
-        imgui.PushStyleColor(ImGuiCol_Border, contentBorderColor);
-        imgui.BeginChild("SettingsContent", { 0, 0 }, true);
+        imgui.BeginChild("SettingsContent", { 0, 0 }, false);
 
         imgui.SetWindowFontScale(0.95);
 
@@ -1240,13 +1441,12 @@ config.DrawWindow = function(us)
         end
 
         imgui.EndChild();
-        imgui.PopStyleColor(2);
 
         imgui.EndChild();
     end
 
-    imgui.PopStyleVar(3);
-    imgui.PopStyleColor(12);
+    imgui.PopStyleVar(9);
+    imgui.PopStyleColor(22);
     imgui.End();
 end
 
