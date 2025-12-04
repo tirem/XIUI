@@ -306,11 +306,12 @@ end
 -- Section: Enemy List Settings
 local function DrawEnemyListSettings()
     if (imgui.CollapsingHeader("Enemy List")) then
-        imgui.BeginChild("EnemyListSettings", { 0, 250 }, true);
+        imgui.BeginChild("EnemyListSettings", { 0, 420 }, true);
 
         DrawCheckbox('Enabled', 'showEnemyList', CheckVisibility);
         DrawCheckbox('Show Distance', 'showEnemyDistance');
         DrawCheckbox('Show HP% Text', 'showEnemyHPPText');
+        DrawCheckbox('Show Debuffs', 'showEnemyListDebuffs');
         DrawCheckbox('Show Enemy Targets', 'showEnemyListTargets');
         imgui.ShowHelp('Shows who each enemy is targeting based on their last action.');
         DrawCheckbox('Show Bookends', 'showEnemyListBookends');
@@ -322,9 +323,29 @@ local function DrawEnemyListSettings()
         DrawSlider('Scale X', 'enemyListScaleX', 0.1, 3.0, '%.1f');
         DrawSlider('Scale Y', 'enemyListScaleY', 0.1, 3.0, '%.1f');
         DrawSlider('Name Font Size', 'enemyListNameFontSize', 8, 36);
-        DrawSlider('Distance Font Size', 'enemyListDistanceFontSize', 8, 36);
-        DrawSlider('HP% Font Size', 'enemyListPercentFontSize', 8, 36);
-        DrawSlider('Icon Scale', 'enemyListIconScale', 0.1, 3.0, '%.1f');
+        DrawSlider('Rows Per Column', 'enemyListRowsPerColumn', 1, 20);
+        imgui.ShowHelp('Number of enemies to show per column before starting a new column.');
+        DrawSlider('Max Columns', 'enemyListMaxColumns', 1, 5);
+        imgui.ShowHelp('Maximum number of columns to display. Total enemies = Rows x Columns.');
+        DrawSlider('Row Spacing', 'enemyListRowSpacing', 0, 20);
+        imgui.ShowHelp('Vertical space between enemy entries.');
+        DrawSlider('Column Spacing', 'enemyListColumnSpacing', 0, 50);
+        imgui.ShowHelp('Horizontal space between columns.');
+        if (gConfig.showEnemyListDebuffs) then
+            DrawCheckbox('Right Align Debuffs', 'enemyListDebuffsRightAlign');
+            imgui.ShowHelp('When enabled, debuff icons align to the right edge of each enemy entry instead of the left.');
+            DrawSlider('Debuff Offset X', 'enemyListDebuffOffsetX', -100, 200);
+            imgui.ShowHelp('Horizontal offset for debuff icons. Offsets from left edge (or right edge if right-aligned).');
+            DrawSlider('Debuff Offset Y', 'enemyListDebuffOffsetY', -100, 200);
+            imgui.ShowHelp('Vertical offset for debuff icons from top of entry.');
+            DrawSlider('Status Effect Icon Size', 'enemyListIconScale', 0.1, 3.0, '%.1f');
+        end
+        if (gConfig.showEnemyDistance) then
+            DrawSlider('Distance Font Size', 'enemyListDistanceFontSize', 8, 36);
+        end
+        if (gConfig.showEnemyHPPText) then
+            DrawSlider('HP% Font Size', 'enemyListPercentFontSize', 8, 36);
+        end
 
         imgui.EndChild();
     end

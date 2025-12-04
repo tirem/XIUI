@@ -131,7 +131,15 @@ T{
 	fontOutlineWidth = 2, -- Global outline width for all text (range: 0-5)
 
 	showPartyListWhenSolo = false,
-	maxEnemyListEntries = 8,
+	maxEnemyListEntries = 8,  -- Legacy, now calculated from rows * columns
+	enemyListRowsPerColumn = 8,
+	enemyListMaxColumns = 1,
+	enemyListRowSpacing = 5,
+	enemyListColumnSpacing = 10,
+	enemyListDebuffOffsetX = 0,
+	enemyListDebuffOffsetY = 0,
+	showEnemyListDebuffs = true,
+	enemyListDebuffsRightAlign = false,
 	showEnemyListTargets = false,
 	enableEnemyListClickTarget = true,
 
@@ -1313,6 +1321,8 @@ function UpdateUserSettings()
 	gAdjustedSettings.enemyListSettings.barWidth = ds.enemyListSettings.barWidth * us.enemyListScaleX;
 	gAdjustedSettings.enemyListSettings.barHeight = ds.enemyListSettings.barHeight * us.enemyListScaleY;
 	gAdjustedSettings.enemyListSettings.iconSize = ds.enemyListSettings.iconSize * us.enemyListIconScale;
+	gAdjustedSettings.enemyListSettings.debuffOffsetX = us.enemyListDebuffOffsetX;
+	gAdjustedSettings.enemyListSettings.debuffOffsetY = us.enemyListDebuffOffsetY;
 	gAdjustedSettings.enemyListSettings.name_font_settings.font_height = math.max(us.enemyListNameFontSize, 8);
 	gAdjustedSettings.enemyListSettings.distance_font_settings.font_height = math.max(us.enemyListDistanceFontSize, 8);
 	gAdjustedSettings.enemyListSettings.distance_font_settings.font_color = us.colorCustomization.enemyList.distanceTextColor;
@@ -1519,7 +1529,9 @@ ashita.events.register('d3d_present', 'present_cb', function ()
         else
 			targetBar.DrawWindow(gAdjustedSettings.targetBarSettings);
 		end
-		if (gConfig.showEnemyList) then
+		if (not gConfig.showEnemyList) then
+			enemyList.SetHidden(true);
+		else
 			enemyList.DrawWindow(gAdjustedSettings.enemyListSettings);
 		end
 		if (gConfig.showExpBar) then

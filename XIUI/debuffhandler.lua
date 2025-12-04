@@ -3,11 +3,16 @@ require('common');
 require('helpers');
 local buffTable = require('bufftable');
 
-local debuffHandler = 
+local debuffHandler =
 T{
     -- All enemies we have seen take a debuff
     enemies = T{};
 };
+
+-- Reusable tables for GetActiveDebuffs to avoid per-frame allocations
+-- These are cleared and reused each call instead of creating new tables
+local reusableDebuffIds = {};
+local reusableDebuffTimes = {};
 
 -- TO DO: Audit these messages for which ones are actually useful
 local statusOnMes = T{101, 127, 160, 164, 166, 186, 194, 203, 205, 230, 236, 266, 267, 268, 269, 237, 271, 272, 277, 278, 279, 280, 319, 320, 375, 412, 645, 754, 755, 804};
@@ -223,15 +228,32 @@ debuffHandler.GetActiveDebuffs = function(serverId)
     if (debuffHandler.enemies[serverId] == nil) then
         return nil
     end
-    local returnTable = {};
-    local returnTable2 = {};
-    for k,v in pairs(debuffHandler.enemies[serverId]) do
-        if (v ~= 0 and v > os.time()) then
-            table.insert(returnTable, k);
-            table.insert(returnTable2, v - os.time());
+
+    -- Clear and reuse tables instead of allocating new ones every frame
+    -- This significantly reduces garbage collection pressure
+    local count = 0;
+    for i = 1, #reusableDebuffIds do
+        reusableDebuffIds[i] = nil;
+        reusableDebuffTimes[i] = nil;
+    end
+
+    -- Cache os.time() once instead of calling it repeatedly in the loop
+    local currentTime = os.time();
+
+    for buffId, expiryTime in pairs(debuffHandler.enemies[serverId]) do
+        if (expiryTime ~= 0 and expiryTime > currentTime) then
+            count = count + 1;
+            reusableDebuffIds[count] = buffId;
+            reusableDebuffTimes[count] = expiryTime - currentTime;
         end
     end
-    return returnTable, returnTable2;
+
+    -- Return nil if no active debuffs (same behavior as before)
+    if count == 0 then
+        return nil;
+    end
+
+    return reusableDebuffIds, reusableDebuffTimes;
 end
 
 return debuffHandler;

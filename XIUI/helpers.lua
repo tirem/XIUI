@@ -903,6 +903,14 @@ function IsMemberOfParty(targetIndex)
 	return false;
 end
 
+-- Check if a server ID belongs to a party member (uses cached data for O(1) lookup)
+function IsPartyMemberByServerId(serverId)
+	if partyMemberIndicesDirty then
+		UpdatePartyCache();
+	end
+	return partyMemberServerIds[serverId] == true;
+end
+
 function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset, buffTimes, settings)
 	if (statusIds ~= nil and #statusIds > 0) then
 		local currentRow = 1;
