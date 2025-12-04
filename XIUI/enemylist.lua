@@ -198,7 +198,11 @@ enemylist.DrawWindow = function(settings)
 
 				-- Entry width is the content area (barWidth), not including window margins
 				local entryWidth = settings.barWidth;
-				local padding = 10;  -- Internal padding within entry (uniform 10px on all sides)
+				-- Scale padding and gaps based on bar dimensions to prevent negative sizes at low scales
+				-- Base values at scale 1.0: padding=10, nameToBarGap=10, barToInfoGap=5
+				local scaleX = entryWidth / 125;  -- 125 is the default barWidth
+				local scaleY = settings.barHeight / 10;  -- 10 is the default barHeight
+				local padding = math.max(10 * math.min(scaleX, scaleY), 2);  -- Minimum 2px padding
 				local borderThickness = 2;
 
 				-- Calculate entry dimensions
@@ -207,8 +211,8 @@ enemylist.DrawWindow = function(settings)
 				-- Row 3: Distance (left) and HP% (right) - only if enabled
 				local nameHeight = settings.name_font_settings.font_height;
 				local barHeight = settings.barHeight;
-				local nameToBarGap = 10;  -- Vertical spacing between name and HP bar
-				local barToInfoGap = 5;  -- Vertical spacing between HP bar and info row
+				local nameToBarGap = math.max(10 * scaleY, 1);  -- Vertical spacing between name and HP bar
+				local barToInfoGap = math.max(5 * scaleY, 1);  -- Vertical spacing between HP bar and info row
 
 				-- Calculate info row height based only on enabled features
 				local infoRowHeight = 0;
@@ -240,8 +244,8 @@ enemylist.DrawWindow = function(settings)
 					hpText = ('%.0f%%'):format(ent.HPPercent);
 				end
 
-				-- HP bar is full width
-				local barWidth = entryWidth - (padding * 2);
+				-- HP bar is full width (ensure minimum of 1px to prevent negative/zero width)
+				local barWidth = math.max(entryWidth - (padding * 2), 1);
 
 				-- ===== BACKGROUND & BORDER RENDERING =====
 				-- We need to draw these BEFORE the ImGui content so they appear behind progress bars
