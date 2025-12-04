@@ -33,6 +33,52 @@ RENDER_FLAG_VISIBLE = 0x200;  -- Entity is visible and rendered
 RENDER_FLAG_HIDDEN = 0x4000;  -- Entity is hidden (cutscene, menu, etc.)
 
 -- ========================================
+-- Shared Spell Lists (for fast cast calculations)
+-- ========================================
+-- Cure spells that benefit from WHM Cure Speed trait
+CURE_SPELLS = T{ 'Cure','Cure II','Cure III','Cure IV','Cure V','Cure VI','Full Cure','Curaga','Curaga II','Curaga III','Curaga IV','Curaga V' };
+
+-- ========================================
+-- Fast Cast Calculation (shared by castbar and partylist)
+-- ========================================
+-- Calculates total fast cast percentage based on job, subjob, and spell info
+-- Returns the fast cast multiplier (0.0 to 0.80, clamped)
+-- @param mainJob: Main job ID (1-22)
+-- @param subJob: Sub job ID (1-22)
+-- @param spellType: Magic skill type (33=Healing, 40=Singing, etc.) - optional
+-- @param spellName: Spell name string - optional (for cure speed check)
+function CalculateFastCast(mainJob, subJob, spellType, spellName)
+    if not gConfig.castBarFastCastEnabled then
+        return 0;
+    end
+
+    local fastCast = 0;
+
+    -- Job-based fast cast from user config
+    if (gConfig.castBarFastCast and mainJob and gConfig.castBarFastCast[mainJob]) then
+        fastCast = fastCast + (gConfig.castBarFastCast[mainJob] or 0);
+    end
+
+    -- WHM main job + Healing Magic (skill 33) = Cure Speed bonus
+    if (mainJob == 3 and spellType == 33) then
+        if (spellName and CURE_SPELLS:contains(spellName)) then
+            fastCast = fastCast + (gConfig.castBarFastCastWHMCureSpeed or 0);
+        end
+    -- BRD main job + Singing (skill 40) = Singing Speed bonus
+    elseif (mainJob == 10 and spellType == 40) then
+        fastCast = fastCast + (gConfig.castBarFastCastBRDSingSpeed or 0);
+    end
+
+    -- RDM sub-job fast cast bonus
+    if (subJob == 5 and gConfig.castBarFastCastRDMSJ) then
+        fastCast = fastCast + (gConfig.castBarFastCastRDMSJ or 0);
+    end
+
+    -- Clamp fast cast to prevent negative/inverted results
+    return math.min(fastCast, 0.80);
+end
+
+-- ========================================
 -- FontManager Helper
 -- ========================================
 -- Provides a centralized API for font lifecycle management
@@ -305,18 +351,54 @@ HpInterpolation = {
 
         local hpPercentData = {{baseHpPercent / 100, gradient}};
 
+        -- Get configurable colors for damage/healing effects
+        -- Note: GetHpInterpolationColors() is defined below but this code runs at runtime after helpers.lua is fully loaded
+        local interpColors = {
+            damageGradient = {'#cf3437', '#c54d4d'},
+            damageFlashColor = '#ffacae',
+            healGradient = {'#4ade80', '#86efac'},
+            healFlashColor = '#c8ffc8',
+        };
+        if gConfig and gConfig.colorCustomization and gConfig.colorCustomization.shared then
+            local shared = gConfig.colorCustomization.shared;
+            if shared.hpDamageGradient then
+                if shared.hpDamageGradient.enabled then
+                    interpColors.damageGradient = {shared.hpDamageGradient.start, shared.hpDamageGradient.stop};
+                else
+                    interpColors.damageGradient = {shared.hpDamageGradient.start, shared.hpDamageGradient.start};
+                end
+            end
+            if shared.hpDamageFlashColor then
+                interpColors.damageFlashColor = shared.hpDamageFlashColor;
+            end
+            if shared.hpHealGradient then
+                if shared.hpHealGradient.enabled then
+                    interpColors.healGradient = {shared.hpHealGradient.start, shared.hpHealGradient.stop};
+                else
+                    interpColors.healGradient = {shared.hpHealGradient.start, shared.hpHealGradient.start};
+                end
+            end
+            if shared.hpHealFlashColor then
+                interpColors.healFlashColor = shared.hpHealFlashColor;
+            end
+        end
+        local damageGradient = interpColors.damageGradient;
+        local damageFlashColor = interpColors.damageFlashColor;
+        local healGradient = interpColors.healGradient;
+        local healFlashColor = interpColors.healFlashColor;
+
         -- Add damage interpolation bar
         if state.interpolationDamagePercent > 0 then
             local interpolationOverlay;
             if gConfig.healthBarFlashEnabled and state.overlayAlpha > 0 then
                 interpolationOverlay = {
-                    '#ffacae',  -- overlay color (light red)
+                    damageFlashColor,
                     state.overlayAlpha
                 };
             end
             table.insert(hpPercentData, {
                 state.interpolationDamagePercent / 100,
-                {'#cf3437', '#c54d4d'},  -- red gradient
+                damageGradient,
                 interpolationOverlay
             });
         end
@@ -326,13 +408,13 @@ HpInterpolation = {
             local healInterpolationOverlay;
             if gConfig.healthBarFlashEnabled and state.healOverlayAlpha > 0 then
                 healInterpolationOverlay = {
-                    '#c8ffc8',  -- overlay color (light green)
+                    healFlashColor,
                     state.healOverlayAlpha
                 };
             end
             table.insert(hpPercentData, {
                 state.interpolationHealPercent / 100,
-                {'#4ade80', '#86efac'},  -- green gradient
+                healGradient,
                 healInterpolationOverlay
             });
         end
@@ -366,6 +448,43 @@ function GetGradientSetting(module, setting, defaultGradient)
         end
     end
     return defaultGradient;
+end
+
+-- Get HP interpolation effect colors from shared config
+-- Returns table with damageGradient, damageFlashColor, healGradient, healFlashColor
+function GetHpInterpolationColors()
+    local colors = {
+        damageGradient = {'#cf3437', '#c54d4d'},
+        damageFlashColor = '#ffacae',
+        healGradient = {'#4ade80', '#86efac'},
+        healFlashColor = '#c8ffc8',
+    };
+
+    if gConfig and gConfig.colorCustomization and gConfig.colorCustomization.shared then
+        local shared = gConfig.colorCustomization.shared;
+        if shared.hpDamageGradient then
+            if shared.hpDamageGradient.enabled then
+                colors.damageGradient = {shared.hpDamageGradient.start, shared.hpDamageGradient.stop};
+            else
+                colors.damageGradient = {shared.hpDamageGradient.start, shared.hpDamageGradient.start};
+            end
+        end
+        if shared.hpDamageFlashColor then
+            colors.damageFlashColor = shared.hpDamageFlashColor;
+        end
+        if shared.hpHealGradient then
+            if shared.hpHealGradient.enabled then
+                colors.healGradient = {shared.hpHealGradient.start, shared.hpHealGradient.stop};
+            else
+                colors.healGradient = {shared.hpHealGradient.start, shared.hpHealGradient.start};
+            end
+        end
+        if shared.hpHealFlashColor then
+            colors.healFlashColor = shared.hpHealFlashColor;
+        end
+    end
+
+    return colors;
 end
 
 -- Party member cache for performance optimization
@@ -901,6 +1020,14 @@ function IsMemberOfParty(targetIndex)
 		end
 	end
 	return false;
+end
+
+-- Check if a server ID belongs to a party member (uses cached data for O(1) lookup)
+function IsPartyMemberByServerId(serverId)
+	if partyMemberIndicesDirty then
+		UpdatePartyCache();
+	end
+	return partyMemberServerIds[serverId] == true;
 end
 
 function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset, buffTimes, settings)

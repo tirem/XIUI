@@ -19,9 +19,34 @@ local lastTpTextColor;
 -- Reference text height for baseline alignment (prevents text jumping)
 local referenceTextHeight = 0;
 
+-- Cached interpolation colors (updated when config changes)
+local cachedInterpColors = nil;
+local lastInterpColorConfig = nil;
+
+-- Cached window flags (constant, computed once)
+local baseWindowFlags = nil;
+
 local playerbar = {
 	interpolation = {}
 };
+
+-- Get cached interpolation colors, only recompute when config changes
+local function getCachedInterpColors()
+	local currentConfig = gConfig.colorCustomization and gConfig.colorCustomization.shared;
+	if cachedInterpColors == nil or lastInterpColorConfig ~= currentConfig then
+		cachedInterpColors = GetHpInterpolationColors();
+		lastInterpColorConfig = currentConfig;
+	end
+	return cachedInterpColors;
+end
+
+-- Get cached base window flags (computed once, lock flag added dynamically)
+local function getBaseWindowFlags()
+	if baseWindowFlags == nil then
+		baseWindowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+	end
+	return baseWindowFlags;
+end
 
 local _XIUI_DEV_DEBUG_INTERPOLATION = false;
 local _XIUI_DEV_DEBUG_INTERPOLATION_DELAY, _XIUI_DEV_DEBUG_INTERPOLATION_NEXT_TIME;
@@ -32,7 +57,7 @@ if _XIUI_DEV_DEBUG_INTERPOLATION then
 end
 
 playerbar.DrawWindow = function(settings)
-    -- Obtain the player entity..
+    -- Obtain game state (single call each, cached for this frame)
     local party = GetPartySafe();
     local player = GetPlayerSafe();
 	local playerEnt = GetPlayerEntity();
@@ -47,10 +72,6 @@ playerbar.DrawWindow = function(settings)
     if (player.isZoning or currJob == 0) then
 		SetFontsVisible(allFonts, false);
         return;
-	end
-	
-	if (party == nil or player == nil) then
-		return;
 	end
 
 	local SelfHP = party:GetMemberHP(0);
@@ -201,7 +222,8 @@ playerbar.DrawWindow = function(settings)
 	end
 	
 		
-	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+	-- Use cached base flags, only add NoMove dynamically if positions are locked
+	local windowFlags = getBaseWindowFlags();
 	if (gConfig.lockPositions) then
 		windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
 	end
@@ -230,22 +252,25 @@ playerbar.DrawWindow = function(settings)
 
 		local hpPercentData = {{baseHpPercent / 100, hpGradient}};
 
+		-- Get cached interpolation colors (only recomputed when config changes)
+		local interpColors = getCachedInterpColors();
+
 		-- Add interpolation bar for damage taken
 		if playerbar.interpolation.interpolationDamagePercent and playerbar.interpolation.interpolationDamagePercent > 0 then
 			local interpolationOverlay;
 
 			if gConfig.healthBarFlashEnabled and interpolationOverlayAlpha > 0 then
 				interpolationOverlay = {
-					'#ffacae', -- overlay color,
-					interpolationOverlayAlpha -- overlay alpha
+					interpColors.damageFlashColor,
+					interpolationOverlayAlpha
 				};
 			end
 
 			table.insert(
 				hpPercentData,
 				{
-					playerbar.interpolation.interpolationDamagePercent / 100, -- interpolation percent
-					{'#cf3437', '#c54d4d'}, -- interpolation gradient (red)
+					playerbar.interpolation.interpolationDamagePercent / 100,
+					interpColors.damageGradient,
 					interpolationOverlay
 				}
 			);
@@ -257,16 +282,16 @@ playerbar.DrawWindow = function(settings)
 
 			if gConfig.healthBarFlashEnabled and healInterpolationOverlayAlpha > 0 then
 				healInterpolationOverlay = {
-					'#c8ffc8', -- overlay color (light green),
-					healInterpolationOverlayAlpha -- overlay alpha
+					interpColors.healFlashColor,
+					healInterpolationOverlayAlpha
 				};
 			end
 
 			table.insert(
 				hpPercentData,
 				{
-					playerbar.interpolation.interpolationHealPercent / 100, -- interpolation percent
-					{'#4ade80', '#86efac'}, -- interpolation gradient (green)
+					playerbar.interpolation.interpolationHealPercent / 100,
+					interpColors.healGradient,
 					healInterpolationOverlay
 				}
 			);
@@ -434,6 +459,10 @@ playerbar.UpdateVisuals = function(settings)
 
 	-- Reset reference height so it gets recalculated with new font
 	referenceTextHeight = 0;
+
+	-- Invalidate interpolation color cache (config may have changed)
+	cachedInterpColors = nil;
+	lastInterpColorConfig = nil;
 end
 
 playerbar.SetHidden = function(hidden)

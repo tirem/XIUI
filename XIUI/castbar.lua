@@ -14,9 +14,12 @@ local castbar = {
 	previousPercent = 0,
 	currentSpellId = nil,
 	currentItemId = nil,
+	-- Cached spell data (set once at cast start, avoids per-frame resource lookups)
+	currentSpellType = nil,
+	currentSpellName = nil,
 };
 
-local CureSpells = T{ 'Cure','Cure II','Cure III','Cure IV','Cure V','Cure VI','Full Cure','Curaga','Curaga II','Curaga III','Curaga IV','Curaga V' }
+-- CureSpells moved to helpers.lua as CURE_SPELLS (shared global)
 
 castbar.GetSpellName = function(spellId)
 	return AshitaCore:GetResourceManager():GetSpellById(spellId).Name[1];
@@ -49,34 +52,19 @@ castbar.DrawWindow = function(settings)
 
 	local totalCast = 1
 
-	if (gConfig.castBarFastCastEnabled) then
-		local player = GetPlayerSafe();
-		if player == nil then
-			return;
+	-- Use shared fast cast calculation
+	local player = GetPlayerSafe();
+	if player ~= nil then
+		local fastCast = CalculateFastCast(
+			player:GetMainJob(),
+			player:GetSubJob(),
+			castbar.currentSpellType,
+			castbar.currentSpellName
+		);
+		if fastCast > 0 then
+			-- The 0.75 factor corrects for how GetCastBarSafe():GetPercent() reports progress
+			totalCast = (1 - fastCast) * 0.75;
 		end
-		local MID = player:GetMainJob()
-		local SID = player:GetSubJob()
-
-		local fastCast = 0
-		if (gConfig.castBarFastCast[MID]) then
-			fastCast = fastCast + tonumber(string.format("%.2f", gConfig.castBarFastCast[MID]))
-		end
-
-		if (castbar.currentSpellId) then
-			if (MID == 3 and castbar.GetSpellType(castbar.currentSpellId) == 33) then -- if WHM MJ and Healing Magic
-				if (CureSpells:contains(castbar.GetSpellName(castbar.currentSpellId))) then
-					fastCast = fastCast + tonumber(string.format("%.2f", gConfig.castBarFastCastWHMCureSpeed))
-				end
-			elseif (MID == 10 and castbar.GetSpellType(castbar.currentSpellId) == 40) then -- if BRD MJ and Singing
-				fastCast = fastCast + tonumber(string.format("%.2f", gConfig.castBarFastCastBRDSingSpeed))
-			end
-		end
-
-		if (SID == 5 and gConfig.castBarFastCastRDMSJ) then -- if RDM SJ
-			fastCast = fastCast + tonumber(string.format("%.2f", gConfig.castBarFastCastRDMSJ))
-		end
-
-		totalCast = (1 - fastCast) * 0.75
 	end
 
 	percent = percent / totalCast
@@ -172,9 +160,14 @@ castbar.HandleActionPacket = function(actionPacket)
 	if (actionPacket.UserId == localPlayerId and (actionPacket.Type == 8 or actionPacket.Type == 9) and actionPacket.Param == 0x6163) then
 		castbar.currentSpellId = nil;
 		castbar.currentItemId = nil;
+		castbar.currentSpellType = nil;
+		castbar.currentSpellName = nil;
 
 		if (actionPacket.Type == 8) then
 			castbar.currentSpellId = actionPacket.Targets[1].Actions[1].Param;
+			-- Cache spell type and name at cast start (avoids per-frame resource lookups)
+			castbar.currentSpellType = castbar.GetSpellType(castbar.currentSpellId);
+			castbar.currentSpellName = castbar.GetSpellName(castbar.currentSpellId);
 		else
 			castbar.currentItemId = actionPacket.Targets[1].Actions[1].Param;
 		end
