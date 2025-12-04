@@ -33,6 +33,52 @@ RENDER_FLAG_VISIBLE = 0x200;  -- Entity is visible and rendered
 RENDER_FLAG_HIDDEN = 0x4000;  -- Entity is hidden (cutscene, menu, etc.)
 
 -- ========================================
+-- Shared Spell Lists (for fast cast calculations)
+-- ========================================
+-- Cure spells that benefit from WHM Cure Speed trait
+CURE_SPELLS = T{ 'Cure','Cure II','Cure III','Cure IV','Cure V','Cure VI','Full Cure','Curaga','Curaga II','Curaga III','Curaga IV','Curaga V' };
+
+-- ========================================
+-- Fast Cast Calculation (shared by castbar and partylist)
+-- ========================================
+-- Calculates total fast cast percentage based on job, subjob, and spell info
+-- Returns the fast cast multiplier (0.0 to 0.80, clamped)
+-- @param mainJob: Main job ID (1-22)
+-- @param subJob: Sub job ID (1-22)
+-- @param spellType: Magic skill type (33=Healing, 40=Singing, etc.) - optional
+-- @param spellName: Spell name string - optional (for cure speed check)
+function CalculateFastCast(mainJob, subJob, spellType, spellName)
+    if not gConfig.castBarFastCastEnabled then
+        return 0;
+    end
+
+    local fastCast = 0;
+
+    -- Job-based fast cast from user config
+    if (gConfig.castBarFastCast and mainJob and gConfig.castBarFastCast[mainJob]) then
+        fastCast = fastCast + (gConfig.castBarFastCast[mainJob] or 0);
+    end
+
+    -- WHM main job + Healing Magic (skill 33) = Cure Speed bonus
+    if (mainJob == 3 and spellType == 33) then
+        if (spellName and CURE_SPELLS:contains(spellName)) then
+            fastCast = fastCast + (gConfig.castBarFastCastWHMCureSpeed or 0);
+        end
+    -- BRD main job + Singing (skill 40) = Singing Speed bonus
+    elseif (mainJob == 10 and spellType == 40) then
+        fastCast = fastCast + (gConfig.castBarFastCastBRDSingSpeed or 0);
+    end
+
+    -- RDM sub-job fast cast bonus
+    if (subJob == 5 and gConfig.castBarFastCastRDMSJ) then
+        fastCast = fastCast + (gConfig.castBarFastCastRDMSJ or 0);
+    end
+
+    -- Clamp fast cast to prevent negative/inverted results
+    return math.min(fastCast, 0.80);
+end
+
+-- ========================================
 -- FontManager Helper
 -- ========================================
 -- Provides a centralized API for font lifecycle management

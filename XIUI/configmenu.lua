@@ -395,6 +395,7 @@ local function DrawPartyListSettings()
         DrawCheckbox('Show Cast Bars', 'partyListCastBars');
         if (gConfig.partyListCastBars) then
             DrawSlider('Cast Bar Scale Y', 'partyListCastBarScaleY', 0.1, 3.0, '%.1f');
+            imgui.ShowHelp('Fast cast settings are shared with Cast Bar config section.');
         end
 
         DrawCheckbox('Show Bookends', 'showPartyListBookends');

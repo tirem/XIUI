@@ -120,7 +120,7 @@ local pendingSettingsSave = false;
 local SETTINGS_SAVE_DEBOUNCE = 0.5;  -- 500ms debounce
 
 local partyList = {
-	partyCasts = {} -- Track party member casting: [serverId] = {spellName, castTime, startTime, timestamp}
+	partyCasts = {} -- Track party member casting: [serverId] = {spellName, castTime, startTime, timestamp, job, subjob, spellType}
 };
 
 
@@ -326,9 +326,13 @@ local function GetMemberInformation(memIdx)
             local loopTime = os.clock() % castDuration;  -- Loop every 5 seconds
             partyList.partyCasts[-2] = T{
                 spellName = 'Cure IV',
+                spellId = 3,           -- Cure IV spell ID
+                spellType = 33,        -- Healing Magic skill
                 castTime = castDuration,
                 startTime = os.clock() - loopTime,  -- Simulate progress through the cast
-                timestamp = os.time()
+                timestamp = os.time(),
+                job = 3,               -- WHM (for fast cast demo)
+                subjob = 5             -- RDM sub (for fast cast demo)
             };
         end
 
@@ -938,28 +942,75 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
             local spellNameWidth, _ = memberText[memIdx].name:get_text_size();
 
             -- Calculate cast progress
-            local elapsed = os.clock() - castData.startTime;
-            local progress = math.min(elapsed / castData.castTime, 1.0);
+            local progress = 0;
 
-            -- Draw cast bar to the right of spell name
-            local castBarWidth = hpBarWidth * 0.6; -- 60% of HP bar width
-            local castBarHeight = math.max(6, nameRefHeight * 0.8 * gConfig.partyListCastBarScaleY); -- 80% of reference name height, scaled by user setting (min 6px for progress bar padding)
-            local castBarX = namePosX + spellNameWidth + 4; -- 4px spacing after spell name
-            local castBarY = hpStartY - nameRefHeight - settings.nameTextOffsetY + (nameRefHeight - castBarHeight) / 2; -- Vertically center with text area
+            -- For local player (memIdx 0), use game's cast bar directly for accuracy
+            -- This matches exactly what the player castbar shows
+            if (memIdx == 0) then
+                local castBar = GetCastBarSafe();
+                if (castBar ~= nil) then
+                    local percent = castBar:GetPercent();
+                    -- Apply same fast cast adjustment as player castbar
+                    local fastCast = CalculateFastCast(
+                        castData.job,
+                        castData.subjob,
+                        castData.spellType,
+                        castData.spellName
+                    );
+                    if fastCast > 0 then
+                        -- The 0.75 factor corrects for how GetPercent() reports progress
+                        local totalCast = (1 - fastCast) * 0.75;
+                        progress = math.min(percent / totalCast, 1.0);
+                    else
+                        progress = percent;
+                    end
+                end
+            else
+                -- For other party members, calculate from elapsed time
+                local elapsed = os.clock() - castData.startTime;
+                local effectiveCastTime = castData.castTime;
 
-            -- Get cast bar gradient from config
-            local castGradient = GetCustomGradient(gConfig.colorCustomization.partyList, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
+                local fastCast = CalculateFastCast(
+                    castData.job,
+                    castData.subjob,
+                    castData.spellType,
+                    castData.spellName
+                );
+                if fastCast > 0 then
+                    effectiveCastTime = castData.castTime * (1 - fastCast);
+                end
 
-            -- Draw cast bar with absolute positioning
-            progressbar.ProgressBar(
-                {{progress, castGradient}},
-                {castBarWidth, castBarHeight},
-                {
-                    decorate = false,
-                    absolutePosition = {castBarX, castBarY},
-                    borderColorOverride = getBarBorderOverride()
-                }
-            );
+                progress = math.min(elapsed / effectiveCastTime, 1.0);
+            end
+
+            -- For local player, clear cast data when bar is complete (matches player castbar behavior)
+            -- This handles the case where we don't clear on Type 4 packet
+            if (memIdx == 0 and progress >= 1.0) then
+                partyList.partyCasts[memInfo.serverid] = nil;
+                isCasting = false;
+                -- Restore name text since we're done casting
+                memberText[memIdx].name:set_text(tostring(memInfo.name));
+            else
+                -- Draw cast bar to the right of spell name
+                local castBarWidth = hpBarWidth * 0.6; -- 60% of HP bar width
+                local castBarHeight = math.max(6, nameRefHeight * 0.8 * gConfig.partyListCastBarScaleY); -- 80% of reference name height, scaled by user setting (min 6px for progress bar padding)
+                local castBarX = namePosX + spellNameWidth + 4; -- 4px spacing after spell name
+                local castBarY = hpStartY - nameRefHeight - settings.nameTextOffsetY + (nameRefHeight - castBarHeight) / 2; -- Vertically center with text area
+
+                -- Get cast bar gradient from config
+                local castGradient = GetCustomGradient(gConfig.colorCustomization.partyList, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
+
+                -- Draw cast bar with absolute positioning
+                progressbar.ProgressBar(
+                    {{progress, castGradient}},
+                    {castBarWidth, castBarHeight},
+                    {
+                        decorate = false,
+                        absolutePosition = {castBarX, castBarY},
+                        borderColorOverride = getBarBorderOverride()
+                    }
+                );
+            end
         end
     end
 
@@ -2018,21 +2069,46 @@ partyList.HandleActionPacket = function(actionPacket)
 				local spellName = encoding:ShiftJIS_To_UTF8(spell.Name[1], true);
 				-- Cast time is in quarter seconds (e.g., 40 = 10 seconds)
 				local castTime = spell.CastTime / 4.0;
+				local spellType = spell.Skill;  -- Magic skill type (33=Healing, 40=Singing, etc.)
+
+				-- Look up caster's job/subjob by server ID for fast cast calculation
+				local memberJob = nil;
+				local memberSubjob = nil;
+				local party = GetPartySafe();
+				if (party) then
+					for i = 0, 17 do  -- All alliance members
+						if (party:GetMemberServerId(i) == actionPacket.UserId) then
+							memberJob = party:GetMemberMainJob(i);
+							memberSubjob = party:GetMemberSubJob(i);
+							break;
+						end
+					end
+				end
 
 				partyList.partyCasts[actionPacket.UserId] = T{
 					spellName = spellName,
 					spellId = spellId,
+					spellType = spellType,
 					castTime = castTime,
 					startTime = os.clock(),  -- High precision timestamp
-					timestamp = os.time()    -- For cleanup
+					timestamp = os.time(),   -- For cleanup
+					job = memberJob,         -- Caster's main job (for fast cast)
+					subjob = memberSubjob    -- Caster's sub job (for RDM fast cast)
 				};
 			end
 		end
 	-- Type 4 = Magic (Finish) - Cast completed
 	-- Type 11 = Monster Skill (Finish) - Some abilities
 	elseif (actionPacket.Type == 4 or actionPacket.Type == 11) then
-		-- Clear the cast for this party member
-		partyList.partyCasts[actionPacket.UserId] = nil;
+		-- For local player, don't clear immediately - let the render loop handle it
+		-- based on GetCastBarSafe():GetPercent() reaching 1.0 (matches player castbar behavior)
+		local party = GetPartySafe();
+		local localPlayerId = party and party:GetMemberServerId(0) or nil;
+		if (actionPacket.UserId ~= localPlayerId) then
+			-- Clear the cast for other party members
+			partyList.partyCasts[actionPacket.UserId] = nil;
+		end
+		-- Local player cast will be cleared in DrawMember when progress >= 1.0
 	end
 
 	-- Cleanup stale casts (older than 30 seconds)
