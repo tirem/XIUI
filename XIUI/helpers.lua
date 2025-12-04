@@ -305,18 +305,54 @@ HpInterpolation = {
 
         local hpPercentData = {{baseHpPercent / 100, gradient}};
 
+        -- Get configurable colors for damage/healing effects
+        -- Note: GetHpInterpolationColors() is defined below but this code runs at runtime after helpers.lua is fully loaded
+        local interpColors = {
+            damageGradient = {'#cf3437', '#c54d4d'},
+            damageFlashColor = '#ffacae',
+            healGradient = {'#4ade80', '#86efac'},
+            healFlashColor = '#c8ffc8',
+        };
+        if gConfig and gConfig.colorCustomization and gConfig.colorCustomization.shared then
+            local shared = gConfig.colorCustomization.shared;
+            if shared.hpDamageGradient then
+                if shared.hpDamageGradient.enabled then
+                    interpColors.damageGradient = {shared.hpDamageGradient.start, shared.hpDamageGradient.stop};
+                else
+                    interpColors.damageGradient = {shared.hpDamageGradient.start, shared.hpDamageGradient.start};
+                end
+            end
+            if shared.hpDamageFlashColor then
+                interpColors.damageFlashColor = shared.hpDamageFlashColor;
+            end
+            if shared.hpHealGradient then
+                if shared.hpHealGradient.enabled then
+                    interpColors.healGradient = {shared.hpHealGradient.start, shared.hpHealGradient.stop};
+                else
+                    interpColors.healGradient = {shared.hpHealGradient.start, shared.hpHealGradient.start};
+                end
+            end
+            if shared.hpHealFlashColor then
+                interpColors.healFlashColor = shared.hpHealFlashColor;
+            end
+        end
+        local damageGradient = interpColors.damageGradient;
+        local damageFlashColor = interpColors.damageFlashColor;
+        local healGradient = interpColors.healGradient;
+        local healFlashColor = interpColors.healFlashColor;
+
         -- Add damage interpolation bar
         if state.interpolationDamagePercent > 0 then
             local interpolationOverlay;
             if gConfig.healthBarFlashEnabled and state.overlayAlpha > 0 then
                 interpolationOverlay = {
-                    '#ffacae',  -- overlay color (light red)
+                    damageFlashColor,
                     state.overlayAlpha
                 };
             end
             table.insert(hpPercentData, {
                 state.interpolationDamagePercent / 100,
-                {'#cf3437', '#c54d4d'},  -- red gradient
+                damageGradient,
                 interpolationOverlay
             });
         end
@@ -326,13 +362,13 @@ HpInterpolation = {
             local healInterpolationOverlay;
             if gConfig.healthBarFlashEnabled and state.healOverlayAlpha > 0 then
                 healInterpolationOverlay = {
-                    '#c8ffc8',  -- overlay color (light green)
+                    healFlashColor,
                     state.healOverlayAlpha
                 };
             end
             table.insert(hpPercentData, {
                 state.interpolationHealPercent / 100,
-                {'#4ade80', '#86efac'},  -- green gradient
+                healGradient,
                 healInterpolationOverlay
             });
         end
@@ -366,6 +402,43 @@ function GetGradientSetting(module, setting, defaultGradient)
         end
     end
     return defaultGradient;
+end
+
+-- Get HP interpolation effect colors from shared config
+-- Returns table with damageGradient, damageFlashColor, healGradient, healFlashColor
+function GetHpInterpolationColors()
+    local colors = {
+        damageGradient = {'#cf3437', '#c54d4d'},
+        damageFlashColor = '#ffacae',
+        healGradient = {'#4ade80', '#86efac'},
+        healFlashColor = '#c8ffc8',
+    };
+
+    if gConfig and gConfig.colorCustomization and gConfig.colorCustomization.shared then
+        local shared = gConfig.colorCustomization.shared;
+        if shared.hpDamageGradient then
+            if shared.hpDamageGradient.enabled then
+                colors.damageGradient = {shared.hpDamageGradient.start, shared.hpDamageGradient.stop};
+            else
+                colors.damageGradient = {shared.hpDamageGradient.start, shared.hpDamageGradient.start};
+            end
+        end
+        if shared.hpDamageFlashColor then
+            colors.damageFlashColor = shared.hpDamageFlashColor;
+        end
+        if shared.hpHealGradient then
+            if shared.hpHealGradient.enabled then
+                colors.healGradient = {shared.hpHealGradient.start, shared.hpHealGradient.stop};
+            else
+                colors.healGradient = {shared.hpHealGradient.start, shared.hpHealGradient.start};
+            end
+        end
+        if shared.hpHealFlashColor then
+            colors.healFlashColor = shared.hpHealFlashColor;
+        end
+    end
+
+    return colors;
 end
 
 -- Party member cache for performance optimization

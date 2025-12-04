@@ -392,6 +392,10 @@ local function DrawPartyListSettings()
         DrawCheckbox('Show Job Icons', 'showPartyJobIcon');
         DrawCheckbox('Show Job/Subjob', 'showPartyListJob');
         imgui.ShowHelp('Display job and subjob info on the right side of the name row (Layout 1 only).');
+        DrawCheckbox('Show Cast Bars', 'partyListCastBars');
+        if (gConfig.partyListCastBars) then
+            DrawSlider('Cast Bar Scale Y', 'partyListCastBarScaleY', 0.1, 3.0, '%.1f');
+        end
 
         DrawCheckbox('Show Bookends', 'showPartyListBookends');
         DrawCheckbox('Show When Solo', 'showPartyListWhenSolo');
@@ -440,10 +444,6 @@ local function DrawPartyListSettings()
         end
 
         DrawSlider('Status Icon Scale', 'partyListBuffScale', 0.1, 3.0, '%.1f');
-        DrawCheckbox('Show Cast Bars', 'partyListCastBars');
-        if (gConfig.partyListCastBars) then
-            DrawSlider('Cast Bar Scale Y', 'partyListCastBarScaleY', 0.1, 3.0, '%.1f');
-        end
 
         imgui.EndChild();
 

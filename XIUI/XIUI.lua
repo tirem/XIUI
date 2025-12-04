@@ -503,6 +503,11 @@ T{
 			mobUnclaimedTextColor = 0xFFFFFF66,    -- yellow - unclaimed mobs
 			mobPartyClaimedTextColor = 0xFFFF6666, -- red - mobs claimed by party
 			mobOtherClaimedTextColor = 0xFFFF66FF, -- magenta - mobs claimed by others
+			-- HP bar interpolation effect colors
+			hpDamageGradient = T{ enabled = true, start = '#cf3437', stop = '#c54d4d' },
+			hpDamageFlashColor = '#ffacae',
+			hpHealGradient = T{ enabled = true, start = '#4ade80', stop = '#86efac' },
+			hpHealFlashColor = '#c8ffc8',
 		},
 	},
 };

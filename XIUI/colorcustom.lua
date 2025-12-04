@@ -49,6 +49,28 @@ local function DrawGradientPicker(label, gradientTable, helpText)
     end
 end
 
+-- Helper function to draw hex color picker (for colors stored as hex strings like '#ffacae')
+local function DrawHexColorPicker(label, parentTable, key, helpText)
+    if not parentTable or not parentTable[key] then
+        return;
+    end
+
+    local colorValue = parentTable[key];
+    local colorRGBA = HexToImGui(colorValue);
+
+    if (imgui.ColorEdit4(label, colorRGBA, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
+        parentTable[key] = ImGuiToHex(colorRGBA);
+    end
+    -- Only save settings when user finishes editing
+    if (imgui.IsItemDeactivatedAfterEdit()) then
+        SaveSettingsOnly();
+    end
+
+    if helpText then
+        imgui.ShowHelp(helpText);
+    end
+end
+
 -- Helper function to draw 3-step gradient color pickers (for bookends)
 local function DrawThreeStepGradientPicker(label, gradientTable, helpText)
     if not gradientTable then
@@ -170,7 +192,7 @@ colorcustom.DrawWindow = function()
 
         -- Global
         if (imgui.CollapsingHeader("Global")) then
-            imgui.BeginChild("GlobalColors", { 0, 600 }, true);
+            imgui.BeginChild("GlobalColors", { 0, 800 }, true);
 
             imgui.Text("Background Color:");
             imgui.Separator();
@@ -190,6 +212,14 @@ colorcustom.DrawWindow = function()
             DrawTextColorPicker("Unclaimed Mob", gConfig.colorCustomization.shared, 'mobUnclaimedTextColor', "Color for unclaimed mob names");
             DrawTextColorPicker("Party-Claimed Mob", gConfig.colorCustomization.shared, 'mobPartyClaimedTextColor', "Color for mobs claimed by your party");
             DrawTextColorPicker("Other-Claimed Mob", gConfig.colorCustomization.shared, 'mobOtherClaimedTextColor', "Color for mobs claimed by others");
+
+            imgui.Separator();
+            imgui.Text("HP Bar Effects (Damage/Healing):");
+            imgui.Separator();
+            DrawGradientPicker("Damage Effect", gConfig.colorCustomization.shared.hpDamageGradient, "Color of the trailing bar when HP decreases");
+            DrawHexColorPicker("Damage Flash", gConfig.colorCustomization.shared, 'hpDamageFlashColor', "Flash overlay color when taking damage");
+            DrawGradientPicker("Healing Effect", gConfig.colorCustomization.shared.hpHealGradient, "Color of the leading bar when HP increases");
+            DrawHexColorPicker("Healing Flash", gConfig.colorCustomization.shared, 'hpHealFlashColor', "Flash overlay color when healing");
 
             imgui.EndChild();
         end

@@ -8,9 +8,9 @@ Investigation into performance issues reported by users when using the party lis
 
 ---
 
-## Status: PENDING FIXES
+## Status: FIXES IMPLEMENTED
 
-Critical and high-priority bottlenecks have been identified. See "Recommended Fix Priority" section below.
+Phase 1 and Phase 2 optimizations have been implemented. See "Implemented Changes" section at the bottom.
 
 ---
 
@@ -392,8 +392,8 @@ The enemy list module had similar issues that were fixed:
 | Pattern | Enemy List Fix | Party List Status |
 |---------|---------------|-------------------|
 | Regex visibility loops | Numeric index tracking | N/A (different architecture) |
-| Table allocations | Reusable tables | **Needs fix** |
-| Redundant GetEntitySafe | Single call + cache | **Needs fix** |
+| Table allocations | Reusable tables | **FIXED** |
+| Redundant GetEntitySafe | Single call + cache | **FIXED** |
 | Color caching | Per-enemy cache | Partial (has memberTextColorCache) |
 | Name truncation cache | Cache by (name, width) | N/A |
 | Party member cache | O(1) lookup | N/A |
@@ -415,3 +415,58 @@ With a full alliance (18 members, 3 parties), implementing Phase 1 fixes should 
 - Redundant calculations by ~50%
 
 This should significantly improve frame times when alliances are enabled.
+
+---
+
+## Implemented Changes
+
+### Phase 1 - Completed
+
+1. **Frame-level caching system** (`frameCache` table)
+   - `party`, `player`, `entity`, `playerTarget` cached once per frame in `DrawWindow()`
+   - Target info (`t1`, `t2`, `subTargetActive`, `stPartyIndex`) cached once per frame
+   - Active member counts pre-calculated per party
+   - Location: Lines 80-94, 1340-1398
+
+2. **Party config caching** (`partyConfigCache` table)
+   - `getScale()`, `getFontSizes()`, `getBarScales()`, `showPartyTP()` now return cached values
+   - Cache updated via `updatePartyConfigCache()` at frame start
+   - Eliminates 54 table allocations per frame
+   - Location: Lines 96-226
+
+3. **Pre-calculated reference heights** (`partyRefHeights` table)
+   - Reference heights computed once in `UpdateVisuals()` when fonts change
+   - Eliminates expensive `set_text()`/`get_text_size()` calls during drawing
+   - Location: Lines 104-111, 495-500, 1473-1475, 1799-1846
+
+### Phase 2 - Completed
+
+4. **HP interpolation optimization**
+   - Added local `interp` reference to avoid repeated table lookups
+   - Early exit when no interpolation is active (`hasDamageInterp`, `hasHealInterp`, `hasActiveFlash`)
+   - Skips decay/flash calculations for members with no damage/healing
+   - Location: Lines 661-775
+
+5. **Buff/debuff table reuse** (`reusableBuffs`, `reusableDebuffs`)
+   - Module-level tables cleared and reused instead of creating new tables per member
+   - Uses direct index assignment instead of `table.insert()`
+   - Location: Lines 113-115, 1206-1256
+
+6. **Debounced settings save**
+   - Window position changes trigger `pendingSettingsSave = true` instead of immediate I/O
+   - Actual save happens after 500ms debounce period
+   - Eliminates I/O blocking during window drag operations
+   - Location: Lines 117-120, 1400-1407, 1612-1615
+
+### Performance Improvements Summary
+
+| Metric | Before | After |
+|--------|--------|-------|
+| GetPartySafe/GetPlayerSafe calls per frame | 18+ | 1 |
+| GetEntitySafe calls per frame | 18 | 1 |
+| GetTargets/GetSubTargetActive/GetStPartyIndex calls | 54+ | 3 |
+| Table allocations (scale/font helpers) | 54 | 0 |
+| Reference height recalculations | 72 cache lookups | 0 (pre-calculated) |
+| Buff/debuff table allocations | 12 per frame | 0 (reused) |
+| Settings saves during drag | Every frame | Debounced (500ms) |
+| HP interpolation logic (idle members) | Full execution | Early exit |

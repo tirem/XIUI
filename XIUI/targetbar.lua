@@ -280,21 +280,24 @@ targetbar.DrawWindow = function(settings)
 			hpPercentData[1][1] = targetbar.interpolation.currentHpp / 100;
 		end
 
+		-- Get configurable interpolation colors
+		local interpColors = GetHpInterpolationColors();
+
 		if targetbar.interpolation.interpolationDamagePercent > 0 then
 			local interpolationOverlay;
 
 			if gConfig.healthBarFlashEnabled then
 				interpolationOverlay = {
-					'#FFFFFF', -- overlay color,
-					targetbar.interpolation.overlayAlpha -- overlay alpha,
+					interpColors.damageFlashColor,
+					targetbar.interpolation.overlayAlpha
 				};
 			end
 
 			table.insert(
 				hpPercentData,
 				{
-					targetbar.interpolation.interpolationDamagePercent / 100, -- interpolation percent
-					{'#cf3437', '#c54d4d'}, -- red gradient
+					targetbar.interpolation.interpolationDamagePercent / 100,
+					interpColors.damageGradient,
 					interpolationOverlay
 				}
 			);
@@ -306,16 +309,16 @@ targetbar.DrawWindow = function(settings)
 
 			if gConfig.healthBarFlashEnabled and targetbar.interpolation.healOverlayAlpha > 0 then
 				healInterpolationOverlay = {
-					'#c8ffc8', -- overlay color (light green),
-					targetbar.interpolation.healOverlayAlpha -- overlay alpha
+					interpColors.healFlashColor,
+					targetbar.interpolation.healOverlayAlpha
 				};
 			end
 
 			table.insert(
 				hpPercentData,
 				{
-					targetbar.interpolation.interpolationHealPercent / 100, -- interpolation percent
-					{'#4ade80', '#86efac'}, -- green gradient
+					targetbar.interpolation.interpolationHealPercent / 100,
+					interpColors.healGradient,
 					healInterpolationOverlay
 				}
 			);
