@@ -10,6 +10,10 @@ local spellText;
 local percentText;
 local allFonts; -- Table for batch visibility operations
 
+-- Cache last set colors to avoid expensive SetColor() calls every frame
+local lastSpellTextColor;
+local lastPercentTextColor;
+
 local castbar = {
 	previousPercent = 0,
 	currentSpellId = nil,
@@ -72,7 +76,7 @@ castbar.DrawWindow = function(settings)
 	if ((percent < 1 and percent ~= castbar.previousPercent) or showConfig[1]) then
 		imgui.SetNextWindowSize({settings.barWidth, -1});
 
-		local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+		local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
 		if (gConfig.lockPositions) then
 			windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
 		end
@@ -107,6 +111,11 @@ castbar.DrawWindow = function(settings)
 			spellText:set_position_x(leftTextX);
 			spellText:set_position_y(startY + settings.barHeight + settings.spellOffsetY);
 			spellText:set_text(showConfig[1] and 'Configuration Mode' or castbar.GetLabelText());
+			-- Only call set_font_color if the color has changed
+			if (lastSpellTextColor ~= gConfig.colorCustomization.castBar.spellTextColor) then
+				spellText:set_font_color(gConfig.colorCustomization.castBar.spellTextColor);
+				lastSpellTextColor = gConfig.colorCustomization.castBar.spellTextColor;
+			end
 
 			-- Right-aligned text position (percent) - 8px from right edge (before bookend)
 			local progressBarWidth = settings.barWidth - imgui.GetStyle().FramePadding.x * 2;
@@ -114,6 +123,11 @@ castbar.DrawWindow = function(settings)
 			percentText:set_position_x(rightTextX);
 			percentText:set_position_y(startY + settings.barHeight + settings.percentOffsetY);
 			percentText:set_text(showConfig[1] and '50%' or math.floor(percent * 100) .. '%');
+			-- Only call set_font_color if the color has changed
+			if (lastPercentTextColor ~= gConfig.colorCustomization.castBar.percentTextColor) then
+				percentText:set_font_color(gConfig.colorCustomization.castBar.percentTextColor);
+				lastPercentTextColor = gConfig.colorCustomization.castBar.percentTextColor;
+			end
 
 			SetFontsVisible(allFonts,true);
 		end
@@ -131,6 +145,10 @@ castbar.UpdateVisuals = function(settings)
 	spellText = FontManager.recreate(spellText, settings.spell_font_settings);
 	percentText = FontManager.recreate(percentText, settings.percent_font_settings);
 	allFonts = {spellText, percentText};
+
+	-- Reset cached colors when fonts are recreated
+	lastSpellTextColor = nil;
+	lastPercentTextColor = nil;
 end
 
 castbar.SetHidden = function(hidden)

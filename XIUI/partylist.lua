@@ -59,6 +59,10 @@ local memberInterpolation = {};
 local cachedBorderColorU32 = nil;
 local cachedBorderColorARGB = nil;
 
+-- Cache converted subtarget border color to avoid redundant U32 conversion every frame
+local cachedSubtargetBorderColorU32 = nil;
+local cachedSubtargetBorderColorARGB = nil;
+
 -- Cache last used font sizes to avoid unnecessary font recreation
 local cachedFontSizes = {12, 12, 12};
 
@@ -67,7 +71,6 @@ local cachedFontFamily = '';
 local cachedFontFlags = 0;
 local cachedOutlineWidth = 2;
 
-local borderConfig = {1, '#243e58'};
 
 local bgImageKeys = { 'bg', 'tl', 'tr', 'br', 'bl' };
 local loadedBg = {};  -- Track loaded background per party
@@ -177,7 +180,10 @@ local function updatePartyConfigCache()
         cache.backgroundName = party.backgroundName;
         cache.bgScale = party.bgScale or 1;
         cache.cursor = party.cursor;
+        cache.subtargetArrowTint = party.subtargetArrowTint or 0xFFfdd017;
+        cache.targetArrowTint = party.targetArrowTint or 0xFFFFFFFF;
         cache.statusTheme = party.statusTheme or 0;
+        cache.statusSide = party.statusSide or 0;
         cache.buffScale = party.buffScale or 1;
         cache.expandHeight = party.expandHeight;
         cache.alignBottom = party.alignBottom;
@@ -194,6 +200,7 @@ local function updatePartyConfigCache()
             cache.fontSizes.tp = party.tpFontSize or party.fontSize or 12;
             cache.fontSizes.distance = party.distanceFontSize or party.fontSize or 12;
             cache.fontSizes.job = party.jobFontSize or party.fontSize or 12;
+            cache.fontSizes.zone = party.zoneFontSize or 10;
         else
             local fontSize = party.fontSize or 12;
             cache.fontSizes.name = fontSize;
@@ -202,18 +209,17 @@ local function updatePartyConfigCache()
             cache.fontSizes.tp = fontSize;
             cache.fontSizes.distance = fontSize;
             cache.fontSizes.job = fontSize;
+            cache.fontSizes.zone = fontSize;  -- Use main font size when not split
         end
 
-        -- BarScales (used in Compact Vertical layout)
-        if layout == 1 then
-            if cache.barScales == nil then cache.barScales = {}; end
-            cache.barScales.hpBarScaleX = party.hpBarScaleX or 1;
-            cache.barScales.mpBarScaleX = party.mpBarScaleX or 1;
-            cache.barScales.hpBarScaleY = party.hpBarScaleY or 1;
-            cache.barScales.mpBarScaleY = party.mpBarScaleY or 1;
-        else
-            cache.barScales = nil;
-        end
+        -- BarScales (used for all layouts)
+        if cache.barScales == nil then cache.barScales = {}; end
+        cache.barScales.hpBarScaleX = party.hpBarScaleX or 1;
+        cache.barScales.mpBarScaleX = party.mpBarScaleX or 1;
+        cache.barScales.tpBarScaleX = party.tpBarScaleX or 1;
+        cache.barScales.hpBarScaleY = party.hpBarScaleY or 1;
+        cache.barScales.mpBarScaleY = party.mpBarScaleY or 1;
+        cache.barScales.tpBarScaleY = party.tpBarScaleY or 1;
 
         -- Color settings reference (cached for performance)
         if partyIndex == 1 then
@@ -321,11 +327,13 @@ local function GetMemberInformation(memIdx)
         memInfo.level = 99;
         memInfo.subjob = ((memIdx + 3) % 22) + 1;  -- Vary subjobs for preview
         memInfo.subjoblevel = 49;
-        memInfo.targeted = memIdx == 4;
+        -- Preview target: Player 5 in each party (memIdx 4, 10, 16)
+        memInfo.targeted = memIdx == 4 or memIdx == 10 or memIdx == 16;
         memInfo.serverid = -memIdx - 1;  -- Unique negative IDs for preview members
         memInfo.buffs = nil;
         memInfo.sync = false;
-        memInfo.subTargeted = false;
+        -- Preview subtarget: Player 3 in each party (memIdx 2, 8, 14)
+        memInfo.subTargeted = memIdx == 2 or memIdx == 8 or memIdx == 14;
         memInfo.zone = 100;
         memInfo.inzone = memIdx % 4 ~= 0;
         memInfo.name = 'Player ' .. (memIdx + 1);
@@ -333,11 +341,12 @@ local function GetMemberInformation(memIdx)
         -- Varying preview distances for demonstration
         memInfo.previewDistance = memIdx == 0 and 0 or memIdx == 1 and 5.2 or memIdx == 2 and 12.8 or memIdx == 3 and 21.5 or memIdx == 4 and 35.0 or 18.3;
 
-        -- Add a preview cast bar for Player 2 (memIdx 1) with looping animation
-        if (memIdx == 1) then
+        -- Add preview cast bars for Player 2 of each party with looping animation
+        -- Party A: memIdx 1, Party B: memIdx 7, Party C: memIdx 13
+        if (memIdx == 1 or memIdx == 7 or memIdx == 13) then
             local castDuration = 5.0;  -- 5 second cast time for preview
             local loopTime = os.clock() % castDuration;  -- Loop every 5 seconds
-            partyList.partyCasts[-2] = T{
+            partyList.partyCasts[memInfo.serverid] = T{
                 spellName = 'Cure IV',
                 spellId = 3,           -- Cure IV spell ID
                 spellType = 33,        -- Healing Magic skill
@@ -475,27 +484,35 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     -- Detect current layout early for dimension calculations
     local layout = cache.layout or 0;
 
-    -- Get party-specific bar scales for Layout 2
+    -- Get party-specific bar scales and layout template
     local barScales = getBarScales(partyIndex);
+    local layoutTemplate = getLayoutTemplate(partyIndex);
 
-    -- Apply bar scales - Layout 2 uses individual HP/MP scales, Layout 1 uses uniform scales
-    local hpBarWidth, mpBarWidth, tpBarWidth, hpBarHeight, mpBarHeight;
-    if layout == 1 and barScales then
-        -- Layout 2: Use party-specific HP and MP bar X/Y scales
-        hpBarWidth = settings.hpBarWidth * scale.x * barScales.hpBarScaleX;
-        mpBarWidth = settings.mpBarWidth * scale.x * barScales.mpBarScaleX;
-        hpBarHeight = settings.barHeight * scale.y * barScales.hpBarScaleY;
-        mpBarHeight = settings.barHeight * scale.y * barScales.mpBarScaleY;
-        tpBarWidth = settings.tpBarWidth * scale.x;  -- No TP bar in Layout 2
+    -- Get base bar dimensions from party's layout template (not global settings)
+    local baseHpBarWidth = layoutTemplate.hpBarWidth or settings.hpBarWidth or 150;
+    local baseMpBarWidth = layoutTemplate.mpBarWidth or settings.mpBarWidth or 100;
+    local baseTpBarWidth = layoutTemplate.tpBarWidth or settings.tpBarWidth or 100;
+    local baseBarHeight = layoutTemplate.barHeight or settings.barHeight or 20;
+
+    -- Apply bar scales - all layouts use individual bar scales now
+    local hpBarWidth, mpBarWidth, tpBarWidth, hpBarHeight, mpBarHeight, tpBarHeight;
+    if barScales then
+        hpBarWidth = baseHpBarWidth * scale.x * barScales.hpBarScaleX;
+        mpBarWidth = baseMpBarWidth * scale.x * barScales.mpBarScaleX;
+        tpBarWidth = baseTpBarWidth * scale.x * barScales.tpBarScaleX;
+        hpBarHeight = baseBarHeight * scale.y * barScales.hpBarScaleY;
+        mpBarHeight = baseBarHeight * scale.y * barScales.mpBarScaleY;
+        tpBarHeight = baseBarHeight * scale.y * barScales.tpBarScaleY;
     else
-        -- Layout 1: Use uniform scale.x and scale.y for all bars
-        hpBarWidth = settings.hpBarWidth * scale.x;
-        mpBarWidth = settings.mpBarWidth * scale.x;
-        tpBarWidth = settings.tpBarWidth * scale.x;
-        hpBarHeight = settings.barHeight * scale.y;
-        mpBarHeight = settings.barHeight * scale.y;
+        -- Fallback if barScales not available
+        hpBarWidth = baseHpBarWidth * scale.x;
+        mpBarWidth = baseMpBarWidth * scale.x;
+        tpBarWidth = baseTpBarWidth * scale.x;
+        hpBarHeight = baseBarHeight * scale.y;
+        mpBarHeight = baseBarHeight * scale.y;
+        tpBarHeight = baseBarHeight * scale.y;
     end
-    local barHeight = settings.barHeight * scale.y;
+    local barHeight = baseBarHeight * scale.y;
 
     local hpStartX, hpStartY = imgui.GetCursorScreenPos();
 
@@ -509,6 +526,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
     memberText[memIdx].name:set_font_height(fontSizes.name);
     memberText[memIdx].tp:set_font_height(fontSizes.tp);
     memberText[memIdx].distance:set_font_height(fontSizes.distance);
+    memberText[memIdx].zone:set_font_height(fontSizes.zone);
 
     -- PERFORMANCE: Use pre-calculated reference heights from UpdateVisuals
     local refHeights = partyRefHeights[partyIndex];
@@ -589,8 +607,16 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
         local selectionTL = {hpStartX - settings.cursorPaddingX1, topOfMember - settings.cursorPaddingY1 - centerOffsetY};
         local selectionBR = {selectionTL[1] + selectionWidth, selectionTL[2] + selectionHeight};
 
-        -- Get selection gradient colors from config using helper
-        local selectionGradient = GetCustomGradient(cache.colors, 'selectionGradient') or {'#4da5d9', '#78c0ed'};
+        -- Get selection gradient colors from config - use subtarget colors if subtargeted
+        local selectionGradient;
+        local borderColorARGB;
+        if memInfo.subTargeted then
+            selectionGradient = GetCustomGradient(cache.colors, 'subtargetGradient') or {'#d9a54d', '#edcf78'};
+            borderColorARGB = cache.colors.subtargetBorderColor or 0xFFfdd017;
+        else
+            selectionGradient = GetCustomGradient(cache.colors, 'selectionGradient') or {'#4da5d9', '#78c0ed'};
+            borderColorARGB = cache.colors.selectionBorderColor;
+        end
         local startColor = HexToImGui(selectionGradient[1]);
         local endColor = HexToImGui(selectionGradient[2]);
 
@@ -626,12 +652,20 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
         -- Draw border outline with rounded corners (convert ARGB to ImGui format for real-time updates)
         -- Cache the U32 conversion to avoid redundant bit operations every frame
-        local borderColorARGB = cache.colors.selectionBorderColor;
-        if cachedBorderColorARGB ~= borderColorARGB then
-            cachedBorderColorARGB = borderColorARGB;
-            cachedBorderColorU32 = imgui.GetColorU32(ARGBToImGui(borderColorARGB));
+        local borderColor;
+        if memInfo.subTargeted then
+            if cachedSubtargetBorderColorARGB ~= borderColorARGB then
+                cachedSubtargetBorderColorARGB = borderColorARGB;
+                cachedSubtargetBorderColorU32 = imgui.GetColorU32(ARGBToImGui(borderColorARGB));
+            end
+            borderColor = cachedSubtargetBorderColorU32;
+        else
+            if cachedBorderColorARGB ~= borderColorARGB then
+                cachedBorderColorARGB = borderColorARGB;
+                cachedBorderColorU32 = imgui.GetColorU32(ARGBToImGui(borderColorARGB));
+            end
+            borderColor = cachedBorderColorU32;
         end
-        local borderColor = cachedBorderColorU32;
         drawList:AddRect({selectionTL[1], selectionTL[2]}, {selectionBR[1], selectionBR[2]}, borderColor, 6, 15, 2); -- 6px radius, all corners, 2px thick
 
         partyTargeted = true;
@@ -850,9 +884,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Draw the HP bar (or zone bar for out-of-zone members)
     if (memInfo.inzone) then
-        -- Use individual HP bar height in Layout 2
-        local currentHpBarHeight = (layout == 1) and hpBarHeight or barHeight;
-        progressbar.ProgressBar(hpPercentData, {hpBarWidth, currentHpBarHeight}, {borderConfig=borderConfig, decorate = cache.showBookends, backgroundGradientOverride = getBarBackgroundOverride(partyIndex), borderColorOverride = getBarBorderOverride(partyIndex)});
+        progressbar.ProgressBar(hpPercentData, {hpBarWidth, hpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = getBarBackgroundOverride(partyIndex), borderColorOverride = getBarBorderOverride(partyIndex)});
         -- Hide zone text when in zone
         memberText[memIdx].zone:set_visible(false);
     elseif (memInfo.zone == '' or memInfo.zone == nil) then
@@ -1116,11 +1148,44 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
             local rowStartX, rowStartY = imgui.GetCursorScreenPos();
 
             -- === TP TEXT (LEFT OF MP BAR) ===
-            -- Set TP text color
-            local desiredTpColor = (memInfo.tp >= 1000) and cache.colors.tpFullTextColor or cache.colors.tpEmptyTextColor;
-            if (memberTextColorCache[memIdx].tp ~= desiredTpColor) then
+            -- Set TP text color (with optional flashing for 1000+ TP)
+            local desiredTpColor;
+            if memInfo.tp >= 1000 and cache.flashTP then
+                -- Flash TP text between normal color and bright green
+                local flashTime = os.clock();
+                local timePerPulse = 1;  -- 1 second per pulse cycle (matches bar flash)
+                local phase = flashTime % timePerPulse;
+                local pulseAlpha = (2 / timePerPulse) * phase;
+                if pulseAlpha > 1 then
+                    pulseAlpha = 2 - pulseAlpha;  -- Triangle wave: 0 -> 1 -> 0
+                end
+                -- Interpolate between tpFullTextColor and flash color
+                local baseColor = cache.colors.tpFullTextColor or 0xFFFFFFFF;
+                local flashColor = cache.colors.tpFlashColor or 0xFF3ECE00;
+                -- Extract ARGB components
+                local baseA = bit.band(bit.rshift(baseColor, 24), 0xFF);
+                local baseR = bit.band(bit.rshift(baseColor, 16), 0xFF);
+                local baseG = bit.band(bit.rshift(baseColor, 8), 0xFF);
+                local baseB = bit.band(baseColor, 0xFF);
+                local flashA = bit.band(bit.rshift(flashColor, 24), 0xFF);
+                local flashR = bit.band(bit.rshift(flashColor, 16), 0xFF);
+                local flashG = bit.band(bit.rshift(flashColor, 8), 0xFF);
+                local flashB = bit.band(flashColor, 0xFF);
+                -- Interpolate
+                local interpA = math.floor(baseA + (flashA - baseA) * pulseAlpha);
+                local interpR = math.floor(baseR + (flashR - baseR) * pulseAlpha);
+                local interpG = math.floor(baseG + (flashG - baseG) * pulseAlpha);
+                local interpB = math.floor(baseB + (flashB - baseB) * pulseAlpha);
+                desiredTpColor = bit.bor(bit.lshift(interpA, 24), bit.lshift(interpR, 16), bit.lshift(interpG, 8), interpB);
+                -- Always update color during flash (bypasses cache since color changes every frame)
                 memberText[memIdx].tp:set_font_color(desiredTpColor);
-                memberTextColorCache[memIdx].tp = desiredTpColor;
+                memberTextColorCache[memIdx].tp = nil;  -- Invalidate cache during flash
+            else
+                desiredTpColor = (memInfo.tp >= 1000) and cache.colors.tpFullTextColor or cache.colors.tpEmptyTextColor;
+                if (memberTextColorCache[memIdx].tp ~= desiredTpColor) then
+                    memberText[memIdx].tp:set_font_color(desiredTpColor);
+                    memberTextColorCache[memIdx].tp = desiredTpColor;
+                end
             end
 
             -- Position TP text at row start + 4px offset (LEFT of MP bar)
@@ -1139,7 +1204,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
             -- Draw MP bar
             local mpGradient = GetCustomGradient(cache.colors, 'mpGradient') or {'#9abb5a', '#bfe07d'};
-            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {borderConfig=borderConfig, decorate = cache.showBookends, backgroundGradientOverride = getBarBackgroundOverride(partyIndex), borderColorOverride = getBarBorderOverride(partyIndex)});
+            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = getBarBackgroundOverride(partyIndex), borderColorOverride = getBarBorderOverride(partyIndex)});
 
             -- === MP TEXT (RIGHT OF MP BAR) ===
             -- Prepare MP text
@@ -1163,7 +1228,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
             imgui.SetCursorPosX(imgui.GetCursorPosX());
             mpStartX, mpStartY = imgui.GetCursorScreenPos();
             local mpGradient = GetCustomGradient(cache.colors, 'mpGradient') or {'#9abb5a', '#bfe07d'};
-            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {borderConfig=borderConfig, decorate = cache.showBookends, backgroundGradientOverride = getBarBackgroundOverride(partyIndex), borderColorOverride = getBarBorderOverride(partyIndex)});
+            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = getBarBackgroundOverride(partyIndex), borderColorOverride = getBarBorderOverride(partyIndex)});
 
             -- Update the mp text
             -- Only call set_color if the color has changed
@@ -1193,15 +1258,18 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                 if (memInfo.tp >= 1000) then
                     mainPercent = (memInfo.tp - 1000) / 2000;
                     if (cache.flashTP) then
-                        tpOverlay = {{1, tpOverlayGradient}, math.ceil(barHeight * 5/7), 0, { '#3ECE00', 1 }};
+                        -- Convert ARGB color to hex string for gradient (strip alpha)
+                        local flashARGB = cache.colors.tpFlashColor or 0xFF3ECE00;
+                        local flashHex = string.format('#%06X', bit.band(flashARGB, 0xFFFFFF));
+                        tpOverlay = {{1, tpOverlayGradient}, math.ceil(tpBarHeight * 5/7), 0, { flashHex, 1 }};
                     else
-                        tpOverlay = {{1, tpOverlayGradient}, math.ceil(barHeight * 2/7), 1};
+                        tpOverlay = {{1, tpOverlayGradient}, math.ceil(tpBarHeight * 2/7), 1};
                     end
                 else
                     mainPercent = memInfo.tp / 1000;
                 end
 
-                progressbar.ProgressBar({{mainPercent, tpGradient}}, {tpBarWidth, barHeight}, {overlayBar=tpOverlay, borderConfig=borderConfig, decorate = cache.showBookends, backgroundGradientOverride = getBarBackgroundOverride(partyIndex), borderColorOverride = getBarBorderOverride(partyIndex)});
+                progressbar.ProgressBar({{mainPercent, tpGradient}}, {tpBarWidth, tpBarHeight}, {overlayBar=tpOverlay, decorate = cache.showBookends, backgroundGradientOverride = getBarBackgroundOverride(partyIndex), borderColorOverride = getBarBorderOverride(partyIndex)});
 
                 -- Update the tp text
                 local desiredTpColor = (memInfo.tp >= 1000) and cache.colors.tpFullTextColor or cache.colors.tpEmptyTextColor;
@@ -1215,7 +1283,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                 -- Calculate baseline offset to keep text baseline consistent
                 local tpBaselineOffset = tpRefHeight - tpHeight;
                 memberText[memIdx].tp:set_position_x(tpStartX + tpBarWidth - tpTextWidth);
-                memberText[memIdx].tp:set_position_y(tpStartY + barHeight + settings.tpTextOffsetY + tpBaselineOffset);
+                memberText[memIdx].tp:set_position_y(tpStartY + tpBarHeight + settings.tpTextOffsetY + tpBaselineOffset);
             end
         end
 
@@ -1243,12 +1311,13 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                 local cursorX = selectionTL_X - cursorWidth;
                 local cursorY = selectionTL_Y + (selectionHeight / 2) - (cursorHeight / 2);
 
-                -- Determine tint color
+                -- Determine tint color (use memInfo.subTargeted for both live and preview mode)
+                -- Convert ARGB to ABGR for ImGui draw calls
                 local tintColor;
-                if (subTargetActive) then
-                    tintColor = imgui.GetColorU32(settings.subtargetArrowTint);
+                if (memInfo.subTargeted) then
+                    tintColor = ARGBToABGR(cache.subtargetArrowTint);
                 else
-                    tintColor = IM_COL32_WHITE;
+                    tintColor = ARGBToABGR(cache.targetArrowTint);
                 end
 
                 -- Draw using UI draw list
@@ -1286,13 +1355,20 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                 end
 
                 if (buffCount > 0) then
-                    if (cache.statusTheme == 0 and buffWindowX[memIdx] ~= nil) then
-                        imgui.SetNextWindowPos({hpStartX - buffWindowX[memIdx] - settings.buffOffset , hpStartY - settings.iconSize*1.2});
-                    elseif (cache.statusTheme == 1 and fullMenuWidth[partyIndex] ~= nil) then
-                        local thisPosX, _ = imgui.GetWindowPos();
-                        imgui.SetNextWindowPos({ thisPosX + fullMenuWidth[partyIndex], hpStartY - settings.iconSize * 1.2 });
+                    -- Position buffs based on statusSide setting (0 = Left, 1 = Right)
+                    if cache.statusSide == 0 then
+                        -- Left side: right-align icons to the left of HP bar
+                        if buffWindowX[memIdx] ~= nil then
+                            imgui.SetNextWindowPos({hpStartX - buffWindowX[memIdx] - settings.buffOffset , hpStartY - settings.iconSize*1.2});
+                        end
+                    else
+                        -- Right side: left-align icons to the right of the window
+                        if fullMenuWidth[partyIndex] ~= nil then
+                            local thisPosX, _ = imgui.GetWindowPos();
+                            imgui.SetNextWindowPos({ thisPosX + fullMenuWidth[partyIndex], hpStartY - settings.iconSize * 1.2 });
+                        end
                     end
-                    if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings))) then
+                    if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
                         imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {3, 1});
                         DrawStatusIcons(reusableBuffs, settings.iconSize, 32, 1, true);
                         imgui.PopStyleVar(1);
@@ -1304,13 +1380,20 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                 end
 
                 if (debuffCount > 0) then
-                    if (cache.statusTheme == 0 and debuffWindowX[memIdx] ~= nil) then
-                        imgui.SetNextWindowPos({hpStartX - debuffWindowX[memIdx] - settings.buffOffset , hpStartY});
-                    elseif (cache.statusTheme == 1 and fullMenuWidth[partyIndex] ~= nil) then
-                        local thisPosX, _ = imgui.GetWindowPos();
-                        imgui.SetNextWindowPos({ thisPosX + fullMenuWidth[partyIndex], hpStartY });
+                    -- Position debuffs based on statusSide setting (0 = Left, 1 = Right)
+                    if cache.statusSide == 0 then
+                        -- Left side: right-align icons to the left of HP bar
+                        if debuffWindowX[memIdx] ~= nil then
+                            imgui.SetNextWindowPos({hpStartX - debuffWindowX[memIdx] - settings.buffOffset , hpStartY});
+                        end
+                    else
+                        -- Right side: left-align icons to the right of the window
+                        if fullMenuWidth[partyIndex] ~= nil then
+                            local thisPosX, _ = imgui.GetWindowPos();
+                            imgui.SetNextWindowPos({ thisPosX + fullMenuWidth[partyIndex], hpStartY });
+                        end
                     end
-                    if (imgui.Begin('PlayerDebuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings))) then
+                    if (imgui.Begin('PlayerDebuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
                         imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {3, 1});
                         DrawStatusIcons(reusableDebuffs, settings.iconSize, 32, 1, true);
                         imgui.PopStyleVar(1);
@@ -1324,7 +1407,7 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                 local resetX, resetY = imgui.GetCursorScreenPos();
                 imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0} );
                 imgui.SetNextWindowPos({mpStartX, mpStartY - settings.iconSize - settings.xivBuffOffsetY})
-                if (imgui.Begin('XIVStatus'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings))) then
+                if (imgui.Begin('XIVStatus'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
                     imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {0, 0});
                     DrawStatusIcons(memInfo.buffs, settings.iconSize, 32, 1);
                     imgui.PopStyleVar(1);
@@ -1333,10 +1416,20 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
                 imgui.End();
                 imgui.SetCursorScreenPos({resetX, resetY});
             elseif (cache.statusTheme == 3) then
-                if (buffWindowX[memIdx] ~= nil) then
-                    imgui.SetNextWindowPos({hpStartX - buffWindowX[memIdx] - settings.buffOffset , memberText[memIdx].name.settings.position_y - settings.iconSize/2});
+                -- Position based on statusSide setting (0 = Left, 1 = Right)
+                if cache.statusSide == 0 then
+                    -- Left side: right-align icons to the left of HP bar
+                    if buffWindowX[memIdx] ~= nil then
+                        imgui.SetNextWindowPos({hpStartX - buffWindowX[memIdx] - settings.buffOffset , memberText[memIdx].name.settings.position_y - settings.iconSize/2});
+                    end
+                else
+                    -- Right side: left-align icons to the right of the window
+                    if fullMenuWidth[partyIndex] ~= nil then
+                        local thisPosX, _ = imgui.GetWindowPos();
+                        imgui.SetNextWindowPos({ thisPosX + fullMenuWidth[partyIndex], memberText[memIdx].name.settings.position_y - settings.iconSize/2 });
+                    end
                 end
-                if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings))) then
+                if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
                     imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {0, 3});
                     DrawStatusIcons(memInfo.buffs, settings.iconSize, 7, 3);
                     imgui.PopStyleVar(1);
@@ -1355,15 +1448,8 @@ local function DrawMember(memIdx, settings, isLastVisibleMember)
 
     memberText[memIdx].hp:set_visible(memInfo.inzone);
     memberText[memIdx].mp:set_visible(memInfo.inzone);
-    -- In Layout 2, TP is shown for party 1 only (alliance parties don't have TP data)
-    -- In Layout 1, TP visibility depends on showTP flag
-    local partyIndex = math.floor(memIdx / 6) + 1;
-    if layout == 1 then
-        -- Layout 2: show TP text only for party 1, hide for parties 2 and 3
-        memberText[memIdx].tp:set_visible(memInfo.inzone and partyIndex == 1);
-    else
-        memberText[memIdx].tp:set_visible(memInfo.inzone and showTP);  -- Layout 1: show if showTP is true
-    end
+    -- TP visibility depends on showTP flag for all layouts and all parties
+    memberText[memIdx].tp:set_visible(memInfo.inzone and showTP);
 
     -- Reserve space in ImGui layout for the text/bars (which use absolute positioning)
     -- For Layout 2, reserve horizontal space based on the larger of the two rows
@@ -1518,7 +1604,7 @@ partyList.DrawPartyWindow = function(settings, party, partyIndex)
 
     local imguiPosX, imguiPosY;
 
-    local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+    local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
     if (gConfig.lockPositions) then
         windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
     end
@@ -1565,6 +1651,30 @@ partyList.DrawPartyWindow = function(settings, party, partyIndex)
     end
 
     local menuWidth, menuHeight = imgui.GetWindowSize();
+
+    -- For horizontal layout, ensure minimum width accounts for all bars including TP
+    -- This fixes the first-frame sizing issue with AlwaysAutoResize windows
+    local layout = cache.layout or 0;
+    if layout == 0 then
+        local barScales = getBarScales(partyIndex);
+        local layoutTemplate = getLayoutTemplate(partyIndex);
+        local showTP = showPartyTP(partyIndex);
+        local hpScaleX = barScales and barScales.hpBarScaleX or 1;
+        local mpScaleX = barScales and barScales.mpBarScaleX or 1;
+        local tpScaleX = barScales and barScales.tpBarScaleX or 1;
+        -- Use party's layout template for base widths
+        local baseHpWidth = layoutTemplate.hpBarWidth or 150;
+        local baseMpWidth = layoutTemplate.mpBarWidth or 100;
+        local baseTpWidth = layoutTemplate.tpBarWidth or 100;
+        local baseBarSpacing = layoutTemplate.barSpacing or 8;
+        local minWidth = baseHpWidth * scale.x * hpScaleX + baseBarSpacing * scale.x + baseMpWidth * scale.x * mpScaleX;
+        if showTP then
+            minWidth = minWidth + baseBarSpacing * scale.x + baseTpWidth * scale.x * tpScaleX;
+        end
+        -- Note: Job icon is NOT included in minWidth because it's rendered as an overlay
+        -- (positioned absolutely to the left of the bars) and shouldn't affect background width
+        menuWidth = math.max(menuWidth, minWidth);
+    end
 
     fullMenuWidth[partyIndex] = menuWidth;
     fullMenuHeight[partyIndex] = menuHeight;
@@ -1719,7 +1829,7 @@ partyList.Initialize = function(settings)
         mp_font_settings.font_height = math.max(fontSizes.mp, 6);
         tp_font_settings.font_height = math.max(fontSizes.tp, 6);
         distance_font_settings.font_height = math.max(fontSizes.distance, 6);
-        zone_font_settings.font_height = 10;  -- Fixed 10px for zone text
+        zone_font_settings.font_height = math.max(fontSizes.zone, 6);
         job_font_settings.font_height = math.max(fontSizes.job, 6);
 
         memberText[i] = {};
@@ -1869,7 +1979,7 @@ partyList.UpdateVisuals = function(settings)
         mp_font_settings.font_height = math.max(fontSizes.mp, 6);
         tp_font_settings.font_height = math.max(fontSizes.tp, 6);
         distance_font_settings.font_height = math.max(fontSizes.distance, 6);
-        zone_font_settings.font_height = 10;  -- Fixed 10px for zone text
+        zone_font_settings.font_height = math.max(fontSizes.zone, 6);
         job_font_settings.font_height = math.max(fontSizes.job, 6);
 
         -- Use FontManager for cleaner font recreation

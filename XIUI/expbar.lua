@@ -124,7 +124,7 @@ expbar.DrawWindow = function(settings)
 
     -- Let ImGui auto-size the window based on content (Dummy call in progressbar)
     imgui.SetNextWindowSize({ -1, -1 }, ImGuiCond_Always);
-	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
 	if (gConfig.lockPositions) then
 		windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
 	end

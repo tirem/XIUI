@@ -53,7 +53,28 @@ if ($gitStatus) {
 }
 Write-Host "[✓] Working directory is clean" -ForegroundColor Green
 
-# Safety Check 3: Fetch and verify we're up to date with origin
+# Safety Check 3: Verify dev flags are disabled
+$xiuiLuaContent = Get-Content "XIUI/XIUI.lua" -Raw
+
+# Check Ashita 4.3 flag
+if ($xiuiLuaContent -match '_XIUI_USE_ASHITA_4_3\s*=\s*true') {
+    Write-Host "Error: _XIUI_USE_ASHITA_4_3 is set to true" -ForegroundColor Red
+    Write-Host "This flag must be false for releases (most players use main branch)"
+    Write-Host "Set it to false in XIUI/XIUI.lua before releasing"
+    exit 1
+}
+Write-Host "[✓] Ashita 4.3 flag is disabled" -ForegroundColor Green
+
+# Check hot reloading flag
+if ($xiuiLuaContent -match '_XIUI_DEV_HOT_RELOADING_ENABLED\s*=\s*true') {
+    Write-Host "Error: _XIUI_DEV_HOT_RELOADING_ENABLED is set to true" -ForegroundColor Red
+    Write-Host "Hot reloading must be disabled for releases"
+    Write-Host "Set it to false in XIUI/XIUI.lua before releasing"
+    exit 1
+}
+Write-Host "[✓] Hot reloading is disabled" -ForegroundColor Green
+
+# Safety Check 4: Fetch and verify we're up to date with origin
 Write-Host "Fetching from origin..." -ForegroundColor Yellow
 git fetch origin 2>$null
 if ($LASTEXITCODE -ne 0) {

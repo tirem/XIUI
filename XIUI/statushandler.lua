@@ -189,12 +189,10 @@ statusHandler.render_tooltip = function(status)
     local name = resMan:GetString('buffs.names', status);
     if (name ~= nil and info ~= nil) then
         imgui.BeginTooltip();
-            imgui.SetWindowFontScale(gConfig.tooltipScale);
             imgui.Text(('%s (#%d)'):fmt(encoding:ShiftJIS_To_UTF8(name, true), status));
             if (info.Description[1] ~= nil) then
                 imgui.Text(encoding:ShiftJIS_To_UTF8(info.Description[1], true));
             end
-            imgui.SetWindowFontScale(1);
         imgui.EndTooltip();
     end
 end

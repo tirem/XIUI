@@ -32,6 +32,7 @@ local lastNameTextColor;
 local lastPercentTextColor;
 local lastTotNameTextColor;
 local lastCastTextColor;
+local lastDistTextColor;
 
 local _XIUI_DEV_DEBUG_INTERPOLATION = false;
 local _XIUI_DEV_DEBUG_INTERPOLATION_DELAY = 1;
@@ -243,7 +244,7 @@ targetbar.DrawWindow = function(settings)
 	local isMonster = GetIsMob(targetEntity);
 
 	-- Draw the main target window
-	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
 	if (gConfig.lockPositions) then
 		windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
 	end
@@ -408,15 +409,16 @@ targetbar.DrawWindow = function(settings)
 			distText:set_position_x(rightTextX);
 			distText:set_position_y(topTextY - settings.distance_font_settings.font_height);
 
-			-- Use HP color only when showing HP% alone, otherwise use white
+			-- Use HP color only when showing HP% alone, otherwise use configured distance text color
+			local desiredDistColor;
 			if (showHpPercent and not showDistance) then
-				local hpColor, _ = GetHpColors(targetEntity.HPPercent / 100);
-				if (lastPercentTextColor ~= hpColor) then
-					distText:set_font_color(hpColor);
-					lastPercentTextColor = hpColor;
-				end
+				desiredDistColor, _ = GetHpColors(targetEntity.HPPercent / 100);
 			else
-				distText:set_font_color(0xFFFFFFFF);
+				desiredDistColor = gConfig.colorCustomization.targetBar.distanceTextColor;
+			end
+			if (lastDistTextColor ~= desiredDistColor) then
+				distText:set_font_color(desiredDistColor);
+				lastDistTextColor = desiredDistColor;
 			end
 
 			distText:set_visible(true);
@@ -429,7 +431,6 @@ targetbar.DrawWindow = function(settings)
 
 		-- Draw enemy cast bar and text if casting (or in config mode) and if enabled
 		local castData = targetbar.enemyCasts[targetEntity.ServerId];
-		local inConfigMode = showConfig and showConfig[1];
 
 		-- Create test cast data for config mode
 		if (inConfigMode and castData == nil) then
@@ -473,7 +474,7 @@ targetbar.DrawWindow = function(settings)
 			castText:set_position_y(castBarY + castBarHeight + 2);
 			castText:set_text(inConfigMode and "Fire III (Demo)" or castData.spellName);
 			-- Get custom cast text color
-			local castColor = GetColorSetting('targetBar', 'castTextColor', 0xFFFFAA00);
+			local castColor = gConfig.colorCustomization.targetBar.castTextColor;
 			if (lastCastTextColor ~= castColor) then
 				castText:set_font_color(castColor);
 				lastCastTextColor = castColor;
@@ -641,7 +642,7 @@ targetbar.DrawWindow = function(settings)
 		end
 
 		if (totEntity ~= nil and totEntity.Name ~= nil) then
-			local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+			local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
 			if (gConfig.lockPositions) then
 				windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
 			end
@@ -720,6 +721,7 @@ targetbar.UpdateVisuals = function(settings)
 	lastPercentTextColor = nil;
 	lastTotNameTextColor = nil;
 	lastCastTextColor = nil;
+	lastDistTextColor = nil;
 end
 
 targetbar.SetHidden = function(hidden)

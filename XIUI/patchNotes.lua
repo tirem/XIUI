@@ -26,9 +26,8 @@ end
 * desc : Event called when the Direct3D device is presenting a scene.
 --]]
 patchNotes.DrawWindow = function()
-    -- Obtain the player entity..
-
-	if (gShowPatchNotes[1] == false) then
+	-- Early exit if patch notes window isn't shown
+	if (not gShowPatchNotes[1]) then
 		XIUITexture = nil;
 		PatchVerTexture = nil;
 		NewTexture = nil;
@@ -49,7 +48,7 @@ patchNotes.DrawWindow = function()
 	imgui.PushStyleColor(ImGuiCol_TitleBgActive, {0,0.06,.16, .9});
 	imgui.PushStyleColor(ImGuiCol_TitleBgCollapsed, {0,0.06,.16, .5});
 	imgui.PushStyleVar(ImGuiStyleVar_FramePadding, { 8, 6 });
-    if (gShowPatchNotes[1] and imgui.Begin('XIUI PatchNotes', gShowPatchNotes, bit.bor(ImGuiWindowFlags_NoSavedSettings))) then
+	if (imgui.Begin('XIUI PatchNotes', gShowPatchNotes, bit.bor(ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
 		-- Save starting Y position for button alignment
 		local startY = imgui.GetCursorPosY();
 
@@ -63,8 +62,10 @@ patchNotes.DrawWindow = function()
 		local buttonWidth = 120;
 		local buttonHeight = 30;
 		local imageHeight = 53;
-		local contentRegionMax = imgui.GetWindowContentRegionMax();
-		local buttonX = contentRegionMax - buttonWidth;
+		-- Use GetContentRegionAvail + GetCursorPosX to calculate max X position
+		local contentAvail = imgui.GetContentRegionAvail();
+		local cursorX = imgui.GetCursorPosX();
+		local buttonX = cursorX + contentAvail - buttonWidth;
 		local buttonY = startY + (imageHeight - buttonHeight) / 2;
 
 		imgui.SetCursorPos({ buttonX, buttonY });
@@ -74,27 +75,35 @@ patchNotes.DrawWindow = function()
 		end
 
 		imgui.NewLine();
-		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Performance Improvements');
-		imgui.BulletText('Major enemy list performance optimizations - fixed O(n) bottlenecks');
-		imgui.BulletText('Party list rendering performance improvements');
-		imgui.BulletText('Reduced memory allocations and garbage collection pressure');
-		imgui.BulletText('Optimized debuff handler with caching');
+		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Ashita 4.3 Compatibility');
+		imgui.BulletText('Added compatibility layer for upcoming Ashita 4.3 update');
 		imgui.NewLine();
-		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'New Features');
-		imgui.BulletText('Per-party color settings - customize colors for each party');
-		imgui.BulletText('Per-party display settings - show/hide elements per party');
-		imgui.BulletText('HP gradient enabled by default');
-		imgui.BulletText('Color interpolation configuration');
-		imgui.BulletText('Castbar accuracy improvements for self and party members');
+		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Party List');
+		imgui.BulletText('TP bars now available for alliance parties (B and C)');
+		imgui.BulletText('TP text flashing in compact mode when at 1000+ TP');
+		imgui.BulletText('Subtarget highlighting with customizable colors');
+		imgui.BulletText('Status icons can now display on left or right side');
+		imgui.BulletText('Individual bar scaling for HP, MP, and TP bars in both modes');
+		imgui.BulletText('Copy settings between parties feature');
+		imgui.BulletText('Zone font size setting');
+		imgui.NewLine();
+		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Player Bar');
+		imgui.BulletText('TP flash effects now have customizable overlay and flash colors');
+		imgui.BulletText('TP flash toggle moved to player bar settings (from global)');
+		imgui.NewLine();
+		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Enemy Debuff Tracking');
+		imgui.BulletText('Weaponskill debuffs now tracked (Def Down, Att Down, etc.)');
+		imgui.BulletText('Supports Shell Crusher, Armor Break, Full Break, and more');
 		imgui.NewLine();
 		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'UI Improvements');
-		imgui.BulletText('Redesigned config menu with new layout');
-		imgui.BulletText('Added Discord and GitHub links to config');
-		
-    end
+		imgui.BulletText('Horizontal color picker layout for HP bar colors');
+		imgui.BulletText('Improved config menu party tab styling');
+		imgui.BulletText('Fixed bookend scaling with tall bar heights');
+		imgui.BulletText('Bookend size setting added to global settings');
+	end
+	imgui.End();
 	imgui.PopStyleVar(1);
 	imgui.PopStyleColor(4);
-	imgui.End();
 end
 
 return patchNotes;

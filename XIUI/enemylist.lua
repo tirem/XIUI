@@ -120,7 +120,7 @@ enemylist.DrawWindow = function(settings)
 	imgui.SetNextWindowSize({ windowWidth, -1, }, ImGuiCond_Always);
 
 	-- Draw the main target window
-	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
 	if (gConfig.lockPositions) then
 		windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
 	end
@@ -370,7 +370,7 @@ enemylist.DrawWindow = function(settings)
 						-- Dynamically set font height based on settings (avoids expensive font recreation)
 						distanceFont:set_font_height(settings.distance_font_settings.font_height);
 						-- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
-						local distanceColor = settings.distance_font_settings.font_color;
+						local distanceColor = gConfig.colorCustomization.enemyList.distanceTextColor;
 						if (enemyDistanceColorCache[k] ~= distanceColor) then
 							distanceFont:set_font_color(distanceColor);
 							enemyDistanceColorCache[k] = distanceColor;
@@ -392,7 +392,7 @@ enemylist.DrawWindow = function(settings)
 						-- Dynamically set font height based on settings (avoids expensive font recreation)
 						hpFont:set_font_height(settings.percent_font_settings.font_height);
 						-- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
-						local hpColor = settings.percent_font_settings.font_color;
+						local hpColor = gConfig.colorCustomization.enemyList.percentTextColor;
 						if (enemyHPColorCache[k] ~= hpColor) then
 							hpFont:set_font_color(hpColor);
 							enemyHPColorCache[k] = hpColor;
@@ -430,7 +430,7 @@ enemylist.DrawWindow = function(settings)
 						end
 
 						imgui.SetNextWindowPos({debuffX, debuffY});
-						if (imgui.Begin('EnemyDebuffs'..k, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings))) then
+						if (imgui.Begin('EnemyDebuffs'..k, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
 							imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {1, 1});
 							DrawStatusIcons(buffIds, settings.iconSize, settings.maxIcons, 1);
 							imgui.PopStyleVar(1);

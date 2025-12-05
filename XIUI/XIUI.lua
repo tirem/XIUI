@@ -28,6 +28,13 @@ addon.version   = '1.5.0';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/XIUI'
 
+-- Ashita version targeting (for ImGui compatibility)
+-- Set to true when developing/testing against Ashita 4.3 (2025_q3_update branch)
+-- Set to false for releases targeting current main branch (most players)
+-- See: https://github.com/AshitaXI/Ashita-v4beta/tree/2025_q3_update
+_G._XIUI_USE_ASHITA_4_3 = false;
+require('imgui_compat'); -- Must be before any module that uses imgui
+
 require('common');
 local settings = require('settings');
 local playerBar = require('playerbar');
@@ -147,6 +154,7 @@ T{
 	playerBarFontSize = 12,
 	showPlayerBarBookends = true,
 	alwaysShowMpBar = true,
+	playerBarTpFlashEnabled = true,
     playerBarHideDuringEvents = true,
 
 	targetBarScaleX = 1,
@@ -219,7 +227,7 @@ T{
 		showDistance = false,
 		distanceHighlight = 0,
 		showJobIcon = true,
-		showJob = true,
+		showJob = false,
 		showCastBars = true,
 		castBarScaleY = 0.6,
 		showBookends = true,
@@ -231,6 +239,7 @@ T{
 		bgScale = 1.0,
 		cursor = 'GreyArrow.png',
 		statusTheme = 0, -- 0: HorizonXI, 1: HorizonXI-R, 2: FFXIV, 3: FFXI, 4: Disabled
+		statusSide = 0, -- 0: Left, 1: Right
 		buffScale = 1.0,
 		-- Positioning
 		expandHeight = false,
@@ -250,13 +259,16 @@ T{
 		tpFontSize = 12,
 		distanceFontSize = 12,
 		jobFontSize = 12,
+		zoneFontSize = 10,
 		-- Job icon
 		jobIconScale = 1,
-		-- Bar scales (for Compact Vertical layout)
+		-- Bar scales (for all layouts)
 		hpBarScaleX = 1,
 		mpBarScaleX = 1,
+		tpBarScaleX = 1,
 		hpBarScaleY = 1,
 		mpBarScaleY = 1,
+		tpBarScaleY = 1,
 	},
 
 	partyB = T{
@@ -266,7 +278,7 @@ T{
 		showDistance = false,
 		distanceHighlight = 0,
 		showJobIcon = true,
-		showJob = true,
+		showJob = false,
 		showCastBars = true,
 		castBarScaleY = 0.6,
 		showBookends = true,
@@ -278,6 +290,7 @@ T{
 		bgScale = 1.0,
 		cursor = 'GreyArrow.png',
 		statusTheme = 0,
+		statusSide = 0,
 		buffScale = 1.0,
 		-- Positioning
 		expandHeight = false,
@@ -297,13 +310,16 @@ T{
 		tpFontSize = 12,
 		distanceFontSize = 12,
 		jobFontSize = 12,
+		zoneFontSize = 10,
 		-- Job icon
 		jobIconScale = 0.8,
-		-- Bar scales (for Compact Vertical layout)
-		hpBarScaleX = 0.9,
-		mpBarScaleX = 0.6,
+		-- Bar scales (for all layouts)
+		hpBarScaleX = 1,
+		mpBarScaleX = 1,
+		tpBarScaleX = 1,
 		hpBarScaleY = 1,
-		mpBarScaleY = 0.7,
+		mpBarScaleY = 1,
+		tpBarScaleY = 1,
 	},
 
 	partyC = T{
@@ -313,7 +329,7 @@ T{
 		showDistance = false,
 		distanceHighlight = 0,
 		showJobIcon = true,
-		showJob = true,
+		showJob = false,
 		showCastBars = true,
 		castBarScaleY = 0.6,
 		showBookends = true,
@@ -325,6 +341,7 @@ T{
 		bgScale = 1.0,
 		cursor = 'GreyArrow.png',
 		statusTheme = 0,
+		statusSide = 0,
 		buffScale = 1.0,
 		-- Positioning
 		expandHeight = false,
@@ -344,13 +361,16 @@ T{
 		tpFontSize = 12,
 		distanceFontSize = 12,
 		jobFontSize = 12,
+		zoneFontSize = 10,
 		-- Job icon
 		jobIconScale = 0.8,
-		-- Bar scales (for Compact Vertical layout)
-		hpBarScaleX = 0.9,
-		mpBarScaleX = 0.6,
+		-- Bar scales (for all layouts)
+		hpBarScaleX = 1,
+		mpBarScaleX = 1,
+		tpBarScaleX = 1,
 		hpBarScaleY = 1,
-		mpBarScaleY = 0.7,
+		mpBarScaleY = 1,
+		tpBarScaleY = 1,
 	},
 
 	-- Layout templates (bar dimensions and text offsets per layout mode)
@@ -571,8 +591,8 @@ T{
 
 	-- Bar Settings (global progress bar configuration)
 	showBookends = true,            -- Global bookend visibility (overrides individual bookend settings)
+	bookendSize = 10,               -- Minimum bookend width in pixels (5-20)
 	healthBarFlashEnabled = true,   -- Flash effect when taking damage
-	tpBarFlashEnabled = true,       -- Flash effect when TP reaches 100%
 	noBookendRounding = 4,          -- Bar roundness for bars without bookends (0-10)
 	barBorderThickness = 1,         -- Border thickness for all progress bars (1-5)
 
@@ -588,10 +608,12 @@ T{
 			},
 			mpGradient = T{ enabled = true, start = '#9abb5a', stop = '#bfe07d' },
 			tpGradient = T{ enabled = true, start = '#3898ce', stop = '#78c4ee' },
+			tpOverlayGradient = T{ enabled = true, start = '#0078CC', stop = '#0078CC' },  -- TP overlay bar (1000+ stored)
 			hpTextColor = 0xFFFFFFFF,
 			mpTextColor = 0xFFdef2db,
 			tpEmptyTextColor = 0xFF9acce8,  -- TP < 1000
 			tpFullTextColor = 0xFF2fa9ff,   -- TP >= 1000
+			tpFlashColor = 0xFF2fa9ff,      -- TP flash effect color
 		},
 
 		-- Target Bar
@@ -607,7 +629,6 @@ T{
 		-- Target of Target Bar
 		totBar = T{
 			hpGradient = T{ enabled = true, start = '#e16c6c', stop = '#fb9494' },
-			nameTextColor = 0xFFFFFFFF,
 		},
 
 		-- Enemy List
@@ -638,10 +659,13 @@ T{
 			mpTextColor = 0xFFFFFFFF,
 			tpEmptyTextColor = 0xFF9acce8,
 			tpFullTextColor = 0xFF2fa9ff,
+			tpFlashColor = 0xFF3ECE00,
 			bgColor = 0xFFFFFFFF,
 			borderColor = 0xFFFFFFFF,
 			selectionGradient = T{ enabled = true, start = '#4da5d9', stop = '#78c0ed' },
 			selectionBorderColor = 0xFF78C0ED,
+			subtargetGradient = T{ enabled = true, start = '#d9a54d', stop = '#edcf78' },
+			subtargetBorderColor = 0xFFfdd017,
 		},
 		partyListB = T{
 			hpGradient = T{
@@ -656,10 +680,15 @@ T{
 			nameTextColor = 0xFFFFFFFF,
 			hpTextColor = 0xFFFFFFFF,
 			mpTextColor = 0xFFFFFFFF,
+			tpEmptyTextColor = 0xFF9acce8,
+			tpFullTextColor = 0xFF2fa9ff,
+			tpFlashColor = 0xFF3ECE00,
 			bgColor = 0xFFFFFFFF,
 			borderColor = 0xFFFFFFFF,
 			selectionGradient = T{ enabled = true, start = '#4da5d9', stop = '#78c0ed' },
 			selectionBorderColor = 0xFF78C0ED,
+			subtargetGradient = T{ enabled = true, start = '#d9a54d', stop = '#edcf78' },
+			subtargetBorderColor = 0xFFfdd017,
 		},
 		partyListC = T{
 			hpGradient = T{
@@ -674,10 +703,15 @@ T{
 			nameTextColor = 0xFFFFFFFF,
 			hpTextColor = 0xFFFFFFFF,
 			mpTextColor = 0xFFFFFFFF,
+			tpEmptyTextColor = 0xFF9acce8,
+			tpFullTextColor = 0xFF2fa9ff,
+			tpFlashColor = 0xFF3ECE00,
 			bgColor = 0xFFFFFFFF,
 			borderColor = 0xFFFFFFFF,
 			selectionGradient = T{ enabled = true, start = '#4da5d9', stop = '#78c0ed' },
 			selectionBorderColor = 0xFF78C0ED,
+			subtargetGradient = T{ enabled = true, start = '#d9a54d', stop = '#edcf78' },
+			subtargetBorderColor = 0xFFfdd017,
 		},
 
 		-- Exp Bar
@@ -1019,6 +1053,7 @@ T{
 		arrowSize = 1;
 
 		subtargetArrowTint = 0xFFfdd017,
+		targetArrowTint = 0xFFFFFFFF,
 
 		iconSize = 22,
 		maxIconColumns = 6,
@@ -1303,6 +1338,8 @@ if not gConfig.partyA then
 		backgroundName = gConfig.partyListBackgroundName or 'Window1',
 		bgScale = gConfig.partyListBgScale or 1.0,
 		cursor = gConfig.partyListCursor or 'GreyArrow.png',
+		subtargetArrowTint = 0xFFfdd017,
+		targetArrowTint = 0xFFFFFFFF,
 		statusTheme = gConfig.partyListStatusTheme or 0,
 		buffScale = gConfig.partyListBuffScale or 1.0,
 		expandHeight = gConfig.partyListExpandHeight or false,
@@ -1323,8 +1360,10 @@ if not gConfig.partyA then
 		jobIconScale = getOld('partyListJobIconScale', 1),
 		hpBarScaleX = getOld('hpBarScaleX', 1),
 		mpBarScaleX = getOld('mpBarScaleX', 1),
+		tpBarScaleX = getOld('tpBarScaleX', 1),
 		hpBarScaleY = getOld('hpBarScaleY', 1),
 		mpBarScaleY = getOld('mpBarScaleY', 1),
+		tpBarScaleY = getOld('tpBarScaleY', 1),
 	};
 
 	gConfig.partyB = T{
@@ -1342,6 +1381,8 @@ if not gConfig.partyA then
 		backgroundName = gConfig.partyListBackgroundName or 'Window1',
 		bgScale = gConfig.partyListBgScale or 1.0,
 		cursor = gConfig.partyListCursor or 'GreyArrow.png',
+		subtargetArrowTint = 0xFFfdd017,
+		targetArrowTint = 0xFFFFFFFF,
 		statusTheme = gConfig.partyListStatusTheme or 0,
 		buffScale = gConfig.partyListBuffScale or 1.0,
 		expandHeight = gConfig.partyListExpandHeight or false,
@@ -1362,8 +1403,10 @@ if not gConfig.partyA then
 		jobIconScale = getOld('partyList2JobIconScale', 0.8),
 		hpBarScaleX = getOld('partyList2HpBarScaleX', 0.9),
 		mpBarScaleX = getOld('partyList2MpBarScaleX', 0.6),
+		tpBarScaleX = getOld('partyList2TpBarScaleX', 1),
 		hpBarScaleY = getOld('partyList2HpBarScaleY', 1),
 		mpBarScaleY = getOld('partyList2MpBarScaleY', 0.7),
+		tpBarScaleY = getOld('partyList2TpBarScaleY', 1),
 	};
 
 	gConfig.partyC = T{
@@ -1381,6 +1424,8 @@ if not gConfig.partyA then
 		backgroundName = gConfig.partyListBackgroundName or 'Window1',
 		bgScale = gConfig.partyListBgScale or 1.0,
 		cursor = gConfig.partyListCursor or 'GreyArrow.png',
+		subtargetArrowTint = 0xFFfdd017,
+		targetArrowTint = 0xFFFFFFFF,
 		statusTheme = gConfig.partyListStatusTheme or 0,
 		buffScale = gConfig.partyListBuffScale or 1.0,
 		expandHeight = gConfig.partyListExpandHeight or false,
@@ -1401,8 +1446,10 @@ if not gConfig.partyA then
 		jobIconScale = getOld('partyList3JobIconScale', 0.8),
 		hpBarScaleX = getOld('partyList3HpBarScaleX', 0.9),
 		mpBarScaleX = getOld('partyList3MpBarScaleX', 0.6),
+		tpBarScaleX = getOld('partyList3TpBarScaleX', 1),
 		hpBarScaleY = getOld('partyList3HpBarScaleY', 1),
 		mpBarScaleY = getOld('partyList3MpBarScaleY', 0.7),
+		tpBarScaleY = getOld('partyList3TpBarScaleY', 1),
 	};
 
 	-- Initialize layout templates if missing
@@ -1626,7 +1673,6 @@ function UpdateUserSettings()
 	gAdjustedSettings.targetBarSettings.distance_font_settings.font_height = math.max(us.targetBarDistanceFontSize, 8);
     gAdjustedSettings.targetBarSettings.percent_font_settings.font_height = math.max(us.targetBarPercentFontSize, 8);
 	gAdjustedSettings.targetBarSettings.cast_font_settings.font_height = math.max(us.targetBarCastFontSize, 8);
-	-- Note: percent_font_settings.color is set dynamically in targetbar.DrawWindow based on HP amount
 	gAdjustedSettings.targetBarSettings.iconSize = ds.targetBarSettings.iconSize * us.targetBarIconScale;
 	gAdjustedSettings.targetBarSettings.arrowSize = ds.targetBarSettings.arrowSize * us.targetBarScaleY;
 	-- Buff/Debuff positioning
@@ -1764,17 +1810,13 @@ function UpdateUserSettings()
 	gAdjustedSettings.enemyListSettings.debuffOffsetY = us.enemyListDebuffOffsetY;
 	gAdjustedSettings.enemyListSettings.name_font_settings.font_height = math.max(us.enemyListNameFontSize, 8);
 	gAdjustedSettings.enemyListSettings.distance_font_settings.font_height = math.max(us.enemyListDistanceFontSize, 8);
-	gAdjustedSettings.enemyListSettings.distance_font_settings.font_color = us.colorCustomization.enemyList.distanceTextColor;
 	gAdjustedSettings.enemyListSettings.percent_font_settings.font_height = math.max(us.enemyListPercentFontSize, 8);
-	gAdjustedSettings.enemyListSettings.percent_font_settings.font_color = us.colorCustomization.enemyList.percentTextColor;
 
 	-- Cast Bar
 	gAdjustedSettings.castBarSettings.barWidth = ds.castBarSettings.barWidth * us.castBarScaleX;
 	gAdjustedSettings.castBarSettings.barHeight = ds.castBarSettings.barHeight * us.castBarScaleY;
 	gAdjustedSettings.castBarSettings.spell_font_settings.font_height = math.max(us.castBarFontSize, 8);
-	gAdjustedSettings.castBarSettings.spell_font_settings.font_color = us.colorCustomization.castBar.spellTextColor;
 	gAdjustedSettings.castBarSettings.percent_font_settings.font_height = math.max(us.castBarFontSize, 8);
-	gAdjustedSettings.castBarSettings.percent_font_settings.font_color = us.colorCustomization.castBar.percentTextColor;
 end
 
 -- Just save settings to disk (no updates)

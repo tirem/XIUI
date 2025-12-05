@@ -43,7 +43,7 @@ end
 -- Get cached base window flags (computed once, lock flag added dynamically)
 local function getBaseWindowFlags()
 	if baseWindowFlags == nil then
-		baseWindowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus);
+		baseWindowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
 	end
 	return baseWindowFlags;
 end
@@ -340,12 +340,25 @@ playerbar.DrawWindow = function(settings)
 		if (SelfTP >= 1000) then
 			mainPercent = (SelfTP - 1000) / 2000;
 
-			local tpOverlayGradient = {'#0078CC', '#0078CC'};
+			-- Get TP overlay gradient from settings
+			local overlaySettings = gConfig.colorCustomization.playerBar.tpOverlayGradient;
+			local tpOverlayGradient;
+			if overlaySettings and overlaySettings.enabled then
+				tpOverlayGradient = {overlaySettings.start, overlaySettings.stop};
+			else
+				tpOverlayGradient = {overlaySettings and overlaySettings.start or '#0078CC', overlaySettings and overlaySettings.start or '#0078CC'};
+			end
 
 		local tpPulseConfig = nil;
-		if gConfig.tpBarFlashEnabled then
+		if gConfig.playerBarTpFlashEnabled then
+			-- Get flash color from settings (ARGB) and convert to hex string
+			local flashColor = gConfig.colorCustomization.playerBar.tpFlashColor or 0xFF2fa9ff;
+			local r = bit.band(bit.rshift(flashColor, 16), 0xFF);
+			local g = bit.band(bit.rshift(flashColor, 8), 0xFF);
+			local b = bit.band(flashColor, 0xFF);
+			local flashHex = string.format('#%02x%02x%02x', r, g, b);
 			tpPulseConfig = {
-				'#2fa9ff', -- overlay pulse color
+				flashHex, -- overlay pulse color
 				1 -- overlay pulse seconds
 			};
 		end

@@ -208,31 +208,25 @@ progressbar.DrawColoredBar = function(startPosition, endPosition, color, roundin
 end
 
 progressbar.DrawBookends = function(positionStartX, positionStartY, width, height)
-	local bookendWidth = height / 2;
+	-- Bookend width needs to be at least half the height for proper semicircular caps
+	-- User setting is a base/minimum, but we scale up if bar height requires it
+	local baseBookendWidth = gConfig and gConfig.bookendSize or 10;
 	local radius = height / 2;
+	-- Bookend width must accommodate the full radius for proper rounded caps
+	local bookendWidth = math.max(baseBookendWidth, radius);
 	local draw_list = imgui.GetWindowDrawList();
-	local outlineThickness = 1;
 
 	-- Get bookend gradient colors (default: dark blue gradient)
 	local gradientStart = '#1a2a4a';
 	local gradientMid = '#2d4a7c';
 	local gradientEnd = '#1a2a4a';
 
-	-- Get outline color (default: match background)
-	local outlineColor = progressbar.backgroundGradientStartColor;
-
 	-- Apply custom colors if available from global config
-	if gConfig and gConfig.colorCustomization and gConfig.colorCustomization.shared then
-		if gConfig.colorCustomization.shared.bookendGradient then
-			local bookendSettings = gConfig.colorCustomization.shared.bookendGradient;
-			gradientStart = bookendSettings.start or gradientStart;
-			gradientMid = bookendSettings.mid or gradientMid;
-			gradientEnd = bookendSettings.stop or gradientEnd;
-		end
-
-		if gConfig.colorCustomization.shared.backgroundGradient then
-			outlineColor = gConfig.colorCustomization.shared.backgroundGradient.start;
-		end
+	if gConfig and gConfig.colorCustomization and gConfig.colorCustomization.shared and gConfig.colorCustomization.shared.bookendGradient then
+		local bookendSettings = gConfig.colorCustomization.shared.bookendGradient;
+		gradientStart = bookendSettings.start or gradientStart;
+		gradientMid = bookendSettings.mid or gradientMid;
+		gradientEnd = bookendSettings.stop or gradientEnd;
 	end
 
 	-- Get the 3-step gradient texture
@@ -241,11 +235,8 @@ progressbar.DrawBookends = function(positionStartX, positionStartY, width, heigh
 		return;
 	end
 
-	-- Prepare outline color
-	local outlineR, outlineG, outlineB, outlineA = hex2rgba(outlineColor);
-	local outlineColorU32 = imgui.GetColorU32({outlineR / 255, outlineG / 255, outlineB / 255, outlineA / 255});
-
 	-- Draw left bookend (rounded rectangle on left side)
+	-- Note: The main progress bar border encompasses the bookends, so no separate outline is needed
 	draw_list:AddImageRounded(
 		gradientTexture,
 		{positionStartX, positionStartY},
@@ -254,16 +245,6 @@ progressbar.DrawBookends = function(positionStartX, positionStartY, width, heigh
 		IM_COL32_WHITE,
 		radius,
 		ImDrawCornerFlags_Left
-	);
-
-	-- Draw left bookend outline
-	draw_list:AddRect(
-		{positionStartX, positionStartY},
-		{positionStartX + bookendWidth, positionStartY + height},
-		outlineColorU32,
-		radius,
-		ImDrawCornerFlags_Left,
-		outlineThickness
 	);
 
 	-- Draw right bookend (rounded rectangle on right side)
@@ -275,16 +256,6 @@ progressbar.DrawBookends = function(positionStartX, positionStartY, width, heigh
 		IM_COL32_WHITE,
 		radius,
 		ImDrawCornerFlags_Right
-	);
-
-	-- Draw right bookend outline
-	draw_list:AddRect(
-		{positionStartX + width - bookendWidth, positionStartY},
-		{positionStartX + width, positionStartY + height},
-		outlineColorU32,
-		radius,
-		ImDrawCornerFlags_Right,
-		outlineThickness
 	);
 end
 
@@ -328,11 +299,13 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 
 	-- Draw the bookends!
 	if options.decorate then
-		local bookendWidth = height / 2;
-		
+		-- Bookend width must match DrawBookends calculation (scales with bar height)
+		local baseBookendWidth = gConfig and gConfig.bookendSize or 10;
+		local bookendWidth = math.max(baseBookendWidth, height / 2);
+
 		contentWidth = width - (bookendWidth * 2);
 		contentPositionStartX = contentPositionStartX + bookendWidth;
-		
+
 		progressbar.DrawBookends(positionStartX, positionStartY, width, height);
 	end
 	
@@ -461,13 +434,6 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 			rounding = options.decorate and progressbar.foregroundRounding or gConfig.noBookendRounding;
 			progressbar.DrawColoredBar({progressPositionStartX, progressPositionStartY + progressHeight - overlayHeight + overlayTopPadding}, {progressPositionStartX + overlayProgressWidth, progressPositionStartY + progressHeight}, pulseBarColor, rounding);
 		end
-	end
-
-	if options.borderConfig then
-		local borderWidth = options.borderConfig[1];
-		local borderColorRed, borderColorGreen, borderColorBlue = hex2rgb(options.borderConfig[2]);
-		rounding = options.decorate and height/2 or gConfig.noBookendRounding;
-		imgui.GetWindowDrawList():AddRect({positionStartX - (borderWidth / 2), positionStartY - (borderWidth / 2)}, {positionStartX + width + (borderWidth / 2), positionStartY + height + (borderWidth / 2)}, imgui.GetColorU32({borderColorRed / 255, borderColorGreen / 255, borderColorBlue / 255, 1}), rounding, ImDrawCornerFlags_All, borderWidth);
 	end
 
 	-- Draw default border and optional enhanced border

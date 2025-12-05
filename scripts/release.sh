@@ -74,7 +74,28 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 echo -e "${GREEN}[✓] Working directory is clean${NC}"
 
-# Safety Check 3: Fetch and verify we're up to date with origin
+# Safety Check 3: Verify dev flags are disabled
+XIUI_CONTENT=$(cat XIUI/XIUI.lua)
+
+# Check Ashita 4.3 flag
+if echo "$XIUI_CONTENT" | grep -q '_XIUI_USE_ASHITA_4_3\s*=\s*true'; then
+    echo -e "${RED}Error: _XIUI_USE_ASHITA_4_3 is set to true${NC}"
+    echo "This flag must be false for releases (most players use main branch)"
+    echo "Set it to false in XIUI/XIUI.lua before releasing"
+    exit 1
+fi
+echo -e "${GREEN}[✓] Ashita 4.3 flag is disabled${NC}"
+
+# Check hot reloading flag
+if echo "$XIUI_CONTENT" | grep -q '_XIUI_DEV_HOT_RELOADING_ENABLED\s*=\s*true'; then
+    echo -e "${RED}Error: _XIUI_DEV_HOT_RELOADING_ENABLED is set to true${NC}"
+    echo "Hot reloading must be disabled for releases"
+    echo "Set it to false in XIUI/XIUI.lua before releasing"
+    exit 1
+fi
+echo -e "${GREEN}[✓] Hot reloading is disabled${NC}"
+
+# Safety Check 4: Fetch and verify we're up to date with origin
 echo -e "${YELLOW}Fetching from origin...${NC}"
 if ! git fetch origin 2>/dev/null; then
     echo -e "${YELLOW}Warning: Could not fetch from origin (offline?)${NC}"
