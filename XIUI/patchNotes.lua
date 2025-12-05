@@ -75,22 +75,23 @@ patchNotes.DrawWindow = function()
 		end
 
 		imgui.NewLine();
-		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Performance Improvements');
-		imgui.BulletText('Major enemy list performance optimizations - fixed O(n) bottlenecks');
-		imgui.BulletText('Party list rendering performance improvements');
-		imgui.BulletText('Reduced memory allocations and garbage collection pressure');
-		imgui.BulletText('Optimized debuff handler with caching');
+		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Ashita 4.3 Compatibility');
+		imgui.BulletText('Added compatibility layer for upcoming Ashita 4.3 update');
+		imgui.BulletText('Supports both current main branch and 2025_q3_update branch');
 		imgui.NewLine();
-		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'New Features');
-		imgui.BulletText('Per-party color settings - customize colors for each party');
-		imgui.BulletText('Per-party display settings - show/hide elements per party');
-		imgui.BulletText('HP gradient enabled by default');
-		imgui.BulletText('Color interpolation configuration');
-		imgui.BulletText('Castbar accuracy improvements for self and party members');
+		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Party List Features');
+		imgui.BulletText('TP bars now available for alliance parties (B and C)');
+		imgui.BulletText('TP text flashing in compact mode when at 1000+ TP');
+		imgui.BulletText('Subtarget highlighting with customizable colors');
+		imgui.BulletText('Status icons can now display on left or right side');
+		imgui.BulletText('Individual bar scaling for HP, MP, and TP bars');
+		imgui.BulletText('Copy settings between parties feature');
+		imgui.BulletText('Zone font size setting');
 		imgui.NewLine();
 		imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'UI Improvements');
-		imgui.BulletText('Redesigned config menu with new layout');
-		imgui.BulletText('Added Discord and GitHub links to config');
+		imgui.BulletText('Horizontal color picker layout for HP bar colors');
+		imgui.BulletText('Improved config menu party tab styling');
+		imgui.BulletText('Fixed bookend scaling with tall bar heights');
 	end
 	imgui.End();
 	imgui.PopStyleVar(1);

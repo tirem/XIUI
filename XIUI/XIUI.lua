@@ -154,6 +154,7 @@ T{
 	playerBarFontSize = 12,
 	showPlayerBarBookends = true,
 	alwaysShowMpBar = true,
+	playerBarTpFlashEnabled = true,
     playerBarHideDuringEvents = true,
 
 	targetBarScaleX = 1,
@@ -590,8 +591,8 @@ T{
 
 	-- Bar Settings (global progress bar configuration)
 	showBookends = true,            -- Global bookend visibility (overrides individual bookend settings)
+	bookendSize = 10,               -- Minimum bookend width in pixels (5-20)
 	healthBarFlashEnabled = true,   -- Flash effect when taking damage
-	tpBarFlashEnabled = true,       -- Flash effect when TP reaches 100%
 	noBookendRounding = 4,          -- Bar roundness for bars without bookends (0-10)
 	barBorderThickness = 1,         -- Border thickness for all progress bars (1-5)
 
@@ -607,10 +608,12 @@ T{
 			},
 			mpGradient = T{ enabled = true, start = '#9abb5a', stop = '#bfe07d' },
 			tpGradient = T{ enabled = true, start = '#3898ce', stop = '#78c4ee' },
+			tpOverlayGradient = T{ enabled = true, start = '#0078CC', stop = '#0078CC' },  -- TP overlay bar (1000+ stored)
 			hpTextColor = 0xFFFFFFFF,
 			mpTextColor = 0xFFdef2db,
 			tpEmptyTextColor = 0xFF9acce8,  -- TP < 1000
 			tpFullTextColor = 0xFF2fa9ff,   -- TP >= 1000
+			tpFlashColor = 0xFF2fa9ff,      -- TP flash effect color
 		},
 
 		-- Target Bar
@@ -626,7 +629,6 @@ T{
 		-- Target of Target Bar
 		totBar = T{
 			hpGradient = T{ enabled = true, start = '#e16c6c', stop = '#fb9494' },
-			nameTextColor = 0xFFFFFFFF,
 		},
 
 		-- Enemy List
@@ -1671,7 +1673,6 @@ function UpdateUserSettings()
 	gAdjustedSettings.targetBarSettings.distance_font_settings.font_height = math.max(us.targetBarDistanceFontSize, 8);
     gAdjustedSettings.targetBarSettings.percent_font_settings.font_height = math.max(us.targetBarPercentFontSize, 8);
 	gAdjustedSettings.targetBarSettings.cast_font_settings.font_height = math.max(us.targetBarCastFontSize, 8);
-	-- Note: percent_font_settings.color is set dynamically in targetbar.DrawWindow based on HP amount
 	gAdjustedSettings.targetBarSettings.iconSize = ds.targetBarSettings.iconSize * us.targetBarIconScale;
 	gAdjustedSettings.targetBarSettings.arrowSize = ds.targetBarSettings.arrowSize * us.targetBarScaleY;
 	-- Buff/Debuff positioning
@@ -1809,17 +1810,13 @@ function UpdateUserSettings()
 	gAdjustedSettings.enemyListSettings.debuffOffsetY = us.enemyListDebuffOffsetY;
 	gAdjustedSettings.enemyListSettings.name_font_settings.font_height = math.max(us.enemyListNameFontSize, 8);
 	gAdjustedSettings.enemyListSettings.distance_font_settings.font_height = math.max(us.enemyListDistanceFontSize, 8);
-	gAdjustedSettings.enemyListSettings.distance_font_settings.font_color = us.colorCustomization.enemyList.distanceTextColor;
 	gAdjustedSettings.enemyListSettings.percent_font_settings.font_height = math.max(us.enemyListPercentFontSize, 8);
-	gAdjustedSettings.enemyListSettings.percent_font_settings.font_color = us.colorCustomization.enemyList.percentTextColor;
 
 	-- Cast Bar
 	gAdjustedSettings.castBarSettings.barWidth = ds.castBarSettings.barWidth * us.castBarScaleX;
 	gAdjustedSettings.castBarSettings.barHeight = ds.castBarSettings.barHeight * us.castBarScaleY;
 	gAdjustedSettings.castBarSettings.spell_font_settings.font_height = math.max(us.castBarFontSize, 8);
-	gAdjustedSettings.castBarSettings.spell_font_settings.font_color = us.colorCustomization.castBar.spellTextColor;
 	gAdjustedSettings.castBarSettings.percent_font_settings.font_height = math.max(us.castBarFontSize, 8);
-	gAdjustedSettings.castBarSettings.percent_font_settings.font_color = us.colorCustomization.castBar.percentTextColor;
 end
 
 -- Just save settings to disk (no updates)

@@ -370,7 +370,7 @@ enemylist.DrawWindow = function(settings)
 						-- Dynamically set font height based on settings (avoids expensive font recreation)
 						distanceFont:set_font_height(settings.distance_font_settings.font_height);
 						-- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
-						local distanceColor = settings.distance_font_settings.font_color;
+						local distanceColor = gConfig.colorCustomization.enemyList.distanceTextColor;
 						if (enemyDistanceColorCache[k] ~= distanceColor) then
 							distanceFont:set_font_color(distanceColor);
 							enemyDistanceColorCache[k] = distanceColor;
@@ -392,7 +392,7 @@ enemylist.DrawWindow = function(settings)
 						-- Dynamically set font height based on settings (avoids expensive font recreation)
 						hpFont:set_font_height(settings.percent_font_settings.font_height);
 						-- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
-						local hpColor = settings.percent_font_settings.font_color;
+						local hpColor = gConfig.colorCustomization.enemyList.percentTextColor;
 						if (enemyHPColorCache[k] ~= hpColor) then
 							hpFont:set_font_color(hpColor);
 							enemyHPColorCache[k] = hpColor;

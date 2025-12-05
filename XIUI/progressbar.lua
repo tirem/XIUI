@@ -208,12 +208,9 @@ progressbar.DrawColoredBar = function(startPosition, endPosition, color, roundin
 end
 
 progressbar.DrawBookends = function(positionStartX, positionStartY, width, height)
-	-- Cap bookend width to prevent them from getting too wide when bar height is scaled
-	-- Default bar height is 20, so default bookend width is 10 - use that as max
-	local maxBookendWidth = 10;
-	local bookendWidth = math.min(height / 2, maxBookendWidth);
-	-- Radius must not exceed bookend width, otherwise corners bleed through the border
-	local radius = bookendWidth;
+	-- Bookend width is user-controlled, radius is half the height for proper curves
+	local bookendWidth = gConfig and gConfig.bookendSize or 10;
+	local radius = height / 2;
 	local draw_list = imgui.GetWindowDrawList();
 
 	-- Get bookend gradient colors (default: dark blue gradient)
@@ -299,9 +296,8 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 
 	-- Draw the bookends!
 	if options.decorate then
-		-- Cap bookend width to prevent them from getting too wide when bar height is scaled
-		local maxBookendWidth = 10;
-		local bookendWidth = math.min(height / 2, maxBookendWidth);
+		-- Bookend width must match DrawBookends calculation
+		local bookendWidth = gConfig and gConfig.bookendSize or 10;
 
 		contentWidth = width - (bookendWidth * 2);
 		contentPositionStartX = contentPositionStartX + bookendWidth;

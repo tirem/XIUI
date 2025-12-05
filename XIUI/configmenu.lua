@@ -115,7 +115,8 @@ local function DrawHPBarColorsRow(hpGradient, idSuffix)
 end
 
 -- Draw a 2-column row for MP/TP or similar pairs
-local function DrawTwoColumnRow(label1, gradient1, help1, label2, gradient2, help2, idSuffix)
+-- Optional: flashColorTable and flashKey to add a flash color picker in the second column
+local function DrawTwoColumnRow(label1, gradient1, help1, label2, gradient2, help2, idSuffix, flashColorTable, flashKey, flashHelp)
     idSuffix = idSuffix or "";
 
     -- Column headers
@@ -128,8 +129,20 @@ local function DrawTwoColumnRow(label1, gradient1, help1, label2, gradient2, hel
 
     imgui.SameLine(COLOR_COLUMN_SPACING);
 
-    -- Second column
+    -- Second column with optional flash color
+    imgui.BeginGroup();
     DrawGradientPickerColumn(label2..idSuffix, gradient2, help2);
+
+    -- Add flash color picker if provided
+    if flashColorTable and flashKey then
+        local flashColor = ARGBToImGui(flashColorTable[flashKey]);
+        if (imgui.ColorEdit4('Flash##'..label2..idSuffix, flashColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
+            flashColorTable[flashKey] = ImGuiToARGB(flashColor);
+        end
+        if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+        if flashHelp then imgui.ShowHelp(flashHelp); end
+    end
+    imgui.EndGroup();
 end
 
 -- Draw a single effect column (gradient + flash color)
@@ -543,13 +556,15 @@ local function DrawGlobalSettings()
     imgui.Spacing();
 
     DrawCheckbox('Show Bookends', 'showBookends');
+    if gConfig.showBookends then
+        imgui.SameLine();
+        imgui.SetNextItemWidth(100);
+        DrawSlider('Size##bookendSize', 'bookendSize', 5, 20);
+    end
     imgui.ShowHelp('Global setting to show or hide bookends on all progress bars.');
 
     DrawCheckbox('Health Bar Flash Effects', 'healthBarFlashEnabled');
     imgui.ShowHelp('Flash effect when taking damage on health bars.');
-
-    DrawCheckbox('TP Bar Flash Effects', 'tpBarFlashEnabled');
-    imgui.ShowHelp('Flash effect when TP reaches 100% or higher.');
 
     DrawSlider('Bar Roundness', 'noBookendRounding', 0, 10);
     imgui.ShowHelp('Corner roundness for bars without bookends (0 = square corners, 10 = very rounded).');
@@ -596,6 +611,8 @@ local function DrawPlayerBarSettings()
     DrawCheckbox('Hide During Events', 'playerBarHideDuringEvents');
     DrawCheckbox('Always Show MP Bar', 'alwaysShowMpBar');
     imgui.ShowHelp('Always display the MP Bar even if your current jobs cannot cast spells.');
+    DrawCheckbox('TP Bar Flash Effects', 'playerBarTpFlashEnabled');
+    imgui.ShowHelp('Flash effect when TP reaches 1000 or higher.');
 
     DrawSlider('Scale X', 'playerBarScaleX', 0.1, 3.0, '%.1f');
     DrawSlider('Scale Y', 'playerBarScaleY', 0.1, 3.0, '%.1f');
@@ -614,8 +631,34 @@ local function DrawPlayerBarColorSettings()
     imgui.Text("MP/TP Bar Colors:");
     imgui.Separator();
     imgui.Spacing();
-    DrawTwoColumnRow("MP Bar", gConfig.colorCustomization.playerBar.mpGradient, "MP bar color gradient",
-                     "TP Bar", gConfig.colorCustomization.playerBar.tpGradient, "TP bar color gradient", "##playerBar");
+
+    -- Column headers
+    imgui.Text("MP Bar");
+    imgui.SameLine(COLOR_COLUMN_SPACING);
+    imgui.Text("TP Bar");
+    imgui.SameLine(COLOR_COLUMN_SPACING * 2);
+    imgui.Text("TP Overlay (1000+)");
+
+    -- First column - MP Bar
+    DrawGradientPickerColumn("MP Bar##playerBar", gConfig.colorCustomization.playerBar.mpGradient, "MP bar color gradient");
+
+    imgui.SameLine(COLOR_COLUMN_SPACING);
+
+    -- Second column - TP Bar
+    DrawGradientPickerColumn("TP Bar##playerBar", gConfig.colorCustomization.playerBar.tpGradient, "TP bar color gradient");
+
+    imgui.SameLine(COLOR_COLUMN_SPACING * 2);
+
+    -- Third column - TP Overlay with flash color
+    imgui.BeginGroup();
+    DrawGradientPickerColumn("TP Overlay##playerBar", gConfig.colorCustomization.playerBar.tpOverlayGradient, "TP overlay bar color when storing TP above 1000");
+    local flashColor = ARGBToImGui(gConfig.colorCustomization.playerBar.tpFlashColor);
+    if (imgui.ColorEdit4('Flash##tpFlashPlayerBar', flashColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
+        gConfig.colorCustomization.playerBar.tpFlashColor = ImGuiToARGB(flashColor);
+    end
+    if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+    imgui.ShowHelp("Color to flash when TP is 1000+");
+    imgui.EndGroup();
 
     imgui.Spacing();
     imgui.Spacing();
@@ -715,7 +758,7 @@ local function DrawTargetBarColorSettings()
     imgui.Separator();
     imgui.Spacing();
     DrawGradientPicker("ToT HP Bar", gConfig.colorCustomization.totBar.hpGradient, "Target of Target HP bar color");
-    DrawTextColorPicker("ToT Name Text", gConfig.colorCustomization.totBar, 'nameTextColor', "Color of target of target name text");
+    imgui.ShowHelp("ToT name text color is set dynamically based on target type");
 end
 
 -- Section: Enemy List Settings
