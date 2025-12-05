@@ -50,6 +50,32 @@ local function ApplyMessage(debuffs, action)
                 if spell == 1908 then -- nightmare
                     debuffs[target.Id][2] = now + 60
                 end
+            elseif action.Type == 3 and message == 185 then
+                -- Weapon skill damage message - apply debuffs for WS that have status effects
+                -- Defense Down: Shell Crusher(181), Armor Break(83), Full Break(87), Tachi: Ageha(155), Garland of Bliss(187), Metatron Torment(89)
+                if spell == 181 or spell == 83 or spell == 87 or spell == 155 or spell == 187 or spell == 89 then
+                    debuffs[target.Id][149] = now + 180
+                end
+                -- Attack Down: Full Break(87), Weapon Break(85), Gate of Tartarus(185), Infernal Scythe(107)
+                if spell == 87 or spell == 85 or spell == 185 or spell == 107 then
+                    debuffs[target.Id][147] = now + 180
+                end
+                -- Poison: Wasp Sting(16), Viper Bite(17)
+                if spell == 16 or spell == 17 then
+                    debuffs[target.Id][3] = now + 90
+                end
+                -- Bind: Shadowstitch(18)
+                if spell == 18 then
+                    debuffs[target.Id][11] = now + 30
+                end
+                -- Stun: Flat Blade(35), Leg Sweep(115), Shoulder Tackle(2), Smash Axe(65), Brainshaker(162), Tachi: Hobaku(145)
+                if spell == 35 or spell == 115 or spell == 2 or spell == 65 or spell == 162 or spell == 145 then
+                    debuffs[target.Id][10] = now + 5
+                end
+                -- Evasion Down: Shield Break(80)
+                if spell == 80 then
+                    debuffs[target.Id][148] = now + 180
+                end
             elseif action.Type == 4 and spellDamageMes:contains(message) then -- dia / bio damage handling
                 local expiry = nil
 
