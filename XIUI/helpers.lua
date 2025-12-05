@@ -1246,6 +1246,20 @@ function ImGuiToARGB(rgba)
     );
 end
 
+-- Convert ARGB (0xAARRGGBB) to ABGR (0xAABBGGRR) for ImGui draw calls
+function ARGBToABGR(argb)
+    local a = bit.band(bit.rshift(argb, 24), 0xFF);
+    local r = bit.band(bit.rshift(argb, 16), 0xFF);
+    local g = bit.band(bit.rshift(argb, 8), 0xFF);
+    local b = bit.band(argb, 0xFF);
+    return bit.bor(
+        bit.lshift(a, 24),
+        bit.lshift(b, 16),
+        bit.lshift(g, 8),
+        r
+    );
+end
+
 -- Convert hex string (#RRGGBB or #RRGGBBAA) to ImGui RGBA float table
 function HexToImGui(hex)
     hex = hex:gsub("#", "");

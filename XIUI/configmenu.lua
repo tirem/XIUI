@@ -17,6 +17,8 @@ local githubTexture = nil;
 -- Navigation state
 local selectedCategory = 1;  -- 1-indexed category selection
 local selectedTab = 1;       -- 1 = settings, 2 = color settings
+local selectedPartyTab = 1;  -- 1 = Party A, 2 = Party B, 3 = Party C
+local selectedPartyColorTab = 1;  -- 1 = Party A, 2 = Party B, 3 = Party C (for color settings)
 
 -- Category definitions
 local categories = {
@@ -30,6 +32,9 @@ local categories = {
     { name = 'inventoryTracker', label = 'Inventory' },
     { name = 'castBar', label = 'Cast Bar' },
 };
+
+-- Column spacing for horizontal color picker layouts
+local COLOR_COLUMN_SPACING = 200;
 
 -- List of common Windows fonts
 local available_fonts = {
@@ -45,6 +50,148 @@ local available_fonts = {
     'Trebuchet MS',
     'Verdana',
 };
+
+-- Draw a single gradient picker column (for horizontal layout)
+local function DrawGradientPickerColumn(label, gradientTable, helpText)
+    if not gradientTable then return; end
+
+    imgui.BeginGroup();
+
+    local enabled = { gradientTable.enabled };
+    if (imgui.Checkbox('Use Gradient##'..label, enabled)) then
+        gradientTable.enabled = enabled[1];
+        SaveSettingsOnly();
+    end
+    imgui.ShowHelp('Enable gradient (2 colors) or use static color');
+
+    local startColor = HexToImGui(gradientTable.start);
+    if (imgui.ColorEdit4(label..'##start'..label, startColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
+        gradientTable.start = ImGuiToHex(startColor);
+    end
+    if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+
+    if gradientTable.enabled then
+        local stopColor = HexToImGui(gradientTable.stop);
+        if (imgui.ColorEdit4(label..'##end'..label, stopColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
+            gradientTable.stop = ImGuiToHex(stopColor);
+        end
+        if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+        if helpText then imgui.ShowHelp(helpText); end
+    end
+
+    imgui.EndGroup();
+end
+
+-- Draw HP bar colors in a 4-column horizontal layout
+local function DrawHPBarColorsRow(hpGradient, idSuffix)
+    idSuffix = idSuffix or "";
+
+    -- Column headers
+    imgui.Text("High (75-100%)");
+    imgui.SameLine(COLOR_COLUMN_SPACING);
+    imgui.Text("Med-High (50-75%)");
+    imgui.SameLine(COLOR_COLUMN_SPACING * 2);
+    imgui.Text("Med-Low (25-50%)");
+    imgui.SameLine(COLOR_COLUMN_SPACING * 3);
+    imgui.Text("Low (0-25%)");
+
+    -- High HP column
+    DrawGradientPickerColumn("High"..idSuffix, hpGradient.high, "HP bar when health is above 75%");
+
+    imgui.SameLine(COLOR_COLUMN_SPACING);
+
+    -- Med-High HP column
+    DrawGradientPickerColumn("Med-High"..idSuffix, hpGradient.medHigh, "HP bar when health is 50-75%");
+
+    imgui.SameLine(COLOR_COLUMN_SPACING * 2);
+
+    -- Med-Low HP column
+    DrawGradientPickerColumn("Med-Low"..idSuffix, hpGradient.medLow, "HP bar when health is 25-50%");
+
+    imgui.SameLine(COLOR_COLUMN_SPACING * 3);
+
+    -- Low HP column
+    DrawGradientPickerColumn("Low"..idSuffix, hpGradient.low, "HP bar when health is below 25%");
+end
+
+-- Draw a 2-column row for MP/TP or similar pairs
+local function DrawTwoColumnRow(label1, gradient1, help1, label2, gradient2, help2, idSuffix)
+    idSuffix = idSuffix or "";
+
+    -- Column headers
+    imgui.Text(label1);
+    imgui.SameLine(COLOR_COLUMN_SPACING);
+    imgui.Text(label2);
+
+    -- First column
+    DrawGradientPickerColumn(label1..idSuffix, gradient1, help1);
+
+    imgui.SameLine(COLOR_COLUMN_SPACING);
+
+    -- Second column
+    DrawGradientPickerColumn(label2..idSuffix, gradient2, help2);
+end
+
+-- Draw a single effect column (gradient + flash color)
+local function DrawEffectColumn(label, gradientTable, gradientHelp, parentTable, flashKey, flashHelp, idSuffix)
+    if not gradientTable then return; end
+
+    imgui.BeginGroup();
+
+    local enabled = { gradientTable.enabled };
+    if (imgui.Checkbox('Use Gradient##'..label..idSuffix, enabled)) then
+        gradientTable.enabled = enabled[1];
+        SaveSettingsOnly();
+    end
+    imgui.ShowHelp('Enable gradient (2 colors) or use static color');
+
+    local startColor = HexToImGui(gradientTable.start);
+    if (imgui.ColorEdit4(label..'##start'..label..idSuffix, startColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
+        gradientTable.start = ImGuiToHex(startColor);
+    end
+    if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+
+    if gradientTable.enabled then
+        local stopColor = HexToImGui(gradientTable.stop);
+        if (imgui.ColorEdit4(label..'##end'..label..idSuffix, stopColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
+            gradientTable.stop = ImGuiToHex(stopColor);
+        end
+        if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+        if gradientHelp then imgui.ShowHelp(gradientHelp); end
+    end
+
+    -- Flash color
+    if parentTable and flashKey and parentTable[flashKey] then
+        local flashColor = HexToImGui(parentTable[flashKey]);
+        if (imgui.ColorEdit4('Flash##'..label..idSuffix, flashColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
+            parentTable[flashKey] = ImGuiToHex(flashColor);
+        end
+        if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+        if flashHelp then imgui.ShowHelp(flashHelp); end
+    end
+
+    imgui.EndGroup();
+end
+
+-- Draw HP effects (Damage/Healing) in 2-column layout
+local function DrawHPEffectsRow(shared, idSuffix)
+    idSuffix = idSuffix or "";
+
+    -- Column headers
+    imgui.Text("Damage Effect");
+    imgui.SameLine(COLOR_COLUMN_SPACING);
+    imgui.Text("Healing Effect");
+
+    -- Damage column
+    DrawEffectColumn("Damage", shared.hpDamageGradient, "Color of the trailing bar when HP decreases",
+                     shared, 'hpDamageFlashColor', "Flash overlay color when taking damage", idSuffix);
+
+    imgui.SameLine(COLOR_COLUMN_SPACING);
+
+    -- Healing column
+    DrawEffectColumn("Healing", shared.hpHealGradient, "Color of the leading bar when HP increases",
+                     shared, 'hpHealFlashColor', "Flash overlay color when healing", idSuffix);
+end
 
 -- Color picker helper functions (for color settings tabs)
 local function DrawGradientPicker(label, gradientTable, helpText)
@@ -314,6 +461,27 @@ local function DrawPartyComboBoxIndexed(partyTable, label, configKey, items, cal
     end
 end
 
+-- Helper function for per-party color picker (ARGB format, saves to partyA/B/C table)
+local function DrawPartyColorPicker(partyTable, label, configKey, helpText, defaultColor)
+    local colorValue = partyTable[configKey];
+    -- Initialize with default color if not set
+    if not colorValue then
+        colorValue = defaultColor or 0xFFFFFFFF;
+        partyTable[configKey] = colorValue;
+    end
+
+    local colorRGBA = ARGBToImGui(colorValue);
+    local uniqueLabel = label .. '##party_' .. configKey;
+
+    if (imgui.ColorEdit4(uniqueLabel, colorRGBA, bit.bor(ImGuiColorEditFlags_AlphaBar, ImGuiColorEditFlags_NoInputs))) then
+        partyTable[configKey] = ImGuiToARGB(colorRGBA);
+        UpdateUserSettings();
+    end
+    if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsToDisk(); end
+
+    if helpText then imgui.ShowHelp(helpText); end
+end
+
 -- Section: Global Settings (combines General, Font, and Bar settings)
 local function DrawGlobalSettings()
     DrawCheckbox('Lock HUD Position', 'lockPositions');
@@ -418,10 +586,7 @@ local function DrawGlobalColorSettings()
     imgui.Text("HP Bar Effects (Damage/Healing):");
     imgui.Separator();
     imgui.Spacing();
-    DrawGradientPicker("Damage Effect", gConfig.colorCustomization.shared.hpDamageGradient, "Color of the trailing bar when HP decreases");
-    DrawHexColorPicker("Damage Flash", gConfig.colorCustomization.shared, 'hpDamageFlashColor', "Flash overlay color when taking damage");
-    DrawGradientPicker("Healing Effect", gConfig.colorCustomization.shared.hpHealGradient, "Color of the leading bar when HP increases");
-    DrawHexColorPicker("Healing Flash", gConfig.colorCustomization.shared, 'hpHealFlashColor', "Flash overlay color when healing");
+    DrawHPEffectsRow(gConfig.colorCustomization.shared, "##shared");
 end
 
 -- Section: Player Bar Settings
@@ -442,18 +607,17 @@ local function DrawPlayerBarColorSettings()
     imgui.Text("HP Bar Colors:");
     imgui.Separator();
     imgui.Spacing();
-    DrawGradientPicker("HP High (75-100%)", gConfig.colorCustomization.playerBar.hpGradient.high, "HP bar color when health is above 75%");
-    DrawGradientPicker("HP Med-High (50-75%)", gConfig.colorCustomization.playerBar.hpGradient.medHigh, "HP bar color when health is 50-75%");
-    DrawGradientPicker("HP Med-Low (25-50%)", gConfig.colorCustomization.playerBar.hpGradient.medLow, "HP bar color when health is 25-50%");
-    DrawGradientPicker("HP Low (0-25%)", gConfig.colorCustomization.playerBar.hpGradient.low, "HP bar color when health is below 25%");
+    DrawHPBarColorsRow(gConfig.colorCustomization.playerBar.hpGradient, "##playerBar");
 
+    imgui.Spacing();
     imgui.Spacing();
     imgui.Text("MP/TP Bar Colors:");
     imgui.Separator();
     imgui.Spacing();
-    DrawGradientPicker("MP Bar", gConfig.colorCustomization.playerBar.mpGradient, "MP bar color gradient");
-    DrawGradientPicker("TP Bar", gConfig.colorCustomization.playerBar.tpGradient, "TP bar color gradient");
+    DrawTwoColumnRow("MP Bar", gConfig.colorCustomization.playerBar.mpGradient, "MP bar color gradient",
+                     "TP Bar", gConfig.colorCustomization.playerBar.tpGradient, "TP bar color gradient", "##playerBar");
 
+    imgui.Spacing();
     imgui.Spacing();
     imgui.Text("Text Colors:");
     imgui.Separator();
@@ -619,12 +783,65 @@ local function DrawEnemyListColorSettings()
     DrawTextColorPicker("Subtarget Border", gConfig.colorCustomization.enemyList, 'subtargetBorderColor', "Border color for subtargeted enemy");
 end
 
+-- Helper function to copy all settings from one party to another
+local function CopyPartySettings(sourcePartyName, targetPartyName)
+    -- Get source and target party tables
+    local sourceParty = gConfig['party' .. sourcePartyName];
+    local targetParty = gConfig['party' .. targetPartyName];
+
+    -- Copy regular settings (deep copy to avoid reference issues)
+    local sourceCopy = deep_copy_table(sourceParty);
+    for key, value in pairs(sourceCopy) do
+        targetParty[key] = value;
+    end
+
+    -- Get source and target color tables
+    local sourceColors = gConfig.colorCustomization['partyList' .. sourcePartyName];
+    local targetColors = gConfig.colorCustomization['partyList' .. targetPartyName];
+
+    -- Copy color settings (deep copy)
+    local sourceColorsCopy = deep_copy_table(sourceColors);
+    for key, value in pairs(sourceColorsCopy) do
+        targetColors[key] = value;
+    end
+
+    -- Save and update
+    UpdateSettings();
+end
+
 -- Helper function to draw per-party settings tab content
 local function DrawPartyTabContent(party, partyName)
     local layoutItems = { [0] = 'Horizontal', [1] = 'Compact Vertical' };
     local statusThemeItems = { [0] = 'HorizonXI', [1] = 'HorizonXI-R', [2] = 'FFXIV', [3] = 'FFXI', [4] = 'Disabled' };
+    local statusSideItems = { [0] = 'Left', [1] = 'Right' };
     local bg_theme_paths = statusHandler.get_background_paths();
     local cursor_paths = statusHandler.get_cursor_paths();
+
+    -- Copy settings section (only for Party B and C)
+    if partyName == 'B' or partyName == 'C' then
+        imgui.Text('Copy Settings');
+        imgui.Separator();
+        imgui.Spacing();
+
+        -- Build list of other parties to copy from
+        local copyOptions = {};
+        if partyName == 'B' then
+            copyOptions = { 'A', 'C' };
+        else -- partyName == 'C'
+            copyOptions = { 'A', 'B' };
+        end
+
+        imgui.Text('Copy all settings from another party:');
+        for _, sourceName in ipairs(copyOptions) do
+            imgui.SameLine();
+            if imgui.Button('Party ' .. sourceName .. '##copy_from_' .. sourceName .. '_to_' .. partyName) then
+                CopyPartySettings(sourceName, partyName);
+            end
+        end
+        imgui.ShowHelp('Copies all settings and colors from the selected party to this one.');
+
+        imgui.Spacing();
+    end
 
     -- Layout Selector
     DrawPartyComboBoxIndexed(party, 'Layout', 'layout', layoutItems, function()
@@ -638,11 +855,11 @@ local function DrawPartyTabContent(party, partyName)
     imgui.Separator();
     imgui.Spacing();
 
-    -- TP is only available for Party A (alliance members don't have TP data)
-    if partyName == 'A' then
-        DrawPartyCheckbox(party, 'Show TP', 'showTP');
-        if party.layout == 0 and party.showTP then
-            DrawPartyCheckbox(party, 'Flash TP at 100%', 'flashTP');
+    DrawPartyCheckbox(party, 'Show TP', 'showTP');
+    if party.showTP then
+        DrawPartyCheckbox(party, 'Flash TP at 100%', 'flashTP');
+        if party.layout == 1 then
+            imgui.ShowHelp('In compact mode, the TP text will flash when at 1000+ TP.');
         end
     end
     DrawPartyCheckbox(party, 'Show Distance', 'showDistance');
@@ -653,6 +870,12 @@ local function DrawPartyTabContent(party, partyName)
         imgui.PopItemWidth();
     end
     DrawPartyCheckbox(party, 'Show Job Icons', 'showJobIcon');
+    if party.showJobIcon then
+        imgui.SameLine();
+        imgui.PushItemWidth(100);
+        DrawPartySlider(party, 'Scale', 'jobIconScale', 0.1, 3.0, '%.1f');
+        imgui.PopItemWidth();
+    end
     DrawPartyCheckbox(party, 'Show Job/Subjob', 'showJob');
     imgui.ShowHelp('Display job and subjob info (Horizontal layout only).');
     DrawPartyCheckbox(party, 'Show Cast Bars', 'showCastBars');
@@ -676,6 +899,7 @@ local function DrawPartyTabContent(party, partyName)
     DrawPartySlider(party, 'Background Scale', 'bgScale', 0.1, 3.0, '%.2f', UpdatePartyListVisuals);
     DrawPartyComboBox(party, 'Cursor', 'cursor', cursor_paths, DeferredUpdateVisuals);
     DrawPartyComboBoxIndexed(party, 'Status Theme', 'statusTheme', statusThemeItems);
+    DrawPartyComboBoxIndexed(party, 'Status Side', 'statusSide', statusSideItems);
     DrawPartySlider(party, 'Status Icon Scale', 'buffScale', 0.1, 3.0, '%.1f');
 
     imgui.Spacing();
@@ -687,15 +911,22 @@ local function DrawPartyTabContent(party, partyName)
     DrawPartySlider(party, 'Entry Spacing', 'entrySpacing', -4, 16);
     DrawPartySlider(party, 'Selection Box Scale Y', 'selectionBoxScaleY', 0.5, 2.0, '%.2f');
 
-    -- Scale controls depend on layout mode
-    if party.layout == 0 then
-        DrawPartySlider(party, 'Scale X', 'scaleX', 0.1, 3.0, '%.2f');
-        DrawPartySlider(party, 'Scale Y', 'scaleY', 0.1, 3.0, '%.2f');
-    else
-        DrawPartySlider(party, 'HP Bar Scale X', 'hpBarScaleX', 0.1, 3.0, '%.2f');
-        DrawPartySlider(party, 'MP Bar Scale X', 'mpBarScaleX', 0.1, 3.0, '%.2f');
-        DrawPartySlider(party, 'HP Bar Scale Y', 'hpBarScaleY', 0.1, 3.0, '%.2f');
-        DrawPartySlider(party, 'MP Bar Scale Y', 'mpBarScaleY', 0.1, 3.0, '%.2f');
+    -- General scale controls (applies to all elements)
+    DrawPartySlider(party, 'Scale X', 'scaleX', 0.1, 3.0, '%.2f');
+    DrawPartySlider(party, 'Scale Y', 'scaleY', 0.1, 3.0, '%.2f');
+
+    -- Individual bar scale controls
+    imgui.Spacing();
+    imgui.Text('Bar Scales');
+    imgui.Separator();
+    imgui.Spacing();
+    DrawPartySlider(party, 'HP Bar Scale X', 'hpBarScaleX', 0.1, 3.0, '%.2f');
+    DrawPartySlider(party, 'HP Bar Scale Y', 'hpBarScaleY', 0.1, 3.0, '%.2f');
+    DrawPartySlider(party, 'MP Bar Scale X', 'mpBarScaleX', 0.1, 3.0, '%.2f');
+    DrawPartySlider(party, 'MP Bar Scale Y', 'mpBarScaleY', 0.1, 3.0, '%.2f');
+    if party.showTP then
+        DrawPartySlider(party, 'TP Bar Scale X', 'tpBarScaleX', 0.1, 3.0, '%.2f');
+        DrawPartySlider(party, 'TP Bar Scale Y', 'tpBarScaleY', 0.1, 3.0, '%.2f');
     end
 
     imgui.Spacing();
@@ -713,12 +944,9 @@ local function DrawPartyTabContent(party, partyName)
         DrawPartySlider(party, 'TP Font Size', 'tpFontSize', 8, 36);
         DrawPartySlider(party, 'Distance Font Size', 'distanceFontSize', 8, 36);
         DrawPartySlider(party, 'Job Font Size', 'jobFontSize', 8, 36);
+        DrawPartySlider(party, 'Zone Font Size', 'zoneFontSize', 8, 36);
     else
         DrawPartySlider(party, 'Font Size', 'fontSize', 8, 36);
-    end
-
-    if party.showJobIcon then
-        DrawPartySlider(party, 'Job Icon Scale', 'jobIconScale', 0.1, 3.0, '%.1f');
     end
 end
 
@@ -736,61 +964,176 @@ local function DrawPartyListSettings()
     DrawCheckbox('Show When Solo', 'showPartyListWhenSolo');
     DrawCheckbox('Hide During Events', 'partyListHideDuringEvents');
     DrawCheckbox('Alliance Windows', 'partyListAlliance');
-    DrawSlider('Title Font Size', 'partyListTitleFontSize', 8, 36);
 
     imgui.Spacing();
 
-    -- Party tabs
-    if imgui.BeginTabBar('PartyListTabs') then
-        -- Party A tab
-        if imgui.BeginTabItem('Party A') then
-            imgui.Spacing();
-            DrawPartyTabContent(gConfig.partyA, 'A');
-            imgui.EndTabItem();
-        end
+    -- Party tab buttons with gold underline for selected
+    local partyTabWidth = 80;
+    local partyTabHeight = 24;
+    local gold = {0.957, 0.855, 0.592, 1.0};
+    local bgMedium = {0.098, 0.090, 0.075, 1.0};
+    local bgLight = {0.137, 0.125, 0.106, 1.0};
+    local bgLighter = {0.176, 0.161, 0.137, 1.0};
 
-        -- Party B tab (only if alliance enabled)
-        if gConfig.partyListAlliance then
-            if imgui.BeginTabItem('Party B') then
-                imgui.Spacing();
-                DrawPartyTabContent(gConfig.partyB, 'B');
-                imgui.EndTabItem();
-            end
-
-            -- Party C tab
-            if imgui.BeginTabItem('Party C') then
-                imgui.Spacing();
-                DrawPartyTabContent(gConfig.partyC, 'C');
-                imgui.EndTabItem();
-            end
-        end
-
-        imgui.EndTabBar();
+    -- Party A button
+    local partyAPosX, partyAPosY = imgui.GetCursorScreenPos();
+    if selectedPartyTab == 1 then
+        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
+    else
+        imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
     end
+    if imgui.Button('Party A##partyListTab', { partyTabWidth, partyTabHeight }) then
+        selectedPartyTab = 1;
+    end
+    if selectedPartyTab == 1 then
+        local draw_list = imgui.GetWindowDrawList();
+        draw_list:AddRectFilled(
+            {partyAPosX + 4, partyAPosY + partyTabHeight - 2},
+            {partyAPosX + partyTabWidth - 4, partyAPosY + partyTabHeight},
+            imgui.GetColorU32(gold),
+            1.0
+        );
+    end
+    imgui.PopStyleColor(3);
+
+    -- Party B and C buttons (only if alliance enabled)
+    if gConfig.partyListAlliance then
+        imgui.SameLine();
+        local partyBPosX, partyBPosY = imgui.GetCursorScreenPos();
+        if selectedPartyTab == 2 then
+            imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
+        else
+            imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
+        end
+        if imgui.Button('Party B##partyListTab', { partyTabWidth, partyTabHeight }) then
+            selectedPartyTab = 2;
+        end
+        if selectedPartyTab == 2 then
+            local draw_list = imgui.GetWindowDrawList();
+            draw_list:AddRectFilled(
+                {partyBPosX + 4, partyBPosY + partyTabHeight - 2},
+                {partyBPosX + partyTabWidth - 4, partyBPosY + partyTabHeight},
+                imgui.GetColorU32(gold),
+                1.0
+            );
+        end
+        imgui.PopStyleColor(3);
+
+        imgui.SameLine();
+        local partyCPosX, partyCPosY = imgui.GetCursorScreenPos();
+        if selectedPartyTab == 3 then
+            imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
+        else
+            imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
+        end
+        if imgui.Button('Party C##partyListTab', { partyTabWidth, partyTabHeight }) then
+            selectedPartyTab = 3;
+        end
+        if selectedPartyTab == 3 then
+            local draw_list = imgui.GetWindowDrawList();
+            draw_list:AddRectFilled(
+                {partyCPosX + 4, partyCPosY + partyTabHeight - 2},
+                {partyCPosX + partyTabWidth - 4, partyCPosY + partyTabHeight},
+                imgui.GetColorU32(gold),
+                1.0
+            );
+        end
+        imgui.PopStyleColor(3);
+    else
+        -- Reset to Party A if alliance is disabled and B or C was selected
+        if selectedPartyTab > 1 then
+            selectedPartyTab = 1;
+        end
+    end
+
+    imgui.Spacing();
+    imgui.Separator();
+    imgui.Spacing();
+
+    -- Draw content for selected party tab
+    if selectedPartyTab == 1 then
+        DrawPartyTabContent(gConfig.partyA, 'A');
+    elseif selectedPartyTab == 2 then
+        DrawPartyTabContent(gConfig.partyB, 'B');
+    elseif selectedPartyTab == 3 then
+        DrawPartyTabContent(gConfig.partyC, 'C');
+    end
+end
+
+-- Helper function to copy only color settings from one party to another
+local function CopyPartyColorSettings(sourcePartyName, targetPartyName)
+    -- Get source and target color tables
+    local sourceColors = gConfig.colorCustomization['partyList' .. sourcePartyName];
+    local targetColors = gConfig.colorCustomization['partyList' .. targetPartyName];
+
+    -- Copy color settings (deep copy)
+    local sourceColorsCopy = deep_copy_table(sourceColors);
+    for key, value in pairs(sourceColorsCopy) do
+        targetColors[key] = value;
+    end
+
+    -- Save and update
+    UpdateSettings();
 end
 
 -- Helper function to draw color settings for a specific party
 local function DrawPartyColorTabContent(colors, partyName)
+    -- Copy colors section (only for Party B and C)
+    if partyName == 'B' or partyName == 'C' then
+        imgui.Text('Copy Colors');
+        imgui.Separator();
+        imgui.Spacing();
+
+        -- Build list of other parties to copy from
+        local copyOptions = {};
+        if partyName == 'B' then
+            copyOptions = { 'A', 'C' };
+        else -- partyName == 'C'
+            copyOptions = { 'A', 'B' };
+        end
+
+        imgui.Text('Copy colors from another party:');
+        for _, sourceName in ipairs(copyOptions) do
+            imgui.SameLine();
+            if imgui.Button('Party ' .. sourceName .. '##copy_colors_from_' .. sourceName .. '_to_' .. partyName) then
+                CopyPartyColorSettings(sourceName, partyName);
+            end
+        end
+        imgui.ShowHelp('Copies all color settings from the selected party to this one.');
+
+        imgui.Spacing();
+    end
+
     imgui.Text("HP Bar Colors:");
     imgui.Separator();
     imgui.Spacing();
-    DrawGradientPicker("HP High (75-100%)##" .. partyName, colors.hpGradient.high, "HP bar when health is above 75%");
-    DrawGradientPicker("HP Med-High (50-75%)##" .. partyName, colors.hpGradient.medHigh, "HP bar when health is 50-75%");
-    DrawGradientPicker("HP Med-Low (25-50%)##" .. partyName, colors.hpGradient.medLow, "HP bar when health is 25-50%");
-    DrawGradientPicker("HP Low (0-25%)##" .. partyName, colors.hpGradient.low, "HP bar when health is below 25%");
+    DrawHPBarColorsRow(colors.hpGradient, "##party" .. partyName);
 
+    imgui.Spacing();
     imgui.Spacing();
     if partyName == 'A' then
         imgui.Text("MP/TP Bar Colors:");
+        imgui.Separator();
+        imgui.Spacing();
+        DrawTwoColumnRow("MP Bar", colors.mpGradient, "MP bar color",
+                         "TP Bar", colors.tpGradient, "TP bar color", "##party" .. partyName);
     else
         imgui.Text("MP Bar Colors:");
-    end
-    imgui.Separator();
-    imgui.Spacing();
-    DrawGradientPicker("MP Bar##" .. partyName, colors.mpGradient, "MP bar color");
-    -- TP only available for Party A
-    if partyName == 'A' then
-        DrawGradientPicker("TP Bar##" .. partyName, colors.tpGradient, "TP bar color");
+        imgui.Separator();
+        imgui.Spacing();
+        DrawGradientPickerColumn("MP Bar##party" .. partyName, colors.mpGradient, "MP bar color");
     end
 
     -- Cast bar only for Party A
@@ -844,11 +1187,9 @@ local function DrawPartyColorTabContent(colors, partyName)
     DrawTextColorPicker("Name Text##" .. partyName, colors, 'nameTextColor', "Color of member name");
     DrawTextColorPicker("HP Text##" .. partyName, colors, 'hpTextColor', "Color of HP numbers");
     DrawTextColorPicker("MP Text##" .. partyName, colors, 'mpTextColor', "Color of MP numbers");
-    -- TP text colors only for Party A
-    if partyName == 'A' then
-        DrawTextColorPicker("TP Text (Empty, <1000)##" .. partyName, colors, 'tpEmptyTextColor', "Color of TP numbers when below 1000");
-        DrawTextColorPicker("TP Text (Full, >=1000)##" .. partyName, colors, 'tpFullTextColor', "Color of TP numbers when 1000 or higher");
-    end
+    DrawTextColorPicker("TP Text (Empty, <1000)##" .. partyName, colors, 'tpEmptyTextColor', "Color of TP numbers when below 1000");
+    DrawTextColorPicker("TP Text (Full, >=1000)##" .. partyName, colors, 'tpFullTextColor', "Color of TP numbers when 1000 or higher");
+    DrawTextColorPicker("TP Flash Color##" .. partyName, colors, 'tpFlashColor', "Color to flash when TP is 1000+");
 
     imgui.Spacing();
     imgui.Text("Background Colors:");
@@ -863,29 +1204,135 @@ local function DrawPartyColorTabContent(colors, partyName)
     imgui.Spacing();
     DrawGradientPicker("Selection Box##" .. partyName, colors.selectionGradient, "Color gradient for the selection box around targeted members");
     DrawTextColorPicker("Selection Border##" .. partyName, colors, 'selectionBorderColor', "Color of the selection box border");
+
+    imgui.Spacing();
+    imgui.Text("Subtarget Colors:");
+    imgui.Separator();
+    imgui.Spacing();
+    -- Initialize subtarget colors if not present
+    if not colors.subtargetGradient then
+        colors.subtargetGradient = T{ enabled = true, start = '#d9a54d', stop = '#edcf78' };
+    end
+    if not colors.subtargetBorderColor then
+        colors.subtargetBorderColor = 0xFFfdd017;
+    end
+    DrawGradientPicker("Subtarget Box##" .. partyName, colors.subtargetGradient, "Color gradient for the selection box around subtargeted members");
+    DrawTextColorPicker("Subtarget Border##" .. partyName, colors, 'subtargetBorderColor', "Color of the subtarget selection box border");
+
+    -- Cursor tint colors (stored in party config, not color customization)
+    imgui.Spacing();
+    imgui.Text("Cursor Tint Colors:");
+    imgui.Separator();
+    imgui.Spacing();
+    local partyConfig = gConfig['party' .. partyName];
+    DrawPartyColorPicker(partyConfig, 'Target Cursor Tint##' .. partyName, 'targetArrowTint', 'Color tint applied to the cursor when targeting a party member', 0xFFFFFFFF);
+    DrawPartyColorPicker(partyConfig, 'Subtarget Cursor Tint##' .. partyName, 'subtargetArrowTint', 'Color tint applied to the cursor when subtargeting a party member', 0xFFfdd017);
 end
 
 -- Section: Party List Color Settings
 local function DrawPartyListColorSettings()
-    if imgui.BeginTabBar('PartyListColorTabs') then
-        if imgui.BeginTabItem('Party A') then
-            DrawPartyColorTabContent(gConfig.colorCustomization.partyListA, 'A');
-            imgui.EndTabItem();
+    -- Party color tab buttons with gold underline for selected
+    local partyTabWidth = 80;
+    local partyTabHeight = 24;
+    local gold = {0.957, 0.855, 0.592, 1.0};
+    local bgMedium = {0.098, 0.090, 0.075, 1.0};
+    local bgLight = {0.137, 0.125, 0.106, 1.0};
+    local bgLighter = {0.176, 0.161, 0.137, 1.0};
+
+    -- Party A button
+    local partyAPosX, partyAPosY = imgui.GetCursorScreenPos();
+    if selectedPartyColorTab == 1 then
+        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
+    else
+        imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
+    end
+    if imgui.Button('Party A##partyColorTab', { partyTabWidth, partyTabHeight }) then
+        selectedPartyColorTab = 1;
+    end
+    if selectedPartyColorTab == 1 then
+        local draw_list = imgui.GetWindowDrawList();
+        draw_list:AddRectFilled(
+            {partyAPosX + 4, partyAPosY + partyTabHeight - 2},
+            {partyAPosX + partyTabWidth - 4, partyAPosY + partyTabHeight},
+            imgui.GetColorU32(gold),
+            1.0
+        );
+    end
+    imgui.PopStyleColor(3);
+
+    -- Party B and C buttons (only if alliance enabled)
+    if gConfig.partyListAlliance then
+        imgui.SameLine();
+        local partyBPosX, partyBPosY = imgui.GetCursorScreenPos();
+        if selectedPartyColorTab == 2 then
+            imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
+        else
+            imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
         end
-
-        if gConfig.partyListAlliance then
-            if imgui.BeginTabItem('Party B') then
-                DrawPartyColorTabContent(gConfig.colorCustomization.partyListB, 'B');
-                imgui.EndTabItem();
-            end
-
-            if imgui.BeginTabItem('Party C') then
-                DrawPartyColorTabContent(gConfig.colorCustomization.partyListC, 'C');
-                imgui.EndTabItem();
-            end
+        if imgui.Button('Party B##partyColorTab', { partyTabWidth, partyTabHeight }) then
+            selectedPartyColorTab = 2;
         end
+        if selectedPartyColorTab == 2 then
+            local draw_list = imgui.GetWindowDrawList();
+            draw_list:AddRectFilled(
+                {partyBPosX + 4, partyBPosY + partyTabHeight - 2},
+                {partyBPosX + partyTabWidth - 4, partyBPosY + partyTabHeight},
+                imgui.GetColorU32(gold),
+                1.0
+            );
+        end
+        imgui.PopStyleColor(3);
 
-        imgui.EndTabBar();
+        imgui.SameLine();
+        local partyCPosX, partyCPosY = imgui.GetCursorScreenPos();
+        if selectedPartyColorTab == 3 then
+            imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
+        else
+            imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
+        end
+        if imgui.Button('Party C##partyColorTab', { partyTabWidth, partyTabHeight }) then
+            selectedPartyColorTab = 3;
+        end
+        if selectedPartyColorTab == 3 then
+            local draw_list = imgui.GetWindowDrawList();
+            draw_list:AddRectFilled(
+                {partyCPosX + 4, partyCPosY + partyTabHeight - 2},
+                {partyCPosX + partyTabWidth - 4, partyCPosY + partyTabHeight},
+                imgui.GetColorU32(gold),
+                1.0
+            );
+        end
+        imgui.PopStyleColor(3);
+    else
+        -- Reset to Party A if alliance is disabled and B or C was selected
+        if selectedPartyColorTab > 1 then
+            selectedPartyColorTab = 1;
+        end
+    end
+
+    imgui.Spacing();
+    imgui.Separator();
+    imgui.Spacing();
+
+    -- Draw content for selected party color tab
+    if selectedPartyColorTab == 1 then
+        DrawPartyColorTabContent(gConfig.colorCustomization.partyListA, 'A');
+    elseif selectedPartyColorTab == 2 then
+        DrawPartyColorTabContent(gConfig.colorCustomization.partyListB, 'B');
+    elseif selectedPartyColorTab == 3 then
+        DrawPartyColorTabContent(gConfig.colorCustomization.partyListC, 'C');
     end
 end
 
@@ -1172,8 +1619,8 @@ config.DrawWindow = function(us)
     local selectedButtonColor = {gold[1], gold[2], gold[3], 0.25};  -- Gold tinted selection
     local tabColor = bgMedium;
     local tabHoverColor = bgLight;
-    local tabActiveColor = bgLighter;
-    local tabSelectedColor = {0, 0, 0, 0};  -- Transparent for selected tab
+    local tabActiveColor = {gold[1], gold[2], gold[3], 0.3};  -- Gold tinted for selected tab
+    local tabSelectedColor = {gold[1], gold[2], gold[3], 0.25};  -- Gold tinted for selected settings/color tab buttons
     local borderColor = borderDark;
     local textColor = textLight;
 
@@ -1190,6 +1637,10 @@ config.DrawWindow = function(us)
     imgui.PushStyleColor(ImGuiCol_HeaderActive, {gold[1], gold[2], gold[3], 0.3});
     imgui.PushStyleColor(ImGuiCol_Border, borderColor);
     imgui.PushStyleColor(ImGuiCol_Text, textColor);
+    imgui.PushStyleColor(ImGuiCol_TextDisabled, goldDark);  -- Dropdown arrows
+    imgui.PushStyleColor(ImGuiCol_Button, buttonColor);
+    imgui.PushStyleColor(ImGuiCol_ButtonHovered, buttonHoverColor);
+    imgui.PushStyleColor(ImGuiCol_ButtonActive, buttonActiveColor);
     imgui.PushStyleColor(ImGuiCol_CheckMark, gold);
     imgui.PushStyleColor(ImGuiCol_SliderGrab, goldDark);
     imgui.PushStyleColor(ImGuiCol_SliderGrabActive, gold);
@@ -1222,10 +1673,6 @@ config.DrawWindow = function(us)
         local contentWidth = windowWidth - sidebarWidth - 20;
 
         -- Top bar with reset buttons and social links
-        imgui.PushStyleColor(ImGuiCol_Button, buttonColor);
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, buttonHoverColor);
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, buttonActiveColor);
-
         if(imgui.Button("Reset Settings")) then
             showRestoreDefaultsConfirm = true;
         end
@@ -1332,8 +1779,6 @@ config.DrawWindow = function(us)
                 ashita.misc.open_url("https://github.com/tirem/xiui");
             end
         end
-
-        imgui.PopStyleColor(3);
 
         -- Reset Settings confirmation popup
         if (showRestoreDefaultsConfirm) then
@@ -1524,7 +1969,7 @@ config.DrawWindow = function(us)
 
     imgui.End();
     imgui.PopStyleVar(9);
-    imgui.PopStyleColor(27);  -- 22 base + 5 tab colors
+    imgui.PopStyleColor(31);  -- 26 base + 5 tab colors
 end
 
 return config;
