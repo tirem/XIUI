@@ -316,7 +316,7 @@ mobinfo.DrawWindow = function(settings)
                         local percent = math.floor((modifier - 1) * 100);
                         table.insert(weaknessIcons, {
                             texture = textures.elements[string.lower(elem.key)],
-                            tooltip = elem.name .. ' Weakness (+' .. percent .. '% damage)',
+                            tooltip = elem.name .. ' Weakness (+' .. percent .. '%% damage)',
                             tint = gConfig.colorCustomization.mobInfo.weaknessColor
                         });
                     end
@@ -329,7 +329,7 @@ mobinfo.DrawWindow = function(settings)
                         local percent = math.floor((modifier - 1) * 100);
                         table.insert(weaknessIcons, {
                             texture = textures.physical[string.lower(phys.key)],
-                            tooltip = phys.name .. ' Weakness (+' .. percent .. '% damage)',
+                            tooltip = phys.name .. ' Weakness (+' .. percent .. '%% damage)',
                             tint = gConfig.colorCustomization.mobInfo.weaknessColor
                         });
                     end
@@ -356,7 +356,7 @@ mobinfo.DrawWindow = function(settings)
                         local percent = math.floor((1 - modifier) * 100);
                         table.insert(resistanceIcons, {
                             texture = textures.elements[string.lower(elem.key)],
-                            tooltip = elem.name .. ' Resistance (-' .. percent .. '% damage)',
+                            tooltip = elem.name .. ' Resistance (-' .. percent .. '%% damage)',
                             tint = gConfig.colorCustomization.mobInfo.resistanceColor
                         });
                     end
@@ -369,7 +369,7 @@ mobinfo.DrawWindow = function(settings)
                         local percent = math.floor((1 - modifier) * 100);
                         table.insert(resistanceIcons, {
                             texture = textures.physical[string.lower(phys.key)],
-                            tooltip = phys.name .. ' Resistance (-' .. percent .. '% damage)',
+                            tooltip = phys.name .. ' Resistance (-' .. percent .. '%% damage)',
                             tint = gConfig.colorCustomization.mobInfo.resistanceColor
                         });
                     end

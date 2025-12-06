@@ -340,6 +340,11 @@ function M.MigrateIndividualSettings(gConfig, defaults)
         end
     end
 
+    -- Add mobInfo color settings if missing
+    if gConfig.colorCustomization and not gConfig.colorCustomization.mobInfo then
+        gConfig.colorCustomization.mobInfo = deep_copy_table(defaults.colorCustomization.mobInfo);
+    end
+
     -- Migrate new target bar settings (add missing fields for existing users)
     if gConfig.showTargetHpPercent == nil then
         gConfig.showTargetHpPercent = true;

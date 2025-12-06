@@ -815,20 +815,6 @@ local function DrawMobInfoSettingsContent()
         DrawSlider('Font Size', 'mobInfoFontSize', 8, 36);
         imgui.ShowHelp('Font size for level text.');
     end
-
-    if CollapsingSection('Colors##mobInfo') then
-        local mobInfoColors = gConfig.colorCustomization.mobInfo;
-
-        DrawTextColorPicker('Level Text', mobInfoColors, 'levelTextColor', 'Color for the level text.');
-
-        imgui.Spacing();
-        imgui.Text('Icon Tint Colors');
-        imgui.ShowHelp('These colors tint the icons. Use white (FFFFFFFF) for no tint.');
-
-        DrawTextColorPicker('Weakness Tint', mobInfoColors, 'weaknessColor', 'Tint color for weakness icons. Use white for original icon colors.');
-        DrawTextColorPicker('Resistance Tint', mobInfoColors, 'resistanceColor', 'Tint color for resistance icons. Use white for original icon colors.');
-        DrawTextColorPicker('Immunity Tint', mobInfoColors, 'immunityColor', 'Tint color for immunity icons. Use white for original icon colors.');
-    end
 end
 
 -- Section: Target Bar Settings (with tabs for Target Bar / Mob Info)
