@@ -18,8 +18,7 @@ local COMBAT_ACTION_TYPES = T{1, 4, 7, 11};
 -- Time in seconds before an action target entry expires
 local ACTION_EXPIRY_TIME = 30;
 
--- Spawn flag for players
-local SPAWN_FLAG_PLAYER = 0x0001;
+-- Note: Uses SPAWN_FLAG_PLAYER global from helpers.lua
 
 --[[
 * Determines if an entity is NOT a player (i.e., could be enemy/NPC/etc)
