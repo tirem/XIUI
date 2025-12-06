@@ -609,6 +609,14 @@ local function DrawGlobalColorSettings()
     end
 end
 
+-- Display mode options for HP/MP text
+local displayModeOptions = {'number', 'percent', 'both'};
+local displayModeLabels = {
+    number = 'Number Only',
+    percent = 'Percent Only',
+    both = 'Both'
+};
+
 -- Section: Player Bar Settings
 local function DrawPlayerBarSettings()
     DrawCheckbox('Enabled', 'showPlayerBar', CheckVisibility);
@@ -622,6 +630,34 @@ local function DrawPlayerBarSettings()
     DrawSlider('Scale X', 'playerBarScaleX', 0.1, 3.0, '%.1f');
     DrawSlider('Scale Y', 'playerBarScaleY', 0.1, 3.0, '%.1f');
     DrawSlider('Font Size', 'playerBarFontSize', 8, 36);
+
+    -- HP Display Mode dropdown
+    local hpDisplayLabel = displayModeLabels[gConfig.playerBarHpDisplayMode] or 'Number Only';
+    DrawComboBox('HP Display##playerBar', hpDisplayLabel, {'Number Only', 'Percent Only', 'Both'}, function(newValue)
+        if newValue == 'Number Only' then
+            gConfig.playerBarHpDisplayMode = 'number';
+        elseif newValue == 'Percent Only' then
+            gConfig.playerBarHpDisplayMode = 'percent';
+        else
+            gConfig.playerBarHpDisplayMode = 'both';
+        end
+        SaveSettingsOnly();
+    end);
+    imgui.ShowHelp('Choose how HP is displayed: number only (1234), percent only (100%), or both (1234 (100%)).');
+
+    -- MP Display Mode dropdown
+    local mpDisplayLabel = displayModeLabels[gConfig.playerBarMpDisplayMode] or 'Number Only';
+    DrawComboBox('MP Display##playerBar', mpDisplayLabel, {'Number Only', 'Percent Only', 'Both'}, function(newValue)
+        if newValue == 'Number Only' then
+            gConfig.playerBarMpDisplayMode = 'number';
+        elseif newValue == 'Percent Only' then
+            gConfig.playerBarMpDisplayMode = 'percent';
+        else
+            gConfig.playerBarMpDisplayMode = 'both';
+        end
+        SaveSettingsOnly();
+    end);
+    imgui.ShowHelp('Choose how MP is displayed: number only (1234), percent only (100%), or both (1234 (100%)).');
 end
 
 -- Section: Player Bar Color Settings

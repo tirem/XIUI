@@ -395,7 +395,17 @@ playerbar.DrawWindow = function(settings)
 		-- Update our HP Text (using proper padding like exp bar)
 		local hpTextX = hpBarStartX + barSize - bookendWidth - textPadding;
 		local hpTextY = hpBarStartY + settings.barHeight + settings.textYOffset;
-		hpText:set_text(tostring(SelfHP));
+		-- Format HP text based on display mode setting
+		local hpDisplayMode = gConfig.playerBarHpDisplayMode or 'number';
+		local hpDisplayText;
+		if hpDisplayMode == 'percent' then
+			hpDisplayText = tostring(SelfHPPercent) .. '%';
+		elseif hpDisplayMode == 'both' then
+			hpDisplayText = tostring(SelfHP) .. ' (' .. tostring(SelfHPPercent) .. '%)';
+		else
+			hpDisplayText = tostring(SelfHP);
+		end
+		hpText:set_text(hpDisplayText);
 		-- Apply baseline offset to keep text baseline consistent
 		local _, hpTextHeight = hpText:get_text_size();
 		local hpBaselineOffset = referenceTextHeight - hpTextHeight;
@@ -413,7 +423,17 @@ playerbar.DrawWindow = function(settings)
 			-- Update our MP Text (using proper padding like exp bar)
 			local mpTextX = mpBarStartX + barSize - bookendWidth - textPadding;
 			local mpTextY = mpBarStartY + settings.barHeight + settings.textYOffset;
-			mpText:set_text(tostring(SelfMP));
+			-- Format MP text based on display mode setting
+			local mpDisplayMode = gConfig.playerBarMpDisplayMode or 'number';
+			local mpDisplayText;
+			if mpDisplayMode == 'percent' then
+				mpDisplayText = tostring(SelfMPPercent) .. '%';
+			elseif mpDisplayMode == 'both' then
+				mpDisplayText = tostring(SelfMP) .. ' (' .. tostring(SelfMPPercent) .. '%)';
+			else
+				mpDisplayText = tostring(SelfMP);
+			end
+			mpText:set_text(mpDisplayText);
 			-- Apply baseline offset to keep text baseline consistent
 			local _, mpTextHeight = mpText:get_text_size();
 			local mpBaselineOffset = referenceTextHeight - mpTextHeight;

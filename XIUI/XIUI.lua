@@ -157,6 +157,8 @@ T{
 	alwaysShowMpBar = true,
 	playerBarTpFlashEnabled = true,
     playerBarHideDuringEvents = true,
+	playerBarHpDisplayMode = 'number', -- 'number', 'percent', 'both'
+	playerBarMpDisplayMode = 'number', -- 'number', 'percent', 'both'
 
 	targetBarScaleX = 1,
 	targetBarScaleY = 1,

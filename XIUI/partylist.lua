@@ -387,7 +387,22 @@ local function GetMemberInformation(memIdx)
     memberInfo.zone = party:GetMemberZone(memIdx);
     memberInfo.inzone = memberInfo.zone == party:GetMemberZone(0);
     memberInfo.name = party:GetMemberName(memIdx);
-    memberInfo.leader = partyLeaderId == party:GetMemberServerId(memIdx);
+
+    -- Determine party leader status
+    -- Don't show leader indicator when solo (only 1 active member in main party)
+    local memberServerId = party:GetMemberServerId(memIdx);
+    local partyMemberCount = frameCache.activeMemberCount[partyIndex] or 0;
+    if (partyMemberCount <= 1) then
+        memberInfo.leader = false;
+    elseif (partyLeaderId ~= nil and partyLeaderId ~= 0) then
+        -- Normal case: leader server ID is available
+        memberInfo.leader = partyLeaderId == memberServerId;
+    else
+        -- Fallback: leader server ID not yet available (e.g. before party data packet received)
+        -- First member of each party group is assumed to be leader
+        local firstMemberOfParty = (partyIndex - 1) * partyMaxSize;
+        memberInfo.leader = memIdx == firstMemberOfParty;
+    end
 
     if (memberInfo.inzone == true) then
         memberInfo.hp = party:GetMemberHP(memIdx);
