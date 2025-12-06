@@ -49,6 +49,7 @@ local castBar = require('castbar');
 local configMenu = require('configmenu');
 local debuffHandler = require('debuffhandler');
 local actionTracker = require('actiontracker');
+local mobInfo = require('mobinfo.include');
 local patchNotes = require('patchNotes');
 local statusHandler = require('statushandler');
 local gdi = require('gdifonts.include');
@@ -226,6 +227,18 @@ T{
     satchelTrackerColorThreshold1 = 15,
     satchelTrackerColorThreshold2 = 29,
     satchelShowCount = true,
+
+	-- Mob Info settings
+	showMobInfo = true,
+	mobInfoShowLevel = true,
+	mobInfoShowDetection = true,
+	mobInfoShowLink = true,
+	mobInfoShowResistances = true,
+	mobInfoShowWeaknesses = true,
+	mobInfoShowImmunities = true,
+	mobInfoIconScale = 1.0,
+	mobInfoShowNoData = false,
+	mobInfoFontSize = 12,
 
 	-- Party List global settings (shared across all parties)
 	partyListTitleFontSize = 12,
@@ -778,6 +791,14 @@ T{
 			percentTextColor = 0xFFFFFFFF,
 		},
 
+		-- Mob Info
+		mobInfo = T{
+			levelTextColor = 0xFFFFFFFF,
+			resistanceColor = 0xFFFF6666,   -- Red tint for resistances
+			weaknessColor = 0xFF66FF66,     -- Green tint for weaknesses
+			immunityColor = 0xFFFFFF66,     -- Yellow tint for immunities
+		},
+
 		-- Global/Shared
 		shared = T{
 			backgroundGradient = T{ enabled = true, start = '#01122b', stop = '#061c39' },
@@ -1066,6 +1087,25 @@ T{
 			font_alignment = gdi.Alignment.Right,
 			font_family = 'Consolas',
 			font_height = 13,
+			font_color = 0xFFFFFFFF,
+			font_flags = gdi.FontFlags.None,
+			outline_color = 0xFF000000,
+			outline_width = 2,
+		};
+	};
+
+	-- settings for mob info
+	mobInfoSettings =
+	T{
+		iconSize = 20;
+		iconSpacing = 2;
+		rowSpacing = 4;
+		maxIconsPerRow = 10;
+		level_font_settings =
+		T{
+			font_alignment = gdi.Alignment.Left,
+			font_family = 'Consolas',
+			font_height = 12,
 			font_color = 0xFFFFFFFF,
 			font_flags = gdi.FontFlags.None,
 			outline_color = 0xFF000000,
@@ -1650,6 +1690,7 @@ local function UpdateVisuals()
 	partyList.UpdateVisuals(gAdjustedSettings.partyListSettings);
 	castBar.UpdateVisuals(gAdjustedSettings.castBarSettings);
 	enemyList.UpdateVisuals(gAdjustedSettings.enemyListSettings);
+	mobInfo.display.UpdateVisuals(gAdjustedSettings.mobInfoSettings);
 end
 
 function UpdateUserSettings()
@@ -1737,6 +1778,11 @@ function UpdateUserSettings()
 	gAdjustedSettings.enemyListSettings.percent_font_settings.font_family = us.fontFamily;
 	gAdjustedSettings.enemyListSettings.percent_font_settings.font_flags = fontWeightFlags;
 	gAdjustedSettings.enemyListSettings.percent_font_settings.outline_width = us.fontOutlineWidth;
+
+	-- Mob Info
+	gAdjustedSettings.mobInfoSettings.level_font_settings.font_family = us.fontFamily;
+	gAdjustedSettings.mobInfoSettings.level_font_settings.font_flags = fontWeightFlags;
+	gAdjustedSettings.mobInfoSettings.level_font_settings.outline_width = us.fontOutlineWidth;
 
 	-- Target Bar
 	gAdjustedSettings.targetBarSettings.barWidth = ds.targetBarSettings.barWidth * us.targetBarScaleX;
@@ -1901,6 +1947,9 @@ function UpdateUserSettings()
 	gAdjustedSettings.castBarSettings.barHeight = ds.castBarSettings.barHeight * us.castBarScaleY;
 	gAdjustedSettings.castBarSettings.spell_font_settings.font_height = math.max(us.castBarFontSize, 8);
 	gAdjustedSettings.castBarSettings.percent_font_settings.font_height = math.max(us.castBarFontSize, 8);
+
+	-- Mob Info
+	gAdjustedSettings.mobInfoSettings.level_font_settings.font_height = math.max(us.mobInfoFontSize, 8);
 end
 
 -- Just save settings to disk (no updates)
@@ -2111,6 +2160,9 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 		if (gConfig.showSatchelTracker) then
 			satchelTracker.DrawWindow(gAdjustedSettings.satchelTrackerSettings);
 		end
+		if (gConfig.showMobInfo) then
+			mobInfo.display.DrawWindow(gAdjustedSettings.mobInfoSettings);
+		end
 		if (not gConfig.showPartyList or (gConfig.partyListHideDuringEvents and eventSystemActive)) then
             partyList.SetHidden(true);
         else
@@ -2157,6 +2209,16 @@ ashita.events.register('load', 'load_cb', function ()
 	partyList.Initialize(gAdjustedSettings.partyListSettings);
 	castBar.Initialize(gAdjustedSettings.castBarSettings);
 	enemyList.Initialize(gAdjustedSettings.enemyListSettings);
+	mobInfo.display.Initialize(gAdjustedSettings.mobInfoSettings);
+
+	-- Load mob data for current zone (in case addon is loaded while already in a zone)
+	local party = AshitaCore:GetMemoryManager():GetParty();
+	if party then
+		local currentZone = party:GetMemberZone(0);
+		if currentZone and currentZone > 0 then
+			mobInfo.data.LoadZone(currentZone);
+		end
+	end
 
 	-- Mark initialization as complete to allow rendering
 	bInitialized = true;
@@ -2203,6 +2265,13 @@ ashita.events.register('unload', 'unload_cb', function ()
     end
     if satchelTracker and satchelTracker.Cleanup then
         satchelTracker.Cleanup();
+    end
+
+    if mobInfo and mobInfo.display and mobInfo.display.Cleanup then
+        mobInfo.display.Cleanup();
+    end
+    if mobInfo and mobInfo.data and mobInfo.data.Cleanup then
+        mobInfo.data.Cleanup();
     end
 
     -- Cleanup GDI interface last
@@ -2270,6 +2339,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
 		partyList.HandleZonePacket(e);
 		debuffHandler.HandleZonePacket(e);
 		actionTracker.HandleZonePacket();
+		mobInfo.data.HandleZonePacket(e);
 		MarkPartyCacheDirty(); -- Invalidate party cache on zone
 		bLoggedIn = true;
 	elseif (e.id == 0x0029) then

@@ -21,6 +21,8 @@ local selectedPartyTab = 1;  -- 1 = Party A, 2 = Party B, 3 = Party C
 local selectedPartyColorTab = 1;  -- 1 = Party A, 2 = Party B, 3 = Party C (for color settings)
 local selectedInventoryTab = 1;  -- 1 = Inventory, 2 = Satchel
 local selectedInventoryColorTab = 1;  -- 1 = Inventory, 2 = Satchel (for color settings)
+local selectedTargetBarTab = 1;  -- 1 = Target Bar, 2 = Mob Info
+local selectedTargetBarColorTab = 1;  -- 1 = Target Bar, 2 = Mob Info (for color settings)
 
 -- Category definitions
 local categories = {
@@ -704,8 +706,8 @@ local function DrawPlayerBarColorSettings()
     end
 end
 
--- Section: Target Bar Settings
-local function DrawTargetBarSettings()
+-- Helper: Draw Target Bar specific settings (used in tab)
+local function DrawTargetBarSettingsContent()
     DrawCheckbox('Enabled', 'showTargetBar', CheckVisibility);
 
     if CollapsingSection('Display Options##targetBar') then
@@ -774,8 +776,128 @@ local function DrawTargetBarSettings()
     end
 end
 
--- Section: Target Bar Color Settings
-local function DrawTargetBarColorSettings()
+-- Helper: Draw Mob Info specific settings (used in tab)
+local function DrawMobInfoSettingsContent()
+    DrawCheckbox('Enabled', 'showMobInfo', CheckVisibility);
+    imgui.ShowHelp('Show mob information window when targeting monsters.');
+
+    if CollapsingSection('Display Options##mobInfo') then
+        DrawCheckbox('Show Level', 'mobInfoShowLevel');
+        imgui.ShowHelp('Display the mob level or level range.');
+
+        DrawCheckbox('Show Detection Methods', 'mobInfoShowDetection');
+        imgui.ShowHelp('Show icons for how the mob detects players (sight, sound, etc.).');
+
+        if gConfig.mobInfoShowDetection then
+            imgui.Indent(20);
+            DrawCheckbox('Show Link', 'mobInfoShowLink');
+            imgui.ShowHelp('Show if the mob links with nearby mobs.');
+            imgui.Unindent(20);
+        end
+
+        DrawCheckbox('Show Weaknesses', 'mobInfoShowWeaknesses');
+        imgui.ShowHelp('Show damage types the mob is weak to (takes extra damage).');
+
+        DrawCheckbox('Show Resistances', 'mobInfoShowResistances');
+        imgui.ShowHelp('Show damage types the mob resists (takes reduced damage).');
+
+        DrawCheckbox('Show Immunities', 'mobInfoShowImmunities');
+        imgui.ShowHelp('Show status effects the mob is immune to.');
+
+        DrawCheckbox('Show When No Data', 'mobInfoShowNoData');
+        imgui.ShowHelp('Show the window even when no mob data is available for the current zone.');
+    end
+
+    if CollapsingSection('Scale & Font##mobInfo') then
+        DrawSlider('Icon Scale', 'mobInfoIconScale', 0.5, 3.0, '%.1f');
+        imgui.ShowHelp('Scale multiplier for mob info icons.');
+
+        DrawSlider('Font Size', 'mobInfoFontSize', 8, 36);
+        imgui.ShowHelp('Font size for level text.');
+    end
+end
+
+-- Section: Target Bar Settings (with tabs for Target Bar / Mob Info)
+local function DrawTargetBarSettings()
+    -- Tab styling colors
+    local tabHeight = 24;
+    local tabPadding = 12;
+    local gold = {0.957, 0.855, 0.592, 1.0};
+    local bgMedium = {0.098, 0.090, 0.075, 1.0};
+    local bgLight = {0.137, 0.125, 0.106, 1.0};
+    local bgLighter = {0.176, 0.161, 0.137, 1.0};
+
+    -- Calculate tab widths based on text size
+    local targetBarTextWidth = imgui.CalcTextSize('Target Bar');
+    local mobInfoTextWidth = imgui.CalcTextSize('Mob Info');
+    local targetBarTabWidth = targetBarTextWidth + tabPadding * 2;
+    local mobInfoTabWidth = mobInfoTextWidth + tabPadding * 2;
+
+    -- Target Bar tab button
+    local targetBarPosX, targetBarPosY = imgui.GetCursorScreenPos();
+    if selectedTargetBarTab == 1 then
+        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
+    else
+        imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
+    end
+    if imgui.Button('Target Bar##targetBarTab', { targetBarTabWidth, tabHeight }) then
+        selectedTargetBarTab = 1;
+    end
+    if selectedTargetBarTab == 1 then
+        local draw_list = imgui.GetWindowDrawList();
+        draw_list:AddRectFilled(
+            {targetBarPosX + 4, targetBarPosY + tabHeight - 2},
+            {targetBarPosX + targetBarTabWidth - 4, targetBarPosY + tabHeight},
+            imgui.GetColorU32(gold),
+            1.0
+        );
+    end
+    imgui.PopStyleColor(3);
+
+    -- Mob Info tab button
+    imgui.SameLine();
+    local mobInfoPosX, mobInfoPosY = imgui.GetCursorScreenPos();
+    if selectedTargetBarTab == 2 then
+        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
+    else
+        imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
+    end
+    if imgui.Button('Mob Info##targetBarTab', { mobInfoTabWidth, tabHeight }) then
+        selectedTargetBarTab = 2;
+    end
+    if selectedTargetBarTab == 2 then
+        local draw_list = imgui.GetWindowDrawList();
+        draw_list:AddRectFilled(
+            {mobInfoPosX + 4, mobInfoPosY + tabHeight - 2},
+            {mobInfoPosX + mobInfoTabWidth - 4, mobInfoPosY + tabHeight},
+            imgui.GetColorU32(gold),
+            1.0
+        );
+    end
+    imgui.PopStyleColor(3);
+
+    imgui.Spacing();
+    imgui.Separator();
+    imgui.Spacing();
+
+    -- Draw settings based on selected tab
+    if selectedTargetBarTab == 1 then
+        DrawTargetBarSettingsContent();
+    else
+        DrawMobInfoSettingsContent();
+    end
+end
+
+-- Helper: Draw Target Bar specific color settings (used in tab)
+local function DrawTargetBarColorSettingsContent()
     if CollapsingSection('Bar Colors##targetBarColor') then
         DrawGradientPicker("Target HP Bar", gConfig.colorCustomization.targetBar.hpGradient, "Target HP bar color");
         if (not HzLimitedMode) then
@@ -794,6 +916,98 @@ local function DrawTargetBarColorSettings()
     if CollapsingSection('Target of Target##targetBarColor') then
         DrawGradientPicker("ToT HP Bar", gConfig.colorCustomization.totBar.hpGradient, "Target of Target HP bar color");
         imgui.ShowHelp("ToT name text color is set dynamically based on target type");
+    end
+end
+
+-- Helper: Draw Mob Info specific color settings (used in tab)
+local function DrawMobInfoColorSettingsContent()
+    if CollapsingSection('Text Colors##mobInfoColor') then
+        DrawTextColorPicker("Level Text", gConfig.colorCustomization.mobInfo, 'levelTextColor', "Color of level text");
+    end
+
+    if CollapsingSection('Icon Tints##mobInfoColor') then
+        DrawTextColorPicker("Weakness Tint", gConfig.colorCustomization.mobInfo, 'weaknessColor', "Tint color for weakness icons (green recommended)");
+        DrawTextColorPicker("Resistance Tint", gConfig.colorCustomization.mobInfo, 'resistanceColor', "Tint color for resistance icons (red recommended)");
+        DrawTextColorPicker("Immunity Tint", gConfig.colorCustomization.mobInfo, 'immunityColor', "Tint color for immunity icons (yellow recommended)");
+    end
+end
+
+-- Section: Target Bar Color Settings (with tabs for Target Bar / Mob Info)
+local function DrawTargetBarColorSettings()
+    -- Tab styling colors
+    local tabHeight = 24;
+    local tabPadding = 12;
+    local gold = {0.957, 0.855, 0.592, 1.0};
+    local bgMedium = {0.098, 0.090, 0.075, 1.0};
+    local bgLight = {0.137, 0.125, 0.106, 1.0};
+    local bgLighter = {0.176, 0.161, 0.137, 1.0};
+
+    -- Calculate tab widths based on text size
+    local targetBarTextWidth = imgui.CalcTextSize('Target Bar');
+    local mobInfoTextWidth = imgui.CalcTextSize('Mob Info');
+    local targetBarTabWidth = targetBarTextWidth + tabPadding * 2;
+    local mobInfoTabWidth = mobInfoTextWidth + tabPadding * 2;
+
+    -- Target Bar tab button
+    local targetBarPosX, targetBarPosY = imgui.GetCursorScreenPos();
+    if selectedTargetBarColorTab == 1 then
+        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
+    else
+        imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
+    end
+    if imgui.Button('Target Bar##targetBarColorTab', { targetBarTabWidth, tabHeight }) then
+        selectedTargetBarColorTab = 1;
+    end
+    if selectedTargetBarColorTab == 1 then
+        local draw_list = imgui.GetWindowDrawList();
+        draw_list:AddRectFilled(
+            {targetBarPosX + 4, targetBarPosY + tabHeight - 2},
+            {targetBarPosX + targetBarTabWidth - 4, targetBarPosY + tabHeight},
+            imgui.GetColorU32(gold),
+            1.0
+        );
+    end
+    imgui.PopStyleColor(3);
+
+    -- Mob Info tab button
+    imgui.SameLine();
+    local mobInfoPosX, mobInfoPosY = imgui.GetCursorScreenPos();
+    if selectedTargetBarColorTab == 2 then
+        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
+    else
+        imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
+    end
+    if imgui.Button('Mob Info##targetBarColorTab', { mobInfoTabWidth, tabHeight }) then
+        selectedTargetBarColorTab = 2;
+    end
+    if selectedTargetBarColorTab == 2 then
+        local draw_list = imgui.GetWindowDrawList();
+        draw_list:AddRectFilled(
+            {mobInfoPosX + 4, mobInfoPosY + tabHeight - 2},
+            {mobInfoPosX + mobInfoTabWidth - 4, mobInfoPosY + tabHeight},
+            imgui.GetColorU32(gold),
+            1.0
+        );
+    end
+    imgui.PopStyleColor(3);
+
+    imgui.Spacing();
+    imgui.Separator();
+    imgui.Spacing();
+
+    -- Draw color settings based on selected tab
+    if selectedTargetBarColorTab == 1 then
+        DrawTargetBarColorSettingsContent();
+    else
+        DrawMobInfoColorSettingsContent();
     end
 end
 
