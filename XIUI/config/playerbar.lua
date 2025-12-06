@@ -1,0 +1,171 @@
+--[[
+* XIUI Config Menu - Player Bar Settings
+* Contains settings and color settings for Player Bar
+]]--
+
+require('common');
+require('handlers.helpers');
+local components = require('config.components');
+local imgui = require('imgui');
+
+local M = {};
+
+-- Display mode options for HP/MP text
+local displayModeOptions = {'number', 'percent', 'both', 'both_percent_first'};
+local displayModeLabels = {
+    number = 'Number Only',
+    percent = 'Percent Only',
+    both = 'Number (Percent)',
+    both_percent_first = 'Percent (Number)'
+};
+
+-- Alignment options
+local alignmentOptions = {'left', 'center', 'right'};
+local alignmentLabels = {
+    left = 'Left',
+    center = 'Center',
+    right = 'Right'
+};
+
+-- Section: Player Bar Settings
+function M.DrawSettings()
+    components.DrawCheckbox('Enabled', 'showPlayerBar', CheckVisibility);
+    components.DrawCheckbox('Show Bookends', 'showPlayerBarBookends');
+    components.DrawCheckbox('Hide During Events', 'playerBarHideDuringEvents');
+    components.DrawCheckbox('Always Show MP Bar', 'alwaysShowMpBar');
+    imgui.ShowHelp('Always display the MP Bar even if your current jobs cannot cast spells.');
+    components.DrawCheckbox('TP Bar Flash Effects', 'playerBarTpFlashEnabled');
+    imgui.ShowHelp('Flash effect when TP reaches 1000 or higher.');
+
+    components.DrawSlider('Scale X', 'playerBarScaleX', 0.1, 3.0, '%.1f');
+    components.DrawSlider('Scale Y', 'playerBarScaleY', 0.1, 3.0, '%.1f');
+    components.DrawSlider('Font Size', 'playerBarFontSize', 8, 36);
+
+    -- HP Display Mode dropdown
+    local hpDisplayLabel = displayModeLabels[gConfig.playerBarHpDisplayMode] or 'Number Only';
+    components.DrawComboBox('HP Display##playerBar', hpDisplayLabel, {'Number Only', 'Percent Only', 'Number (Percent)', 'Percent (Number)'}, function(newValue)
+        if newValue == 'Number Only' then
+            gConfig.playerBarHpDisplayMode = 'number';
+        elseif newValue == 'Percent Only' then
+            gConfig.playerBarHpDisplayMode = 'percent';
+        elseif newValue == 'Number (Percent)' then
+            gConfig.playerBarHpDisplayMode = 'both';
+        else
+            gConfig.playerBarHpDisplayMode = 'both_percent_first';
+        end
+        SaveSettingsOnly();
+    end);
+    imgui.ShowHelp('Choose how HP is displayed: number only (1234), percent only (100%), number first (1234 (100%)), or percent first (100% (1234)).');
+
+    -- MP Display Mode dropdown
+    local mpDisplayLabel = displayModeLabels[gConfig.playerBarMpDisplayMode] or 'Number Only';
+    components.DrawComboBox('MP Display##playerBar', mpDisplayLabel, {'Number Only', 'Percent Only', 'Number (Percent)', 'Percent (Number)'}, function(newValue)
+        if newValue == 'Number Only' then
+            gConfig.playerBarMpDisplayMode = 'number';
+        elseif newValue == 'Percent Only' then
+            gConfig.playerBarMpDisplayMode = 'percent';
+        elseif newValue == 'Number (Percent)' then
+            gConfig.playerBarMpDisplayMode = 'both';
+        else
+            gConfig.playerBarMpDisplayMode = 'both_percent_first';
+        end
+        SaveSettingsOnly();
+    end);
+    imgui.ShowHelp('Choose how MP is displayed: number only (1234), percent only (100%), number first (1234 (100%)), or percent first (100% (1234)).');
+
+    -- Text positioning section
+    if components.CollapsingSection('Text Positioning##playerBar', false) then
+        imgui.Text('HP Text');
+        local hpAlignLabel = alignmentLabels[gConfig.playerBarHpTextAlignment] or 'Right';
+        components.DrawComboBox('Alignment##hpText', hpAlignLabel, {'Left', 'Center', 'Right'}, function(newValue)
+            if newValue == 'Left' then
+                gConfig.playerBarHpTextAlignment = 'left';
+            elseif newValue == 'Center' then
+                gConfig.playerBarHpTextAlignment = 'center';
+            else
+                gConfig.playerBarHpTextAlignment = 'right';
+            end
+            SaveSettingsOnly();
+        end);
+        components.DrawSlider('X Offset##hpText', 'playerBarHpTextOffsetX', -50, 50);
+        components.DrawSlider('Y Offset##hpText', 'playerBarHpTextOffsetY', -50, 50);
+
+        imgui.Spacing();
+        imgui.Text('MP Text');
+        local mpAlignLabel = alignmentLabels[gConfig.playerBarMpTextAlignment] or 'Right';
+        components.DrawComboBox('Alignment##mpText', mpAlignLabel, {'Left', 'Center', 'Right'}, function(newValue)
+            if newValue == 'Left' then
+                gConfig.playerBarMpTextAlignment = 'left';
+            elseif newValue == 'Center' then
+                gConfig.playerBarMpTextAlignment = 'center';
+            else
+                gConfig.playerBarMpTextAlignment = 'right';
+            end
+            SaveSettingsOnly();
+        end);
+        components.DrawSlider('X Offset##mpText', 'playerBarMpTextOffsetX', -50, 50);
+        components.DrawSlider('Y Offset##mpText', 'playerBarMpTextOffsetY', -50, 50);
+
+        imgui.Spacing();
+        imgui.Text('TP Text');
+        local tpAlignLabel = alignmentLabels[gConfig.playerBarTpTextAlignment] or 'Right';
+        components.DrawComboBox('Alignment##tpText', tpAlignLabel, {'Left', 'Center', 'Right'}, function(newValue)
+            if newValue == 'Left' then
+                gConfig.playerBarTpTextAlignment = 'left';
+            elseif newValue == 'Center' then
+                gConfig.playerBarTpTextAlignment = 'center';
+            else
+                gConfig.playerBarTpTextAlignment = 'right';
+            end
+            SaveSettingsOnly();
+        end);
+        components.DrawSlider('X Offset##tpText', 'playerBarTpTextOffsetX', -50, 50);
+        components.DrawSlider('Y Offset##tpText', 'playerBarTpTextOffsetY', -50, 50);
+    end
+end
+
+-- Section: Player Bar Color Settings
+function M.DrawColorSettings()
+    if components.CollapsingSection('HP Bar Colors##playerBarColor') then
+        components.DrawHPBarColorsRow(gConfig.colorCustomization.playerBar.hpGradient, "##playerBar");
+    end
+
+    if components.CollapsingSection('MP/TP Bar Colors##playerBarColor') then
+        -- Column headers
+        imgui.Text("MP Bar");
+        imgui.SameLine(components.COLOR_COLUMN_SPACING);
+        imgui.Text("TP Bar");
+        imgui.SameLine(components.COLOR_COLUMN_SPACING * 2);
+        imgui.Text("TP Overlay (1000+)");
+
+        -- First column - MP Bar
+        components.DrawGradientPickerColumn("MP Bar##playerBar", gConfig.colorCustomization.playerBar.mpGradient, "MP bar color gradient");
+
+        imgui.SameLine(components.COLOR_COLUMN_SPACING);
+
+        -- Second column - TP Bar
+        components.DrawGradientPickerColumn("TP Bar##playerBar", gConfig.colorCustomization.playerBar.tpGradient, "TP bar color gradient");
+
+        imgui.SameLine(components.COLOR_COLUMN_SPACING * 2);
+
+        -- Third column - TP Overlay with flash color
+        imgui.BeginGroup();
+        components.DrawGradientPickerColumn("TP Overlay##playerBar", gConfig.colorCustomization.playerBar.tpOverlayGradient, "TP overlay bar color when storing TP above 1000");
+        local flashColor = ARGBToImGui(gConfig.colorCustomization.playerBar.tpFlashColor);
+        if (imgui.ColorEdit4('Flash##tpFlashPlayerBar', flashColor, bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaBar))) then
+            gConfig.colorCustomization.playerBar.tpFlashColor = ImGuiToARGB(flashColor);
+        end
+        if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+        imgui.ShowHelp("Color to flash when TP is 1000+");
+        imgui.EndGroup();
+    end
+
+    if components.CollapsingSection('Text Colors##playerBarColor') then
+        components.DrawTextColorPicker("HP Text", gConfig.colorCustomization.playerBar, 'hpTextColor', "Color of HP number text");
+        components.DrawTextColorPicker("MP Text", gConfig.colorCustomization.playerBar, 'mpTextColor', "Color of MP number text");
+        components.DrawTextColorPicker("TP Text (Empty, <1000)", gConfig.colorCustomization.playerBar, 'tpEmptyTextColor', "Color of TP number text when below 1000");
+        components.DrawTextColorPicker("TP Text (Full, >=1000)", gConfig.colorCustomization.playerBar, 'tpFullTextColor', "Color of TP number text when 1000 or higher");
+    end
+end
+
+return M;

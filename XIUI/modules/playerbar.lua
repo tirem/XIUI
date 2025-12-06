@@ -393,8 +393,6 @@ playerbar.DrawWindow = function(settings)
 		end
 
 		-- Update our HP Text (using proper padding like exp bar)
-		local hpTextX = hpBarStartX + barSize - bookendWidth - textPadding;
-		local hpTextY = hpBarStartY + settings.barHeight + settings.textYOffset;
 		-- Format HP text based on display mode setting
 		local hpDisplayMode = gConfig.playerBarHpDisplayMode or 'number';
 		local hpDisplayText;
@@ -402,6 +400,8 @@ playerbar.DrawWindow = function(settings)
 			hpDisplayText = tostring(SelfHPPercent) .. '%';
 		elseif hpDisplayMode == 'both' then
 			hpDisplayText = tostring(SelfHP) .. ' (' .. tostring(SelfHPPercent) .. '%)';
+		elseif hpDisplayMode == 'both_percent_first' then
+			hpDisplayText = tostring(SelfHPPercent) .. '% (' .. tostring(SelfHP) .. ')';
 		else
 			hpDisplayText = tostring(SelfHP);
 		end
@@ -409,6 +409,22 @@ playerbar.DrawWindow = function(settings)
 		-- Apply baseline offset to keep text baseline consistent
 		local _, hpTextHeight = hpText:get_text_size();
 		local hpBaselineOffset = referenceTextHeight - hpTextHeight;
+		-- Calculate position based on alignment
+		local hpTextX;
+		local hpAlignment = gConfig.playerBarHpTextAlignment or 'right';
+		if hpAlignment == 'left' then
+			hpTextX = hpBarStartX + bookendWidth + textPadding;
+			hpText:set_font_alignment(gdi.Alignment.Left);
+		elseif hpAlignment == 'center' then
+			hpTextX = hpBarStartX + (barSize / 2);
+			hpText:set_font_alignment(gdi.Alignment.Center);
+		else -- right alignment (default)
+			hpTextX = hpBarStartX + barSize - bookendWidth - textPadding;
+			hpText:set_font_alignment(gdi.Alignment.Right);
+		end
+		-- Apply user offset
+		hpTextX = hpTextX + (gConfig.playerBarHpTextOffsetX or 0);
+		local hpTextY = hpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarHpTextOffsetY or 0);
 		hpText:set_position_x(hpTextX);
 		hpText:set_position_y(hpTextY + hpBaselineOffset);
 		-- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
@@ -421,8 +437,6 @@ playerbar.DrawWindow = function(settings)
 
 		if (bShowMp) then
 			-- Update our MP Text (using proper padding like exp bar)
-			local mpTextX = mpBarStartX + barSize - bookendWidth - textPadding;
-			local mpTextY = mpBarStartY + settings.barHeight + settings.textYOffset;
 			-- Format MP text based on display mode setting
 			local mpDisplayMode = gConfig.playerBarMpDisplayMode or 'number';
 			local mpDisplayText;
@@ -430,6 +444,8 @@ playerbar.DrawWindow = function(settings)
 				mpDisplayText = tostring(SelfMPPercent) .. '%';
 			elseif mpDisplayMode == 'both' then
 				mpDisplayText = tostring(SelfMP) .. ' (' .. tostring(SelfMPPercent) .. '%)';
+			elseif mpDisplayMode == 'both_percent_first' then
+				mpDisplayText = tostring(SelfMPPercent) .. '% (' .. tostring(SelfMP) .. ')';
 			else
 				mpDisplayText = tostring(SelfMP);
 			end
@@ -437,6 +453,22 @@ playerbar.DrawWindow = function(settings)
 			-- Apply baseline offset to keep text baseline consistent
 			local _, mpTextHeight = mpText:get_text_size();
 			local mpBaselineOffset = referenceTextHeight - mpTextHeight;
+			-- Calculate position based on alignment
+			local mpTextX;
+			local mpAlignment = gConfig.playerBarMpTextAlignment or 'right';
+			if mpAlignment == 'left' then
+				mpTextX = mpBarStartX + bookendWidth + textPadding;
+				mpText:set_font_alignment(gdi.Alignment.Left);
+			elseif mpAlignment == 'center' then
+				mpTextX = mpBarStartX + (barSize / 2);
+				mpText:set_font_alignment(gdi.Alignment.Center);
+			else -- right alignment (default)
+				mpTextX = mpBarStartX + barSize - bookendWidth - textPadding;
+				mpText:set_font_alignment(gdi.Alignment.Right);
+			end
+			-- Apply user offset
+			mpTextX = mpTextX + (gConfig.playerBarMpTextOffsetX or 0);
+			local mpTextY = mpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarMpTextOffsetY or 0);
 			mpText:set_position_x(mpTextX);
 			mpText:set_position_y(mpTextY + mpBaselineOffset);
 			-- Only call set_font_color if the color has changed
@@ -449,12 +481,26 @@ playerbar.DrawWindow = function(settings)
 		mpText:set_visible(bShowMp);
 
 		-- Update our TP Text (using proper padding like exp bar)
-		local tpTextX = tpBarStartX + barSize - bookendWidth - textPadding;
-		local tpTextY = tpBarStartY + settings.barHeight + settings.textYOffset;
 		tpText:set_text(tostring(SelfTP));
 		-- Apply baseline offset to keep text baseline consistent
 		local _, tpTextHeight = tpText:get_text_size();
 		local tpBaselineOffset = referenceTextHeight - tpTextHeight;
+		-- Calculate position based on alignment
+		local tpTextX;
+		local tpAlignment = gConfig.playerBarTpTextAlignment or 'right';
+		if tpAlignment == 'left' then
+			tpTextX = tpBarStartX + bookendWidth + textPadding;
+			tpText:set_font_alignment(gdi.Alignment.Left);
+		elseif tpAlignment == 'center' then
+			tpTextX = tpBarStartX + (barSize / 2);
+			tpText:set_font_alignment(gdi.Alignment.Center);
+		else -- right alignment (default)
+			tpTextX = tpBarStartX + barSize - bookendWidth - textPadding;
+			tpText:set_font_alignment(gdi.Alignment.Right);
+		end
+		-- Apply user offset
+		tpTextX = tpTextX + (gConfig.playerBarTpTextOffsetX or 0);
+		local tpTextY = tpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarTpTextOffsetY or 0);
 		tpText:set_position_x(tpTextX);
 		tpText:set_position_y(tpTextY + tpBaselineOffset);
 		local desiredTpColor = (SelfTP >= 1000) and gConfig.colorCustomization.playerBar.tpFullTextColor or gConfig.colorCustomization.playerBar.tpEmptyTextColor;

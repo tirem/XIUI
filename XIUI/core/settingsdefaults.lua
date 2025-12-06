@@ -145,8 +145,19 @@ M.user_settings = T{
     alwaysShowMpBar = true,
     playerBarTpFlashEnabled = true,
     playerBarHideDuringEvents = true,
-    playerBarHpDisplayMode = 'number', -- 'number', 'percent', 'both'
-    playerBarMpDisplayMode = 'number', -- 'number', 'percent', 'both'
+    playerBarHpDisplayMode = 'number', -- 'number', 'percent', 'both', 'both_percent_first'
+    playerBarMpDisplayMode = 'number', -- 'number', 'percent', 'both', 'both_percent_first'
+
+    -- Text positioning settings for player bar (per stat)
+    playerBarHpTextOffsetX = 0,
+    playerBarHpTextOffsetY = 0,
+    playerBarHpTextAlignment = 'right', -- 'left', 'right'
+    playerBarMpTextOffsetX = 0,
+    playerBarMpTextOffsetY = 0,
+    playerBarMpTextAlignment = 'right', -- 'left', 'right'
+    playerBarTpTextOffsetX = 0,
+    playerBarTpTextOffsetY = 0,
+    playerBarTpTextAlignment = 'right', -- 'left', 'right'
 
     targetBarScaleX = 1,
     targetBarScaleY = 1,
