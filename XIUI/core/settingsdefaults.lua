@@ -28,6 +28,7 @@ local function createPartyDefaults(overrides)
         showSubJob = true,
         showSubJobLevel = true,
         showCastBars = true,
+        castBarScaleX = 1.0,
         castBarScaleY = 0.6,
         showBookends = true,
         showTitle = true,

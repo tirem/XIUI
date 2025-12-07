@@ -169,6 +169,7 @@ function data.updatePartyConfigCache()
         cache.showSubJob = party.showSubJob ~= false;
         cache.showSubJobLevel = party.showSubJobLevel ~= false;
         cache.showCastBars = party.showCastBars;
+        cache.castBarScaleX = party.castBarScaleX or 1.0;
         cache.castBarScaleY = party.castBarScaleY or 0.6;
         cache.showBookends = party.showBookends;
         cache.showTitle = party.showTitle;

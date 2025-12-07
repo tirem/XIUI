@@ -530,7 +530,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 isCasting = false;
                 data.memberText[memIdx].name:set_text(tostring(memInfo.name));
             else
-                local castBarWidth = hpBarWidth * 0.6;
+                local castBarWidth = hpBarWidth * 0.6 * cache.castBarScaleX;
                 local castBarHeight = math.max(6, nameRefHeight * 0.8 * cache.castBarScaleY);
                 local castBarX = namePosX + spellNameWidth + 4;
                 local castBarY = hpStartY - nameRefHeight - settings.nameTextOffsetY + (nameRefHeight - castBarHeight) / 2;

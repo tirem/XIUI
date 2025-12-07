@@ -107,6 +107,8 @@ local function DrawPartyTabContent(party, partyName)
         if party.showCastBars then
             imgui.SameLine();
             imgui.PushItemWidth(100);
+            components.DrawPartySlider(party, 'Scale X', 'castBarScaleX', 0.1, 3.0, '%.1f');
+            imgui.SameLine();
             components.DrawPartySlider(party, 'Scale Y', 'castBarScaleY', 0.1, 3.0, '%.1f');
             imgui.PopItemWidth();
         end
@@ -196,7 +198,7 @@ local function DrawPartyTabContent(party, partyName)
 
     if components.CollapsingSection('Scale & Spacing##party' .. partyName) then
         components.DrawPartySlider(party, 'Min Rows', 'minRows', 1, 6);
-        components.DrawPartySlider(party, 'Entry Spacing', 'entrySpacing', -4, 16);
+        components.DrawPartySlider(party, 'Entry Spacing', 'entrySpacing', -50, 50);
         components.DrawPartySlider(party, 'Selection Box Scale Y', 'selectionBoxScaleY', 0.5, 2.0, '%.2f');
 
         -- General scale controls (applies to all elements)
