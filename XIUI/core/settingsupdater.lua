@@ -199,7 +199,7 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
     -- Gil Tracker
     gAdjustedSettings.gilTrackerSettings.iconScale = ds.gilTrackerSettings.iconScale * us.gilTrackerScale;
     gAdjustedSettings.gilTrackerSettings.font_settings.font_height = math.max(us.gilTrackerFontSize, 8);
-    gAdjustedSettings.gilTrackerSettings.font_settings.font_alignment = us.gilTrackerRightAlign and gdi.Alignment.Left or gdi.Alignment.Right;
+    gAdjustedSettings.gilTrackerSettings.font_settings.font_alignment = gdi.Alignment.Right;
     gAdjustedSettings.gilTrackerSettings.rightAlign = us.gilTrackerRightAlign;
     gAdjustedSettings.gilTrackerSettings.showIcon = us.gilTrackerShowIcon;
 
