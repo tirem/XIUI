@@ -9,8 +9,118 @@ local imgui = require('imgui');
 local progressbar = require('libs.progressbar');
 
 local data = require('modules.petbar.data');
+local color = require('libs.color');
 
 local display = {};
+
+-- Helper to convert hex color string to RGBA values (0-1 range)
+local function hexToRgba(hex)
+    hex = hex:gsub("#", "");
+    local r = tonumber("0x"..hex:sub(1,2)) / 255;
+    local g = tonumber("0x"..hex:sub(3,4)) / 255;
+    local b = tonumber("0x"..hex:sub(5,6)) / 255;
+    local a = 1.0;
+    if #hex == 8 then
+        a = tonumber("0x"..hex:sub(7,8)) / 255;
+    end
+    return r, g, b, a;
+end
+
+-- Helper to get gradient colors from config
+local function getGradientColors(gradient, defaultStart, defaultStop)
+    local startColor = (gradient and gradient.start) or defaultStart;
+    local endColor = (gradient and gradient.stop) or defaultStop;
+    local sr, sg, sb = hexToRgba(startColor);
+    local er, eg, eb = hexToRgba(endColor);
+    return sr, sg, sb, er, eg, eb;
+end
+
+-- Draw a filled circle with vertical gradient (top to bottom)
+local function DrawGradientCircleFilled(drawList, centerX, centerY, radius, topR, topG, topB, bottomR, bottomG, bottomB, alpha, segments)
+    segments = segments or 32;
+    local topY = centerY - radius;
+    local bottomY = centerY + radius;
+    local height = bottomY - topY;
+
+    -- Draw horizontal strips from top to bottom
+    local numStrips = math.max(16, math.floor(radius));
+    for i = 0, numStrips - 1 do
+        local t1 = i / numStrips;
+        local t2 = (i + 1) / numStrips;
+        local y1 = topY + t1 * height;
+        local y2 = topY + t2 * height;
+
+        -- Interpolate colors
+        local r1 = topR + t1 * (bottomR - topR);
+        local g1 = topG + t1 * (bottomG - topG);
+        local b1 = topB + t1 * (bottomB - topB);
+        local r2 = topR + t2 * (bottomR - topR);
+        local g2 = topG + t2 * (bottomG - topG);
+        local b2 = topB + t2 * (bottomB - topB);
+
+        -- Calculate x bounds at this y level (circle equation)
+        local dy1 = y1 - centerY;
+        local dy2 = y2 - centerY;
+        local halfWidth1 = math.sqrt(math.max(0, radius * radius - dy1 * dy1));
+        local halfWidth2 = math.sqrt(math.max(0, radius * radius - dy2 * dy2));
+
+        -- Draw a quad for this strip
+        local color1 = imgui.GetColorU32({r1, g1, b1, alpha});
+        local color2 = imgui.GetColorU32({r2, g2, b2, alpha});
+
+        drawList:AddRectFilledMultiColor(
+            {centerX - halfWidth1, y1},
+            {centerX + halfWidth2, y2},
+            color1, color1, color2, color2
+        );
+    end
+end
+
+-- Draw a pie slice with vertical gradient
+local function DrawGradientPieSlice(drawList, centerX, centerY, radius, startAngle, endAngle, topR, topG, topB, bottomR, bottomG, bottomB, alpha, segments)
+    segments = segments or 32;
+    local topY = centerY - radius;
+    local height = radius * 2;
+
+    -- Build the pie slice as triangles from center
+    local angleStep = (endAngle - startAngle) / segments;
+
+    for i = 0, segments - 1 do
+        local angle1 = startAngle + i * angleStep;
+        local angle2 = startAngle + (i + 1) * angleStep;
+
+        local x1 = centerX + math.cos(angle1) * radius;
+        local y1 = centerY + math.sin(angle1) * radius;
+        local x2 = centerX + math.cos(angle2) * radius;
+        local y2 = centerY + math.sin(angle2) * radius;
+
+        -- Calculate gradient t values based on y position
+        local tCenter = 0.5;  -- Center is middle of gradient
+        local t1 = (y1 - topY) / height;
+        local t2 = (y2 - topY) / height;
+
+        -- Interpolate colors for each vertex
+        local rC = topR + tCenter * (bottomR - topR);
+        local gC = topG + tCenter * (bottomG - topG);
+        local bC = topB + tCenter * (bottomB - topB);
+
+        local r1 = topR + t1 * (bottomR - topR);
+        local g1 = topG + t1 * (bottomG - topG);
+        local b1 = topB + t1 * (bottomB - topB);
+
+        local r2 = topR + t2 * (bottomR - topR);
+        local g2 = topG + t2 * (bottomG - topG);
+        local b2 = topB + t2 * (bottomB - topB);
+
+        -- Use average color for the triangle (ImGui doesn't support per-vertex colors on triangles easily)
+        local avgR = (rC + r1 + r2) / 3;
+        local avgG = (gC + g1 + g2) / 3;
+        local avgB = (bC + b1 + b2) / 3;
+        local color = imgui.GetColorU32({avgR, avgG, avgB, alpha});
+
+        drawList:AddTriangleFilled({centerX, centerY}, {x1, y1}, {x2, y2}, color);
+    end
+end
 
 -- ============================================
 -- Draw Ability Icon with Clockwise Fill
@@ -21,8 +131,8 @@ local function DrawAbilityIcon(drawList, x, y, size, timerInfo, colorConfig)
     local centerY = y + radius;
     local innerRadius = radius - 2;
 
-    -- Background circle (dark)
-    local bgColor = imgui.GetColorU32({0.15, 0.15, 0.15, 0.95});
+    -- Background circle (dark blue)
+    local bgColor = imgui.GetColorU32({0.01, 0.07, 0.17, 1.0});
     drawList:AddCircleFilled({centerX, centerY}, radius, bgColor, 32);
 
     if not timerInfo.isReady and timerInfo.timer > 0 and timerInfo.maxTimer and timerInfo.maxTimer > 0 then
@@ -31,36 +141,29 @@ local function DrawAbilityIcon(drawList, x, y, size, timerInfo, colorConfig)
         progress = math.max(0, math.min(1, progress));
 
         if progress > 0 then
+            -- Recast color from config (default: yellow)
+            local recastHex = (colorConfig and colorConfig.timerRecastColor) or 0xD9FFFF00;
+            local fillColor = imgui.GetColorU32(color.ARGBToImGui(recastHex));
+
             -- Draw clockwise fill arc (from 12 o'clock position)
             local startAngle = -math.pi / 2;
             local endAngle = startAngle + (progress * 2 * math.pi);
 
-            -- Get recast color for the fill (yellow when on cooldown)
-            local recastColor = colorConfig and colorConfig.timerRecastColor or 0xFFFFFF00;
-            local r = bit.band(bit.rshift(recastColor, 16), 0xFF) / 255;
-            local g = bit.band(bit.rshift(recastColor, 8), 0xFF) / 255;
-            local b = bit.band(recastColor, 0xFF) / 255;
-            local fillColor = imgui.GetColorU32({r, g, b, 0.7});
-
-            -- Draw filled arc using PathArcTo
             drawList:PathClear();
             drawList:PathLineTo({centerX, centerY});
-            local segments = math.max(3, math.floor(32 * progress));
-            drawList:PathArcTo({centerX, centerY}, innerRadius, startAngle, endAngle, segments);
+            local numSegments = math.max(3, math.floor(32 * progress));
+            drawList:PathArcTo({centerX, centerY}, innerRadius, startAngle, endAngle, numSegments);
             drawList:PathFillConvex(fillColor);
         end
     else
-        -- Ready indicator (full green circle)
-        local readyColor = colorConfig and colorConfig.timerReadyColor or 0xFF00FF00;
-        local r = bit.band(bit.rshift(readyColor, 16), 0xFF) / 255;
-        local g = bit.band(bit.rshift(readyColor, 8), 0xFF) / 255;
-        local b = bit.band(readyColor, 0xFF) / 255;
-        local innerColor = imgui.GetColorU32({r, g, b, 0.8});
-        drawList:AddCircleFilled({centerX, centerY}, innerRadius, innerColor, 32);
+        -- Ready indicator from config (default: green)
+        local readyHex = (colorConfig and colorConfig.timerReadyColor) or 0xE600FF00;
+        local readyColor = imgui.GetColorU32(color.ARGBToImGui(readyHex));
+        drawList:AddCircleFilled({centerX, centerY}, innerRadius, readyColor, 32);
     end
 
-    -- Border
-    local borderColor = imgui.GetColorU32({0.5, 0.5, 0.5, 1.0});
+    -- Border (darker blue)
+    local borderColor = imgui.GetColorU32({0.01, 0.05, 0.12, 1.0});
     drawList:AddCircle({centerX, centerY}, radius, borderColor, 32, 2);
 end
 
@@ -127,23 +230,21 @@ function display.DrawWindow(settings)
     local tpScaleY = gConfig.petBarTpScaleY or 1.0;
 
     -- Calculate scaled bar dimensions
+    -- HP bar is full width
     local hpBarWidth = barWidth * hpScaleX;
     local hpBarHeight = barHeight * hpScaleY;
-    local mpBarWidth = (barWidth / 2 - barSpacing / 2) * mpScaleX;
+    -- MP and TP bars split the HP bar width (minus spacing between them)
+    local halfBarWidth = (hpBarWidth - barSpacing) / 2;
+    local mpBarWidth = halfBarWidth * mpScaleX;
     local mpBarHeight = barHeight * mpScaleY;
-    local tpBarWidth = (barWidth / 2 - barSpacing / 2) * tpScaleX;
+    local tpBarWidth = halfBarWidth * tpScaleX;
     local tpBarHeight = barHeight * tpScaleY;
-
-    -- Text positioning
-    local textGap = 8;
-    local textOffsetX = barWidth + textGap;
-    local maxTextWidth = 50;
 
     -- Color config
     local colorConfig = gConfig.colorCustomization and gConfig.colorCustomization.petBar or {};
 
-    -- Total row width for proper window sizing
-    local totalRowWidth = barWidth + textGap + maxTextWidth;
+    -- Total row width for proper window sizing (based on HP bar width)
+    local totalRowWidth = hpBarWidth;
 
     -- Store for pet target window
     data.lastTotalRowWidth = totalRowWidth;
@@ -157,8 +258,10 @@ function display.DrawWindow(settings)
         windowPosX, windowPosY = imgui.GetWindowPos();
         local startX, startY = imgui.GetCursorScreenPos();
 
-        -- Row 1: Pet Name and Distance
+        -- Row 1: Pet Name (left) and HP% (right, same line)
         local nameFontSize = gConfig.petBarNameFontSize or settings.name_font_settings.font_height;
+        local vitalsFontSize = gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
+
         data.nameText:set_font_height(nameFontSize);
         data.nameText:set_text(petName);
         data.nameText:set_position_x(startX);
@@ -170,21 +273,41 @@ function display.DrawWindow(settings)
         end
         data.nameText:set_visible(true);
 
-        -- Distance text (right side)
-        data.distanceText:set_font_height(gConfig.petBarDistanceFontSize or settings.distance_font_settings.font_height);
-        data.distanceText:set_text(string.format('%.1fy', petDistance));
-        data.distanceText:set_position_x(startX + barWidth);
-        data.distanceText:set_position_y(startY);
-        local distColor = colorConfig.distanceTextColor or 0xFFFFFFFF;
-        if data.lastDistColor ~= distColor then
-            data.distanceText:set_font_color(distColor);
-            data.lastDistColor = distColor;
+        -- Distance text (next to pet name)
+        if gConfig.petBarShowDistance then
+            local distanceFontSize = gConfig.petBarDistanceFontSize or settings.distance_font_settings.font_height;
+            local nameWidth, _ = data.nameText:get_text_size();
+            data.distanceText:set_font_height(distanceFontSize);
+            data.distanceText:set_text(string.format('%.1f', petDistance));
+            data.distanceText:set_position_x(startX + nameWidth + 4);
+            data.distanceText:set_position_y(startY + (nameFontSize - distanceFontSize) / 2);
+            local distColor = colorConfig.distanceTextColor or 0xFFFFFFFF;
+            if data.lastDistanceColor ~= distColor then
+                data.distanceText:set_font_color(distColor);
+                data.lastDistanceColor = distColor;
+            end
+            data.distanceText:set_visible(true);
+        else
+            data.distanceText:set_visible(false);
         end
-        data.distanceText:set_visible(gConfig.petBarShowDistance ~= false);
+
+        -- HP% text (right side of name row)
+        if gConfig.petBarShowVitals ~= false then
+            data.hpText:set_font_height(vitalsFontSize);
+            data.hpText:set_text(tostring(petHpPercent) .. '%');
+            data.hpText:set_position_x(startX + barWidth);
+            data.hpText:set_position_y(startY + (nameFontSize - vitalsFontSize) / 2);
+            local hpColor = colorConfig.hpTextColor or 0xFFFFFFFF;
+            if data.lastHpColor ~= hpColor then
+                data.hpText:set_font_color(hpColor);
+                data.lastHpColor = hpColor;
+            end
+            data.hpText:set_visible(true);
+        end
 
         imgui.Dummy({totalRowWidth, nameFontSize + 4});
 
-        -- Row 2: HP Bar with text to the right
+        -- Row 2: HP Bar (full width)
         if gConfig.petBarShowVitals ~= false then
             local hpGradient = GetCustomGradient(colorConfig, 'hpGradient') or {'#e26c6c', '#fa9c9c'};
             local hpBarX, hpBarY = imgui.GetCursorScreenPos();
@@ -195,25 +318,9 @@ function display.DrawWindow(settings)
                 {decorate = gConfig.petBarShowBookends}
             );
 
-            -- HP Text to the right of bar
-            local vitalsFontSize = gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
-            data.hpText:set_font_height(vitalsFontSize);
-            data.hpText:set_text(tostring(petHpPercent) .. '%');
-            data.hpText:set_position_x(hpBarX + textOffsetX);
-            data.hpText:set_position_y(hpBarY + (barHeight - vitalsFontSize) / 2);
-            local hpColor = colorConfig.hpTextColor or 0xFFFFFFFF;
-            if data.lastHpColor ~= hpColor then
-                data.hpText:set_font_color(hpColor);
-                data.lastHpColor = hpColor;
-            end
-            data.hpText:set_visible(true);
-
-            imgui.Dummy({0, barSpacing});
-
             -- Row 3: MP and TP bars side by side (half width each)
-            local mpTpBarY;
             local mpBarX, mpBarY = imgui.GetCursorScreenPos();
-            mpTpBarY = mpBarY;
+            local tpBarX = mpBarX;
 
             if showMp then
                 local mpGradient = GetCustomGradient(colorConfig, 'mpGradient') or {'#9abb5a', '#bfe07d'};
@@ -223,15 +330,14 @@ function display.DrawWindow(settings)
                     {decorate = gConfig.petBarShowBookends}
                 );
 
-                imgui.SameLine();
-                imgui.Dummy({barSpacing, 0});
-                imgui.SameLine();
+                imgui.SameLine(0, barSpacing);
+                tpBarX = imgui.GetCursorScreenPos();
             end
 
             -- TP Bar
-            local tpBarX, tpBarY = imgui.GetCursorScreenPos();
             local tpGradient = GetCustomGradient(colorConfig, 'tpGradient') or {'#3898ce', '#78c4ee'};
-            local actualTpWidth = showMp and tpBarWidth or (barWidth * tpScaleX);
+            -- When no MP bar, TP bar takes full HP bar width; otherwise use calculated tpBarWidth
+            local actualTpWidth = showMp and tpBarWidth or hpBarWidth;
             local actualTpHeight = tpBarHeight;
 
             progressbar.ProgressBar(
@@ -240,32 +346,51 @@ function display.DrawWindow(settings)
                 {decorate = gConfig.petBarShowBookends}
             );
 
-            -- MP/TP Text to the right
+            -- Row 4: MP% and TP text below their respective bars (right-aligned)
+            -- Position text 2px below the MP/TP bars
+            local textRowY = mpBarY + mpBarHeight + 2;
+
             if showMp then
                 data.mpText:set_font_height(vitalsFontSize);
                 data.mpText:set_text(tostring(petMpPercent) .. '%');
-                data.mpText:set_position_x(mpBarX + textOffsetX);
-                data.mpText:set_position_y(mpTpBarY + (barHeight - vitalsFontSize) / 2);
+                -- Right-align MP text under MP bar
+                data.mpText:set_position_x(mpBarX + mpBarWidth);
+                data.mpText:set_position_y(textRowY);
                 local mpColor = colorConfig.mpTextColor or 0xFFFFFFFF;
                 if data.lastMpColor ~= mpColor then
                     data.mpText:set_font_color(mpColor);
                     data.lastMpColor = mpColor;
                 end
                 data.mpText:set_visible(true);
+
+                data.tpText:set_font_height(vitalsFontSize);
+                data.tpText:set_text(tostring(petTp));
+                -- Right-align TP text under TP bar
+                data.tpText:set_position_x(tpBarX + actualTpWidth);
+                data.tpText:set_position_y(textRowY);
+                local tpColor = colorConfig.tpTextColor or 0xFFFFFFFF;
+                if data.lastTpColor ~= tpColor then
+                    data.tpText:set_font_color(tpColor);
+                    data.lastTpColor = tpColor;
+                end
+                data.tpText:set_visible(true);
             else
                 data.mpText:set_visible(false);
+
+                data.tpText:set_font_height(vitalsFontSize);
+                data.tpText:set_text(tostring(petTp));
+                -- Right-align TP text under TP bar (full width when no MP)
+                data.tpText:set_position_x(mpBarX + actualTpWidth);
+                data.tpText:set_position_y(textRowY);
+                local tpColor = colorConfig.tpTextColor or 0xFFFFFFFF;
+                if data.lastTpColor ~= tpColor then
+                    data.tpText:set_font_color(tpColor);
+                    data.lastTpColor = tpColor;
+                end
+                data.tpText:set_visible(true);
             end
 
-            data.tpText:set_font_height(vitalsFontSize);
-            data.tpText:set_text(tostring(petTp));
-            data.tpText:set_position_x(mpBarX + textOffsetX + (showMp and 40 or 0));
-            data.tpText:set_position_y(mpTpBarY + (barHeight - vitalsFontSize) / 2);
-            local tpColor = colorConfig.tpTextColor or 0xFFFFFFFF;
-            if data.lastTpColor ~= tpColor then
-                data.tpText:set_font_color(tpColor);
-                data.lastTpColor = tpColor;
-            end
-            data.tpText:set_visible(true);
+            imgui.Dummy({totalRowWidth, vitalsFontSize + 2});
         else
             data.hpText:set_visible(false);
             data.mpText:set_visible(false);
@@ -276,20 +401,39 @@ function display.DrawWindow(settings)
         if gConfig.petBarShowTimers ~= false then
             local timers = data.GetPetAbilityTimers();
             if #timers > 0 then
-                imgui.Dummy({0, barSpacing + 4});
+                local iconScale = gConfig.petBarIconsScale or 1.0;
+                local iconOffsetX = gConfig.petBarIconsOffsetX or 0;
+                local iconOffsetY = gConfig.petBarIconsOffsetY or 0;
+                local scaledIconSize = data.ABILITY_ICON_SIZE * iconScale;
+                local iconSpacing = 4 * iconScale;
 
-                local iconX, iconY = imgui.GetCursorScreenPos();
-                local drawList = imgui.GetWindowDrawList();
-                local iconSpacing = 4;
+                local iconX, iconY;
+                local drawList;
+
+                if gConfig.petBarIconsAbsolute then
+                    -- Absolute positioning: relative to window top-left
+                    iconX = windowPosX + iconOffsetX;
+                    iconY = windowPosY + iconOffsetY;
+                    drawList = imgui.GetForegroundDrawList();
+                else
+                    -- In container: flow within the pet bar
+                    imgui.Dummy({0, barSpacing + 4});
+                    iconX, iconY = imgui.GetCursorScreenPos();
+                    iconX = iconX + iconOffsetX;
+                    iconY = iconY + iconOffsetY;
+                    drawList = imgui.GetWindowDrawList();
+                end
 
                 for i, timerInfo in ipairs(timers) do
                     if i > data.MAX_ABILITY_ICONS then break; end
 
-                    local posX = iconX + (i - 1) * (data.ABILITY_ICON_SIZE + iconSpacing);
-                    DrawAbilityIcon(drawList, posX, iconY, data.ABILITY_ICON_SIZE, timerInfo, colorConfig);
+                    local posX = iconX + (i - 1) * (scaledIconSize + iconSpacing);
+                    DrawAbilityIcon(drawList, posX, iconY, scaledIconSize, timerInfo, colorConfig);
                 end
 
-                imgui.Dummy({totalRowWidth, data.ABILITY_ICON_SIZE});
+                if not gConfig.petBarIconsAbsolute then
+                    imgui.Dummy({totalRowWidth, scaledIconSize});
+                end
             end
         end
 

@@ -26,8 +26,11 @@ petbar.Initialize = function(settings)
     data.distanceText:set_font_alignment(gdi.Alignment.Right);
 
     data.hpText = FontManager.create(settings.vitals_font_settings);
+    data.hpText:set_font_alignment(gdi.Alignment.Right);
     data.mpText = FontManager.create(settings.vitals_font_settings);
+    data.mpText:set_font_alignment(gdi.Alignment.Right);
     data.tpText = FontManager.create(settings.vitals_font_settings);
+    data.tpText:set_font_alignment(gdi.Alignment.Right);
 
     data.allFonts = {data.nameText, data.distanceText, data.hpText, data.mpText, data.tpText};
 
@@ -120,8 +123,11 @@ petbar.UpdateVisuals = function(settings)
     data.distanceText:set_font_alignment(gdi.Alignment.Right);
 
     data.hpText = FontManager.recreate(data.hpText, settings.vitals_font_settings);
+    data.hpText:set_font_alignment(gdi.Alignment.Right);
     data.mpText = FontManager.recreate(data.mpText, settings.vitals_font_settings);
+    data.mpText:set_font_alignment(gdi.Alignment.Right);
     data.tpText = FontManager.recreate(data.tpText, settings.vitals_font_settings);
+    data.tpText:set_font_alignment(gdi.Alignment.Right);
 
     data.allFonts = {data.nameText, data.distanceText, data.hpText, data.mpText, data.tpText};
 

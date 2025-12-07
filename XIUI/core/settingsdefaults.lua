@@ -30,7 +30,7 @@ local function createPartyDefaults(overrides)
         showCastBars = true,
         castBarScaleX = 1.0,
         castBarScaleY = 0.6,
-        showBookends = true,
+        showBookends = false,
         showTitle = true,
         flashTP = false,
         showTP = true,
@@ -100,10 +100,10 @@ local function createPartyColorDefaults(includeTP)
         barBackgroundOverride = T{ active = false, enabled = true, start = '#01122b', stop = '#061c39' },
         barBorderOverride = T{ active = false, color = '#01122b' },
         nameTextColor = 0xFFFFFFFF,
-        hpTextColor = 0xFFFFFFFF,
-        mpTextColor = 0xFFFFFFFF,
-        tpEmptyTextColor = 0xFF9acce8,
-        tpFullTextColor = 0xFF2fa9ff,
+        hpTextColor = 0xFFFFA7A7,
+        mpTextColor = 0xFFD4FF97,
+        tpEmptyTextColor = 0xFF8DC7FF,
+        tpFullTextColor = 0xFF8DC7FF,
         tpFlashColor = 0xFF3ECE00,
         bgColor = 0xFFFFFFFF,
         borderColor = 0xFFFFFFFF,
@@ -158,7 +158,7 @@ M.user_settings = T{
     playerBarScaleX = 1,
     playerBarScaleY = 1,
     playerBarFontSize = 12,
-    showPlayerBarBookends = true,
+    showPlayerBarBookends = false,
     alwaysShowMpBar = true,
     playerBarTpFlashEnabled = true,
     playerBarHideDuringEvents = true,
@@ -192,7 +192,7 @@ M.user_settings = T{
     showTargetHpPercent = true,
     showTargetHpPercentAllTargets = false,
     showTargetName = true,
-    showTargetBarBookends = true,
+    showTargetBarBookends = false,
     showTargetBarLockOnBorder = true,
     showTargetBarCastBar = true,
     showEnemyId = false,
@@ -210,11 +210,11 @@ M.user_settings = T{
     enemyListIconScale = 1,
     showEnemyDistance = false,
     showEnemyHPPText = true,
-    showEnemyListBookends = true,
+    showEnemyListBookends = false,
 
     expBarScaleX = 1,
     expBarScaleY = 1,
-    showExpBarBookends = true,
+    showExpBarBookends = false,
     expBarFontSize = 12,
     expBarShowText = true,
     expBarShowPercent = true,
@@ -379,7 +379,7 @@ M.user_settings = T{
     partyListStatusTheme = 0,
     partyListTheme = 0,
     partyListFlashTP = false,
-    showPartyListBookends = true,
+    showPartyListBookends = false,
     showPartyJobIcon = true,
     showPartyListTitle = true,
     showPartyListDistance = false,
@@ -521,7 +521,7 @@ M.user_settings = T{
 
     castBarScaleX = 1,
     castBarScaleY = 1,
-    showCastBarBookends = true,
+    showCastBarBookends = false,
     castBarFontSize = 12,
     castBarFastCastEnabled = false,
     castBarFastCastRDMSJ = 0.17,
@@ -561,7 +561,11 @@ M.user_settings = T{
     petBarShowVitals = true,
     petBarShowTimers = true,
     petBarShowImage = true,
-    petBarShowBookends = true,
+    petBarShowBookends = false,
+    petBarIconsAbsolute = true,
+    petBarIconsScale = 0.6,
+    petBarIconsOffsetX = 112,
+    petBarIconsOffsetY = 79,
     petBarBackgroundTheme = 'Window1',
     petBarBackgroundOpacity = 1.0,
     -- Legacy global pet image settings (kept for migration)
@@ -610,7 +614,7 @@ M.user_settings = T{
     petTargetBackgroundTheme = nil,  -- Uses petBarBackgroundTheme by default
 
     -- Bar Settings (global progress bar configuration)
-    showBookends = true,            -- Global bookend visibility (overrides individual bookend settings)
+    showBookends = false,            -- Global bookend visibility (overrides individual bookend settings)
     bookendSize = 10,               -- Minimum bookend width in pixels (5-20)
     healthBarFlashEnabled = true,   -- Flash effect when taking damage
     noBookendRounding = 4,          -- Bar roundness for bars without bookends (0-10)
@@ -629,10 +633,10 @@ M.user_settings = T{
             mpGradient = T{ enabled = true, start = '#9abb5a', stop = '#bfe07d' },
             tpGradient = T{ enabled = true, start = '#3898ce', stop = '#78c4ee' },
             tpOverlayGradient = T{ enabled = true, start = '#0078CC', stop = '#0078CC' },  -- TP overlay bar (1000+ stored)
-            hpTextColor = 0xFFFFFFFF,
-            mpTextColor = 0xFFdef2db,
-            tpEmptyTextColor = 0xFF9acce8,  -- TP < 1000
-            tpFullTextColor = 0xFF2fa9ff,   -- TP >= 1000
+            hpTextColor = 0xFFFFA7A7,
+            mpTextColor = 0xFFD4FF97,
+            tpEmptyTextColor = 0xFF8DC7FF,  -- TP < 1000
+            tpFullTextColor = 0xFF8DC7FF,   -- TP >= 1000
             tpFlashColor = 0xFF2fa9ff,      -- TP flash effect color
         },
 
@@ -747,9 +751,9 @@ M.user_settings = T{
             tpGradient = T{ enabled = true, start = '#3898ce', stop = '#78c4ee' },  -- Match playerBar TP
             nameTextColor = 0xFFFFFFFF,
             distanceTextColor = 0xFFFFFFFF,
-            hpTextColor = 0xFFFFFFFF,
-            mpTextColor = 0xFFFFFFFF,
-            tpTextColor = 0xFFFFFFFF,
+            hpTextColor = 0xFFFFA7A7,
+            mpTextColor = 0xFFD4FF97,
+            tpTextColor = 0xFF8DC7FF,
             targetTextColor = 0xFFFFFFFF,
             timerReadyColor = 0xFF00FF00,      -- Timer ready (green)
             timerRecastColor = 0xFFFFFF00,     -- Timer on cooldown (yellow)

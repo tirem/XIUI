@@ -169,6 +169,27 @@ local function DrawPetBarSettingsContent()
         end);
         imgui.ShowHelp('How pet HP is displayed on the bar.');
     end
+
+    if components.CollapsingSection('Ability Icons##petBar') then
+        -- Position mode
+        local positionModes = {'In Container', 'Absolute'};
+        local currentMode = gConfig.petBarIconsAbsolute and 'Absolute' or 'In Container';
+        components.DrawComboBox('Position Mode##petBarIcons', currentMode, positionModes, function(newValue)
+            gConfig.petBarIconsAbsolute = (newValue == 'Absolute');
+            SaveSettingsOnly();
+        end);
+        imgui.ShowHelp('In Container: Icons flow within the pet bar.\nAbsolute: Icons positioned independently from the pet bar.');
+
+        -- Scale
+        components.DrawSlider('Scale##petBarIcons', 'petBarIconsScale', 0.5, 2.0, '%.1f');
+        imgui.ShowHelp('Scale of the ability icons.');
+
+        -- X/Y Offset
+        components.DrawSlider('Offset X##petBarIcons', 'petBarIconsOffsetX', -200, 200);
+        imgui.ShowHelp('Horizontal offset for ability icons.');
+        components.DrawSlider('Offset Y##petBarIcons', 'petBarIconsOffsetY', -200, 200);
+        imgui.ShowHelp('Vertical offset for ability icons.');
+    end
 end
 
 -- Helper: Draw Pet Target specific settings (used in tab)
@@ -291,13 +312,12 @@ local function DrawPetBarColorSettingsContent()
             tpGradient = T{ enabled = true, start = '#3898ce', stop = '#78c4ee' },
             nameTextColor = 0xFFFFFFFF,
             distanceTextColor = 0xFFFFFFFF,
-            hpTextColor = 0xFFFFFFFF,
-            mpTextColor = 0xFFFFFFFF,
-            tpTextColor = 0xFFFFFFFF,
+            hpTextColor = 0xFFFFA7A7,
+            mpTextColor = 0xFFD4FF97,
+            tpTextColor = 0xFF8DC7FF,
             targetTextColor = 0xFFFFFFFF,
-            timerReadyColor = 0xFF00FF00,
-            timerRecastColor = 0xFFFFFF00,
-            durationWarningColor = 0xFFFF6600,
+            timerReadyColor = 0xE600FF00,
+            timerRecastColor = 0xD9FFFF00,
             bgColor = 0xFFFFFFFF,
             borderColor = 0xFFFFFFFF,
         };
@@ -338,9 +358,16 @@ local function DrawPetBarColorSettingsContent()
     end
 
     if components.CollapsingSection('Timer Colors##petBarColor') then
+        -- Ensure timer color settings exist
+        if gConfig.colorCustomization.petBar.timerReadyColor == nil then
+            gConfig.colorCustomization.petBar.timerReadyColor = 0xE600FF00;
+        end
+        if gConfig.colorCustomization.petBar.timerRecastColor == nil then
+            gConfig.colorCustomization.petBar.timerRecastColor = 0xD9FFFF00;
+        end
+
         components.DrawTextColorPicker("Timer Ready", gConfig.colorCustomization.petBar, 'timerReadyColor', "Color when ability is ready to use");
         components.DrawTextColorPicker("Timer Recast", gConfig.colorCustomization.petBar, 'timerRecastColor', "Color when ability is on cooldown");
-        components.DrawTextColorPicker("Duration Warning", gConfig.colorCustomization.petBar, 'durationWarningColor', "Color when charm/jug is about to expire");
     end
 
     if components.CollapsingSection('Background Colors##petBarColor') then
