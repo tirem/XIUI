@@ -45,8 +45,10 @@ local function DrawPetBarSettingsContent()
             DeferredUpdateVisuals();
         end);
         imgui.ShowHelp('Select the background window theme.');
-        components.DrawSlider('Opacity##petBarBg', 'petBarBackgroundOpacity', 0.0, 1.0, '%.2f');
+        components.DrawSlider('Background Opacity##petBarBg', 'petBarBackgroundOpacity', 0.0, 1.0, '%.2f');
         imgui.ShowHelp('Opacity of the background.');
+        components.DrawSlider('Border Opacity##petBarBg', 'petBarBorderOpacity', 0.0, 1.0, '%.2f');
+        imgui.ShowHelp('Opacity of the window borders (Window themes only).');
     end
 
     if gConfig.petBarShowImage and components.CollapsingSection('Pet Image##petBar') then
@@ -179,7 +181,7 @@ local function DrawPetTargetSettingsContent()
         imgui.ShowHelp('Font size for pet target text.');
     end
 
-    if components.CollapsingSection('Background Theme##petTarget') then
+    if components.CollapsingSection('Background##petTarget') then
         local bgThemes = {'-None-', 'Plain', 'Window1', 'Window2', 'Window3', 'Window4', 'Window5', 'Window6', 'Window7', 'Window8'};
         local currentTheme = gConfig.petTargetBackgroundTheme or gConfig.petBarBackgroundTheme or 'Window1';
         components.DrawComboBox('Theme##petTargetBg', currentTheme, bgThemes, function(newValue)
@@ -187,6 +189,10 @@ local function DrawPetTargetSettingsContent()
             DeferredUpdateVisuals();
         end);
         imgui.ShowHelp('Select the background window theme for pet target. Uses Pet Bar theme by default.');
+        components.DrawSlider('Background Opacity##petTargetBg', 'petTargetBackgroundOpacity', 0.0, 1.0, '%.2f');
+        imgui.ShowHelp('Opacity of the background. Uses Pet Bar opacity by default.');
+        components.DrawSlider('Border Opacity##petTargetBg', 'petTargetBorderOpacity', 0.0, 1.0, '%.2f');
+        imgui.ShowHelp('Opacity of the window borders. Uses Pet Bar border opacity by default.');
     end
 end
 
@@ -292,7 +298,13 @@ local function DrawPetBarColorSettingsContent()
             timerReadyColor = 0xFF00FF00,
             timerRecastColor = 0xFFFFFF00,
             durationWarningColor = 0xFFFF6600,
+            bgColor = 0xFFFFFFFF,
+            borderColor = 0xFFFFFFFF,
         };
+    end
+    -- Ensure borderColor exists (for existing configs)
+    if gConfig.colorCustomization.petBar.borderColor == nil then
+        gConfig.colorCustomization.petBar.borderColor = 0xFFFFFFFF;
     end
 
     if components.CollapsingSection('Bar Colors##petBarColor') then
@@ -332,7 +344,8 @@ local function DrawPetBarColorSettingsContent()
     end
 
     if components.CollapsingSection('Background Colors##petBarColor') then
-        components.DrawTextColorPicker("Background Tint", gConfig.colorCustomization.petBar, 'bgColor', "Tint color for Plain background theme");
+        components.DrawTextColorPicker("Background Tint", gConfig.colorCustomization.petBar, 'bgColor', "Tint color for background");
+        components.DrawTextColorPicker("Border Color", gConfig.colorCustomization.petBar, 'borderColor', "Color of window borders (Window themes only)");
     end
 end
 
@@ -343,7 +356,12 @@ local function DrawPetTargetColorSettingsContent()
         gConfig.colorCustomization.petTarget = T{
             bgColor = 0xFFFFFFFF,
             targetTextColor = 0xFFFFFFFF,
+            borderColor = 0xFFFFFFFF,
         };
+    end
+    -- Ensure borderColor exists (for existing configs)
+    if gConfig.colorCustomization.petTarget.borderColor == nil then
+        gConfig.colorCustomization.petTarget.borderColor = 0xFFFFFFFF;
     end
 
     if components.CollapsingSection('Text Colors##petTargetColor') then
@@ -351,7 +369,8 @@ local function DrawPetTargetColorSettingsContent()
     end
 
     if components.CollapsingSection('Background Colors##petTargetColor') then
-        components.DrawTextColorPicker("Background Tint", gConfig.colorCustomization.petTarget, 'bgColor', "Tint color for Plain background theme");
+        components.DrawTextColorPicker("Background Tint", gConfig.colorCustomization.petTarget, 'bgColor', "Tint color for background");
+        components.DrawTextColorPicker("Border Color", gConfig.colorCustomization.petTarget, 'borderColor', "Color of window borders (Window themes only)");
     end
 end
 

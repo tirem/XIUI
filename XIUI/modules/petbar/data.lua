@@ -290,27 +290,31 @@ end
 
 -- Update background primitives position and visibility
 function data.UpdateBackground(x, y, width, height, settings)
-    local bgPadding = data.PADDING;
+    local bgPadding = settings.bgPadding or data.PADDING;
+    local bgPaddingY = settings.bgPaddingY or data.PADDING;
     local bgWidth = width + (bgPadding * 2);
-    local bgHeight = height + (bgPadding * 2);
+    local bgHeight = height + (bgPaddingY * 2);
     local bgScale = settings.bgScale or 1.0;
     local bgTheme = gConfig.petBarBackgroundTheme or 'Window1';
+    local borderSize = settings.borderSize or 21;
+    local bgOffset = settings.bgOffset or 1;
 
-    -- Hide border primitives (not using themed borders for pet bar)
-    data.backgroundPrim.br.visible = false;
-    data.backgroundPrim.tr.visible = false;
-    data.backgroundPrim.tl.visible = false;
-    data.backgroundPrim.bl.visible = false;
+    -- Check if this is a Window theme (has borders)
+    local isWindowTheme = bgTheme:match('^Window%d+$') ~= nil;
 
     -- Handle background based on theme
     if bgTheme == '-None-' then
         -- No background at all
         data.backgroundPrim.bg.visible = false;
+        data.backgroundPrim.br.visible = false;
+        data.backgroundPrim.tr.visible = false;
+        data.backgroundPrim.tl.visible = false;
+        data.backgroundPrim.bl.visible = false;
     else
         -- Main background (works for both 'Plain' and Window themes)
         data.backgroundPrim.bg.visible = data.backgroundPrim.bg.exists;
         data.backgroundPrim.bg.position_x = x - bgPadding;
-        data.backgroundPrim.bg.position_y = y - bgPadding;
+        data.backgroundPrim.bg.position_y = y - bgPaddingY;
         data.backgroundPrim.bg.width = bgWidth / bgScale;
         data.backgroundPrim.bg.height = bgHeight / bgScale;
         -- Apply background color/tint and opacity
@@ -320,6 +324,54 @@ function data.UpdateBackground(x, y, width, height, settings)
         local bgAlphaByte = math.floor(bgOpacity * 255);
         local bgRGB = bit.band(bgColor, 0x00FFFFFF);
         data.backgroundPrim.bg.color = bit.bor(bit.lshift(bgAlphaByte, 24), bgRGB);
+
+        -- Show borders for Window themes
+        if isWindowTheme then
+            local borderBaseColor = gConfig.colorCustomization and gConfig.colorCustomization.petBar and gConfig.colorCustomization.petBar.borderColor or 0xFFFFFFFF;
+            local borderOpacity = gConfig.petBarBorderOpacity or 1.0;
+            -- Apply opacity to border color
+            local borderAlphaByte = math.floor(borderOpacity * 255);
+            local borderRGB = bit.band(borderBaseColor, 0x00FFFFFF);
+            local borderColor = bit.bor(bit.lshift(borderAlphaByte, 24), borderRGB);
+
+            -- Bottom-right corner
+            data.backgroundPrim.br.visible = data.backgroundPrim.br.exists;
+            data.backgroundPrim.br.position_x = data.backgroundPrim.bg.position_x + bgWidth - borderSize + bgOffset;
+            data.backgroundPrim.br.position_y = data.backgroundPrim.bg.position_y + bgHeight - borderSize + bgOffset;
+            data.backgroundPrim.br.width = borderSize;
+            data.backgroundPrim.br.height = borderSize;
+            data.backgroundPrim.br.color = borderColor;
+
+            -- Top-right edge (from top to br)
+            data.backgroundPrim.tr.visible = data.backgroundPrim.tr.exists;
+            data.backgroundPrim.tr.position_x = data.backgroundPrim.br.position_x;
+            data.backgroundPrim.tr.position_y = data.backgroundPrim.bg.position_y - bgOffset;
+            data.backgroundPrim.tr.width = borderSize;
+            data.backgroundPrim.tr.height = data.backgroundPrim.br.position_y - data.backgroundPrim.tr.position_y;
+            data.backgroundPrim.tr.color = borderColor;
+
+            -- Top-left (L-shaped: top and left edges)
+            data.backgroundPrim.tl.visible = data.backgroundPrim.tl.exists;
+            data.backgroundPrim.tl.position_x = data.backgroundPrim.bg.position_x - bgOffset;
+            data.backgroundPrim.tl.position_y = data.backgroundPrim.bg.position_y - bgOffset;
+            data.backgroundPrim.tl.width = data.backgroundPrim.tr.position_x - data.backgroundPrim.tl.position_x;
+            data.backgroundPrim.tl.height = data.backgroundPrim.br.position_y - data.backgroundPrim.tl.position_y;
+            data.backgroundPrim.tl.color = borderColor;
+
+            -- Bottom-left edge (from left to br)
+            data.backgroundPrim.bl.visible = data.backgroundPrim.bl.exists;
+            data.backgroundPrim.bl.position_x = data.backgroundPrim.tl.position_x;
+            data.backgroundPrim.bl.position_y = data.backgroundPrim.bg.position_y + bgHeight - borderSize + bgOffset;
+            data.backgroundPrim.bl.width = data.backgroundPrim.br.position_x - data.backgroundPrim.bl.position_x;
+            data.backgroundPrim.bl.height = borderSize;
+            data.backgroundPrim.bl.color = borderColor;
+        else
+            -- Hide borders for Plain theme
+            data.backgroundPrim.br.visible = false;
+            data.backgroundPrim.tr.visible = false;
+            data.backgroundPrim.tl.visible = false;
+            data.backgroundPrim.bl.visible = false;
+        end
     end
 
     -- Pet image overlay (show correct avatar based on current pet)
@@ -372,12 +424,19 @@ function data.UpdateBackground(x, y, width, height, settings)
             local color = bit.bor(bit.lshift(alphaByte, 24), 0x00FFFFFF);
 
             if clipToBackground then
-                -- Calculate background bounds (background extends PADDING outside window)
-                local bgPadding = data.PADDING;
-                local bgLeft = x - bgPadding;
-                local bgTop = y - bgPadding;
-                local bgRight = x + width + bgPadding;
-                local bgBottom = y + height + bgPadding;
+                -- Calculate background bounds including border area
+                -- Background extends PADDING outside window, borders extend further based on bgOffset
+                local clipBgPadding = settings.bgPadding or data.PADDING;
+                local clipBgPaddingY = settings.bgPaddingY or data.PADDING;
+                local bgTheme = gConfig.petBarBackgroundTheme or 'Window1';
+                local isWindowTheme = bgTheme:match('^Window%d+$') ~= nil;
+                local clipBgOffset = isWindowTheme and (settings.bgOffset or 1) or 0;
+
+                -- When borders are visible, extend clip bounds to include border area
+                local bgLeft = x - clipBgPadding - clipBgOffset;
+                local bgTop = y - clipBgPaddingY - clipBgOffset;
+                local bgRight = x + width + clipBgPadding + clipBgOffset;
+                local bgBottom = y + height + clipBgPaddingY + clipBgOffset;
 
                 -- Calculate intersection of image bounds with background bounds
                 local imgRight = imgX + imgWidth;
