@@ -14,5 +14,6 @@ modules.giltracker = require('modules.giltracker');
 modules.inventory = require('modules.inventory.init');
 modules.partylist = require('modules.partylist.init');
 modules.castbar = require('modules.castbar');
+modules.petbar = require('modules.petbar.init');
 
 return modules;

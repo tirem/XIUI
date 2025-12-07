@@ -58,6 +58,7 @@ local storageTracker = uiMods.inventory.storage;
 local wardrobeTracker = uiMods.inventory.wardrobe;
 local partyList = uiMods.partylist;
 local castBar = uiMods.castbar;
+local petBar = uiMods.petbar;
 local configMenu = require('config');
 local debuffHandler = require('handlers.debuffhandler');
 local actionTracker = require('handlers.actiontracker');
@@ -201,6 +202,13 @@ uiModules.Register('mobInfo', {
     module = mobInfo.display,
     settingsKey = 'mobInfoSettings',
     configKey = 'showMobInfo',
+    hasSetHidden = true,
+});
+uiModules.Register('petBar', {
+    module = petBar,
+    settingsKey = 'petBarSettings',
+    configKey = 'showPetBar',
+    hideOnEventKey = 'petBarHideDuringEvents',
     hasSetHidden = true,
 });
 
@@ -408,6 +416,11 @@ end);
 
 ashita.events.register('packet_in', 'packet_in_cb', function (e)
     expBar.HandlePacket(e)
+
+    -- Pet bar packet handling (0x0028 Action, 0x0068 Pet Sync)
+    if gConfig.showPetBar then
+        petBar.HandlePacket(e);
+    end
 
     if (e.id == 0x0028) then
         local actionPacket = ParseActionPacket(e);

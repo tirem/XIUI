@@ -133,6 +133,7 @@ M.user_settings = T{
     showInventoryTracker = true,
     showPartyList = true,
     showCastBar = true,
+    showPetBar = true,
 
     statusIconTheme = 'XIView',
     jobIconTheme = 'FFXI',
@@ -551,6 +552,61 @@ M.user_settings = T{
         [22] = 0.02, -- RUN
     },
 
+    -- Pet Bar settings
+    petBarScaleX = 1.0,
+    petBarScaleY = 1.0,
+    petBarHideDuringEvents = true,
+    petBarShowDistance = true,
+    petBarShowTarget = true,
+    petBarShowVitals = true,
+    petBarShowTimers = true,
+    petBarShowImage = true,
+    petBarShowBookends = true,
+    petBarBackgroundTheme = 'Window1',
+    petBarBackgroundOpacity = 1.0,
+    -- Legacy global pet image settings (kept for migration)
+    petBarImageScale = 0.4,
+    petBarImageOpacity = 0.3,
+    petBarImageOffsetX = 0,
+    petBarImageOffsetY = 0,
+
+    -- Per-avatar image settings
+    petBarAvatarSettings = T{
+        carbuncle = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        ifrit = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        shiva = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        garuda = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        titan = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        ramuh = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        leviathan = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        fenrir = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        diabolos = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        atomos = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        odin = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        caitsith = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        firespirit = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        icespirit = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        airspirit = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        earthspirit = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        thunderspirit = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        waterspirit = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        lightspirit = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+        darkspirit = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0 },
+    },
+    petBarHpScaleX = 1.0,
+    petBarHpScaleY = 1.0,
+    petBarMpScaleX = 1.0,
+    petBarMpScaleY = 1.0,
+    petBarTpScaleX = 1.0,
+    petBarTpScaleY = 1.0,
+    petBarNameFontSize = 12,
+    petBarDistanceFontSize = 10,
+    petBarVitalsFontSize = 10,
+    petBarTimerFontSize = 10,
+    petBarHpDisplayMode = 'percent', -- 'percent', 'number'
+    petBarTargetFontSize = 10,
+    petTargetBackgroundTheme = nil,  -- Uses petBarBackgroundTheme by default
+
     -- Bar Settings (global progress bar configuration)
     showBookends = true,            -- Global bookend visibility (overrides individual bookend settings)
     bookendSize = 10,               -- Minimum bookend width in pixels (5-20)
@@ -680,6 +736,29 @@ M.user_settings = T{
             barGradient = T{ enabled = true, start = '#3798ce', stop = '#78c5ee' },
             spellTextColor = 0xFFFFFFFF,
             percentTextColor = 0xFFFFFFFF,
+        },
+
+        -- Pet Bar
+        petBar = T{
+            hpGradient = T{ enabled = true, start = '#e26c6c', stop = '#fa9c9c' },  -- Match playerBar high HP
+            mpGradient = T{ enabled = true, start = '#9abb5a', stop = '#bfe07d' },  -- Match playerBar MP
+            tpGradient = T{ enabled = true, start = '#3898ce', stop = '#78c4ee' },  -- Match playerBar TP
+            nameTextColor = 0xFFFFFFFF,
+            distanceTextColor = 0xFFFFFFFF,
+            hpTextColor = 0xFFFFFFFF,
+            mpTextColor = 0xFFFFFFFF,
+            tpTextColor = 0xFFFFFFFF,
+            targetTextColor = 0xFFFFFFFF,
+            timerReadyColor = 0xFF00FF00,      -- Timer ready (green)
+            timerRecastColor = 0xFFFFFF00,     -- Timer on cooldown (yellow)
+            durationWarningColor = 0xFFFF6600, -- Charm/Jug about to expire (orange)
+            bgColor = 0xFFFFFFFF,              -- Background tint (for Plain theme)
+        },
+
+        -- Pet Target
+        petTarget = T{
+            bgColor = 0xFFFFFFFF,              -- Background tint (for Plain theme)
+            targetTextColor = 0xFFFFFFFF,
         },
 
         -- Mob Info
@@ -1176,6 +1255,61 @@ M.default_settings = T{
             font_family = 'Consolas',
             font_height = 15,
             font_color = 0xFFFFFFFF,
+            font_flags = gdi.FontFlags.None,
+            outline_color = 0xFF000000,
+            outline_width = 2,
+        },
+    },
+
+    -- settings for pet bar
+    petBarSettings = T{
+        barWidth = 150,
+        barHeight = 12,
+        barSpacing = 4,
+        bgPadding = 8,
+        bgPaddingY = 8,
+        bgOffset = 0,
+        bgScale = 1.0,
+        borderSize = 4,
+        prim_data = T{
+            visible = false,
+            can_focus = false,
+            locked = true,
+            width = 100,
+            height = 100,
+        },
+        name_font_settings = T{
+            font_alignment = gdi.Alignment.Left,
+            font_family = 'Consolas',
+            font_height = 12,
+            font_color = 0xFFFFFFFF,
+            font_flags = gdi.FontFlags.None,
+            outline_color = 0xFF000000,
+            outline_width = 2,
+        },
+        distance_font_settings = T{
+            font_alignment = gdi.Alignment.Right,
+            font_family = 'Consolas',
+            font_height = 10,
+            font_color = 0xFFFFFFFF,
+            font_flags = gdi.FontFlags.None,
+            outline_color = 0xFF000000,
+            outline_width = 2,
+        },
+        vitals_font_settings = T{
+            font_alignment = gdi.Alignment.Left,
+            font_family = 'Consolas',
+            font_height = 10,
+            font_color = 0xFFFFFFFF,
+            font_flags = gdi.FontFlags.None,
+            outline_color = 0xFF000000,
+            outline_width = 2,
+        },
+        timer_font_settings = T{
+            font_alignment = gdi.Alignment.Left,
+            font_family = 'Consolas',
+            font_height = 10,
+            font_color = 0xFFFFFF00,
             font_flags = gdi.FontFlags.None,
             outline_color = 0xFF000000,
             outline_width = 2,

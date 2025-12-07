@@ -55,6 +55,7 @@ GetTargetSafe = memoryLib.GetTargetSafe;
 GetInventorySafe = memoryLib.GetInventorySafe;
 GetCastBarSafe = memoryLib.GetCastBarSafe;
 GetRecastSafe = memoryLib.GetRecastSafe;
+GetPetSafe = memoryLib.GetPetSafe;
 
 -- Entity Utilities (from entity.lua)
 GetIsMob = entityLib.GetIsMob;
@@ -115,6 +116,7 @@ valid_server_id = packetsLib.valid_server_id;
 
 -- Texture Utilities (from textures.lua)
 LoadTexture = texturesLib.LoadTexture;
+LoadTextureWithExt = texturesLib.LoadTextureWithExt;
 
 -- HP Utilities (from hp.lua)
 HpInterpolation = hpLib.HpInterpolation;

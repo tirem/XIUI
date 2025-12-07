@@ -91,6 +91,12 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
     -- Mob Info fonts
     applyGlobalFontSettings(gAdjustedSettings.mobInfoSettings.level_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
 
+    -- Pet Bar fonts
+    applyGlobalFontSettings(gAdjustedSettings.petBarSettings.name_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
+    applyGlobalFontSettings(gAdjustedSettings.petBarSettings.distance_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
+    applyGlobalFontSettings(gAdjustedSettings.petBarSettings.vitals_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
+    applyGlobalFontSettings(gAdjustedSettings.petBarSettings.timer_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
+
     -- Target Bar dimensions and settings
     gAdjustedSettings.targetBarSettings.barWidth = ds.targetBarSettings.barWidth * us.targetBarScaleX;
     gAdjustedSettings.targetBarSettings.barHeight = ds.targetBarSettings.barHeight * us.targetBarScaleY;
@@ -289,6 +295,15 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
 
     -- Mob Info
     gAdjustedSettings.mobInfoSettings.level_font_settings.font_height = math.max(us.mobInfoFontSize, 8);
+
+    -- Pet Bar
+    gAdjustedSettings.petBarSettings.barWidth = ds.petBarSettings.barWidth * us.petBarScaleX;
+    gAdjustedSettings.petBarSettings.barHeight = ds.petBarSettings.barHeight * us.petBarScaleY;
+    gAdjustedSettings.petBarSettings.barSpacing = ds.petBarSettings.barSpacing * us.petBarScaleY;
+    gAdjustedSettings.petBarSettings.name_font_settings.font_height = math.max(us.petBarNameFontSize, 8);
+    gAdjustedSettings.petBarSettings.distance_font_settings.font_height = math.max(us.petBarDistanceFontSize, 8);
+    gAdjustedSettings.petBarSettings.vitals_font_settings.font_height = math.max(us.petBarVitalsFontSize, 8);
+    gAdjustedSettings.petBarSettings.timer_font_settings.font_height = math.max(us.petBarTimerFontSize, 8);
 end
 
 return M;

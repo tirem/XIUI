@@ -19,6 +19,7 @@ local expbarModule = require('config.expbar');
 local giltrackerModule = require('config.giltracker');
 local inventoryModule = require('config.inventory');
 local castbarModule = require('config.castbar');
+local petbarModule = require('config.petbar');
 
 local config = {};
 
@@ -43,6 +44,8 @@ local selectedInventoryTab = 1;  -- 1 = Inventory, 2 = Satchel
 local selectedInventoryColorTab = 1;  -- 1 = Inventory, 2 = Satchel (for color settings)
 local selectedTargetBarTab = 1;  -- 1 = Target Bar, 2 = Mob Info
 local selectedTargetBarColorTab = 1;  -- 1 = Target Bar, 2 = Mob Info (for color settings)
+local selectedPetBarTab = 1;  -- 1 = Pet Bar, 2 = Pet Target
+local selectedPetBarColorTab = 1;  -- 1 = Pet Bar, 2 = Pet Target (for color settings)
 
 -- Category definitions
 local categories = {
@@ -55,6 +58,7 @@ local categories = {
     { name = 'gilTracker', label = 'Gil Tracker' },
     { name = 'inventory', label = 'Inventory' },
     { name = 'castBar', label = 'Cast Bar' },
+    { name = 'petBar', label = 'Pet Bar' },
 };
 
 -- Build state object for modules that need tab state
@@ -66,6 +70,8 @@ local function buildState()
         selectedInventoryColorTab = selectedInventoryColorTab,
         selectedTargetBarTab = selectedTargetBarTab,
         selectedTargetBarColorTab = selectedTargetBarColorTab,
+        selectedPetBarTab = selectedPetBarTab,
+        selectedPetBarColorTab = selectedPetBarColorTab,
         githubTexture = githubTexture,
     };
 end
@@ -76,6 +82,7 @@ local function applySettingsState(newState)
         if newState.selectedPartyTab then selectedPartyTab = newState.selectedPartyTab; end
         if newState.selectedInventoryTab then selectedInventoryTab = newState.selectedInventoryTab; end
         if newState.selectedTargetBarTab then selectedTargetBarTab = newState.selectedTargetBarTab; end
+        if newState.selectedPetBarTab then selectedPetBarTab = newState.selectedPetBarTab; end
     end
 end
 
@@ -84,6 +91,7 @@ local function applyColorState(newState)
         if newState.selectedPartyColorTab then selectedPartyColorTab = newState.selectedPartyColorTab; end
         if newState.selectedInventoryColorTab then selectedInventoryColorTab = newState.selectedInventoryColorTab; end
         if newState.selectedTargetBarColorTab then selectedTargetBarColorTab = newState.selectedTargetBarColorTab; end
+        if newState.selectedPetBarColorTab then selectedPetBarColorTab = newState.selectedPetBarColorTab; end
     end
 end
 
@@ -127,6 +135,11 @@ local function DrawCastBarSettings()
     castbarModule.DrawSettings();
 end
 
+local function DrawPetBarSettings()
+    local newState = petbarModule.DrawSettings(buildState());
+    applySettingsState(newState);
+end
+
 -- Color settings draw functions with state handling
 local function DrawGlobalColorSettings()
     globalModule.DrawColorSettings();
@@ -167,6 +180,11 @@ local function DrawCastBarColorSettings()
     castbarModule.DrawColorSettings();
 end
 
+local function DrawPetBarColorSettings()
+    local newState = petbarModule.DrawColorSettings(buildState());
+    applyColorState(newState);
+end
+
 -- Dispatch tables for settings and color settings
 local settingsDrawFunctions = {
     DrawGlobalSettings,
@@ -178,6 +196,7 @@ local settingsDrawFunctions = {
     DrawGilTrackerSettings,
     DrawInventorySettings,
     DrawCastBarSettings,
+    DrawPetBarSettings,
 };
 
 local colorSettingsDrawFunctions = {
@@ -190,6 +209,7 @@ local colorSettingsDrawFunctions = {
     DrawGilTrackerColorSettings,
     DrawInventoryColorSettings,
     DrawCastBarColorSettings,
+    DrawPetBarColorSettings,
 };
 
 config.DrawWindow = function(us)

@@ -83,4 +83,14 @@ function M.GetRecastSafe()
     return memMgr:GetRecast();
 end
 
+-- Safe accessor for pet entity
+-- Returns the player's pet entity if one exists, nil otherwise
+function M.GetPetSafe()
+    local playerEntity = GetPlayerEntity();
+    if playerEntity == nil or playerEntity.PetTargetIndex == 0 then
+        return nil;
+    end
+    return GetEntity(playerEntity.PetTargetIndex);
+end
+
 return M;
