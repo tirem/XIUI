@@ -37,7 +37,9 @@ data.petImageMap = {
     ['Diabolos'] = 'avatars/diabolos.png',
     ['Atomos'] = 'avatars/atomos.png',
     ['Odin'] = 'avatars/odin.png',
+    ['Alexander'] = 'avatars/alexander.png',
     ['Cait Sith'] = 'avatars/caitsith.png',
+    ['Siren'] = 'avatars/siren.png',
     -- Spirits
     ['Fire Spirit'] = 'spirits/firespirit.png',
     ['Ice Spirit'] = 'spirits/icespirit.png',
@@ -52,7 +54,8 @@ data.petImageMap = {
 -- Ordered list of avatars for config dropdown
 data.avatarList = {
     'Carbuncle', 'Ifrit', 'Shiva', 'Garuda', 'Titan', 'Ramuh',
-    'Leviathan', 'Fenrir', 'Diabolos', 'Atomos', 'Odin', 'Cait Sith',
+    'Leviathan', 'Fenrir', 'Diabolos', 'Atomos', 'Odin', 'Alexander',
+    'Cait Sith', 'Siren',
     'Fire Spirit', 'Ice Spirit', 'Air Spirit', 'Earth Spirit',
     'Thunder Spirit', 'Water Spirit', 'Light Spirit', 'Dark Spirit',
 };
@@ -414,11 +417,13 @@ function data.UpdateBackground(x, y, width, height, settings)
                 prim.visible = true;
                 prim.position_x = imgX;
                 prim.position_y = imgY;
-                prim.color = color;
-                prim.scale_x = petImageScale;
-                prim.scale_y = petImageScale;
+                prim.texture_offset_x = 0;
+                prim.texture_offset_y = 0;
                 prim.width = baseWidth;
                 prim.height = baseHeight;
+                prim.scale_x = petImageScale;
+                prim.scale_y = petImageScale;
+                prim.color = color;
             end
         end
     end
