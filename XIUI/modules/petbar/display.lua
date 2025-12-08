@@ -176,15 +176,21 @@ local function DrawAbilityIcon(drawList, x, y, size, timerInfo, colorConfig)
         if progress > 0 then
             local fillColor = imgui.GetColorU32(color.ARGBToImGui(recastHex));
 
-            -- Draw clockwise fill arc (from 12 o'clock position)
-            local startAngle = -math.pi / 2;
-            local endAngle = startAngle + (progress * 2 * math.pi);
+            -- Check if Path methods are available (Ashita 4.3+)
+            if drawList.PathClear then
+                -- Draw clockwise fill arc (from 12 o'clock position)
+                local startAngle = -math.pi / 2;
+                local endAngle = startAngle + (progress * 2 * math.pi);
 
-            drawList:PathClear();
-            drawList:PathLineTo({centerX, centerY});
-            local numSegments = math.max(3, math.floor(32 * progress));
-            drawList:PathArcTo({centerX, centerY}, innerRadius, startAngle, endAngle, numSegments);
-            drawList:PathFillConvex(fillColor);
+                drawList:PathClear();
+                drawList:PathLineTo({centerX, centerY});
+                local numSegments = math.max(3, math.floor(32 * progress));
+                drawList:PathArcTo({centerX, centerY}, innerRadius, startAngle, endAngle, numSegments);
+                drawList:PathFillConvex(fillColor);
+            else
+                -- Fallback for Ashita 4.0: draw simple filled circle for progress
+                drawList:AddCircleFilled({centerX, centerY}, innerRadius * progress, fillColor, 32);
+            end
         end
     else
         local readyColor = imgui.GetColorU32(color.ARGBToImGui(readyHex));
