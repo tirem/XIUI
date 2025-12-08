@@ -8,7 +8,7 @@ require('handlers.helpers');
 local ffi = require('ffi');
 local d3d8 = require('d3d8');
 local gdi = require('submodules.gdifonts.include');
-local primitives = require('primitives');
+local windowBg = require('libs.windowbackground');
 local encoding = require('submodules.gdifonts.encoding');
 
 local data = require('modules.partylist.data');
@@ -86,20 +86,19 @@ partyList.Initialize = function(settings)
         end
     end
 
-    -- Initialize background primitives
+    -- Initialize background primitives using windowbackground library
     data.loadedBg = {};
 
-    for i = 1, 3 do
-        local backgroundPrim = {};
+    for partyIndex = 1, 3 do
+        local cache = data.partyConfigCache[partyIndex];
+        data.loadedBg[partyIndex] = cache.backgroundName;
 
-        for _, k in ipairs(data.bgImageKeys) do
-            backgroundPrim[k] = primitives:new(settings.prim_data);
-            backgroundPrim[k].visible = false;
-            backgroundPrim[k].can_focus = false;
-            backgroundPrim[k].exists = false;
-        end
-
-        data.partyWindowPrim[i].background = backgroundPrim;
+        -- Create combined background + borders using windowbackground library
+        data.partyWindowPrim[partyIndex].background = windowBg.create(
+            settings.prim_data,
+            cache.backgroundName,
+            cache.bgScale
+        );
     end
 
     -- Calculate initial reference heights
@@ -125,27 +124,6 @@ partyList.Initialize = function(settings)
                     cursorTexture.height = 32;
                 end
                 data.cursorTextures[cursorName] = cursorTexture;
-            end
-        end
-    end
-
-    -- Load background primitives textures
-    for partyIndex = 1, 3 do
-        local cache = data.partyConfigCache[partyIndex];
-        local backgroundPrim = data.partyWindowPrim[partyIndex].background;
-        data.loadedBg[partyIndex] = cache.backgroundName;
-
-        for _, k in ipairs(data.bgImageKeys) do
-            local file_name = string.format('%s-%s.png', cache.backgroundName, k);
-            local filepath = string.format('%s/assets/backgrounds/%s', addon.path, file_name);
-            backgroundPrim[k].texture = filepath;
-            backgroundPrim[k].exists = ashita.fs.exists(filepath);
-            if k == 'bg' then
-                backgroundPrim[k].scale_x = cache.bgScale;
-                backgroundPrim[k].scale_y = cache.bgScale;
-            else
-                backgroundPrim[k].scale_x = 1.0;
-                backgroundPrim[k].scale_y = 1.0;
             end
         end
     end
@@ -256,7 +234,7 @@ partyList.UpdateVisuals = function(settings)
         end
     end
 
-    -- Update background primitives
+    -- Update background primitives using windowbackground library
     for partyIndex = 1, 3 do
         local cache = data.partyConfigCache[partyIndex];
         local backgroundPrim = data.partyWindowPrim[partyIndex].background;
@@ -265,24 +243,8 @@ partyList.UpdateVisuals = function(settings)
         local bgChanged = cache.backgroundName ~= data.loadedBg[partyIndex];
         data.loadedBg[partyIndex] = cache.backgroundName;
 
-        for _, k in ipairs(data.bgImageKeys) do
-            local file_name = string.format('%s-%s.png', cache.backgroundName, k);
-            if (bgChanged) then
-                -- Keep width/height to prevent flicker when switching to new texture
-                local width, height = backgroundPrim[k].width, backgroundPrim[k].height;
-                local filepath = string.format('%s/assets/backgrounds/%s', addon.path, file_name);
-                backgroundPrim[k].texture = filepath;
-                backgroundPrim[k].width, backgroundPrim[k].height = width, height;
-                backgroundPrim[k].exists = ashita.fs.exists(filepath);
-            end
-            -- Only scale the main background, not the borders
-            if k == 'bg' then
-                backgroundPrim[k].scale_x = cache.bgScale;
-                backgroundPrim[k].scale_y = cache.bgScale;
-            else
-                backgroundPrim[k].scale_x = 1.0;
-                backgroundPrim[k].scale_y = 1.0;
-            end
+        if bgChanged then
+            windowBg.setTheme(backgroundPrim, cache.backgroundName, cache.bgScale);
         end
     end
 end
@@ -318,13 +280,12 @@ partyList.Cleanup = function()
         end
     end
 
-    -- Destroy primitives
+    -- Destroy background primitives using windowbackground library
     for i = 1, 3 do
         local backgroundPrim = data.partyWindowPrim[i].background;
-        for _, k in ipairs(data.bgImageKeys) do
-            if backgroundPrim[k] and backgroundPrim[k].destroy then
-                backgroundPrim[k]:destroy();
-            end
+        if backgroundPrim then
+            windowBg.destroy(backgroundPrim);
+            data.partyWindowPrim[i].background = nil;
         end
     end
 

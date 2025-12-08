@@ -568,7 +568,7 @@ M.user_settings = T{
     petBarShowLevel = true, -- Show pet level in name
     petBarIconsAbsolute = true,
     petBarIconsScale = 0.6,
-    petBarIconsOffsetX = 93,
+    petBarIconsOffsetX = 128,
     petBarIconsOffsetY = 78,
     -- Distance text positioning (absolute = relative to window top-left)
     petBarDistanceAbsolute = true,
@@ -588,8 +588,8 @@ M.user_settings = T{
     -- SMN abilities
     petBarSmnShowBPRage = true,
     petBarSmnShowBPWard = true,
-    petBarSmnShowApogee = true,
-    petBarSmnShowManaCede = true,
+    petBarSmnShowApogee = false,
+    petBarSmnShowManaCede = false,
     -- BST abilities
     petBarBstShowReady = true,
     petBarBstShowSic = true,
@@ -652,6 +652,20 @@ M.user_settings = T{
     petBarHpDisplayMode = 'percent', -- 'percent', 'number'
     petBarTargetFontSize = 10,
     petTargetBackgroundTheme = nil,  -- Uses petBarBackgroundTheme by default
+
+    -- Pet Target text positioning (absolute = relative to window top-left, inline = flow with layout)
+    -- Target Name positioning
+    petTargetNameAbsolute = false,       -- Inline by default (in row with HP%)
+    petTargetNameOffsetX = 0,
+    petTargetNameOffsetY = 0,
+    -- HP% text positioning
+    petTargetHpAbsolute = false,         -- Inline by default (right side of name row)
+    petTargetHpOffsetX = 0,
+    petTargetHpOffsetY = 0,
+    -- Distance text positioning
+    petTargetDistanceAbsolute = true,    -- Absolute by default
+    petTargetDistanceOffsetX = 11,
+    petTargetDistanceOffsetY = 50,
 
     -- Bar Settings (global progress bar configuration)
     showBookends = false,            -- Global bookend visibility (overrides individual bookend settings)
@@ -819,6 +833,8 @@ M.user_settings = T{
             hpGradient = T{ enabled = true, start = '#e26c6c', stop = '#fb9494' },
             bgColor = 0xFFFF8D8D,              -- Background tint (for Plain theme)
             targetTextColor = 0xFFFFFFFF,
+            hpTextColor = 0xFFFFA7A7,          -- HP% text color
+            distanceTextColor = 0xFFFFFFFF,    -- Distance text color
             borderColor = 0xFFFF8D8D,
         },
 

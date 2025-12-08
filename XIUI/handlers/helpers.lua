@@ -27,6 +27,7 @@ local fastcastLib = require('libs.fastcast');
 local formatLib = require('libs.format');
 local colorLib = require('libs.color');
 local statusIconsLib = require('libs.statusicons');
+local windowBackgroundLib = require('libs.windowbackground');
 
 -- Handler imports (still in handlers/)
 local statusHandler = require('handlers.statushandler');
@@ -165,3 +166,6 @@ ClearDebuffFontCache = statusIconsLib.ClearDebuffFontCache;
 
 -- Legacy debuffTable global (for backwards compatibility)
 debuffTable = statusIconsLib.GetDebuffTable();
+
+-- Window Background Utilities (from windowbackground.lua)
+WindowBackground = windowBackgroundLib;

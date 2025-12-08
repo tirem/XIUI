@@ -10,6 +10,7 @@ local imgui = require('imgui');
 local statusHandler = require('handlers.statushandler');
 local buffTable = require('libs.bufftable');
 local progressbar = require('libs.progressbar');
+local windowBg = require('libs.windowbackground');
 local encoding = require('submodules.gdifonts.encoding');
 local ashita_settings = require('settings');
 
@@ -1004,46 +1005,21 @@ function display.DrawPartyWindow(settings, party, partyIndex)
     data.fullMenuWidth[partyIndex] = menuWidth;
     data.fullMenuHeight[partyIndex] = menuHeight;
 
+    -- Calculate background dimensions (needed for title positioning)
     local bgWidth = data.fullMenuWidth[partyIndex] + (settings.bgPadding * 2);
-    local bgHeight = data.fullMenuHeight[partyIndex] + (settings.bgPaddingY * 2);
 
-    local bgColor = cache.colors.bgColor;
-    local borderColor = cache.colors.borderColor;
-
-    backgroundPrim.bg.visible = backgroundPrim.bg.exists;
-    backgroundPrim.bg.position_x = imguiPosX - settings.bgPadding;
-    backgroundPrim.bg.position_y = imguiPosY - settings.bgPaddingY;
-    backgroundPrim.bg.width = bgWidth / cache.bgScale;
-    backgroundPrim.bg.height = bgHeight / cache.bgScale;
-    backgroundPrim.bg.color = bgColor;
-
-    backgroundPrim.br.visible = backgroundPrim.br.exists;
-    backgroundPrim.br.position_x = backgroundPrim.bg.position_x + bgWidth - settings.borderSize + settings.bgOffset;
-    backgroundPrim.br.position_y = backgroundPrim.bg.position_y + bgHeight - settings.borderSize + settings.bgOffset;
-    backgroundPrim.br.width = settings.borderSize;
-    backgroundPrim.br.height = settings.borderSize;
-    backgroundPrim.br.color = borderColor;
-
-    backgroundPrim.tr.visible = backgroundPrim.tr.exists;
-    backgroundPrim.tr.position_x = backgroundPrim.br.position_x;
-    backgroundPrim.tr.position_y = backgroundPrim.bg.position_y - settings.bgOffset;
-    backgroundPrim.tr.width = settings.borderSize;
-    backgroundPrim.tr.height = backgroundPrim.br.position_y - backgroundPrim.tr.position_y;
-    backgroundPrim.tr.color = borderColor;
-
-    backgroundPrim.tl.visible = backgroundPrim.tl.exists;
-    backgroundPrim.tl.position_x = backgroundPrim.bg.position_x - settings.bgOffset;
-    backgroundPrim.tl.position_y = backgroundPrim.bg.position_y - settings.bgOffset;
-    backgroundPrim.tl.width = backgroundPrim.tr.position_x - backgroundPrim.tl.position_x;
-    backgroundPrim.tl.height = backgroundPrim.br.position_y - backgroundPrim.tl.position_y;
-    backgroundPrim.tl.color = borderColor;
-
-    backgroundPrim.bl.visible = backgroundPrim.bl.exists;
-    backgroundPrim.bl.position_x = backgroundPrim.tl.position_x;
-    backgroundPrim.bl.position_y = backgroundPrim.bg.position_y + bgHeight - settings.borderSize + settings.bgOffset;
-    backgroundPrim.bl.width = backgroundPrim.br.position_x - backgroundPrim.bl.position_x;
-    backgroundPrim.bl.height = settings.borderSize;
-    backgroundPrim.bl.color = borderColor;
+    -- Update background and borders using windowbackground library
+    local bgOptions = {
+        theme = cache.backgroundName,
+        padding = settings.bgPadding,
+        paddingY = settings.bgPaddingY,
+        bgScale = cache.bgScale,
+        bgColor = cache.colors.bgColor,
+        borderSize = settings.borderSize,
+        bgOffset = settings.bgOffset,
+        borderColor = cache.colors.borderColor,
+    };
+    windowBg.update(backgroundPrim, imguiPosX, imguiPosY, data.fullMenuWidth[partyIndex], data.fullMenuHeight[partyIndex], bgOptions);
 
     -- Draw title (skip foreground rendering when modal is open to respect dim overlay)
     if (cache.showTitle and data.partyTitlesTexture ~= nil and not _XIUI_MODAL_OPEN) then

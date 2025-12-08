@@ -9,6 +9,7 @@ require('handlers.helpers');
 local gdi = require('submodules.gdifonts.include');
 local primitives = require('primitives');
 local ffi = require('ffi');
+local windowBg = require('libs.windowbackground');
 
 local data = require('modules.petbar.data');
 local display = require('modules.petbar.display');
@@ -50,19 +51,10 @@ petbar.Initialize = function(settings)
     data.loadedBgName = backgroundName;
 
     -- 1. Create background primitive first (renders at bottom)
-    data.backgroundPrim['bg'] = primitives:new(prim_data);
-    data.backgroundPrim['bg'].visible = false;
-    data.backgroundPrim['bg'].can_focus = false;
-    data.backgroundPrim['bg'].exists = false;
-    if backgroundName ~= '-None-' then
-        local filepath = string.format('%s/assets/backgrounds/%s-bg.png', addon.path, backgroundName);
-        data.backgroundPrim['bg'].texture = filepath;
-        data.backgroundPrim['bg'].exists = ashita.fs.exists(filepath);
-    end
-    data.backgroundPrim['bg'].scale_x = settings.bgScale or 1.0;
-    data.backgroundPrim['bg'].scale_y = settings.bgScale or 1.0;
+    local bgHandle = windowBg.createBackground(prim_data, backgroundName, settings.bgScale);
+    data.backgroundPrim['bg'] = bgHandle.bg;
 
-    -- 2. Create pet image primitives (render in middle)
+    -- 2. Create pet image primitives (render in middle - petbar specific)
     data.petImagePrims = {};
     data.petImageTextures = {};
     for _, petName in ipairs(data.avatarList) do
@@ -98,21 +90,11 @@ petbar.Initialize = function(settings)
     end
 
     -- 3. Create border primitives last (render on top)
-    local borderKeys = {'tl', 'tr', 'br', 'bl'};
-    for _, k in ipairs(borderKeys) do
-        data.backgroundPrim[k] = primitives:new(prim_data);
-        data.backgroundPrim[k].visible = false;
-        data.backgroundPrim[k].can_focus = false;
-        data.backgroundPrim[k].exists = false;
-        if backgroundName ~= '-None-' then
-            local file_name = string.format('%s-%s.png', backgroundName, k);
-            local filepath = string.format('%s/assets/backgrounds/%s', addon.path, file_name);
-            data.backgroundPrim[k].texture = filepath;
-            data.backgroundPrim[k].exists = ashita.fs.exists(filepath);
-        end
-        data.backgroundPrim[k].scale_x = 1.0;
-        data.backgroundPrim[k].scale_y = 1.0;
-    end
+    local borderHandle = windowBg.createBorders(prim_data, backgroundName);
+    data.backgroundPrim['tl'] = borderHandle.tl;
+    data.backgroundPrim['tr'] = borderHandle.tr;
+    data.backgroundPrim['bl'] = borderHandle.bl;
+    data.backgroundPrim['br'] = borderHandle.br;
 
     -- Initialize pet target module
     pettarget.Initialize(settings);
@@ -142,17 +124,9 @@ petbar.UpdateVisuals = function(settings)
     local backgroundName = gConfig.petBarBackgroundTheme or 'Window1';
     if data.loadedBgName ~= backgroundName then
         data.loadedBgName = backgroundName;
-        -- Update main background primitives
-        for _, k in ipairs(data.bgImageKeys) do
-            if backgroundName == '-None-' then
-                data.backgroundPrim[k].exists = false;
-            else
-                local file_name = string.format('%s-%s.png', backgroundName, k);
-                local filepath = string.format('%s/assets/backgrounds/%s', addon.path, file_name);
-                data.backgroundPrim[k].texture = filepath;
-                data.backgroundPrim[k].exists = ashita.fs.exists(filepath);
-            end
-        end
+        -- Update using windowbackground library
+        windowBg.setBackgroundTheme(data.backgroundPrim, backgroundName, settings.bgScale);
+        windowBg.setBordersTheme(data.backgroundPrim, backgroundName);
     end
 
     -- Update pet target module
@@ -197,15 +171,11 @@ petbar.Cleanup = function()
 
     data.allFonts = nil;
 
-    -- Cleanup background primitives
-    for _, k in ipairs(data.bgImageKeys) do
-        if data.backgroundPrim[k] then
-            data.backgroundPrim[k]:destroy();
-            data.backgroundPrim[k] = nil;
-        end
-    end
+    -- Cleanup background and border primitives using windowbackground library
+    windowBg.destroy(data.backgroundPrim);
+    data.backgroundPrim = {};
 
-    -- Cleanup pet image primitives
+    -- Cleanup pet image primitives (petbar specific)
     if data.petImagePrims then
         for _, prim in pairs(data.petImagePrims) do
             if prim then

@@ -6,6 +6,7 @@
 require('common');
 local ffi = require('ffi');
 local statusHandler = require('handlers.statushandler');
+local windowBg = require('libs.windowbackground');
 
 local data = {};
 
@@ -490,12 +491,15 @@ function data.UpdateTextVisibility(visible, partyIndex)
         end
     end
 
-    for i = 1, 3 do
-        if (partyIndex == nil or i == partyIndex) then
-            local backgroundPrim = data.partyWindowPrim[i].background;
-            for _, k in ipairs(data.bgImageKeys) do
-                if backgroundPrim[k] then
-                    backgroundPrim[k].visible = visible and backgroundPrim[k].exists;
+    -- Handle background visibility using windowbackground library
+    -- When visible=false, hide backgrounds; when visible=true, backgrounds
+    -- will be shown on next windowBg.update() call in DrawPartyWindow
+    if not visible then
+        for i = 1, 3 do
+            if (partyIndex == nil or i == partyIndex) then
+                local backgroundPrim = data.partyWindowPrim[i].background;
+                if backgroundPrim then
+                    windowBg.hide(backgroundPrim);
                 end
             end
         end

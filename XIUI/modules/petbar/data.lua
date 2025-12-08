@@ -5,6 +5,7 @@
 
 require('common');
 require('handlers.helpers');
+local windowBg = require('libs.windowbackground');
 
 local data = {};
 
@@ -753,12 +754,10 @@ end
 
 -- Hide all background primitives
 function data.HideBackground()
-    for _, k in ipairs(data.bgImageKeys) do
-        if data.backgroundPrim[k] then
-            data.backgroundPrim[k].visible = false;
-        end
-    end
-    -- Hide all pet image primitives
+    -- Hide background and borders using windowbackground library
+    windowBg.hide(data.backgroundPrim);
+
+    -- Hide all pet image primitives (petbar-specific)
     if data.petImagePrims then
         for _, prim in pairs(data.petImagePrims) do
             if prim then
@@ -770,91 +769,30 @@ end
 
 -- Update background primitives position and visibility
 function data.UpdateBackground(x, y, width, height, settings)
-    local bgPadding = settings.bgPadding or data.PADDING;
-    local bgPaddingY = settings.bgPaddingY or data.PADDING;
-    local bgWidth = width + (bgPadding * 2);
-    local bgHeight = height + (bgPaddingY * 2);
-    local bgScale = settings.bgScale or 1.0;
     local bgTheme = gConfig.petBarBackgroundTheme or 'Window1';
-    local borderSize = settings.borderSize or 21;
-    local bgOffset = settings.bgOffset or 1;
+    local bgOpacity = gConfig.petBarBackgroundOpacity or 1.0;
+    local bgColor = gConfig.colorCustomization and gConfig.colorCustomization.petBar and gConfig.colorCustomization.petBar.bgColor or 0xFFFFFFFF;
+    local borderColor = gConfig.colorCustomization and gConfig.colorCustomization.petBar and gConfig.colorCustomization.petBar.borderColor or 0xFFFFFFFF;
+    local borderOpacity = gConfig.petBarBorderOpacity or 1.0;
 
-    -- Check if this is a Window theme (has borders)
-    local isWindowTheme = bgTheme:match('^Window%d+$') ~= nil;
+    -- Common options for windowbackground library
+    local bgOptions = {
+        theme = bgTheme,
+        padding = settings.bgPadding or data.PADDING,
+        paddingY = settings.bgPaddingY or data.PADDING,
+        bgScale = settings.bgScale or 1.0,
+        bgOpacity = bgOpacity,
+        bgColor = bgColor,
+        borderSize = settings.borderSize or 21,
+        bgOffset = settings.bgOffset or 1,
+        borderOpacity = borderOpacity,
+        borderColor = borderColor,
+    };
 
-    -- Handle background based on theme
-    if bgTheme == '-None-' then
-        -- No background at all
-        data.backgroundPrim.bg.visible = false;
-        data.backgroundPrim.br.visible = false;
-        data.backgroundPrim.tr.visible = false;
-        data.backgroundPrim.tl.visible = false;
-        data.backgroundPrim.bl.visible = false;
-    else
-        -- Main background (works for both 'Plain' and Window themes)
-        data.backgroundPrim.bg.visible = data.backgroundPrim.bg.exists;
-        data.backgroundPrim.bg.position_x = x - bgPadding;
-        data.backgroundPrim.bg.position_y = y - bgPaddingY;
-        data.backgroundPrim.bg.width = bgWidth / bgScale;
-        data.backgroundPrim.bg.height = bgHeight / bgScale;
-        -- Apply background color/tint and opacity
-        local bgOpacity = gConfig.petBarBackgroundOpacity or 1.0;
-        local bgColor = gConfig.colorCustomization and gConfig.colorCustomization.petBar and gConfig.colorCustomization.petBar.bgColor or 0xFFFFFFFF;
-        -- Extract RGB from bgColor (ARGB format) and apply opacity
-        local bgAlphaByte = math.floor(bgOpacity * 255);
-        local bgRGB = bit.band(bgColor, 0x00FFFFFF);
-        data.backgroundPrim.bg.color = bit.bor(bit.lshift(bgAlphaByte, 24), bgRGB);
+    -- Update background and borders using windowbackground library
+    windowBg.update(data.backgroundPrim, x, y, width, height, bgOptions);
 
-        -- Show borders for Window themes
-        if isWindowTheme then
-            local borderBaseColor = gConfig.colorCustomization and gConfig.colorCustomization.petBar and gConfig.colorCustomization.petBar.borderColor or 0xFFFFFFFF;
-            local borderOpacity = gConfig.petBarBorderOpacity or 1.0;
-            -- Apply opacity to border color
-            local borderAlphaByte = math.floor(borderOpacity * 255);
-            local borderRGB = bit.band(borderBaseColor, 0x00FFFFFF);
-            local borderColor = bit.bor(bit.lshift(borderAlphaByte, 24), borderRGB);
-
-            -- Bottom-right corner
-            data.backgroundPrim.br.visible = data.backgroundPrim.br.exists;
-            data.backgroundPrim.br.position_x = data.backgroundPrim.bg.position_x + bgWidth - borderSize + bgOffset;
-            data.backgroundPrim.br.position_y = data.backgroundPrim.bg.position_y + bgHeight - borderSize + bgOffset;
-            data.backgroundPrim.br.width = borderSize;
-            data.backgroundPrim.br.height = borderSize;
-            data.backgroundPrim.br.color = borderColor;
-
-            -- Top-right edge (from top to br)
-            data.backgroundPrim.tr.visible = data.backgroundPrim.tr.exists;
-            data.backgroundPrim.tr.position_x = data.backgroundPrim.br.position_x;
-            data.backgroundPrim.tr.position_y = data.backgroundPrim.bg.position_y - bgOffset;
-            data.backgroundPrim.tr.width = borderSize;
-            data.backgroundPrim.tr.height = data.backgroundPrim.br.position_y - data.backgroundPrim.tr.position_y;
-            data.backgroundPrim.tr.color = borderColor;
-
-            -- Top-left (L-shaped: top and left edges)
-            data.backgroundPrim.tl.visible = data.backgroundPrim.tl.exists;
-            data.backgroundPrim.tl.position_x = data.backgroundPrim.bg.position_x - bgOffset;
-            data.backgroundPrim.tl.position_y = data.backgroundPrim.bg.position_y - bgOffset;
-            data.backgroundPrim.tl.width = data.backgroundPrim.tr.position_x - data.backgroundPrim.tl.position_x;
-            data.backgroundPrim.tl.height = data.backgroundPrim.br.position_y - data.backgroundPrim.tl.position_y;
-            data.backgroundPrim.tl.color = borderColor;
-
-            -- Bottom-left edge (from left to br)
-            data.backgroundPrim.bl.visible = data.backgroundPrim.bl.exists;
-            data.backgroundPrim.bl.position_x = data.backgroundPrim.tl.position_x;
-            data.backgroundPrim.bl.position_y = data.backgroundPrim.bg.position_y + bgHeight - borderSize + bgOffset;
-            data.backgroundPrim.bl.width = data.backgroundPrim.br.position_x - data.backgroundPrim.bl.position_x;
-            data.backgroundPrim.bl.height = borderSize;
-            data.backgroundPrim.bl.color = borderColor;
-        else
-            -- Hide borders for Plain theme
-            data.backgroundPrim.br.visible = false;
-            data.backgroundPrim.tr.visible = false;
-            data.backgroundPrim.tl.visible = false;
-            data.backgroundPrim.bl.visible = false;
-        end
-    end
-
-    -- Pet image overlay (show correct avatar based on current pet)
+    -- Pet image overlay (petbar-specific - show correct avatar based on current pet)
     -- Clear clipped image info
     data.clippedPetImageInfo = nil;
 
@@ -904,48 +842,27 @@ function data.UpdateBackground(x, y, width, height, settings)
             local color = bit.bor(bit.lshift(alphaByte, 24), 0x00FFFFFF);
 
             if clipToBackground then
-                -- Calculate background bounds including border area
-                -- Background extends PADDING outside window, borders extend further based on bgOffset
-                local clipBgPadding = settings.bgPadding or data.PADDING;
-                local clipBgPaddingY = settings.bgPaddingY or data.PADDING;
-                local bgTheme = gConfig.petBarBackgroundTheme or 'Window1';
-                local isWindowTheme = bgTheme:match('^Window%d+$') ~= nil;
-                local clipBgOffset = isWindowTheme and (settings.bgOffset or 1) or 0;
+                -- Get clip bounds using windowbackground library
+                local clipBounds = windowBg.getClipBounds(x, y, width, height, {
+                    theme = bgTheme,
+                    padding = settings.bgPadding or data.PADDING,
+                    paddingY = settings.bgPaddingY or data.PADDING,
+                    bgOffset = settings.bgOffset or 1,
+                });
 
-                -- When borders are visible, extend clip bounds to include border area
-                local bgLeft = x - clipBgPadding - clipBgOffset;
-                local bgTop = y - clipBgPaddingY - clipBgOffset;
-                local bgRight = x + width + clipBgPadding + clipBgOffset;
-                local bgBottom = y + height + clipBgPaddingY + clipBgOffset;
+                -- Clip image to background bounds
+                local clipped = windowBg.clipImageToBounds(imgX, imgY, imgWidth, imgHeight, clipBounds, petImageScale);
 
-                -- Calculate intersection of image bounds with background bounds
-                local imgRight = imgX + imgWidth;
-                local imgBottom = imgY + imgHeight;
-
-                local clipLeft = math.max(imgX, bgLeft);
-                local clipTop = math.max(imgY, bgTop);
-                local clipRight = math.min(imgRight, bgRight);
-                local clipBottom = math.min(imgBottom, bgBottom);
-
-                -- Check if there's any visible area
-                if clipLeft < clipRight and clipTop < clipBottom then
-                    -- Calculate texture offset in pixels (how much of the texture to skip)
-                    local texOffsetX = (clipLeft - imgX) / petImageScale;
-                    local texOffsetY = (clipTop - imgY) / petImageScale;
-
-                    -- Calculate visible dimensions in texture pixels
-                    local visibleWidth = (clipRight - clipLeft) / petImageScale;
-                    local visibleHeight = (clipBottom - clipTop) / petImageScale;
-
+                if clipped then
                     prim.visible = true;
-                    prim.position_x = clipLeft;
-                    prim.position_y = clipTop;
-                    prim.texture_offset_x = texOffsetX;
-                    prim.texture_offset_y = texOffsetY;
-                    prim.width = visibleWidth;
-                    prim.height = visibleHeight;
-                    prim.scale_x = petImageScale;
-                    prim.scale_y = petImageScale;
+                    prim.position_x = clipped.x;
+                    prim.position_y = clipped.y;
+                    prim.texture_offset_x = clipped.texOffsetX;
+                    prim.texture_offset_y = clipped.texOffsetY;
+                    prim.width = clipped.width;
+                    prim.height = clipped.height;
+                    prim.scale_x = clipped.scaleX;
+                    prim.scale_y = clipped.scaleY;
                     prim.color = color;
                 else
                     -- Image is completely outside background bounds

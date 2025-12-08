@@ -260,13 +260,19 @@ function display.DrawWindow(settings)
 
         imgui.Dummy({totalRowWidth, nameFontSize + 4});
 
-        -- Row 2: HP Bar (full width)
+        -- Row 2: HP Bar (full width) with interpolation
         if gConfig.petBarShowVitals ~= false then
             local hpGradient = GetCustomGradient(colorConfig, 'hpGradient') or {'#e26c6c', '#fa9c9c'};
             local hpBarX, hpBarY = imgui.GetCursorScreenPos();
 
+            -- Use HP interpolation for damage/healing animations
+            local currentTime = os.clock();
+            local petEntity = data.GetPetEntity();
+            local petIndex = petEntity and petEntity.TargetIndex or 0;
+            local hpPercentData = HpInterpolation.update('petbar', petHpPercent, petIndex, settings, currentTime, hpGradient);
+
             progressbar.ProgressBar(
-                {{petHpPercent / 100, hpGradient}},
+                hpPercentData,
                 {hpBarWidth, hpBarHeight},
                 {decorate = gConfig.petBarShowBookends}
             );
