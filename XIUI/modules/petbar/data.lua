@@ -22,6 +22,22 @@ data.ABILITY_ICON_SIZE = 24;
 
 data.bgImageKeys = { 'bg', 'tl', 'tr', 'br', 'bl' };
 
+-- Preview type constants
+data.PREVIEW_WYVERN = 1;
+data.PREVIEW_AVATAR = 2;
+data.PREVIEW_AUTOMATON = 3;
+data.PREVIEW_JUG = 4;
+data.PREVIEW_CHARMED = 5;
+
+-- Preview type names for config dropdown
+data.previewTypeNames = {
+    [data.PREVIEW_WYVERN] = 'Wyvern (DRG)',
+    [data.PREVIEW_AVATAR] = 'Avatar (SMN)',
+    [data.PREVIEW_AUTOMATON] = 'Automaton (PUP)',
+    [data.PREVIEW_JUG] = 'Jug Pet (BST)',
+    [data.PREVIEW_CHARMED] = 'Charmed Pet (BST)',
+};
+
 -- Pet name to image file mapping
 -- Maps in-game pet names to their image file paths
 data.petImageMap = {
@@ -199,8 +215,41 @@ function data.FormatTimer(frames)
 end
 
 -- Get ability recast timers relevant to current job
-function data.GetPetAbilityTimers()
+-- Optional jobOverride parameter for preview mode
+function data.GetPetAbilityTimers(jobOverride)
     local timers = {};
+
+    -- In preview mode with job override, return mock timer data
+    if jobOverride then
+        if jobOverride == data.JOB_SMN then
+            if gConfig.petBarSmnShowBPRage ~= false then
+                table.insert(timers, {name = 'Blood Pact: Rage', timer = 0, maxTimer = 60, formatted = 'Ready', isReady = true});
+            end
+            if gConfig.petBarSmnShowBPWard ~= false then
+                table.insert(timers, {name = 'Blood Pact: Ward', timer = 1800, maxTimer = 3600, formatted = '30s', isReady = false});
+            end
+        elseif jobOverride == data.JOB_BST then
+            if gConfig.petBarBstShowReady ~= false then
+                table.insert(timers, {name = 'Ready', timer = 0, maxTimer = 30, formatted = 'Ready', isReady = true});
+            end
+            if gConfig.petBarBstShowReward ~= false then
+                table.insert(timers, {name = 'Reward', timer = 2700, maxTimer = 5400, formatted = '45s', isReady = false});
+            end
+        elseif jobOverride == data.JOB_DRG then
+            if gConfig.petBarDrgShowSpiritLink ~= false then
+                table.insert(timers, {name = 'Spirit Link', timer = 0, maxTimer = 120, formatted = 'Ready', isReady = true});
+            end
+        elseif jobOverride == data.JOB_PUP then
+            if gConfig.petBarPupShowRepair ~= false then
+                table.insert(timers, {name = 'Repair', timer = 900, maxTimer = 10800, formatted = '15s', isReady = false});
+            end
+            if gConfig.petBarPupShowDeploy ~= false then
+                table.insert(timers, {name = 'Deploy', timer = 0, maxTimer = 60, formatted = 'Ready', isReady = true});
+            end
+        end
+        return timers;
+    end
+
     local recast = GetRecastSafe();
     if recast == nil then return timers; end
 
@@ -508,6 +557,72 @@ function data.ClearColorCache()
     data.lastHpColor = nil;
     data.lastMpColor = nil;
     data.lastTpColor = nil;
+end
+
+-- ============================================
+-- Preview Mock Data
+-- ============================================
+
+-- Returns mock pet data for preview mode
+-- Returns values that match what DrawWindow expects from real pet data
+function data.GetPreviewPetData(previewType)
+    local mockData = {
+        name = 'Pet',
+        hpPercent = 85,
+        distance = 5.2,
+        mpPercent = 75,
+        tp = 1200,
+        job = nil,
+        showMp = false,
+        isCharmed = false,
+        isJug = false,
+    };
+
+    if previewType == data.PREVIEW_WYVERN then
+        mockData.name = 'Wyvern';
+        mockData.hpPercent = 85;
+        mockData.distance = 5.2;
+        mockData.mpPercent = 0;
+        mockData.tp = 1200;
+        mockData.job = data.JOB_DRG;
+        mockData.showMp = false;
+    elseif previewType == data.PREVIEW_AVATAR then
+        mockData.name = 'Ifrit';
+        mockData.hpPercent = 100;
+        mockData.distance = 8.5;
+        mockData.mpPercent = 75;
+        mockData.tp = 800;
+        mockData.job = data.JOB_SMN;
+        mockData.showMp = true;
+    elseif previewType == data.PREVIEW_AUTOMATON then
+        mockData.name = 'Automaton';
+        mockData.hpPercent = 90;
+        mockData.distance = 3.1;
+        mockData.mpPercent = 60;
+        mockData.tp = 1500;
+        mockData.job = data.JOB_PUP;
+        mockData.showMp = true;
+    elseif previewType == data.PREVIEW_JUG then
+        mockData.name = 'FunguarFamiliar';
+        mockData.hpPercent = 70;
+        mockData.distance = 6.8;
+        mockData.mpPercent = 0;
+        mockData.tp = 500;
+        mockData.job = data.JOB_BST;
+        mockData.showMp = false;
+        mockData.isJug = true;
+    elseif previewType == data.PREVIEW_CHARMED then
+        mockData.name = 'Goblin Gambler';
+        mockData.hpPercent = 45;
+        mockData.distance = 4.5;
+        mockData.mpPercent = 0;
+        mockData.tp = 2000;
+        mockData.job = data.JOB_BST;
+        mockData.showMp = false;
+        mockData.isCharmed = true;
+    end
+
+    return mockData;
 end
 
 -- ============================================

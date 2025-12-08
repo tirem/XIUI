@@ -34,7 +34,8 @@ petbar.Initialize = function(settings)
 
     data.allFonts = {data.nameText, data.distanceText, data.hpText, data.mpText, data.tpText};
 
-    -- Initialize background primitives
+    -- Initialize primitives - creation order determines render order
+    -- Order: background -> pet images -> borders
     local prim_data = settings.prim_data or {
         visible = false,
         can_focus = false,
@@ -43,38 +44,23 @@ petbar.Initialize = function(settings)
         height = 100,
     };
 
-    for _, k in ipairs(data.bgImageKeys) do
-        data.backgroundPrim[k] = primitives:new(prim_data);
-        data.backgroundPrim[k].visible = false;
-        data.backgroundPrim[k].can_focus = false;
-        data.backgroundPrim[k].exists = false;
-    end
-
-    -- Load background textures
     local backgroundName = gConfig.petBarBackgroundTheme or 'Window1';
     data.loadedBgName = backgroundName;
 
-    for _, k in ipairs(data.bgImageKeys) do
-        local filepath;
-        if backgroundName == '-None-' then
-            -- No background - set exists to false
-            data.backgroundPrim[k].exists = false;
-        else
-            local file_name = string.format('%s-%s.png', backgroundName, k);
-            filepath = string.format('%s/assets/backgrounds/%s', addon.path, file_name);
-            data.backgroundPrim[k].texture = filepath;
-            data.backgroundPrim[k].exists = ashita.fs.exists(filepath);
-        end
-        if k == 'bg' then
-            data.backgroundPrim[k].scale_x = settings.bgScale or 1.0;
-            data.backgroundPrim[k].scale_y = settings.bgScale or 1.0;
-        else
-            data.backgroundPrim[k].scale_x = 1.0;
-            data.backgroundPrim[k].scale_y = 1.0;
-        end
+    -- 1. Create background primitive first (renders at bottom)
+    data.backgroundPrim['bg'] = primitives:new(prim_data);
+    data.backgroundPrim['bg'].visible = false;
+    data.backgroundPrim['bg'].can_focus = false;
+    data.backgroundPrim['bg'].exists = false;
+    if backgroundName ~= '-None-' then
+        local filepath = string.format('%s/assets/backgrounds/%s-bg.png', addon.path, backgroundName);
+        data.backgroundPrim['bg'].texture = filepath;
+        data.backgroundPrim['bg'].exists = ashita.fs.exists(filepath);
     end
+    data.backgroundPrim['bg'].scale_x = settings.bgScale or 1.0;
+    data.backgroundPrim['bg'].scale_y = settings.bgScale or 1.0;
 
-    -- Initialize pet image primitives (one per avatar for preloading)
+    -- 2. Create pet image primitives (render in middle)
     data.petImagePrims = {};
     data.petImageTextures = {};
     for _, petName in ipairs(data.avatarList) do
@@ -107,6 +93,23 @@ petbar.Initialize = function(settings)
             end
             data.petImagePrims[key] = prim;
         end
+    end
+
+    -- 3. Create border primitives last (render on top)
+    local borderKeys = {'tl', 'tr', 'br', 'bl'};
+    for _, k in ipairs(borderKeys) do
+        data.backgroundPrim[k] = primitives:new(prim_data);
+        data.backgroundPrim[k].visible = false;
+        data.backgroundPrim[k].can_focus = false;
+        data.backgroundPrim[k].exists = false;
+        if backgroundName ~= '-None-' then
+            local file_name = string.format('%s-%s.png', backgroundName, k);
+            local filepath = string.format('%s/assets/backgrounds/%s', addon.path, file_name);
+            data.backgroundPrim[k].texture = filepath;
+            data.backgroundPrim[k].exists = ashita.fs.exists(filepath);
+        end
+        data.backgroundPrim[k].scale_x = 1.0;
+        data.backgroundPrim[k].scale_y = 1.0;
     end
 
     -- Initialize pet target module

@@ -1045,8 +1045,8 @@ function display.DrawPartyWindow(settings, party, partyIndex)
     backgroundPrim.bl.height = settings.borderSize;
     backgroundPrim.bl.color = borderColor;
 
-    -- Draw title
-    if (cache.showTitle and data.partyTitlesTexture ~= nil) then
+    -- Draw title (skip foreground rendering when modal is open to respect dim overlay)
+    if (cache.showTitle and data.partyTitlesTexture ~= nil and not _XIUI_MODAL_OPEN) then
         local titleImage = tonumber(ffi.cast("uint32_t", data.partyTitlesTexture.image));
         local titleWidth = data.partyTitlesTexture.width;
         local titleHeight = data.partyTitlesTexture.height / 4;

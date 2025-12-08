@@ -556,18 +556,52 @@ M.user_settings = T{
     petBarScaleX = 1.0,
     petBarScaleY = 1.0,
     petBarHideDuringEvents = true,
+    petBarPreview = false,
     petBarShowDistance = true,
     petBarShowTarget = true,
     petBarShowVitals = true,
     petBarShowTimers = true,
+    petBarShow2HourAbility = false,
     petBarShowImage = true,
     petBarShowBookends = false,
     petBarIconsAbsolute = true,
     petBarIconsScale = 0.6,
-    petBarIconsOffsetX = 112,
-    petBarIconsOffsetY = 79,
+    petBarIconsOffsetX = 10,
+    petBarIconsOffsetY = 62,
     petBarBackgroundTheme = 'Window1',
     petBarBackgroundOpacity = 1.0,
+    -- BST Charm indicator settings (absolute positioned relative to window)
+    petBarShowCharmIndicator = true,
+    petBarShowJugTimer = true,
+    petBarCharmIconSize = 16,
+    petBarCharmTimerFontSize = 10,
+    petBarCharmOffsetX = 0,
+    petBarCharmOffsetY = -20,
+
+    -- Pet ability icon toggles per job
+    -- SMN abilities
+    petBarSmnShowBPRage = true,
+    petBarSmnShowBPWard = true,
+    petBarSmnShowApogee = true,
+    petBarSmnShowManaCede = true,
+    -- BST abilities
+    petBarBstShowReady = true,
+    petBarBstShowSic = true,
+    petBarBstShowReward = true,
+    petBarBstShowCallBeast = true,
+    petBarBstShowBestialLoyalty = true,
+    -- DRG abilities
+    petBarDrgShowCallWyvern = true,
+    petBarDrgShowSpiritLink = true,
+    petBarDrgShowDeepBreathing = true,
+    petBarDrgShowSteadyWing = true,
+    -- PUP abilities
+    petBarPupShowActivate = true,
+    petBarPupShowRepair = true,
+    petBarPupShowDeusExAutomata = true,
+    petBarPupShowDeploy = true,
+    petBarPupShowDeactivate = true,
+    petBarPupShowRetrieve = true,
     -- Legacy global pet image settings (kept for migration)
     petBarImageScale = 0.4,
     petBarImageOpacity = 0.3,
@@ -583,7 +617,7 @@ M.user_settings = T{
         titan = T{ scale = 0.44, opacity = 0.3, offsetX = -24, offsetY = -88, clipToBackground = true },
         ramuh = T{ scale = 0.44, opacity = 0.3, offsetX = -96, offsetY = -24, clipToBackground = true },
         leviathan = T{ scale = 0.4, opacity = 0.3, offsetX = -200, offsetY = -102, clipToBackground = true },
-        fenrir = T{ scale = 0.4, opacity = 0.3, offsetX = 74, offsetY = -82, clipToBackground = true },
+        fenrir = T{ scale = 0.2, opacity = 0.35, offsetX = 49, offsetY = -60, clipToBackground = true },
         diabolos = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0, clipToBackground = true },
         atomos = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0, clipToBackground = true },
         odin = T{ scale = 0.4, opacity = 0.3, offsetX = 0, offsetY = 0, clipToBackground = true },
@@ -755,16 +789,31 @@ M.user_settings = T{
             mpTextColor = 0xFFD4FF97,
             tpTextColor = 0xFF8DC7FF,
             targetTextColor = 0xFFFFFFFF,
-            timerReadyColor = 0xFF00FF00,      -- Timer ready (green)
-            timerRecastColor = 0xFFFFFF00,     -- Timer on cooldown (yellow)
+            -- Rage timer colors (Blood Pact: Rage, Ready, Sic, Deploy)
+            timerRageReadyColor = 0xE6FF6600,   -- Orange
+            timerRageRecastColor = 0xD9FF9933,  -- Light orange
+            -- Ward timer colors (Blood Pact: Ward, Reward, Repair, Spirit Link)
+            timerWardReadyColor = 0xE600CCFF,   -- Cyan
+            timerWardRecastColor = 0xD966E0FF,  -- Light cyan
+            -- 2-Hour timer colors (Astral Flow, Familiar, Spirit Surge, Overdrive)
+            timer2hReadyColor = 0xE6FF00FF,     -- Magenta
+            timer2hRecastColor = 0xD9FF66FF,    -- Light magenta
+            -- Other timer colors (utility abilities)
+            timerReadyColor = 0xE600FF00,       -- Green
+            timerRecastColor = 0xD9FFFF00,      -- Yellow
             durationWarningColor = 0xFFFF6600, -- Charm/Jug about to expire (orange)
+            charmHeartColor = 0xFFFF6699,      -- BST charm heart icon (pink)
+            jugIconColor = 0xFFFFFFFF,         -- BST jug pet icon
+            charmTimerColor = 0xFFFFFFFF,      -- BST pet timer text (charm/jug)
             bgColor = 0xFFFFFFFF,              -- Background tint (for Plain theme)
         },
 
         -- Pet Target
         petTarget = T{
-            bgColor = 0xFFFFFFFF,              -- Background tint (for Plain theme)
+            hpGradient = T{ enabled = true, start = '#e26c6c', stop = '#fb9494' },
+            bgColor = 0xFFFF8D8D,              -- Background tint (for Plain theme)
             targetTextColor = 0xFFFFFFFF,
+            borderColor = 0xFFFF8D8D,
         },
 
         -- Mob Info
@@ -1277,6 +1326,10 @@ M.default_settings = T{
         bgOffset = 1,
         bgScale = 1.0,
         borderSize = 21,
+        -- HP interpolation settings
+        hitInterpolationDecayPercentPerSecond = 150,
+        hitDelayDuration = 0.5,
+        hitFlashDuration = 0.4,
         prim_data = T{
             visible = false,
             can_focus = false,
@@ -1294,7 +1347,7 @@ M.default_settings = T{
             outline_width = 2,
         },
         distance_font_settings = T{
-            font_alignment = gdi.Alignment.Right,
+            font_alignment = gdi.Alignment.Left,
             font_family = 'Consolas',
             font_height = 10,
             font_color = 0xFFFFFFFF,

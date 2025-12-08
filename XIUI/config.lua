@@ -23,6 +23,9 @@ local petbarModule = require('config.petbar');
 
 local config = {};
 
+-- Global modal state (accessible by other modules to know when to dim foreground elements)
+_XIUI_MODAL_OPEN = false;
+
 -- State for confirmation dialogs
 local showRestoreDefaultsConfirm = false;
 local showRestoreColorsConfirm = false;
@@ -447,6 +450,9 @@ config.DrawWindow = function(us)
             end
         end
 
+        -- Track modal state for foreground elements dimming
+        local anyModalOpen = false;
+
         -- Credits popup
         if showCreditsPopup then
             imgui.OpenPopup("Attributions");
@@ -454,6 +460,7 @@ config.DrawWindow = function(us)
         end
 
         if imgui.BeginPopupModal("Attributions", true, ImGuiWindowFlags_AlwaysAutoResize) then
+            anyModalOpen = true;
             imgui.Text("XIUI - A UI Addon for Final Fantasy XI");
             imgui.Separator();
 
@@ -477,6 +484,7 @@ config.DrawWindow = function(us)
         end
 
         if (imgui.BeginPopupModal("Confirm Reset Settings", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+            anyModalOpen = true;
             imgui.Text("Are you sure you want to reset all settings to defaults?");
             imgui.Text("This will reset all your customizations including:");
             imgui.BulletText("UI positions, scales, and visibility");
@@ -503,6 +511,7 @@ config.DrawWindow = function(us)
         end
 
         if (imgui.BeginPopupModal("Confirm Reset Colors", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+            anyModalOpen = true;
             imgui.Text("Are you sure you want to restore all colors to defaults?");
             imgui.Text("This will reset all your custom colors.");
             imgui.NewLine();
@@ -519,6 +528,9 @@ config.DrawWindow = function(us)
 
             imgui.EndPopup();
         end
+
+        -- Update global modal state for other modules
+        _XIUI_MODAL_OPEN = anyModalOpen;
 
         imgui.Spacing();
 

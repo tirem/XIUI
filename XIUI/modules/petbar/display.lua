@@ -171,44 +171,64 @@ end
 -- DrawWindow - Main Pet Bar Rendering
 -- ============================================
 function display.DrawWindow(settings)
-    local player = GetPlayerSafe();
-    local party = GetPartySafe();
-    local playerEnt = GetPlayerEntity();
+    -- Preview mode: use mock data instead of real pet data
+    local isPreviewMode = gConfig.petBarPreview and showConfig[1];
+    local previewType = gConfig.petBarPreviewType or data.PREVIEW_AVATAR;
 
-    if player == nil or party == nil or playerEnt == nil then
-        data.SetAllFontsVisible(false);
-        data.HideBackground();
-        return false;
+    local petName, petHpPercent, petDistance, petMpPercent, petTp, petTpPercent, petJob, showMp;
+
+    if isPreviewMode then
+        -- Get mock data for preview
+        local mockData = data.GetPreviewPetData(previewType);
+        petName = mockData.name;
+        petHpPercent = mockData.hpPercent;
+        petDistance = mockData.distance;
+        petMpPercent = mockData.mpPercent;
+        petTp = mockData.tp;
+        petTpPercent = math.min(petTp / 1000, 1.0);
+        petJob = mockData.job;
+        showMp = mockData.showMp;
+        data.currentPetName = petName;
+    else
+        -- Real mode: get actual pet data
+        local player = GetPlayerSafe();
+        local party = GetPartySafe();
+        local playerEnt = GetPlayerEntity();
+
+        if player == nil or party == nil or playerEnt == nil then
+            data.SetAllFontsVisible(false);
+            data.HideBackground();
+            return false;
+        end
+
+        local currJob = player:GetMainJob();
+        if player.isZoning or currJob == 0 then
+            data.SetAllFontsVisible(false);
+            data.HideBackground();
+            return false;
+        end
+
+        -- Check if we have a pet
+        local pet = data.GetPetEntity();
+        if pet == nil then
+            data.currentPetName = nil;
+            data.SetAllFontsVisible(false);
+            data.HideBackground();
+            return false;
+        end
+
+        -- Get pet stats
+        petName = pet.Name or 'Pet';
+        data.currentPetName = petName;
+        petHpPercent = pet.HPPercent or 0;
+        petDistance = math.sqrt(pet.Distance);
+        petMpPercent = player:GetPetMPPercent() or 0;
+        petTp = player:GetPetTP() or 0;
+        petTpPercent = math.min(petTp / 1000, 1.0);
+
+        petJob = data.GetPetJob();
+        showMp = petJob == data.JOB_SMN or petJob == data.JOB_PUP;
     end
-
-    local currJob = player:GetMainJob();
-    if player.isZoning or currJob == 0 then
-        data.SetAllFontsVisible(false);
-        data.HideBackground();
-        return false;
-    end
-
-    -- Check if we have a pet
-    local pet = data.GetPetEntity();
-    if pet == nil then
-        data.currentPetName = nil;
-        data.SetAllFontsVisible(false);
-        data.HideBackground();
-        return false;
-    end
-
-    -- Get pet stats
-    local petName = pet.Name or 'Pet';
-    -- Update current pet name for image display
-    data.currentPetName = petName;
-    local petHpPercent = pet.HPPercent or 0;
-    local petDistance = math.sqrt(pet.Distance);
-    local petMpPercent = player:GetPetMPPercent() or 0;
-    local petTp = player:GetPetTP() or 0;
-    local petTpPercent = math.min(petTp / 1000, 1.0);
-
-    local petJob = data.GetPetJob();
-    local showMp = petJob == data.JOB_SMN or petJob == data.JOB_PUP;
 
     -- Build window flags
     local windowFlags = data.getBaseWindowFlags();
@@ -399,7 +419,8 @@ function display.DrawWindow(settings)
 
         -- Row 4: Ability Icons (circular)
         if gConfig.petBarShowTimers ~= false then
-            local timers = data.GetPetAbilityTimers();
+            -- Pass job override in preview mode so mock timers respect settings
+            local timers = data.GetPetAbilityTimers(isPreviewMode and petJob or nil);
             if #timers > 0 then
                 local iconScale = gConfig.petBarIconsScale or 1.0;
                 local iconOffsetX = gConfig.petBarIconsOffsetX or 0;
