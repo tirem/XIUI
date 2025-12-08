@@ -76,6 +76,247 @@ data.avatarList = {
     'Thunder Spirit', 'Water Spirit', 'Light Spirit', 'Dark Spirit',
 };
 
+-- ============================================
+-- Jug Pet Database (from PetMe addon)
+-- ============================================
+-- Each entry: name (in-game), maxLevel, duration (minutes)
+data.jugPets = {
+    -- 90 minute pets (lower level)
+    {name = 'FunguarFamiliar', maxLevel = 35, duration = 90},
+    {name = 'CourierCarrie', maxLevel = 23, duration = 90},
+    {name = 'SheepFamiliar', maxLevel = 35, duration = 90},
+    {name = 'TigerFamiliar', maxLevel = 40, duration = 90},
+    {name = 'FlytrapFamiliar', maxLevel = 40, duration = 90},
+    {name = 'LizardFamiliar', maxLevel = 45, duration = 90},
+    {name = 'MayflyFamiliar', maxLevel = 45, duration = 90},
+
+    -- 60 minute pets (mid level)
+    {name = 'EftFamiliar', maxLevel = 50, duration = 60},
+    {name = 'BeetleFamiliar', maxLevel = 55, duration = 60},
+    {name = 'AntlionFamiliar', maxLevel = 55, duration = 60},
+    {name = 'MiteFamiliar', maxLevel = 55, duration = 60},
+    {name = 'KeenearedSteffi', maxLevel = 75, duration = 60},
+    {name = 'LullabyMelodia', maxLevel = 75, duration = 60},
+    {name = 'FlowerpotBen', maxLevel = 75, duration = 60},
+    {name = 'FlowerpotBill', maxLevel = 75, duration = 60},
+    {name = 'Homunculus', maxLevel = 75, duration = 60},
+    {name = 'VoraciousAudrey', maxLevel = 75, duration = 60},
+    {name = 'AmbusherAllie', maxLevel = 75, duration = 60},
+    {name = 'LifedrinkerLars', maxLevel = 75, duration = 60},
+    {name = 'PanzerGalahad', maxLevel = 75, duration = 60},
+    {name = 'ChopsueyChucky', maxLevel = 75, duration = 60},
+    {name = 'AmigoSabotender', maxLevel = 75, duration = 60},
+
+    -- 30 minute pets (high level)
+    {name = 'CraftyClyvonne', maxLevel = 75, duration = 30},
+    {name = 'BloodclawShasra', maxLevel = 75, duration = 30},
+    {name = 'GorefangHobs', maxLevel = 75, duration = 30},
+    {name = 'DipperYuly', maxLevel = 75, duration = 30},
+    {name = 'SunburstMalfik', maxLevel = 75, duration = 30},
+    {name = 'WarlikePatrick', maxLevel = 75, duration = 30},
+    {name = 'ScissorlegXerin', maxLevel = 75, duration = 30},
+    {name = 'BouncingBertha', maxLevel = 75, duration = 30},
+    {name = 'RhymingShizuna', maxLevel = 75, duration = 30},
+    {name = 'AttentiveIbuki', maxLevel = 75, duration = 30},
+    {name = 'SwoopingZhivago', maxLevel = 75, duration = 30},
+    {name = 'GenerousArthur', maxLevel = 75, duration = 30},
+    {name = 'ThreestarLynn', maxLevel = 75, duration = 30},
+    {name = 'BrainyWaluis', maxLevel = 75, duration = 30},
+    {name = 'FaithfulFalcorr', maxLevel = 75, duration = 30},
+    {name = 'SharpwitHermes', maxLevel = 99, duration = 30},
+    {name = 'HeadbreakerKen', maxLevel = 99, duration = 30},
+    {name = 'RedolentCandi', maxLevel = 99, duration = 30},
+    {name = 'AlluringHoney', maxLevel = 99, duration = 30},
+    {name = 'CaringKiyomaro', maxLevel = 99, duration = 30},
+    {name = 'VivaciousVickie', maxLevel = 99, duration = 30},
+    {name = 'HurlerPercival', maxLevel = 99, duration = 30},
+    {name = 'BlackbeardRandy', maxLevel = 99, duration = 30},
+    {name = 'FleetReinhard', maxLevel = 99, duration = 30},
+    {name = 'GooeyGerard', maxLevel = 99, duration = 30},
+    {name = 'CrudeRaphie', maxLevel = 99, duration = 30},
+    {name = 'DroopyDortwin', maxLevel = 99, duration = 30},
+    {name = 'SunburstMalfik', maxLevel = 99, duration = 30},
+    {name = 'PonderingPeter', maxLevel = 99, duration = 30},
+    {name = 'MosquitoFamilia', maxLevel = 99, duration = 30},
+    {name = 'Left-HandedYoko', maxLevel = 99, duration = 30},
+};
+
+-- Build a lookup table for faster access
+data.jugPetLookup = {};
+for _, pet in ipairs(data.jugPets) do
+    data.jugPetLookup[pet.name] = pet;
+end
+
+-- Get jug pet info by name
+function data.GetJugPetInfo(petName)
+    if petName == nil then return nil; end
+    return data.jugPetLookup[petName];
+end
+
+-- Check if a pet name is a jug pet
+function data.IsJugPet(petName)
+    return data.GetJugPetInfo(petName) ~= nil;
+end
+
+-- Get pet level based on player level and pet type
+function data.GetPetLevel(petName, playerLevel)
+    if petName == nil or playerLevel == nil then return nil; end
+
+    -- For jug pets, level is min(playerLevel, petMaxLevel)
+    local jugInfo = data.GetJugPetInfo(petName);
+    if jugInfo then
+        return math.min(playerLevel, jugInfo.maxLevel);
+    end
+
+    -- For avatars/spirits, they match player's SMN level (main or sub)
+    if data.petImageMap[petName] then
+        return playerLevel;
+    end
+
+    -- For charmed pets, we can't know the level without tracking the charm action
+    return nil;
+end
+
+-- ============================================
+-- Pet Timer Tracking Functions
+-- ============================================
+
+-- Detect and track a new pet summon
+function data.TrackPetSummon(petName, petJob)
+    if petName == nil then
+        -- Pet dismissed - clear tracking
+        data.petSummonTime = nil;
+        data.petExpireTime = nil;
+        data.petType = nil;
+        data.lastTrackedPetName = nil;
+        data.charmStartTime = nil;
+        -- Clear persisted timer data
+        if gConfig then
+            gConfig.petBarPetSummonTime = nil;
+            gConfig.petBarPetExpireTime = nil;
+            gConfig.petBarPetType = nil;
+            gConfig.petBarPetName = nil;
+            gConfig.petBarCharmStartTime = nil;
+        end
+        return;
+    end
+
+    -- Only track if pet name changed (new summon)
+    if petName == data.lastTrackedPetName then
+        return;
+    end
+
+    data.lastTrackedPetName = petName;
+    data.petSummonTime = os.time();
+
+    -- Determine pet type and calculate expiration
+    local jugInfo = data.GetJugPetInfo(petName);
+    if jugInfo then
+        data.petType = 'jug';
+        data.petExpireTime = data.petSummonTime + (jugInfo.duration * 60);
+        data.charmStartTime = nil;
+    elseif petJob == data.JOB_BST and not data.petImageMap[petName] then
+        -- BST pet that isn't an avatar = charmed pet
+        data.petType = 'charm';
+        data.petExpireTime = nil;  -- Charm duration is complex to calculate
+        data.charmStartTime = os.time();
+    elseif petJob == data.JOB_SMN then
+        data.petType = 'avatar';
+        data.petExpireTime = nil;  -- Avatars don't expire on timer
+        data.charmStartTime = nil;
+    elseif petJob == data.JOB_DRG then
+        data.petType = 'wyvern';
+        data.petExpireTime = nil;  -- Wyverns don't expire on timer
+        data.charmStartTime = nil;
+    elseif petJob == data.JOB_PUP then
+        data.petType = 'automaton';
+        data.petExpireTime = nil;  -- Automatons don't expire on timer
+        data.charmStartTime = nil;
+    else
+        data.petType = nil;
+        data.petExpireTime = nil;
+        data.charmStartTime = nil;
+    end
+
+    -- Persist timer data for session survival
+    if gConfig then
+        gConfig.petBarPetSummonTime = data.petSummonTime;
+        gConfig.petBarPetExpireTime = data.petExpireTime;
+        gConfig.petBarPetType = data.petType;
+        gConfig.petBarPetName = petName;
+        gConfig.petBarCharmStartTime = data.charmStartTime;
+    end
+end
+
+-- Restore timers from persisted config (called on addon load)
+function data.RestoreTimersFromConfig()
+    if gConfig == nil then return; end
+
+    -- Check if we have persisted timer data
+    if gConfig.petBarPetSummonTime and gConfig.petBarPetName then
+        local now = os.time();
+
+        -- For jug pets, check if timer hasn't expired
+        if gConfig.petBarPetExpireTime then
+            if gConfig.petBarPetExpireTime > now then
+                -- Timer still valid, restore it
+                data.petSummonTime = gConfig.petBarPetSummonTime;
+                data.petExpireTime = gConfig.petBarPetExpireTime;
+                data.petType = gConfig.petBarPetType;
+                data.lastTrackedPetName = gConfig.petBarPetName;
+                data.charmStartTime = gConfig.petBarCharmStartTime;
+            else
+                -- Timer expired, clear persisted data
+                gConfig.petBarPetSummonTime = nil;
+                gConfig.petBarPetExpireTime = nil;
+                gConfig.petBarPetType = nil;
+                gConfig.petBarPetName = nil;
+                gConfig.petBarCharmStartTime = nil;
+            end
+        elseif gConfig.petBarCharmStartTime then
+            -- Charm timer - restore if it was within last 30 min (reasonable max)
+            if now - gConfig.petBarCharmStartTime < 1800 then
+                data.petSummonTime = gConfig.petBarPetSummonTime;
+                data.petType = gConfig.petBarPetType;
+                data.lastTrackedPetName = gConfig.petBarPetName;
+                data.charmStartTime = gConfig.petBarCharmStartTime;
+            else
+                -- Too old, clear
+                gConfig.petBarPetSummonTime = nil;
+                gConfig.petBarPetExpireTime = nil;
+                gConfig.petBarPetType = nil;
+                gConfig.petBarPetName = nil;
+                gConfig.petBarCharmStartTime = nil;
+            end
+        end
+    end
+end
+
+-- Get remaining time for jug pet (in seconds)
+function data.GetJugTimeRemaining()
+    if data.petType ~= 'jug' or data.petExpireTime == nil then
+        return nil;
+    end
+    local remaining = data.petExpireTime - os.time();
+    return math.max(0, remaining);
+end
+
+-- Get elapsed time for charm (in seconds)
+function data.GetCharmElapsedTime()
+    if data.petType ~= 'charm' or data.charmStartTime == nil then
+        return nil;
+    end
+    return os.time() - data.charmStartTime;
+end
+
+-- Format seconds to MM:SS string
+function data.FormatTimeMMSS(seconds)
+    if seconds == nil then return nil; end
+    local mins = math.floor(seconds / 60);
+    local secs = math.floor(seconds % 60);
+    return string.format('%d:%02d', mins, secs);
+end
+
 -- Get settings key for a pet name (converts to lowercase, removes spaces)
 function data.GetPetSettingsKey(petName)
     if petName == nil then return nil; end
@@ -96,7 +337,7 @@ end
 -- State Variables
 -- ============================================
 
--- Font objects
+-- Font objects (main pet bar)
 data.nameText = nil;
 data.distanceText = nil;
 data.hpText = nil;
@@ -106,7 +347,7 @@ data.allFonts = nil;
 
 -- Cached colors
 data.lastNameColor = nil;
-data.lastDistColor = nil;
+data.lastDistanceColor = nil;
 data.lastHpColor = nil;
 data.lastMpColor = nil;
 data.lastTpColor = nil;
@@ -116,6 +357,13 @@ data.petTargetServerId = nil;
 
 -- Current pet name (for image loading)
 data.currentPetName = nil;
+
+-- Pet timer tracking (jug pets and charm)
+data.petSummonTime = nil;       -- os.time() when pet was summoned
+data.petExpireTime = nil;       -- os.time() when pet will despawn (jug only)
+data.petType = nil;             -- 'jug', 'charm', 'avatar', 'wyvern', 'automaton'
+data.lastTrackedPetName = nil;  -- Track pet name changes to detect new summons
+data.charmStartTime = nil;      -- os.time() when charm started (for elapsed timer)
 
 -- Background primitives
 data.backgroundPrim = {};
@@ -201,6 +449,75 @@ function data.GetPetJob()
     return nil;
 end
 
+-- Get pet data - single entry point for both preview and real data
+-- This follows the partylist pattern where preview is handled inside the data function
+function data.GetPetData()
+    -- Preview check inside data function (like partylist's GetMemberInformation)
+    if showConfig[1] and gConfig.petBarPreview then
+        local previewType = gConfig.petBarPreviewType or data.PREVIEW_AVATAR;
+        return data.GetPreviewPetData(previewType);
+    end
+
+    -- Real data
+    local player = GetPlayerSafe();
+    local party = GetPartySafe();
+    local playerEnt = GetPlayerEntity();
+
+    if player == nil or party == nil or playerEnt == nil then
+        -- No pet - clear tracking
+        data.TrackPetSummon(nil, nil);
+        return nil;
+    end
+
+    if player.isZoning or player:GetMainJob() == 0 then
+        return nil;
+    end
+
+    local pet = data.GetPetEntity();
+    if pet == nil then
+        -- No pet - clear tracking
+        data.TrackPetSummon(nil, nil);
+        return nil;
+    end
+
+    local petJob = data.GetPetJob();
+    local showMp = petJob == data.JOB_SMN or petJob == data.JOB_PUP;
+    local petName = pet.Name or 'Pet';
+
+    -- Track pet summon for timer tracking
+    data.TrackPetSummon(petName, petJob);
+
+    -- Calculate pet level
+    local playerLevel = player:GetMainJobLevel();
+    if petJob and petJob ~= player:GetMainJob() then
+        playerLevel = player:GetSubJobLevel();
+    end
+    local petLevel = data.GetPetLevel(petName, playerLevel);
+
+    -- Check pet type and get timer info
+    local isJug = data.IsJugPet(petName);
+    local isCharmed = (data.petType == 'charm');
+    local jugTimeRemaining = data.GetJugTimeRemaining();
+    local charmElapsed = data.GetCharmElapsedTime();
+
+    return {
+        name = petName,
+        hpPercent = pet.HPPercent or 0,
+        distance = math.sqrt(pet.Distance),
+        mpPercent = player:GetPetMPPercent() or 0,
+        tp = player:GetPetTP() or 0,
+        job = petJob,
+        showMp = showMp,
+        -- New fields
+        level = petLevel,
+        isJug = isJug,
+        isCharmed = isCharmed,
+        jugTimeRemaining = jugTimeRemaining,
+        charmElapsed = charmElapsed,
+        petType = data.petType,
+    };
+end
+
 -- Format timer from frames to readable string
 function data.FormatTimer(frames)
     if frames <= 0 then return 'Ready'; end
@@ -214,101 +531,215 @@ function data.FormatTimer(frames)
     end
 end
 
--- Get ability recast timers relevant to current job
--- Optional jobOverride parameter for preview mode
-function data.GetPetAbilityTimers(jobOverride)
+-- Check if an ability should be shown based on config settings
+local function ShouldShowAbility(name, petJob)
+    if petJob == data.JOB_SMN then
+        if name:find('Blood Pact') then
+            if name:find('Rage') then
+                return gConfig.petBarSmnShowBPRage ~= false;
+            elseif name:find('Ward') then
+                return gConfig.petBarSmnShowBPWard ~= false;
+            else
+                return gConfig.petBarSmnShowBPRage ~= false or gConfig.petBarSmnShowBPWard ~= false;
+            end
+        elseif name == 'Astral Flow' then return gConfig.petBarShow2HourAbility;
+        elseif name == 'Apogee' then return gConfig.petBarSmnShowApogee ~= false;
+        elseif name == 'Mana Cede' then return gConfig.petBarSmnShowManaCede ~= false;
+        end
+    elseif petJob == data.JOB_BST then
+        if name == 'Ready' then return gConfig.petBarBstShowReady ~= false;
+        elseif name == 'Sic' then return gConfig.petBarBstShowSic ~= false;
+        elseif name == 'Reward' then return gConfig.petBarBstShowReward ~= false;
+        elseif name == 'Call Beast' then return gConfig.petBarBstShowCallBeast ~= false;
+        elseif name == 'Bestial Loyalty' then return gConfig.petBarBstShowBestialLoyalty ~= false;
+        elseif name == 'Familiar' then return gConfig.petBarShow2HourAbility;
+        end
+    elseif petJob == data.JOB_DRG then
+        if name == 'Call Wyvern' then return gConfig.petBarDrgShowCallWyvern ~= false;
+        elseif name == 'Spirit Link' then return gConfig.petBarDrgShowSpiritLink ~= false;
+        elseif name == 'Deep Breathing' then return gConfig.petBarDrgShowDeepBreathing ~= false;
+        elseif name == 'Steady Wing' then return gConfig.petBarDrgShowSteadyWing ~= false;
+        elseif name == 'Spirit Surge' then return gConfig.petBarShow2HourAbility;
+        end
+    elseif petJob == data.JOB_PUP then
+        if name == 'Activate' then return gConfig.petBarPupShowActivate ~= false;
+        elseif name == 'Repair' then return gConfig.petBarPupShowRepair ~= false;
+        elseif name == 'Deus Ex Automata' then return gConfig.petBarPupShowDeusExAutomata ~= false;
+        elseif name == 'Deploy' then return gConfig.petBarPupShowDeploy ~= false;
+        elseif name == 'Deactivate' then return gConfig.petBarPupShowDeactivate ~= false;
+        elseif name == 'Retrieve' then return gConfig.petBarPupShowRetrieve ~= false;
+        elseif name == 'Overdrive' then return gConfig.petBarShow2HourAbility;
+        end
+    end
+    return false;
+end
+
+-- Mock ability data for preview mode
+local mockAbilities = {
+    [data.JOB_SMN] = {
+        {name = 'Blood Pact: Rage', timer = 0, maxTimer = 60, isReady = true},
+        {name = 'Blood Pact: Ward', timer = 30, maxTimer = 60, isReady = false},
+        {name = 'Apogee', timer = 0, maxTimer = 60, isReady = true},
+        {name = 'Mana Cede', timer = 45, maxTimer = 60, isReady = false},
+    },
+    [data.JOB_BST] = {
+        {name = 'Ready', timer = 0, maxTimer = 30, isReady = true},
+        {name = 'Sic', timer = 10, maxTimer = 30, isReady = false},
+        {name = 'Reward', timer = 0, maxTimer = 90, isReady = true},
+        {name = 'Call Beast', timer = 20, maxTimer = 60, isReady = false},
+    },
+    [data.JOB_DRG] = {
+        {name = 'Call Wyvern', timer = 0, maxTimer = 20, isReady = true},
+        {name = 'Spirit Link', timer = 30, maxTimer = 120, isReady = false},
+        {name = 'Deep Breathing', timer = 0, maxTimer = 60, isReady = true},
+        {name = 'Steady Wing', timer = 40, maxTimer = 120, isReady = false},
+    },
+    [data.JOB_PUP] = {
+        {name = 'Activate', timer = 0, maxTimer = 60, isReady = true},
+        {name = 'Repair', timer = 15, maxTimer = 180, isReady = false},
+        {name = 'Deploy', timer = 0, maxTimer = 60, isReady = true},
+        {name = 'Retrieve', timer = 10, maxTimer = 30, isReady = false},
+    },
+};
+
+-- ============================================
+-- Ability Recast Memory Reading (like PetMe)
+-- ============================================
+
+-- Memory pointer for ability recasts (initialized on first use)
+local AbilityRecastPointer = nil;
+
+-- Initialize the ability recast pointer by scanning memory
+local function InitAbilityRecastPointer()
+    if AbilityRecastPointer ~= nil then return true; end
+
+    -- Memory pattern from PetMe addon
+    local pointer = ashita.memory.find('FFXiMain.dll', 0,
+        '894124E9????????8B46??6A006A00508BCEE8', 0x19, 0);
+
+    if pointer == 0 then
+        print('[PetBar] Failed to find AbilityRecastPointer');
+        return false;
+    end
+
+    AbilityRecastPointer = ashita.memory.read_uint32(pointer);
+    print('[PetBar] AbilityRecastPointer initialized: ' .. string.format('0x%X', AbilityRecastPointer));
+    return true;
+end
+
+-- Get ability timer data by ability ID (direct memory read)
+local function GetAbilityTimerById(abilityId)
+    if not InitAbilityRecastPointer() then
+        return nil;
+    end
+
+    for i = 1, 31 do
+        local compId = ashita.memory.read_uint8(AbilityRecastPointer + (i * 8) + 3);
+        if compId == abilityId then
+            local recast = ashita.memory.read_uint32(AbilityRecastPointer + (i * 4) + 0xF8);
+            return recast;
+        end
+    end
+
+    return 0;  -- Not found or ready
+end
+
+-- Get job from preview type (for preview mode)
+local function GetPreviewJob(previewType)
+    if previewType == data.PREVIEW_WYVERN then
+        return data.JOB_DRG;
+    elseif previewType == data.PREVIEW_AVATAR then
+        return data.JOB_SMN;
+    elseif previewType == data.PREVIEW_AUTOMATON then
+        return data.JOB_PUP;
+    else -- PREVIEW_JUG or PREVIEW_CHARMED
+        return data.JOB_BST;
+    end
+end
+
+-- Get pet ability timers - single entry point for both preview and real data
+-- This follows the partylist pattern where preview is handled inside the data function
+function data.GetPetAbilityTimers()
     local timers = {};
 
-    -- In preview mode with job override, return mock timer data
-    if jobOverride then
-        if jobOverride == data.JOB_SMN then
-            if gConfig.petBarSmnShowBPRage ~= false then
-                table.insert(timers, {name = 'Blood Pact: Rage', timer = 0, maxTimer = 60, formatted = 'Ready', isReady = true});
-            end
-            if gConfig.petBarSmnShowBPWard ~= false then
-                table.insert(timers, {name = 'Blood Pact: Ward', timer = 1800, maxTimer = 3600, formatted = '30s', isReady = false});
-            end
-        elseif jobOverride == data.JOB_BST then
-            if gConfig.petBarBstShowReady ~= false then
-                table.insert(timers, {name = 'Ready', timer = 0, maxTimer = 30, formatted = 'Ready', isReady = true});
-            end
-            if gConfig.petBarBstShowReward ~= false then
-                table.insert(timers, {name = 'Reward', timer = 2700, maxTimer = 5400, formatted = '45s', isReady = false});
-            end
-        elseif jobOverride == data.JOB_DRG then
-            if gConfig.petBarDrgShowSpiritLink ~= false then
-                table.insert(timers, {name = 'Spirit Link', timer = 0, maxTimer = 120, formatted = 'Ready', isReady = true});
-            end
-        elseif jobOverride == data.JOB_PUP then
-            if gConfig.petBarPupShowRepair ~= false then
-                table.insert(timers, {name = 'Repair', timer = 900, maxTimer = 10800, formatted = '15s', isReady = false});
-            end
-            if gConfig.petBarPupShowDeploy ~= false then
-                table.insert(timers, {name = 'Deploy', timer = 0, maxTimer = 60, formatted = 'Ready', isReady = true});
+    -- Preview check FIRST (before getting real job) - like partylist's GetMemberInformation
+    if showConfig[1] and gConfig.petBarPreview then
+        -- Derive job from preview type, not real player job
+        local previewType = gConfig.petBarPreviewType or data.PREVIEW_AVATAR;
+        local petJob = GetPreviewJob(previewType);
+
+        local mockData = mockAbilities[petJob];
+        if mockData then
+            for _, ability in ipairs(mockData) do
+                if ShouldShowAbility(ability.name, petJob) then
+                    table.insert(timers, ability);
+                end
             end
         end
         return timers;
     end
 
-    local recast = GetRecastSafe();
-    if recast == nil then return timers; end
-
-    local resMgr = AshitaCore:GetResourceManager();
+    -- Real mode: get actual pet job
     local petJob = data.GetPetJob();
+    if not petJob then return timers; end
 
-    -- Loop through ability timers
-    for i = 0, 31 do
-        local timerId = recast:GetAbilityTimerId(i);
-        local timer = recast:GetAbilityTimer(i);
+    -- Pet ability IDs for direct memory reading
+    -- These are the actual ability IDs used by the game
+    local petAbilityIds = {
+        [data.JOB_SMN] = {
+            {id = 173, name = 'Blood Pact: Rage', maxTimer = 3600},
+            {id = 174, name = 'Blood Pact: Ward', maxTimer = 3600},
+            {id = 254, name = 'Apogee', maxTimer = 3600},
+            {id = 255, name = 'Mana Cede', maxTimer = 3600},
+        },
+        [data.JOB_BST] = {
+            {id = 102, name = 'Call Beast', maxTimer = 3600},
+            {id = 94, name = 'Reward', maxTimer = 5400},
+            {id = 103, name = 'Sic', maxTimer = 1800},
+        },
+        [data.JOB_DRG] = {
+            {id = 163, name = 'Call Wyvern', maxTimer = 72000},
+            {id = 164, name = 'Spirit Link', maxTimer = 7200},
+            {id = 221, name = 'Deep Breathing', maxTimer = 3600},
+            {id = 224, name = 'Steady Wing', maxTimer = 7200},
+        },
+        [data.JOB_PUP] = {
+            {id = 205, name = 'Activate', maxTimer = 3600},
+            {id = 206, name = 'Repair', maxTimer = 10800},
+            {id = 210, name = 'Deploy', maxTimer = 3600},
+            {id = 209, name = 'Deactivate', maxTimer = 3600},
+            {id = 211, name = 'Retrieve', maxTimer = 3600},
+            {id = 242, name = 'Deus Ex Automata', maxTimer = 3600},
+        },
+    };
 
-        if timerId ~= 0 or i == 0 then
-            local ability = resMgr:GetAbilityByTimerId(timerId);
-            if ability ~= nil then
-                local name = ability.Name[1];
+    local abilityList = petAbilityIds[petJob];
+    if not abilityList then return timers; end
 
-                -- Filter to pet-related abilities based on job
-                local isPetAbility = false;
+    -- Use direct memory reading to get ability timers (like PetMe)
+    for _, abilityInfo in ipairs(abilityList) do
+        local name = abilityInfo.name;
 
-                if petJob == data.JOB_SMN then
-                    if name and (name:find('Blood Pact') or name == 'Astral Flow' or name == 'Apogee' or name == 'Mana Cede') then
-                        isPetAbility = true;
+        if ShouldShowAbility(name, petJob) then
+            local timer = GetAbilityTimerById(abilityInfo.id);
+            if timer ~= nil then
+                local maxTimer = abilityInfo.maxTimer;
+                if timer > 0 then
+                    if data.abilityMaxTimers[name] == nil or timer > data.abilityMaxTimers[name] then
+                        data.abilityMaxTimers[name] = timer;
                     end
-                elseif petJob == data.JOB_BST then
-                    if name and (name == 'Ready' or name == 'Sic' or name == 'Reward'
-                        or name == 'Call Beast' or name == 'Bestial Loyalty' or name == 'Familiar') then
-                        isPetAbility = true;
-                    end
-                elseif petJob == data.JOB_DRG then
-                    if name and (name == 'Call Wyvern' or name == 'Spirit Link'
-                        or name == 'Deep Breathing' or name == 'Spirit Surge' or name == 'Steady Wing') then
-                        isPetAbility = true;
-                    end
-                elseif petJob == data.JOB_PUP then
-                    if name and (name == 'Activate' or name == 'Repair' or name == 'Deus Ex Automata'
-                        or name == 'Deploy' or name == 'Deactivate' or name == 'Retrieve') then
-                        isPetAbility = true;
-                    end
+                    maxTimer = data.abilityMaxTimers[name] or maxTimer;
+                else
+                    data.abilityMaxTimers[name] = nil;
                 end
 
-                if isPetAbility then
-                    -- Track the max timer when cooldown starts
-                    if timer > 0 then
-                        if data.abilityMaxTimers[name] == nil or timer > data.abilityMaxTimers[name] then
-                            data.abilityMaxTimers[name] = timer;
-                        end
-                    elseif timer <= 0 then
-                        -- Clear max timer when ability is ready (so next use can recalculate)
-                        data.abilityMaxTimers[name] = nil;
-                    end
-
-                    table.insert(timers, {
-                        name = name,
-                        timer = timer,
-                        maxTimer = data.abilityMaxTimers[name] or timer,
-                        formatted = data.FormatTimer(timer),
-                        isReady = timer <= 0,
-                    });
-                end
+                table.insert(timers, {
+                    name = name,
+                    timer = timer,
+                    maxTimer = maxTimer,
+                    formatted = data.FormatTimer(timer),
+                    isReady = timer <= 0,
+                });
             end
         end
     end
@@ -553,7 +984,7 @@ end
 
 function data.ClearColorCache()
     data.lastNameColor = nil;
-    data.lastDistColor = nil;
+    data.lastDistanceColor = nil;
     data.lastHpColor = nil;
     data.lastMpColor = nil;
     data.lastTpColor = nil;
@@ -576,6 +1007,10 @@ function data.GetPreviewPetData(previewType)
         showMp = false,
         isCharmed = false,
         isJug = false,
+        level = nil,
+        jugTimeRemaining = nil,
+        charmElapsed = nil,
+        petType = nil,
     };
 
     if previewType == data.PREVIEW_WYVERN then
@@ -586,6 +1021,8 @@ function data.GetPreviewPetData(previewType)
         mockData.tp = 1200;
         mockData.job = data.JOB_DRG;
         mockData.showMp = false;
+        mockData.level = 75;
+        mockData.petType = 'wyvern';
     elseif previewType == data.PREVIEW_AVATAR then
         mockData.name = 'Ifrit';
         mockData.hpPercent = 100;
@@ -594,6 +1031,8 @@ function data.GetPreviewPetData(previewType)
         mockData.tp = 800;
         mockData.job = data.JOB_SMN;
         mockData.showMp = true;
+        mockData.level = 75;
+        mockData.petType = 'avatar';
     elseif previewType == data.PREVIEW_AUTOMATON then
         mockData.name = 'Automaton';
         mockData.hpPercent = 90;
@@ -602,6 +1041,8 @@ function data.GetPreviewPetData(previewType)
         mockData.tp = 1500;
         mockData.job = data.JOB_PUP;
         mockData.showMp = true;
+        mockData.level = 75;
+        mockData.petType = 'automaton';
     elseif previewType == data.PREVIEW_JUG then
         mockData.name = 'FunguarFamiliar';
         mockData.hpPercent = 70;
@@ -611,6 +1052,9 @@ function data.GetPreviewPetData(previewType)
         mockData.job = data.JOB_BST;
         mockData.showMp = false;
         mockData.isJug = true;
+        mockData.level = 35;  -- FunguarFamiliar max level
+        mockData.jugTimeRemaining = 2732;  -- ~45 minutes remaining
+        mockData.petType = 'jug';
     elseif previewType == data.PREVIEW_CHARMED then
         mockData.name = 'Goblin Gambler';
         mockData.hpPercent = 45;
@@ -620,6 +1064,9 @@ function data.GetPreviewPetData(previewType)
         mockData.job = data.JOB_BST;
         mockData.showMp = false;
         mockData.isCharmed = true;
+        mockData.level = nil;  -- Unknown for charmed pets
+        mockData.charmElapsed = 183;  -- ~3 minutes elapsed
+        mockData.petType = 'charm';
     end
 
     return mockData;
@@ -644,6 +1091,12 @@ function data.Reset()
     data.currentPetName = nil;
     data.abilityMaxTimers = {};
     data.loadedBgName = nil;
+    -- Pet timer tracking reset
+    data.petSummonTime = nil;
+    data.petExpireTime = nil;
+    data.petType = nil;
+    data.lastTrackedPetName = nil;
+    data.charmStartTime = nil;
     data.ClearColorCache();
 end
 

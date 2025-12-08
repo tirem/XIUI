@@ -13,113 +13,58 @@ local color = require('libs.color');
 
 local display = {};
 
--- Helper to convert hex color string to RGBA values (0-1 range)
-local function hexToRgba(hex)
-    hex = hex:gsub("#", "");
-    local r = tonumber("0x"..hex:sub(1,2)) / 255;
-    local g = tonumber("0x"..hex:sub(3,4)) / 255;
-    local b = tonumber("0x"..hex:sub(5,6)) / 255;
-    local a = 1.0;
-    if #hex == 8 then
-        a = tonumber("0x"..hex:sub(7,8)) / 255;
+-- ============================================
+-- Get Timer Colors Based on Ability Category
+-- ============================================
+-- Rage (offensive): Blood Pact: Rage, Ready, Sic, Deploy
+-- Ward (defensive): Blood Pact: Ward, Reward, Repair, Spirit Link
+-- Two-Hour: Astral Flow, Familiar, Spirit Surge, Overdrive
+-- Other: Apogee, Mana Cede, Call Beast, Call Wyvern, Activate, etc.
+local function GetTimerColors(abilityName, colorConfig)
+    local name = abilityName or '';
+
+    -- Blood Pact handling - check for Rage/Ward variants
+    if name:find('Blood Pact') then
+        if name:find('Rage') then
+            local readyColor = (colorConfig and colorConfig.timerRageReadyColor) or 0xE6FF6600;
+            local recastColor = (colorConfig and colorConfig.timerRageRecastColor) or 0xD9FF9933;
+            return readyColor, recastColor;
+        elseif name:find('Ward') then
+            local readyColor = (colorConfig and colorConfig.timerWardReadyColor) or 0xE600CCFF;
+            local recastColor = (colorConfig and colorConfig.timerWardRecastColor) or 0xD966E0FF;
+            return readyColor, recastColor;
+        end
+        -- Generic Blood Pact without Rage/Ward - default to Rage colors
+        local readyColor = (colorConfig and colorConfig.timerRageReadyColor) or 0xE6FF6600;
+        local recastColor = (colorConfig and colorConfig.timerRageRecastColor) or 0xD9FF9933;
+        return readyColor, recastColor;
     end
-    return r, g, b, a;
-end
 
--- Helper to get gradient colors from config
-local function getGradientColors(gradient, defaultStart, defaultStop)
-    local startColor = (gradient and gradient.start) or defaultStart;
-    local endColor = (gradient and gradient.stop) or defaultStop;
-    local sr, sg, sb = hexToRgba(startColor);
-    local er, eg, eb = hexToRgba(endColor);
-    return sr, sg, sb, er, eg, eb;
-end
-
--- Draw a filled circle with vertical gradient (top to bottom)
-local function DrawGradientCircleFilled(drawList, centerX, centerY, radius, topR, topG, topB, bottomR, bottomG, bottomB, alpha, segments)
-    segments = segments or 32;
-    local topY = centerY - radius;
-    local bottomY = centerY + radius;
-    local height = bottomY - topY;
-
-    -- Draw horizontal strips from top to bottom
-    local numStrips = math.max(16, math.floor(radius));
-    for i = 0, numStrips - 1 do
-        local t1 = i / numStrips;
-        local t2 = (i + 1) / numStrips;
-        local y1 = topY + t1 * height;
-        local y2 = topY + t2 * height;
-
-        -- Interpolate colors
-        local r1 = topR + t1 * (bottomR - topR);
-        local g1 = topG + t1 * (bottomG - topG);
-        local b1 = topB + t1 * (bottomB - topB);
-        local r2 = topR + t2 * (bottomR - topR);
-        local g2 = topG + t2 * (bottomG - topG);
-        local b2 = topB + t2 * (bottomB - topB);
-
-        -- Calculate x bounds at this y level (circle equation)
-        local dy1 = y1 - centerY;
-        local dy2 = y2 - centerY;
-        local halfWidth1 = math.sqrt(math.max(0, radius * radius - dy1 * dy1));
-        local halfWidth2 = math.sqrt(math.max(0, radius * radius - dy2 * dy2));
-
-        -- Draw a quad for this strip
-        local color1 = imgui.GetColorU32({r1, g1, b1, alpha});
-        local color2 = imgui.GetColorU32({r2, g2, b2, alpha});
-
-        drawList:AddRectFilledMultiColor(
-            {centerX - halfWidth1, y1},
-            {centerX + halfWidth2, y2},
-            color1, color1, color2, color2
-        );
+    -- Rage abilities (offensive) - Orange
+    if name == 'Ready' or name == 'Sic' or name == 'Deploy' then
+        local readyColor = (colorConfig and colorConfig.timerRageReadyColor) or 0xE6FF6600;
+        local recastColor = (colorConfig and colorConfig.timerRageRecastColor) or 0xD9FF9933;
+        return readyColor, recastColor;
     end
-end
 
--- Draw a pie slice with vertical gradient
-local function DrawGradientPieSlice(drawList, centerX, centerY, radius, startAngle, endAngle, topR, topG, topB, bottomR, bottomG, bottomB, alpha, segments)
-    segments = segments or 32;
-    local topY = centerY - radius;
-    local height = radius * 2;
-
-    -- Build the pie slice as triangles from center
-    local angleStep = (endAngle - startAngle) / segments;
-
-    for i = 0, segments - 1 do
-        local angle1 = startAngle + i * angleStep;
-        local angle2 = startAngle + (i + 1) * angleStep;
-
-        local x1 = centerX + math.cos(angle1) * radius;
-        local y1 = centerY + math.sin(angle1) * radius;
-        local x2 = centerX + math.cos(angle2) * radius;
-        local y2 = centerY + math.sin(angle2) * radius;
-
-        -- Calculate gradient t values based on y position
-        local tCenter = 0.5;  -- Center is middle of gradient
-        local t1 = (y1 - topY) / height;
-        local t2 = (y2 - topY) / height;
-
-        -- Interpolate colors for each vertex
-        local rC = topR + tCenter * (bottomR - topR);
-        local gC = topG + tCenter * (bottomG - topG);
-        local bC = topB + tCenter * (bottomB - topB);
-
-        local r1 = topR + t1 * (bottomR - topR);
-        local g1 = topG + t1 * (bottomG - topG);
-        local b1 = topB + t1 * (bottomB - topB);
-
-        local r2 = topR + t2 * (bottomR - topR);
-        local g2 = topG + t2 * (bottomG - topG);
-        local b2 = topB + t2 * (bottomB - topB);
-
-        -- Use average color for the triangle (ImGui doesn't support per-vertex colors on triangles easily)
-        local avgR = (rC + r1 + r2) / 3;
-        local avgG = (gC + g1 + g2) / 3;
-        local avgB = (bC + b1 + b2) / 3;
-        local color = imgui.GetColorU32({avgR, avgG, avgB, alpha});
-
-        drawList:AddTriangleFilled({centerX, centerY}, {x1, y1}, {x2, y2}, color);
+    -- Ward abilities (defensive) - Cyan
+    if name == 'Reward' or name == 'Repair' or name == 'Spirit Link' then
+        local readyColor = (colorConfig and colorConfig.timerWardReadyColor) or 0xE600CCFF;
+        local recastColor = (colorConfig and colorConfig.timerWardRecastColor) or 0xD966E0FF;
+        return readyColor, recastColor;
     end
+
+    -- Two-Hour abilities - Magenta
+    if name == 'Astral Flow' or name == 'Familiar' or name == 'Spirit Surge' or name == 'Overdrive' then
+        local readyColor = (colorConfig and colorConfig.timer2hReadyColor) or 0xE6FF00FF;
+        local recastColor = (colorConfig and colorConfig.timer2hRecastColor) or 0xD9FF66FF;
+        return readyColor, recastColor;
+    end
+
+    -- Other abilities (utility) - Green/Yellow
+    local readyColor = (colorConfig and colorConfig.timerReadyColor) or 0xE600FF00;
+    local recastColor = (colorConfig and colorConfig.timerRecastColor) or 0xD9FFFF00;
+    return readyColor, recastColor;
 end
 
 -- ============================================
@@ -131,6 +76,9 @@ local function DrawAbilityIcon(drawList, x, y, size, timerInfo, colorConfig)
     local centerY = y + radius;
     local innerRadius = radius - 2;
 
+    -- Get colors based on ability category
+    local readyHex, recastHex = GetTimerColors(timerInfo.name, colorConfig);
+
     -- Background circle (dark blue)
     local bgColor = imgui.GetColorU32({0.01, 0.07, 0.17, 1.0});
     drawList:AddCircleFilled({centerX, centerY}, radius, bgColor, 32);
@@ -141,8 +89,6 @@ local function DrawAbilityIcon(drawList, x, y, size, timerInfo, colorConfig)
         progress = math.max(0, math.min(1, progress));
 
         if progress > 0 then
-            -- Recast color from config (default: yellow)
-            local recastHex = (colorConfig and colorConfig.timerRecastColor) or 0xD9FFFF00;
             local fillColor = imgui.GetColorU32(color.ARGBToImGui(recastHex));
 
             -- Draw clockwise fill arc (from 12 o'clock position)
@@ -156,8 +102,6 @@ local function DrawAbilityIcon(drawList, x, y, size, timerInfo, colorConfig)
             drawList:PathFillConvex(fillColor);
         end
     else
-        -- Ready indicator from config (default: green)
-        local readyHex = (colorConfig and colorConfig.timerReadyColor) or 0xE600FF00;
         local readyColor = imgui.GetColorU32(color.ARGBToImGui(readyHex));
         drawList:AddCircleFilled({centerX, centerY}, innerRadius, readyColor, 32);
     end
@@ -171,68 +115,40 @@ end
 -- DrawWindow - Main Pet Bar Rendering
 -- ============================================
 function display.DrawWindow(settings)
-    -- Preview mode: use mock data instead of real pet data
-    local isPreviewMode = gConfig.petBarPreview and showConfig[1];
-    local previewType = gConfig.petBarPreviewType or data.PREVIEW_AVATAR;
+    -- Get pet data from data module (handles preview internally)
+    local petData = data.GetPetData();
 
-    local petName, petHpPercent, petDistance, petMpPercent, petTp, petTpPercent, petJob, showMp;
-
-    if isPreviewMode then
-        -- Get mock data for preview
-        local mockData = data.GetPreviewPetData(previewType);
-        petName = mockData.name;
-        petHpPercent = mockData.hpPercent;
-        petDistance = mockData.distance;
-        petMpPercent = mockData.mpPercent;
-        petTp = mockData.tp;
-        petTpPercent = math.min(petTp / 1000, 1.0);
-        petJob = mockData.job;
-        showMp = mockData.showMp;
-        data.currentPetName = petName;
-    else
-        -- Real mode: get actual pet data
-        local player = GetPlayerSafe();
-        local party = GetPartySafe();
-        local playerEnt = GetPlayerEntity();
-
-        if player == nil or party == nil or playerEnt == nil then
-            data.SetAllFontsVisible(false);
-            data.HideBackground();
-            return false;
-        end
-
-        local currJob = player:GetMainJob();
-        if player.isZoning or currJob == 0 then
-            data.SetAllFontsVisible(false);
-            data.HideBackground();
-            return false;
-        end
-
-        -- Check if we have a pet
-        local pet = data.GetPetEntity();
-        if pet == nil then
-            data.currentPetName = nil;
-            data.SetAllFontsVisible(false);
-            data.HideBackground();
-            return false;
-        end
-
-        -- Get pet stats
-        petName = pet.Name or 'Pet';
-        data.currentPetName = petName;
-        petHpPercent = pet.HPPercent or 0;
-        petDistance = math.sqrt(pet.Distance);
-        petMpPercent = player:GetPetMPPercent() or 0;
-        petTp = player:GetPetTP() or 0;
-        petTpPercent = math.min(petTp / 1000, 1.0);
-
-        petJob = data.GetPetJob();
-        showMp = petJob == data.JOB_SMN or petJob == data.JOB_PUP;
+    if petData == nil then
+        data.currentPetName = nil;
+        data.SetAllFontsVisible(false);
+        data.HideBackground();
+        return false;
     end
 
+    -- Use petData directly - no preview checks needed
+    local petName = petData.name;
+    local petHpPercent = petData.hpPercent;
+    local petDistance = petData.distance;
+    local petMpPercent = petData.mpPercent;
+    local petTp = petData.tp;
+    local petJob = petData.job;
+    local showMp = petData.showMp;
+    -- New fields
+    local petLevel = petData.level;
+    local isJug = petData.isJug;
+    local isCharmed = petData.isCharmed;
+    local jugTimeRemaining = petData.jugTimeRemaining;
+    local charmElapsed = petData.charmElapsed;
+
+    -- Set current pet name for background image rendering
+    data.currentPetName = petName;
+
+    local petTpPercent = math.min(petTp / 1000, 1.0);
+
     -- Build window flags
+    -- Only allow movement when config is open and preview is enabled (like partylist)
     local windowFlags = data.getBaseWindowFlags();
-    if gConfig.lockPositions then
+    if gConfig.lockPositions and not (showConfig[1] and gConfig.petBarPreview) then
         windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
     end
 
@@ -278,12 +194,18 @@ function display.DrawWindow(settings)
         windowPosX, windowPosY = imgui.GetWindowPos();
         local startX, startY = imgui.GetCursorScreenPos();
 
-        -- Row 1: Pet Name (left) and HP% (right, same line)
+        -- Row 1: Pet Name (with optional level) (left) and HP% (right, same line)
         local nameFontSize = gConfig.petBarNameFontSize or settings.name_font_settings.font_height;
         local vitalsFontSize = gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
 
+        -- Format name with level if available and enabled
+        local displayName = petName;
+        if petLevel and gConfig.petBarShowLevel ~= false then
+            displayName = string.format('Lv.%d %s', petLevel, petName);
+        end
+
         data.nameText:set_font_height(nameFontSize);
-        data.nameText:set_text(petName);
+        data.nameText:set_text(displayName);
         data.nameText:set_position_x(startX);
         data.nameText:set_position_y(startY);
         local nameColor = colorConfig.nameTextColor or 0xFFFFFFFF;
@@ -293,14 +215,25 @@ function display.DrawWindow(settings)
         end
         data.nameText:set_visible(true);
 
-        -- Distance text (next to pet name)
+        -- Distance text (absolute or next to pet name)
         if gConfig.petBarShowDistance then
             local distanceFontSize = gConfig.petBarDistanceFontSize or settings.distance_font_settings.font_height;
-            local nameWidth, _ = data.nameText:get_text_size();
             data.distanceText:set_font_height(distanceFontSize);
             data.distanceText:set_text(string.format('%.1f', petDistance));
-            data.distanceText:set_position_x(startX + nameWidth + 4);
-            data.distanceText:set_position_y(startY + (nameFontSize - distanceFontSize) / 2);
+
+            if gConfig.petBarDistanceAbsolute then
+                -- Absolute positioning: relative to window top-left
+                local offsetX = gConfig.petBarDistanceOffsetX or 0;
+                local offsetY = gConfig.petBarDistanceOffsetY or 0;
+                data.distanceText:set_position_x(windowPosX + offsetX);
+                data.distanceText:set_position_y(windowPosY + offsetY);
+            else
+                -- Relative positioning: next to pet name
+                local nameWidth, _ = data.nameText:get_text_size();
+                data.distanceText:set_position_x(startX + nameWidth + 4);
+                data.distanceText:set_position_y(startY + (nameFontSize - distanceFontSize) / 2);
+            end
+
             local distColor = colorConfig.distanceTextColor or 0xFFFFFFFF;
             if data.lastDistanceColor ~= distColor then
                 data.distanceText:set_font_color(distColor);
@@ -419,8 +352,8 @@ function display.DrawWindow(settings)
 
         -- Row 4: Ability Icons (circular)
         if gConfig.petBarShowTimers ~= false then
-            -- Pass job override in preview mode so mock timers respect settings
-            local timers = data.GetPetAbilityTimers(isPreviewMode and petJob or nil);
+            -- Get timers from data module (handles preview internally)
+            local timers = data.GetPetAbilityTimers();
             if #timers > 0 then
                 local iconScale = gConfig.petBarIconsScale or 1.0;
                 local iconOffsetX = gConfig.petBarIconsOffsetX or 0;
@@ -458,6 +391,86 @@ function display.DrawWindow(settings)
             end
         end
 
+        -- BST Pet Timer Display (Jug countdown or Charm elapsed)
+        local showJugTimer = isJug and gConfig.petBarShowJugTimer ~= false and jugTimeRemaining;
+        local showCharmTimer = isCharmed and gConfig.petBarShowCharmIndicator ~= false;
+
+        if showJugTimer or showCharmTimer then
+            local drawList = imgui.GetForegroundDrawList();
+            local iconSize = gConfig.petBarCharmIconSize or 16;
+            local offsetX = gConfig.petBarCharmOffsetX or 0;
+            local offsetY = gConfig.petBarCharmOffsetY or -20;
+
+            local timerX = windowPosX + offsetX;
+            local timerY = windowPosY + offsetY;
+
+            if showJugTimer then
+                -- Jug pet: Show jug icon with countdown timer
+                local jugColor = imgui.GetColorU32(color.ARGBToImGui(colorConfig.jugIconColor or 0xFFFFFFFF));
+
+                -- Draw a simple jug/bottle icon (rounded rectangle)
+                local iconCenterX = timerX + iconSize / 2;
+                local iconCenterY = timerY + iconSize / 2;
+                drawList:AddRectFilled(
+                    {timerX + 2, timerY + iconSize * 0.3},
+                    {timerX + iconSize - 2, timerY + iconSize},
+                    jugColor, 3
+                );
+                -- Jug neck
+                drawList:AddRectFilled(
+                    {timerX + iconSize * 0.3, timerY},
+                    {timerX + iconSize * 0.7, timerY + iconSize * 0.4},
+                    jugColor, 2
+                );
+
+                -- Timer text (countdown)
+                local timerStr = data.FormatTimeMMSS(jugTimeRemaining);
+                if timerStr then
+                    local textColor = colorConfig.charmTimerColor or 0xFFFFFFFF;
+                    -- Warning color if under 5 minutes
+                    if jugTimeRemaining < 300 then
+                        textColor = colorConfig.durationWarningColor or 0xFFFF6600;
+                    end
+                    -- Draw timer text next to icon using ImGui
+                    local textX = timerX + iconSize + 4;
+                    local textY = timerY + (iconSize - 12) / 2;
+                    drawList:AddText({textX, textY}, imgui.GetColorU32(color.ARGBToImGui(textColor)), timerStr);
+                end
+            elseif showCharmTimer then
+                -- Charmed pet: Show heart icon with elapsed timer
+                local heartColor = imgui.GetColorU32(color.ARGBToImGui(colorConfig.charmHeartColor or 0xFFFF6699));
+
+                -- Draw heart shape using filled triangles/circles
+                local centerX = timerX + iconSize / 2;
+                local centerY = timerY + iconSize / 2;
+                local halfSize = iconSize / 2;
+
+                -- Heart is made of two circles and a triangle
+                local circleRadius = halfSize * 0.5;
+                local circleY = centerY - circleRadius * 0.3;
+                drawList:AddCircleFilled({centerX - circleRadius * 0.6, circleY}, circleRadius, heartColor, 16);
+                drawList:AddCircleFilled({centerX + circleRadius * 0.6, circleY}, circleRadius, heartColor, 16);
+                -- Triangle for bottom of heart
+                drawList:AddTriangleFilled(
+                    {centerX - halfSize * 0.9, centerY - circleRadius * 0.2},
+                    {centerX + halfSize * 0.9, centerY - circleRadius * 0.2},
+                    {centerX, centerY + halfSize * 0.8},
+                    heartColor
+                );
+
+                -- Timer text (elapsed time)
+                if charmElapsed then
+                    local timerStr = data.FormatTimeMMSS(charmElapsed);
+                    if timerStr then
+                        local textColor = colorConfig.charmTimerColor or 0xFFFFFFFF;
+                        local textX = timerX + iconSize + 4;
+                        local textY = timerY + (iconSize - 12) / 2;
+                        drawList:AddText({textX, textY}, imgui.GetColorU32(color.ARGBToImGui(textColor)), timerStr);
+                    end
+                end
+            end
+        end
+
         -- Get final window size for background
         local windowWidth, windowHeight = imgui.GetWindowSize();
 
@@ -470,7 +483,7 @@ function display.DrawWindow(settings)
     end
     imgui.End();
 
-    return true;  -- Pet exists, target window can render
+    return true;  -- Pet exists (or preview mode), target window can render
 end
 
 return display;

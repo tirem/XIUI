@@ -20,14 +20,12 @@ local function DrawPetBarSettingsContent()
     components.DrawCheckbox('Hide During Events', 'petBarHideDuringEvents');
     components.DrawCheckbox('Show Bookends', 'petBarShowBookends');
     components.DrawCheckbox('Preview Mode', 'petBarPreview');
-    imgui.ShowHelp('Show a preview of the pet bar with mock data. Use the dropdown below to select pet type.');
+    imgui.ShowHelp('Show the pet bar with mock data to preview your settings.');
 
-    -- Preview type selector (only shown when preview mode is enabled)
     if gConfig.petBarPreview then
         local previewTypes = {'Wyvern (DRG)', 'Avatar (SMN)', 'Automaton (PUP)', 'Jug Pet (BST)', 'Charmed Pet (BST)'};
         local currentType = gConfig.petBarPreviewType or petData.PREVIEW_AVATAR;
-        local currentTypeName = previewTypes[currentType] or 'Avatar (SMN)';
-        components.DrawComboBox('Preview Type##petBarPreviewType', currentTypeName, previewTypes, function(newValue)
+        components.DrawComboBox('Preview Type##petBarPreview', previewTypes[currentType], previewTypes, function(newValue)
             for i, name in ipairs(previewTypes) do
                 if name == newValue then
                     gConfig.petBarPreviewType = i;
@@ -36,12 +34,35 @@ local function DrawPetBarSettingsContent()
             end
             SaveSettingsOnly();
         end);
-        imgui.ShowHelp('Select which type of pet to preview.');
+        imgui.ShowHelp('Select which pet type to preview.');
     end
 
     if components.CollapsingSection('Display Options##petBar') then
+        components.DrawCheckbox('Show Pet Level', 'petBarShowLevel');
+        imgui.ShowHelp('Show pet level before the name (e.g., "Lv.35 FunguarFamiliar").');
+
         components.DrawCheckbox('Show Distance', 'petBarShowDistance');
         imgui.ShowHelp('Show distance from player to pet.');
+
+        if gConfig.petBarShowDistance then
+            imgui.SameLine();
+            imgui.SetNextItemWidth(120);
+            local positionModes = {'Next to Name', 'Absolute'};
+            local currentMode = gConfig.petBarDistanceAbsolute and 'Absolute' or 'Next to Name';
+            components.DrawComboBox('Position Mode##petBarDistance', currentMode, positionModes, function(newValue)
+                gConfig.petBarDistanceAbsolute = (newValue == 'Absolute');
+                SaveSettingsOnly();
+            end);
+            imgui.ShowHelp('Next to Name: Distance appears after pet name.\nAbsolute: Distance positioned relative to window top-left.');
+
+            if gConfig.petBarDistanceAbsolute then
+                components.DrawSlider('Offset X##petBarDistance', 'petBarDistanceOffsetX', -200, 200);
+                imgui.ShowHelp('Horizontal offset from window left.');
+                components.DrawSlider('Offset Y##petBarDistance', 'petBarDistanceOffsetY', -200, 200);
+                imgui.ShowHelp('Vertical offset from window top.');
+            end
+        end
+
         components.DrawCheckbox('Show Vitals (HP/MP/TP)', 'petBarShowVitals');
         imgui.ShowHelp('Show pet HP, MP, and TP bars.');
         components.DrawCheckbox('Show Ability Timers', 'petBarShowTimers');

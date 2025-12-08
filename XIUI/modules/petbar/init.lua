@@ -20,6 +20,9 @@ local petbar = {};
 -- Initialize
 -- ============================================
 petbar.Initialize = function(settings)
+    -- Restore timers from config (session persistence)
+    data.RestoreTimersFromConfig();
+
     -- Create fonts
     data.nameText = FontManager.create(settings.name_font_settings);
     data.distanceText = FontManager.create(settings.distance_font_settings);
@@ -139,6 +142,7 @@ petbar.UpdateVisuals = function(settings)
     local backgroundName = gConfig.petBarBackgroundTheme or 'Window1';
     if data.loadedBgName ~= backgroundName then
         data.loadedBgName = backgroundName;
+        -- Update main background primitives
         for _, k in ipairs(data.bgImageKeys) do
             if backgroundName == '-None-' then
                 data.backgroundPrim[k].exists = false;
