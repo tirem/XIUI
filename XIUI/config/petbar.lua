@@ -140,15 +140,17 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
 
         imgui.Spacing();
 
-        -- MP Bar
-        components.DrawPartyCheckbox(typeSettings, 'Show MP Bar##' .. configKey, 'showMP');
-        imgui.ShowHelp('Show pet MP bar.');
-        if typeSettings.showMP then
-            components.DrawPartySlider(typeSettings, 'Scale X##mp' .. configKey, 'mpScaleX', 0.5, 2.0, '%.1f');
-            components.DrawPartySlider(typeSettings, 'Scale Y##mp' .. configKey, 'mpScaleY', 0.5, 2.0, '%.1f');
-        end
+        -- MP Bar (only Automaton uses MP in era)
+        if configKey == 'petBarAutomaton' then
+            components.DrawPartyCheckbox(typeSettings, 'Show MP Bar##' .. configKey, 'showMP');
+            imgui.ShowHelp('Show pet MP bar.');
+            if typeSettings.showMP then
+                components.DrawPartySlider(typeSettings, 'Scale X##mp' .. configKey, 'mpScaleX', 0.5, 2.0, '%.1f');
+                components.DrawPartySlider(typeSettings, 'Scale Y##mp' .. configKey, 'mpScaleY', 0.5, 2.0, '%.1f');
+            end
 
-        imgui.Spacing();
+            imgui.Spacing();
+        end
 
         -- TP Bar
         components.DrawPartyCheckbox(typeSettings, 'Show TP Bar##' .. configKey, 'showTP');
@@ -164,7 +166,10 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
         components.DrawPartySlider(typeSettings, 'Pet Name##' .. configKey, 'nameFontSize', 8, 24);
         components.DrawPartySlider(typeSettings, 'Distance##' .. configKey, 'distanceFontSize', 6, 18);
         components.DrawPartySlider(typeSettings, 'HP Text##' .. configKey, 'hpFontSize', 6, 18);
-        components.DrawPartySlider(typeSettings, 'MP Text##' .. configKey, 'mpFontSize', 6, 18);
+        -- Only Automaton uses MP in era
+        if configKey == 'petBarAutomaton' then
+            components.DrawPartySlider(typeSettings, 'MP Text##' .. configKey, 'mpFontSize', 6, 18);
+        end
         components.DrawPartySlider(typeSettings, 'TP Text##' .. configKey, 'tpFontSize', 6, 18);
     end
 

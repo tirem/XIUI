@@ -251,6 +251,106 @@ local function DrawRecastIcon(drawList, x, y, size, timerInfo, colorConfig, fill
 end
 
 -- ============================================
+-- Draw Recast Icons for Charge Abilities (compact mode)
+-- Draws multiple smaller icons representing charges
+-- Returns total width consumed
+-- ============================================
+local function DrawRecastIconCharged(drawList, x, y, size, timerInfo, colorConfig, fillStyle)
+    fillStyle = fillStyle or 'square';
+
+    local charges = timerInfo.charges or 0;
+    local maxCharges = timerInfo.maxCharges or 3;
+    local nextChargeTimer = timerInfo.nextChargeTimer or 0;
+
+    -- Get gradients based on ability category
+    local readyGradient, recastGradient = GetTimerGradients(timerInfo.name, colorConfig);
+    local bgColor = imgui.GetColorU32({0.01, 0.07, 0.17, 1.0});
+    local borderColor = imgui.GetColorU32({0.01, 0.05, 0.12, 1.0});
+
+    local readyColor = imgui.GetColorU32(color.HexToImGui(readyGradient[1]));
+    local recastColor = imgui.GetColorU32(color.HexToImGui(recastGradient[1]));
+
+    -- Size for each charge icon (same size as normal icons)
+    local chargeSize = size;
+    local chargeSpacing = 4;
+    local rounding = 3;
+    local padding = 2;
+
+    for i = 1, maxCharges do
+        local chargeX = x + (i - 1) * (chargeSize + chargeSpacing);
+
+        if fillStyle == 'circle' or fillStyle == 'clock' then
+            -- Circle style for charges
+            local radius = chargeSize / 2;
+            local centerX = chargeX + radius;
+            local centerY = y + radius;
+            local innerRadius = radius - 2;
+
+            -- Background circle
+            drawList:AddCircleFilled({centerX, centerY}, radius, bgColor, 24);
+
+            if i <= charges then
+                -- Full charge available
+                drawList:AddCircleFilled({centerX, centerY}, innerRadius, readyColor, 24);
+            elseif i == charges + 1 and nextChargeTimer > 0 then
+                -- Recharging charge - show progress
+                local progress = 1.0 - (nextChargeTimer / data.READY_BASE_RECAST);
+                progress = math.max(0, math.min(1, progress));
+
+                if fillStyle == 'clock' and drawList.PathClear then
+                    -- Clock sweep arc
+                    local startAngle = -math.pi / 2;
+                    local endAngle = startAngle + (progress * 2 * math.pi);
+                    drawList:PathClear();
+                    drawList:PathLineTo({centerX, centerY});
+                    local numSegments = math.max(3, math.floor(24 * progress));
+                    drawList:PathArcTo({centerX, centerY}, innerRadius, startAngle, endAngle, numSegments);
+                    drawList:PathFillConvex(recastColor);
+                else
+                    -- Circle fill
+                    drawList:AddCircleFilled({centerX, centerY}, innerRadius * progress, recastColor, 24);
+                end
+            end
+            -- Empty charges get no fill (just background)
+
+            -- Border circle
+            drawList:AddCircle({centerX, centerY}, radius, borderColor, 24, 1.5);
+        else
+            -- Square style for charges
+            -- Background
+            drawList:AddRectFilled({chargeX, y}, {chargeX + chargeSize, y + chargeSize}, bgColor, rounding);
+
+            -- Inner area
+            local innerX = chargeX + padding;
+            local innerY = y + padding;
+            local innerSize = chargeSize - (padding * 2);
+
+            if i <= charges then
+                -- Full charge available
+                drawList:AddRectFilled({innerX, innerY}, {innerX + innerSize, innerY + innerSize}, readyColor, rounding - 1);
+            elseif i == charges + 1 and nextChargeTimer > 0 then
+                -- Recharging charge - show progress (vertical fill)
+                local progress = 1.0 - (nextChargeTimer / data.READY_BASE_RECAST);
+                progress = math.max(0, math.min(1, progress));
+
+                if progress > 0 then
+                    local fillHeight = innerSize * progress;
+                    local fillTop = innerY + innerSize - fillHeight;
+                    drawList:AddRectFilled({innerX, fillTop}, {innerX + innerSize, innerY + innerSize}, recastColor, rounding - 1);
+                end
+            end
+            -- Empty charges get no fill (just background)
+
+            -- Border
+            drawList:AddRect({chargeX, y}, {chargeX + chargeSize, y + chargeSize}, borderColor, rounding, nil, 1.5);
+        end
+    end
+
+    -- Return total width consumed
+    return maxCharges * chargeSize + (maxCharges - 1) * chargeSpacing;
+end
+
+-- ============================================
 -- Format recast time for display
 -- rawTimer is in 60ths of a second (60 units = 1 second)
 -- ============================================
@@ -361,6 +461,134 @@ local function DrawRecastFull(drawList, x, y, timerInfo, colorConfig, fullSettin
             drawList = drawList,
         }
     )
+
+    -- Return the bar height for layout purposes
+    return barHeight;
+end
+
+-- ============================================
+-- Draw Recast - Full Display Mode for Charge Abilities
+-- Shows name and recast timer with 3 segmented progress bars
+-- fontIndex: 1-based index for which font slot to use
+-- ============================================
+local function DrawRecastFullCharged(drawList, x, y, timerInfo, colorConfig, fullSettings, fontIndex)
+    local showName = fullSettings.showName;
+    local showRecast = fullSettings.showRecast;
+    local nameFontSize = fullSettings.nameFontSize or 10;
+    local recastFontSize = fullSettings.recastFontSize or 10;
+
+    local charges = timerInfo.charges or 0;
+    local maxCharges = timerInfo.maxCharges or 3;
+    local nextChargeTimer = timerInfo.nextChargeTimer or 0;
+
+    -- Get font objects from data module
+    local nameFont = data.recastNameFonts and data.recastNameFonts[fontIndex];
+    local recastFont = data.recastTimerFonts and data.recastTimerFonts[fontIndex];
+
+    -- Get gradients based on ability category
+    local readyGradient, recastGradient = GetTimerGradients(timerInfo.name, colorConfig);
+
+    -- Determine text color based on charge state
+    local barGradient = (charges > 0) and readyGradient or recastGradient;
+
+    -- Get text color from gradient start (convert hex to ARGB for GdiFonts)
+    local textColorHex = color.HexToARGB(barGradient[1]:gsub('#', ''):sub(1, 6),
+        tonumber(barGradient[1]:gsub('#', ''):sub(7, 8) or 'ff', 16));
+
+    -- Prepare text content
+    local nameText = timerInfo.name or 'Unknown';
+    -- For charges, show "[charges]" or timer to next charge
+    local recastText;
+    if charges >= maxCharges then
+        recastText = string.format('[%d]', charges);
+    elseif charges > 0 then
+        recastText = string.format('[%d] %s', charges, FormatRecastTime(nextChargeTimer));
+    else
+        recastText = FormatRecastTime(nextChargeTimer);
+    end
+
+    -- Calculate the max font size for vertical positioning
+    local maxFontSize = 0;
+    if showName then maxFontSize = math.max(maxFontSize, nameFontSize); end
+    if showRecast then maxFontSize = math.max(maxFontSize, recastFontSize); end
+    if maxFontSize == 0 then maxFontSize = 10; end
+
+    -- Text Y position at top of row
+    local textY = y;
+
+    -- Hide fonts by default, will show if needed
+    if nameFont then nameFont:set_visible(false); end
+    if recastFont then recastFont:set_visible(false); end
+
+    -- Progress bar settings (configurable)
+    local barHeight = fullSettings.barHeight or 4;
+    local barWidth = fullSettings.barWidth or 150;
+    local barY = textY + maxFontSize + 2;  -- Position below the text
+
+    -- Track where text/bar should start
+    local barStartX = x;
+
+    -- Name - left-aligned at start of bar
+    if showName and nameFont then
+        nameFont:set_font_height(nameFontSize);
+        nameFont:set_text(nameText);
+        nameFont:set_position_x(barStartX);
+        nameFont:set_position_y(textY);
+        nameFont:set_font_color(textColorHex);
+        nameFont:set_font_alignment(0); -- Left alignment
+        nameFont:set_visible(true);
+    end
+
+    -- Recast timer - right-aligned at far right of progress bar
+    if showRecast and recastFont then
+        recastFont:set_font_height(recastFontSize);
+        recastFont:set_text(recastText);
+        recastFont:set_position_x(barStartX + barWidth);  -- Right edge of bar
+        recastFont:set_position_y(textY);
+        recastFont:set_font_color(textColorHex);
+        recastFont:set_font_alignment(2); -- Right alignment
+        recastFont:set_visible(true);
+    end
+
+    -- Draw 3 segmented progress bars using progressbar library
+    local showBookends = fullSettings.showBookends;
+    if showBookends == nil then showBookends = false; end
+
+    local segmentGap = 3;
+    local totalGapWidth = (maxCharges - 1) * segmentGap;
+    local segmentWidth = (barWidth - totalGapWidth) / maxCharges;
+
+    for i = 1, maxCharges do
+        local segmentX = barStartX + (i - 1) * (segmentWidth + segmentGap);
+
+        local segmentProgress;
+        local segmentGradient;
+
+        if i <= charges then
+            -- Full charge available
+            segmentProgress = 1.0;
+            segmentGradient = readyGradient;
+        elseif i == charges + 1 and nextChargeTimer > 0 then
+            -- Recharging charge - show progress
+            segmentProgress = 1.0 - (nextChargeTimer / data.READY_BASE_RECAST);
+            segmentProgress = math.max(0, math.min(1, segmentProgress));
+            segmentGradient = recastGradient;
+        else
+            -- Empty charge
+            segmentProgress = 0;
+            segmentGradient = recastGradient;
+        end
+
+        progressbar.ProgressBar(
+            {{segmentProgress, segmentGradient}},
+            {segmentWidth, barHeight},
+            {
+                decorate = showBookends,
+                absolutePosition = {segmentX, barY},
+                drawList = drawList,
+            }
+        );
+    end
 
     -- Return the bar height for layout purposes
     return barHeight;
@@ -757,7 +985,11 @@ function display.DrawWindow(settings)
                         if i > data.MAX_RECAST_SLOTS then break; end
 
                         local posY = iconY + (i - 1) * rowHeight;
-                        DrawRecastFull(drawList, iconX, posY, timerInfo, colorConfig, fullSettings, i);
+                        if timerInfo.isChargeAbility then
+                            DrawRecastFullCharged(drawList, iconX, posY, timerInfo, colorConfig, fullSettings, i);
+                        else
+                            DrawRecastFull(drawList, iconX, posY, timerInfo, colorConfig, fullSettings, i);
+                        end
                     end
 
                     -- Hide unused font slots
@@ -788,12 +1020,20 @@ function display.DrawWindow(settings)
                     end
 
                     local compactSpacing = 4 * iconScale;
+                    local currentX = iconX;
 
                     for i, timerInfo in ipairs(timers) do
                         if i > data.MAX_RECAST_SLOTS then break; end
 
-                        local posX = iconX + (i - 1) * (scaledIconSize + compactSpacing);
-                        DrawRecastIcon(drawList, posX, iconY, scaledIconSize, timerInfo, colorConfig, fillStyle);
+                        if timerInfo.isChargeAbility then
+                            -- Draw multiple charge icons
+                            local chargeWidth = DrawRecastIconCharged(drawList, currentX, iconY, scaledIconSize, timerInfo, colorConfig, fillStyle);
+                            currentX = currentX + chargeWidth + compactSpacing;
+                        else
+                            -- Draw single normal icon
+                            DrawRecastIcon(drawList, currentX, iconY, scaledIconSize, timerInfo, colorConfig, fillStyle);
+                            currentX = currentX + scaledIconSize + compactSpacing;
+                        end
                     end
 
                     if not iconsAbsolute then

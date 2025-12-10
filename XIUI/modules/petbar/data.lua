@@ -22,6 +22,10 @@ data.JOB_PUP = 18;
 data.MAX_RECAST_SLOTS = 6;
 data.RECAST_ICON_SIZE = 24;
 
+-- Ready charge system constants
+data.READY_BASE_RECAST = 1800;  -- 30 seconds in 60ths (one charge cooldown)
+data.READY_MAX_CHARGES = 3;
+
 data.bgImageKeys = { 'bg', 'tl', 'tr', 'br', 'bl' };
 
 -- Preview type constants
@@ -520,7 +524,8 @@ function data.GetPetData()
     end
 
     local petJob = data.GetPetJob();
-    local showMp = petJob == data.JOB_SMN or petJob == data.JOB_PUP;
+    -- Only PUP automatons use MP in era (avatars don't)
+    local showMp = petJob == data.JOB_PUP;
     local petName = pet.Name or 'Pet';
 
     -- Track pet summon for timer tracking
@@ -623,7 +628,8 @@ local mockAbilities = {
         {name = 'Mana Cede', timer = 45, maxTimer = 60, isReady = false},
     },
     [data.JOB_BST] = {
-        {name = 'Ready', timer = 0, maxTimer = 30, isReady = true},
+        {name = 'Ready', timer = 2400, maxTimer = 5400, isReady = false,
+            isChargeAbility = true, maxCharges = 3, charges = 2, nextChargeTimer = 600},
         {name = 'Reward', timer = 15, maxTimer = 90, isReady = false},
         {name = 'Call Beast', timer = 0, maxTimer = 60, isReady = true},
         {name = 'Bestial Loyalty', timer = 20, maxTimer = 60, isReady = false},
@@ -776,13 +782,33 @@ function data.GetPetRecasts()
                     data.recastMaxTimers[name] = nil;
                 end
 
-                table.insert(timers, {
+                local timerEntry = {
                     name = name,
                     timer = timer,
                     maxTimer = maxTimer,
                     formatted = data.FormatTimer(timer),
                     isReady = timer <= 0,
-                });
+                };
+
+                -- Add charge info for Ready ability
+                if name == 'Ready' then
+                    timerEntry.isChargeAbility = true;
+                    timerEntry.maxCharges = data.READY_MAX_CHARGES;
+                    -- Calculate current charges from timer
+                    -- timer = 0: 3 charges, timer <= 1800: 2 charges, timer <= 3600: 1 charge, else: 0 charges
+                    if timer <= 0 then
+                        timerEntry.charges = 3;
+                        timerEntry.nextChargeTimer = 0;
+                    else
+                        -- Charges available = max - ceil(timer / baseRecast)
+                        local chargesRecharging = math.ceil(timer / data.READY_BASE_RECAST);
+                        timerEntry.charges = math.max(0, data.READY_MAX_CHARGES - chargesRecharging);
+                        -- Time until next charge = timer mod baseRecast (or timer if less than base)
+                        timerEntry.nextChargeTimer = ((timer - 1) % data.READY_BASE_RECAST) + 1;
+                    end
+                end
+
+                table.insert(timers, timerEntry);
             end
         end
     end
@@ -1017,10 +1043,10 @@ function data.GetPreviewPetData(previewType)
         mockData.name = gConfig.petBarPreviewAvatar or data.avatarList[1];
         mockData.hpPercent = 100;
         mockData.distance = 8.5;
-        mockData.mpPercent = 75;
+        mockData.mpPercent = 0;
         mockData.tp = 800;
         mockData.job = data.JOB_SMN;
-        mockData.showMp = true;
+        mockData.showMp = false;  -- Avatars don't use MP in era
         mockData.level = 75;
         mockData.petType = 'avatar';
     elseif previewType == data.PREVIEW_AUTOMATON then
@@ -1046,7 +1072,7 @@ function data.GetPreviewPetData(previewType)
         mockData.jugTimeRemaining = 2732;  -- ~45 minutes remaining
         mockData.petType = 'jug';
     elseif previewType == data.PREVIEW_CHARMED then
-        mockData.name = 'Goblin Gambler';
+        mockData.name = 'Forest Hare';
         mockData.hpPercent = 45;
         mockData.distance = 4.5;
         mockData.mpPercent = 0;
