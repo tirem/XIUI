@@ -738,8 +738,8 @@ M.user_settings = T{
     -- BST abilities (Ready and Sic share same timer ID 102, tracked as Ready)
     petBarBstShowReady = true,
     petBarBstShowReward = true,
-    petBarBstShowCallBeast = true,
-    petBarBstShowBestialLoyalty = true,
+    petBarBstShowCallBeast = false,
+    petBarBstShowBestialLoyalty = false,
     -- DRG abilities
     petBarDrgShowCallWyvern = true,
     petBarDrgShowSpiritLink = true,
