@@ -156,7 +156,10 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         local row2Width = 4 + maxTpTextWidth + 4 + mpBarWidth + 4 + mpTextWidth;
         allBarsLengths = math.max(row1Width, row2Width);
     else
-        allBarsLengths = hpBarWidth + mpBarWidth + imgui.GetStyle().FramePadding.x + imgui.GetStyle().ItemSpacing.x;
+        allBarsLengths = hpBarWidth;
+        if cache.alwaysShowMpBar then
+            allBarsLengths = allBarsLengths + mpBarWidth + imgui.GetStyle().FramePadding.x + imgui.GetStyle().ItemSpacing.x;
+        end
         if (showTP) then
             allBarsLengths = allBarsLengths + tpBarWidth + imgui.GetStyle().FramePadding.x + imgui.GetStyle().ItemSpacing.x;
         end
@@ -1048,7 +1051,11 @@ function display.DrawPartyWindow(settings, party, partyIndex)
         local baseMpWidth = layoutTemplate.mpBarWidth or 100;
         local baseTpWidth = layoutTemplate.tpBarWidth or 100;
         local baseBarSpacing = layoutTemplate.barSpacing or 8;
-        local minWidth = baseHpWidth * scale.x * hpScaleX + baseBarSpacing * scale.x + baseMpWidth * scale.x * mpScaleX;
+        local minWidth = baseHpWidth * scale.x * hpScaleX;
+        -- Only include MP bar width if alwaysShowMpBar is enabled
+        if cache.alwaysShowMpBar then
+            minWidth = minWidth + baseBarSpacing * scale.x + baseMpWidth * scale.x * mpScaleX;
+        end
         if showTP then
             minWidth = minWidth + baseBarSpacing * scale.x + baseTpWidth * scale.x * tpScaleX;
         end
