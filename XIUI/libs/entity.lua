@@ -14,6 +14,47 @@ M.RENDER_FLAG_VISIBLE = 0x200;  -- Entity is visible and rendered
 M.RENDER_FLAG_HIDDEN = 0x4000;  -- Entity is hidden (cutscene, menu, etc.)
 
 -- ========================================
+-- Job Constants
+-- ========================================
+-- Job IDs: 1=WAR, 2=MNK, 3=WHM, 4=BLM, 5=RDM, 6=THF, 7=PLD, 8=DRK, 9=BST, 10=BRD
+--          11=RNG, 12=SAM, 13=NIN, 14=DRG, 15=SMN, 16=BLU, 17=COR, 18=PUP, 19=DNC, 20=SCH, 21=GEO, 22=RUN
+
+-- Jobs that have MP (mages, hybrids, and magic-using jobs)
+M.JOBS_WITH_MP = {
+    [3] = true,   -- WHM
+    [4] = true,   -- BLM
+    [5] = true,   -- RDM
+    [7] = true,   -- PLD
+    [8] = true,   -- DRK
+    [10] = true,  -- BRD
+    [15] = true,  -- SMN
+    [16] = true,  -- BLU
+    [20] = true,  -- SCH
+    [21] = true,  -- GEO
+    [22] = true,  -- RUN
+};
+
+-- ========================================
+-- Job Helper Functions
+-- ========================================
+
+-- Returns true if the job has an MP pool
+-- mainJob: job ID (1-22)
+-- subJob: optional sub job ID - if sub has MP, returns true
+function M.JobHasMP(mainJob, subJob)
+    if mainJob == nil or mainJob == '' or mainJob == 0 then
+        return false;
+    end
+    if M.JOBS_WITH_MP[mainJob] then
+        return true;
+    end
+    if subJob and M.JOBS_WITH_MP[subJob] then
+        return true;
+    end
+    return false;
+end
+
+-- ========================================
 -- Entity Type Detection
 -- ========================================
 

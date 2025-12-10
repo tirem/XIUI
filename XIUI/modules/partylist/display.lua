@@ -41,6 +41,9 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
     local scale = data.getScale(partyIndex);
     local showTP = data.showPartyTP(partyIndex);
 
+    -- Check if this job has MP (considers main job and sub job)
+    local jobHasMP = JobHasMP(memInfo.job, memInfo.subjob);
+
     local subTargetActive = GetSubTargetActive();
 
     -- Get HP colors
@@ -487,17 +490,17 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
     data.memberText[memIdx].name:set_position_x(namePosX + textOffsets.nameX);
     data.memberText[memIdx].name:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset + textOffsets.nameY);
 
-    -- Handle cast bars
+    -- Handle cast bars - determine if casting and calculate progress
     local castData = nil;
     local isCasting = false;
+    local castProgress = 0;
+    local castBarStyle = cache.castBarStyle or 'name';
     if (cache.showCastBars and memInfo.inzone and memInfo.serverid ~= nil) then
         castData = data.partyCasts[memInfo.serverid];
         if (castData ~= nil and castData.spellName ~= nil and castData.castTime ~= nil and castData.startTime ~= nil) then
             isCasting = true;
-            data.memberText[memIdx].name:set_text(castData.spellName);
-            local spellNameWidth, _ = data.memberText[memIdx].name:get_text_size();
 
-            local progress = 0;
+            -- Calculate cast progress
             if (memIdx == 0) then
                 local castBar = GetCastBarSafe();
                 if (castBar ~= nil) then
@@ -508,9 +511,9 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                     );
                     if fastCast > 0 then
                         local totalCast = (1 - fastCast) * 0.75;
-                        progress = math.min(percent / totalCast, 1.0);
+                        castProgress = math.min(percent / totalCast, 1.0);
                     else
-                        progress = percent;
+                        castProgress = percent;
                     end
                 end
             else
@@ -523,21 +526,35 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 if fastCast > 0 then
                     effectiveCastTime = castData.castTime * (1 - fastCast);
                 end
-                progress = math.min(elapsed / effectiveCastTime, 1.0);
+                castProgress = math.min(elapsed / effectiveCastTime, 1.0);
             end
 
-            if (memIdx == 0 and progress >= 1.0) then
+            -- Check if cast is complete (for player only)
+            if (memIdx == 0 and castProgress >= 1.0) then
                 data.partyCasts[memInfo.serverid] = nil;
                 isCasting = false;
-                data.memberText[memIdx].name:set_text(tostring(memInfo.name));
-            else
+            end
+
+            -- Handle 'name' style cast bar rendering
+            if isCasting and castBarStyle == 'name' then
+                data.memberText[memIdx].name:set_text(castData.spellName);
+                -- Set name text to cast text color
+                local castTextColor = cache.colors.castTextColor or 0xFFFFCC44;
+                if (data.memberTextColorCache[memIdx].name ~= castTextColor) then
+                    data.memberText[memIdx].name:set_font_color(castTextColor);
+                    data.memberTextColorCache[memIdx].name = castTextColor;
+                end
+                local spellNameWidth, _ = data.memberText[memIdx].name:get_text_size();
+
                 local castBarWidth = hpBarWidth * 0.6 * cache.castBarScaleX;
                 local castBarHeight = math.max(6, nameRefHeight * 0.8 * cache.castBarScaleY);
-                local castBarX = namePosX + spellNameWidth + 4;
-                local castBarY = hpStartY - nameRefHeight - settings.nameTextOffsetY + (nameRefHeight - castBarHeight) / 2;
+                local castBarOffsetX = cache.castBarOffsetX or 0;
+                local castBarOffsetY = cache.castBarOffsetY or 0;
+                local castBarX = namePosX + spellNameWidth + 4 + castBarOffsetX;
+                local castBarY = hpStartY - nameRefHeight - settings.nameTextOffsetY + (nameRefHeight - castBarHeight) / 2 + castBarOffsetY;
                 local castGradient = GetCustomGradient(cache.colors, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
                 progressbar.ProgressBar(
-                    {{progress, castGradient}},
+                    {{castProgress, castGradient}},
                     {castBarWidth, castBarHeight},
                     {
                         decorate = false,
@@ -625,6 +642,11 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
     -- MP/TP bars
     local mpStartX, mpStartY;
 
+    -- Determine if we should show the MP bar slot
+    -- Show if: alwaysShowMpBar is enabled, OR job has MP, OR we're casting and cast bar style is 'mp'
+    local showingCastInMpSlot = isCasting and castBarStyle == 'mp' and castData;
+    local showMpBar = cache.alwaysShowMpBar or jobHasMP or showingCastInMpSlot;
+
     if (memInfo.inzone) then
         if layout == 1 then
             -- Layout 2: Vertical layout
@@ -673,34 +695,65 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
             mpStartY = rowStartY;
             imgui.SetCursorScreenPos({mpStartX, mpStartY});
 
-            local mpGradient = GetCustomGradient(cache.colors, 'mpGradient') or {'#9abb5a', '#bfe07d'};
-            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+            -- Render cast bar or MP bar based on style and job type
+            if showMpBar then
+                if showingCastInMpSlot then
+                    local castGradient = GetCustomGradient(cache.colors, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
+                    progressbar.ProgressBar({{castProgress, castGradient}}, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+                    -- Set MP text to spell name with cast text color
+                    data.memberText[memIdx].mp:set_text(castData.spellName);
+                    local castTextColor = cache.colors.castTextColor or 0xFFFFCC44;
+                    if (data.memberTextColorCache[memIdx].mp ~= castTextColor) then
+                        data.memberText[memIdx].mp:set_font_color(castTextColor);
+                        data.memberTextColorCache[memIdx].mp = castTextColor;
+                    end
+                else
+                    local mpGradient = GetCustomGradient(cache.colors, 'mpGradient') or {'#9abb5a', '#bfe07d'};
+                    progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+                    if (data.memberTextColorCache[memIdx].mp ~= cache.colors.mpTextColor) then
+                        data.memberText[memIdx].mp:set_font_color(cache.colors.mpTextColor);
+                        data.memberTextColorCache[memIdx].mp = cache.colors.mpTextColor;
+                    end
+                end
 
-            if (data.memberTextColorCache[memIdx].mp ~= cache.colors.mpTextColor) then
-                data.memberText[memIdx].mp:set_font_color(cache.colors.mpTextColor);
-                data.memberTextColorCache[memIdx].mp = cache.colors.mpTextColor;
+                local mpBaselineOffset = mpRefHeight - mpHeight;
+                data.memberText[memIdx].mp:set_position_x(mpStartX + mpBarWidth + 4 + textOffsets.mpX);
+                data.memberText[memIdx].mp:set_position_y(mpStartY + (mpBarHeight - mpRefHeight) / 2 + mpBaselineOffset + textOffsets.mpY);
             end
-            -- MP text already set with formatting above
-
-            local mpBaselineOffset = mpRefHeight - mpHeight;
-            data.memberText[memIdx].mp:set_position_x(mpStartX + mpBarWidth + 4 + textOffsets.mpX);
-            data.memberText[memIdx].mp:set_position_y(mpStartY + (mpBarHeight - mpRefHeight) / 2 + mpBaselineOffset + textOffsets.mpY);
         else
-            -- Layout 1: Horizontal layout
-            imgui.SameLine();
-            imgui.SetCursorPosX(imgui.GetCursorPosX());
-            mpStartX, mpStartY = imgui.GetCursorScreenPos();
-            local mpGradient = GetCustomGradient(cache.colors, 'mpGradient') or {'#9abb5a', '#bfe07d'};
-            progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+            -- Layout 0: Horizontal layout
+            -- Render MP bar/cast bar if job has MP or is casting with 'mp' style
+            if showMpBar then
+                imgui.SameLine();
+                imgui.SetCursorPosX(imgui.GetCursorPosX());
+                mpStartX, mpStartY = imgui.GetCursorScreenPos();
 
-            if (data.memberTextColorCache[memIdx].mp ~= cache.colors.mpTextColor) then
-                data.memberText[memIdx].mp:set_font_color(cache.colors.mpTextColor);
-                data.memberTextColorCache[memIdx].mp = cache.colors.mpTextColor;
+                -- Render cast bar or MP bar based on style and job type
+                if showingCastInMpSlot then
+                    local castGradient = GetCustomGradient(cache.colors, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
+                    progressbar.ProgressBar({{castProgress, castGradient}}, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+                    -- Set MP text to spell name with cast text color
+                    data.memberText[memIdx].mp:set_text(castData.spellName);
+                    local castTextColor = cache.colors.castTextColor or 0xFFFFCC44;
+                    if (data.memberTextColorCache[memIdx].mp ~= castTextColor) then
+                        data.memberText[memIdx].mp:set_font_color(castTextColor);
+                        data.memberTextColorCache[memIdx].mp = castTextColor;
+                    end
+                else
+                    local mpGradient = GetCustomGradient(cache.colors, 'mpGradient') or {'#9abb5a', '#bfe07d'};
+                    progressbar.ProgressBar({{memInfo.mpp, mpGradient}}, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+                    if (data.memberTextColorCache[memIdx].mp ~= cache.colors.mpTextColor) then
+                        data.memberText[memIdx].mp:set_font_color(cache.colors.mpTextColor);
+                        data.memberTextColorCache[memIdx].mp = cache.colors.mpTextColor;
+                    end
+                end
+
+                -- Recalculate mp text width in case it changed to spell name
+                local currentMpTextWidth, _ = data.memberText[memIdx].mp:get_text_size();
+                local mpBaselineOffset = mpRefHeight - mpHeight;
+                data.memberText[memIdx].mp:set_position_x(mpStartX + mpBarWidth - currentMpTextWidth + textOffsets.mpX);
+                data.memberText[memIdx].mp:set_position_y(mpStartY + mpBarHeight + settings.mpTextOffsetY + mpBaselineOffset + textOffsets.mpY);
             end
-            -- MP text already set with formatting above
-            local mpBaselineOffset = mpRefHeight - mpHeight;
-            data.memberText[memIdx].mp:set_position_x(mpStartX + mpBarWidth - mpTextWidth + textOffsets.mpX);
-            data.memberText[memIdx].mp:set_position_y(mpStartY + mpBarHeight + settings.mpTextOffsetY + mpBaselineOffset + textOffsets.mpY);
 
             -- TP bar
             if (showTP) then
@@ -881,7 +934,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Set text visibility
     data.memberText[memIdx].hp:set_visible(memInfo.inzone);
-    data.memberText[memIdx].mp:set_visible(memInfo.inzone);
+    data.memberText[memIdx].mp:set_visible(memInfo.inzone and showMpBar);
     data.memberText[memIdx].tp:set_visible(memInfo.inzone and showTP);
 
     -- Reserve space for layout

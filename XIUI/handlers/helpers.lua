@@ -61,6 +61,8 @@ GetPetSafe = memoryLib.GetPetSafe;
 -- Entity Utilities (from entity.lua)
 GetIsMob = entityLib.GetIsMob;
 GetIsMobByIndex = entityLib.GetIsMobByIndex;
+JobHasMP = entityLib.JobHasMP;
+JOBS_WITH_MP = entityLib.JOBS_WITH_MP;
 
 -- Wrappers for entity color functions that inject dependencies
 function GetEntityNameColorRGBA(targetEntity, targetIndex, colorConfig)

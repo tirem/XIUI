@@ -172,6 +172,9 @@ function data.updatePartyConfigCache()
         cache.showCastBars = party.showCastBars;
         cache.castBarScaleX = party.castBarScaleX or 1.0;
         cache.castBarScaleY = party.castBarScaleY or 0.6;
+        cache.castBarOffsetX = party.castBarOffsetX or 0;
+        cache.castBarOffsetY = party.castBarOffsetY or 0;
+        cache.castBarStyle = party.castBarStyle or 'name';
         cache.showBookends = party.showBookends;
         cache.showTitle = party.showTitle;
         cache.flashTP = party.flashTP;
@@ -192,6 +195,7 @@ function data.updatePartyConfigCache()
         -- HP/MP display modes
         cache.hpDisplayMode = party.hpDisplayMode or 'number';
         cache.mpDisplayMode = party.mpDisplayMode or 'number';
+        cache.alwaysShowMpBar = party.alwaysShowMpBar ~= false; -- Default true
 
         -- FontSizes
         if cache.fontSizes == nil then cache.fontSizes = {}; end
@@ -303,14 +307,42 @@ function data.GetMemberInformation(memIdx)
         memInfo.hpp = memIdx == 4 and 0.1 or memIdx == 2 and 0.5 or memIdx == 0 and 0.75 or 1;
         memInfo.maxhp = 1250;
         memInfo.hp = math.floor(memInfo.maxhp * memInfo.hpp);
-        memInfo.mpp = memIdx == 1 and 0.1 or 0.75;
-        memInfo.maxmp = 1000;
-        memInfo.mp = math.floor(memInfo.maxmp * memInfo.mpp);
         memInfo.tp = 1500;
-        memInfo.job = memIdx + 1;
+
+        -- Preview jobs: mix of MP jobs (WHM, BLM, RDM, BRD) and no-MP jobs (WAR, NIN)
+        -- Job IDs: 1=WAR, 3=WHM, 4=BLM, 5=RDM, 10=BRD, 13=NIN
+        local previewJobs = {
+            [0] = 3,   -- WHM (has MP)
+            [1] = 13,  -- NIN (no MP - will show cast bar when casting)
+            [2] = 4,   -- BLM (has MP)
+            [3] = 1,   -- WAR (no MP)
+            [4] = 5,   -- RDM (has MP)
+            [5] = 10,  -- BRD (has MP)
+        };
+        local previewSubJobs = {
+            [0] = 5,   -- /RDM
+            [1] = 1,   -- /WAR
+            [2] = 5,   -- /RDM
+            [3] = 13,  -- /NIN
+            [4] = 3,   -- /WHM
+            [5] = 3,   -- /WHM
+        };
+        memInfo.job = previewJobs[memIdx % 6];
         memInfo.level = 99;
-        memInfo.subjob = ((memIdx + 3) % 22) + 1;
+        memInfo.subjob = previewSubJobs[memIdx % 6];
         memInfo.subjoblevel = 49;
+
+        -- Set MP based on whether job has MP
+        if JobHasMP(memInfo.job, memInfo.subjob) then
+            memInfo.mpp = memIdx == 1 and 0.1 or 0.75;
+            memInfo.maxmp = 1000;
+            memInfo.mp = math.floor(memInfo.maxmp * memInfo.mpp);
+        else
+            -- Jobs without MP show 0
+            memInfo.mpp = 0;
+            memInfo.maxmp = 0;
+            memInfo.mp = 0;
+        end
         memInfo.targeted = memIdx == 4 or memIdx == 10 or memIdx == 16;
         memInfo.serverid = -memIdx - 1;
         -- Preview buffs/debuffs - different combinations per member
@@ -330,12 +362,31 @@ function data.GetMemberInformation(memIdx)
         memInfo.subTargeted = memIdx == 2 or memIdx == 8 or memIdx == 14;
         memInfo.zone = 100;
         memInfo.inzone = memIdx % 4 ~= 0;
-        memInfo.name = 'Player ' .. (memIdx + 1);
+        memInfo.name = (memIdx % 6 == 1) and 'Thisisaverylongname' or ('Player ' .. (memIdx + 1));
         memInfo.leader = memIdx == 0 or memIdx == 6 or memIdx == 12;
         memInfo.previewDistance = memIdx == 0 and 0 or memIdx == 1 and 5.2 or memIdx == 2 and 12.8 or memIdx == 3 and 21.5 or memIdx == 4 and 35.0 or 18.3;
 
         -- Preview cast bars
-        if (memIdx == 1 or memIdx == 7 or memIdx == 13) then
+        -- memIdx 1: NIN casting Utsusemi (no-MP job with cast bar)
+        -- memIdx 2: BLM casting (MP job with cast bar)
+        if memIdx == 1 then
+            -- NIN casting Utsusemi - demonstrates cast bar for no-MP job
+            local castDuration = 4.0;
+            local loopTime = os.clock() % castDuration;
+            data.partyCasts[memInfo.serverid] = T{
+                spellName = 'Utsusemi: Ni',
+                spellId = 339,
+                spellType = 36,  -- Ninjutsu
+                castTime = castDuration,
+                startTime = os.clock() - loopTime,
+                timestamp = os.time(),
+                job = 13,
+                subjob = 1,
+                jobLevel = 75,
+                subjobLevel = 37
+            };
+        elseif memIdx == 2 or memIdx == 7 or memIdx == 13 then
+            -- WHM/BLM casting - demonstrates cast bar for MP job
             local castDuration = 5.0;
             local loopTime = os.clock() % castDuration;
             data.partyCasts[memInfo.serverid] = T{

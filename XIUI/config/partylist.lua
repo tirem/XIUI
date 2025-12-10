@@ -103,15 +103,6 @@ local function DrawPartyTabContent(party, partyName)
             components.DrawPartySlider(party, 'Highlight', 'distanceHighlight', 0.0, 50.0, '%.1f');
             imgui.PopItemWidth();
         end
-        components.DrawPartyCheckbox(party, 'Show Cast Bars', 'showCastBars');
-        if party.showCastBars then
-            imgui.SameLine();
-            imgui.PushItemWidth(100);
-            components.DrawPartySlider(party, 'Scale X', 'castBarScaleX', 0.1, 3.0, '%.1f');
-            imgui.SameLine();
-            components.DrawPartySlider(party, 'Scale Y', 'castBarScaleY', 0.1, 3.0, '%.1f');
-            imgui.PopItemWidth();
-        end
         components.DrawPartyCheckbox(party, 'Show Bookends', 'showBookends');
         components.DrawPartyCheckbox(party, 'Show Title', 'showTitle');
         components.DrawPartyCheckbox(party, 'Align Bottom', 'alignBottom');
@@ -152,6 +143,9 @@ local function DrawPartyTabContent(party, partyName)
             SaveSettingsOnly();
         end);
         imgui.ShowHelp('How MP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (750/1000).');
+
+        components.DrawPartyCheckbox(party, 'Always Show MP Bar', 'alwaysShowMpBar');
+        imgui.ShowHelp('When disabled, hides the MP bar for jobs without MP (WAR, MNK, THF, etc.). Cast bars will still appear when casting.');
     end
 
     if components.CollapsingSection('Job Display##party' .. partyName) then
@@ -188,6 +182,44 @@ local function DrawPartyTabContent(party, partyName)
         components.DrawPartyComboBox(party, 'Background', 'backgroundName', bg_theme_paths, DeferredUpdateVisuals);
         components.DrawPartySlider(party, 'Background Scale', 'bgScale', 0.1, 3.0, '%.2f', UpdatePartyListVisuals);
         components.DrawPartyComboBox(party, 'Cursor', 'cursor', cursor_paths, DeferredUpdateVisuals);
+    end
+
+    if components.CollapsingSection('Cast Bars##party' .. partyName) then
+        components.DrawPartyCheckbox(party, 'Show Cast Bars', 'showCastBars');
+        if party.showCastBars then
+            local castBarStyleItems = { [0] = 'Replace Name', [1] = 'Use MP Bar' };
+            local currentStyleIndex = party.castBarStyle == 'mp' and 1 or 0;
+            local styleLabel = castBarStyleItems[currentStyleIndex];
+            if imgui.BeginCombo('Style##castBarStyle' .. partyName, styleLabel) then
+                for i = 0, 1 do
+                    local isSelected = (currentStyleIndex == i);
+                    if imgui.Selectable(castBarStyleItems[i] .. '##' .. i, isSelected) then
+                        party.castBarStyle = (i == 1) and 'mp' or 'name';
+                        UpdateSettings();
+                    end
+                    if isSelected then
+                        imgui.SetItemDefaultFocus();
+                    end
+                end
+                imgui.EndCombo();
+            end
+            imgui.ShowHelp('Replace Name: replaces player name with spell name during cast.\nUse MP Bar: replaces MP bar with cast bar and MP text with spell name.');
+
+            if party.castBarStyle == 'name' then
+                imgui.Text('Scale');
+                imgui.PushItemWidth(100);
+                components.DrawPartySlider(party, 'X##castScaleX', 'castBarScaleX', 0.1, 3.0, '%.1f');
+                imgui.SameLine();
+                components.DrawPartySlider(party, 'Y##castScaleY', 'castBarScaleY', 0.1, 3.0, '%.1f');
+                imgui.PopItemWidth();
+                imgui.Text('Offset');
+                imgui.PushItemWidth(100);
+                components.DrawPartySlider(party, 'X##castOffsetX', 'castBarOffsetX', -200, 200);
+                imgui.SameLine();
+                components.DrawPartySlider(party, 'Y##castOffsetY', 'castBarOffsetY', -200, 200);
+                imgui.PopItemWidth();
+            end
+        end
     end
 
     if components.CollapsingSection('Status Icons##party' .. partyName) then
@@ -461,11 +493,9 @@ local function DrawPartyColorTabContent(colors, partyName)
         end
     end
 
-    -- Cast bar only for Party A
-    if partyName == 'A' then
-        if components.CollapsingSection('Cast Bar Colors##partyColor' .. partyName) then
-            components.DrawGradientPicker("Cast Bar##" .. partyName, colors.castBarGradient, "Cast bar color (appears when casting)");
-        end
+    if components.CollapsingSection('Cast Bar Colors##partyColor' .. partyName) then
+        components.DrawGradientPicker("Cast Bar##" .. partyName, colors.castBarGradient, "Cast bar color (appears when casting)");
+        components.DrawTextColorPicker("Cast Text##" .. partyName, colors, 'castTextColor', "Cast text color (spell name when using MP bar style)");
     end
 
     if components.CollapsingSection('Bar Overrides##partyColor' .. partyName) then

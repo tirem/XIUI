@@ -28,8 +28,12 @@ local function createPartyDefaults(overrides)
         showSubJob = true,
         showSubJobLevel = true,
         showCastBars = true,
+        castBarStyle = 'name', -- 'name' = replace name, 'mp' = use MP bar
+        alwaysShowMpBar = true, -- Show MP bar even for jobs without MP
         castBarScaleX = 1.0,
         castBarScaleY = 0.6,
+        castBarOffsetX = 0,
+        castBarOffsetY = 0,
         showBookends = false,
         showTitle = true,
         flashTP = false,
@@ -242,10 +246,11 @@ local function createPartyColorDefaults(includeTP)
         selectionBorderColor = 0xFF78C0ED,
         subtargetGradient = T{ enabled = true, start = '#d9a54d', stop = '#edcf78' },
         subtargetBorderColor = 0xFFfdd017,
+        castBarGradient = T{ enabled = true, start = '#ffaa00', stop = '#ffcc44' },
+        castTextColor = 0xFFFFCC44,
     };
     if includeTP then
         colors.tpGradient = T{ enabled = true, start = '#3898ce', stop = '#78c4ee' };
-        colors.castBarGradient = T{ enabled = true, start = '#ffaa00', stop = '#ffcc44' };
     end
     return colors;
 end
