@@ -9,6 +9,7 @@ local expText;
 local percentText;
 local allFonts; -- Table for batch visibility operations
 
+-- Thank you @onimitch for the help with tons of the EXPbar module!
 -- Cached colors to avoid expensive set_font_color calls every frame
 local lastJobTextColor;
 local lastExpTextColor;
@@ -133,25 +134,30 @@ expbar.DrawWindow = function(settings)
     local inlineMode = gConfig.expBarInlineMode;
     local expBarTextMargin = 10;
 
+    -- Build text strings once, reuse for both measuring and rendering
+    -- Note: In inline mode we use ' - ' separator, in non-inline mode we use ''
+    -- All text (including percent) requires expBarShowText to be enabled
+    local expStringSeparator = inlineMode and ' - ' or '';
+    local jobString = gConfig.expBarShowText and buildJobString(player, jobLevel, masteryEnabled, mlJobLevel) or nil;
+    local expString = gConfig.expBarShowText and buildExpString(expStringSeparator, masteryEnabled, meritMode, jobLevel, jobPoints, meritPoints, limitPoints, capPoints, expPoints, expbar.mastery) or nil;
+    local percentString = (gConfig.expBarShowText and gConfig.expBarShowPercent) and buildPercentString(progressBarProgress, true) or nil;
+
     -- Calculate text width for inline mode positioning
     local actualTextWidth = 0;
     if inlineMode then
-        -- Pre-calculate text sizes to determine actual width needed
-        if gConfig.expBarShowText then
-            local jobString = buildJobString(player, jobLevel, masteryEnabled, mlJobLevel);
+        if jobString then
             jobText:set_text(jobString);
             local jobWidth = jobText:get_text_size();
             actualTextWidth = actualTextWidth + jobWidth;
+        end
 
-            -- Calculate exp text width
-            local expTestString = buildExpString(' - ', masteryEnabled, meritMode, jobLevel, jobPoints, meritPoints, limitPoints, capPoints, expPoints, expbar.mastery);
-            expText:set_text(expTestString);
+        if expString then
+            expText:set_text(expString);
             local expWidth = expText:get_text_size();
             actualTextWidth = actualTextWidth + expWidth + expBarTextMargin;
         end
 
-        if gConfig.expBarShowPercent then
-            local percentString = buildPercentString(progressBarProgress, gConfig.expBarShowText);
+        if percentString then
             percentText:set_text(percentString);
             local percentWidth = percentText:get_text_size();
             actualTextWidth = actualTextWidth + percentWidth;
@@ -213,10 +219,8 @@ expbar.DrawWindow = function(settings)
         end
 
         -- Pre-calculate percent text width for layout purposes (needed before expText positioning)
-        local percentString = '';
         local percentTextWidth = 0;
-        if gConfig.expBarShowPercent then
-            percentString = buildPercentString(progressBarProgress, gConfig.expBarShowText);
+        if percentString then
             percentText:set_text(percentString);
             percentTextWidth = percentText:get_text_size();
         end
@@ -232,9 +236,8 @@ expbar.DrawWindow = function(settings)
         local textWidth, textHeight = 0, 0;
         local expTextWidth, expTextHeight = 0, 0;
 
-        if gConfig.expBarShowText then
-            -- Job Text
-            local jobString = buildJobString(player, jobLevel, masteryEnabled, mlJobLevel);
+        if jobString then
+            -- Job Text (string already built above)
             jobText:set_text(jobString);
             textWidth, textHeight = jobText:get_text_size();
             jobText:set_position_x(leftTextX);
@@ -245,9 +248,7 @@ expbar.DrawWindow = function(settings)
                 lastJobTextColor = gConfig.colorCustomization.expBar.jobTextColor;
             end
 
-            -- Exp Text (with separator in inline mode)
-            local separator = inlineMode and ' - ' or '';
-            local expString = buildExpString(separator, masteryEnabled, meritMode, jobLevel, jobPoints, meritPoints, limitPoints, capPoints, expPoints, expbar.mastery);
+            -- Exp Text (string already built above with correct separator)
             expText:set_text(expString);
             expTextWidth, expTextHeight = expText:get_text_size();
 
@@ -274,14 +275,12 @@ expbar.DrawWindow = function(settings)
             jobText:set_visible(true);
             expText:set_visible(true);
         else
-            jobText:set_text('');
             jobText:set_visible(false);
-            expText:set_text('');
             expText:set_visible(false);
         end
 
         -- Percent Text
-        if gConfig.expBarShowPercent then
+        if percentString then
             -- percentString and percentTextWidth already calculated above for layout purposes
             local _, percentTextHeight = percentText:get_text_size();
 
@@ -320,7 +319,6 @@ expbar.DrawWindow = function(settings)
 
             percentText:set_visible(true);
         else
-            percentText:set_text('');
             percentText:set_visible(false);
         end
 
