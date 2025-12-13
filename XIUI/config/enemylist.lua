@@ -26,6 +26,15 @@ function M.DrawSettings()
         end
         components.DrawCheckbox('Show Enemy Targets', 'showEnemyListTargets');
         imgui.ShowHelp('Shows who each enemy is targeting based on their last action.');
+        if (gConfig.showEnemyListTargets) then
+            components.DrawSlider('Target Offset X', 'enemyListTargetOffsetX', -100, 200);
+            imgui.ShowHelp('Horizontal offset for enemy target container from the enemy entry.');
+            components.DrawSlider('Target Offset Y', 'enemyListTargetOffsetY', -100, 100);
+            imgui.ShowHelp('Vertical offset for enemy target container.');
+            components.DrawSlider('Target Width', 'enemyListTargetWidth', 50, 200);
+            imgui.ShowHelp('Width of the enemy target container.');
+            components.DrawSlider('Target Font Size', 'enemyListTargetFontSize', 8, 36);
+        end
         components.DrawCheckbox('Show Bookends', 'showEnemyListBookends');
         if (not HzLimitedMode) then
             components.DrawCheckbox('Click to Target', 'enableEnemyListClickTarget');
@@ -70,6 +79,7 @@ function M.DrawColorSettings()
     if components.CollapsingSection('Text Colors##enemyListColor') then
         components.DrawTextColorPicker("Distance Text", gConfig.colorCustomization.enemyList, 'distanceTextColor', "Color of distance text");
         components.DrawTextColorPicker("HP% Text", gConfig.colorCustomization.enemyList, 'percentTextColor', "Color of HP percentage text");
+        components.DrawTextColorPicker("Target Name Text", gConfig.colorCustomization.enemyList, 'targetNameTextColor', "Color of enemy's target name");
         imgui.ShowHelp("Enemy name colors are in the Global section");
     end
 

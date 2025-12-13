@@ -92,13 +92,6 @@ end
 -- Helper: Draw Mob Info specific settings (used in tab)
 local function DrawMobInfoSettingsContent(githubTexture)
     components.DrawCheckbox('Enabled', 'showMobInfo', CheckVisibility);
-    imgui.ShowHelp('Show mob information window when targeting monsters.');
-
-    components.DrawCheckbox('Snap to Target Bar', 'mobInfoSnapToTargetBar');
-    imgui.ShowHelp('Position mob info directly after the target name in the target bar.');
-
-    components.DrawCheckbox('Single Row Layout', 'mobInfoSingleRow');
-    imgui.ShowHelp('Display all mob info on a single horizontal line with pipe separators.');
 
     -- Attribution for Thorny's MobDB (on same line as Enabled)
     imgui.SameLine();
@@ -168,6 +161,12 @@ local function DrawMobInfoSettingsContent(githubTexture)
         ashita.misc.open_url('https://github.com/ThornyFFXI/mobdb');
     end
 
+    components.DrawCheckbox('Snap to Target Bar', 'mobInfoSnapToTargetBar');
+    imgui.ShowHelp('Position mob info directly after the target name in the target bar.');
+
+    components.DrawCheckbox('Single Row Layout', 'mobInfoSingleRow');
+    imgui.ShowHelp('Display all mob info on a single horizontal line with pipe separators.');
+
     if components.CollapsingSection('Display Options##mobInfo') then
         components.DrawCheckbox('Show Job', 'mobInfoShowJob');
         imgui.ShowHelp('Display the mob\'s job type (WAR, MNK, BLM, etc.).');
@@ -196,6 +195,13 @@ local function DrawMobInfoSettingsContent(githubTexture)
 
         components.DrawCheckbox('Show Modifier Percentages', 'mobInfoShowModifierText');
         imgui.ShowHelp('Show +25%/-50% text next to weakness/resistance icons.');
+
+        if gConfig.mobInfoShowModifierText then
+            imgui.Indent(20);
+            components.DrawCheckbox('Group by Percentage', 'mobInfoGroupModifiers');
+            imgui.ShowHelp('Group icons with the same percentage together (Wind Earth Water -25%%) vs showing each individually (Wind -25%% Earth -25%%).');
+            imgui.Unindent(20);
+        end
 
         components.DrawCheckbox('Show Server ID', 'mobInfoShowServerId');
         imgui.ShowHelp('Display the target\'s server ID.');

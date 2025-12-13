@@ -44,6 +44,17 @@ local previewDebuffs = {
     [9007] = {3, 5, 6, 11, 13}, -- Many debuffs
     [9008] = {},                -- No debuffs
 };
+-- Preview target data (who each enemy is targeting)
+local previewTargets = {
+    [9001] = 'Playername',
+    [9002] = 'Whitemage',
+    [9003] = nil,               -- No target
+    [9004] = 'Warrior',
+    [9005] = 'Blackmage',
+    [9006] = nil,               -- No target
+    [9007] = 'Longtargetname',
+    [9008] = 'Redmage',
+};
 
 -- Font objects for enemy list (keyed by numeric enemy index for O(1) lookup)
 local enemyNameFonts = {};  -- Enemy name font objects
@@ -486,78 +497,90 @@ enemylist.DrawWindow = function(settings)
 				end
 
 				-- ===== ENEMY TARGET CONTAINER =====
-				-- Show target's name and HP bar in a separate container to the right
-				-- Skip in preview mode since we don't have real target tracking data
-				if (gConfig.showEnemyListTargets and not isPreviewMode) then
-					local targetIndex = actionTracker.GetLastTarget(ent.ServerId);
+				-- Show target's name in a separate container to the right
+				if (gConfig.showEnemyListTargets) then
 					local hasValidTarget = false;
-					if (targetIndex ~= nil) then
-						local targetEntity = GetEntity(targetIndex);
-						if (targetEntity ~= nil and targetEntity.Name ~= nil) then
-							hasValidTarget = true;
-							-- Position target container below the debuff row
-							local targetContainerX = entryStartX + entryWidth + settings.debuffOffsetX + 10.;
-							-- Position Y at the bottom of the enemy entry (bottom-right)
-							local targetContainerY = entryStartY + entryHeight - ((settings.name_font_settings.font_height + 6) + 2);
+					local targetName = nil;
 
-							-- Target container dimensions
-							local targetWidth = 100;
-							local targetPadding = 6;
-							local targetNameHeight = settings.name_font_settings.font_height;
-							local targetTotalHeight = (targetPadding * 2) + targetNameHeight;
-
-							-- ===== PRIMITIVE BACKGROUND RENDERING =====
-							-- Create/get background primitive for this target container
-							-- Primitives render in the correct layer (behind Ashita fonts)
-							-- Use numeric key directly for O(1) lookup (no string concatenation)
-							if (enemyTargetBackgrounds[k] == nil and settings.prim_data) then
-								enemyTargetBackgrounds[k] = primitives.new(settings.prim_data);
-								enemyTargetBackgrounds[k].can_focus = false;
-								enemyTargetBackgrounds[k].locked = true;
+					if isPreviewMode then
+						-- Use preview target data
+						targetName = previewTargets[k];
+						hasValidTarget = targetName ~= nil;
+					else
+						-- Normal mode: get real target from action tracker
+						local targetIdx = actionTracker.GetLastTarget(ent.ServerId);
+						if (targetIdx ~= nil) then
+							local targetEntity = GetEntity(targetIdx);
+							if (targetEntity ~= nil and targetEntity.Name ~= nil) then
+								targetName = targetEntity.Name;
+								hasValidTarget = true;
 							end
-
-							if (enemyTargetBackgrounds[k] ~= nil) then
-								local targetBg = enemyTargetBackgrounds[k];
-								targetBg.position_x = targetContainerX;
-								targetBg.position_y = targetContainerY;
-								targetBg.width = targetWidth;
-								targetBg.height = targetTotalHeight;
-								-- Semi-transparent black (0.4 alpha * 255 = 102 = 0x66)
-								targetBg.color = 0x66000000;
-								targetBg.visible = true;
-							end
-
-							-- Target name
-							-- Use numeric key directly for O(1) lookup (no string concatenation)
-							if (enemyTargetFonts[k] == nil) then
-								local targetFontSettings = deep_copy_table(settings.name_font_settings);
-								targetFontSettings.font_alignment = gdi.Alignment.Left;
-								targetFontSettings.font_color = 0xFFFFAA00;
-								enemyTargetFonts[k] = FontManager.create(targetFontSettings);
-							end
-							local targetFont = enemyTargetFonts[k];
-							targetFont:set_font_height(settings.name_font_settings.font_height);
-							targetFont:set_position_x(targetContainerX + targetPadding);
-							targetFont:set_position_y(targetContainerY + targetPadding);
-							-- Truncate name to fit (use cache to avoid per-frame binary search)
-							local maxTargetNameWidth = targetWidth - (targetPadding * 2);
-							local targetFontHeight = settings.name_font_settings.font_height;
-							local targetNameCache = truncatedTargetNameCache[k];
-							local displayTargetName;
-							if targetNameCache and targetNameCache.name == targetEntity.Name and targetNameCache.maxWidth == maxTargetNameWidth and targetNameCache.fontHeight == targetFontHeight then
-								-- Cache hit - reuse truncated name
-								displayTargetName = targetNameCache.truncated;
-							else
-								-- Cache miss - compute and store (font height affects text width measurement)
-								displayTargetName = TruncateTextToFit(targetFont, targetEntity.Name, maxTargetNameWidth);
-								truncatedTargetNameCache[k] = {name = targetEntity.Name, maxWidth = maxTargetNameWidth, fontHeight = targetFontHeight, truncated = displayTargetName};
-							end
-							targetFont:set_text(displayTargetName);
-							targetFont:set_visible(true);
 						end
 					end
-					-- Hide target elements if enemy has no valid target (prevents stale overlays)
-					if (not hasValidTarget) then
+
+					if (hasValidTarget and targetName) then
+						-- Position target container using configurable offsets
+						local targetOffsetX = gConfig.enemyListTargetOffsetX or 10;
+						local targetOffsetY = gConfig.enemyListTargetOffsetY or 0;
+						local targetContainerX = entryStartX + entryWidth + targetOffsetX;
+						local targetContainerY = entryStartY + targetOffsetY;
+
+						-- Target container dimensions (configurable width)
+						local targetWidth = gConfig.enemyListTargetWidth or 100;
+						local targetPadding = 6;
+						local targetNameHeight = settings.target_font_settings.font_height;
+						local targetTotalHeight = (targetPadding * 2) + targetNameHeight;
+
+						-- ===== PRIMITIVE BACKGROUND RENDERING =====
+						-- Create/get background primitive for this target container
+						-- Primitives render in the correct layer (behind Ashita fonts)
+						-- Use numeric key directly for O(1) lookup (no string concatenation)
+						if (enemyTargetBackgrounds[k] == nil and settings.prim_data) then
+							enemyTargetBackgrounds[k] = primitives.new(settings.prim_data);
+							enemyTargetBackgrounds[k].can_focus = false;
+							enemyTargetBackgrounds[k].locked = true;
+						end
+
+						if (enemyTargetBackgrounds[k] ~= nil) then
+							local targetBg = enemyTargetBackgrounds[k];
+							targetBg.position_x = targetContainerX;
+							targetBg.position_y = targetContainerY;
+							targetBg.width = targetWidth;
+							targetBg.height = targetTotalHeight;
+							-- Semi-transparent black (0.4 alpha * 255 = 102 = 0x66)
+							targetBg.color = 0x66000000;
+							targetBg.visible = true;
+						end
+
+						-- Target name
+						-- Use numeric key directly for O(1) lookup (no string concatenation)
+						if (enemyTargetFonts[k] == nil) then
+							enemyTargetFonts[k] = FontManager.create(settings.target_font_settings);
+						end
+						local targetFont = enemyTargetFonts[k];
+						-- Dynamically set font height and color based on settings
+						targetFont:set_font_height(settings.target_font_settings.font_height);
+						local targetTextColor = gConfig.colorCustomization.enemyList.targetNameTextColor or 0xFFFFAA00;
+						targetFont:set_font_color(targetTextColor);
+						targetFont:set_position_x(targetContainerX + targetPadding);
+						targetFont:set_position_y(targetContainerY + targetPadding);
+						-- Truncate name to fit (use cache to avoid per-frame binary search)
+						local maxTargetNameWidth = targetWidth - (targetPadding * 2);
+						local targetFontHeight = settings.target_font_settings.font_height;
+						local targetNameCache = truncatedTargetNameCache[k];
+						local displayTargetName;
+						if targetNameCache and targetNameCache.name == targetName and targetNameCache.maxWidth == maxTargetNameWidth and targetNameCache.fontHeight == targetFontHeight then
+							-- Cache hit - reuse truncated name
+							displayTargetName = targetNameCache.truncated;
+						else
+							-- Cache miss - compute and store (font height affects text width measurement)
+							displayTargetName = TruncateTextToFit(targetFont, targetName, maxTargetNameWidth);
+							truncatedTargetNameCache[k] = {name = targetName, maxWidth = maxTargetNameWidth, fontHeight = targetFontHeight, truncated = displayTargetName};
+						end
+						targetFont:set_text(displayTargetName);
+						targetFont:set_visible(true);
+					else
+						-- Hide target elements if enemy has no valid target (prevents stale overlays)
 						if (enemyTargetBackgrounds[k] ~= nil) then
 							enemyTargetBackgrounds[k].visible = false;
 						end

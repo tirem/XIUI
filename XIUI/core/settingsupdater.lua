@@ -87,6 +87,7 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
     applyGlobalFontSettings(gAdjustedSettings.enemyListSettings.name_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
     applyGlobalFontSettings(gAdjustedSettings.enemyListSettings.distance_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
     applyGlobalFontSettings(gAdjustedSettings.enemyListSettings.percent_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
+    applyGlobalFontSettings(gAdjustedSettings.enemyListSettings.target_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
 
     -- Mob Info fonts
     applyGlobalFontSettings(gAdjustedSettings.mobInfoSettings.level_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
@@ -297,6 +298,7 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
     gAdjustedSettings.enemyListSettings.name_font_settings.font_height = math.max(us.enemyListNameFontSize, 8);
     gAdjustedSettings.enemyListSettings.distance_font_settings.font_height = math.max(us.enemyListDistanceFontSize, 8);
     gAdjustedSettings.enemyListSettings.percent_font_settings.font_height = math.max(us.enemyListPercentFontSize, 8);
+    gAdjustedSettings.enemyListSettings.target_font_settings.font_height = math.max(us.enemyListTargetFontSize or 12, 8);
 
     -- Cast Bar
     gAdjustedSettings.castBarSettings.barWidth = ds.castBarSettings.barWidth * us.castBarScaleX;

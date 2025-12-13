@@ -237,11 +237,16 @@ local function BuildWeaknessIcons(mobInfo)
     end);
 
     -- Build final icon list with showPercent flag
+    local groupModifiers = gConfig.mobInfoGroupModifiers;
     for i, item in ipairs(allWeaknesses) do
         local percent = math.floor((item.modifier - 1) * 100);
-        -- Show percent only if this is the last icon OR the next icon has a different percentage
-        local nextItem = allWeaknesses[i + 1];
-        local showPercent = (nextItem == nil) or (math.floor((nextItem.modifier - 1) * 100) ~= percent);
+        -- When grouping: show percent only if this is the last icon OR the next icon has a different percentage
+        -- When not grouping: always show percent for each icon
+        local showPercent = true;
+        if groupModifiers then
+            local nextItem = allWeaknesses[i + 1];
+            showPercent = (nextItem == nil) or (math.floor((nextItem.modifier - 1) * 100) ~= percent);
+        end
 
         table.insert(weaknessIcons, {
             texture = item.texture,
@@ -293,11 +298,16 @@ local function BuildResistanceIcons(mobInfo)
     end);
 
     -- Build final icon list with showPercent flag
+    local groupModifiers = gConfig.mobInfoGroupModifiers;
     for i, item in ipairs(allResistances) do
         local percent = math.floor((1 - item.modifier) * 100);
-        -- Show percent only if this is the last icon OR the next icon has a different percentage
-        local nextItem = allResistances[i + 1];
-        local showPercent = (nextItem == nil) or (math.floor((1 - nextItem.modifier) * 100) ~= percent);
+        -- When grouping: show percent only if this is the last icon OR the next icon has a different percentage
+        -- When not grouping: always show percent for each icon
+        local showPercent = true;
+        if groupModifiers then
+            local nextItem = allResistances[i + 1];
+            showPercent = (nextItem == nil) or (math.floor((1 - nextItem.modifier) * 100) ~= percent);
+        end
 
         table.insert(resistanceIcons, {
             texture = item.texture,

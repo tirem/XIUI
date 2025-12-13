@@ -283,11 +283,11 @@ M.user_settings = T{
     enemyListMaxColumns = 1,
     enemyListRowSpacing = 5,
     enemyListColumnSpacing = 10,
-    enemyListDebuffOffsetX = 0,
+    enemyListDebuffOffsetX = 131,
     enemyListDebuffOffsetY = 0,
     showEnemyListDebuffs = true,
     enemyListDebuffsRightAlign = false,
-    showEnemyListTargets = false,
+    showEnemyListTargets = true,
     enableEnemyListClickTarget = true,
     enemyListPreview = false,
 
@@ -344,13 +344,18 @@ M.user_settings = T{
 
     enemyListScaleX = 1,
     enemyListScaleY = 1,
-    enemyListNameFontSize = 12,
-    enemyListDistanceFontSize = 12,
-    enemyListPercentFontSize = 12,
+    enemyListNameFontSize = 10,
+    enemyListDistanceFontSize = 8,
+    enemyListPercentFontSize = 8,
     enemyListIconScale = 1,
-    showEnemyDistance = false,
+    showEnemyDistance = true,
     showEnemyHPPText = true,
     showEnemyListBookends = false,
+    -- Enemy target container settings
+    enemyListTargetOffsetX = 0,
+    enemyListTargetOffsetY = 45,
+    enemyListTargetWidth = 64,
+    enemyListTargetFontSize = 8,
 
     expBarScaleX = 1,
     expBarScaleY = 1,
@@ -443,20 +448,21 @@ M.user_settings = T{
 
     -- Mob Info settings
     showMobInfo = true,
-    mobInfoSnapToTargetBar = false,
+    mobInfoSnapToTargetBar = true,
     mobInfoShowLevel = true,
     mobInfoShowDetection = true,
     mobInfoShowLink = true,
-    mobInfoShowResistances = true,
-    mobInfoShowWeaknesses = true,
-    mobInfoShowImmunities = true,
+    mobInfoShowResistances = false,
+    mobInfoShowWeaknesses = false,
+    mobInfoShowImmunities = false,
     mobInfoIconScale = 1.0,
     mobInfoShowNoData = false,
     mobInfoFontSize = 12,
-    mobInfoSingleRow = false, -- false = stacked layout, true = single row layout
+    mobInfoSingleRow = true, -- false = stacked layout, true = single row layout
     mobInfoHideWhenEngaged = false, -- hide mob info when engaged in combat
-    mobInfoShowJob = true, -- show mob's job type (WAR, MNK, etc.)
+    mobInfoShowJob = false, -- show mob's job type (WAR, MNK, etc.)
     mobInfoShowModifierText = false, -- show +25%/-50% next to icons
+    mobInfoGroupModifiers = true, -- group icons by percentage (Wind Earth Water -25%) vs individual (Wind -25% Earth -25%)
     mobInfoSeparatorStyle = 'space', -- separator style: 'space', 'pipe', 'dot'
     mobInfoShowServerId = false, -- show target's server ID
     mobInfoServerIdHex = true, -- true = hex format (0x1C0), false = decimal
@@ -892,6 +898,7 @@ M.user_settings = T{
             percentTextColor = 0xFFFFFFFF,
             targetBorderColor = 0xFFFFFFFF,      -- white - border for main target
             subtargetBorderColor = 0xFF8080FF,   -- blue - border for subtarget
+            targetNameTextColor = 0xFFFFAA00,    -- orange - enemy's target name
             -- Note: Entity name colors are in shared section
         },
 
@@ -1197,7 +1204,7 @@ M.default_settings = T{
         name_font_settings = T{
             font_alignment = gdi.Alignment.Left,
             font_family = 'Consolas',
-            font_height = 11,
+            font_height = 10,
             font_color = 0xFFFFFFFF,
             font_flags = gdi.FontFlags.None,
             outline_color = 0xFF000000,
@@ -1206,7 +1213,7 @@ M.default_settings = T{
         distance_font_settings = T{
             font_alignment = gdi.Alignment.Left,
             font_family = 'Consolas',
-            font_height = 9,
+            font_height = 8,
             font_color = 0xFFFFFFFF,
             font_flags = gdi.FontFlags.None,
             outline_color = 0xFF000000,
@@ -1215,8 +1222,17 @@ M.default_settings = T{
         percent_font_settings = T{
             font_alignment = gdi.Alignment.Right,
             font_family = 'Consolas',
-            font_height = 9,
+            font_height = 8,
             font_color = 0xFFFFFFFF,
+            font_flags = gdi.FontFlags.None,
+            outline_color = 0xFF000000,
+            outline_width = 2,
+        },
+        target_font_settings = T{
+            font_alignment = gdi.Alignment.Left,
+            font_family = 'Consolas',
+            font_height = 8,
+            font_color = 0xFFFFAA00,
             font_flags = gdi.FontFlags.None,
             outline_color = 0xFF000000,
             outline_width = 2,

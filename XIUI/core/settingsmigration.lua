@@ -477,6 +477,9 @@ function M.MigrateIndividualSettings(gConfig, defaults)
     if gConfig.mobInfoSeparatorStyle == nil then
         gConfig.mobInfoSeparatorStyle = defaults.mobInfoSeparatorStyle;
     end
+    if gConfig.mobInfoGroupModifiers == nil then
+        gConfig.mobInfoGroupModifiers = defaults.mobInfoGroupModifiers;
+    end
 
     -- Migrate party text position offsets (add to all parties if missing)
     local partyTables = { gConfig.partyA, gConfig.partyB, gConfig.partyC };
