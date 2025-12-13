@@ -81,8 +81,9 @@ mobdata.LoadZone = function(zoneId)
 end
 
 --[[
-    Get mob information by name
-    @param mobName: The name of the mob to look up
+    Get mob information by entity index (preferred) or name
+    @param mobName: The name of the mob to look up (used as fallback)
+    @param entityIndex: Optional entity index for more accurate lookup (different spawn points may have different jobs)
     @return table or nil: Mob data table or nil if not found
 
     Mob data table fields:
@@ -102,9 +103,25 @@ end
     - Modifiers: table - Damage type modifiers (multipliers)
         - Fire, Ice, Wind, Earth, Lightning, Water, Light, Dark
         - Slashing, Piercing, H2H, Impact
+
+    Note: Many mobs (like Om'aern) have different jobs depending on spawn point.
+    The Indices table contains spawn-specific data, while Names has generic fallback data.
 ]]
-mobdata.GetMobInfo = function(mobName)
-    if mobName == nil or zoneData.Names == nil then
+mobdata.GetMobInfo = function(mobName, entityIndex)
+    if mobName == nil then
+        return nil;
+    end
+
+    -- Try index lookup first for spawn-specific data (more accurate job info)
+    if entityIndex ~= nil and zoneData.Indices ~= nil then
+        local indexData = zoneData.Indices[entityIndex];
+        if indexData ~= nil then
+            return indexData;
+        end
+    end
+
+    -- Fall back to name lookup
+    if zoneData.Names == nil then
         return nil;
     end
     return zoneData.Names[mobName];

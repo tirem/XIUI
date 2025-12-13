@@ -532,8 +532,8 @@ mobinfo.DrawWindow = function(settings)
         return;
     end
 
-    -- Get mob info from database
-    local mobInfo = mobdata.GetMobInfo(targetEntity.Name);
+    -- Get mob info from database (pass index for spawn-specific job data)
+    local mobInfo = mobdata.GetMobInfo(targetEntity.Name, targetIndex);
 
     -- If no data and we don't want to show "no data" window, hide
     if mobInfo == nil and not gConfig.mobInfoShowNoData then

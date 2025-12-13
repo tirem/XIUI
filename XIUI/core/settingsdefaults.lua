@@ -289,7 +289,7 @@ M.user_settings = T{
     enemyListDebuffsRightAlign = false,
     showEnemyListTargets = true,
     enableEnemyListClickTarget = true,
-    enemyListPreview = false,
+    enemyListPreview = true,
 
     playerBarScaleX = 1,
     playerBarScaleY = 1,
@@ -353,7 +353,7 @@ M.user_settings = T{
     showEnemyListBookends = false,
     -- Enemy target container settings
     enemyListTargetOffsetX = 0,
-    enemyListTargetOffsetY = 45,
+    enemyListTargetOffsetY = 43,
     enemyListTargetWidth = 64,
     enemyListTargetFontSize = 8,
 
