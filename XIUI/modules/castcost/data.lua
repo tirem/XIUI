@@ -1,6 +1,8 @@
 --[[
 * XIUI Cast Cost Data Layer
 * Handles menu detection and selected item retrieval via memory reading
+*
+* Special thanks to Atom0s for assistance with memory signatures and structures.
 ]]--
 
 require('common');
