@@ -307,6 +307,15 @@ local function DrawPartyTabContent(party, partyName)
             components.DrawPartySlider(party, 'Y##distY', 'distanceTextOffsetY', -50, 50);
             imgui.PopItemWidth();
         end
+
+        if party.showJob and party.layout == 0 then
+            imgui.Text('Job Text');
+            imgui.PushItemWidth(100);
+            components.DrawPartySlider(party, 'X##jobX', 'jobTextOffsetX', -50, 50);
+            imgui.SameLine();
+            components.DrawPartySlider(party, 'Y##jobY', 'jobTextOffsetY', -50, 50);
+            imgui.PopItemWidth();
+        end
     end
 end
 

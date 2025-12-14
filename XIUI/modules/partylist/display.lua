@@ -631,8 +631,8 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
             data.memberText[memIdx].job:set_font_height(fontSizes.job);
             local jobTextWidth, jobTextHeight = data.memberText[memIdx].job:get_text_size();
             local jobPosX = hpStartX + allBarsLengths - jobTextWidth;
-            data.memberText[memIdx].job:set_position_x(jobPosX);
-            data.memberText[memIdx].job:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset);
+            data.memberText[memIdx].job:set_position_x(jobPosX + textOffsets.jobX);
+            data.memberText[memIdx].job:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset + textOffsets.jobY);
             local desiredJobColor = cache.colors.nameTextColor;
             if (data.memberTextColorCache[memIdx].job ~= desiredJobColor) then
                 data.memberText[memIdx].job:set_font_color(desiredJobColor);

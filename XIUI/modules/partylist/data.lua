@@ -239,6 +239,8 @@ function data.updatePartyConfigCache()
         cache.textOffsets.tpY = party.tpTextOffsetY or 0;
         cache.textOffsets.distanceX = party.distanceTextOffsetX or 0;
         cache.textOffsets.distanceY = party.distanceTextOffsetY or 0;
+        cache.textOffsets.jobX = party.jobTextOffsetX or 0;
+        cache.textOffsets.jobY = party.jobTextOffsetY or 0;
 
         -- Color settings reference
         if partyIndex == 1 then

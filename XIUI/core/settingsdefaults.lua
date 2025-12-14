@@ -82,6 +82,8 @@ local function createPartyDefaults(overrides)
         tpTextOffsetY = 0,
         distanceTextOffsetX = 0,
         distanceTextOffsetY = 0,
+        jobTextOffsetX = 0,
+        jobTextOffsetY = 0,
     };
     if overrides then
         for k, v in pairs(overrides) do

@@ -497,6 +497,8 @@ function M.MigrateIndividualSettings(gConfig, defaults)
             if party.tpTextOffsetY == nil then party.tpTextOffsetY = partyDefault.tpTextOffsetY or 0; end
             if party.distanceTextOffsetX == nil then party.distanceTextOffsetX = partyDefault.distanceTextOffsetX or 0; end
             if party.distanceTextOffsetY == nil then party.distanceTextOffsetY = partyDefault.distanceTextOffsetY or 0; end
+            if party.jobTextOffsetX == nil then party.jobTextOffsetX = partyDefault.jobTextOffsetX or 0; end
+            if party.jobTextOffsetY == nil then party.jobTextOffsetY = partyDefault.jobTextOffsetY or 0; end
         end
     end
 
