@@ -302,9 +302,9 @@ local function DrawPartyTabContent(party, partyName)
         if party.showDistance then
             imgui.Text('Distance Text');
             imgui.PushItemWidth(100);
-            components.DrawPartySlider(party, 'X##distX', 'distanceTextOffsetX', -50, 50);
+            components.DrawPartySlider(party, 'X##distX', 'distanceTextOffsetX', -200, 200);
             imgui.SameLine();
-            components.DrawPartySlider(party, 'Y##distY', 'distanceTextOffsetY', -50, 50);
+            components.DrawPartySlider(party, 'Y##distY', 'distanceTextOffsetY', -200, 200);
             imgui.PopItemWidth();
         end
 

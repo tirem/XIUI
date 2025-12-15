@@ -591,7 +591,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         end
         if (distance ~= nil and distance > 0 and distance <= 50) then
             local distanceText = ('%.1f'):fmt(distance);
-            data.memberText[memIdx].distance:set_text('- ' .. distanceText);
+            data.memberText[memIdx].distance:set_text(distanceText);
             local distancePosX = namePosX + nameWidth + 4;
             data.memberText[memIdx].distance:set_position_x(distancePosX + textOffsets.distanceX);
             data.memberText[memIdx].distance:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset + textOffsets.distanceY);
