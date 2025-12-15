@@ -14,13 +14,130 @@ T{
 local reusableDebuffIds = {};
 local reusableDebuffTimes = {};
 
--- TO DO: Audit these messages for which ones are actually useful
-local statusOnMes = T{101, 127, 160, 164, 166, 186, 194, 203, 205, 230, 236, 266, 267, 268, 269, 237, 271, 272, 277, 278, 279, 280, 319, 320, 375, 412, 645, 754, 755, 804};
-local statusOffMes = T{64, 159, 168, 204, 206, 321, 322, 341, 342, 343, 344, 350, 378, 531, 647, 805, 806};
-local deathMes = T{6, 20, 97, 113, 406, 605, 646};
-local spellDamageMes = T{2, 252, 264, 265};
-local additionalEffectJobAbilities = T{22, 45, 46, 77}; --energy drain, mug, shield bash, weapon bash
-local additionalEffectMes = T{160, 164};
+-- Message type hash tables for O(1) lookup (converted from T{} arrays)
+local statusOnMes = {[101]=true, [127]=true, [160]=true, [164]=true, [166]=true, [186]=true, [194]=true, [203]=true, [205]=true, [230]=true, [236]=true, [266]=true, [267]=true, [268]=true, [269]=true, [237]=true, [271]=true, [272]=true, [277]=true, [278]=true, [279]=true, [280]=true, [319]=true, [320]=true, [375]=true, [412]=true, [645]=true, [754]=true, [755]=true, [804]=true};
+local statusOffMes = {[64]=true, [159]=true, [168]=true, [204]=true, [206]=true, [321]=true, [322]=true, [341]=true, [342]=true, [343]=true, [344]=true, [350]=true, [378]=true, [531]=true, [647]=true, [805]=true, [806]=true};
+local deathMes = {[6]=true, [20]=true, [97]=true, [113]=true, [406]=true, [605]=true, [646]=true};
+local spellDamageMes = {[2]=true, [252]=true, [264]=true, [265]=true};
+local additionalEffectJobAbilities = {[22]=true, [45]=true, [46]=true, [77]=true}; --energy drain, mug, shield bash, weapon bash
+local additionalEffectMes = {[160]=true, [164]=true};
+
+-- Spell duration lookup table for O(1) performance
+-- Maps spell IDs to duration (in seconds) and optionally buff ID overrides
+local SPELL_DURATIONS = {
+    -- Weapon skills with debuffs
+    [181] = {duration = 180, buffId = 149}, -- Shell Crusher - Defense Down
+    [83] = {duration = 180, buffId = 149},  -- Armor Break - Defense Down
+    [87] = {duration = 180, buffIds = {149, 147}}, -- Full Break - Defense Down & Attack Down
+    [155] = {duration = 180, buffId = 149}, -- Tachi: Ageha - Defense Down
+    [187] = {duration = 180, buffId = 149}, -- Garland of Bliss - Defense Down
+    [89] = {duration = 180, buffId = 149},  -- Metatron Torment - Defense Down
+    [85] = {duration = 180, buffId = 147},  -- Weapon Break - Attack Down
+    [185] = {duration = 180, buffId = 147}, -- Gate of Tartarus - Attack Down
+    [107] = {duration = 180, buffId = 147}, -- Infernal Scythe - Attack Down
+    [16] = {duration = 90, buffId = 3},     -- Wasp Sting - Poison
+    [17] = {duration = 90, buffId = 3},     -- Viper Bite - Poison
+    [18] = {duration = 30, buffId = 11},    -- Shadowstitch - Bind
+    [35] = {duration = 5, buffId = 10},     -- Flat Blade - Stun
+    [115] = {duration = 5, buffId = 10},    -- Leg Sweep - Stun
+    [2] = {duration = 5, buffId = 10},      -- Shoulder Tackle - Stun
+    [65] = {duration = 5, buffId = 10},     -- Smash Axe - Stun
+    [162] = {duration = 5, buffId = 10},    -- Brainshaker - Stun
+    [145] = {duration = 5, buffId = 10},    -- Tachi: Hobaku - Stun
+    [80] = {duration = 180, buffId = 148},  -- Shield Break - Evasion Down
+
+    -- Dia/Bio spells
+    [23] = {duration = 60},   -- Dia
+    [33] = {duration = 60},   -- Diaga
+    [230] = {duration = 60},  -- Bio
+    [24] = {duration = 120},  -- Dia II
+    [231] = {duration = 120}, -- Bio II
+    [25] = {duration = 150},  -- Dia III
+    [232] = {duration = 150}, -- Bio III
+
+    -- Helix spells (278-285 and 885-892)
+    [278] = {duration = 90, buffId = 186}, [279] = {duration = 90, buffId = 186},
+    [280] = {duration = 90, buffId = 186}, [281] = {duration = 90, buffId = 186},
+    [282] = {duration = 90, buffId = 186}, [283] = {duration = 90, buffId = 186},
+    [284] = {duration = 90, buffId = 186}, [285] = {duration = 90, buffId = 186},
+    [885] = {duration = 90, buffId = 186}, [886] = {duration = 90, buffId = 186},
+    [887] = {duration = 90, buffId = 186}, [888] = {duration = 90, buffId = 186},
+    [889] = {duration = 90, buffId = 186}, [890] = {duration = 90, buffId = 186},
+    [891] = {duration = 90, buffId = 186}, [892] = {duration = 90, buffId = 186},
+
+    -- Regular debuff spells
+    [58] = {duration = 120},  -- Paralyze
+    [80] = {duration = 120},  -- Paralyze II
+    [56] = {duration = 180},  -- Slow
+    [79] = {duration = 180},  -- Slow II
+    [216] = {duration = 120}, -- Gravity
+    [254] = {duration = 180}, -- Blind
+    [276] = {duration = 180}, -- Blind II
+    [59] = {duration = 120},  -- Silence
+    [359] = {duration = 120}, -- Silencega
+    [253] = {duration = 60},  -- Sleep
+    [273] = {duration = 60},  -- Sleepga
+    [363] = {duration = 60},  -- Sleepga II
+    [259] = {duration = 90, buffId = 19, clearsBuffs = {2, 193}}, -- Sleep II
+    [274] = {duration = 90, buffId = 19, clearsBuffs = {2, 193}}, -- Sleepga II
+    [364] = {duration = 90, buffId = 19, clearsBuffs = {2, 193}}, -- Sleepga III
+    [258] = {duration = 60},  -- Bind
+    [362] = {duration = 60},  -- Bindga
+    [252] = {duration = 5},   -- Stun
+    [220] = {duration = 90},  -- Poison
+    [221] = {duration = 120}, -- Poison II
+
+    -- Ninjutsu debuffs
+    [341] = {duration = 180}, -- Kurayami: Ichi
+    [344] = {duration = 180}, -- Hojo: Ichi
+    [347] = {duration = 180}, -- Dokumori: Ichi
+    [342] = {duration = 300}, -- Kurayami: Ni
+    [345] = {duration = 300}, -- Hojo: Ni
+    [348] = {duration = 300}, -- Dokumori: Ni
+
+    -- Elemental debuffs (Burn, Frost, Choke, Rasp, Shock, Drown)
+    [235] = {duration = 120}, [236] = {duration = 120},
+    [237] = {duration = 120}, [238] = {duration = 120},
+    [239] = {duration = 120}, [240] = {duration = 120},
+
+    -- Threnodies (454-461)
+    [454] = {duration = 78}, [455] = {duration = 78},
+    [456] = {duration = 78}, [457] = {duration = 78},
+    [458] = {duration = 78}, [459] = {duration = 78},
+    [460] = {duration = 78}, [461] = {duration = 78},
+
+    -- Elegies
+    [422] = {duration = 216}, -- Carnage Elegy
+    [421] = {duration = 216}, -- Battlefield Elegy
+
+    -- Bard songs
+    [376] = {duration = 30}, -- Foe Lullaby
+    [463] = {duration = 30}, -- Horde Lullaby
+    [321] = {duration = 60}, -- Bully
+
+    -- 2-Hour abilities
+    [688] = {duration = 45}, -- Mighty Strikes
+    [690] = {duration = 45}, -- Hundred Fists
+    [691] = {duration = 60}, -- Manafont
+    [692] = {duration = 60}, -- Chainspell
+    [693] = {duration = 30}, -- Perfect Dodge
+    [694] = {duration = 30}, -- Invincible
+    [695] = {duration = 30}, -- Blood Weapon
+
+    -- Job abilities with debuffs
+    [22] = {duration = 120, buffId = 13},  -- Energy Drain - Max HP Down
+    [45] = {duration = 30, buffId = 448},  -- Mug - ???
+    [46] = {duration = 6, buffId = 10},    -- Shield Bash - Stun
+    [77] = {duration = 6, buffId = 10},    -- Weapon Bash - Stun
+
+    -- Additional effect debuffs
+    [2] = {duration = 25, additionalEffect = true},   -- Sleep Bolt
+    [149] = {duration = 60, additionalEffect = true}, -- Defense Down/Acid Bolt
+    [12] = {duration = 30, additionalEffect = true},  -- Gravity/Mandau
+
+    -- Special cases
+    [1908] = {duration = 60, buffId = 2, type = 13}, -- Nightmare (pet ability)
+};
 
 local function ApplyMessage(debuffs, action)
 
@@ -43,170 +160,95 @@ local function ApplyMessage(debuffs, action)
             end
 
             if (debuffs[target.Id] == nil) then
-                debuffs[target.Id] = T{}; 
+                debuffs[target.Id] = T{};
             end
 
-            if action.Type == 13 then
-                if spell == 1908 then -- nightmare
-                    debuffs[target.Id][2] = now + 60
-                end
+            -- Handle pet abilities (Type 13)
+            if action.Type == 13 and spell == 1908 then
+                -- Nightmare
+                debuffs[target.Id][2] = now + 60
+            -- Handle weapon skills (Type 3 with damage message)
             elseif action.Type == 3 and message == 185 then
-                -- Weapon skill damage message - apply debuffs for WS that have status effects
-                -- Defense Down: Shell Crusher(181), Armor Break(83), Full Break(87), Tachi: Ageha(155), Garland of Bliss(187), Metatron Torment(89)
-                if spell == 181 or spell == 83 or spell == 87 or spell == 155 or spell == 187 or spell == 89 then
-                    debuffs[target.Id][149] = now + 180
+                local spellData = SPELL_DURATIONS[spell];
+                if spellData then
+                    if spellData.buffId then
+                        debuffs[target.Id][spellData.buffId] = now + spellData.duration;
+                    end
+                    if spellData.buffIds then
+                        for _, buffId in ipairs(spellData.buffIds) do
+                            debuffs[target.Id][buffId] = now + spellData.duration;
+                        end
+                    end
                 end
-                -- Attack Down: Full Break(87), Weapon Break(85), Gate of Tartarus(185), Infernal Scythe(107)
-                if spell == 87 or spell == 85 or spell == 185 or spell == 107 then
-                    debuffs[target.Id][147] = now + 180
+            -- Handle dia/bio/helix spells (Type 4 with damage message)
+            elseif action.Type == 4 and spellDamageMes[message] then
+                local spellData = SPELL_DURATIONS[spell];
+                if spellData then
+                    local expiry = now + spellData.duration;
+                    if spell == 23 or spell == 24 or spell == 25 or spell == 33 then
+                        -- Dia spells - set dia, clear bio
+                        debuffs[target.Id][134] = expiry;
+                        debuffs[target.Id][135] = nil;
+                    elseif spell == 230 or spell == 231 or spell == 232 then
+                        -- Bio spells - set bio, clear dia
+                        debuffs[target.Id][134] = nil;
+                        debuffs[target.Id][135] = expiry;
+                    elseif spellData.buffId then
+                        -- Helix spells
+                        debuffs[target.Id][spellData.buffId] = expiry;
+                    end
                 end
-                -- Poison: Wasp Sting(16), Viper Bite(17)
-                if spell == 16 or spell == 17 then
-                    debuffs[target.Id][3] = now + 90
-                end
-                -- Bind: Shadowstitch(18)
-                if spell == 18 then
-                    debuffs[target.Id][11] = now + 30
-                end
-                -- Stun: Flat Blade(35), Leg Sweep(115), Shoulder Tackle(2), Smash Axe(65), Brainshaker(162), Tachi: Hobaku(145)
-                if spell == 35 or spell == 115 or spell == 2 or spell == 65 or spell == 162 or spell == 145 then
-                    debuffs[target.Id][10] = now + 5
-                end
-                -- Evasion Down: Shield Break(80)
-                if spell == 80 then
-                    debuffs[target.Id][148] = now + 180
-                end
-            elseif action.Type == 4 and spellDamageMes:contains(message) then -- dia / bio / helix damage handling
-                local expiry = nil
-
-                if spell == 23 or spell == 33 or spell == 230 then
-                    expiry = now + 60
-                elseif spell == 24 or spell == 231 then
-                    expiry = now + 120
-                elseif spell == 25 or spell == 232 then
-                    expiry = now + 150
-                end
-
-                if spell == 23 or spell == 24 or spell == 25 or spell == 33 then
-                    debuffs[target.Id][134] = expiry
-                    debuffs[target.Id][135] = nil
-                elseif spell == 230 or spell == 231 or spell == 232 then
-                    debuffs[target.Id][134] = nil
-                    debuffs[target.Id][135] = expiry
-                elseif (spell >= 278 and spell <= 285) or (spell >= 885 and spell <= 892) then
-                    -- Helix spells: base duration ~90s, can vary with Dark Arts/Job Points/gear
-                    -- Using 90s as conservative estimate
-                    debuffs[target.Id][186] = now + 90
-                end
-            elseif statusOnMes:contains(message) then
-                -- Regular (de)buffs
+            -- Handle regular status effect spells
+            elseif statusOnMes[message] then
                 local buffId = ability.Param or (action.Type == 4 and buffTable.GetBuffIdBySpellId(spell) or nil);
                 if (buffId == nil) then
                     return
                 end
 
-                if spell == 58 or spell == 80 then -- para/para2
-                    debuffs[target.Id][buffId] = now + 120
-                elseif spell == 56 or spell == 79 then -- slow/slow2
-                    debuffs[target.Id][buffId] = now + 180
-                elseif spell == 216 then -- gravity
-                    debuffs[target.Id][buffId] = now + 120
-                elseif spell == 254 or spell == 276 then -- blind/blind2
-                    debuffs[target.Id][buffId] = now + 180
-                elseif spell == 341 or spell == 344 or spell == 347 then -- ninjutsu debuffs: ichi
-                    debuffs[target.Id][buffId] = now + 180
-                elseif spell == 342 or spell == 345 or spell == 348 then -- ninjutsu debuffs: ni
-                    debuffs[target.Id][buffId] = now + 300
-                elseif spell == 23 then -- dia
-                    debuffs[target.Id][buffId] = now + 60
-                elseif spell == 24 then -- dia2
-                    debuffs[target.Id][buffId] = now + 120
-                elseif spell == 230 then -- bio
-                    debuffs[target.Id][buffId] = now + 60
-                elseif spell == 231 then -- bio2
-                    debuffs[target.Id][buffId] = now + 120
-                elseif spell == 59 or spell == 359 then -- silence/ga
-                    debuffs[target.Id][buffId] = now + 120
-                elseif spell == 253 or spell == 273 or spell == 363 then -- sleep/ga
-                    debuffs[target.Id][buffId] = now + 60
-                elseif spell == 259 or spell == 274 or spell == 364 then -- sleep2/ga2
-                    debuffs[target.Id][2] = nil
-                    debuffs[target.Id][193] = nil 
-                    debuffs[target.Id][buffId] = now + 90 --id 19
-                elseif spell == 376 or spell == 463 then -- foe/horde lullaby
-                    debuffs[target.Id][buffId] = now + 30
-                elseif spell == 258 or spell == 362 then -- bind
-                    debuffs[target.Id][buffId] = now + 60
-                elseif spell == 252 then -- stun
-                    debuffs[target.Id][buffId] = now + 5
-                elseif spell == 220 then -- poison
-                    debuffs[target.Id][buffId] = now + 90
-                elseif spell == 221 then -- poison2
-                    debuffs[target.Id][buffId] = now + 120
-                elseif spell >= 235 and spell <= 240 then -- elemental debuffs
-                    debuffs[target.Id][buffId] = now + 120
-                elseif spell >= 454 and spell <= 461 then -- threnodies
-                    debuffs[target.Id][buffId] = now + 78
-                elseif spell == 422 or spell == 421 then -- elegies
-                    debuffs[target.Id][buffId] = now + 216
-                elseif spell == 321 then -- bully
-                    debuffs[target.Id][buffId] = now + 60
-                elseif spell == 688 then -- mighty strikes
-                    debuffs[target.Id][buffId] = now + 45
-                elseif spell == 690 then -- hundred fist
-                    debuffs[target.Id][buffId] = now + 45
-                elseif spell == 691 then -- manafont
-                    debuffs[target.Id][buffId] = now + 60
-                elseif spell == 692 then -- chainspell
-                    debuffs[target.Id][buffId] = now + 60
-                elseif spell == 693 then -- perfect dodge
-                    debuffs[target.Id][buffId] = now + 30
-                elseif spell == 694 then -- invincible
-                    debuffs[target.Id][buffId] = now + 30
-                elseif spell == 695 then -- blood weapon
-                    debuffs[target.Id][buffId] = now + 30
-                else -- Handle unknown status effect @ 5 minutes
+                local spellData = SPELL_DURATIONS[spell];
+                if spellData then
+                    -- Handle special clear buffs (Sleep II clears Sleep I)
+                    if spellData.clearsBuffs then
+                        for _, clearBuffId in ipairs(spellData.clearsBuffs) do
+                            debuffs[target.Id][clearBuffId] = nil;
+                        end
+                    end
+                    -- Apply the debuff
+                    local finalBuffId = spellData.buffId or buffId;
+                    debuffs[target.Id][finalBuffId] = now + spellData.duration;
+                else
+                    -- Unknown status effect - default to 5 minutes
                     debuffs[target.Id][buffId] = now + 300;
                 end
-            elseif statusOffMes:contains(message) then --341 dispel
+            -- Handle dispel effects
+            elseif statusOffMes[message] then
                 if (ability.Param == nil) then
                     return
                 else
                     debuffs[target.Id][ability.Param] = nil
                 end
-            elseif action.Type == 3 and additionalEffectJobAbilities:contains(spell) then
-                if spell == 22 and message == 185 then -- energy drain
-                    if (debuffs[target.Id][13] == nil or debuffs[target.Id][13] < now) then
-                        debuffs[target.Id][13] = now + 120
+            -- Handle job abilities with additional effects
+            elseif action.Type == 3 and additionalEffectJobAbilities[spell] then
+                local spellData = SPELL_DURATIONS[spell];
+                if spellData and spellData.buffId and (message == 185 or spell ~= 22) then
+                    -- Only apply if not already present or expired
+                    if (debuffs[target.Id][spellData.buffId] == nil or debuffs[target.Id][spellData.buffId] < now) then
+                        debuffs[target.Id][spellData.buffId] = now + spellData.duration;
                     end
-                elseif spell == 45 then -- mug
-                    if (debuffs[target.Id][448] == nil or debuffs[target.Id][448] < now) then
-                        debuffs[target.Id][448] = now + 30
-                    end
-                elseif spell == 46 then -- shield bash
-                    if (debuffs[target.Id][10] == nil or debuffs[target.Id][10] < now) then
-                        debuffs[target.Id][10] = now + 6
-                    end
-                elseif spell == 77 then -- weapon bash
-                    if (debuffs[target.Id][10] == nil or debuffs[target.Id][10] < now) then
-                        debuffs[target.Id][10] = now + 6
-                    end
-                --elseif spell == 82 then -- chi blast (will need this later for handling penance)
                 end
-            elseif additionalEffect ~= nil and additionalEffectMes:contains(additionalEffect) then
+            -- Handle additional effects (weapon procs, etc.)
+            elseif additionalEffect ~= nil and additionalEffectMes[additionalEffect] then
                 local buffId = ability.AdditionalEffect.Param;
                 if (buffId == nil) then
                     return
                 end
 
-                if buffId == 2 then -- sleep bolt
-                    debuffs[target.Id][buffId] = now + 25
-                elseif buffId == 149 then -- defense down/acid bolt
-                    debuffs[target.Id][buffId] = now + 60
-                elseif buffId == 12 then -- gravity/mandau
-                    debuffs[target.Id][buffId] = now + 30
+                local spellData = SPELL_DURATIONS[buffId];
+                if spellData and spellData.additionalEffect then
+                    debuffs[target.Id][buffId] = now + spellData.duration;
                 else
-                    debuffs[target.Id][buffId] = now + 30
+                    -- Default duration for unknown additional effects
+                    debuffs[target.Id][buffId] = now + 30;
                 end
             end
         end
@@ -215,7 +257,7 @@ end
 
 local function ClearMessage(debuffs, basic)
     -- if we're tracking a mob that dies, reset its status
-    if deathMes:contains(basic.message) and debuffs[basic.target] then
+    if deathMes[basic.message] and debuffs[basic.target] then
         debuffs[basic.target] = nil
     elseif (basic.message == 321) then --Custom Chi Blast dispel message
         if (debuffs[basic.target] == nil or basic.value == nil) then
@@ -223,7 +265,7 @@ local function ClearMessage(debuffs, basic)
         end
 
         debuffs[basic.target][basic.value] = nil
-    elseif statusOffMes:contains(basic.message) then
+    elseif statusOffMes[basic.message] then
         if debuffs[basic.target] == nil then
             return
         end
@@ -232,7 +274,7 @@ local function ClearMessage(debuffs, basic)
         if (basic.param ~= nil) then
             if (basic.param == 2) then --Sleep/Lullaby Handling
                 debuffs[basic.target][2] = nil
-                debuffs[basic.target][193] = nil 
+                debuffs[basic.target][193] = nil
                 debuffs[basic.target][19] = nil
             else
                 debuffs[basic.target][basic.param] = nil

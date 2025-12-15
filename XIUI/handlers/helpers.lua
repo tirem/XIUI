@@ -114,12 +114,14 @@ GetUIDrawList = drawingLib.GetUIDrawList;
 GetIndexFromId = packetsLib.GetIndexFromId;
 ParseActionPacket = packetsLib.ParseActionPacket;
 ParseMobUpdatePacket = packetsLib.ParseMobUpdatePacket;
+ClearEntityCache = packetsLib.ClearEntityCache;
 ParseMessagePacket = packetsLib.ParseMessagePacket;
 valid_server_id = packetsLib.valid_server_id;
 
 -- Texture Utilities (from textures.lua)
 LoadTexture = texturesLib.LoadTexture;
 LoadTextureWithExt = texturesLib.LoadTextureWithExt;
+GetTextureDimensions = texturesLib.GetTextureDimensions;
 
 -- HP Utilities (from hp.lua)
 HpInterpolation = hpLib.HpInterpolation;
@@ -150,10 +152,17 @@ HexToARGB = colorLib.HexToARGB;
 GetColorSetting = colorLib.GetColorSetting;
 GetGradientSetting = colorLib.GetGradientSetting;
 
+-- Color Helper Utilities (from color.lua)
+GetGradientTextColor = colorLib.GetGradientTextColor;
+HexToU32 = colorLib.HexToU32;
+ARGBToU32 = colorLib.ARGBToU32;
+ColorTableToARGB = colorLib.ColorTableToARGB;
+
 -- Legacy color functions (also from color.lua)
 rgbToHsv = colorLib.rgbToHsv;
 hsvToRgb = colorLib.hsvToRgb;
 hex2rgb = colorLib.hex2rgb;
+hex2rgba = colorLib.hex2rgba;
 rgb2hex = colorLib.rgb2hex;
 shiftSaturationAndBrightness = colorLib.shiftSaturationAndBrightness;
 shiftGradient = colorLib.shiftGradient;
@@ -171,3 +180,32 @@ debuffTable = statusIconsLib.GetDebuffTable();
 
 -- Window Background Utilities (from windowbackground.lua)
 WindowBackground = windowBackgroundLib;
+
+-- ========================================
+-- Window Utilities
+-- ========================================
+
+-- Cached base window flags (computed once)
+local baseWindowFlagsCache = nil;
+
+-- Get base window flags for UI modules
+-- Optionally adds NoMove flag based on lockPositions parameter
+function GetBaseWindowFlags(lockPositions)
+    if baseWindowFlagsCache == nil then
+        baseWindowFlagsCache = bit.bor(
+            ImGuiWindowFlags_NoDecoration,
+            ImGuiWindowFlags_AlwaysAutoResize,
+            ImGuiWindowFlags_NoFocusOnAppearing,
+            ImGuiWindowFlags_NoNav,
+            ImGuiWindowFlags_NoBackground,
+            ImGuiWindowFlags_NoBringToFrontOnFocus,
+            ImGuiWindowFlags_NoDocking
+        );
+    end
+
+    if lockPositions then
+        return bit.bor(baseWindowFlagsCache, ImGuiWindowFlags_NoMove);
+    end
+
+    return baseWindowFlagsCache;
+end

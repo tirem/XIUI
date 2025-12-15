@@ -11,16 +11,6 @@ local imgui = require('imgui');
 
 local M = {};
 
--- Display mode options for HP/MP text
-local displayModeOptions = {'number', 'percent', 'both', 'both_percent_first', 'current_max'};
-local displayModeLabels = {
-    number = 'Number Only',
-    percent = 'Percent Only',
-    both = 'Number (Percent)',
-    both_percent_first = 'Percent (Number)',
-    current_max = 'Current/Max'
-};
-
 -- Helper function to copy all settings from one party to another
 local function CopyPartySettings(sourcePartyName, targetPartyName)
     -- Get source and target party tables
@@ -109,40 +99,12 @@ local function DrawPartyTabContent(party, partyName)
         components.DrawPartyCheckbox(party, 'Expand Height', 'expandHeight');
 
         -- HP Display Mode dropdown
-        local hpDisplayLabel = displayModeLabels[party.hpDisplayMode] or 'Number Only';
-        components.DrawComboBox('HP Display##party' .. partyName, hpDisplayLabel, {'Number Only', 'Percent Only', 'Number (Percent)', 'Percent (Number)', 'Current/Max'}, function(newValue)
-            if newValue == 'Number Only' then
-                party.hpDisplayMode = 'number';
-            elseif newValue == 'Percent Only' then
-                party.hpDisplayMode = 'percent';
-            elseif newValue == 'Number (Percent)' then
-                party.hpDisplayMode = 'both';
-            elseif newValue == 'Percent (Number)' then
-                party.hpDisplayMode = 'both_percent_first';
-            else
-                party.hpDisplayMode = 'current_max';
-            end
-            SaveSettingsOnly();
-        end);
-        imgui.ShowHelp('How HP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (1234/1500).');
+        components.DrawDisplayModeDropdown('HP Display##party' .. partyName, party, 'hpDisplayMode',
+            'How HP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (1234/1500).');
 
         -- MP Display Mode dropdown
-        local mpDisplayLabel = displayModeLabels[party.mpDisplayMode] or 'Number Only';
-        components.DrawComboBox('MP Display##party' .. partyName, mpDisplayLabel, {'Number Only', 'Percent Only', 'Number (Percent)', 'Percent (Number)', 'Current/Max'}, function(newValue)
-            if newValue == 'Number Only' then
-                party.mpDisplayMode = 'number';
-            elseif newValue == 'Percent Only' then
-                party.mpDisplayMode = 'percent';
-            elseif newValue == 'Number (Percent)' then
-                party.mpDisplayMode = 'both';
-            elseif newValue == 'Percent (Number)' then
-                party.mpDisplayMode = 'both_percent_first';
-            else
-                party.mpDisplayMode = 'current_max';
-            end
-            SaveSettingsOnly();
-        end);
-        imgui.ShowHelp('How MP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (750/1000).');
+        components.DrawDisplayModeDropdown('MP Display##party' .. partyName, party, 'mpDisplayMode',
+            'How MP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (750/1000).');
 
         components.DrawPartyCheckbox(party, 'Always Show MP Bar', 'alwaysShowMpBar');
         imgui.ShowHelp('When disabled, hides the MP bar for jobs without MP (WAR, MNK, THF, etc.). Cast bars will still appear when casting.');
@@ -302,9 +264,18 @@ local function DrawPartyTabContent(party, partyName)
         if party.showDistance then
             imgui.Text('Distance Text');
             imgui.PushItemWidth(100);
-            components.DrawPartySlider(party, 'X##distX', 'distanceTextOffsetX', -50, 50);
+            components.DrawPartySlider(party, 'X##distX', 'distanceTextOffsetX', -200, 200);
             imgui.SameLine();
-            components.DrawPartySlider(party, 'Y##distY', 'distanceTextOffsetY', -50, 50);
+            components.DrawPartySlider(party, 'Y##distY', 'distanceTextOffsetY', -200, 200);
+            imgui.PopItemWidth();
+        end
+
+        if party.showJob and party.layout == 0 then
+            imgui.Text('Job Text');
+            imgui.PushItemWidth(100);
+            components.DrawPartySlider(party, 'X##jobX', 'jobTextOffsetX', -50, 50);
+            imgui.SameLine();
+            components.DrawPartySlider(party, 'Y##jobY', 'jobTextOffsetY', -50, 50);
             imgui.PopItemWidth();
         end
     end

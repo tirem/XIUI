@@ -192,8 +192,8 @@ local function DrawRecastIcon(drawList, x, y, size, timerInfo, colorConfig, fill
     end
 
     local fillColor = isOnCooldown
-        and imgui.GetColorU32(color.HexToImGui(recastGradient[1]))
-        or imgui.GetColorU32(color.HexToImGui(readyGradient[1]));
+        and color.HexToU32(recastGradient[1])
+        or color.HexToU32(readyGradient[1]);
 
     if fillStyle == 'circle' or fillStyle == 'clock' then
         -- Circle-based styles
@@ -274,8 +274,8 @@ local function DrawRecastIconCharged(drawList, x, y, size, timerInfo, colorConfi
     local bgColor = imgui.GetColorU32({0.01, 0.07, 0.17, 1.0});
     local borderColor = imgui.GetColorU32({0.01, 0.05, 0.12, 1.0});
 
-    local readyColor = imgui.GetColorU32(color.HexToImGui(readyGradient[1]));
-    local recastColor = imgui.GetColorU32(color.HexToImGui(recastGradient[1]));
+    local readyColor = color.HexToU32(readyGradient[1]);
+    local recastColor = color.HexToU32(recastGradient[1]);
 
     -- Size for each charge icon (same size as normal icons)
     local chargeSize = size;
@@ -398,8 +398,7 @@ local function DrawRecastFull(drawList, x, y, timerInfo, colorConfig, fullSettin
     local barGradient = timerInfo.isReady and readyGradient or recastGradient;
 
     -- Get text color from gradient start (convert hex to ARGB for GdiFonts)
-    local textColorHex = color.HexToARGB(barGradient[1]:gsub('#', ''):sub(1, 6),
-        tonumber(barGradient[1]:gsub('#', ''):sub(7, 8) or 'ff', 16));
+    local textColorHex = color.GetGradientTextColor(barGradient[1]);
 
     -- Prepare text content
     local nameText = timerInfo.name or 'Unknown';
@@ -499,8 +498,7 @@ local function DrawRecastFullCharged(drawList, x, y, timerInfo, colorConfig, ful
     local barGradient = (charges > 0) and readyGradient or recastGradient;
 
     -- Get text color from gradient start (convert hex to ARGB for GdiFonts)
-    local textColorHex = color.HexToARGB(barGradient[1]:gsub('#', ''):sub(1, 6),
-        tonumber(barGradient[1]:gsub('#', ''):sub(7, 8) or 'ff', 16));
+    local textColorHex = color.GetGradientTextColor(barGradient[1]);
 
     -- Prepare text content
     local nameText = timerInfo.name or 'Unknown';
@@ -1089,7 +1087,7 @@ function display.DrawWindow(settings)
 
                 -- Draw jug icon using texture
                 if data.jugIconTexture and data.jugIconTexture.image then
-                    local jugColor = imgui.GetColorU32(color.ARGBToImGui(colorConfig.jugIconColor or 0xFFFFFFFF));
+                    local jugColor = color.ARGBToU32(colorConfig.jugIconColor or 0xFFFFFFFF);
                     drawList:AddImage(
                         tonumber(ffi.cast("uint32_t", data.jugIconTexture.image)),
                         {timerX, timerY},
@@ -1112,7 +1110,7 @@ function display.DrawWindow(settings)
                 end
 
                 -- Charmed pet: Show heart icon
-                local heartColor = imgui.GetColorU32(color.ARGBToImGui(colorConfig.charmHeartColor or 0xFFFF6699));
+                local heartColor = color.ARGBToU32(colorConfig.charmHeartColor or 0xFFFF6699);
 
                 -- Draw heart shape using filled triangles/circles
                 local centerX = timerX + iconSize / 2;

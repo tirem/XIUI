@@ -58,34 +58,8 @@ local TABS = {
 };
 
 -- Helper function to draw a single tab button
-local function DrawTabButton(tab, selectedTab, tabHeight, tabPadding, gold, bgMedium, bgLight, bgLighter, uniqueSuffix)
-    local textWidth = imgui.CalcTextSize(tab.name);
-    local tabWidth = textWidth + tabPadding * 2;
-
-    local posX, posY = imgui.GetCursorScreenPos();
-    if selectedTab == tab.id then
-        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
-    else
-        imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
-    end
-
-    local clicked = imgui.Button(tab.name .. '##' .. uniqueSuffix, { tabWidth, tabHeight });
-
-    if selectedTab == tab.id then
-        local draw_list = imgui.GetWindowDrawList();
-        draw_list:AddRectFilled(
-            {posX + 4, posY + tabHeight - 2},
-            {posX + tabWidth - 4, posY + tabHeight},
-            imgui.GetColorU32(gold),
-            1.0
-        );
-    end
-    imgui.PopStyleColor(3);
-
+local function DrawTabButton(tab, selectedTab, uniqueSuffix)
+    local clicked = components.DrawStyledTab(tab.name, uniqueSuffix, selectedTab == tab.id);
     return clicked, tab.id;
 end
 
@@ -245,18 +219,10 @@ end
 function M.DrawSettings(state)
     local selectedInventoryTab = state.selectedInventoryTab or 1;
 
-    -- Tab styling colors
-    local tabHeight = 24;
-    local tabPadding = 12;
-    local gold = {0.957, 0.855, 0.592, 1.0};
-    local bgMedium = {0.098, 0.090, 0.075, 1.0};
-    local bgLight = {0.137, 0.125, 0.106, 1.0};
-    local bgLighter = {0.176, 0.161, 0.137, 1.0};
-
     -- Draw tab buttons
     for i, tab in ipairs(TABS) do
         if i > 1 then imgui.SameLine(); end
-        local clicked, tabId = DrawTabButton(tab, selectedInventoryTab, tabHeight, tabPadding, gold, bgMedium, bgLight, bgLighter, 'invTab');
+        local clicked, tabId = DrawTabButton(tab, selectedInventoryTab, 'invTab');
         if clicked then
             selectedInventoryTab = tabId;
         end
@@ -283,18 +249,10 @@ end
 function M.DrawColorSettings(state)
     local selectedInventoryColorTab = state.selectedInventoryColorTab or 1;
 
-    -- Tab styling colors
-    local tabHeight = 24;
-    local tabPadding = 12;
-    local gold = {0.957, 0.855, 0.592, 1.0};
-    local bgMedium = {0.098, 0.090, 0.075, 1.0};
-    local bgLight = {0.137, 0.125, 0.106, 1.0};
-    local bgLighter = {0.176, 0.161, 0.137, 1.0};
-
     -- Draw tab buttons
     for i, tab in ipairs(TABS) do
         if i > 1 then imgui.SameLine(); end
-        local clicked, tabId = DrawTabButton(tab, selectedInventoryColorTab, tabHeight, tabPadding, gold, bgMedium, bgLight, bgLighter, 'invColorTab');
+        local clicked, tabId = DrawTabButton(tab, selectedInventoryColorTab, 'invColorTab');
         if clicked then
             selectedInventoryColorTab = tabId;
         end

@@ -14,57 +14,6 @@ local M = {};
 -- Track selected avatar in config dropdown
 local selectedAvatarIndex = 1;
 
--- ============================================
--- Tab Styling Constants and Helpers
--- ============================================
-local TAB_STYLE = {
-    height = 24,
-    smallHeight = 20,
-    padding = 12,
-    smallPadding = 8,
-    gold = {0.957, 0.855, 0.592, 1.0},
-    bgMedium = {0.098, 0.090, 0.075, 1.0},
-    bgLight = {0.137, 0.125, 0.106, 1.0},
-    bgLighter = {0.176, 0.161, 0.137, 1.0},
-};
-
--- Helper: Draw a styled tab button with underline when selected
--- Returns true if tab was clicked
-local function DrawStyledTab(label, id, isSelected, width, height, padding)
-    height = height or TAB_STYLE.height;
-    padding = padding or TAB_STYLE.padding;
-
-    local textWidth = imgui.CalcTextSize(label);
-    local tabWidth = width or (textWidth + padding * 2);
-    local tabPosX, tabPosY = imgui.GetCursorScreenPos();
-
-    if isSelected then
-        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
-    else
-        imgui.PushStyleColor(ImGuiCol_Button, TAB_STYLE.bgMedium);
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, TAB_STYLE.bgLight);
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, TAB_STYLE.bgLighter);
-    end
-
-    local clicked = imgui.Button(label .. '##' .. id, { tabWidth, height });
-
-    if isSelected then
-        local draw_list = imgui.GetWindowDrawList();
-        local underlineInset = (height == TAB_STYLE.smallHeight) and 2 or 4;
-        draw_list:AddRectFilled(
-            {tabPosX + underlineInset, tabPosY + height - 2},
-            {tabPosX + tabWidth - underlineInset, tabPosY + height},
-            imgui.GetColorU32(TAB_STYLE.gold),
-            1.0
-        );
-    end
-    imgui.PopStyleColor(3);
-
-    return clicked, tabWidth;
-end
-
 -- Pet type definitions for sub-tabs
 -- previewType maps to data.PREVIEW_* constants: WYVERN=1, AVATAR=2, AUTOMATON=3, JUG=4, CHARM=5
 local PET_TYPES = {
@@ -1131,11 +1080,11 @@ function M.DrawSettings(state)
     end
 
     -- Pet Bar / Pet Target tabs
-    if DrawStyledTab('Pet Bar', 'petBarTab', selectedPetBarTab == 1) then
+    if components.DrawStyledTab('Pet Bar', 'petBarTab', selectedPetBarTab == 1) then
         selectedPetBarTab = 1;
     end
     imgui.SameLine();
-    if DrawStyledTab('Pet Target', 'petBarTab', selectedPetBarTab == 2) then
+    if components.DrawStyledTab('Pet Target', 'petBarTab', selectedPetBarTab == 2) then
         selectedPetBarTab = 2;
     end
 
@@ -1153,13 +1102,13 @@ function M.DrawSettings(state)
         imgui.Spacing();
 
         -- Pet Type Sub-Tabs
-        imgui.TextColored(TAB_STYLE.gold, 'Per-Pet-Type Visual Settings');
+        imgui.TextColored(components.TAB_STYLE.gold, 'Per-Pet-Type Visual Settings');
         imgui.ShowHelp('Customize the appearance for each pet type independently.');
         imgui.Spacing();
 
         -- Draw pet type sub-tabs
         for i, petType in ipairs(PET_TYPES) do
-            if DrawStyledTab(petType.label, 'petTypeTab', selectedPetTypeTab == i, nil, TAB_STYLE.smallHeight, TAB_STYLE.smallPadding) then
+            if components.DrawStyledTab(petType.label, 'petTypeTab', selectedPetTypeTab == i, nil, components.TAB_STYLE.smallHeight, components.TAB_STYLE.smallPadding) then
                 selectedPetTypeTab = i;
                 gConfig.petBarPreviewType = petType.previewType;
             end
@@ -1320,11 +1269,11 @@ function M.DrawColorSettings(state)
     end
 
     -- Pet Bar / Pet Target tabs
-    if DrawStyledTab('Pet Bar', 'petBarColorTab', selectedPetBarColorTab == 1) then
+    if components.DrawStyledTab('Pet Bar', 'petBarColorTab', selectedPetBarColorTab == 1) then
         selectedPetBarColorTab = 1;
     end
     imgui.SameLine();
-    if DrawStyledTab('Pet Target', 'petBarColorTab', selectedPetBarColorTab == 2) then
+    if components.DrawStyledTab('Pet Target', 'petBarColorTab', selectedPetBarColorTab == 2) then
         selectedPetBarColorTab = 2;
     end
 
@@ -1336,7 +1285,7 @@ function M.DrawColorSettings(state)
     if selectedPetBarColorTab == 1 then
         -- Draw pet type sub-tabs
         for i, petType in ipairs(PET_TYPES) do
-            if DrawStyledTab(petType.label, 'petTypeColorTab', selectedPetTypeColorTab == i, nil, TAB_STYLE.smallHeight, TAB_STYLE.smallPadding) then
+            if components.DrawStyledTab(petType.label, 'petTypeColorTab', selectedPetTypeColorTab == i, nil, components.TAB_STYLE.smallHeight, components.TAB_STYLE.smallPadding) then
                 selectedPetTypeColorTab = i;
                 gConfig.petBarPreviewType = petType.previewType;
             end

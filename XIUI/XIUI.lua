@@ -452,6 +452,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         actionTracker.HandleZonePacket();
         mobInfo.data.HandleZonePacket(e);
         MarkPartyCacheDirty();
+        ClearEntityCache();
         bLoggedIn = true;
     elseif (e.id == 0x0029) then
         local messagePacket = ParseMessagePacket(e.data);

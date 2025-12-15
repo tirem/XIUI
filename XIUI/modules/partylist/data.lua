@@ -239,6 +239,8 @@ function data.updatePartyConfigCache()
         cache.textOffsets.tpY = party.tpTextOffsetY or 0;
         cache.textOffsets.distanceX = party.distanceTextOffsetX or 0;
         cache.textOffsets.distanceY = party.distanceTextOffsetY or 0;
+        cache.textOffsets.jobX = party.jobTextOffsetX or 0;
+        cache.textOffsets.jobY = party.jobTextOffsetY or 0;
 
         -- Color settings reference
         if partyIndex == 1 then
@@ -429,13 +431,16 @@ function data.GetMemberInformation(memIdx)
 
     local memberServerId = party:GetMemberServerId(memIdx);
     local partyMemberCount = data.frameCache.activeMemberCount[partyIndex] or 0;
-    if (partyMemberCount <= 1) then
-        memberInfo.leader = false;
-    elseif (partyLeaderId ~= nil and partyLeaderId ~= 0) then
+    if (partyLeaderId ~= nil and partyLeaderId ~= 0) then
+        -- Party leader ID is set - we're in a party (even if alone), use it to determine leader
         memberInfo.leader = partyLeaderId == memberServerId;
-    else
+    elseif (partyMemberCount > 1) then
+        -- No leader ID but multiple members - fallback to first member as leader
         local firstMemberOfParty = (partyIndex - 1) * data.partyMaxSize;
         memberInfo.leader = memIdx == firstMemberOfParty;
+    else
+        -- Truly solo (no party leader ID and alone) - no leader indicator
+        memberInfo.leader = false;
     end
 
     if (memberInfo.inzone == true) then

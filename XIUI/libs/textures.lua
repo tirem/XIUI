@@ -54,4 +54,25 @@ function M.LoadTextureWithExt(textureName, ext)
     return textures;
 end
 
+-- ========================================
+-- Texture Dimensions Query
+-- ========================================
+
+-- Get dimensions from a loaded texture
+-- Returns width, height from the texture descriptor, or defaults if unavailable
+function M.GetTextureDimensions(texture, defaultWidth, defaultHeight)
+    if texture == nil or texture.image == nil then
+        return defaultWidth or 64, defaultHeight or 64;
+    end
+
+    local texture_ptr = ffi.cast('IDirect3DTexture8*', texture.image);
+    local res, desc = texture_ptr:GetLevelDesc(0);
+
+    if desc ~= nil then
+        return desc.Width, desc.Height;
+    end
+
+    return defaultWidth or 64, defaultHeight or 64;
+end
+
 return M;

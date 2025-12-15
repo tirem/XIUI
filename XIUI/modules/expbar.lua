@@ -53,7 +53,7 @@ end
 
 local function buildPercentString(progressBarProgress, showText)
     local expPercentString = ('%.f'):fmt(progressBarProgress * 100);
-    local percentSeparator = showText and ' - ' or '';
+    local percentSeparator = showText and ' ' or '';
     return percentSeparator .. expPercentString .. '%';
 end
 
@@ -170,11 +170,9 @@ expbar.DrawWindow = function(settings)
     end
 
     -- Let ImGui auto-size the window based on content (Dummy call in progressbar)
-    imgui.SetNextWindowSize({ -1, -1 }, ImGuiCond_Always);
-	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
-	if (gConfig.lockPositions) then
-		windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
-	end
+    -- Use {0, 0} to allow unlimited auto-sizing (not {-1, -1} which can cause clipping)
+    imgui.SetNextWindowSize({ 0, 0 }, ImGuiCond_Always);
+	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
     if (imgui.Begin('ExpBar', true, windowFlags)) then
 
 		-- Draw the progress bar
@@ -185,10 +183,22 @@ expbar.DrawWindow = function(settings)
         if inlineMode then
             -- Position the bar after the text in inline mode
             barStartX = startX + actualTextWidth;
-            imgui.SetCursorScreenPos({barStartX, startY});
         end
-		local expGradient = GetCustomGradient(gConfig.colorCustomization.expBar, 'barGradient') or {'#c39040', '#e9c466'};
-		progressbar.ProgressBar({{progressBarProgress, expGradient}}, {progressBarWidth, settings.barHeight}, {decorate = gConfig.showExpBarBookends});
+
+		-- Pre-size the window with Dummy BEFORE drawing to prevent clipping
+		-- Total width includes text area (in inline mode) plus bar width
+		local totalWidth = inlineMode and (actualTextWidth + progressBarWidth) or progressBarWidth;
+		imgui.Dummy({totalWidth, settings.barHeight});
+		imgui.SetCursorScreenPos({barStartX, startY});
+
+		local expGradient;
+		if meritMode then
+			expGradient = GetCustomGradient(gConfig.colorCustomization.expBar, 'meritBarGradient') or {'#3064c3', '#66a0e9'};
+		else
+			expGradient = GetCustomGradient(gConfig.colorCustomization.expBar, 'expBarGradient') or {'#c39040', '#e9c466'};
+		end
+		-- Use foreground draw list to avoid window clipping, absolutePosition to skip internal Dummy
+		progressbar.ProgressBar({{progressBarProgress, expGradient}}, {progressBarWidth, settings.barHeight}, {decorate = gConfig.showExpBarBookends, absolutePosition = {barStartX, startY}, drawList = imgui.GetForegroundDrawList()});
 
 		imgui.SameLine();
 

@@ -10,22 +10,6 @@ local imgui = require('imgui');
 
 local M = {};
 
--- Display mode options for HP/MP text
-local displayModeLabels = {
-    number = 'Number Only',
-    percent = 'Percent Only',
-    both = 'Number (Percent)',
-    both_percent_first = 'Percent (Number)',
-    current_max = 'Current/Max'
-};
-
--- Alignment options
-local alignmentLabels = {
-    left = 'Left',
-    center = 'Center',
-    right = 'Right'
-};
-
 -- Section: Player Bar Settings
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showPlayerBar', CheckVisibility);
@@ -41,87 +25,29 @@ function M.DrawSettings()
     components.DrawSlider('Font Size', 'playerBarFontSize', 8, 36);
 
     -- HP Display Mode dropdown
-    local hpDisplayLabel = displayModeLabels[gConfig.playerBarHpDisplayMode] or 'Number Only';
-    components.DrawComboBox('HP Display##playerBar', hpDisplayLabel, {'Number Only', 'Percent Only', 'Number (Percent)', 'Percent (Number)', 'Current/Max'}, function(newValue)
-        if newValue == 'Number Only' then
-            gConfig.playerBarHpDisplayMode = 'number';
-        elseif newValue == 'Percent Only' then
-            gConfig.playerBarHpDisplayMode = 'percent';
-        elseif newValue == 'Number (Percent)' then
-            gConfig.playerBarHpDisplayMode = 'both';
-        elseif newValue == 'Percent (Number)' then
-            gConfig.playerBarHpDisplayMode = 'both_percent_first';
-        else
-            gConfig.playerBarHpDisplayMode = 'current_max';
-        end
-        SaveSettingsOnly();
-    end);
-    imgui.ShowHelp('How HP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (1234/1500).');
+    components.DrawDisplayModeDropdown('HP Display##playerBar', gConfig, 'playerBarHpDisplayMode',
+        'How HP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (1234/1500).');
 
     -- MP Display Mode dropdown
-    local mpDisplayLabel = displayModeLabels[gConfig.playerBarMpDisplayMode] or 'Number Only';
-    components.DrawComboBox('MP Display##playerBar', mpDisplayLabel, {'Number Only', 'Percent Only', 'Number (Percent)', 'Percent (Number)', 'Current/Max'}, function(newValue)
-        if newValue == 'Number Only' then
-            gConfig.playerBarMpDisplayMode = 'number';
-        elseif newValue == 'Percent Only' then
-            gConfig.playerBarMpDisplayMode = 'percent';
-        elseif newValue == 'Number (Percent)' then
-            gConfig.playerBarMpDisplayMode = 'both';
-        elseif newValue == 'Percent (Number)' then
-            gConfig.playerBarMpDisplayMode = 'both_percent_first';
-        else
-            gConfig.playerBarMpDisplayMode = 'current_max';
-        end
-        SaveSettingsOnly();
-    end);
-    imgui.ShowHelp('How MP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (750/1000).');
+    components.DrawDisplayModeDropdown('MP Display##playerBar', gConfig, 'playerBarMpDisplayMode',
+        'How MP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (750/1000).');
 
     -- Text positioning section
     if components.CollapsingSection('Text Positioning##playerBar', false) then
         imgui.Text('HP Text');
-        local hpAlignLabel = alignmentLabels[gConfig.playerBarHpTextAlignment] or 'Right';
-        components.DrawComboBox('Alignment##hpText', hpAlignLabel, {'Left', 'Center', 'Right'}, function(newValue)
-            if newValue == 'Left' then
-                gConfig.playerBarHpTextAlignment = 'left';
-            elseif newValue == 'Center' then
-                gConfig.playerBarHpTextAlignment = 'center';
-            else
-                gConfig.playerBarHpTextAlignment = 'right';
-            end
-            SaveSettingsOnly();
-        end);
+        components.DrawAlignmentDropdown('Alignment##hpText', gConfig, 'playerBarHpTextAlignment');
         components.DrawSlider('X Offset##hpText', 'playerBarHpTextOffsetX', -50, 50);
         components.DrawSlider('Y Offset##hpText', 'playerBarHpTextOffsetY', -50, 50);
 
         imgui.Spacing();
         imgui.Text('MP Text');
-        local mpAlignLabel = alignmentLabels[gConfig.playerBarMpTextAlignment] or 'Right';
-        components.DrawComboBox('Alignment##mpText', mpAlignLabel, {'Left', 'Center', 'Right'}, function(newValue)
-            if newValue == 'Left' then
-                gConfig.playerBarMpTextAlignment = 'left';
-            elseif newValue == 'Center' then
-                gConfig.playerBarMpTextAlignment = 'center';
-            else
-                gConfig.playerBarMpTextAlignment = 'right';
-            end
-            SaveSettingsOnly();
-        end);
+        components.DrawAlignmentDropdown('Alignment##mpText', gConfig, 'playerBarMpTextAlignment');
         components.DrawSlider('X Offset##mpText', 'playerBarMpTextOffsetX', -50, 50);
         components.DrawSlider('Y Offset##mpText', 'playerBarMpTextOffsetY', -50, 50);
 
         imgui.Spacing();
         imgui.Text('TP Text');
-        local tpAlignLabel = alignmentLabels[gConfig.playerBarTpTextAlignment] or 'Right';
-        components.DrawComboBox('Alignment##tpText', tpAlignLabel, {'Left', 'Center', 'Right'}, function(newValue)
-            if newValue == 'Left' then
-                gConfig.playerBarTpTextAlignment = 'left';
-            elseif newValue == 'Center' then
-                gConfig.playerBarTpTextAlignment = 'center';
-            else
-                gConfig.playerBarTpTextAlignment = 'right';
-            end
-            SaveSettingsOnly();
-        end);
+        components.DrawAlignmentDropdown('Alignment##tpText', gConfig, 'playerBarTpTextAlignment');
         components.DrawSlider('X Offset##tpText', 'playerBarTpTextOffsetX', -50, 50);
         components.DrawSlider('Y Offset##tpText', 'playerBarTpTextOffsetY', -50, 50);
     end

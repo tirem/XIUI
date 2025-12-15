@@ -39,16 +39,31 @@ function M.MigrateFromHXUI()
             -- Read old settings file
             local oldFile = io.open(oldSettingsPath, 'rb');
             if oldFile then
-                local content = oldFile:read('*all');
+                local success, content = pcall(function() return oldFile:read('*all'); end);
                 oldFile:close();
 
-                -- Write to new settings file
-                local newFile = io.open(newSettingsPath, 'wb');
-                if newFile then
-                    newFile:write(content);
-                    newFile:close();
-                    migratedCount = migratedCount + 1;
+                if success and content then
+                    -- Write to new settings file
+                    local newFile = io.open(newSettingsPath, 'wb');
+                    if newFile then
+                        local writeSuccess, writeError = pcall(function()
+                            newFile:write(content);
+                        end);
+                        newFile:close();
+
+                        if writeSuccess then
+                            migratedCount = migratedCount + 1;
+                        else
+                            print(string.format('[XIUI] Warning: Failed to write settings migration to %s: %s', newSettingsPath, tostring(writeError)));
+                        end
+                    else
+                        print(string.format('[XIUI] Warning: Failed to open settings file for writing: %s', newSettingsPath));
+                    end
+                else
+                    print(string.format('[XIUI] Warning: Failed to read settings from %s', oldSettingsPath));
                 end
+            else
+                print(string.format('[XIUI] Warning: Failed to open settings file for reading: %s', oldSettingsPath));
             end
         end
     end
@@ -332,6 +347,23 @@ function M.MigrateColorSettings(gConfig, defaults)
     if not gConfig.colorCustomization.partyListC then
         gConfig.colorCustomization.partyListC = deep_copy_table(defaults.colorCustomization.partyListC);
     end
+
+    -- Migrate old unified expBar barGradient to separate expBarGradient and meritBarGradient
+    if gConfig.colorCustomization.expBar then
+        if gConfig.colorCustomization.expBar.barGradient and not gConfig.colorCustomization.expBar.expBarGradient then
+            -- Migrate old barGradient to expBarGradient
+            gConfig.colorCustomization.expBar.expBarGradient = deep_copy_table(gConfig.colorCustomization.expBar.barGradient);
+            gConfig.colorCustomization.expBar.barGradient = nil;
+        end
+        -- Initialize meritBarGradient if missing
+        if not gConfig.colorCustomization.expBar.meritBarGradient then
+            gConfig.colorCustomization.expBar.meritBarGradient = deep_copy_table(defaults.colorCustomization.expBar.meritBarGradient);
+        end
+        -- Initialize expBarGradient if missing (fresh installs)
+        if not gConfig.colorCustomization.expBar.expBarGradient then
+            gConfig.colorCustomization.expBar.expBarGradient = deep_copy_table(defaults.colorCustomization.expBar.expBarGradient);
+        end
+    end
 end
 
 -- Migrate to new per-pet-type settings structure (petBarAvatar, petBarCharm, etc.)
@@ -497,6 +529,8 @@ function M.MigrateIndividualSettings(gConfig, defaults)
             if party.tpTextOffsetY == nil then party.tpTextOffsetY = partyDefault.tpTextOffsetY or 0; end
             if party.distanceTextOffsetX == nil then party.distanceTextOffsetX = partyDefault.distanceTextOffsetX or 0; end
             if party.distanceTextOffsetY == nil then party.distanceTextOffsetY = partyDefault.distanceTextOffsetY or 0; end
+            if party.jobTextOffsetX == nil then party.jobTextOffsetX = partyDefault.jobTextOffsetX or 0; end
+            if party.jobTextOffsetY == nil then party.jobTextOffsetY = partyDefault.jobTextOffsetY or 0; end
         end
     end
 

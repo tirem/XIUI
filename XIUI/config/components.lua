@@ -496,6 +496,123 @@ function components.DrawPartyComboBoxIndexed(partyTable, label, configKey, items
     end
 end
 
+-- Display mode dropdown with automatic label-to-mode conversion
+-- Handles the common pattern of converting user-friendly labels to internal mode strings
+function components.DrawDisplayModeDropdown(label, parentTable, configKey, helpText)
+    -- Display mode mappings
+    local displayModeLabels = {
+        number = 'Number Only',
+        percent = 'Percent Only',
+        both = 'Number (Percent)',
+        both_percent_first = 'Percent (Number)',
+        current_max = 'Current/Max'
+    };
+
+    local labelToMode = {
+        ['Number Only'] = 'number',
+        ['Percent Only'] = 'percent',
+        ['Number (Percent)'] = 'both',
+        ['Percent (Number)'] = 'both_percent_first',
+        ['Current/Max'] = 'current_max'
+    };
+
+    local currentMode = parentTable[configKey] or 'number';
+    local currentLabel = displayModeLabels[currentMode] or 'Number Only';
+
+    components.DrawComboBox(label, currentLabel, {
+        'Number Only',
+        'Percent Only',
+        'Number (Percent)',
+        'Percent (Number)',
+        'Current/Max'
+    }, function(newLabel)
+        parentTable[configKey] = labelToMode[newLabel];
+        SaveSettingsOnly();
+    end);
+
+    if helpText then
+        imgui.ShowHelp(helpText);
+    end
+end
+
+-- Alignment dropdown (left/center/right)
+-- Handles the common pattern of converting alignment labels to internal strings
+function components.DrawAlignmentDropdown(label, parentTable, configKey, helpText)
+    -- Alignment mappings
+    local alignmentLabels = {
+        left = 'Left',
+        center = 'Center',
+        right = 'Right'
+    };
+
+    local labelToAlignment = {
+        ['Left'] = 'left',
+        ['Center'] = 'center',
+        ['Right'] = 'right'
+    };
+
+    local currentAlignment = parentTable[configKey] or 'right';
+    local currentLabel = alignmentLabels[currentAlignment] or 'Right';
+
+    components.DrawComboBox(label, currentLabel, {'Left', 'Center', 'Right'}, function(newLabel)
+        parentTable[configKey] = labelToAlignment[newLabel];
+        SaveSettingsOnly();
+    end);
+
+    if helpText then
+        imgui.ShowHelp(helpText);
+    end
+end
+
+-- Tab Styling Constants
+components.TAB_STYLE = {
+    height = 24,
+    smallHeight = 20,
+    padding = 12,
+    smallPadding = 8,
+    gold = {0.957, 0.855, 0.592, 1.0},
+    bgMedium = {0.098, 0.090, 0.075, 1.0},
+    bgLight = {0.137, 0.125, 0.106, 1.0},
+    bgLighter = {0.176, 0.161, 0.137, 1.0},
+};
+
+-- Helper: Draw a styled tab button with underline when selected
+-- Returns true if tab was clicked, and the calculated tab width
+function components.DrawStyledTab(label, id, isSelected, width, height, padding)
+    height = height or components.TAB_STYLE.height;
+    padding = padding or components.TAB_STYLE.padding;
+
+    local textWidth = imgui.CalcTextSize(label);
+    local tabWidth = width or (textWidth + padding * 2);
+    local tabPosX, tabPosY = imgui.GetCursorScreenPos();
+
+    if isSelected then
+        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
+    else
+        imgui.PushStyleColor(ImGuiCol_Button, components.TAB_STYLE.bgMedium);
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, components.TAB_STYLE.bgLight);
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, components.TAB_STYLE.bgLighter);
+    end
+
+    local clicked = imgui.Button(label .. '##' .. id, { tabWidth, height });
+
+    if isSelected then
+        local draw_list = imgui.GetWindowDrawList();
+        local underlineInset = (height == components.TAB_STYLE.smallHeight) and 2 or 4;
+        draw_list:AddRectFilled(
+            {tabPosX + underlineInset, tabPosY + height - 2},
+            {tabPosX + tabWidth - underlineInset, tabPosY + height},
+            imgui.GetColorU32(components.TAB_STYLE.gold),
+            1.0
+        );
+    end
+    imgui.PopStyleColor(3);
+
+    return clicked, tabWidth;
+end
+
 -- Helper function for per-party color picker (ARGB format, saves to partyA/B/C table)
 function components.DrawPartyColorPicker(partyTable, label, configKey, helpText, defaultColor)
     local colorValue = partyTable[configKey];

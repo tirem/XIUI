@@ -94,12 +94,7 @@ petbar.Initialize = function(settings)
             if prim.exists then
                 local texture = LoadTextureWithExt(string.format('pets/%s', data.petImageMap[petName]:gsub('%.png$', '')), 'png');
                 if texture and texture.image then
-                    local texture_ptr = ffi.cast('IDirect3DTexture8*', texture.image);
-                    local res, desc = texture_ptr:GetLevelDesc(0);
-                    if desc then
-                        prim.baseWidth = desc.Width;
-                        prim.baseHeight = desc.Height;
-                    end
+                    prim.baseWidth, prim.baseHeight = GetTextureDimensions(texture, 256, 256);
                     -- Store full texture object for ImGui rendering (keeps reference alive)
                     data.petImageTextures[key] = texture;
                 end

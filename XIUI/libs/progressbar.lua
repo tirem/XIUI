@@ -1,6 +1,7 @@
 require('common');
 require('libs/bitmap');
-require('libs/color');
+local colorLib = require('libs.color');
+local memory = require('libs.memory');
 local imgui = require('imgui');
 local ffi = require('ffi');
 local d3d = require('d3d8');
@@ -21,18 +22,8 @@ local progressbar = {
 	gradientTextures = {}
 };
 
--- Helper function to extract RGBA from hex string (supports #RRGGBB or #RRGGBBAA)
-local function hex2rgba(hex)
-	local hex = hex:gsub("#", "");
-	local r = tonumber("0x"..hex:sub(1,2));
-	local g = tonumber("0x"..hex:sub(3,4));
-	local b = tonumber("0x"..hex:sub(5,6));
-	local a = 255;
-	if #hex == 8 then
-		a = tonumber("0x"..hex:sub(7,8));
-	end
-	return r, g, b, a;
-end
+-- Use shared hex2rgba from color library
+local hex2rgba = colorLib.hex2rgba;
 
 function MakeGradientBitmap(startColor, endColor)
 	local height = 100;
@@ -100,7 +91,7 @@ function GetGradient(startColor, endColor)
 	end
 
 	if not texture then
-		local device = GetD3D8Device();
+		local device = memory.GetD3D8Device();
 		if (device == nil) then return nil; end
 
 		local image = MakeGradientBitmap(startColor, endColor);
@@ -143,7 +134,7 @@ function GetThreeStepGradient(startColor, midColor, endColor)
 	end
 
 	if not texture then
-		local device = GetD3D8Device();
+		local device = memory.GetD3D8Device();
 		if (device == nil) then return nil; end
 
 		local image = MakeThreeStepGradientBitmap(startColor, midColor, endColor);
@@ -459,7 +450,7 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 	-- Draw enhanced border if specified (middle and outer layers)
 	if options.enhancedBorder then
 		local accentColor = options.enhancedBorder; -- ARGB color
-		local accentColorU32 = imgui.GetColorU32(ARGBToImGui(accentColor));
+		local accentColorU32 = ARGBToU32(accentColor);
 
 		-- Border thickness values
 		local innerBorderThickness = gConfig.barBorderThickness or 2;

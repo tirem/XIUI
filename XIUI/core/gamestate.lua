@@ -12,12 +12,21 @@ local pEventSystem = ashita.memory.find('FFXiMain.dll', 0, "A0????????84C0741AA1
 local pInterfaceHidden = ashita.memory.find('FFXiMain.dll', 0, "8B4424046A016A0050B9????????E8????????F6D81BC040C3", 0, 0);
 
 function M.GetMenuName()
+    if (pGameMenu == 0) then
+        return '';
+    end
     local subPointer = ashita.memory.read_uint32(pGameMenu);
+    if (subPointer == 0) then
+        return '';
+    end
     local subValue = ashita.memory.read_uint32(subPointer);
     if (subValue == 0) then
         return '';
     end
     local menuHeader = ashita.memory.read_uint32(subValue + 4);
+    if (menuHeader == 0) then
+        return '';
+    end
     local menuName = ashita.memory.read_string(menuHeader + 0x46, 16);
     return string.gsub(menuName, '\x00', '');
 end

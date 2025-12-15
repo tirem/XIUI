@@ -8,10 +8,25 @@ require('common');
 local M = {};
 
 -- ========================================
+-- Entity Index Cache
+-- ========================================
+
+local entityIndexCache = {};
+
+function M.ClearEntityCache()
+    entityIndexCache = {};
+end
+
+-- ========================================
 -- Index/ID Conversion
 -- ========================================
 
 function M.GetIndexFromId(id)
+    -- Check cache first
+    if entityIndexCache[id] then
+        return entityIndexCache[id];
+    end
+
     local entMgr = AshitaCore:GetMemoryManager():GetEntity();
 
     -- Shortcut for monsters/static npcs
@@ -22,16 +37,19 @@ function M.GetIndexFromId(id)
         end
 
         if (index < 0x900) and (entMgr:GetServerId(index) == id) then
+            entityIndexCache[id] = index;
             return index;
         end
     end
 
     for i = 1, 0x8FF do
         if entMgr:GetServerId(i) == id then
+            entityIndexCache[id] = i;
             return i;
         end
     end
 
+    entityIndexCache[id] = 0;
     return 0;
 end
 

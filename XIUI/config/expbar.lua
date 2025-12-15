@@ -21,15 +21,16 @@ function M.DrawSettings()
     components.DrawCheckbox('Show Text', 'expBarShowText');
     components.DrawCheckbox('Show Percent', 'expBarShowPercent');
 
-    components.DrawSlider('Scale X', 'expBarScaleX', 0.1, 3.0, '%.2f');
+    components.DrawSlider('Scale X', 'expBarScaleX', 0.1, 8.0, '%.2f');
     components.DrawSlider('Scale Y', 'expBarScaleY', 0.1, 3.0, '%.2f');
     components.DrawSlider('Font Size', 'expBarFontSize', 8, 36);
 end
 
 -- Section: Exp Bar Color Settings
 function M.DrawColorSettings()
-    if components.CollapsingSection('Bar Color##expBarColor') then
-        components.DrawGradientPicker("Exp/Merit Bar", gConfig.colorCustomization.expBar.barGradient, "Color for EXP/Merit/Capacity bar");
+    if components.CollapsingSection('Bar Colors##expBarColor') then
+        components.DrawGradientPicker("Exp Bar", gConfig.colorCustomization.expBar.expBarGradient, "Color for EXP/Capacity/Mastery bar");
+        components.DrawGradientPicker("Merit Bar", gConfig.colorCustomization.expBar.meritBarGradient, "Color for Merit/Limit Points bar");
     end
 
     if components.CollapsingSection('Text Colors##expBarColor') then

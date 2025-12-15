@@ -73,17 +73,7 @@ partyList.Initialize = function(settings)
     -- Load party titles texture
     data.partyTitlesTexture = LoadTexture('PartyList-Titles');
     if (data.partyTitlesTexture ~= nil) then
-        local texture_ptr = ffi.cast('IDirect3DTexture8*', data.partyTitlesTexture.image);
-        local res, desc = texture_ptr:GetLevelDesc(0);
-
-        if (desc ~= nil) then
-            data.partyTitlesTexture.width = desc.Width;
-            data.partyTitlesTexture.height = desc.Height;
-        else
-            data.partyTitlesTexture.width = 64;
-            data.partyTitlesTexture.height = 64;
-            print('[XIUI] Warning: Failed to query party titles texture dimensions, using default 64x64');
-        end
+        data.partyTitlesTexture.width, data.partyTitlesTexture.height = GetTextureDimensions(data.partyTitlesTexture, 64, 64);
     end
 
     -- Initialize background primitives using windowbackground library
@@ -114,15 +104,7 @@ partyList.Initialize = function(settings)
         if cursorName and cursorName ~= '' and not data.cursorTextures[cursorName] then
             local cursorTexture = LoadTexture(string.format('cursors/%s', cursorName:gsub('%.png$', '')));
             if cursorTexture then
-                local texture_ptr = ffi.cast('IDirect3DTexture8*', cursorTexture.image);
-                local res, desc = texture_ptr:GetLevelDesc(0);
-                if desc then
-                    cursorTexture.width = desc.Width;
-                    cursorTexture.height = desc.Height;
-                else
-                    cursorTexture.width = 32;
-                    cursorTexture.height = 32;
-                end
+                cursorTexture.width, cursorTexture.height = GetTextureDimensions(cursorTexture, 32, 32);
                 data.cursorTextures[cursorName] = cursorTexture;
             end
         end
@@ -220,15 +202,7 @@ partyList.UpdateVisuals = function(settings)
         if cursorName and cursorName ~= '' and not data.cursorTextures[cursorName] then
             local cursorTexture = LoadTexture(string.format('cursors/%s', cursorName:gsub('%.png$', '')));
             if cursorTexture then
-                local texture_ptr = ffi.cast('IDirect3DTexture8*', cursorTexture.image);
-                local res, desc = texture_ptr:GetLevelDesc(0);
-                if desc then
-                    cursorTexture.width = desc.Width;
-                    cursorTexture.height = desc.Height;
-                else
-                    cursorTexture.width = 32;
-                    cursorTexture.height = 32;
-                end
+                cursorTexture.width, cursorTexture.height = GetTextureDimensions(cursorTexture, 32, 32);
                 data.cursorTextures[cursorName] = cursorTexture;
             end
         end

@@ -192,12 +192,15 @@ function M.Render(itemInfo, itemType, settings, colors)
     local costText = '';
     local timeText = '';
     local hasEnoughMp = true; -- Track if player has enough MP for spells
+    local hasEnoughTp = true; -- Track if player has enough TP for weapon skills
 
-    -- Get player's current MP for cost comparison
+    -- Get player's current MP and TP for cost comparison
     local playerMp = 0;
+    local playerTp = 0;
     local party = GetPartySafe();
     if party then
         playerMp = party:GetMemberMP(0) or 0;
+        playerTp = party:GetMemberTP(0) or 0;
     end
 
     -- Update shared state for other modules (playerbar, partylist) to consume
@@ -205,15 +208,22 @@ function M.Render(itemInfo, itemType, settings, colors)
 
     -- Check if on cooldown (currentRecast > 0 means spell/ability is on cooldown)
     local isOnCooldown = itemInfo.currentRecast and itemInfo.currentRecast > 0;
+    -- For weapon skills, also consider "not ready" if not enough TP
+    local isWeaponSkill = itemInfo.isWeaponSkill;
+    if isWeaponSkill then
+        hasEnoughTp = playerTp >= 1000;  -- WS requires at least 1000 TP
+    end
     local cooldownPercent = 0;
     local cooldownText = '';
 
     if itemType == 'spell' then
         -- Spell: Show MP cost, recast
-        if settings.showMpCost and itemInfo.mpCost and itemInfo.mpCost > 0 then
-            costText = string.format('MP: %d', itemInfo.mpCost);
-            -- Check if player has enough MP
+        -- Always check if player has enough MP (even if not displaying cost)
+        if itemInfo.mpCost and itemInfo.mpCost > 0 then
             hasEnoughMp = playerMp >= itemInfo.mpCost;
+            if settings.showMpCost then
+                costText = string.format('MP: %d', itemInfo.mpCost);
+            end
         end
         if settings.showRecast and itemInfo.recastDelay and itemInfo.recastDelay > 0 then
             -- RecastDelay is in 1/4 seconds
@@ -229,7 +239,13 @@ function M.Render(itemInfo, itemType, settings, colors)
         end
 
     elseif itemType == 'ability' then
-        -- Ability: Show recast
+        -- Ability: Show TP cost for weapon skills, recast for others
+        if isWeaponSkill then
+            -- Weapon skill: Show TP cost
+            if settings.showTpCost ~= false then
+                costText = string.format('TP: %d', playerTp);
+            end
+        end
         if settings.showRecast and itemInfo.recastDelay and itemInfo.recastDelay > 0 then
             -- RecastDelay is in 1/4 seconds
             local recastSeconds = itemInfo.recastDelay / 4;
@@ -395,8 +411,9 @@ function M.Render(itemInfo, itemType, settings, colors)
         if nameText ~= '' then
             nameFont:set_position_x(cursorX);
             nameFont:set_position_y(yPos);
-            -- Use greyed out color when on cooldown or not enough MP
-            local nameColor = (isOnCooldown or not hasEnoughMp)
+            -- Use greyed out color when on cooldown, not enough MP, or not enough TP
+            local isNotReady = isOnCooldown or not hasEnoughMp or not hasEnoughTp;
+            local nameColor = isNotReady
                 and (colors.nameOnCooldownColor or 0xFF888888)
                 or (colors.nameTextColor or 0xFFFFFFFF);
             if lastNameColor ~= nameColor then
@@ -410,12 +427,16 @@ function M.Render(itemInfo, itemType, settings, colors)
         if costText ~= '' then
             costFont:set_position_x(cursorX);
             costFont:set_position_y(yPos);
-            -- Use "not enough MP" color if player can't afford the spell
+            -- Use "not enough" color if player can't afford the spell/WS
             local costColor;
             if itemType == 'spell' and not hasEnoughMp then
                 costColor = colors.mpNotEnoughColor or 0xFFFF6666;
+            elseif isWeaponSkill and not hasEnoughTp then
+                costColor = colors.tpNotEnoughColor or 0xFFFF6666;
+            elseif isWeaponSkill then
+                costColor = colors.tpCostTextColor or 0xFFFFCC00;  -- Gold/yellow for TP
             else
-                costColor = colors.mpCostTextColor or colors.tpCostTextColor or 0xFFD4FF97;
+                costColor = colors.mpCostTextColor or 0xFFD4FF97;
             end
             if lastCostColor ~= costColor then
                 costFont:set_font_color(costColor);
@@ -489,6 +510,22 @@ function M.Render(itemInfo, itemType, settings, colors)
                         drawList = drawList,
                     }
                 );
+            elseif isWeaponSkill and not hasEnoughTp then
+                -- Weapon skill without enough TP
+                cooldownFont:set_text('Need TP');
+                local notEnoughColor = colors.tpNotEnoughColor or 0xFFFF6666;
+                if lastCooldownColor ~= notEnoughColor then
+                    cooldownFont:set_font_color(notEnoughColor);
+                    lastCooldownColor = notEnoughColor;
+                end
+            elseif itemType == 'spell' and not hasEnoughMp then
+                -- Spell without enough MP
+                cooldownFont:set_text('Need MP');
+                local notEnoughColor = colors.mpNotEnoughColor or 0xFFFF6666;
+                if lastCooldownColor ~= notEnoughColor then
+                    cooldownFont:set_font_color(notEnoughColor);
+                    lastCooldownColor = notEnoughColor;
+                end
             else
                 -- Ready: show "Ready" text
                 cooldownFont:set_text('Ready');

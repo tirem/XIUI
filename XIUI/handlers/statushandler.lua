@@ -124,53 +124,8 @@ local function load_status_icon_from_theme(theme, status_id)
     return load_dummy_icon();
 end
 
-local ptrPartyBuffs = ashita.memory.find('FFXiMain.dll', 0, 'B93C0000008D7004BF????????F3A5', 9, 0);
-if ptrPartyBuffs ~= nil and ptrPartyBuffs ~= 0 then
-	ptrPartyBuffs = ashita.memory.read_uint32(ptrPartyBuffs);
-else
-	ptrPartyBuffs = 0;
-end
-
--- Call once at plugin load and keep reference to table
-local function ReadPartyBuffsFromMemory()
-    local ptr = AshitaCore:GetPointerManager():Get('party.statusicons');
-    if ptr == nil or ptr == 0 then
-        return {};
-    end
-    local ptrPartyBuffs = ashita.memory.read_uint32(ptr);
-    if ptrPartyBuffs == nil or ptrPartyBuffs == 0 then
-        return {};
-    end
-    local partyBuffTable = {};
-    for memberIndex = 0,4 do
-        local memberPtr = ptrPartyBuffs + (0x30 * memberIndex);
-        local playerId = ashita.memory.read_uint32(memberPtr);
-        if (playerId ~= 0) then
-            local buffs = {};
-            local empty = false;
-            for buffIndex = 0,31 do
-                if empty then
-                    buffs[buffIndex + 1] = -1;
-                else
-                    local highBits = ashita.memory.read_uint8(memberPtr + 8 + (math.floor(buffIndex / 4)));
-                    local fMod = math.fmod(buffIndex, 4) * 2;
-                    highBits = bit.lshift(bit.band(bit.rshift(highBits, fMod), 0x03), 8);
-                    local lowBits = ashita.memory.read_uint8(memberPtr + 16 + buffIndex);
-                    local buff = highBits + lowBits;
-                    if buff == 255 then
-                        empty = true;
-                        buffs[buffIndex + 1] = -1;
-                    else
-                        buffs[buffIndex + 1] = buff;
-                    end
-                end
-            end
-            partyBuffTable[playerId] = buffs;
-        end
-    end
-    return partyBuffTable;
-end
-local partyBuffs = ReadPartyBuffsFromMemory();
+-- Party buffs table, populated by packet 0x076 via ReadPartyBuffsFromPacket()
+local partyBuffs = {};
 
 -------------------------------------------------------------------------------
 -- exported functions
@@ -280,19 +235,10 @@ statusHandler.get_icon_from_theme = function(theme, status_id)
     return tonumber(ffi.cast("uint32_t", icon_cache[status_id]));
 end
 
--- return index of the currently active theme in module.get_theme_paths()
----@return number theme_index
-statusHandler.get_theme_index = function(theme)
-    local paths = statusHandler.get_theme_paths();
-    for i = 1,#paths,1 do
-        if (paths[i] == theme) then
-            return i;
-        end
-    end
-    return nil;
-end
-
 -- reset the icon cache and release all resources
+-- Note: All textures are wrapped with d3d8.gc_safe_release() which automatically
+-- calls Release() when garbage collected. Do NOT manually call Release() here
+-- as it would cause double-release crashes.
 statusHandler.clear_cache = function()
     icon_cache = T{};
     buffIcon = nil;

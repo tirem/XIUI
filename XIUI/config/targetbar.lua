@@ -45,14 +45,14 @@ local function DrawTargetBarSettingsContent()
         components.DrawSlider('Scale Y', 'targetBarScaleY', 0.1, 3.0, '%.1f');
         components.DrawSlider('Name Font Size', 'targetBarNameFontSize', 8, 36);
         components.DrawSlider('Distance Font Size', 'targetBarDistanceFontSize', 8, 36);
-        components.DrawSlider('Distance Offset X', 'targetBarDistanceOffsetX', -100, 100);
+        components.DrawSlider('Distance Offset X', 'targetBarDistanceOffsetX', -300, 300);
         imgui.ShowHelp('Horizontal offset for distance text position.');
-        components.DrawSlider('Distance Offset Y', 'targetBarDistanceOffsetY', -50, 50);
+        components.DrawSlider('Distance Offset Y', 'targetBarDistanceOffsetY', -150, 150);
         imgui.ShowHelp('Vertical offset for distance text position.');
         components.DrawSlider('HP% Font Size', 'targetBarPercentFontSize', 8, 36);
-        components.DrawSlider('HP% Offset X', 'targetBarPercentOffsetX', -100, 100);
+        components.DrawSlider('HP% Offset X', 'targetBarPercentOffsetX', -300, 300);
         imgui.ShowHelp('Horizontal offset for HP% text position.');
-        components.DrawSlider('HP% Offset Y', 'targetBarPercentOffsetY', -50, 50);
+        components.DrawSlider('HP% Offset Y', 'targetBarPercentOffsetY', -150, 150);
         imgui.ShowHelp('Vertical offset for HP% text position.');
     end
 
@@ -262,70 +262,16 @@ function M.DrawSettings(state)
     local selectedTargetBarTab = state.selectedTargetBarTab or 1;
     local githubTexture = state.githubTexture;
 
-    -- Tab styling colors
-    local tabHeight = 24;
-    local tabPadding = 12;
-    local gold = {0.957, 0.855, 0.592, 1.0};
-    local bgMedium = {0.098, 0.090, 0.075, 1.0};
-    local bgLight = {0.137, 0.125, 0.106, 1.0};
-    local bgLighter = {0.176, 0.161, 0.137, 1.0};
-
-    -- Calculate tab widths based on text size
-    local targetBarTextWidth = imgui.CalcTextSize('Target Bar');
-    local mobInfoTextWidth = imgui.CalcTextSize('Mob Info');
-    local targetBarTabWidth = targetBarTextWidth + tabPadding * 2;
-    local mobInfoTabWidth = mobInfoTextWidth + tabPadding * 2;
-
     -- Target Bar tab button
-    local targetBarPosX, targetBarPosY = imgui.GetCursorScreenPos();
-    if selectedTargetBarTab == 1 then
-        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
-    else
-        imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
-    end
-    if imgui.Button('Target Bar##targetBarTab', { targetBarTabWidth, tabHeight }) then
+    if components.DrawStyledTab('Target Bar', 'targetBarTab', selectedTargetBarTab == 1) then
         selectedTargetBarTab = 1;
     end
-    if selectedTargetBarTab == 1 then
-        local draw_list = imgui.GetWindowDrawList();
-        draw_list:AddRectFilled(
-            {targetBarPosX + 4, targetBarPosY + tabHeight - 2},
-            {targetBarPosX + targetBarTabWidth - 4, targetBarPosY + tabHeight},
-            imgui.GetColorU32(gold),
-            1.0
-        );
-    end
-    imgui.PopStyleColor(3);
 
     -- Mob Info tab button
     imgui.SameLine();
-    local mobInfoPosX, mobInfoPosY = imgui.GetCursorScreenPos();
-    if selectedTargetBarTab == 2 then
-        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
-    else
-        imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
-    end
-    if imgui.Button('Mob Info##targetBarTab', { mobInfoTabWidth, tabHeight }) then
+    if components.DrawStyledTab('Mob Info', 'targetBarTab', selectedTargetBarTab == 2) then
         selectedTargetBarTab = 2;
     end
-    if selectedTargetBarTab == 2 then
-        local draw_list = imgui.GetWindowDrawList();
-        draw_list:AddRectFilled(
-            {mobInfoPosX + 4, mobInfoPosY + tabHeight - 2},
-            {mobInfoPosX + mobInfoTabWidth - 4, mobInfoPosY + tabHeight},
-            imgui.GetColorU32(gold),
-            1.0
-        );
-    end
-    imgui.PopStyleColor(3);
 
     imgui.Spacing();
     imgui.Separator();
@@ -377,70 +323,16 @@ end
 function M.DrawColorSettings(state)
     local selectedTargetBarColorTab = state.selectedTargetBarColorTab or 1;
 
-    -- Tab styling colors
-    local tabHeight = 24;
-    local tabPadding = 12;
-    local gold = {0.957, 0.855, 0.592, 1.0};
-    local bgMedium = {0.098, 0.090, 0.075, 1.0};
-    local bgLight = {0.137, 0.125, 0.106, 1.0};
-    local bgLighter = {0.176, 0.161, 0.137, 1.0};
-
-    -- Calculate tab widths based on text size
-    local targetBarTextWidth = imgui.CalcTextSize('Target Bar');
-    local mobInfoTextWidth = imgui.CalcTextSize('Mob Info');
-    local targetBarTabWidth = targetBarTextWidth + tabPadding * 2;
-    local mobInfoTabWidth = mobInfoTextWidth + tabPadding * 2;
-
     -- Target Bar tab button
-    local targetBarPosX, targetBarPosY = imgui.GetCursorScreenPos();
-    if selectedTargetBarColorTab == 1 then
-        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
-    else
-        imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
-    end
-    if imgui.Button('Target Bar##targetBarColorTab', { targetBarTabWidth, tabHeight }) then
+    if components.DrawStyledTab('Target Bar', 'targetBarColorTab', selectedTargetBarColorTab == 1) then
         selectedTargetBarColorTab = 1;
     end
-    if selectedTargetBarColorTab == 1 then
-        local draw_list = imgui.GetWindowDrawList();
-        draw_list:AddRectFilled(
-            {targetBarPosX + 4, targetBarPosY + tabHeight - 2},
-            {targetBarPosX + targetBarTabWidth - 4, targetBarPosY + tabHeight},
-            imgui.GetColorU32(gold),
-            1.0
-        );
-    end
-    imgui.PopStyleColor(3);
 
     -- Mob Info tab button
     imgui.SameLine();
-    local mobInfoPosX, mobInfoPosY = imgui.GetCursorScreenPos();
-    if selectedTargetBarColorTab == 2 then
-        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
-    else
-        imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
-    end
-    if imgui.Button('Mob Info##targetBarColorTab', { mobInfoTabWidth, tabHeight }) then
+    if components.DrawStyledTab('Mob Info', 'targetBarColorTab', selectedTargetBarColorTab == 2) then
         selectedTargetBarColorTab = 2;
     end
-    if selectedTargetBarColorTab == 2 then
-        local draw_list = imgui.GetWindowDrawList();
-        draw_list:AddRectFilled(
-            {mobInfoPosX + 4, mobInfoPosY + tabHeight - 2},
-            {mobInfoPosX + mobInfoTabWidth - 4, mobInfoPosY + tabHeight},
-            imgui.GetColorU32(gold),
-            1.0
-        );
-    end
-    imgui.PopStyleColor(3);
 
     imgui.Spacing();
     imgui.Separator();

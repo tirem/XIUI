@@ -86,11 +86,25 @@ end
 -- Safe accessor for pet entity
 -- Returns the player's pet entity if one exists, nil otherwise
 function M.GetPetSafe()
-    local playerEntity = GetPlayerEntity();
-    if playerEntity == nil or playerEntity.PetTargetIndex == 0 then
-        return nil;
-    end
-    return GetEntity(playerEntity.PetTargetIndex);
+    local memMgr = GetMemoryManager();
+    if memMgr == nil then return nil end
+
+    local entityMgr = memMgr:GetEntity();
+    if entityMgr == nil then return nil end
+
+    local partyMgr = memMgr:GetParty();
+    if partyMgr == nil then return nil end
+
+    -- Get player's entity index
+    local playerIndex = partyMgr:GetMemberTargetIndex(0);
+    if playerIndex == nil or playerIndex == 0 then return nil end
+
+    -- Get pet target index from player entity
+    local petIndex = entityMgr:GetPetTargetIndex(playerIndex);
+    if petIndex == nil or petIndex == 0 then return nil end
+
+    -- Return pet entity
+    return entityMgr:GetEntity(petIndex);
 end
 
 return M;

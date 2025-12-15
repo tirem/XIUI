@@ -87,6 +87,19 @@ function M.hex2rgb(hex)
     return tonumber("0x"..hex:sub(1,2)), tonumber("0x"..hex:sub(3,4)), tonumber("0x"..hex:sub(5,6))
 end
 
+-- Extract RGBA from hex string (supports #RRGGBB or #RRGGBBAA)
+function M.hex2rgba(hex)
+    local hex = hex:gsub("#", "");
+    local r = tonumber("0x"..hex:sub(1,2));
+    local g = tonumber("0x"..hex:sub(3,4));
+    local b = tonumber("0x"..hex:sub(5,6));
+    local a = 255;
+    if #hex >= 8 then
+        a = tonumber("0x"..hex:sub(7,8));
+    end
+    return r, g, b, a;
+end
+
 function M.rgb2hex(red, green, blue)
     return string.format('#%02x%02x%02x', red, green, blue);
 end
@@ -250,6 +263,63 @@ function M.GetGradientSetting(module, setting, defaultGradient)
         end
     end
     return defaultGradient;
+end
+
+-- ========================================
+-- Helper Functions
+-- ========================================
+
+-- Extract text color from gradient (first color with full opacity)
+-- Used for deriving text colors from gradient settings
+function M.GetGradientTextColor(gradientStart)
+    if not gradientStart then
+        return 0xFFFFFFFF;  -- Default white
+    end
+    return M.HexToARGB(gradientStart:gsub('#', ''):sub(1, 6), 0xFF);
+end
+
+-- Convert hex string directly to U32 for ImGui drawing
+-- Uses imgui.GetColorU32() at render time when available, falls back to manual ABGR conversion
+function M.HexToU32(hexString)
+    if not hexString then
+        return 0xFFFFFFFF;  -- Default white
+    end
+    -- Prefer imgui.GetColorU32 when available (at render time)
+    if imgui and imgui.GetColorU32 then
+        return imgui.GetColorU32(M.HexToImGui(hexString));
+    end
+    -- Fallback: manual conversion to ABGR
+    local argb = M.HexToARGB(hexString:gsub('#', ''), 0xFF);
+    return M.ARGBToABGR(argb);
+end
+
+-- Convert ARGB hex to U32 for ImGui drawing
+-- Uses imgui.GetColorU32() at render time when available, falls back to manual ABGR conversion
+function M.ARGBToU32(argb)
+    if not argb then
+        return 0xFFFFFFFF;  -- Default white
+    end
+    -- Prefer imgui.GetColorU32 when available (at render time)
+    if imgui and imgui.GetColorU32 then
+        return imgui.GetColorU32(M.ARGBToImGui(argb));
+    end
+    -- Fallback: manual conversion to ABGR
+    return M.ARGBToABGR(argb);
+end
+
+-- Safe color table accessor (for inventory tracker style colors)
+-- Converts ImGui-style color table {r, g, b, a} to ARGB integer
+function M.ColorTableToARGB(colorTable, fallback)
+    if colorTable and colorTable.r and colorTable.g and colorTable.b then
+        local a = colorTable.a or 1.0;
+        return bit.bor(
+            bit.lshift(math.floor(a * 255), 24),
+            bit.lshift(math.floor(colorTable.r * 255), 16),
+            bit.lshift(math.floor(colorTable.g * 255), 8),
+            math.floor(colorTable.b * 255)
+        );
+    end
+    return fallback or 0xFFFFFFFF;
 end
 
 -- ========================================

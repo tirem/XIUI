@@ -30,11 +30,7 @@ end
 
 -- Helper function to convert dot color (RGBA table) to ARGB hex for font
 local function DotColorToFontColor(dotColor)
-    local a = math.floor(dotColor.a * 255);
-    local r = math.floor(dotColor.r * 255);
-    local g = math.floor(dotColor.g * 255);
-    local b = math.floor(dotColor.b * 255);
-    return bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
+    return color.ColorTableToARGB(dotColor);
 end
 
 -- Helper function to get text color based on thresholds (returns ARGB hex)

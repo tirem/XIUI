@@ -82,6 +82,8 @@ local function createPartyDefaults(overrides)
         tpTextOffsetY = 0,
         distanceTextOffsetX = 0,
         distanceTextOffsetY = 0,
+        jobTextOffsetX = 0,
+        jobTextOffsetY = 0,
     };
     if overrides then
         for k, v in pairs(overrides) do
@@ -933,7 +935,8 @@ M.user_settings = T{
 
         -- Exp Bar
         expBar = T{
-            barGradient = T{ enabled = true, start = '#c39040', stop = '#e9c466' },
+            expBarGradient = T{ enabled = true, start = '#c39040', stop = '#e9c466' },
+            meritBarGradient = T{ enabled = true, start = '#3064c3', stop = '#66a0e9' },
             jobTextColor = 0xFFFFFFFF,
             expTextColor = 0xFFFFFFFF,
             percentTextColor = 0xFFFFFF00,

@@ -9,6 +9,7 @@ require('common');
 local ffi = require('ffi');
 local gamestate = require('core.gamestate');
 local encoding = require('submodules.gdifonts.encoding');
+local abilityRecast = require('libs.abilityrecast');
 
 local M = {};
 
@@ -136,27 +137,84 @@ function M.GetSpellRecast(spellId)
 end
 
 -- Get current ability recast timer (returns remaining time in seconds, or 0 if ready)
-function M.GetAbilityRecast(abilityId)
-    if abilityId == nil or abilityId < 0 then return 0; end
+-- Uses shared abilityrecast library for direct memory reading
+-- @param timerId: The ability's timer ID (e.g., 173 for Blood Pact: Rage, 174 for Blood Pact: Ward)
+function M.GetAbilityRecast(timerId)
+    if timerId == nil or timerId < 0 then return 0; end
+    return abilityRecast.GetAbilityRecastSeconds(timerId);
+end
 
-    local recast = GetRecastSafe();
-    if recast == nil then return 0; end
+-- ============================================
+-- Ability Info Lookup Table (fallback for abilities where resource data may be wrong)
+-- Contains timer IDs and max recast times from PetMe/petbar research
+-- maxRecast values are in seconds
+-- ============================================
+local abilityLookup = {
+    -- SMN pet commands
+    ['Blood Pact: Rage'] = { timerId = 173, maxRecast = 60 },
+    ['Blood Pact: Ward'] = { timerId = 174, maxRecast = 60 },
+    ['Apogee'] = { timerId = 108, maxRecast = 60 },
+    ['Mana Cede'] = { timerId = 71, maxRecast = 60 },
+    -- BST pet commands
+    ['Ready'] = { timerId = 102, maxRecast = 30 },
+    ['Sic'] = { timerId = 102, maxRecast = 30 },  -- Shares timer with Ready
+    ['Reward'] = { timerId = 103, maxRecast = 90 },
+    ['Call Beast'] = { timerId = 104, maxRecast = 60 },
+    ['Bestial Loyalty'] = { timerId = 104, maxRecast = 60 },  -- Shares timer with Call Beast
+    -- DRG pet commands
+    ['Call Wyvern'] = { timerId = 163, maxRecast = 1200 },  -- 20 minutes
+    ['Spirit Link'] = { timerId = 162, maxRecast = 120 },
+    ['Deep Breathing'] = { timerId = 164, maxRecast = 60 },
+    ['Steady Wing'] = { timerId = 70, maxRecast = 120 },
+    -- PUP pet commands
+    ['Activate'] = { timerId = 205, maxRecast = 60 },
+    ['Repair'] = { timerId = 206, maxRecast = 180 },
+    ['Deploy'] = { timerId = 207, maxRecast = 60 },
+    ['Deactivate'] = { timerId = 208, maxRecast = 60 },
+    ['Retrieve'] = { timerId = 209, maxRecast = 60 },
+    ['Deus Ex Automata'] = { timerId = 115, maxRecast = 60 },
+};
 
-    -- Abilities use a timer ID that maps to a recast slot (0-31)
-    -- We need to find which slot this ability uses
-    for i = 0, 31 do
-        local timerId = recast:GetAbilityTimerId(i);
-        if timerId == abilityId then
-            local timer = recast:GetAbilityTimer(i);
-            if timer ~= nil and timer > 0 then
-                -- Convert from 1/60th seconds to seconds
-                return timer / 60;
-            end
-            break;
-        end
+-- Track max recast times seen for abilities (like petbar does)
+-- This allows the progress bar to fill up correctly even when resource manager has no data
+local trackedMaxRecasts = {};
+
+-- Get ability recast info by scanning active recast slots
+-- This approach works for all abilities without needing a lookup table
+-- Returns: timerId, currentRecast (seconds), maxRecast (seconds)
+local function GetAbilityRecastInfo(ability, abilityId)
+    local name = encoding:ShiftJIS_To_UTF8(ability.Name[1], true);
+
+    -- First check our lookup table (for known pet commands with specific timer IDs)
+    local lookup = name and abilityLookup[name];
+    if lookup then
+        local currentRecast = abilityRecast.GetAbilityRecastSeconds(lookup.timerId);
+        return lookup.timerId, currentRecast, lookup.maxRecast;
     end
 
-    return 0;
+    -- For other abilities, scan recast slots to find by ability ID
+    local timerId, rawRecast = abilityRecast.FindAbilityRecast(abilityId);
+    local currentRecast = (rawRecast > 0) and (rawRecast / 60) or 0;
+
+    -- Get max recast from resource manager
+    local maxRecast = (ability.RecastDelay or 0) / 4;  -- Convert from 1/4 seconds
+
+    -- Track max recast times (like petbar does) for accurate progress bar
+    if currentRecast > 0 then
+        -- Update tracked max if current is higher (ability just used)
+        if trackedMaxRecasts[name] == nil or currentRecast > trackedMaxRecasts[name] then
+            trackedMaxRecasts[name] = currentRecast;
+        end
+        -- Use tracked max if resource manager value is missing/lower
+        if maxRecast <= 0 or trackedMaxRecasts[name] > maxRecast then
+            maxRecast = trackedMaxRecasts[name];
+        end
+    else
+        -- Ability is ready - clear tracked max
+        trackedMaxRecasts[name] = nil;
+    end
+
+    return timerId, currentRecast, maxRecast;
 end
 
 -- ============================================
@@ -185,23 +243,31 @@ function M.GetSpellInfo(spellId)
     };
 end
 
+-- Weapon skills have ability IDs in range 1-255 (approximately)
+-- Job abilities start at higher IDs (512+)
+local function IsWeaponSkillById(abilityId)
+    return abilityId >= 1 and abilityId <= 255;
+end
+
 function M.GetAbilityInfo(abilityId)
     if abilityId == nil or abilityId < 0 then return nil; end
     local ability = AshitaCore:GetResourceManager():GetAbilityById(abilityId);
     if ability == nil then return nil; end
 
-    -- Get max recast time (in seconds, converted from 1/4 seconds)
-    local maxRecast = (ability.RecastDelay or 0) / 4;
-    -- Get current remaining recast time
-    local currentRecast = M.GetAbilityRecast(abilityId);
+    -- Get recast info (scans slots for job abilities, uses lookup for pet commands)
+    local timerId, currentRecast, maxRecast = GetAbilityRecastInfo(ability, abilityId);
+
+    -- Check if this is a weapon skill by ID range
+    local isWeaponSkill = IsWeaponSkillById(abilityId);
 
     return {
         id = abilityId,
+        timerId = timerId,
         name = encoding:ShiftJIS_To_UTF8(ability.Name[1], true),
         recastDelay = ability.RecastDelay or 0,
         maxRecast = maxRecast,
         currentRecast = currentRecast,
-        -- Note: TP cost for weapon skills varies and may need special handling
+        isWeaponSkill = isWeaponSkill,
     };
 end
 

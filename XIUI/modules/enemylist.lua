@@ -155,10 +155,7 @@ enemylist.DrawWindow = function(settings)
 	imgui.SetNextWindowSize({ windowWidth, -1, }, ImGuiCond_Always);
 
 	-- Draw the main target window
-	local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
-	if (gConfig.lockPositions) then
-		windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
-	end
+	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
 
 	-- Remove all ImGui padding so we have full control over layout
 	imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});

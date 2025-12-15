@@ -27,6 +27,52 @@ local config = {};
 -- Global modal state (accessible by other modules to know when to dim foreground elements)
 _XIUI_MODAL_OPEN = false;
 
+-- Helper function to render a social icon button with box background
+local function RenderSocialButton(texture, buttonId, onClickCallback, bgLight, bgLighter, borderDark, boxSize, iconSize)
+    if texture == nil or texture.image == nil then
+        return;
+    end
+
+    local iconPad = (boxSize - iconSize) / 2;
+    local screenPosX, screenPosY = imgui.GetCursorScreenPos();
+    local isHovered = imgui.IsMouseHoveringRect({screenPosX, screenPosY}, {screenPosX + boxSize, screenPosY + boxSize});
+
+    -- Draw box background and outline
+    local draw_list = imgui.GetWindowDrawList();
+    local boxColor = isHovered and imgui.GetColorU32(bgLighter) or imgui.GetColorU32(bgLight);
+    local outlineColor = imgui.GetColorU32(borderDark);
+    draw_list:AddRectFilled(
+        {screenPosX, screenPosY},
+        {screenPosX + boxSize, screenPosY + boxSize},
+        boxColor,
+        4.0
+    );
+    draw_list:AddRect(
+        {screenPosX, screenPosY},
+        {screenPosX + boxSize, screenPosY + boxSize},
+        outlineColor,
+        4.0
+    );
+
+    -- Draw image centered in box
+    draw_list:AddImage(
+        tonumber(ffi.cast("uint32_t", texture.image)),
+        {screenPosX + iconPad, screenPosY + iconPad},
+        {screenPosX + iconPad + iconSize, screenPosY + iconPad + iconSize},
+        {0, 0}, {1, 1},
+        IM_COL32_WHITE
+    );
+
+    -- Invisible button for interaction
+    imgui.InvisibleButton(buttonId, { boxSize, boxSize });
+    if imgui.IsItemHovered() then
+        imgui.SetMouseCursor(ImGuiMouseCursor_Hand);
+    end
+    if imgui.IsItemClicked() then
+        onClickCallback();
+    end
+end
+
 -- State for confirmation dialogs
 local showRestoreDefaultsConfirm = false;
 local showRestoreColorsConfirm = false;
@@ -338,135 +384,28 @@ config.DrawWindow = function(us)
         local boxSize = 26;
         local boxSpacing = 4;
         local iconSize = 18;
-        local iconPad = (boxSize - iconSize) / 2;
-        local outlineColor = imgui.GetColorU32(borderDark);
 
         imgui.SameLine();
         imgui.SetCursorPosX(windowWidth - (boxSize * 3) - (boxSpacing * 2));
 
         -- Discord button
-        if discordTexture ~= nil and discordTexture.image ~= nil then
-            local screenPosX, screenPosY = imgui.GetCursorScreenPos();
-            local isHovered = imgui.IsMouseHoveringRect({screenPosX, screenPosY}, {screenPosX + boxSize, screenPosY + boxSize});
-
-            -- Draw box background and outline
-            local draw_list = imgui.GetWindowDrawList();
-            local boxColor = isHovered and imgui.GetColorU32(bgLighter) or imgui.GetColorU32(bgLight);
-            draw_list:AddRectFilled(
-                {screenPosX, screenPosY},
-                {screenPosX + boxSize, screenPosY + boxSize},
-                boxColor,
-                4.0
-            );
-            draw_list:AddRect(
-                {screenPosX, screenPosY},
-                {screenPosX + boxSize, screenPosY + boxSize},
-                outlineColor,
-                4.0
-            );
-
-            -- Draw image centered in box
-            draw_list:AddImage(
-                tonumber(ffi.cast("uint32_t", discordTexture.image)),
-                {screenPosX + iconPad, screenPosY + iconPad},
-                {screenPosX + iconPad + iconSize, screenPosY + iconPad + iconSize},
-                {0, 0}, {1, 1},
-                IM_COL32_WHITE
-            );
-
-            -- Invisible button for interaction
-            imgui.InvisibleButton("discord_btn", { boxSize, boxSize });
-            if imgui.IsItemHovered() then
-                imgui.SetMouseCursor(ImGuiMouseCursor_Hand);
-            end
-            if imgui.IsItemClicked() then
-                ashita.misc.open_url("https://discord.gg/PDFJebrwN4");
-            end
-        end
+        RenderSocialButton(discordTexture, "discord_btn", function()
+            ashita.misc.open_url("https://discord.gg/PDFJebrwN4");
+        end, bgLight, bgLighter, borderDark, boxSize, iconSize);
 
         imgui.SameLine(0, boxSpacing);
 
         -- GitHub button
-        if githubTexture ~= nil and githubTexture.image ~= nil then
-            local screenPosX, screenPosY = imgui.GetCursorScreenPos();
-            local isHovered = imgui.IsMouseHoveringRect({screenPosX, screenPosY}, {screenPosX + boxSize, screenPosY + boxSize});
-
-            -- Draw box background and outline
-            local draw_list = imgui.GetWindowDrawList();
-            local boxColor = isHovered and imgui.GetColorU32(bgLighter) or imgui.GetColorU32(bgLight);
-            draw_list:AddRectFilled(
-                {screenPosX, screenPosY},
-                {screenPosX + boxSize, screenPosY + boxSize},
-                boxColor,
-                4.0
-            );
-            draw_list:AddRect(
-                {screenPosX, screenPosY},
-                {screenPosX + boxSize, screenPosY + boxSize},
-                outlineColor,
-                4.0
-            );
-
-            -- Draw image centered in box
-            draw_list:AddImage(
-                tonumber(ffi.cast("uint32_t", githubTexture.image)),
-                {screenPosX + iconPad, screenPosY + iconPad},
-                {screenPosX + iconPad + iconSize, screenPosY + iconPad + iconSize},
-                {0, 0}, {1, 1},
-                IM_COL32_WHITE
-            );
-
-            -- Invisible button for interaction
-            imgui.InvisibleButton("github_btn", { boxSize, boxSize });
-            if imgui.IsItemHovered() then
-                imgui.SetMouseCursor(ImGuiMouseCursor_Hand);
-            end
-            if imgui.IsItemClicked() then
-                ashita.misc.open_url("https://github.com/tirem/xiui");
-            end
-        end
+        RenderSocialButton(githubTexture, "github_btn", function()
+            ashita.misc.open_url("https://github.com/tirem/xiui");
+        end, bgLight, bgLighter, borderDark, boxSize, iconSize);
 
         imgui.SameLine(0, boxSpacing);
 
         -- Credits button (heart)
-        if heartTexture ~= nil and heartTexture.image ~= nil then
-            local screenPosX, screenPosY = imgui.GetCursorScreenPos();
-            local isHovered = imgui.IsMouseHoveringRect({screenPosX, screenPosY}, {screenPosX + boxSize, screenPosY + boxSize});
-
-            -- Draw box background and outline
-            local draw_list = imgui.GetWindowDrawList();
-            local boxColor = isHovered and imgui.GetColorU32(bgLighter) or imgui.GetColorU32(bgLight);
-            draw_list:AddRectFilled(
-                {screenPosX, screenPosY},
-                {screenPosX + boxSize, screenPosY + boxSize},
-                boxColor,
-                4.0
-            );
-            draw_list:AddRect(
-                {screenPosX, screenPosY},
-                {screenPosX + boxSize, screenPosY + boxSize},
-                outlineColor,
-                4.0
-            );
-
-            -- Draw image centered in box
-            draw_list:AddImage(
-                tonumber(ffi.cast("uint32_t", heartTexture.image)),
-                {screenPosX + iconPad, screenPosY + iconPad},
-                {screenPosX + iconPad + iconSize, screenPosY + iconPad + iconSize},
-                {0, 0}, {1, 1},
-                IM_COL32_WHITE
-            );
-
-            -- Invisible button for interaction
-            imgui.InvisibleButton("credits_btn", { boxSize, boxSize });
-            if imgui.IsItemHovered() then
-                imgui.SetMouseCursor(ImGuiMouseCursor_Hand);
-            end
-            if imgui.IsItemClicked() then
-                showCreditsPopup = true;
-            end
-        end
+        RenderSocialButton(heartTexture, "credits_btn", function()
+            showCreditsPopup = true;
+        end, bgLight, bgLighter, borderDark, boxSize, iconSize);
 
         -- Track modal state for foreground elements dimming
         local anyModalOpen = false;

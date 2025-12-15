@@ -232,13 +232,13 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         if memInfo.subTargeted then
             if data.cachedSubtargetBorderColorARGB ~= borderColorARGB then
                 data.cachedSubtargetBorderColorARGB = borderColorARGB;
-                data.cachedSubtargetBorderColorU32 = imgui.GetColorU32(ARGBToImGui(borderColorARGB));
+                data.cachedSubtargetBorderColorU32 = ARGBToU32(borderColorARGB);
             end
             borderColor = data.cachedSubtargetBorderColorU32;
         else
             if data.cachedBorderColorARGB ~= borderColorARGB then
                 data.cachedBorderColorARGB = borderColorARGB;
-                data.cachedBorderColorU32 = imgui.GetColorU32(ARGBToImGui(borderColorARGB));
+                data.cachedBorderColorU32 = ARGBToU32(borderColorARGB);
             end
             borderColor = data.cachedBorderColorU32;
         end
@@ -573,10 +573,13 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
     -- Distance text
     local showDistance = false;
     local highlightDistance = false;
-    if (not isCasting) then
+    -- Only hide name/distance when casting with 'name' style (which replaces name with spell)
+    -- When using 'mp' or 'tp' bar styles, name and distance should remain visible
+    local hidingNameForCast = isCasting and castBarStyle == 'name';
+    if (not hidingNameForCast) then
         data.memberText[memIdx].name:set_text(tostring(memInfo.name));
     end
-    if (not isCasting and cache.showDistance and memInfo.inzone) then
+    if (not hidingNameForCast and cache.showDistance and memInfo.inzone) then
         local distance = nil;
         if memInfo.previewDistance then
             distance = memInfo.previewDistance;
@@ -588,7 +591,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         end
         if (distance ~= nil and distance > 0 and distance <= 50) then
             local distanceText = ('%.1f'):fmt(distance);
-            data.memberText[memIdx].distance:set_text('- ' .. distanceText);
+            data.memberText[memIdx].distance:set_text(distanceText);
             local distancePosX = namePosX + nameWidth + 4;
             data.memberText[memIdx].distance:set_position_x(distancePosX + textOffsets.distanceX);
             data.memberText[memIdx].distance:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset + textOffsets.distanceY);
@@ -631,8 +634,8 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
             data.memberText[memIdx].job:set_font_height(fontSizes.job);
             local jobTextWidth, jobTextHeight = data.memberText[memIdx].job:get_text_size();
             local jobPosX = hpStartX + allBarsLengths - jobTextWidth;
-            data.memberText[memIdx].job:set_position_x(jobPosX);
-            data.memberText[memIdx].job:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset);
+            data.memberText[memIdx].job:set_position_x(jobPosX + textOffsets.jobX);
+            data.memberText[memIdx].job:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset + textOffsets.jobY);
             local desiredJobColor = cache.colors.nameTextColor;
             if (data.memberTextColorCache[memIdx].job ~= desiredJobColor) then
                 data.memberText[memIdx].job:set_font_color(desiredJobColor);
@@ -693,8 +696,10 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                     local interpG = math.floor(baseG + (flashG - baseG) * pulseAlpha);
                     local interpB = math.floor(baseB + (flashB - baseB) * pulseAlpha);
                     desiredTpColor = bit.bor(bit.lshift(interpA, 24), bit.lshift(interpR, 16), bit.lshift(interpG, 8), interpB);
-                    data.memberText[memIdx].tp:set_font_color(desiredTpColor);
-                    data.memberTextColorCache[memIdx].tp = nil;
+                    if (data.memberTextColorCache[memIdx].tp ~= desiredTpColor) then
+                        data.memberText[memIdx].tp:set_font_color(desiredTpColor);
+                        data.memberTextColorCache[memIdx].tp = desiredTpColor;
+                    end
                 else
                     desiredTpColor = (memInfo.tp >= 1000) and cache.colors.tpFullTextColor or cache.colors.tpEmptyTextColor;
                     if (data.memberTextColorCache[memIdx].tp ~= desiredTpColor) then

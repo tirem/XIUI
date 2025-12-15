@@ -10,24 +10,36 @@ local M = {};
 -- ========================================
 -- Internal Implementation
 -- ========================================
+
+-- Process shadow config and return shadow properties
+-- Returns: offsetX, offsetY, shadowColorU32, or nil if no shadow
+local function processShadowConfig(shadowConfig)
+    if not shadowConfig then
+        return nil;
+    end
+
+    local shadowOffsetX = shadowConfig.offsetX or 2;
+    local shadowOffsetY = shadowConfig.offsetY or 2;
+    local shadowColor = shadowConfig.color or 0x80000000;
+
+    -- Apply alpha override if specified
+    if shadowConfig.alpha then
+        local baseColor = bit.band(shadowColor, 0x00FFFFFF);
+        local alpha = math.floor(math.clamp(shadowConfig.alpha, 0, 1) * 255);
+        shadowColor = bit.bor(baseColor, bit.lshift(alpha, 24));
+    end
+
+    local shadowColorU32 = imgui.GetColorU32(shadowColor);
+    return shadowOffsetX, shadowOffsetY, shadowColorU32;
+end
+
 -- Eliminates code duplication between draw_rect and draw_rect_background
 local function draw_rect_impl(top_left, bot_right, color, radius, fill, shadowConfig, drawList)
     -- Draw shadow first if configured
-    if shadowConfig then
-        local shadowOffsetX = shadowConfig.offsetX or 2;
-        local shadowOffsetY = shadowConfig.offsetY or 2;
-        local shadowColor = shadowConfig.color or 0x80000000;
-
-        -- Apply alpha override if specified
-        if shadowConfig.alpha then
-            local baseColor = bit.band(shadowColor, 0x00FFFFFF);
-            local alpha = math.floor(math.clamp(shadowConfig.alpha, 0, 1) * 255);
-            shadowColor = bit.bor(baseColor, bit.lshift(alpha, 24));
-        end
-
+    local shadowOffsetX, shadowOffsetY, shadowColorU32 = processShadowConfig(shadowConfig);
+    if shadowOffsetX then
         local shadow_top_left = {top_left[1] + shadowOffsetX, top_left[2] + shadowOffsetY};
         local shadow_bot_right = {bot_right[1] + shadowOffsetX, bot_right[2] + shadowOffsetY};
-        local shadowColorU32 = imgui.GetColorU32(shadowColor);
         local shadowDimensions = {
             { shadow_top_left[1], shadow_top_left[2] },
             { shadow_bot_right[1], shadow_bot_right[2] }
@@ -73,20 +85,9 @@ end
 
 function M.draw_circle(center, radius, color, segments, fill, shadowConfig)
     -- Draw shadow first if configured
-    if shadowConfig then
-        local shadowOffsetX = shadowConfig.offsetX or 2;
-        local shadowOffsetY = shadowConfig.offsetY or 2;
-        local shadowColor = shadowConfig.color or 0x80000000;
-
-        -- Apply alpha override if specified
-        if shadowConfig.alpha then
-            local baseColor = bit.band(shadowColor, 0x00FFFFFF);
-            local alpha = math.floor(math.clamp(shadowConfig.alpha, 0, 1) * 255);
-            shadowColor = bit.bor(baseColor, bit.lshift(alpha, 24));
-        end
-
+    local shadowOffsetX, shadowOffsetY, shadowColorU32 = processShadowConfig(shadowConfig);
+    if shadowOffsetX then
         local shadow_center = {center[1] + shadowOffsetX, center[2] + shadowOffsetY};
-        local shadowColorU32 = imgui.GetColorU32(shadowColor);
 
         if (fill == true) then
             imgui.GetWindowDrawList():AddCircleFilled(shadow_center, radius, shadowColorU32, segments);

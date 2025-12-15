@@ -2,7 +2,7 @@
 * XIUI HP Utilities
 * HP interpolation manager and HP color functions
 *
-* Note: GetCustomHpColors() uses HexToARGB which is exported globally by helpers.lua
+* Note: GetCustomHpColors() uses GetGradientTextColor which is exported globally by helpers.lua
 * This module should be loaded via helpers.lua to ensure globals are available
 ]]--
 
@@ -328,9 +328,8 @@ function M.GetCustomHpColors(hppPercent, moduleColorSettings)
         hpGradient = {selectedSettings.start, selectedSettings.start};
     end
 
-    -- Convert first gradient color to ARGB for text (requires color lib)
-    -- Note: HexToARGB is expected to be available globally via helpers.lua
-    hpNameColor = HexToARGB(hpGradient[1], 0xFF);
+    -- Convert first gradient color to ARGB for text
+    hpNameColor = GetGradientTextColor(hpGradient[1]);
 
     return hpNameColor, hpGradient;
 end

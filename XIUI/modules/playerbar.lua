@@ -41,12 +41,10 @@ local function getCachedInterpColors()
 	return cachedInterpColors;
 end
 
--- Get cached base window flags (computed once, lock flag added dynamically)
+-- Note: getBaseWindowFlags moved to handlers/helpers.lua as GetBaseWindowFlags()
+-- This local caching is no longer needed but kept for backwards compatibility
 local function getBaseWindowFlags()
-	if baseWindowFlags == nil then
-		baseWindowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
-	end
-	return baseWindowFlags;
+	return GetBaseWindowFlags(false);
 end
 
 local _XIUI_DEV_DEBUG_INTERPOLATION = false;
@@ -223,11 +221,8 @@ playerbar.DrawWindow = function(settings)
 	end
 	
 		
-	-- Use cached base flags, only add NoMove dynamically if positions are locked
-	local windowFlags = getBaseWindowFlags();
-	if (gConfig.lockPositions) then
-		windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
-	end
+	-- Get base window flags with NoMove dynamically added if positions are locked
+	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
     if (imgui.Begin('PlayerBar', true, windowFlags)) then
 
 		local hpNameColor, hpGradient = GetCustomHpColors(SelfHPPercent/100, gConfig.colorCustomization.playerBar);
