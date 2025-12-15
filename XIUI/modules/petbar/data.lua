@@ -928,6 +928,11 @@ function data.UpdateBackground(x, y, width, height, settings)
 
     if showImage and data.currentPetName and data.petImagePrims then
         local petKey = data.GetPetSettingsKey(data.currentPetName);
+        local petTypeKey = data.GetPetTypeKey();
+        -- For wyvern, use 'wyvern' key to handle renamed wyverns
+        if petTypeKey == 'wyvern' then
+            petKey = 'wyvern';
+        end
         local primMiddle = data.petImagePrims[petKey];  -- Middle layer (for clipped)
         local primTop = data.petImagePrimsTop and data.petImagePrimsTop[petKey];  -- Top layer (for unclipped)
 
