@@ -275,6 +275,46 @@ M.user_settings = T{
     showCastBar = true,
     showPetBar = true,
     showCastCost = true,
+    showNotifications = true,
+
+    -- Notifications settings
+    notificationsShowPartyInvite = true,
+    notificationsShowTradeInvite = true,
+    notificationsShowTreasure = true,
+    notificationsShowItems = true,
+    notificationsShowKeyItems = true,
+    notificationsShowGil = true,
+    notificationsPosition = 'topright',
+    notificationsDirection = 'down',
+    notificationsDisplayDuration = 3.0,
+    notificationsInviteMinifyTimeout = 10.0,
+    notificationsScaleX = 1.0,
+    notificationsScaleY = 1.0,
+    notificationsPadding = 8,
+    notificationsSpacing = 8,
+    notificationsMaxVisible = 5,
+    notificationsTitleFontSize = 14,
+    notificationsSubtitleFontSize = 12,
+    notificationsProgressBarScaleY = 1.0,
+    notificationsHideDuringEvents = false,
+
+    -- Split Window Settings (allow each notification type to have its own window)
+    notificationsSplitPartyInvite = false,
+    notificationsSplitTradeInvite = false,
+    notificationsSplitTreasurePool = false,
+    notificationsSplitItemObtained = false,
+    notificationsSplitKeyItemObtained = false,
+    notificationsSplitGilObtained = false,
+
+    -- Treasure Pool Window Settings
+    notificationsTreasurePoolWindow = true,       -- Show dedicated treasure pool tracking window
+    notificationsTreasurePoolShowTitle = true,    -- Show "Treasure Pool" header text
+    notificationsTreasurePoolShowTimerBar = true, -- Show countdown progress bar on pool items
+    notificationsTreasurePoolShowTimerText = true, -- Show timer text (countdown like "4:32")
+    notificationsTreasurePoolShowLots = true,     -- Show party member lots
+    notificationsTreasurePoolFontSize = 10,       -- Font size for all treasure pool text
+    notificationsTreasurePoolScaleX = 1.0,        -- Treasure pool window horizontal scale
+    notificationsTreasurePoolScaleY = 1.0,        -- Treasure pool window vertical scale
 
     -- Cast Cost settings
     castCostScaleX = 1.0,
@@ -1027,6 +1067,20 @@ M.user_settings = T{
             mpCostPreviewPulseSpeed = 1.0,        -- Pulse duration in seconds
         },
 
+        -- Notifications
+        notifications = T{
+            bgColor = 0xDD1a1a1a,
+            borderColor = 0xFF444444,
+            partyInviteColor = 0xFF4CAF50,
+            tradeInviteColor = 0xFFFF9800,
+            treasurePoolColor = 0xFF2196F3,
+            itemObtainedColor = 0xFFFFFFFF,
+            keyItemColor = 0xFFFFEB3B,
+            gilColor = 0xFFFFD700,
+            textColor = 0xFFFFFFFF,
+            subtitleColor = 0xFFAAAAAA,
+        },
+
         -- Pet Bar
         petBar = T{
             hpGradient = T{ enabled = true, start = '#e26c6c', stop = '#fa9c9c' },  -- Match playerBar high HP
@@ -1736,6 +1790,35 @@ M.default_settings = T{
             font_height = 10,
             font_color = 0xFFFFFF00,
             font_flags = gdi.FontFlags.None,
+            outline_color = 0xFF000000,
+            outline_width = 2,
+        },
+    },
+
+    -- settings for notifications
+    notificationsSettings = T{
+        maxVisible = 10,
+        spacing = 8,
+        width = 280,
+        iconSize = 32,
+        bgPadding = 8,
+        enterDuration = 0.3,
+        exitDuration = 0.2,
+        font_settings = T{
+            font_alignment = gdi.Alignment.Left,
+            font_family = 'Consolas',
+            font_height = 12,
+            font_color = 0xFFFFFFFF,
+            font_flags = gdi.FontFlags.None,
+            outline_color = 0xFF000000,
+            outline_width = 2,
+        },
+        title_font_settings = T{
+            font_alignment = gdi.Alignment.Left,
+            font_family = 'Consolas',
+            font_height = 14,
+            font_color = 0xFFFFFFFF,
+            font_flags = gdi.FontFlags.Bold,
             outline_color = 0xFF000000,
             outline_width = 2,
         },

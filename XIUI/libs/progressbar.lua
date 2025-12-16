@@ -500,7 +500,20 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 	-- Only call Dummy if we're using cursor positioning (affects layout)
 	-- Skip Dummy when using absolute positioning (doesn't affect layout)
 	if not options.absolutePosition then
-		imgui.Dummy({width, height});
+		-- Calculate border extent to prevent clipping
+		-- Borders extend outward from bar edges by this amount
+		local borderExtent = 0;
+		if options.enhancedBorder then
+			-- Enhanced border has multiple layers extending outward
+			local middleBorderThickness = 2;
+			local innerOffset = innerBorderThickness / 2;
+			local middleOffset = innerOffset + innerBorderThickness;
+			borderExtent = middleOffset + middleBorderThickness / 2;
+		elseif innerBorderThickness > 0 then
+			borderExtent = innerBorderThickness / 2;
+		end
+		-- Add border extent to width/height to prevent right/bottom clipping
+		imgui.Dummy({width + borderExtent, height + borderExtent});
 	end
 end
 

@@ -60,6 +60,7 @@ local partyList = uiMods.partylist;
 local castBar = uiMods.castbar;
 local petBar = uiMods.petbar;
 local castCost = uiMods.castcost;
+local notifications = uiMods.notifications;
 local configMenu = require('config');
 local debuffHandler = require('handlers.debuffhandler');
 local actionTracker = require('handlers.actiontracker');
@@ -216,6 +217,13 @@ uiModules.Register('petBar', {
     settingsKey = 'petBarSettings',
     configKey = 'showPetBar',
     hideOnEventKey = 'petBarHideDuringEvents',
+    hasSetHidden = true,
+});
+uiModules.Register('notifications', {
+    module = notifications,
+    settingsKey = 'notificationsSettings',
+    configKey = 'showNotifications',
+    hideOnEventKey = 'notificationsHideDuringEvents',
     hasSetHidden = true,
 });
 
@@ -419,6 +427,19 @@ ashita.events.register('command', 'command_cb', function (e)
             CheckVisibility();
             return;
         end
+
+        -- Test notification command: /xiui testnotif [type]
+        if (command_args[2] == 'testnotif') then
+            local testType = tonumber(command_args[3]) or 5;  -- default to ITEM_OBTAINED
+            notifications.TestNotification(testType, {
+                itemId = 4096,  -- Hi-Potion
+                itemName = 'Hi-Potion',
+                quantity = 1,
+                playerName = 'TestPlayer',
+                amount = 5000,
+            });
+            return;
+        end
     end
 end);
 
@@ -446,6 +467,9 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         local mobUpdatePacket = ParseMobUpdatePacket(e);
         if gConfig.showEnemyList then enemyList.HandleMobUpdatePacket(mobUpdatePacket); end
     elseif (e.id == 0x00A) then
+        -- Note: We do NOT clear treasure pool on zone - items persist across zones
+        -- The server will send 0x00D2 packets to sync pool state after zoning
+        notifications.HandleZonePacket();
         enemyList.HandleZonePacket(e);
         partyList.HandleZonePacket(e);
         debuffHandler.HandleZonePacket(e);
@@ -456,12 +480,61 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         bLoggedIn = true;
     elseif (e.id == 0x0029) then
         local messagePacket = ParseMessagePacket(e.data);
-        if messagePacket then debuffHandler.HandleMessagePacket(messagePacket); end
+        if messagePacket then
+            debuffHandler.HandleMessagePacket(messagePacket);
+            if gConfig.showNotifications then
+                notifications.HandleMessagePacket(e, messagePacket);
+            end
+        end
     elseif (e.id == 0x00B) then
+        notifications.HandleZonePacket();
         bLoggedIn = false;
     elseif (e.id == 0x076) then
         statusHandler.ReadPartyBuffsFromPacket(e);
     elseif (e.id == 0x0DD) then
         MarkPartyCacheDirty();
+    elseif (e.id == 0x00DC) then
+        -- Party invite packet
+        if gConfig.showNotifications and gConfig.notificationsShowPartyInvite then
+            notifications.HandlePartyInvite(e);
+        end
+    elseif (e.id == 0x0021) then
+        -- Trade request packet
+        if gConfig.showNotifications and gConfig.notificationsShowTradeInvite then
+            notifications.HandleTradeRequest(e);
+        end
+    elseif (e.id == 0x0022) then
+        -- Trade response packet (cancel, complete, error, etc.)
+        if gConfig.showNotifications then
+            notifications.HandleTradeResponse(e);
+        end
+    elseif (e.id == 0x0020) then
+        -- Inventory item update packet (item added to inventory)
+        if gConfig.showNotifications and gConfig.notificationsShowItems then
+            notifications.HandleInventoryUpdate(e);
+        end
+    elseif (e.id == 0x00D2) then
+        -- Treasure pool update packet (item dropped to pool)
+        if gConfig.showNotifications and gConfig.notificationsShowTreasure then
+            notifications.HandleTreasurePool(e);
+        end
+    elseif (e.id == 0x00D3) then
+        -- Treasure lot/drop packet (party member lotted or item awarded)
+        if gConfig.showNotifications and gConfig.notificationsShowTreasure then
+            notifications.HandleTreasureLot(e);
+        end
+    end
+end);
+
+-- ============================================
+-- Outgoing Packet Handler
+-- ============================================
+
+ashita.events.register('packet_out', 'packet_out_cb', function (e)
+    if (e.id == 0x0074) then
+        -- Party invite response (accept/decline)
+        if gConfig.showNotifications then
+            notifications.HandlePartyInviteResponse(e);
+        end
     end
 end);

@@ -163,14 +163,16 @@ end
 -- ========================================
 
 function M.ParseMessagePacket(e)
+    -- Use unsigned integers per FFXI packet structure
+    -- 'I4' = unsigned 4-byte int, 'H' = unsigned 2-byte short
     local basic = {
-        sender     = struct.unpack('i4', e, 0x04 + 1),
-        target     = struct.unpack('i4', e, 0x08 + 1),
-        param      = struct.unpack('i4', e, 0x0C + 1),
-        value      = struct.unpack('i4', e, 0x10 + 1),
-        sender_tgt = struct.unpack('i2', e, 0x14 + 1),
-        target_tgt = struct.unpack('i2', e, 0x16 + 1),
-        message    = struct.unpack('i2', e, 0x18 + 1),
+        sender     = struct.unpack('I4', e, 0x04 + 1),
+        target     = struct.unpack('I4', e, 0x08 + 1),
+        param      = struct.unpack('I4', e, 0x0C + 1),
+        value      = struct.unpack('I4', e, 0x10 + 1),
+        sender_tgt = struct.unpack('H', e, 0x14 + 1),
+        target_tgt = struct.unpack('H', e, 0x16 + 1),
+        message    = struct.unpack('H', e, 0x18 + 1),
     }
     return basic;
 end

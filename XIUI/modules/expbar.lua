@@ -3,6 +3,7 @@ require('handlers.helpers');
 local imgui = require('imgui');
 local gdi = require('submodules.gdifonts.include');
 local progressbar = require('libs.progressbar');
+local drawing = require('libs.drawing');
 
 local jobText;
 local expText;
@@ -176,20 +177,19 @@ expbar.DrawWindow = function(settings)
     if (imgui.Begin('ExpBar', true, windowFlags)) then
 
 		-- Draw the progress bar
+        local progressBarWidth = settings.barWidth;
+
+		-- Get window origin for text positioning
 		local startX, startY = imgui.GetCursorScreenPos();
 
-        local progressBarWidth = settings.barWidth;
-        local barStartX = startX; -- Default to window start
-        if inlineMode then
-            -- Position the bar after the text in inline mode
-            barStartX = startX + actualTextWidth;
-        end
+		-- In inline mode, add invisible spacing for text area first
+		if inlineMode then
+			imgui.Dummy({actualTextWidth, settings.barHeight});
+			imgui.SameLine(0, 0);
+		end
 
-		-- Pre-size the window with Dummy BEFORE drawing to prevent clipping
-		-- Total width includes text area (in inline mode) plus bar width
-		local totalWidth = inlineMode and (actualTextWidth + progressBarWidth) or progressBarWidth;
-		imgui.Dummy({totalWidth, settings.barHeight});
-		imgui.SetCursorScreenPos({barStartX, startY});
+		-- Get bar position (offset by text area in inline mode)
+		local barStartX, barStartY = imgui.GetCursorScreenPos();
 
 		local expGradient;
 		if meritMode then
@@ -197,10 +197,9 @@ expbar.DrawWindow = function(settings)
 		else
 			expGradient = GetCustomGradient(gConfig.colorCustomization.expBar, 'expBarGradient') or {'#c39040', '#e9c466'};
 		end
-		-- Use foreground draw list to avoid window clipping, absolutePosition to skip internal Dummy
-		progressbar.ProgressBar({{progressBarProgress, expGradient}}, {progressBarWidth, settings.barHeight}, {decorate = gConfig.showExpBarBookends, absolutePosition = {barStartX, startY}, drawList = imgui.GetForegroundDrawList()});
-
-		imgui.SameLine();
+		-- Let progressbar handle its own Dummy for sizing (includes border extent)
+		-- Use GetUIDrawList: foreground when config closed (no clipping), window when config open (respects layering)
+		progressbar.ProgressBar({{progressBarProgress, expGradient}}, {progressBarWidth, settings.barHeight}, {decorate = gConfig.showExpBarBookends, drawList = drawing.GetUIDrawList()});
 
         -- Calculate text padding
         local bookendWidth = gConfig.showExpBarBookends and (settings.barHeight / 2) or 0;

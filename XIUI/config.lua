@@ -21,6 +21,7 @@ local inventoryModule = require('config.inventory');
 local castbarModule = require('config.castbar');
 local castcostModule = require('config.castcost');
 local petbarModule = require('config.petbar');
+local notificationsModule = require('config.notifications');
 
 local config = {};
 
@@ -112,6 +113,7 @@ local categories = {
     { name = 'castBar', label = 'Cast Bar' },
     { name = 'castCost', label = 'Cast Cost' },
     { name = 'petBar', label = 'Pet Bar' },
+    { name = 'notifications', label = 'Notifications' },
 };
 
 -- Build state object for modules that need tab state
@@ -201,6 +203,10 @@ local function DrawPetBarSettings()
     applySettingsState(newState);
 end
 
+local function DrawNotificationsSettings()
+    notificationsModule.DrawSettings();
+end
+
 -- Color settings draw functions with state handling
 local function DrawGlobalColorSettings()
     globalModule.DrawColorSettings();
@@ -250,6 +256,10 @@ local function DrawPetBarColorSettings()
     applyColorState(newState);
 end
 
+local function DrawNotificationsColorSettings()
+    notificationsModule.DrawColorSettings();
+end
+
 -- Dispatch tables for settings and color settings
 local settingsDrawFunctions = {
     DrawGlobalSettings,
@@ -263,6 +273,7 @@ local settingsDrawFunctions = {
     DrawCastBarSettings,
     DrawCastCostSettings,
     DrawPetBarSettings,
+    DrawNotificationsSettings,
 };
 
 local colorSettingsDrawFunctions = {
@@ -277,6 +288,7 @@ local colorSettingsDrawFunctions = {
     DrawCastBarColorSettings,
     DrawCastCostColorSettings,
     DrawPetBarColorSettings,
+    DrawNotificationsColorSettings,
 };
 
 config.DrawWindow = function(us)

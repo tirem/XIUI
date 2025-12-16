@@ -105,6 +105,14 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
     applyGlobalFontSettings(gAdjustedSettings.petBarSettings.vitals_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
     applyGlobalFontSettings(gAdjustedSettings.petBarSettings.timer_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
 
+    -- Notifications fonts (title uses Bold + global weight, subtitle uses no weight flags)
+    applyGlobalFontSettings(gAdjustedSettings.notificationsSettings.title_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
+    gAdjustedSettings.notificationsSettings.title_font_settings.font_flags = bit.bor(fontWeightFlags, gdi.FontFlags.Bold);
+    -- Subtitle: only apply font family and outline, NOT weight flags (keep it normal/light)
+    gAdjustedSettings.notificationsSettings.font_settings.font_family = us.fontFamily;
+    gAdjustedSettings.notificationsSettings.font_settings.font_flags = gdi.FontFlags.None;
+    gAdjustedSettings.notificationsSettings.font_settings.outline_width = us.fontOutlineWidth;
+
     -- Target Bar dimensions and settings
     gAdjustedSettings.targetBarSettings.barWidth = ds.targetBarSettings.barWidth * us.targetBarScaleX;
     gAdjustedSettings.targetBarSettings.barHeight = ds.targetBarSettings.barHeight * us.targetBarScaleY;
