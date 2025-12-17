@@ -471,6 +471,12 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
+        -- Pass all unlotted items: /xiui passall or /xiui pass
+        if (#command_args == 2 and command_args[2]:any('passall', 'pass')) then
+            rollsWindow.PassAllUnlotted();
+            return;
+        end
+
         -- Test rolls window with mock data: /xiui testrolls
         if (#command_args == 2 and command_args[2] == 'testrolls') then
             local notifData = require('modules.notifications.data');

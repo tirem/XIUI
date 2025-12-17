@@ -9,6 +9,7 @@ require('handlers.helpers');
 local imgui = require('imgui');
 local ffi = require('ffi');
 local gdi = require('submodules.gdifonts.include');
+local primitives = require('primitives');
 local windowBg = require('libs.windowbackground');
 local notificationData = require('modules.notifications.data');
 local textures = require('libs.textures');
@@ -23,6 +24,9 @@ local M = {};
 -- Window visibility (toggled by /xiui rolls command)
 M.isVisible = false;
 
+-- Collapsed state (minimized to title bar only)
+M.isCollapsed = false;
+
 -- Constants
 local MAX_POOL_ITEMS = 10;
 local MAX_HISTORY_ITEMS = 10;
@@ -34,23 +38,35 @@ local NUM_PARTIES = 3;
 local fonts = {
     title = nil,            -- "Treasure Pool" title
     header = nil,           -- "Recent History" header
+    passButton = nil,       -- "Pass All" button text
+    lotButton = nil,        -- "Lot All" button text
     itemNames = {},         -- Item name fonts (indexed by display slot)
     timers = {},            -- Timer fonts
     partyHeaders = {},      -- "Party A", "Party B", "Party C" headers
     lotters = {},           -- Lotter name/value fonts (3D: [itemSlot][partyIdx][memberIdx])
     historyItems = {},      -- History item name fonts
     historyWinners = {},    -- History winner fonts
+    itemLotButtons = {},    -- Individual item "Lot" button fonts
+    itemPassButtons = {},   -- Individual item "Pass" button fonts
 };
 local allFonts = {};
 
 -- Background primitives
 local bgPrims = {
     main = nil,             -- Main window background
+    passButton = nil,       -- Pass All button background
+    lotButton = nil,        -- Lot All button background
+    itemLotButtons = {},    -- Individual item Lot button backgrounds
+    itemPassButtons = {},   -- Individual item Pass button backgrounds
 };
 
 -- Cached colors
 local lastTitleColor = nil;
 local lastHeaderColor = nil;
+local lastPassButtonColor = nil;
+local lastLotButtonColor = nil;
+local lastItemLotButtonColors = {};
+local lastItemPassButtonColors = {};
 local lastItemNameColors = {};
 local lastTimerColors = {};
 local lastPartyHeaderColors = {};
@@ -206,6 +222,30 @@ function M.Initialize(settings)
     });
     table.insert(allFonts, fonts.header);
 
+    -- Pass button font
+    fonts.passButton = FontManager.create({
+        font_alignment = gdi.Alignment.Left,
+        font_family = fontSettings.font_family or 'Consolas',
+        font_height = 10,
+        font_color = 0xFFAAAAAA,
+        font_flags = fontSettings.font_flags or gdi.FontFlags.None,
+        outline_color = 0xFF000000,
+        outline_width = 2,
+    });
+    table.insert(allFonts, fonts.passButton);
+
+    -- Lot button font
+    fonts.lotButton = FontManager.create({
+        font_alignment = gdi.Alignment.Left,
+        font_family = fontSettings.font_family or 'Consolas',
+        font_height = 10,
+        font_color = 0xFF66CC66,
+        font_flags = fontSettings.font_flags or gdi.FontFlags.None,
+        outline_color = 0xFF000000,
+        outline_width = 2,
+    });
+    table.insert(allFonts, fonts.lotButton);
+
     -- Party header fonts
     for p = 1, NUM_PARTIES do
         fonts.partyHeaders[p] = FontManager.create({
@@ -263,6 +303,30 @@ function M.Initialize(settings)
                 table.insert(allFonts, fonts.lotters[i][p][m]);
             end
         end
+
+        -- Individual item Lot button font
+        fonts.itemLotButtons[i] = FontManager.create({
+            font_alignment = gdi.Alignment.Left,
+            font_family = fontSettings.font_family or 'Consolas',
+            font_height = 9,
+            font_color = 0xFF66CC66,
+            font_flags = gdi.FontFlags.None,
+            outline_color = 0xFF000000,
+            outline_width = 2,
+        });
+        table.insert(allFonts, fonts.itemLotButtons[i]);
+
+        -- Individual item Pass button font
+        fonts.itemPassButtons[i] = FontManager.create({
+            font_alignment = gdi.Alignment.Left,
+            font_family = fontSettings.font_family or 'Consolas',
+            font_height = 9,
+            font_color = 0xFFCC6666,
+            font_flags = gdi.FontFlags.None,
+            outline_color = 0xFF000000,
+            outline_width = 2,
+        });
+        table.insert(allFonts, fonts.itemPassButtons[i]);
     end
 
     -- Create fonts for history items
@@ -297,6 +361,39 @@ function M.Initialize(settings)
         locked = true,
     };
     bgPrims.main = windowBg.create(primData, 'Plain', 1.0);
+
+    -- Create pass button background primitive
+    local btnPrim = primitives:new(primData);
+    btnPrim.visible = false;
+    btnPrim.can_focus = false;
+    btnPrim.texture = string.format('%s/assets/backgrounds/Plain-bg.png', addon.path);
+    btnPrim.color = 0xFF333333;
+    bgPrims.passButton = btnPrim;
+
+    -- Create lot button background primitive
+    local lotBtnPrim = primitives:new(primData);
+    lotBtnPrim.visible = false;
+    lotBtnPrim.can_focus = false;
+    lotBtnPrim.texture = string.format('%s/assets/backgrounds/Plain-bg.png', addon.path);
+    lotBtnPrim.color = 0xFF333333;
+    bgPrims.lotButton = lotBtnPrim;
+
+    -- Create individual item button primitives
+    for i = 1, MAX_POOL_ITEMS do
+        local itemLotPrim = primitives:new(primData);
+        itemLotPrim.visible = false;
+        itemLotPrim.can_focus = false;
+        itemLotPrim.texture = string.format('%s/assets/backgrounds/Plain-bg.png', addon.path);
+        itemLotPrim.color = 0xFF333333;
+        bgPrims.itemLotButtons[i] = itemLotPrim;
+
+        local itemPassPrim = primitives:new(primData);
+        itemPassPrim.visible = false;
+        itemPassPrim.can_focus = false;
+        itemPassPrim.texture = string.format('%s/assets/backgrounds/Plain-bg.png', addon.path);
+        itemPassPrim.color = 0xFF333333;
+        bgPrims.itemPassButtons[i] = itemPassPrim;
+    end
 end
 
 function M.UpdateVisuals(settings)
@@ -324,6 +421,32 @@ function M.UpdateVisuals(settings)
             font_height = 14,
             font_color = 0xFFFFFFFF,
             font_flags = gdi.FontFlags.Bold,
+            outline_color = 0xFF000000,
+            outline_width = 2,
+        });
+    end
+
+    -- Recreate pass button font
+    if fonts.passButton then
+        fonts.passButton = FontManager.recreate(fonts.passButton, {
+            font_alignment = gdi.Alignment.Left,
+            font_family = fontSettings.font_family or 'Consolas',
+            font_height = 10,
+            font_color = 0xFFAAAAAA,
+            font_flags = fontSettings.font_flags or gdi.FontFlags.None,
+            outline_color = 0xFF000000,
+            outline_width = 2,
+        });
+    end
+
+    -- Recreate lot button font
+    if fonts.lotButton then
+        fonts.lotButton = FontManager.recreate(fonts.lotButton, {
+            font_alignment = gdi.Alignment.Left,
+            font_family = fontSettings.font_family or 'Consolas',
+            font_height = 10,
+            font_color = 0xFF66CC66,
+            font_flags = fontSettings.font_flags or gdi.FontFlags.None,
             outline_color = 0xFF000000,
             outline_width = 2,
         });
@@ -389,6 +512,30 @@ function M.UpdateVisuals(settings)
                 end
             end
         end
+
+        if fonts.itemLotButtons[i] then
+            fonts.itemLotButtons[i] = FontManager.recreate(fonts.itemLotButtons[i], {
+                font_alignment = gdi.Alignment.Left,
+                font_family = fontSettings.font_family or 'Consolas',
+                font_height = 9,
+                font_color = 0xFF66CC66,
+                font_flags = gdi.FontFlags.None,
+                outline_color = 0xFF000000,
+                outline_width = 2,
+            });
+        end
+
+        if fonts.itemPassButtons[i] then
+            fonts.itemPassButtons[i] = FontManager.recreate(fonts.itemPassButtons[i], {
+                font_alignment = gdi.Alignment.Left,
+                font_family = fontSettings.font_family or 'Consolas',
+                font_height = 9,
+                font_color = 0xFFCC6666,
+                font_flags = gdi.FontFlags.None,
+                outline_color = 0xFF000000,
+                outline_width = 2,
+            });
+        end
     end
 
     -- Recreate history fonts
@@ -422,6 +569,8 @@ function M.UpdateVisuals(settings)
     allFonts = {};
     if fonts.title then table.insert(allFonts, fonts.title); end
     if fonts.header then table.insert(allFonts, fonts.header); end
+    if fonts.passButton then table.insert(allFonts, fonts.passButton); end
+    if fonts.lotButton then table.insert(allFonts, fonts.lotButton); end
     for p = 1, NUM_PARTIES do
         if fonts.partyHeaders[p] then table.insert(allFonts, fonts.partyHeaders[p]); end
     end
@@ -437,6 +586,8 @@ function M.UpdateVisuals(settings)
                 end
             end
         end
+        if fonts.itemLotButtons[i] then table.insert(allFonts, fonts.itemLotButtons[i]); end
+        if fonts.itemPassButtons[i] then table.insert(allFonts, fonts.itemPassButtons[i]); end
     end
     for i = 1, MAX_HISTORY_ITEMS do
         if fonts.historyItems[i] then table.insert(allFonts, fonts.historyItems[i]); end
@@ -446,6 +597,10 @@ function M.UpdateVisuals(settings)
     -- Clear cached colors
     lastTitleColor = nil;
     lastHeaderColor = nil;
+    lastPassButtonColor = nil;
+    lastLotButtonColor = nil;
+    lastItemLotButtonColors = {};
+    lastItemPassButtonColors = {};
     lastItemNameColors = {};
     lastTimerColors = {};
     lastPartyHeaderColors = {};
@@ -461,6 +616,22 @@ function M.DrawWindow(settings)
     -- Hide background
     if bgPrims.main then
         windowBg.hide(bgPrims.main);
+    end
+
+    -- Hide button primitives
+    if bgPrims.passButton then
+        bgPrims.passButton.visible = false;
+    end
+    if bgPrims.lotButton then
+        bgPrims.lotButton.visible = false;
+    end
+    for i = 1, MAX_POOL_ITEMS do
+        if bgPrims.itemLotButtons[i] then
+            bgPrims.itemLotButtons[i].visible = false;
+        end
+        if bgPrims.itemPassButtons[i] then
+            bgPrims.itemPassButtons[i].visible = false;
+        end
     end
 
     -- Early exit if not visible or player not valid
@@ -493,6 +664,7 @@ function M.DrawWindow(settings)
     local headerHeight = 16;
     local itemNameHeight = 16;
     local historyLineHeight = 16;
+    local collapsedBarHeight = padding + titleHeight + 4;  -- Match title row with small bottom padding
 
     -- Calculate window width (3 columns + gaps + padding)
     local contentWidth = (columnWidth * 3) + (columnGap * 2);
@@ -529,6 +701,9 @@ function M.DrawWindow(settings)
 
     local totalContentHeight = poolSectionHeight + historySectionHeight;
 
+    -- When collapsed, use minimal height
+    local displayHeight = M.isCollapsed and collapsedBarHeight or (totalContentHeight + (padding * 2));
+
     -- Create ImGui window
     local windowFlags = getWindowFlags();
 
@@ -538,12 +713,12 @@ function M.DrawWindow(settings)
             local drawList = imgui.GetWindowDrawList();
 
             -- Create dummy for draggable area
-            imgui.Dummy({windowWidth, totalContentHeight + (padding * 2)});
+            imgui.Dummy({windowWidth, displayHeight});
 
             -- Update background with correct dimensions
             if bgPrims.main then
                 windowBg.update(bgPrims.main, windowPosX, windowPosY,
-                    windowWidth, totalContentHeight + (padding * 2), {
+                    windowWidth, displayHeight, {
                     theme = 'Plain',
                     padding = 0,
                     bgOpacity = 0.92,
@@ -552,20 +727,75 @@ function M.DrawWindow(settings)
             end
 
             local contentX = windowPosX + padding;
-            local contentY = windowPosY + padding;
+            local contentY = windowPosY + padding - 4;
             local currentY = contentY;
+
+            -- Check if mouse is hovering (for button interactions)
+            local mouseX, mouseY = imgui.GetMousePos();
 
             -- Draw close button (X) in top right
             local closeBtnSize = 16;
             local closeBtnX = windowPosX + windowWidth - padding - closeBtnSize + 4;
             local closeBtnY = windowPosY + 6;
 
-            -- Draw X
+            -- Draw collapse button (left of X)
+            local collapseBtnSize = 16;
+            local collapseBtnX = closeBtnX - collapseBtnSize - 4;
+            local collapseBtnY = closeBtnY;
+
+            -- Collapse button colors
+            local collapseColor = 0xFF888888;
+            local collapseHoverColor = 0xFFFFFFFF;
+
+            -- Check if mouse is hovering over collapse button
+            local isCollapseHovering = mouseX >= collapseBtnX and mouseX <= collapseBtnX + collapseBtnSize
+                                   and mouseY >= collapseBtnY and mouseY <= collapseBtnY + collapseBtnSize;
+
+            if isCollapseHovering then
+                collapseColor = collapseHoverColor;
+                if imgui.IsMouseClicked(0) then
+                    M.isCollapsed = not M.isCollapsed;
+                end
+            end
+
+            -- Draw collapse button (down arrow when expanded, up arrow when collapsed)
+            if drawList then
+                local arrowCenterX = collapseBtnX + collapseBtnSize / 2;
+                local arrowCenterY = collapseBtnY + collapseBtnSize / 2;
+                local arrowWidth = 4;
+                local arrowHeight = 3;
+
+                if M.isCollapsed then
+                    -- Draw up arrow (chevron pointing up)
+                    drawList:AddLine(
+                        {arrowCenterX - arrowWidth, arrowCenterY + arrowHeight},
+                        {arrowCenterX, arrowCenterY - arrowHeight},
+                        collapseColor, 2
+                    );
+                    drawList:AddLine(
+                        {arrowCenterX, arrowCenterY - arrowHeight},
+                        {arrowCenterX + arrowWidth, arrowCenterY + arrowHeight},
+                        collapseColor, 2
+                    );
+                else
+                    -- Draw down arrow (chevron pointing down)
+                    drawList:AddLine(
+                        {arrowCenterX - arrowWidth, arrowCenterY - arrowHeight},
+                        {arrowCenterX, arrowCenterY + arrowHeight},
+                        collapseColor, 2
+                    );
+                    drawList:AddLine(
+                        {arrowCenterX, arrowCenterY + arrowHeight},
+                        {arrowCenterX + arrowWidth, arrowCenterY - arrowHeight},
+                        collapseColor, 2
+                    );
+                end
+            end
+
+            -- Draw X (close button)
             local xColor = 0xFF888888;
             local xHoverColor = 0xFFFFFFFF;
 
-            -- Check if mouse is hovering over close button area
-            local mouseX, mouseY = imgui.GetMousePos();
             local isHovering = mouseX >= closeBtnX and mouseX <= closeBtnX + closeBtnSize
                            and mouseY >= closeBtnY and mouseY <= closeBtnY + closeBtnSize;
 
@@ -584,21 +814,257 @@ function M.DrawWindow(settings)
             end
 
             -- ========================================
-            -- Draw Treasure Pool Section
+            -- Collapsed State - Show only title bar
             -- ========================================
-            if poolCount > 0 then
-                -- Title: "Treasure Pool"
+            if M.isCollapsed then
+                -- Draw "Treasure Pool" title with item count
+                -- Use same positioning as expanded state (contentY = windowPosY + padding)
+                local titleTextWidth = 0;
                 if fonts.title then
+                    local collapsedTitle = string.format('Treasure Pool (%d)', poolCount);
                     fonts.title:set_font_height(14);
                     fonts.title:set_position_x(contentX);
-                    fonts.title:set_position_y(currentY);
-                    fonts.title:set_text('Treasure Pool');
+                    fonts.title:set_position_y(contentY);
+                    fonts.title:set_text(collapsedTitle);
+                    titleTextWidth = fonts.title:get_text_size();
                     if lastTitleColor ~= 0xFFFFFFFF then
                         fonts.title:set_font_color(0xFFFFFFFF);
                         lastTitleColor = 0xFFFFFFFF;
                     end
                     fonts.title:set_visible(true);
                 end
+
+                -- Draw "Lot All" and "Pass All" buttons next to title (only if there are items)
+                if poolCount > 0 then
+                    local btnPadX = 6;
+                    local btnPadY = 2;
+                    local btnGap = 6;
+
+                    -- Lot All button
+                    local lotBtnTextWidth = 0;
+                    local lotBtnTextHeight = 10;
+                    if fonts.lotButton then
+                        fonts.lotButton:set_font_height(10);
+                        fonts.lotButton:set_text('Lot All');
+                        lotBtnTextWidth, lotBtnTextHeight = fonts.lotButton:get_text_size();
+                    end
+
+                    local lotBtnWidth = lotBtnTextWidth + (btnPadX * 2);
+                    local lotBtnHeight = lotBtnTextHeight + (btnPadY * 2);
+                    local lotBtnX = contentX + titleTextWidth + 10;
+                    local lotBtnY = contentY + (titleHeight - lotBtnHeight) / 2;
+
+                    local lotBtnBgColor = 0xFF333333;
+                    local lotBtnTextColor = 0xFF66CC66;
+                    local lotBtnHoverBgColor = 0xFF224422;
+                    local lotBtnHoverTextColor = 0xFF66FF66;
+
+                    local isLotHovering = mouseX >= lotBtnX and mouseX <= lotBtnX + lotBtnWidth
+                                      and mouseY >= lotBtnY and mouseY <= lotBtnY + lotBtnHeight;
+
+                    if isLotHovering then
+                        lotBtnBgColor = lotBtnHoverBgColor;
+                        lotBtnTextColor = lotBtnHoverTextColor;
+                        if imgui.IsMouseClicked(0) then
+                            M.LotAllUnlotted();
+                        end
+                    end
+
+                    if bgPrims.lotButton then
+                        bgPrims.lotButton.position_x = lotBtnX;
+                        bgPrims.lotButton.position_y = lotBtnY;
+                        bgPrims.lotButton.width = lotBtnWidth;
+                        bgPrims.lotButton.height = lotBtnHeight;
+                        bgPrims.lotButton.color = lotBtnBgColor;
+                        bgPrims.lotButton.visible = true;
+                    end
+
+                    if fonts.lotButton then
+                        fonts.lotButton:set_position_x(lotBtnX + btnPadX);
+                        fonts.lotButton:set_position_y(lotBtnY + btnPadY);
+                        if lastLotButtonColor ~= lotBtnTextColor then
+                            fonts.lotButton:set_font_color(lotBtnTextColor);
+                            lastLotButtonColor = lotBtnTextColor;
+                        end
+                        fonts.lotButton:set_visible(true);
+                    end
+
+                    -- Pass All button
+                    local passBtnTextWidth = 0;
+                    local passBtnTextHeight = 10;
+                    if fonts.passButton then
+                        fonts.passButton:set_font_height(10);
+                        fonts.passButton:set_text('Pass All');
+                        passBtnTextWidth, passBtnTextHeight = fonts.passButton:get_text_size();
+                    end
+
+                    local passBtnWidth = passBtnTextWidth + (btnPadX * 2);
+                    local passBtnHeight = passBtnTextHeight + (btnPadY * 2);
+                    local passBtnX = lotBtnX + lotBtnWidth + btnGap;
+                    local passBtnY = contentY + (titleHeight - passBtnHeight) / 2;
+
+                    local passBtnBgColor = 0xFF333333;
+                    local passBtnTextColor = 0xFFCC6666;
+                    local passBtnHoverBgColor = 0xFF442222;
+                    local passBtnHoverTextColor = 0xFFFF6666;
+
+                    local isPassHovering = mouseX >= passBtnX and mouseX <= passBtnX + passBtnWidth
+                                       and mouseY >= passBtnY and mouseY <= passBtnY + passBtnHeight;
+
+                    if isPassHovering then
+                        passBtnBgColor = passBtnHoverBgColor;
+                        passBtnTextColor = passBtnHoverTextColor;
+                        if imgui.IsMouseClicked(0) then
+                            M.PassAllUnlotted();
+                        end
+                    end
+
+                    if bgPrims.passButton then
+                        bgPrims.passButton.position_x = passBtnX;
+                        bgPrims.passButton.position_y = passBtnY;
+                        bgPrims.passButton.width = passBtnWidth;
+                        bgPrims.passButton.height = passBtnHeight;
+                        bgPrims.passButton.color = passBtnBgColor;
+                        bgPrims.passButton.visible = true;
+                    end
+
+                    if fonts.passButton then
+                        fonts.passButton:set_position_x(passBtnX + btnPadX);
+                        fonts.passButton:set_position_y(passBtnY + btnPadY);
+                        if lastPassButtonColor ~= passBtnTextColor then
+                            fonts.passButton:set_font_color(passBtnTextColor);
+                            lastPassButtonColor = passBtnTextColor;
+                        end
+                        fonts.passButton:set_visible(true);
+                    end
+                end
+
+                -- Skip rest of rendering when collapsed
+                return;
+            end
+
+            -- ========================================
+            -- Draw Treasure Pool Section
+            -- ========================================
+            if poolCount > 0 then
+                -- Title: "Treasure Pool"
+                local titleTextWidth = 0;
+                if fonts.title then
+                    fonts.title:set_font_height(14);
+                    fonts.title:set_position_x(contentX);
+                    fonts.title:set_position_y(currentY);
+                    fonts.title:set_text('Treasure Pool');
+                    titleTextWidth = fonts.title:get_text_size();
+                    if lastTitleColor ~= 0xFFFFFFFF then
+                        fonts.title:set_font_color(0xFFFFFFFF);
+                        lastTitleColor = 0xFFFFFFFF;
+                    end
+                    fonts.title:set_visible(true);
+                end
+
+                -- Draw "Lot All" and "Pass All" buttons next to title
+                local btnPadX = 6;
+                local btnPadY = 2;
+                local btnGap = 6;
+
+                -- Lot All button
+                local lotBtnTextWidth = 0;
+                local lotBtnTextHeight = 10;
+                if fonts.lotButton then
+                    fonts.lotButton:set_font_height(10);
+                    fonts.lotButton:set_text('Lot All');
+                    lotBtnTextWidth, lotBtnTextHeight = fonts.lotButton:get_text_size();
+                end
+
+                local lotBtnWidth = lotBtnTextWidth + (btnPadX * 2);
+                local lotBtnHeight = lotBtnTextHeight + (btnPadY * 2);
+                local lotBtnX = contentX + titleTextWidth + 10;
+                local lotBtnY = currentY + (titleHeight - lotBtnHeight) / 2;
+
+                local lotBtnBgColor = 0xFF333333;
+                local lotBtnTextColor = 0xFF66CC66;
+                local lotBtnHoverBgColor = 0xFF224422;
+                local lotBtnHoverTextColor = 0xFF66FF66;
+
+                local isLotHovering = mouseX >= lotBtnX and mouseX <= lotBtnX + lotBtnWidth
+                                  and mouseY >= lotBtnY and mouseY <= lotBtnY + lotBtnHeight;
+
+                if isLotHovering then
+                    lotBtnBgColor = lotBtnHoverBgColor;
+                    lotBtnTextColor = lotBtnHoverTextColor;
+                    if imgui.IsMouseClicked(0) then
+                        M.LotAllUnlotted();
+                    end
+                end
+
+                if bgPrims.lotButton then
+                    bgPrims.lotButton.position_x = lotBtnX;
+                    bgPrims.lotButton.position_y = lotBtnY;
+                    bgPrims.lotButton.width = lotBtnWidth;
+                    bgPrims.lotButton.height = lotBtnHeight;
+                    bgPrims.lotButton.color = lotBtnBgColor;
+                    bgPrims.lotButton.visible = true;
+                end
+
+                if fonts.lotButton then
+                    fonts.lotButton:set_position_x(lotBtnX + btnPadX);
+                    fonts.lotButton:set_position_y(lotBtnY + btnPadY);
+                    if lastLotButtonColor ~= lotBtnTextColor then
+                        fonts.lotButton:set_font_color(lotBtnTextColor);
+                        lastLotButtonColor = lotBtnTextColor;
+                    end
+                    fonts.lotButton:set_visible(true);
+                end
+
+                -- Pass All button
+                local passBtnTextWidth = 0;
+                local passBtnTextHeight = 10;
+                if fonts.passButton then
+                    fonts.passButton:set_font_height(10);
+                    fonts.passButton:set_text('Pass All');
+                    passBtnTextWidth, passBtnTextHeight = fonts.passButton:get_text_size();
+                end
+
+                local passBtnWidth = passBtnTextWidth + (btnPadX * 2);
+                local passBtnHeight = passBtnTextHeight + (btnPadY * 2);
+                local passBtnX = lotBtnX + lotBtnWidth + btnGap;
+                local passBtnY = currentY + (titleHeight - passBtnHeight) / 2;
+
+                local passBtnBgColor = 0xFF333333;
+                local passBtnTextColor = 0xFFCC6666;
+                local passBtnHoverBgColor = 0xFF442222;
+                local passBtnHoverTextColor = 0xFFFF6666;
+
+                local isPassHovering = mouseX >= passBtnX and mouseX <= passBtnX + passBtnWidth
+                                   and mouseY >= passBtnY and mouseY <= passBtnY + passBtnHeight;
+
+                if isPassHovering then
+                    passBtnBgColor = passBtnHoverBgColor;
+                    passBtnTextColor = passBtnHoverTextColor;
+                    if imgui.IsMouseClicked(0) then
+                        M.PassAllUnlotted();
+                    end
+                end
+
+                if bgPrims.passButton then
+                    bgPrims.passButton.position_x = passBtnX;
+                    bgPrims.passButton.position_y = passBtnY;
+                    bgPrims.passButton.width = passBtnWidth;
+                    bgPrims.passButton.height = passBtnHeight;
+                    bgPrims.passButton.color = passBtnBgColor;
+                    bgPrims.passButton.visible = true;
+                end
+
+                if fonts.passButton then
+                    fonts.passButton:set_position_x(passBtnX + btnPadX);
+                    fonts.passButton:set_position_y(passBtnY + btnPadY);
+                    if lastPassButtonColor ~= passBtnTextColor then
+                        fonts.passButton:set_font_color(passBtnTextColor);
+                        lastPassButtonColor = passBtnTextColor;
+                    end
+                    fonts.passButton:set_visible(true);
+                end
+
                 currentY = currentY + titleHeight + itemSpacing;
 
                 -- Draw each pool item
@@ -671,10 +1137,11 @@ function M.DrawWindow(settings)
                     end
 
                     local timerFont = fonts.timers[idx];
+                    local timerWidth = 0;
                     if timerFont then
                         timerFont:set_font_height(10);
                         timerFont:set_text(timerText);
-                        local timerWidth, _ = timerFont:get_text_size();
+                        timerWidth, _ = timerFont:get_text_size();
                         timerFont:set_position_x(itemX + itemContentWidth - timerWidth);
                         timerFont:set_position_y(itemY + 3);
                         if lastTimerColors[idx] ~= timerColor then
@@ -682,6 +1149,104 @@ function M.DrawWindow(settings)
                             lastTimerColors[idx] = timerColor;
                         end
                         timerFont:set_visible(true);
+                    end
+
+                    -- Draw individual Lot and Pass buttons (to left of timer)
+                    local itemBtnPadX = 4;
+                    local itemBtnPadY = 1;
+                    local itemBtnGap = 4;
+                    local itemBtnY = itemY + 2;
+
+                    -- Pass button (rightmost, left of timer)
+                    local itemPassTextWidth = 0;
+                    local itemPassTextHeight = 9;
+                    if fonts.itemPassButtons[idx] then
+                        fonts.itemPassButtons[idx]:set_font_height(9);
+                        fonts.itemPassButtons[idx]:set_text('Pass');
+                        itemPassTextWidth, itemPassTextHeight = fonts.itemPassButtons[idx]:get_text_size();
+                    end
+
+                    local itemPassBtnWidth = itemPassTextWidth + (itemBtnPadX * 2);
+                    local itemPassBtnHeight = itemPassTextHeight + (itemBtnPadY * 2);
+                    local itemPassBtnX = itemX + itemContentWidth - timerWidth - itemBtnGap - itemPassBtnWidth;
+
+                    local itemPassBgColor = 0xFF333333;
+                    local itemPassTextColor = 0xFFCC6666;
+
+                    local isItemPassHovering = mouseX >= itemPassBtnX and mouseX <= itemPassBtnX + itemPassBtnWidth
+                                           and mouseY >= itemBtnY and mouseY <= itemBtnY + itemPassBtnHeight;
+
+                    if isItemPassHovering then
+                        itemPassBgColor = 0xFF442222;
+                        itemPassTextColor = 0xFFFF6666;
+                        if imgui.IsMouseClicked(0) then
+                            M.PassItem(item.slot);
+                        end
+                    end
+
+                    if bgPrims.itemPassButtons[idx] then
+                        bgPrims.itemPassButtons[idx].position_x = itemPassBtnX;
+                        bgPrims.itemPassButtons[idx].position_y = itemBtnY;
+                        bgPrims.itemPassButtons[idx].width = itemPassBtnWidth;
+                        bgPrims.itemPassButtons[idx].height = itemPassBtnHeight;
+                        bgPrims.itemPassButtons[idx].color = itemPassBgColor;
+                        bgPrims.itemPassButtons[idx].visible = true;
+                    end
+
+                    if fonts.itemPassButtons[idx] then
+                        fonts.itemPassButtons[idx]:set_position_x(itemPassBtnX + itemBtnPadX);
+                        fonts.itemPassButtons[idx]:set_position_y(itemBtnY + itemBtnPadY);
+                        if lastItemPassButtonColors[idx] ~= itemPassTextColor then
+                            fonts.itemPassButtons[idx]:set_font_color(itemPassTextColor);
+                            lastItemPassButtonColors[idx] = itemPassTextColor;
+                        end
+                        fonts.itemPassButtons[idx]:set_visible(true);
+                    end
+
+                    -- Lot button (left of Pass button)
+                    local itemLotTextWidth = 0;
+                    local itemLotTextHeight = 9;
+                    if fonts.itemLotButtons[idx] then
+                        fonts.itemLotButtons[idx]:set_font_height(9);
+                        fonts.itemLotButtons[idx]:set_text('Lot');
+                        itemLotTextWidth, itemLotTextHeight = fonts.itemLotButtons[idx]:get_text_size();
+                    end
+
+                    local itemLotBtnWidth = itemLotTextWidth + (itemBtnPadX * 2);
+                    local itemLotBtnHeight = itemLotTextHeight + (itemBtnPadY * 2);
+                    local itemLotBtnX = itemPassBtnX - itemBtnGap - itemLotBtnWidth;
+
+                    local itemLotBgColor = 0xFF333333;
+                    local itemLotTextColor = 0xFF66CC66;
+
+                    local isItemLotHovering = mouseX >= itemLotBtnX and mouseX <= itemLotBtnX + itemLotBtnWidth
+                                          and mouseY >= itemBtnY and mouseY <= itemBtnY + itemLotBtnHeight;
+
+                    if isItemLotHovering then
+                        itemLotBgColor = 0xFF224422;
+                        itemLotTextColor = 0xFF66FF66;
+                        if imgui.IsMouseClicked(0) then
+                            M.LotItem(item.slot);
+                        end
+                    end
+
+                    if bgPrims.itemLotButtons[idx] then
+                        bgPrims.itemLotButtons[idx].position_x = itemLotBtnX;
+                        bgPrims.itemLotButtons[idx].position_y = itemBtnY;
+                        bgPrims.itemLotButtons[idx].width = itemLotBtnWidth;
+                        bgPrims.itemLotButtons[idx].height = itemLotBtnHeight;
+                        bgPrims.itemLotButtons[idx].color = itemLotBgColor;
+                        bgPrims.itemLotButtons[idx].visible = true;
+                    end
+
+                    if fonts.itemLotButtons[idx] then
+                        fonts.itemLotButtons[idx]:set_position_x(itemLotBtnX + itemBtnPadX);
+                        fonts.itemLotButtons[idx]:set_position_y(itemBtnY + itemBtnPadY);
+                        if lastItemLotButtonColors[idx] ~= itemLotTextColor then
+                            fonts.itemLotButtons[idx]:set_font_color(itemLotTextColor);
+                            lastItemLotButtonColors[idx] = itemLotTextColor;
+                        end
+                        fonts.itemLotButtons[idx]:set_visible(true);
                     end
 
                     currentY = currentY + itemNameHeight + itemSpacing;
@@ -843,6 +1408,20 @@ function M.SetHidden(hidden)
         if bgPrims.main then
             windowBg.hide(bgPrims.main);
         end
+        if bgPrims.passButton then
+            bgPrims.passButton.visible = false;
+        end
+        if bgPrims.lotButton then
+            bgPrims.lotButton.visible = false;
+        end
+        for i = 1, MAX_POOL_ITEMS do
+            if bgPrims.itemLotButtons[i] then
+                bgPrims.itemLotButtons[i].visible = false;
+            end
+            if bgPrims.itemPassButtons[i] then
+                bgPrims.itemPassButtons[i].visible = false;
+            end
+        end
     end
 end
 
@@ -853,6 +1432,12 @@ function M.Cleanup()
     end
     if fonts.header then
         fonts.header = FontManager.destroy(fonts.header);
+    end
+    if fonts.passButton then
+        fonts.passButton = FontManager.destroy(fonts.passButton);
+    end
+    if fonts.lotButton then
+        fonts.lotButton = FontManager.destroy(fonts.lotButton);
     end
 
     for p = 1, NUM_PARTIES do
@@ -879,6 +1464,12 @@ function M.Cleanup()
                 end
             end
         end
+        if fonts.itemLotButtons[i] then
+            fonts.itemLotButtons[i] = FontManager.destroy(fonts.itemLotButtons[i]);
+        end
+        if fonts.itemPassButtons[i] then
+            fonts.itemPassButtons[i] = FontManager.destroy(fonts.itemPassButtons[i]);
+        end
     end
 
     for i = 1, MAX_HISTORY_ITEMS do
@@ -894,12 +1485,16 @@ function M.Cleanup()
     fonts = {
         title = nil,
         header = nil,
+        passButton = nil,
+        lotButton = nil,
         itemNames = {},
         timers = {},
         partyHeaders = {},
         lotters = {},
         historyItems = {},
         historyWinners = {},
+        itemLotButtons = {},
+        itemPassButtons = {},
     };
 
     -- Destroy background
@@ -908,12 +1503,38 @@ function M.Cleanup()
         bgPrims.main = nil;
     end
 
+    -- Destroy button primitives
+    if bgPrims.passButton then
+        bgPrims.passButton:destroy();
+        bgPrims.passButton = nil;
+    end
+    if bgPrims.lotButton then
+        bgPrims.lotButton:destroy();
+        bgPrims.lotButton = nil;
+    end
+    for i = 1, MAX_POOL_ITEMS do
+        if bgPrims.itemLotButtons[i] then
+            bgPrims.itemLotButtons[i]:destroy();
+            bgPrims.itemLotButtons[i] = nil;
+        end
+        if bgPrims.itemPassButtons[i] then
+            bgPrims.itemPassButtons[i]:destroy();
+            bgPrims.itemPassButtons[i] = nil;
+        end
+    end
+    bgPrims.itemLotButtons = {};
+    bgPrims.itemPassButtons = {};
+
     -- Clear icon cache
     iconCache = {};
 
     -- Clear cached colors
     lastTitleColor = nil;
     lastHeaderColor = nil;
+    lastPassButtonColor = nil;
+    lastLotButtonColor = nil;
+    lastItemLotButtonColors = {};
+    lastItemPassButtonColors = {};
     lastItemNameColors = {};
     lastTimerColors = {};
     lastPartyHeaderColors = {};
@@ -937,6 +1558,132 @@ end
 
 function M.Hide()
     M.isVisible = false;
+end
+
+function M.ToggleCollapse()
+    M.isCollapsed = not M.isCollapsed;
+    return M.isCollapsed;
+end
+
+function M.Collapse()
+    M.isCollapsed = true;
+end
+
+function M.Expand()
+    M.isCollapsed = false;
+end
+
+-- ============================================
+-- Pass All Unlotted Function
+-- ============================================
+
+-- Pass on all treasure pool items that player has NOT already lotted on
+-- Skips items where player's lot is 1-999 (already lotted)
+-- Passes on items where lot is 0, nil, or 65535 (not lotted/pending)
+function M.PassAllUnlotted()
+    local inventory = AshitaCore:GetMemoryManager():GetInventory();
+    if not inventory then
+        print('[XIUI] Cannot access inventory');
+        return;
+    end
+
+    local packetManager = AshitaCore:GetPacketManager();
+    if not packetManager then
+        print('[XIUI] Cannot access packet manager');
+        return;
+    end
+
+    -- Count items to pass (skip already lotted)
+    local passedCount = 0;
+    for slot = 0, 9 do
+        local item = inventory:GetTreasurePoolItem(slot);
+        if item and item.ItemId and item.ItemId ~= 0 then
+            local lot = item.Lot;
+            -- Skip if already lotted (1-999)
+            if lot == nil or lot == 0 or lot >= 65535 then
+                -- Send Pass Item packet (0x042)
+                -- Packet structure from XITools: { 0x00, 0x00, 0x00, 0x00, slot }
+                packetManager:AddOutgoingPacket(0x042, { 0x00, 0x00, 0x00, 0x00, slot });
+                passedCount = passedCount + 1;
+            end
+        end
+    end
+
+    if passedCount > 0 then
+        print('[XIUI] Passed on ' .. passedCount .. ' item(s)');
+    else
+        print('[XIUI] No items to pass on (all already lotted or pool empty)');
+    end
+end
+
+-- ============================================
+-- Lot All Unlotted Function
+-- ============================================
+
+-- Lot on all treasure pool items that player has NOT already lotted on
+-- Skips items where player's lot is 1-999 (already lotted)
+-- Lots on items where lot is 0, nil, or 65535 (not lotted/pending)
+function M.LotAllUnlotted()
+    local inventory = AshitaCore:GetMemoryManager():GetInventory();
+    if not inventory then
+        print('[XIUI] Cannot access inventory');
+        return;
+    end
+
+    local packetManager = AshitaCore:GetPacketManager();
+    if not packetManager then
+        print('[XIUI] Cannot access packet manager');
+        return;
+    end
+
+    -- Count items to lot (skip already lotted)
+    local lottedCount = 0;
+    for slot = 0, 9 do
+        local item = inventory:GetTreasurePoolItem(slot);
+        if item and item.ItemId and item.ItemId ~= 0 then
+            local lot = item.Lot;
+            -- Skip if already lotted (1-999)
+            if lot == nil or lot == 0 or lot >= 65535 then
+                -- Send Lot Item packet (0x041)
+                packetManager:AddOutgoingPacket(0x041, { 0x00, 0x00, 0x00, 0x00, slot });
+                lottedCount = lottedCount + 1;
+            end
+        end
+    end
+
+    if lottedCount > 0 then
+        print('[XIUI] Lotted on ' .. lottedCount .. ' item(s)');
+    else
+        print('[XIUI] No items to lot on (all already lotted or pool empty)');
+    end
+end
+
+-- ============================================
+-- Individual Item Functions
+-- ============================================
+
+-- Lot on a specific treasure pool item by slot
+function M.LotItem(slot)
+    local packetManager = AshitaCore:GetPacketManager();
+    if not packetManager then
+        print('[XIUI] Cannot access packet manager');
+        return;
+    end
+
+    -- Send Lot Item packet (0x041)
+    packetManager:AddOutgoingPacket(0x041, { 0x00, 0x00, 0x00, 0x00, slot });
+end
+
+-- Pass on a specific treasure pool item by slot
+function M.PassItem(slot)
+    local packetManager = AshitaCore:GetPacketManager();
+    if not packetManager then
+        print('[XIUI] Cannot access packet manager');
+        return;
+    end
+
+    -- Send Pass Item packet (0x042)
+    packetManager:AddOutgoingPacket(0x042, { 0x00, 0x00, 0x00, 0x00, slot });
 end
 
 return M;
