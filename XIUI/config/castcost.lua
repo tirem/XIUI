@@ -21,27 +21,24 @@ function M.DrawSettings()
         components.DrawPartyCheckbox(gConfig.castCost, 'Recast Time', 'showRecast');
         components.DrawCheckbox('MP Cost Preview', 'showMpCostPreview');
         imgui.ShowHelp('Shows spell MP cost on your MP bar when hovering over spells');
-
-        imgui.Spacing();
-        imgui.Text('Font Sizes:');
-        components.DrawPartySlider(gConfig.castCost, 'Name Font Size', 'nameFontSize', 8, 24);
-        components.DrawPartySlider(gConfig.castCost, 'Cost Font Size', 'costFontSize', 8, 24);
-        components.DrawPartySlider(gConfig.castCost, 'Recast Font Size', 'timeFontSize', 8, 24);
-        components.DrawPartySlider(gConfig.castCost, 'Cooldown Timer Font Size', 'recastFontSize', 8, 24);
-
-        imgui.Spacing();
-        imgui.Text('Cooldown:');
         components.DrawPartyCheckbox(gConfig.castCost, 'Show Cooldown', 'showCooldown');
         imgui.ShowHelp('Shows "Next: ready" when available, or progress bar with timer when on cooldown');
-        components.DrawPartySlider(gConfig.castCost, 'Bar Scale Y', 'barScaleY', 0.5, 2.0, '%.1f');
     end
 
-    if components.CollapsingSection('Layout##castCost') then
+    if components.CollapsingSection('Scale & Position##castCost') then
+        components.DrawPartySlider(gConfig.castCost, 'Bar Scale Y', 'barScaleY', 0.5, 2.0, '%.1f');
         components.DrawPartySlider(gConfig.castCost, 'Minimum Width', 'minWidth', 50, 300);
         components.DrawPartySlider(gConfig.castCost, 'Padding (Horizontal)', 'padding', 0, 20);
         components.DrawPartySlider(gConfig.castCost, 'Padding (Vertical)', 'paddingY', 0, 20);
         components.DrawPartyCheckbox(gConfig.castCost, 'Align Bottom', 'alignBottom');
         imgui.ShowHelp('When enabled, content grows upward instead of downward');
+    end
+
+    if components.CollapsingSection('Text Settings##castCost') then
+        components.DrawPartySlider(gConfig.castCost, 'Name Text Size', 'nameFontSize', 8, 24);
+        components.DrawPartySlider(gConfig.castCost, 'Cost Text Size', 'costFontSize', 8, 24);
+        components.DrawPartySlider(gConfig.castCost, 'Recast Text Size', 'timeFontSize', 8, 24);
+        components.DrawPartySlider(gConfig.castCost, 'Cooldown Timer Text Size', 'recastFontSize', 8, 24);
     end
 
     if components.CollapsingSection('Background##castCost') then

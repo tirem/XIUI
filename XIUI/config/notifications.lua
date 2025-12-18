@@ -82,20 +82,15 @@ function M.DrawSettings()
             for i, label in ipairs(directions) do
                 if imgui.Selectable(label, i == currentDirIndex) then
                     gConfig.notificationsDirection = directionValues[i];
+                    -- Clear window anchors when direction changes
+                    notificationData.ClearWindowAnchors();
                     SaveSettingsOnly();
                 end
             end
             imgui.EndCombo();
         end
-        imgui.ShowHelp('Direction notifications stack');
+        imgui.ShowHelp('Direction notifications stack. Up: window anchors at bottom, grows upward. Down: window anchors at top, grows downward.');
 
-        components.DrawSlider('Scale X', 'notificationsScaleX', 0.5, 2.0, '%.1f');
-        components.DrawSlider('Scale Y', 'notificationsScaleY', 0.5, 2.0, '%.1f');
-        components.DrawSlider('Progress Bar Scale Y', 'notificationsProgressBarScaleY', 0.5, 3.0, '%.1f');
-        imgui.ShowHelp('Height scale for the countdown progress bar');
-        components.DrawSlider('Padding', 'notificationsPadding', 2, 16, '%.0f px');
-        components.DrawSlider('Spacing', 'notificationsSpacing', 0, 24, '%.0f px');
-        imgui.ShowHelp('Space between notifications in the list');
         components.DrawSlider('Max Visible', 'notificationsMaxVisible', 1, 10, '%.0f');
         imgui.ShowHelp('Maximum notifications shown at once');
         components.DrawSlider('Display Duration', 'notificationsDisplayDuration', 1.0, 10.0, '%.1f sec');
@@ -103,9 +98,19 @@ function M.DrawSettings()
         imgui.ShowHelp('Party and trade invites minimize after this time but stay pinned');
     end
 
-    if components.CollapsingSection('Font Settings##notifications') then
-        components.DrawSlider('Title Font Size', 'notificationsTitleFontSize', 8, 24, '%.0f');
-        components.DrawSlider('Subtitle Font Size', 'notificationsSubtitleFontSize', 8, 24, '%.0f');
+    if components.CollapsingSection('Scale & Position##notifications') then
+        components.DrawSlider('Scale X', 'notificationsScaleX', 0.5, 2.0, '%.1f');
+        components.DrawSlider('Scale Y', 'notificationsScaleY', 0.5, 2.0, '%.1f');
+        components.DrawSlider('Progress Bar Scale Y', 'notificationsProgressBarScaleY', 0.5, 3.0, '%.1f');
+        imgui.ShowHelp('Height scale for the countdown progress bar');
+        components.DrawSlider('Padding', 'notificationsPadding', 2, 16, '%.0f px');
+        components.DrawSlider('Spacing', 'notificationsSpacing', 0, 24, '%.0f px');
+        imgui.ShowHelp('Space between notifications in the list');
+    end
+
+    if components.CollapsingSection('Text Settings##notifications') then
+        components.DrawSlider('Title Text Size', 'notificationsTitleFontSize', 8, 24, '%.0f');
+        components.DrawSlider('Subtitle Text Size', 'notificationsSubtitleFontSize', 8, 24, '%.0f');
     end
 
     if components.CollapsingSection('Notification Types##notifications') then

@@ -115,15 +115,15 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
 
     end
 
-    if components.CollapsingSection('Font Sizes##' .. configKey, false) then
-        components.DrawPartySlider(typeSettings, 'Pet Name##' .. configKey, 'nameFontSize', 8, 24);
-        components.DrawPartySlider(typeSettings, 'Distance##' .. configKey, 'distanceFontSize', 6, 18);
-        components.DrawPartySlider(typeSettings, 'HP Text##' .. configKey, 'hpFontSize', 6, 18);
+    if components.CollapsingSection('Text Settings##' .. configKey, false) then
+        components.DrawPartySlider(typeSettings, 'Pet Name Text Size##' .. configKey, 'nameFontSize', 8, 24);
+        components.DrawPartySlider(typeSettings, 'Distance Text Size##' .. configKey, 'distanceFontSize', 6, 18);
+        components.DrawPartySlider(typeSettings, 'HP Text Size##' .. configKey, 'hpFontSize', 6, 18);
         -- Only Automaton uses MP in era
         if configKey == 'petBarAutomaton' then
-            components.DrawPartySlider(typeSettings, 'MP Text##' .. configKey, 'mpFontSize', 6, 18);
+            components.DrawPartySlider(typeSettings, 'MP Text Size##' .. configKey, 'mpFontSize', 6, 18);
         end
-        components.DrawPartySlider(typeSettings, 'TP Text##' .. configKey, 'tpFontSize', 6, 18);
+        components.DrawPartySlider(typeSettings, 'TP Text Size##' .. configKey, 'tpFontSize', 6, 18);
     end
 
     if components.CollapsingSection('Background##' .. configKey, false) then
@@ -189,26 +189,26 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
                     SaveSettingsOnly();
                 end
 
-                -- Name font size (only show if name is enabled)
+                -- Name text size (only show if name is enabled)
                 if showName[1] then
                     local nameFontSize = {typeSettings.recastFullNameFontSize or 10};
                     imgui.SetNextItemWidth(100);
-                    if imgui.SliderInt('Name Font Size##recastFull' .. configKey, nameFontSize, 8, 20) then
+                    if imgui.SliderInt('Name Text Size##recastFull' .. configKey, nameFontSize, 8, 20) then
                         typeSettings.recastFullNameFontSize = nameFontSize[1];
                         SaveSettingsOnly();
                     end
-                    imgui.ShowHelp('Font size for ability name text.');
+                    imgui.ShowHelp('Text size for ability name.');
                 end
 
-                -- Timer font size (only show if timer is enabled)
+                -- Timer text size (only show if timer is enabled)
                 if showRecast[1] then
                     local recastFontSize = {typeSettings.recastFullTimerFontSize or 10};
                     imgui.SetNextItemWidth(100);
-                    if imgui.SliderInt('Timer Font Size##recastFull' .. configKey, recastFontSize, 8, 20) then
+                    if imgui.SliderInt('Timer Text Size##recastFull' .. configKey, recastFontSize, 8, 20) then
                         typeSettings.recastFullTimerFontSize = recastFontSize[1];
                         SaveSettingsOnly();
                     end
-                    imgui.ShowHelp('Font size for recast timer text.');
+                    imgui.ShowHelp('Text size for recast timer.');
                 end
 
                 -- Bar scale settings
@@ -523,7 +523,7 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
             imgui.ShowHelp('Size of the heart icon.');
 
             -- Timer font size
-            components.DrawSlider('Timer Font Size##petBarCharm', 'petBarCharmTimerFontSize', 6, 18);
+            components.DrawSlider('Timer Text Size##petBarCharm', 'petBarCharmTimerFontSize', 6, 18);
             imgui.ShowHelp('Font size for charm duration timer.');
 
             imgui.Spacing();
@@ -550,7 +550,7 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
             imgui.ShowHelp('Size of the jug icon.');
 
             -- Timer font size
-            components.DrawSlider('Timer Font Size##petBarJug', 'petBarJugTimerFontSize', 6, 18);
+            components.DrawSlider('Timer Text Size##petBarJug', 'petBarJugTimerFontSize', 6, 18);
             imgui.ShowHelp('Font size for jug duration timer.');
 
             imgui.Spacing();
@@ -964,7 +964,7 @@ local function DrawPetTargetSettingsContent()
     end
 
     if components.CollapsingSection('Display Options##petTarget', false) then
-        components.DrawSlider('Font Size', 'petBarTargetFontSize', 6, 24);
+        components.DrawSlider('Text Size', 'petBarTargetFontSize', 6, 24);
         imgui.ShowHelp('Font size for pet target text.');
 
         imgui.Spacing();

@@ -77,43 +77,47 @@ local function DrawTargetBarSettingsContent()
         imgui.ShowHelp('Separate the Target of Target bar into its own window that can be moved independently.');
     end
 
-    if components.CollapsingSection('Scale & Font##targetBar') then
+    if components.CollapsingSection('Scale & Position##targetBar') then
         components.DrawSlider('Scale X', 'targetBarScaleX', 0.1, 3.0, '%.1f');
         components.DrawSlider('Scale Y', 'targetBarScaleY', 0.1, 3.0, '%.1f');
-        components.DrawSlider('Name Font Size', 'targetBarNameFontSize', 8, 36);
-        components.DrawSlider('Distance Font Size', 'targetBarDistanceFontSize', 8, 36);
-        components.DrawSlider('Distance Offset X', 'targetBarDistanceOffsetX', -300, 300);
-        imgui.ShowHelp('Horizontal offset for distance text position.');
-        components.DrawSlider('Distance Offset Y', 'targetBarDistanceOffsetY', -150, 150);
-        imgui.ShowHelp('Vertical offset for distance text position.');
-        components.DrawSlider('HP% Font Size', 'targetBarPercentFontSize', 8, 36);
-        components.DrawSlider('HP% Offset X', 'targetBarPercentOffsetX', -300, 300);
-        imgui.ShowHelp('Horizontal offset for HP% text position.');
-        components.DrawSlider('HP% Offset Y', 'targetBarPercentOffsetY', -150, 150);
-        imgui.ShowHelp('Vertical offset for HP% text position.');
+    end
+
+    if components.CollapsingSection('Text Settings##targetBar') then
+        components.DrawSlider('Name Text Size', 'targetBarNameFontSize', 8, 36);
+        components.DrawSlider('Distance Text Size', 'targetBarDistanceFontSize', 8, 36);
+        components.DrawSlider('HP% Text Size', 'targetBarPercentFontSize', 8, 36);
+    end
+
+    if components.CollapsingSection('Text Offsets##targetBar', false) then
+        imgui.Text('Distance Text');
+        components.DrawSlider('X Offset##distanceText', 'targetBarDistanceOffsetX', -300, 300);
+        components.DrawSlider('Y Offset##distanceText', 'targetBarDistanceOffsetY', -150, 150);
+
+        imgui.Spacing();
+        imgui.Text('HP% Text');
+        components.DrawSlider('X Offset##hpPercentText', 'targetBarPercentOffsetX', -300, 300);
+        components.DrawSlider('Y Offset##hpPercentText', 'targetBarPercentOffsetY', -150, 150);
     end
 
     -- Cast bar settings (only show if cast bar is enabled)
     if (gConfig.showTargetBarCastBar and (not HzLimitedMode)) then
         if components.CollapsingSection('Cast Bar##targetBar') then
-            components.DrawSlider('Cast Font Size', 'targetBarCastFontSize', 8, 36);
-            imgui.ShowHelp('Font size for enemy cast text that appears under the HP bar.');
-
             components.DrawSlider('Cast Bar Offset Y', 'targetBarCastBarOffsetY', 0, 50, '%.0f');
             imgui.ShowHelp('Vertical distance below the HP bar (in pixels).');
             components.DrawSlider('Cast Bar Scale X', 'targetBarCastBarScaleX', 0.1, 3.0, '%.1f');
             imgui.ShowHelp('Horizontal scale multiplier for cast bar width.');
             components.DrawSlider('Cast Bar Scale Y', 'targetBarCastBarScaleY', 0.1, 3.0, '%.1f');
             imgui.ShowHelp('Vertical scale multiplier for cast bar height.');
+            components.DrawSlider('Cast Text Size', 'targetBarCastFontSize', 8, 36);
+            imgui.ShowHelp('Text size for enemy cast text that appears under the HP bar.');
         end
     end
 
     if components.CollapsingSection('Buffs/Debuffs##targetBar') then
         components.DrawSlider('Buffs Offset Y', 'targetBarBuffsOffsetY', -20, 50, '%.0f');
         imgui.ShowHelp('Vertical offset for buffs/debuffs below the HP bar (in pixels).');
-
         components.DrawSlider('Icon Scale', 'targetBarIconScale', 0.1, 3.0, '%.1f');
-        components.DrawSlider('Icon Font Size', 'targetBarIconFontSize', 8, 36);
+        components.DrawSlider('Icon Text Size', 'targetBarIconFontSize', 8, 36);
     end
 
     -- Target of Target Bar settings (only show when split is enabled)
@@ -121,7 +125,7 @@ local function DrawTargetBarSettingsContent()
         if components.CollapsingSection('Target of Target Bar##targetBar') then
             components.DrawSlider('ToT Scale X', 'totBarScaleX', 0.1, 3.0, '%.1f');
             components.DrawSlider('ToT Scale Y', 'totBarScaleY', 0.1, 3.0, '%.1f');
-            components.DrawSlider('ToT Font Size', 'totBarFontSize', 8, 36);
+            components.DrawSlider('ToT Text Size', 'totBarFontSize', 8, 36);
         end
     end
 end
@@ -257,7 +261,15 @@ local function DrawMobInfoSettingsContent(githubTexture)
         imgui.ShowHelp('Hide mob info when you are engaged in combat.');
     end
 
-    if components.CollapsingSection('Appearance##mobInfo') then
+    if components.CollapsingSection('Scale & Position##mobInfo') then
+        components.DrawSlider('Icon Scale', 'mobInfoIconScale', 0.5, 3.0, '%.1f');
+        imgui.ShowHelp('Scale multiplier for mob info icons.');
+    end
+
+    if components.CollapsingSection('Text Settings##mobInfo') then
+        components.DrawSlider('Text Size', 'mobInfoFontSize', 8, 36);
+        imgui.ShowHelp('Text size for level text.');
+
         -- Separator style dropdown
         local separatorStyles = { 'space', 'pipe', 'dot' };
         local separatorLabels = { 'Space (none)', 'Pipe |', 'Dot \194\183' };
@@ -283,12 +295,6 @@ local function DrawMobInfoSettingsContent(githubTexture)
             imgui.EndCombo();
         end
         imgui.ShowHelp('Style of separator between sections in single-row mode.');
-
-        components.DrawSlider('Icon Scale', 'mobInfoIconScale', 0.5, 3.0, '%.1f');
-        imgui.ShowHelp('Scale multiplier for mob info icons.');
-
-        components.DrawSlider('Font Size', 'mobInfoFontSize', 8, 36);
-        imgui.ShowHelp('Font size for level text.');
     end
 end
 

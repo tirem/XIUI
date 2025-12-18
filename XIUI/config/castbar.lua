@@ -27,10 +27,15 @@ function M.DrawSettings()
 
     if components.CollapsingSection('Display Options##castBar') then
         components.DrawCheckbox('Show Bookends', 'showCastBarBookends');
+    end
 
+    if components.CollapsingSection('Scale & Position##castBar') then
         components.DrawSlider('Scale X', 'castBarScaleX', 0.1, 3.0, '%.1f');
         components.DrawSlider('Scale Y', 'castBarScaleY', 0.1, 3.0, '%.1f');
-        components.DrawSlider('Font Size', 'castBarFontSize', 8, 36);
+    end
+
+    if components.CollapsingSection('Text Settings##castBar') then
+        components.DrawSlider('Text Size', 'castBarFontSize', 8, 36);
     end
 
     if components.CollapsingSection('Fast Cast Settings##castBar') then

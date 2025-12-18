@@ -138,6 +138,11 @@ M.cachedBarColors = {};
 -- Track which pool slots were visible last frame (for optimized visibility management)
 M.lastVisiblePoolSlots = {};
 
+-- Window anchors for bottom-anchoring in "stack up" mode
+-- Keys: 'bottomAnchor_<windowName>' -> Y position of bottom edge
+--       'bottomAnchor_<windowName>_x' -> X position (preserved during anchor updates)
+M.windowAnchors = {};
+
 -- ============================================
 -- Primitive Storage (following petbar pattern)
 -- ============================================
@@ -253,6 +258,11 @@ function M.ClearColorCache()
     M.timerRefWidthCache = {};
     M.lastPoolFontSize = nil;
     M.cachedBarColors = {};
+end
+
+-- Clear window anchors (call when direction changes)
+function M.ClearWindowAnchors()
+    M.windowAnchors = {};
 end
 
 -- Mark sorted pool cache as dirty (call when pool changes)
@@ -507,6 +517,7 @@ function M.Initialize(settings)
     M.pendingQueue = {};
     M.treasurePool = {};
     M.awardedHistory = {};
+    M.windowAnchors = {};
     M.nextId = 1;
 end
 

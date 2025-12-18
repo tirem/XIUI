@@ -662,27 +662,73 @@ local function drawNotificationWindow(windowName, notifications, settings, split
 
     -- Calculate total content height
     local totalHeight = 0;
+    local stackUp = gConfig.notificationsDirection == 'up';
+
+    -- Helper to calculate notification height
+    local function getNotificationHeight(notification)
+        local isMinified = notificationData.IsMinified(notification);
+        local isMinifying = notificationData.IsMinifying(notification);
+        local minifyProgress = notificationData.GetMinifyProgress(notification);
+
+        if isMinifying then
+            return normalHeight - (minifyProgress * (normalHeight - minifiedHeight));
+        else
+            return isMinified and minifiedHeight or normalHeight;
+        end
+    end
+
     if hasNotifications then
-        for i, notification in ipairs(notifications) do
-            if i > notificationData.MAX_ACTIVE_NOTIFICATIONS then break; end
-            local isMinified = notificationData.IsMinified(notification);
-            local isMinifying = notificationData.IsMinifying(notification);
-            local minifyProgress = notificationData.GetMinifyProgress(notification);
-
-            local height;
-            if isMinifying then
-                height = normalHeight - (minifyProgress * (normalHeight - minifiedHeight));
-            else
-                height = isMinified and minifiedHeight or normalHeight;
+        if stackUp then
+            -- For stack up, calculate height in render order: persistent first, then transient
+            local persistentNotifs = {};
+            local transientNotifs = {};
+            for _, notification in ipairs(notifications) do
+                if notificationData.IsPersistentType(notification.type) then
+                    table.insert(persistentNotifs, notification);
+                else
+                    table.insert(transientNotifs, notification);
+                end
             end
 
-            if i > 1 then
-                totalHeight = totalHeight + spacing;
+            local count = 0;
+            -- Count persistent first
+            for i = #persistentNotifs, 1, -1 do
+                count = count + 1;
+                if count > notificationData.MAX_ACTIVE_NOTIFICATIONS then break; end
+                if count > 1 then totalHeight = totalHeight + spacing; end
+                totalHeight = totalHeight + getNotificationHeight(persistentNotifs[i]);
             end
-            totalHeight = totalHeight + height;
+            -- Then transient
+            for i = #transientNotifs, 1, -1 do
+                count = count + 1;
+                if count > notificationData.MAX_ACTIVE_NOTIFICATIONS then break; end
+                if count > 1 then totalHeight = totalHeight + spacing; end
+                totalHeight = totalHeight + getNotificationHeight(transientNotifs[i]);
+            end
+        else
+            -- Stack down: simple iteration
+            for i, notification in ipairs(notifications) do
+                if i > notificationData.MAX_ACTIVE_NOTIFICATIONS then break; end
+                if i > 1 then totalHeight = totalHeight + spacing; end
+                totalHeight = totalHeight + getNotificationHeight(notification);
+            end
         end
     else
         totalHeight = normalHeight;  -- Placeholder height
+    end
+
+    -- Handle bottom-anchoring for "stack up" mode
+    if stackUp then
+        -- Get or initialize bottom anchor for this window
+        local anchorKey = 'bottomAnchor_' .. windowName;
+        local bottomAnchor = notificationData.windowAnchors[anchorKey];
+        local isDragging = notificationData.windowAnchors[anchorKey .. '_dragging'];
+
+        if bottomAnchor and not isDragging then
+            -- Position window so bottom edge stays at anchor (only when not dragging)
+            local newY = bottomAnchor - totalHeight;
+            imgui.SetNextWindowPos({notificationData.windowAnchors[anchorKey .. '_x'] or 0, newY});
+        end
     end
 
     -- Create ImGui window
@@ -695,42 +741,119 @@ local function drawNotificationWindow(windowName, notifications, settings, split
             -- Set window size
             imgui.Dummy({notificationWidth, totalHeight});
 
-            if hasNotifications then
-                local currentY = windowPosY;
-                local stackUp = gConfig.notificationsDirection == 'up';
+            -- Update bottom anchor for "stack up" mode
+            -- This captures the position when user drags the window
+            if stackUp then
+                local anchorKey = 'bottomAnchor_' .. windowName;
+                local currentBottomY = windowPosY + totalHeight;
 
-                -- For "up" direction, reverse iteration so newest appears at top
-                local startIdx, endIdx, step;
-                if stackUp then
-                    startIdx, endIdx, step = #notifications, 1, -1;
-                else
-                    startIdx, endIdx, step = 1, #notifications, 1;
+                -- Check if window is being dragged
+                local isWindowHovered = imgui.IsWindowHovered();
+                local isMouseDown = imgui.IsMouseDown(0);
+                local isMouseDragging = imgui.IsMouseDragging(0);
+                local wasDragging = notificationData.windowAnchors[anchorKey .. '_dragging'];
+
+                -- Initialize anchor if not set
+                if not notificationData.windowAnchors[anchorKey] then
+                    notificationData.windowAnchors[anchorKey] = currentBottomY;
+                    notificationData.windowAnchors[anchorKey .. '_x'] = windowPosX;
                 end
 
-                for i = startIdx, endIdx, step do
-                    local notification = notifications[i];
-                    -- Use global slot counter instead of local index
-                    currentSlot = currentSlot + 1;
-                    if currentSlot > notificationData.MAX_ACTIVE_NOTIFICATIONS then break; end
+                -- Track dragging state
+                if isWindowHovered and isMouseDown then
+                    -- Started or continuing drag
+                    notificationData.windowAnchors[anchorKey .. '_dragging'] = true;
+                elseif wasDragging and not isMouseDown then
+                    -- Just finished dragging - update anchor to new position
+                    notificationData.windowAnchors[anchorKey] = currentBottomY;
+                    notificationData.windowAnchors[anchorKey .. '_x'] = windowPosX;
+                    notificationData.windowAnchors[anchorKey .. '_dragging'] = false;
+                end
+            end
 
-                    -- Calculate height based on minified/minifying state
-                    local isMinified = notificationData.IsMinified(notification);
-                    local isMinifying = notificationData.IsMinifying(notification);
-                    local minifyProgress = notificationData.GetMinifyProgress(notification);
+            if hasNotifications then
+                if stackUp then
+                    -- Stack Up: render from bottom to top
+                    -- Persistent notifications (party/trade invites) pinned at bottom
+                    -- Transient notifications appear above them
+                    -- Window anchors at its bottom edge conceptually
 
-                    local notificationHeight;
-                    if isMinifying then
-                        notificationHeight = normalHeight - (minifyProgress * (normalHeight - minifiedHeight));
-                    else
-                        notificationHeight = isMinified and minifiedHeight or normalHeight;
+                    -- Separate persistent and transient notifications
+                    local persistentNotifs = {};
+                    local transientNotifs = {};
+                    for _, notification in ipairs(notifications) do
+                        if notificationData.IsPersistentType(notification.type) then
+                            table.insert(persistentNotifs, notification);
+                        else
+                            table.insert(transientNotifs, notification);
+                        end
                     end
 
-                    local x = windowPosX;
-                    local y = currentY;
+                    local currentY = windowPosY + totalHeight;
 
-                    drawNotification(currentSlot, notification, x, y, notificationWidth, notificationHeight, settings, drawList);
+                    -- Helper function to render a notification and move up
+                    local function renderNotificationUp(notification)
+                        currentSlot = currentSlot + 1;
+                        if currentSlot > notificationData.MAX_ACTIVE_NOTIFICATIONS then return false; end
 
-                    currentY = currentY + notificationHeight + spacing;
+                        local isMinified = notificationData.IsMinified(notification);
+                        local isMinifying = notificationData.IsMinifying(notification);
+                        local minifyProgress = notificationData.GetMinifyProgress(notification);
+
+                        local notificationHeight;
+                        if isMinifying then
+                            notificationHeight = normalHeight - (minifyProgress * (normalHeight - minifiedHeight));
+                        else
+                            notificationHeight = isMinified and minifiedHeight or normalHeight;
+                        end
+
+                        -- Move up before drawing (bottom-to-top)
+                        currentY = currentY - notificationHeight;
+
+                        drawNotification(currentSlot, notification, windowPosX, currentY, notificationWidth, notificationHeight, settings, drawList);
+
+                        -- Subtract spacing for next notification above
+                        currentY = currentY - spacing;
+                        return true;
+                    end
+
+                    -- Render persistent notifications at bottom first (newest persistent at very bottom)
+                    for i = #persistentNotifs, 1, -1 do
+                        if not renderNotificationUp(persistentNotifs[i]) then break; end
+                    end
+
+                    -- Render transient notifications above (newest transient closest to persistents)
+                    for i = #transientNotifs, 1, -1 do
+                        if not renderNotificationUp(transientNotifs[i]) then break; end
+                    end
+                else
+                    -- Stack Down: render from top to bottom (default behavior)
+                    local currentY = windowPosY;
+
+                    for i = 1, #notifications do
+                        local notification = notifications[i];
+                        currentSlot = currentSlot + 1;
+                        if currentSlot > notificationData.MAX_ACTIVE_NOTIFICATIONS then break; end
+
+                        -- Calculate height based on minified/minifying state
+                        local isMinified = notificationData.IsMinified(notification);
+                        local isMinifying = notificationData.IsMinifying(notification);
+                        local minifyProgress = notificationData.GetMinifyProgress(notification);
+
+                        local notificationHeight;
+                        if isMinifying then
+                            notificationHeight = normalHeight - (minifyProgress * (normalHeight - minifiedHeight));
+                        else
+                            notificationHeight = isMinified and minifiedHeight or normalHeight;
+                        end
+
+                        local x = windowPosX;
+                        local y = currentY;
+
+                        drawNotification(currentSlot, notification, x, y, notificationWidth, notificationHeight, settings, drawList);
+
+                        currentY = currentY + notificationHeight + spacing;
+                    end
                 end
             elseif configOpen then
                 -- Show placeholder when config is open

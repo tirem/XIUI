@@ -66,64 +66,71 @@ end
 -- Helper function to draw settings for a tracker
 local function DrawTrackerSettings(tab)
     components.DrawCheckbox('Enabled', tab.configKey, CheckVisibility);
-    components.DrawCheckbox('Show Dots', tab.showDotsKey);
-    imgui.ShowHelp('Show dot grid for slot usage. Disable for text-only mode.');
 
-    -- Show Count Text checkbox with Font Size slider on same row
-    components.DrawCheckbox('Show Count Text', tab.showCountKey);
-    if gConfig[tab.showCountKey] then
-        imgui.SameLine();
-        imgui.SetNextItemWidth(100);
-        local fontSize = { gConfig[tab.fontSizeKey] };
-        if (imgui.SliderInt('Font Size', fontSize, 8, 36)) then
-            gConfig[tab.fontSizeKey] = fontSize[1];
-            UpdateUserSettings();
-        end
-        if (imgui.IsItemDeactivatedAfterEdit()) then
-            SaveSettingsOnly();
+    if components.CollapsingSection('Display Options##' .. tab.colorKey) then
+        components.DrawCheckbox('Show Dots', tab.showDotsKey);
+        imgui.ShowHelp('Show dot grid for slot usage. Disable for text-only mode.');
+
+        components.DrawCheckbox('Show Count Text', tab.showCountKey);
+
+        if gConfig[tab.showCountKey] then
+            imgui.Indent(20);
+            components.DrawCheckbox('Text Uses Threshold Color', tab.textUseThresholdColorKey);
+            imgui.ShowHelp('When enabled, count text changes color based on dot thresholds');
+            imgui.Unindent(20);
         end
 
-        -- Text threshold color option
-        components.DrawCheckbox('Text Uses Threshold Color', tab.textUseThresholdColorKey);
-        imgui.ShowHelp('When enabled, count text changes color based on dot thresholds');
+        -- Show per-container option for multi-container trackers
+        if tab.hasMultipleContainers and tab.showPerContainerKey then
+            components.DrawCheckbox(tab.containerLabel, tab.showPerContainerKey);
+            imgui.ShowHelp('Show each container separately instead of combined totals');
+        end
+
+        -- Show labels option for all trackers
+        if tab.showLabelsKey then
+            components.DrawCheckbox('Show Label', tab.showLabelsKey);
+            imgui.ShowHelp('Show container label (e.g., Inv, Satchel, W1, S1)');
+        end
     end
 
-    -- Show per-container option for multi-container trackers
-    if tab.hasMultipleContainers and tab.showPerContainerKey then
-        components.DrawCheckbox(tab.containerLabel, tab.showPerContainerKey);
-        imgui.ShowHelp('Show each container separately instead of combined totals');
-    end
-
-    -- Show labels option for all trackers
-    if tab.showLabelsKey then
-        components.DrawCheckbox('Show Label', tab.showLabelsKey);
-        imgui.ShowHelp('Show container label (e.g., Inv, Satchel, W1, S1)');
-    end
-
-    imgui.Spacing();
-
-    -- Only show dot-related settings if dots are enabled
+    -- Only show scale/position settings if dots are enabled
     local showDots = gConfig[tab.showDotsKey];
     if showDots then
-        local columnCount = { gConfig[tab.columnCountKey] };
-        if (imgui.SliderInt('Columns', columnCount, 1, 80)) then
-            gConfig[tab.columnCountKey] = columnCount[1];
-            UpdateUserSettings();
-        end
-        if (imgui.IsItemDeactivatedAfterEdit()) then
-            SaveSettingsOnly();
-        end
+        if components.CollapsingSection('Scale & Position##' .. tab.colorKey) then
+            local columnCount = { gConfig[tab.columnCountKey] };
+            if (imgui.SliderInt('Columns', columnCount, 1, 80)) then
+                gConfig[tab.columnCountKey] = columnCount[1];
+                UpdateUserSettings();
+            end
+            if (imgui.IsItemDeactivatedAfterEdit()) then
+                SaveSettingsOnly();
+            end
 
-        local rowCount = { gConfig[tab.rowCountKey] };
-        if (imgui.SliderInt('Rows', rowCount, 1, 80)) then
-            gConfig[tab.rowCountKey] = rowCount[1];
-            UpdateUserSettings();
-        end
-        if (imgui.IsItemDeactivatedAfterEdit()) then
-            SaveSettingsOnly();
-        end
+            local rowCount = { gConfig[tab.rowCountKey] };
+            if (imgui.SliderInt('Rows', rowCount, 1, 80)) then
+                gConfig[tab.rowCountKey] = rowCount[1];
+                UpdateUserSettings();
+            end
+            if (imgui.IsItemDeactivatedAfterEdit()) then
+                SaveSettingsOnly();
+            end
 
-        components.DrawSlider('Scale', tab.scaleKey, 0.5, 3.0, '%.1f');
+            components.DrawSlider('Scale', tab.scaleKey, 0.5, 3.0, '%.1f');
+        end
+    end
+
+    -- Text settings only if count text is enabled
+    if gConfig[tab.showCountKey] then
+        if components.CollapsingSection('Text Settings##' .. tab.colorKey) then
+            local fontSize = { gConfig[tab.fontSizeKey] };
+            if (imgui.SliderInt('Text Size', fontSize, 8, 36)) then
+                gConfig[tab.fontSizeKey] = fontSize[1];
+                UpdateUserSettings();
+            end
+            if (imgui.IsItemDeactivatedAfterEdit()) then
+                SaveSettingsOnly();
+            end
+        end
     end
 end
 

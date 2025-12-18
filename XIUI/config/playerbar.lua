@@ -13,27 +13,37 @@ local M = {};
 -- Section: Player Bar Settings
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showPlayerBar', CheckVisibility);
-    components.DrawCheckbox('Show Bookends', 'showPlayerBarBookends');
-    components.DrawCheckbox('Hide During Events', 'playerBarHideDuringEvents');
-    components.DrawCheckbox('Always Show MP Bar', 'alwaysShowMpBar');
-    imgui.ShowHelp('Always display the MP Bar even if your current jobs cannot cast spells.');
-    components.DrawCheckbox('TP Bar Flash Effects', 'playerBarTpFlashEnabled');
-    imgui.ShowHelp('Flash effect when TP reaches 1000 or higher.');
 
-    components.DrawSlider('Scale X', 'playerBarScaleX', 0.1, 3.0, '%.1f');
-    components.DrawSlider('Scale Y', 'playerBarScaleY', 0.1, 3.0, '%.1f');
-    components.DrawSlider('Font Size', 'playerBarFontSize', 8, 36);
+    if components.CollapsingSection('Display Options##playerBar') then
+        components.DrawCheckbox('Show Bookends', 'showPlayerBarBookends');
+        components.DrawCheckbox('Hide During Events', 'playerBarHideDuringEvents');
+        components.DrawCheckbox('Always Show MP Bar', 'alwaysShowMpBar');
+        imgui.ShowHelp('Always display the MP Bar even if your current jobs cannot cast spells.');
+        components.DrawCheckbox('TP Bar Flash Effects', 'playerBarTpFlashEnabled');
+        imgui.ShowHelp('Flash effect when TP reaches 1000 or higher.');
+    end
 
-    -- HP Display Mode dropdown
-    components.DrawDisplayModeDropdown('HP Display##playerBar', gConfig, 'playerBarHpDisplayMode',
-        'How HP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (1234/1500).');
+    if components.CollapsingSection('Scale & Position##playerBar') then
+        components.DrawSlider('Scale X', 'playerBarScaleX', 0.1, 3.0, '%.1f');
+        components.DrawSlider('Scale Y', 'playerBarScaleY', 0.1, 3.0, '%.1f');
+    end
 
-    -- MP Display Mode dropdown
-    components.DrawDisplayModeDropdown('MP Display##playerBar', gConfig, 'playerBarMpDisplayMode',
-        'How MP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (750/1000).');
+    if components.CollapsingSection('Text Settings##playerBar') then
+        components.DrawSlider('Text Size', 'playerBarFontSize', 8, 36);
 
-    -- Text positioning section
-    if components.CollapsingSection('Text Positioning##playerBar', false) then
+        imgui.Spacing();
+
+        -- HP Display Mode dropdown
+        components.DrawDisplayModeDropdown('HP Display##playerBar', gConfig, 'playerBarHpDisplayMode',
+            'How HP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (1234/1500).');
+
+        -- MP Display Mode dropdown
+        components.DrawDisplayModeDropdown('MP Display##playerBar', gConfig, 'playerBarMpDisplayMode',
+            'How MP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (750/1000).');
+    end
+
+    -- Text offsets section (collapsed by default)
+    if components.CollapsingSection('Text Offsets##playerBar', false) then
         imgui.Text('HP Text');
         components.DrawAlignmentDropdown('Alignment##hpText', gConfig, 'playerBarHpTextAlignment');
         components.DrawSlider('X Offset##hpText', 'playerBarHpTextOffsetX', -50, 50);

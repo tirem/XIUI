@@ -110,6 +110,95 @@ local function DrawPartyTabContent(party, partyName)
         imgui.ShowHelp('When disabled, hides the MP bar for jobs without MP (WAR, MNK, THF, etc.). Cast bars will still appear when casting.');
     end
 
+    if components.CollapsingSection('Scale & Spacing##party' .. partyName) then
+        components.DrawPartySlider(party, 'Min Rows', 'minRows', 1, 6);
+        components.DrawPartySlider(party, 'Entry Spacing', 'entrySpacing', -50, 50);
+        components.DrawPartySlider(party, 'Selection Box Scale Y', 'selectionBoxScaleY', 0.5, 2.0, '%.2f');
+
+        -- General scale controls (applies to all elements)
+        components.DrawPartySlider(party, 'Scale X', 'scaleX', 0.1, 3.0, '%.2f');
+        components.DrawPartySlider(party, 'Scale Y', 'scaleY', 0.1, 3.0, '%.2f');
+    end
+
+    if components.CollapsingSection('Bar Scales##party' .. partyName) then
+        components.DrawPartySlider(party, 'HP Bar Scale X', 'hpBarScaleX', 0.1, 3.0, '%.2f');
+        components.DrawPartySlider(party, 'HP Bar Scale Y', 'hpBarScaleY', 0.1, 3.0, '%.2f');
+        components.DrawPartySlider(party, 'MP Bar Scale X', 'mpBarScaleX', 0.1, 3.0, '%.2f');
+        components.DrawPartySlider(party, 'MP Bar Scale Y', 'mpBarScaleY', 0.1, 3.0, '%.2f');
+        if party.showTP then
+            components.DrawPartySlider(party, 'TP Bar Scale X', 'tpBarScaleX', 0.1, 3.0, '%.2f');
+            components.DrawPartySlider(party, 'TP Bar Scale Y', 'tpBarScaleY', 0.1, 3.0, '%.2f');
+        end
+    end
+
+    if components.CollapsingSection('Text Settings##party' .. partyName) then
+        components.DrawPartyCheckbox(party, 'Split Text Sizes', 'splitFontSizes');
+        imgui.ShowHelp('When enabled, allows individual text size control for each element.');
+
+        if party.splitFontSizes then
+            components.DrawPartySlider(party, 'Name Text Size', 'nameFontSize', 8, 36);
+            components.DrawPartySlider(party, 'HP Text Size', 'hpFontSize', 8, 36);
+            components.DrawPartySlider(party, 'MP Text Size', 'mpFontSize', 8, 36);
+            components.DrawPartySlider(party, 'TP Text Size', 'tpFontSize', 8, 36);
+            components.DrawPartySlider(party, 'Distance Text Size', 'distanceFontSize', 8, 36);
+            if party.showJob then
+                components.DrawPartySlider(party, 'Job Text Size', 'jobFontSize', 8, 36);
+            end
+            components.DrawPartySlider(party, 'Zone Text Size', 'zoneFontSize', 8, 36);
+        else
+            components.DrawPartySlider(party, 'Text Size', 'fontSize', 8, 36);
+        end
+    end
+
+    if components.CollapsingSection('Text Offsets##party' .. partyName, false) then
+        imgui.Text('Name Text');
+        components.DrawPartySlider(party, 'X Offset##nameText', 'nameTextOffsetX', -50, 50);
+        components.DrawPartySlider(party, 'Y Offset##nameText', 'nameTextOffsetY', -50, 50);
+
+        imgui.Spacing();
+        imgui.Text('HP Text');
+        components.DrawPartySlider(party, 'X Offset##hpText', 'hpTextOffsetX', -50, 50);
+        components.DrawPartySlider(party, 'Y Offset##hpText', 'hpTextOffsetY', -50, 50);
+
+        imgui.Spacing();
+        imgui.Text('MP Text');
+        components.DrawPartySlider(party, 'X Offset##mpText', 'mpTextOffsetX', -50, 50);
+        components.DrawPartySlider(party, 'Y Offset##mpText', 'mpTextOffsetY', -50, 50);
+
+        if party.showTP then
+            imgui.Spacing();
+            imgui.Text('TP Text');
+            components.DrawPartySlider(party, 'X Offset##tpText', 'tpTextOffsetX', -50, 50);
+            components.DrawPartySlider(party, 'Y Offset##tpText', 'tpTextOffsetY', -50, 50);
+        end
+
+        if party.showDistance then
+            imgui.Spacing();
+            imgui.Text('Distance Text');
+            components.DrawPartySlider(party, 'X Offset##distText', 'distanceTextOffsetX', -200, 200);
+            components.DrawPartySlider(party, 'Y Offset##distText', 'distanceTextOffsetY', -200, 200);
+        end
+
+        if party.showJob and party.layout == 0 then
+            imgui.Spacing();
+            imgui.Text('Job Text');
+            components.DrawPartySlider(party, 'X Offset##jobText', 'jobTextOffsetX', -50, 50);
+            components.DrawPartySlider(party, 'Y Offset##jobText', 'jobTextOffsetY', -50, 50);
+        end
+    end
+
+    if components.CollapsingSection('Background##party' .. partyName) then
+        components.DrawPartyComboBox(party, 'Background', 'backgroundName', bg_theme_paths, DeferredUpdateVisuals);
+        -- Scale/opacity sliders don't need callbacks - changes are picked up from gConfig on next frame
+        components.DrawPartySlider(party, 'Background Scale', 'bgScale', 0.1, 3.0, '%.2f');
+        components.DrawPartySlider(party, 'Border Scale', 'borderScale', 0.1, 3.0, '%.2f');
+        components.DrawPartySlider(party, 'Background Opacity', 'backgroundOpacity', 0.0, 1.0, '%.2f');
+        imgui.ShowHelp('Opacity of the background.');
+        components.DrawPartySlider(party, 'Border Opacity', 'borderOpacity', 0.0, 1.0, '%.2f');
+        imgui.ShowHelp('Opacity of the window borders (Window themes only).');
+        components.DrawPartyComboBox(party, 'Cursor', 'cursor', cursor_paths, DeferredUpdateVisuals);
+    end
+
     if components.CollapsingSection('Job Display##party' .. partyName) then
         components.DrawPartyCheckbox(party, 'Show Job Icons', 'showJobIcon');
         if party.showJobIcon then
@@ -138,18 +227,6 @@ local function DrawPartyTabContent(party, partyName)
             end
             imgui.Unindent();
         end
-    end
-
-    if components.CollapsingSection('Background##party' .. partyName) then
-        components.DrawPartyComboBox(party, 'Background', 'backgroundName', bg_theme_paths, DeferredUpdateVisuals);
-        -- Scale/opacity sliders don't need callbacks - changes are picked up from gConfig on next frame
-        components.DrawPartySlider(party, 'Background Scale', 'bgScale', 0.1, 3.0, '%.2f');
-        components.DrawPartySlider(party, 'Border Scale', 'borderScale', 0.1, 3.0, '%.2f');
-        components.DrawPartySlider(party, 'Background Opacity', 'backgroundOpacity', 0.0, 1.0, '%.2f');
-        imgui.ShowHelp('Opacity of the background.');
-        components.DrawPartySlider(party, 'Border Opacity', 'borderOpacity', 0.0, 1.0, '%.2f');
-        imgui.ShowHelp('Opacity of the window borders (Window themes only).');
-        components.DrawPartyComboBox(party, 'Cursor', 'cursor', cursor_paths, DeferredUpdateVisuals);
     end
 
     if components.CollapsingSection('Cast Bars##party' .. partyName) then
@@ -195,96 +272,6 @@ local function DrawPartyTabContent(party, partyName)
         components.DrawPartyComboBoxIndexed(party, 'Status Side', 'statusSide', statusSideItems);
         components.DrawPartySlider(party, 'Status Icon Scale', 'buffScale', 0.1, 3.0, '%.1f');
     end
-
-    if components.CollapsingSection('Scale & Spacing##party' .. partyName) then
-        components.DrawPartySlider(party, 'Min Rows', 'minRows', 1, 6);
-        components.DrawPartySlider(party, 'Entry Spacing', 'entrySpacing', -50, 50);
-        components.DrawPartySlider(party, 'Selection Box Scale Y', 'selectionBoxScaleY', 0.5, 2.0, '%.2f');
-
-        -- General scale controls (applies to all elements)
-        components.DrawPartySlider(party, 'Scale X', 'scaleX', 0.1, 3.0, '%.2f');
-        components.DrawPartySlider(party, 'Scale Y', 'scaleY', 0.1, 3.0, '%.2f');
-    end
-
-    if components.CollapsingSection('Bar Scales##party' .. partyName) then
-        components.DrawPartySlider(party, 'HP Bar Scale X', 'hpBarScaleX', 0.1, 3.0, '%.2f');
-        components.DrawPartySlider(party, 'HP Bar Scale Y', 'hpBarScaleY', 0.1, 3.0, '%.2f');
-        components.DrawPartySlider(party, 'MP Bar Scale X', 'mpBarScaleX', 0.1, 3.0, '%.2f');
-        components.DrawPartySlider(party, 'MP Bar Scale Y', 'mpBarScaleY', 0.1, 3.0, '%.2f');
-        if party.showTP then
-            components.DrawPartySlider(party, 'TP Bar Scale X', 'tpBarScaleX', 0.1, 3.0, '%.2f');
-            components.DrawPartySlider(party, 'TP Bar Scale Y', 'tpBarScaleY', 0.1, 3.0, '%.2f');
-        end
-    end
-
-    if components.CollapsingSection('Font Sizes##party' .. partyName) then
-        components.DrawPartyCheckbox(party, 'Split Font Sizes', 'splitFontSizes');
-        imgui.ShowHelp('When enabled, allows individual font size control for each text element.');
-
-        if party.splitFontSizes then
-            components.DrawPartySlider(party, 'Name Font Size', 'nameFontSize', 8, 36);
-            components.DrawPartySlider(party, 'HP Font Size', 'hpFontSize', 8, 36);
-            components.DrawPartySlider(party, 'MP Font Size', 'mpFontSize', 8, 36);
-            components.DrawPartySlider(party, 'TP Font Size', 'tpFontSize', 8, 36);
-            components.DrawPartySlider(party, 'Distance Font Size', 'distanceFontSize', 8, 36);
-            if party.showJob then
-                components.DrawPartySlider(party, 'Job Font Size', 'jobFontSize', 8, 36);
-            end
-            components.DrawPartySlider(party, 'Zone Font Size', 'zoneFontSize', 8, 36);
-        else
-            components.DrawPartySlider(party, 'Font Size', 'fontSize', 8, 36);
-        end
-    end
-
-    if components.CollapsingSection('Text Positions##party' .. partyName) then
-        imgui.Text('Name Text');
-        imgui.PushItemWidth(100);
-        components.DrawPartySlider(party, 'X##nameX', 'nameTextOffsetX', -50, 50);
-        imgui.SameLine();
-        components.DrawPartySlider(party, 'Y##nameY', 'nameTextOffsetY', -50, 50);
-        imgui.PopItemWidth();
-
-        imgui.Text('HP Text');
-        imgui.PushItemWidth(100);
-        components.DrawPartySlider(party, 'X##hpX', 'hpTextOffsetX', -50, 50);
-        imgui.SameLine();
-        components.DrawPartySlider(party, 'Y##hpY', 'hpTextOffsetY', -50, 50);
-        imgui.PopItemWidth();
-
-        imgui.Text('MP Text');
-        imgui.PushItemWidth(100);
-        components.DrawPartySlider(party, 'X##mpX', 'mpTextOffsetX', -50, 50);
-        imgui.SameLine();
-        components.DrawPartySlider(party, 'Y##mpY', 'mpTextOffsetY', -50, 50);
-        imgui.PopItemWidth();
-
-        if party.showTP then
-            imgui.Text('TP Text');
-            imgui.PushItemWidth(100);
-            components.DrawPartySlider(party, 'X##tpX', 'tpTextOffsetX', -50, 50);
-            imgui.SameLine();
-            components.DrawPartySlider(party, 'Y##tpY', 'tpTextOffsetY', -50, 50);
-            imgui.PopItemWidth();
-        end
-
-        if party.showDistance then
-            imgui.Text('Distance Text');
-            imgui.PushItemWidth(100);
-            components.DrawPartySlider(party, 'X##distX', 'distanceTextOffsetX', -200, 200);
-            imgui.SameLine();
-            components.DrawPartySlider(party, 'Y##distY', 'distanceTextOffsetY', -200, 200);
-            imgui.PopItemWidth();
-        end
-
-        if party.showJob and party.layout == 0 then
-            imgui.Text('Job Text');
-            imgui.PushItemWidth(100);
-            components.DrawPartySlider(party, 'X##jobX', 'jobTextOffsetX', -50, 50);
-            imgui.SameLine();
-            components.DrawPartySlider(party, 'Y##jobY', 'jobTextOffsetY', -50, 50);
-            imgui.PopItemWidth();
-        end
-    end
 end
 
 -- Section: Party List Settings
@@ -307,90 +294,23 @@ function M.DrawSettings(state)
 
     imgui.Spacing();
 
-    -- Party tab buttons with gold underline for selected
+    -- Party tab buttons
     local partyTabWidth = 80;
-    local partyTabHeight = 24;
-    local gold = {0.957, 0.855, 0.592, 1.0};
-    local bgMedium = {0.098, 0.090, 0.075, 1.0};
-    local bgLight = {0.137, 0.125, 0.106, 1.0};
-    local bgLighter = {0.176, 0.161, 0.137, 1.0};
-
-    -- Party A button
-    local partyAPosX, partyAPosY = imgui.GetCursorScreenPos();
-    if selectedPartyTab == 1 then
-        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
-    else
-        imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
-    end
-    if imgui.Button('Party A##partyListTab', { partyTabWidth, partyTabHeight }) then
+    if components.DrawStyledTab('Party A', 'partyListTab', selectedPartyTab == 1, partyTabWidth) then
         selectedPartyTab = 1;
     end
-    if selectedPartyTab == 1 then
-        local draw_list = imgui.GetWindowDrawList();
-        draw_list:AddRectFilled(
-            {partyAPosX + 4, partyAPosY + partyTabHeight - 2},
-            {partyAPosX + partyTabWidth - 4, partyAPosY + partyTabHeight},
-            imgui.GetColorU32(gold),
-            1.0
-        );
-    end
-    imgui.PopStyleColor(3);
 
     -- Party B and C buttons (only if alliance enabled)
     if gConfig.partyListAlliance then
         imgui.SameLine();
-        local partyBPosX, partyBPosY = imgui.GetCursorScreenPos();
-        if selectedPartyTab == 2 then
-            imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
-            imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
-        else
-            imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
-            imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
-        end
-        if imgui.Button('Party B##partyListTab', { partyTabWidth, partyTabHeight }) then
+        if components.DrawStyledTab('Party B', 'partyListTab', selectedPartyTab == 2, partyTabWidth) then
             selectedPartyTab = 2;
         end
-        if selectedPartyTab == 2 then
-            local draw_list = imgui.GetWindowDrawList();
-            draw_list:AddRectFilled(
-                {partyBPosX + 4, partyBPosY + partyTabHeight - 2},
-                {partyBPosX + partyTabWidth - 4, partyBPosY + partyTabHeight},
-                imgui.GetColorU32(gold),
-                1.0
-            );
-        end
-        imgui.PopStyleColor(3);
 
         imgui.SameLine();
-        local partyCPosX, partyCPosY = imgui.GetCursorScreenPos();
-        if selectedPartyTab == 3 then
-            imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
-            imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
-        else
-            imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
-            imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
-        end
-        if imgui.Button('Party C##partyListTab', { partyTabWidth, partyTabHeight }) then
+        if components.DrawStyledTab('Party C', 'partyListTab', selectedPartyTab == 3, partyTabWidth) then
             selectedPartyTab = 3;
         end
-        if selectedPartyTab == 3 then
-            local draw_list = imgui.GetWindowDrawList();
-            draw_list:AddRectFilled(
-                {partyCPosX + 4, partyCPosY + partyTabHeight - 2},
-                {partyCPosX + partyTabWidth - 4, partyCPosY + partyTabHeight},
-                imgui.GetColorU32(gold),
-                1.0
-            );
-        end
-        imgui.PopStyleColor(3);
     else
         -- Reset to Party A if alliance is disabled and B or C was selected
         if selectedPartyTab > 1 then
@@ -550,90 +470,23 @@ end
 function M.DrawColorSettings(state)
     local selectedPartyColorTab = state.selectedPartyColorTab or 1;
 
-    -- Party color tab buttons with gold underline for selected
+    -- Party color tab buttons
     local partyTabWidth = 80;
-    local partyTabHeight = 24;
-    local gold = {0.957, 0.855, 0.592, 1.0};
-    local bgMedium = {0.098, 0.090, 0.075, 1.0};
-    local bgLight = {0.137, 0.125, 0.106, 1.0};
-    local bgLighter = {0.176, 0.161, 0.137, 1.0};
-
-    -- Party A button
-    local partyAPosX, partyAPosY = imgui.GetCursorScreenPos();
-    if selectedPartyColorTab == 1 then
-        imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
-    else
-        imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
-    end
-    if imgui.Button('Party A##partyColorTab', { partyTabWidth, partyTabHeight }) then
+    if components.DrawStyledTab('Party A', 'partyColorTab', selectedPartyColorTab == 1, partyTabWidth) then
         selectedPartyColorTab = 1;
     end
-    if selectedPartyColorTab == 1 then
-        local draw_list = imgui.GetWindowDrawList();
-        draw_list:AddRectFilled(
-            {partyAPosX + 4, partyAPosY + partyTabHeight - 2},
-            {partyAPosX + partyTabWidth - 4, partyAPosY + partyTabHeight},
-            imgui.GetColorU32(gold),
-            1.0
-        );
-    end
-    imgui.PopStyleColor(3);
 
     -- Party B and C buttons (only if alliance enabled)
     if gConfig.partyListAlliance then
         imgui.SameLine();
-        local partyBPosX, partyBPosY = imgui.GetCursorScreenPos();
-        if selectedPartyColorTab == 2 then
-            imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
-            imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
-        else
-            imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
-            imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
-        end
-        if imgui.Button('Party B##partyColorTab', { partyTabWidth, partyTabHeight }) then
+        if components.DrawStyledTab('Party B', 'partyColorTab', selectedPartyColorTab == 2, partyTabWidth) then
             selectedPartyColorTab = 2;
         end
-        if selectedPartyColorTab == 2 then
-            local draw_list = imgui.GetWindowDrawList();
-            draw_list:AddRectFilled(
-                {partyBPosX + 4, partyBPosY + partyTabHeight - 2},
-                {partyBPosX + partyTabWidth - 4, partyBPosY + partyTabHeight},
-                imgui.GetColorU32(gold),
-                1.0
-            );
-        end
-        imgui.PopStyleColor(3);
 
         imgui.SameLine();
-        local partyCPosX, partyCPosY = imgui.GetCursorScreenPos();
-        if selectedPartyColorTab == 3 then
-            imgui.PushStyleColor(ImGuiCol_Button, {0, 0, 0, 0});
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0, 0, 0, 0});
-            imgui.PushStyleColor(ImGuiCol_ButtonActive, {0, 0, 0, 0});
-        else
-            imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
-            imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
-        end
-        if imgui.Button('Party C##partyColorTab', { partyTabWidth, partyTabHeight }) then
+        if components.DrawStyledTab('Party C', 'partyColorTab', selectedPartyColorTab == 3, partyTabWidth) then
             selectedPartyColorTab = 3;
         end
-        if selectedPartyColorTab == 3 then
-            local draw_list = imgui.GetWindowDrawList();
-            draw_list:AddRectFilled(
-                {partyCPosX + 4, partyCPosY + partyTabHeight - 2},
-                {partyCPosX + partyTabWidth - 4, partyCPosY + partyTabHeight},
-                imgui.GetColorU32(gold),
-                1.0
-            );
-        end
-        imgui.PopStyleColor(3);
     else
         -- Reset to Party A if alliance is disabled and B or C was selected
         if selectedPartyColorTab > 1 then

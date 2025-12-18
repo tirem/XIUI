@@ -13,17 +13,24 @@ local M = {};
 -- Section: Exp Bar Settings
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showExpBar', CheckVisibility);
-    components.DrawCheckbox('Limit Points Mode', 'expBarLimitPointsMode');
-    imgui.ShowHelp('Shows Limit Points if character is set to earn Limit Points in the game.');
 
-    components.DrawCheckbox('Inline Mode', 'expBarInlineMode');
-    components.DrawCheckbox('Show Bookends', 'showExpBarBookends');
-    components.DrawCheckbox('Show Text', 'expBarShowText');
-    components.DrawCheckbox('Show Percent', 'expBarShowPercent');
+    if components.CollapsingSection('Display Options##expBar') then
+        components.DrawCheckbox('Limit Points Mode', 'expBarLimitPointsMode');
+        imgui.ShowHelp('Shows Limit Points if character is set to earn Limit Points in the game.');
+        components.DrawCheckbox('Inline Mode', 'expBarInlineMode');
+        components.DrawCheckbox('Show Bookends', 'showExpBarBookends');
+        components.DrawCheckbox('Show Text', 'expBarShowText');
+        components.DrawCheckbox('Show Percent', 'expBarShowPercent');
+    end
 
-    components.DrawSlider('Scale X', 'expBarScaleX', 0.1, 8.0, '%.2f');
-    components.DrawSlider('Scale Y', 'expBarScaleY', 0.1, 3.0, '%.2f');
-    components.DrawSlider('Font Size', 'expBarFontSize', 8, 36);
+    if components.CollapsingSection('Scale & Position##expBar') then
+        components.DrawSlider('Scale X', 'expBarScaleX', 0.1, 8.0, '%.2f');
+        components.DrawSlider('Scale Y', 'expBarScaleY', 0.1, 3.0, '%.2f');
+    end
+
+    if components.CollapsingSection('Text Settings##expBar') then
+        components.DrawSlider('Text Size', 'expBarFontSize', 8, 36);
+    end
 end
 
 -- Section: Exp Bar Color Settings

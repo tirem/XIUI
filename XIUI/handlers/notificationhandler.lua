@@ -38,7 +38,7 @@ end
 -- ========================================
 
 -- Debug flag - set to true to see message IDs and item IDs in log
-M.DEBUG_ENABLED = false;
+M.DEBUG_ENABLED = true;
 
 -- Item obtained message IDs
 -- Reference: FFXI message packet (0x029) message types
@@ -67,6 +67,10 @@ local gilObtainedMes = {
     [8] = true,     -- You obtain [amount] gil
     [10] = true,    -- [Player] obtains [amount] gil
     [11] = true,    -- You find [amount] gil on the [mob]
+    [127] = true,   -- You find [amount] gil on the [target] (additional mob drop)
+    [131] = true,   -- [Player] finds [amount] gil on the [target]
+    [144] = true,   -- You obtain [amount] gil from the [container]
+    [148] = true,   -- [Player] obtains [amount] gil from the [container]
     [565] = true,   -- [target] obtains [gil]
     [582] = true,   -- [actor] obtains [gil]
 };

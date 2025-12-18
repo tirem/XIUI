@@ -40,7 +40,7 @@ function M.DrawSettings()
         components.DrawCheckbox('Hide During Events', 'hideDuringEvents');
     end
 
-    if components.CollapsingSection('Fonts##global') then
+    if components.CollapsingSection('Text Settings##global') then
         -- Font Family Selector
         components.DrawComboBox('Font Family', gConfig.fontFamily, components.available_fonts, function(newValue)
             gConfig.fontFamily = newValue;
