@@ -271,6 +271,8 @@ local function DrawPartyTabContent(party, partyName)
         components.DrawPartyComboBoxIndexed(party, 'Status Theme', 'statusTheme', statusThemeItems);
         components.DrawPartyComboBoxIndexed(party, 'Status Side', 'statusSide', statusSideItems);
         components.DrawPartySlider(party, 'Status Icon Scale', 'buffScale', 0.1, 3.0, '%.1f');
+        components.DrawPartySlider(party, 'Status Offset X', 'statusOffsetX', -100, 100, nil, nil, 0);
+        components.DrawPartySlider(party, 'Status Offset Y', 'statusOffsetY', -100, 100, nil, nil, 0);
     end
 end
 

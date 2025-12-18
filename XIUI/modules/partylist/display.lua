@@ -152,16 +152,15 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
     end
 
     -- Calculate allBarsLengths based on layout
+    -- This should be consistent across all party members for uniform zone bar/selection width
     local allBarsLengths;
     if layout == 1 then
         local row1Width = hpBarWidth;
         local row2Width = 4 + maxTpTextWidth + 4 + mpBarWidth + 4 + mpTextWidth;
         allBarsLengths = math.max(row1Width, row2Width);
     else
-        allBarsLengths = hpBarWidth;
-        if cache.alwaysShowMpBar then
-            allBarsLengths = allBarsLengths + mpBarWidth + imgui.GetStyle().FramePadding.x + imgui.GetStyle().ItemSpacing.x;
-        end
+        -- Always include HP + MP + TP space for consistent width across all members
+        allBarsLengths = hpBarWidth + mpBarWidth + imgui.GetStyle().FramePadding.x + imgui.GetStyle().ItemSpacing.x;
         if (showTP) then
             allBarsLengths = allBarsLengths + tpBarWidth + imgui.GetStyle().FramePadding.x + imgui.GetStyle().ItemSpacing.x;
         end
@@ -648,7 +647,10 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
     data.memberText[memIdx].job:set_visible(showJobText);
 
     -- MP/TP bars
-    local mpStartX, mpStartY;
+    -- Calculate where MP bar would be positioned (after HP bar) for consistent status icon placement
+    local mpStartX = hpStartX + hpBarWidth + imgui.GetStyle().FramePadding.x + imgui.GetStyle().ItemSpacing.x;
+    local mpStartY = hpStartY;
+    local tpStartX, tpStartY; -- Track TP bar position
 
     -- Determine if we should show the MP bar slot
     -- Show if: alwaysShowMpBar is enabled, OR job has MP, OR we're casting and cast bar style is 'mp'
@@ -884,7 +886,6 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
             -- TP bar (or cast bar if castBarStyle == 'tp')
             if (showTP or showingCastInTpSlot) then
                 imgui.SameLine();
-                local tpStartX, tpStartY;
                 imgui.SetCursorPosX(imgui.GetCursorPosX());
                 tpStartX, tpStartY = imgui.GetCursorScreenPos();
 
@@ -995,15 +996,17 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 end
 
                 -- Debuffs row (closest to party frame, at HP bar level)
+                local statusOffsetX = cache.statusOffsetX or 0;
+                local statusOffsetY = cache.statusOffsetY or 0;
                 if (debuffCount > 0) then
                     if cache.statusSide == 0 then
                         if data.debuffWindowX[memIdx] ~= nil then
-                            imgui.SetNextWindowPos({hpStartX - data.debuffWindowX[memIdx] - settings.buffOffset, hpStartY});
+                            imgui.SetNextWindowPos({hpStartX - data.debuffWindowX[memIdx] - settings.buffOffset + statusOffsetX, hpStartY + statusOffsetY});
                         end
                     else
                         if data.fullMenuWidth[partyIndex] ~= nil then
                             local thisPosX, _ = imgui.GetWindowPos();
-                            imgui.SetNextWindowPos({ thisPosX + data.fullMenuWidth[partyIndex], hpStartY });
+                            imgui.SetNextWindowPos({ thisPosX + data.fullMenuWidth[partyIndex] + statusOffsetX, hpStartY + statusOffsetY });
                         end
                     end
                     if (imgui.Begin('PlayerDebuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
@@ -1020,12 +1023,12 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 if (buffCount > 0) then
                     if cache.statusSide == 0 then
                         if data.buffWindowX[memIdx] ~= nil then
-                            imgui.SetNextWindowPos({hpStartX - data.buffWindowX[memIdx] - settings.buffOffset, hpStartY - settings.iconSize*1.2});
+                            imgui.SetNextWindowPos({hpStartX - data.buffWindowX[memIdx] - settings.buffOffset + statusOffsetX, hpStartY - settings.iconSize*1.2 + statusOffsetY});
                         end
                     else
                         if data.fullMenuWidth[partyIndex] ~= nil then
                             local thisPosX, _ = imgui.GetWindowPos();
-                            imgui.SetNextWindowPos({ thisPosX + data.fullMenuWidth[partyIndex], hpStartY - settings.iconSize * 1.2 });
+                            imgui.SetNextWindowPos({ thisPosX + data.fullMenuWidth[partyIndex] + statusOffsetX, hpStartY - settings.iconSize * 1.2 + statusOffsetY });
                         end
                     end
                     if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
@@ -1038,9 +1041,11 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                     imgui.End();
                 end
             elseif (cache.statusTheme == 2) then
+                local statusOffsetX = cache.statusOffsetX or 0;
+                local statusOffsetY = cache.statusOffsetY or 0;
                 local resetX, resetY = imgui.GetCursorScreenPos();
                 imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
-                imgui.SetNextWindowPos({mpStartX, mpStartY - settings.iconSize - settings.xivBuffOffsetY})
+                imgui.SetNextWindowPos({mpStartX + statusOffsetX, mpStartY - settings.iconSize - settings.xivBuffOffsetY + statusOffsetY})
                 if (imgui.Begin('XIVStatus'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
                     imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {0, 0});
                     DrawStatusIcons(statusIcons.ReorderForStatusSide(memInfo.buffs, buffTable, cache.statusSide), settings.iconSize, 32, 1);
@@ -1050,14 +1055,16 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 imgui.End();
                 imgui.SetCursorScreenPos({resetX, resetY});
             elseif (cache.statusTheme == 3) then
+                local statusOffsetX = cache.statusOffsetX or 0;
+                local statusOffsetY = cache.statusOffsetY or 0;
                 if cache.statusSide == 0 then
                     if data.buffWindowX[memIdx] ~= nil then
-                        imgui.SetNextWindowPos({hpStartX - data.buffWindowX[memIdx] - settings.buffOffset, data.memberText[memIdx].name.settings.position_y - settings.iconSize/2});
+                        imgui.SetNextWindowPos({hpStartX - data.buffWindowX[memIdx] - settings.buffOffset + statusOffsetX, data.memberText[memIdx].name.settings.position_y - settings.iconSize/2 + statusOffsetY});
                     end
                 else
                     if data.fullMenuWidth[partyIndex] ~= nil then
                         local thisPosX, _ = imgui.GetWindowPos();
-                        imgui.SetNextWindowPos({ thisPosX + data.fullMenuWidth[partyIndex], data.memberText[memIdx].name.settings.position_y - settings.iconSize/2 });
+                        imgui.SetNextWindowPos({ thisPosX + data.fullMenuWidth[partyIndex] + statusOffsetX, data.memberText[memIdx].name.settings.position_y - settings.iconSize/2 + statusOffsetY });
                     end
                 end
                 if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then

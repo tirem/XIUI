@@ -189,6 +189,8 @@ function data.updatePartyConfigCache()
         cache.statusTheme = party.statusTheme or 0;
         cache.statusSide = party.statusSide or 0;
         cache.buffScale = party.buffScale or 1;
+        cache.statusOffsetX = party.statusOffsetX or 0;
+        cache.statusOffsetY = party.statusOffsetY or 0;
         cache.expandHeight = party.expandHeight;
         cache.alignBottom = party.alignBottom;
         cache.minRows = party.minRows or 1;

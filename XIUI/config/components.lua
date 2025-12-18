@@ -428,14 +428,17 @@ function components.DrawPartyCheckbox(partyTable, label, configKey, callback)
 end
 
 -- Helper function for per-party slider (saves to partyA/B/C table)
-function components.DrawPartySlider(partyTable, label, configKey, min, max, format, callback)
-    local value = { partyTable[configKey] or min };
+function components.DrawPartySlider(partyTable, label, configKey, min, max, format, callback, default)
+    local defaultValue = default or min;
+    local currentValue = partyTable[configKey];
+    if currentValue == nil then currentValue = defaultValue; end
+    local value = { currentValue };
     local changed = false;
     local uniqueLabel = label .. '##party_' .. configKey;
 
     if format ~= nil then
         changed = imgui.SliderFloat(uniqueLabel, value, min, max, format);
-    elseif type(partyTable[configKey]) == 'number' and math.floor(partyTable[configKey]) == partyTable[configKey] then
+    elseif type(currentValue) == 'number' and math.floor(currentValue) == currentValue then
         changed = imgui.SliderInt(uniqueLabel, value, min, max);
     else
         changed = imgui.SliderFloat(uniqueLabel, value, min, max, '%.2f');
