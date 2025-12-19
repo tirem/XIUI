@@ -8,6 +8,37 @@ local gdi = require('submodules.gdifonts.include');
 local M = {};
 
 -- ========================================
+-- Font Registry (for lightweight property updates)
+-- ========================================
+-- Tracks all created fonts to enable batch property updates without recreation
+local fontRegistry = {};
+local nextFontId = 1;
+
+-- Register a font and return its ID
+local function registerFont(fontObj)
+    local id = nextFontId;
+    nextFontId = nextFontId + 1;
+    fontRegistry[id] = fontObj;
+    return id;
+end
+
+-- Unregister a font by ID
+local function unregisterFont(fontId)
+    if fontId then
+        fontRegistry[fontId] = nil;
+    end
+end
+
+-- Update outline width on all registered fonts (lightweight, no recreation)
+function M.UpdateAllOutlineWidths(width)
+    for _, fontObj in pairs(fontRegistry) do
+        if fontObj and fontObj.set_outline_width then
+            fontObj:set_outline_width(width);
+        end
+    end
+end
+
+-- ========================================
 -- Font Weight Helper
 -- ========================================
 -- Converts fontWeight string setting to GDI font flags
@@ -24,33 +55,48 @@ end
 -- ========================================
 -- Provides a centralized API for font lifecycle management
 -- Eliminates code duplication across modules
+-- All fonts are registered for lightweight property updates
 M.FontManager = {
-    -- Create a single font object
+    -- Create a single font object (registered for batch updates)
     create = function(settings)
-        return gdi:create_object(settings);
+        local fontObj = gdi:create_object(settings);
+        if fontObj then
+            fontObj._registryId = registerFont(fontObj);
+        end
+        return fontObj;
     end,
 
-    -- Destroy a font object safely
+    -- Destroy a font object safely (unregisters from registry)
     destroy = function(fontObj)
         if fontObj ~= nil then
+            unregisterFont(fontObj._registryId);
             gdi:destroy_object(fontObj);
         end
         return nil;
     end,
 
-    -- Recreate a font with new settings
+    -- Recreate a font with new settings (re-registers in registry)
     recreate = function(fontObj, settings)
         if fontObj ~= nil then
+            unregisterFont(fontObj._registryId);
             gdi:destroy_object(fontObj);
         end
-        return gdi:create_object(settings);
+        local newFont = gdi:create_object(settings);
+        if newFont then
+            newFont._registryId = registerFont(newFont);
+        end
+        return newFont;
     end,
 
     -- Batch create multiple fonts from settings table
     createBatch = function(fontSettingsTable)
         local fonts = {};
         for key, settings in pairs(fontSettingsTable) do
-            fonts[key] = gdi:create_object(settings);
+            local fontObj = gdi:create_object(settings);
+            if fontObj then
+                fontObj._registryId = registerFont(fontObj);
+            end
+            fonts[key] = fontObj;
         end
         return fonts;
     end,
@@ -59,6 +105,7 @@ M.FontManager = {
     destroyBatch = function(fontsTable)
         for key, fontObj in pairs(fontsTable) do
             if fontObj ~= nil then
+                unregisterFont(fontObj._registryId);
                 gdi:destroy_object(fontObj);
             end
         end

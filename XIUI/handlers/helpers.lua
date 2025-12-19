@@ -103,6 +103,7 @@ GetFontWeightFlags = fontsLib.GetFontWeightFlags;
 FontManager = fontsLib.FontManager;
 ColorCachedFont = fontsLib.ColorCachedFont;
 SetFontsVisible = fontsLib.SetFontsVisible;
+UpdateAllFontOutlineWidths = fontsLib.UpdateAllOutlineWidths;
 
 -- Drawing Utilities (from drawing.lua)
 draw_rect = drawingLib.draw_rect;
