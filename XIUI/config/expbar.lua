@@ -31,6 +31,20 @@ function M.DrawSettings()
     if components.CollapsingSection('Text Settings##expBar') then
         components.DrawSlider('Text Size', 'expBarFontSize', 8, 36);
     end
+
+    if components.CollapsingSection('Text Positions##expBar') then
+        imgui.Text('Job Text Offset');
+        components.DrawSlider('X##jobTextX', 'expBarJobTextOffsetX', -200, 200);
+        components.DrawSlider('Y##jobTextY', 'expBarJobTextOffsetY', -100, 100);
+        imgui.Spacing();
+        imgui.Text('Exp Text Offset');
+        components.DrawSlider('X##expTextX', 'expBarExpTextOffsetX', -200, 200);
+        components.DrawSlider('Y##expTextY', 'expBarExpTextOffsetY', -100, 100);
+        imgui.Spacing();
+        imgui.Text('Percent Text Offset');
+        components.DrawSlider('X##percentTextX', 'expBarPercentTextOffsetX', -200, 200);
+        components.DrawSlider('Y##percentTextY', 'expBarPercentTextOffsetY', -100, 100);
+    end
 end
 
 -- Section: Exp Bar Color Settings

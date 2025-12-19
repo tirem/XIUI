@@ -221,6 +221,13 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
     gAdjustedSettings.expBarSettings.job_font_settings.font_height = math.max(us.expBarFontSize, 8);
     gAdjustedSettings.expBarSettings.exp_font_settings.font_height = math.max(us.expBarFontSize, 8);
     gAdjustedSettings.expBarSettings.percent_font_settings.font_height = math.max(us.expBarFontSize, 8);
+    -- Text position offsets
+    gAdjustedSettings.expBarSettings.jobTextOffsetX = us.expBarJobTextOffsetX or 0;
+    gAdjustedSettings.expBarSettings.jobTextOffsetY = us.expBarJobTextOffsetY or 0;
+    gAdjustedSettings.expBarSettings.expTextOffsetX = us.expBarExpTextOffsetX or 0;
+    gAdjustedSettings.expBarSettings.expTextOffsetY = us.expBarExpTextOffsetY or 0;
+    gAdjustedSettings.expBarSettings.percentTextOffsetX = us.expBarPercentTextOffsetX or 0;
+    gAdjustedSettings.expBarSettings.percentTextOffsetY = us.expBarPercentTextOffsetY or 0;
 
     -- Gil Tracker
     gAdjustedSettings.gilTrackerSettings.iconScale = ds.gilTrackerSettings.iconScale * us.gilTrackerScale;

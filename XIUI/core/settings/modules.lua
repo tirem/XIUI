@@ -188,7 +188,13 @@ function M.createModuleDefaults()
             barWidth = 550,
             barHeight = 12,
             textOffsetY = 4,
-            percentOffsetX = -5,
+            -- Individual text offsets (applied from user settings)
+            jobTextOffsetX = 0,
+            jobTextOffsetY = 0,
+            expTextOffsetX = 0,
+            expTextOffsetY = 0,
+            percentTextOffsetX = 0,
+            percentTextOffsetY = 0,
             job_font_settings = T{
                 font_alignment = gdi.Alignment.Left,
                 font_family = 'Consolas',

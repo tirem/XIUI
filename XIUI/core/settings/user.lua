@@ -196,6 +196,13 @@ function M.createUserSettingsDefaults()
         expBarShowPercent = true,
         expBarInlineMode = false,
         expBarLimitPointsMode = false,
+        -- Text position offsets (relative to default positions)
+        expBarJobTextOffsetX = 0,
+        expBarJobTextOffsetY = 0,
+        expBarExpTextOffsetX = 0,
+        expBarExpTextOffsetY = 0,
+        expBarPercentTextOffsetX = 0,
+        expBarPercentTextOffsetY = 0,
 
         gilTrackerScale = 1,
         gilTrackerFontSize = 12,
