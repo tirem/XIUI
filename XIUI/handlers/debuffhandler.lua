@@ -193,8 +193,8 @@ local function ApplyMessage(debuffs, action)
                         -- Bio spells - set bio, clear dia
                         debuffs[target.Id][134] = nil;
                         debuffs[target.Id][135] = expiry;
-                    elseif spellData.buffId then
-                        -- Helix spells
+                    elseif (spell >= 278 and spell <= 285) or (spell >= 885 and spell <= 892) then
+                        -- Helix spells only (don't match weaponskill IDs that share numbers with damage spells)
                         debuffs[target.Id][spellData.buffId] = expiry;
                     end
                 end
