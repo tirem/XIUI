@@ -538,54 +538,63 @@ function M.DrawWindow(settings)
                     SaveSettingsToDisk();
                 end
 
-                -- Draw Pass All button (negative/red) using primitive
-                local passAllClicked = button.DrawPrim('tpPassAll', passAllX, btnY, textBtnWidth, btnHeight, {
-                    colors = button.COLORS_NEGATIVE,
-                    tooltip = 'Pass on all items',
-                });
-                if passAllClicked then
-                    actions.PassAll();
-                end
-
-                -- Draw Pass All label (GDI font renders on top of primitive)
-                if data.passAllFont then
-                    data.passAllFont:set_font_height(fontSize);
-                    data.passAllFont:set_text('Pass All');
-                    local passTextW, passTextH = data.passAllFont:get_text_size();
-                    passTextW = passTextW or (fontSize * 2.5);
-                    passTextH = passTextH or fontSize;
-                    data.passAllFont:set_position_x(passAllX + (textBtnWidth - passTextW) / 2);
-                    data.passAllFont:set_position_y(btnY + (btnHeight - passTextH) / 2);
-                    data.passAllFont:set_visible(true);
-                    if data.lastColors.passAll ~= 0xFFFFFFFF then
-                        data.passAllFont:set_font_color(0xFFFFFFFF);
-                        data.lastColors.passAll = 0xFFFFFFFF;
+                -- Draw Lot All and Pass All buttons (disabled in HzLimitedMode)
+                if (not HzLimitedMode) then
+                    -- Draw Pass All button (negative/red) using primitive
+                    local passAllClicked = button.DrawPrim('tpPassAll', passAllX, btnY, textBtnWidth, btnHeight, {
+                        colors = button.COLORS_NEGATIVE,
+                        tooltip = 'Pass on all items',
+                    });
+                    if passAllClicked then
+                        actions.PassAll();
                     end
-                end
 
-                -- Draw Lot All button (positive/green) using primitive
-                local lotAllClicked = button.DrawPrim('tpLotAll', lotAllX, btnY, textBtnWidth, btnHeight, {
-                    colors = button.COLORS_POSITIVE,
-                    tooltip = 'Lot on all items',
-                });
-                if lotAllClicked then
-                    actions.LotAll();
-                end
-
-                -- Draw Lot All label (GDI font renders on top of primitive)
-                if data.lotAllFont then
-                    data.lotAllFont:set_font_height(fontSize);
-                    data.lotAllFont:set_text('Lot All');
-                    local lotTextW, lotTextH = data.lotAllFont:get_text_size();
-                    lotTextW = lotTextW or (fontSize * 2);
-                    lotTextH = lotTextH or fontSize;
-                    data.lotAllFont:set_position_x(lotAllX + (textBtnWidth - lotTextW) / 2);
-                    data.lotAllFont:set_position_y(btnY + (btnHeight - lotTextH) / 2);
-                    data.lotAllFont:set_visible(true);
-                    if data.lastColors.lotAll ~= 0xFFFFFFFF then
-                        data.lotAllFont:set_font_color(0xFFFFFFFF);
-                        data.lastColors.lotAll = 0xFFFFFFFF;
+                    -- Draw Pass All label (GDI font renders on top of primitive)
+                    if data.passAllFont then
+                        data.passAllFont:set_font_height(fontSize);
+                        data.passAllFont:set_text('Pass All');
+                        local passTextW, passTextH = data.passAllFont:get_text_size();
+                        passTextW = passTextW or (fontSize * 2.5);
+                        passTextH = passTextH or fontSize;
+                        data.passAllFont:set_position_x(passAllX + (textBtnWidth - passTextW) / 2);
+                        data.passAllFont:set_position_y(btnY + (btnHeight - passTextH) / 2);
+                        data.passAllFont:set_visible(true);
+                        if data.lastColors.passAll ~= 0xFFFFFFFF then
+                            data.passAllFont:set_font_color(0xFFFFFFFF);
+                            data.lastColors.passAll = 0xFFFFFFFF;
+                        end
                     end
+
+                    -- Draw Lot All button (positive/green) using primitive
+                    local lotAllClicked = button.DrawPrim('tpLotAll', lotAllX, btnY, textBtnWidth, btnHeight, {
+                        colors = button.COLORS_POSITIVE,
+                        tooltip = 'Lot on all items',
+                    });
+                    if lotAllClicked then
+                        actions.LotAll();
+                    end
+
+                    -- Draw Lot All label (GDI font renders on top of primitive)
+                    if data.lotAllFont then
+                        data.lotAllFont:set_font_height(fontSize);
+                        data.lotAllFont:set_text('Lot All');
+                        local lotTextW, lotTextH = data.lotAllFont:get_text_size();
+                        lotTextW = lotTextW or (fontSize * 2);
+                        lotTextH = lotTextH or fontSize;
+                        data.lotAllFont:set_position_x(lotAllX + (textBtnWidth - lotTextW) / 2);
+                        data.lotAllFont:set_position_y(btnY + (btnHeight - lotTextH) / 2);
+                        data.lotAllFont:set_visible(true);
+                        if data.lastColors.lotAll ~= 0xFFFFFFFF then
+                            data.lotAllFont:set_font_color(0xFFFFFFFF);
+                            data.lastColors.lotAll = 0xFFFFFFFF;
+                        end
+                    end
+                else
+                    -- Hide Lot All / Pass All in HzLimitedMode
+                    button.HidePrim('tpLotAll');
+                    button.HidePrim('tpPassAll');
+                    if data.lotAllFont then data.lotAllFont:set_visible(false); end
+                    if data.passAllFont then data.passAllFont:set_visible(false); end
                 end
 
                 -- Hide toggle font (not needed, using arrow button)
