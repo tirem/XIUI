@@ -81,6 +81,11 @@ end
 -- Memory Reading
 -- ============================================
 
+-- Grace period tracking - items must be missing for multiple frames before removal
+-- This handles race conditions where memory state may be temporarily invalid
+M.missingFrameCount = {};  -- slot -> number of consecutive frames item was missing
+local GRACE_FRAMES = 3;    -- Number of frames item must be missing before removal
+
 -- Read treasure pool state from memory API
 -- Call this every frame in DrawWindow
 -- Returns true if pool has items, false otherwise
@@ -102,6 +107,7 @@ function M.ReadFromMemory()
         if item ~= nil and item.ItemId ~= nil and item.ItemId > 0 and item.ItemId ~= 65535 then
             hasItems = true;
             activeSlots[slot] = true;
+            M.missingFrameCount[slot] = 0;  -- Reset missing count
 
             -- Check if this is a NEW item we haven't seen
             local isNewItem = not M.previousPoolState[slot] or
@@ -141,11 +147,21 @@ function M.ReadFromMemory()
         end
     end
 
-    -- Remove items no longer in memory
-    for slot, _ in pairs(M.poolItems) do
+    -- Remove items no longer in memory (with grace period)
+    for slot, poolItem in pairs(M.poolItems) do
         if not activeSlots[slot] then
-            M.poolItems[slot] = nil;
-            markCacheDirty();
+            -- Increment missing frame count
+            M.missingFrameCount[slot] = (M.missingFrameCount[slot] or 0) + 1;
+
+            if M.missingFrameCount[slot] >= GRACE_FRAMES then
+                -- Item has been missing for multiple frames, safe to remove
+                M.poolItems[slot] = nil;
+                M.missingFrameCount[slot] = nil;
+                markCacheDirty();
+            else
+                -- Keep item for grace period
+                hasItems = true;  -- Still has items during grace period
+            end
         end
     end
 
@@ -645,6 +661,7 @@ function M.Initialize()
     M.previewEnabled = false;
     M.previewItems = {};
     M.lotHistory = {};
+    M.missingFrameCount = {};
 end
 
 -- Clear all state (call on zone change)
@@ -655,6 +672,7 @@ function M.Clear()
     M.sortedCache = {};
     M.sortedCacheDirty = true;
     M.lotHistory = {};
+    M.missingFrameCount = {};
 end
 
 -- Cleanup (call on addon unload)

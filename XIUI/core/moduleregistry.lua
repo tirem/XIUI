@@ -91,6 +91,10 @@ function M.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive)
     end
 
     if shouldShow then
+        -- Restore visibility if module was previously hidden
+        if entry.hasSetHidden and entry.module.SetHidden then
+            entry.module.SetHidden(false);
+        end
         if entry.module.DrawWindow then
             entry.module.DrawWindow(gAdjustedSettings[entry.settingsKey]);
         end
