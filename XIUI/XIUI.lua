@@ -62,7 +62,6 @@ local petBar = uiMods.petbar;
 local castCost = uiMods.castcost;
 local notifications = uiMods.notifications;
 local treasurePool = uiMods.treasurepool;
-local rollsWindow = require('modules.notifications.rolls');
 local configMenu = require('config');
 local debuffHandler = require('handlers.debuffhandler');
 local actionTracker = require('handlers.actiontracker');
@@ -382,7 +381,6 @@ ashita.events.register('d3d_present', 'present_cb', function ()
         statusHandler.clear_cache();
         UpdateUserSettings();
         uiModules.UpdateVisualsAll(gAdjustedSettings);
-        rollsWindow.UpdateVisuals(gAdjustedSettings.notificationsSettings);
     end
 
     local eventSystemActive = gameState.GetEventSystemActive();
@@ -402,13 +400,9 @@ ashita.events.register('d3d_present', 'present_cb', function ()
             uiModules.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive);
         end
 
-        -- Render rolls window (command-toggled)
-        rollsWindow.DrawWindow(gAdjustedSettings.notificationsSettings);
-
         configMenu.DrawWindow();
     else
         uiModules.HideAll();
-        rollsWindow.SetHidden(true);
     end
 
     -- XIUI DEV ONLY
@@ -427,9 +421,6 @@ end);
 ashita.events.register('load', 'load_cb', function ()
     UpdateUserSettings();
     uiModules.InitializeAll(gAdjustedSettings);
-
-    -- Initialize rolls window (command-toggled, not in registry)
-    rollsWindow.Initialize(gAdjustedSettings.notificationsSettings);
 
     -- Load mob data for current zone
     local party = AshitaCore:GetMemoryManager():GetParty();
@@ -450,9 +441,6 @@ ashita.events.register('unload', 'unload_cb', function ()
 
     statusHandler.clear_cache();
     if ClearDebuffFontCache then ClearDebuffFontCache(); end
-
-    -- Cleanup rolls window
-    rollsWindow.Cleanup();
 
     uiModules.CleanupAll();
 
@@ -491,14 +479,6 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
-        -- Test rolls window with mock data: /xiui testrolls
-        if (#command_args == 2 and command_args[2] == 'testrolls') then
-            local notifData = require('modules.notifications.data');
-            notifData.PopulateMockRollsData();
-            rollsWindow.Show();
-            return;
-        end
-
         -- Test notification command: /xiui testnotif [type]
         if (command_args[2] == 'testnotif') then
             local testType = tonumber(command_args[3]) or 5;  -- default to ITEM_OBTAINED
@@ -509,16 +489,6 @@ ashita.events.register('command', 'command_cb', function (e)
                 playerName = 'TestPlayer',
                 amount = 5000,
             });
-            return;
-        end
-
-        -- Test extended treasure pool view with mock data: /xiui testpool
-        if (command_args[2] == 'testpool') then
-            local notifData = require('modules.notifications.data');
-            local notifHandler = require('handlers.notificationhandler');
-            notifHandler.testModeEnabled = true;  -- Prevent memory sync from clearing mock data
-            notifData.PopulateMockRollsData();
-            rollsWindow.Show();
             return;
         end
 

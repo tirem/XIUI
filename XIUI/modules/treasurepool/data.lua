@@ -176,9 +176,9 @@ function M.GetSortedPoolItems()
                 idx = idx + 1;
             end
         end
-        -- Sort by slot index
+        -- Sort by expiration time descending (newest items at top)
         table.sort(M.sortedCache, function(a, b)
-            return (a.slot or 999) < (b.slot or 999);
+            return (a.expiresAt or 0) > (b.expiresAt or 0);
         end);
         M.sortedCacheDirty = false;
     end

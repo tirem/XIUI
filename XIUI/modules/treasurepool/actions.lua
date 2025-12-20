@@ -1,20 +1,16 @@
 --[[
 * XIUI Treasure Pool - Actions Module
 * Handles lot/pass packet sending for treasure pool items
+*
+* Full packet format with header required for Ashita v4
+* Lot: { 0x41, size, sync, sync, slot, propertyIndex, pad, pad }
+* Pass: { 0x42, size, sync, sync, slot, pad }
 ]]--
 
 require('common');
-
 local data = require('modules.treasurepool.data');
 
 local M = {};
-
--- ============================================
--- Packet Constants
--- ============================================
-
-local PACKET_LOT_ITEM = 0x041;   -- Lot on treasure pool item
-local PACKET_PASS_ITEM = 0x042;  -- Pass on treasure pool item
 
 -- ============================================
 -- Single Item Actions
@@ -22,12 +18,6 @@ local PACKET_PASS_ITEM = 0x042;  -- Pass on treasure pool item
 
 -- Lot on a specific treasure pool item by slot
 function M.LotItem(slot)
-    local packetManager = AshitaCore:GetPacketManager();
-    if not packetManager then
-        print('[XIUI TreasurePool] Cannot access packet manager');
-        return false;
-    end
-
     -- Validate slot
     if slot == nil or slot < 0 or slot >= data.MAX_POOL_SLOTS then
         return false;
@@ -42,23 +32,17 @@ function M.LotItem(slot)
     -- Check if already lotted
     local status = data.GetPlayerLotStatus(slot);
     if status == 'lotted' then
-        return false;  -- Already lotted
+        return false;
     end
 
-    -- Send Lot Item packet (0x041)
-    -- Packet structure: { 0x00, 0x00, 0x00, 0x00, slot }
-    packetManager:AddOutgoingPacket(PACKET_LOT_ITEM, { 0x00, 0x00, 0x00, 0x00, slot });
+    -- Build and send lot packet (0x041)
+    local lotPacket = struct.pack('bbbbbbbb', 0x41, 0x04, 0x00, 0x00, slot, 0x00, 0x00, 0x00):totable();
+    AshitaCore:GetPacketManager():AddOutgoingPacket(lotPacket[1], lotPacket);
     return true;
 end
 
 -- Pass on a specific treasure pool item by slot
 function M.PassItem(slot)
-    local packetManager = AshitaCore:GetPacketManager();
-    if not packetManager then
-        print('[XIUI TreasurePool] Cannot access packet manager');
-        return false;
-    end
-
     -- Validate slot
     if slot == nil or slot < 0 or slot >= data.MAX_POOL_SLOTS then
         return false;
@@ -76,9 +60,12 @@ function M.PassItem(slot)
         return false;  -- Already decided
     end
 
-    -- Send Pass Item packet (0x042)
-    -- Packet structure: { 0x00, 0x00, 0x00, 0x00, slot }
-    packetManager:AddOutgoingPacket(PACKET_PASS_ITEM, { 0x00, 0x00, 0x00, 0x00, slot });
+    -- Build pass packet with full header
+    local passPacket = struct.pack('bbbbbbbb', 0x42, 0x04, 0x00, 0x00, slot, 0x00, 0x00, 0x00):totable();
+
+    -- Send using SDK pattern
+    local mgr = AshitaCore:GetPacketManager();
+    mgr:AddOutgoingPacket(passPacket[1], passPacket);
     return true;
 end
 
@@ -88,18 +75,12 @@ end
 
 -- Lot on all items that player has NOT already lotted/passed on
 function M.LotAll()
-    local packetManager = AshitaCore:GetPacketManager();
-    if not packetManager then
-        print('[XIUI TreasurePool] Cannot access packet manager');
-        return 0;
-    end
-
     local inventory = AshitaCore:GetMemoryManager():GetInventory();
     if not inventory then
-        print('[XIUI TreasurePool] Cannot access inventory');
         return 0;
     end
 
+    local mgr = AshitaCore:GetPacketManager();
     local count = 0;
     for slot = 0, data.MAX_POOL_SLOTS - 1 do
         local item = inventory:GetTreasurePoolItem(slot);
@@ -107,16 +88,11 @@ function M.LotAll()
             local lot = item.Lot;
             -- Only lot if pending (0, nil, or 65535+ means not lotted)
             if lot == nil or lot == 0 or lot >= 65535 then
-                packetManager:AddOutgoingPacket(PACKET_LOT_ITEM, { 0x00, 0x00, 0x00, 0x00, slot });
+                local lotPacket = struct.pack('bbbbbbbb', 0x41, 0x04, 0x00, 0x00, slot, 0x00, 0x00, 0x00):totable();
+                mgr:AddOutgoingPacket(lotPacket[1], lotPacket);
                 count = count + 1;
             end
         end
-    end
-
-    if count > 0 then
-        print('[XIUI TreasurePool] Lotted on ' .. count .. ' item(s)');
-    else
-        print('[XIUI TreasurePool] No items to lot on');
     end
 
     return count;
@@ -124,18 +100,12 @@ end
 
 -- Pass on all items that player has NOT already lotted/passed on
 function M.PassAll()
-    local packetManager = AshitaCore:GetPacketManager();
-    if not packetManager then
-        print('[XIUI TreasurePool] Cannot access packet manager');
-        return 0;
-    end
-
     local inventory = AshitaCore:GetMemoryManager():GetInventory();
     if not inventory then
-        print('[XIUI TreasurePool] Cannot access inventory');
         return 0;
     end
 
+    local mgr = AshitaCore:GetPacketManager();
     local count = 0;
     for slot = 0, data.MAX_POOL_SLOTS - 1 do
         local item = inventory:GetTreasurePoolItem(slot);
@@ -143,16 +113,11 @@ function M.PassAll()
             local lot = item.Lot;
             -- Only pass if pending (0, nil means not decided, 65535 means already passed)
             if lot == nil or lot == 0 then
-                packetManager:AddOutgoingPacket(PACKET_PASS_ITEM, { 0x00, 0x00, 0x00, 0x00, slot });
+                local passPacket = struct.pack('bbbbbbbb', 0x42, 0x04, 0x00, 0x00, slot, 0x00, 0x00, 0x00):totable();
+                mgr:AddOutgoingPacket(passPacket[1], passPacket);
                 count = count + 1;
             end
         end
-    end
-
-    if count > 0 then
-        print('[XIUI TreasurePool] Passed on ' .. count .. ' item(s)');
-    else
-        print('[XIUI TreasurePool] No items to pass on');
     end
 
     return count;
