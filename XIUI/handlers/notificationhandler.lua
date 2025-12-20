@@ -61,7 +61,7 @@ local timestampCache = {};
 -- Treasure Pool Memory Sync (UI only)
 -- ========================================
 
--- Sync treasure pool state from Ashita memory API for UI display
+-- Sync treasure pool state from Ashita memory API for UI display.
 -- This does NOT create notifications - that's handled by packet handlers
 function M.SyncTreasurePoolFromMemory()
     if M.dataModule == nil then return end
