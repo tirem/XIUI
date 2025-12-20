@@ -630,8 +630,9 @@ targetbar.DrawWindow = function(settings)
             end
         end
 		-- Reorder to show debuffs first for easier identification
-		local reorderedBuffs = statusIcons.ReorderDebuffsFirst(buffIds, buffTable);
-		DrawStatusIcons(reorderedBuffs, settings.iconSize, settings.maxIconColumns, 3, false, settings.barHeight/2, buffTimes, nil);
+		-- Pass buffTimes so they get reordered in tandem with buffIds
+		local reorderedBuffs, reorderedTimes = statusIcons.ReorderDebuffsFirst(buffIds, buffTable, buffTimes);
+		DrawStatusIcons(reorderedBuffs, settings.iconSize, settings.maxIconColumns, 3, false, settings.barHeight/2, reorderedTimes, nil);
 		imgui.PopStyleVar(1);
 
 		-- Obtain our target of target using action-based tracking (more reliable)

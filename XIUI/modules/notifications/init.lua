@@ -354,6 +354,7 @@ notifications.HandlePartyInviteResponse = handler.HandlePartyInviteResponse;
 notifications.HandleTradeRequest = handler.HandleTradeRequest;
 notifications.HandleTradeResponse = handler.HandleTradeResponse;
 notifications.HandleMessagePacket = handler.HandleMessagePacket;
+notifications.HandleActionPacket = handler.HandleActionPacket;
 notifications.HandleInventoryUpdate = handler.HandleInventoryUpdate;
 notifications.HandleTreasurePool = handler.HandleTreasurePool;
 notifications.HandleTreasureLot = handler.HandleTreasureLot;

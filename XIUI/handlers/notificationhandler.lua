@@ -176,10 +176,11 @@ end
 -- Debug flag - set to true to see message IDs and item IDs in log
 M.DEBUG_ENABLED = false;
 
--- Item obtained message IDs
+-- Item obtained message IDs (for MESSAGE packets 0x0029/0x002D only)
 -- Reference: FFXI message packet (0x029) message types
 -- Note: param field contains item ID, value field contains quantity
 -- Important: Message 6 is a DEATH message, not item obtained!
+-- Note: Steal/Despoil (125, 593-599) are handled via ACTION packets, not here
 local itemObtainedMes = {
     [9] = true,     -- [Player] obtains [item]
     [65] = true,    -- You find [item] on the [mob]
@@ -197,8 +198,9 @@ local keyItemObtainedMes = {
     [659] = true,   -- [Player] obtains the key item [item]
 };
 
--- Gil obtained message IDs
+-- Gil obtained message IDs (for MESSAGE packets 0x0029/0x002D only)
 -- Note: param field contains gil amount
+-- Note: Mug (129) is handled via ACTION packets, not here
 local gilObtainedMes = {
     [8] = true,     -- You obtain [amount] gil
     [10] = true,    -- [Player] obtains [amount] gil
@@ -396,8 +398,96 @@ function M.HandleMessagePacket(e, messagePacket, packetId)
         -- Check if gil notifications are enabled
         if not gConfig.notificationsShowGil then return end
         -- param contains gil amount (not value)
+        -- Sanity check: reject absurdly large values (likely server IDs being misinterpreted)
+        -- Normal gil drops are typically under 100k, use 1M as safe threshold
+        local gilAmount = param or 0;
+        if gilAmount > 1000000 then
+            if M.DEBUG_ENABLED then
+                print(string.format('[XIUI] GIL REJECTED: msg=%d param=%d (too large, likely not gil)', message, gilAmount));
+            end
+            return;
+        end
         if M.dataModule.AddGilObtainedNotification then
-            M.dataModule.AddGilObtainedNotification(param or 0);
+            M.dataModule.AddGilObtainedNotification(gilAmount);
+        end
+    end
+end
+
+-- ========================================
+-- Action Packet Message IDs (0x0028)
+-- ========================================
+
+-- Steal message IDs (item obtained via Steal/Despoil)
+-- These appear in action packet's action.Message field, with action.Param containing item ID
+local stealItemMes = {
+    [125] = true,   -- [Actor] steals an [item] from [target]. (Steal)
+    [593] = true,   -- [Actor] steals [item] + Attack Down. (Despoil)
+    [594] = true,   -- [Actor] steals [item] + Defense Down. (Despoil)
+    [595] = true,   -- [Actor] steals [item] + Magic Atk. Down. (Despoil)
+    [596] = true,   -- [Actor] steals [item] + Magic Def. Down. (Despoil)
+    [597] = true,   -- [Actor] steals [item] + Evasion Down. (Despoil)
+    [598] = true,   -- [Actor] steals [item] + Accuracy Down. (Despoil)
+    [599] = true,   -- [Actor] steals [item] + Slow. (Despoil)
+};
+
+-- Mug message ID (gil obtained via Mug)
+-- action.Param contains gil amount
+local mugGilMes = {
+    [129] = true,   -- [Actor] mugs [gil] from [target]. (Mug)
+};
+
+-- ========================================
+-- Action Packet Handler (0x0028)
+-- ========================================
+
+-- Handle action packet (0x0028) for Steal/Mug notifications
+-- Steal and Mug results come through action packets, not message packets
+function M.HandleActionPacket(actionPacket)
+    if M.dataModule == nil then return end
+    if actionPacket == nil then return end
+
+    -- Get player server ID to check if we're the actor
+    local party = GetPartySafe();
+    if not party then return end
+    local playerServerId = party:GetMemberServerId(0);
+
+    -- Only process our own actions
+    if actionPacket.UserId ~= playerServerId then return end
+
+    -- Check each target's actions for steal/mug messages
+    if actionPacket.Targets then
+        for _, target in ipairs(actionPacket.Targets) do
+            if target.Actions then
+                for _, action in ipairs(target.Actions) do
+                    local message = action.Message;
+                    local param = action.Param;
+
+                    -- Debug output
+                    if M.DEBUG_ENABLED then
+                        print(string.format('[XIUI] ACTION: msg=%d param=%d', message or 0, param or 0));
+                    end
+
+                    -- Check for Steal (item obtained)
+                    if stealItemMes[message] and param and param > 0 then
+                        if gConfig.notificationsShowItems and M.dataModule.AddItemObtainedNotification then
+                            M.dataModule.AddItemObtainedNotification(param, 1);
+                            if M.DEBUG_ENABLED then
+                                local item = AshitaCore:GetResourceManager():GetItemById(param);
+                                local itemName = (item and item.Name and item.Name[1]) or 'Unknown';
+                                print(string.format('[XIUI] STEAL: item=%d (%s)', param, itemName));
+                            end
+                        end
+                    -- Check for Mug (gil obtained)
+                    elseif mugGilMes[message] and param and param > 0 then
+                        if gConfig.notificationsShowGil and M.dataModule.AddGilObtainedNotification then
+                            M.dataModule.AddGilObtainedNotification(param);
+                            if M.DEBUG_ENABLED then
+                                print(string.format('[XIUI] MUG: gil=%d', param));
+                            end
+                        end
+                    end
+                end
+            end
         end
     end
 end

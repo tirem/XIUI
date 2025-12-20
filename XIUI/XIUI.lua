@@ -537,6 +537,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
             if gConfig.showPartyList then partyList.HandleActionPacket(actionPacket); end
             debuffHandler.HandleActionPacket(actionPacket);
             actionTracker.HandleActionPacket(actionPacket);
+            if gConfig.showNotifications then notifications.HandleActionPacket(actionPacket); end
         end
     elseif (e.id == 0x00E) then
         local mobUpdatePacket = ParseMobUpdatePacket(e);
