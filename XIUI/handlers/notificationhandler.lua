@@ -182,7 +182,7 @@ M.DEBUG_ENABLED = false;
 -- Important: Message 6 is a DEATH message, not item obtained!
 -- Note: Steal/Despoil (125, 593-599) are handled via ACTION packets, not here
 local itemObtainedMes = {
-    [9] = true,     -- [Player] obtains [item]
+    -- Note: Message ID 9 is "<actor> attains level <number>!" (level up), NOT item obtained
     [65] = true,    -- You find [item] on the [mob]
     [69] = true,    -- [Player] finds [item] on the [mob]
     [98] = true,    -- You obtain an [item] from [target]
@@ -382,6 +382,14 @@ function M.HandleMessagePacket(e, messagePacket, packetId)
         if not gConfig.notificationsShowItems then return end
         -- param contains item ID
         -- value contains quantity
+        -- Validate item ID exists to prevent "Unknown Item" notifications from malformed packets
+        local item = AshitaCore:GetResourceManager():GetItemById(param);
+        if not item or not item.Name or not item.Name[1] or item.Name[1] == '' then
+            if M.DEBUG_ENABLED then
+                print(string.format('[XIUI] ITEM REJECTED: msg=%d param=%d (invalid item ID)', message, param));
+            end
+            return;
+        end
         if M.dataModule.AddItemObtainedNotification then
             M.dataModule.AddItemObtainedNotification(param, value or 1);
         end
