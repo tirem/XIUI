@@ -74,10 +74,11 @@ HzLimitedMode = false;
 -- =================
 -- = XIUI DEV ONLY =
 -- =================
-local _XIUI_DEV_HOT_RELOADING_ENABLED = false;
+local _XIUI_DEV_HOT_RELOADING_ENABLED = true;
 local _XIUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS = 1;
 local _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME;
 local _XIUI_DEV_HOT_RELOAD_FILES = {};
+local _XIUI_DEV_ALPHA_HOTBAR = true;
 
 -- Local split function for hot reload (avoids monkeypatching string metatable)
 local function _split_string(str, sep)
@@ -235,6 +236,15 @@ uiModules.Register('treasurePool', {
     configKey = 'treasurePoolEnabled',
     hasSetHidden = true,
 });
+if _XIUI_DEV_ALPHA_HOTBAR == true then
+    uiModules.Register('hotbar', {
+        module = require('modules.hotbar.init'),
+        settingsKey = 'hotbarSettings',
+        configKey = 'showhotbar',
+        hideOnEventKey = 'hotbarHideDuringEvents',
+        hasSetHidden = true,
+    });
+end
 
 -- Initialize settings from defaults
 local user_settings_container = T{

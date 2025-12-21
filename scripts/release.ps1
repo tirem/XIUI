@@ -69,6 +69,15 @@ if ($xiuiLuaContent -match '_XIUI_DEV_HOT_RELOADING_ENABLED\s*=\s*true') {
 }
 Write-Host "[✓] Hot reloading is disabled" -ForegroundColor Green
 
+# Check hotbar flag
+if ($xiuiLuaContent -match '_XIUI_DEV_ALPHA_HOTBAR\s*=\s*true') {
+    Write-Host "Error: _XIUI_DEV_ALPHA_HOTBAR is set to true" -ForegroundColor Red
+    Write-Host "Hot reloading must be disabled for releases"
+    Write-Host "Set it to false in XIUI/XIUI.lua before releasing"
+    exit 1
+}
+Write-Host "[✓] Alpha hotbar is disabled" -ForegroundColor Green
+
 # Safety Check 4: Fetch and verify we're up to date with origin
 Write-Host "Fetching from origin..." -ForegroundColor Yellow
 git fetch origin 2>$null
