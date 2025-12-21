@@ -271,13 +271,20 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
     local namePosX = hpStartX;
     if cache.showJobIcon then
         local offsetStartY = hpStartY - jobIconSize - settings.nameTextOffsetY;
-        imgui.SetCursorScreenPos({namePosX, offsetStartY});
         local jobIcon = statusHandler.GetJobIcon(memInfo.job);
         if (jobIcon ~= nil) then
             namePosX = namePosX + jobIconSize + settings.nameTextOffsetX;
-            imgui.Image(jobIcon, {jobIconSize, jobIconSize});
+            -- Use background draw list to render outside window clipping
+            local jobIconPtr = tonumber(ffi.cast("uint32_t", jobIcon));
+            local draw_list = imgui.GetBackgroundDrawList();
+            draw_list:AddImage(
+                jobIconPtr,
+                {hpStartX, offsetStartY},
+                {hpStartX + jobIconSize, offsetStartY + jobIconSize},
+                {0, 0}, {1, 1},
+                IM_COL32_WHITE
+            );
         end
-        imgui.SetCursorScreenPos({hpStartX, hpStartY});
     end
 
     -- Update HP text color
