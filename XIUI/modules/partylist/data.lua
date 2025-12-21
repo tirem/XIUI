@@ -208,6 +208,7 @@ function data.updatePartyConfigCache()
         cache.minRows = party.minRows or 1;
         cache.entrySpacing = party.entrySpacing or 0;
         cache.selectionBoxScaleY = party.selectionBoxScaleY or 1;
+        cache.selectionBoxOffsetY = party.selectionBoxOffsetY or 0;
 
         -- HP/MP display modes
         cache.hpDisplayMode = party.hpDisplayMode or 'number';

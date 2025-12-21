@@ -202,11 +202,12 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
         local selectionWidth = allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2;
         local selectionScaleY = cache.selectionBoxScaleY or 1;
+        local selectionOffsetY = cache.selectionBoxOffsetY or 0;
         local unscaledHeight = entrySize + settings.cursorPaddingY1 + settings.cursorPaddingY2;
         local selectionHeight = unscaledHeight * selectionScaleY;
         local topOfMember = hpStartY - nameRefHeight - settings.nameTextOffsetY;
         local centerOffsetY = (selectionHeight - unscaledHeight) / 2;
-        local selectionTL = {hpStartX - settings.cursorPaddingX1, topOfMember - settings.cursorPaddingY1 - centerOffsetY};
+        local selectionTL = {hpStartX - settings.cursorPaddingX1, topOfMember - settings.cursorPaddingY1 - centerOffsetY + selectionOffsetY};
         local selectionBR = {selectionTL[1] + selectionWidth, selectionTL[2] + selectionHeight};
 
         local selectionGradient;
@@ -974,12 +975,13 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 local cursorHeight = cursorTexture.height * settings.arrowSize;
 
                 local selectionScaleY = cache.selectionBoxScaleY or 1;
+                local selectionOffsetY = cache.selectionBoxOffsetY or 0;
                 local unscaledHeight = entrySize + settings.cursorPaddingY1 + settings.cursorPaddingY2;
                 local selectionHeight = unscaledHeight * selectionScaleY;
                 local topOfMember = hpStartY - nameRefHeight - settings.nameTextOffsetY;
                 local centerOffsetY = (selectionHeight - unscaledHeight) / 2;
                 local selectionTL_X = hpStartX - settings.cursorPaddingX1;
-                local selectionTL_Y = topOfMember - settings.cursorPaddingY1 - centerOffsetY;
+                local selectionTL_Y = topOfMember - settings.cursorPaddingY1 - centerOffsetY + selectionOffsetY;
 
                 local cursorX = selectionTL_X - cursorWidth;
                 local cursorY = selectionTL_Y + (selectionHeight / 2) - (cursorHeight / 2);

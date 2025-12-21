@@ -114,6 +114,7 @@ local function DrawPartyTabContent(party, partyName)
         components.DrawPartySlider(party, 'Min Rows', 'minRows', 1, 6);
         components.DrawPartySlider(party, 'Entry Spacing', 'entrySpacing', -50, 50);
         components.DrawPartySlider(party, 'Selection Box Scale Y', 'selectionBoxScaleY', 0.5, 2.0, '%.2f');
+        components.DrawPartySlider(party, 'Selection Box Offset Y', 'selectionBoxOffsetY', -50, 50);
 
         -- General scale controls (applies to all elements)
         components.DrawPartySlider(party, 'Scale X', 'scaleX', 0.1, 3.0, '%.2f');
