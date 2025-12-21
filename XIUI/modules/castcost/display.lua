@@ -51,6 +51,11 @@ local windowState = {
     height = nil,
 };
 
+-- Position saving state
+local hasAppliedSavedPosition = false;
+local lastSavedPosX = nil;
+local lastSavedPosY = nil;
+
 -- ============================================
 -- Initialization
 -- ============================================
@@ -267,6 +272,16 @@ function M.Render(itemInfo, itemType, settings, colors)
 
     -- Set up ImGui window
     imgui.SetNextWindowSize({ -1, -1 }, ImGuiCond_Always);
+
+    -- Apply saved position on first render
+    local cc = gConfig.castCost or {};
+    if not hasAppliedSavedPosition and cc.windowPosX ~= nil and cc.windowPosY ~= nil then
+        imgui.SetNextWindowPos({cc.windowPosX, cc.windowPosY}, ImGuiCond_Once);
+        hasAppliedSavedPosition = true;
+        lastSavedPosX = cc.windowPosX;
+        lastSavedPosY = cc.windowPosY;
+    end
+
     local windowFlags = bit.bor(
         ImGuiWindowFlags_NoDecoration,
         ImGuiWindowFlags_AlwaysAutoResize,
@@ -564,6 +579,27 @@ function M.Render(itemInfo, itemType, settings, colors)
             windowState.x = winPosX;
             windowState.y = winPosY;
             windowState.height = totalHeight;
+        end
+
+        -- Save position when user moves window (check on mouse release)
+        if not gConfig.lockPositions then
+            local winPosX, winPosY = imgui.GetWindowPos();
+            -- Only save if position changed significantly (avoid floating point noise)
+            local posChanged = (lastSavedPosX == nil or lastSavedPosY == nil) or
+                               (math.abs(winPosX - lastSavedPosX) > 1) or
+                               (math.abs(winPosY - lastSavedPosY) > 1);
+            if posChanged and not imgui.IsMouseDown(0) then
+                -- Mouse released and position changed - save to settings
+                local cc = gConfig.castCost or {};
+                cc.windowPosX = winPosX;
+                cc.windowPosY = winPosY;
+                gConfig.castCost = cc;
+                lastSavedPosX = winPosX;
+                lastSavedPosY = winPosY;
+                if SaveSettingsToDisk then
+                    SaveSettingsToDisk();
+                end
+            end
         end
     end
     imgui.End();

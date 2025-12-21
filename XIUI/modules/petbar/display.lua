@@ -21,6 +21,11 @@ local windowState = {
     height = nil,
 };
 
+-- Position saving state
+local hasAppliedSavedPosition = false;
+local lastSavedPosX = nil;
+local lastSavedPosY = nil;
+
 -- ============================================
 -- Per-Pet-Type Settings Helpers
 -- ============================================
@@ -644,6 +649,14 @@ function display.DrawWindow(settings)
         windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
     end
 
+    -- Apply saved position on first render
+    if not hasAppliedSavedPosition and gConfig.petBarWindowPosX ~= nil and gConfig.petBarWindowPosY ~= nil then
+        imgui.SetNextWindowPos({gConfig.petBarWindowPosX, gConfig.petBarWindowPosY}, ImGuiCond_Once);
+        hasAppliedSavedPosition = true;
+        lastSavedPosX = gConfig.petBarWindowPosX;
+        lastSavedPosY = gConfig.petBarWindowPosY;
+    end
+
     -- Get per-pet-type settings and colors
     local typeSettings = GetPetTypeSettings();
     local colorConfig = GetPetTypeColors();
@@ -1180,6 +1193,25 @@ function display.DrawWindow(settings)
 
         -- Update background primitives
         data.UpdateBackground(windowPosX, windowPosY, windowWidth, windowHeight, settings);
+
+        -- Save position when user moves window (check on mouse release)
+        local canMove = not gConfig.lockPositions or (showConfig[1] and gConfig.petBarPreview);
+        if canMove then
+            -- Only save if position changed significantly (avoid floating point noise)
+            local posChanged = (lastSavedPosX == nil or lastSavedPosY == nil) or
+                               (math.abs(windowPosX - lastSavedPosX) > 1) or
+                               (math.abs(windowPosY - lastSavedPosY) > 1);
+            if posChanged and not imgui.IsMouseDown(0) then
+                -- Mouse released and position changed - save to settings
+                gConfig.petBarWindowPosX = windowPosX;
+                gConfig.petBarWindowPosY = windowPosY;
+                lastSavedPosX = windowPosX;
+                lastSavedPosY = windowPosY;
+                if SaveSettingsToDisk then
+                    SaveSettingsToDisk();
+                end
+            end
+        end
     end
     imgui.End();
 

@@ -108,6 +108,10 @@ function M.createUserSettingsDefaults()
             borderScale = 1.0,
             backgroundOpacity = 1.0,
             borderOpacity = 1.0,
+
+            -- Window position (saved when user moves window)
+            windowPosX = nil,
+            windowPosY = nil,
         },
 
         statusIconTheme = 'XIView',
@@ -562,6 +566,9 @@ function M.createUserSettingsDefaults()
         petBarScaleY = 1.0,
         petBarHideDuringEvents = true,
         petBarPreview = true,
+        -- Window positions (saved when user moves window)
+        petBarWindowPosX = nil,
+        petBarWindowPosY = nil,
         petBarPreviewType = 2, -- Avatar (SMN)
         petBarShowDistance = true,
         petBarShowTarget = true,
