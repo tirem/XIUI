@@ -515,6 +515,12 @@ ashita.events.register('command', 'command_cb', function (e)
             notifications.TestToastsOnly();
             return;
         end
+
+        -- Reset gil per hour tracking: /xiui resetgil
+        if (command_args[2] == 'resetgil') then
+            gilTracker.ResetTracking();
+            return;
+        end
     end
 end);
 

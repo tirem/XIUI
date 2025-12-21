@@ -72,6 +72,8 @@ function M.createColorCustomizationDefaults()
         -- Gil Tracker
         gilTracker = T{
             textColor = 0xFFFFFFFF,
+            positiveColor = 0xFF00FF00,  -- Green for positive gil/hr
+            negativeColor = 0xFFFF4444,  -- Red for negative gil/hr
         },
 
         -- Inventory Tracker

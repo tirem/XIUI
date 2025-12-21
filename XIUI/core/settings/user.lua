@@ -226,6 +226,11 @@ function M.createUserSettingsDefaults()
         gilTrackerRightAlign = false,
         gilTrackerIconRight = true,
         gilTrackerShowIcon = true,
+        gilTrackerShowGilPerHour = true,
+        gilTrackerTextOffsetX = 0,
+        gilTrackerTextOffsetY = 0,
+        gilTrackerGilPerHourOffsetX = 0,
+        gilTrackerGilPerHourOffsetY = 0,
 
         inventoryTrackerScale = 1,
         inventoryTrackerFontSize = 12,

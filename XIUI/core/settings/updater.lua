@@ -242,6 +242,10 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
     gAdjustedSettings.gilTrackerSettings.rightAlign = us.gilTrackerRightAlign;
     gAdjustedSettings.gilTrackerSettings.iconRight = us.gilTrackerIconRight;
     gAdjustedSettings.gilTrackerSettings.showIcon = us.gilTrackerShowIcon;
+    gAdjustedSettings.gilTrackerSettings.textOffsetX = us.gilTrackerTextOffsetX or 0;
+    gAdjustedSettings.gilTrackerSettings.textOffsetY = us.gilTrackerTextOffsetY or 0;
+    gAdjustedSettings.gilTrackerSettings.gilPerHourOffsetX = us.gilTrackerGilPerHourOffsetX or 0;
+    gAdjustedSettings.gilTrackerSettings.gilPerHourOffsetY = us.gilTrackerGilPerHourOffsetY or 0;
 
     -- Inventory Tracker
     gAdjustedSettings.inventoryTrackerSettings.dotRadius = ds.inventoryTrackerSettings.dotRadius * us.inventoryTrackerScale;

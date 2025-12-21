@@ -655,6 +655,40 @@ function M.MigrateCastCostSettings(gConfig, defaults)
     end
 end
 
+-- Migrate gil tracker settings (add missing fields for existing users)
+function M.MigrateGilTrackerSettings(gConfig, defaults)
+    -- Gil tracker display settings
+    if gConfig.gilTrackerShowGilPerHour == nil then
+        gConfig.gilTrackerShowGilPerHour = defaults.gilTrackerShowGilPerHour;
+    end
+
+    -- Gil tracker offset settings
+    if gConfig.gilTrackerTextOffsetX == nil then
+        gConfig.gilTrackerTextOffsetX = defaults.gilTrackerTextOffsetX or 0;
+    end
+    if gConfig.gilTrackerTextOffsetY == nil then
+        gConfig.gilTrackerTextOffsetY = defaults.gilTrackerTextOffsetY or 0;
+    end
+    if gConfig.gilTrackerGilPerHourOffsetX == nil then
+        gConfig.gilTrackerGilPerHourOffsetX = defaults.gilTrackerGilPerHourOffsetX or 0;
+    end
+    if gConfig.gilTrackerGilPerHourOffsetY == nil then
+        gConfig.gilTrackerGilPerHourOffsetY = defaults.gilTrackerGilPerHourOffsetY or 0;
+    end
+
+    -- Gil tracker color settings
+    if gConfig.colorCustomization and gConfig.colorCustomization.gilTracker then
+        local gilColors = gConfig.colorCustomization.gilTracker;
+        local defaultColors = defaults.colorCustomization.gilTracker;
+        if gilColors.positiveColor == nil then
+            gilColors.positiveColor = defaultColors.positiveColor;
+        end
+        if gilColors.negativeColor == nil then
+            gilColors.negativeColor = defaultColors.negativeColor;
+        end
+    end
+end
+
 -- Run structure migrations (called AFTER settings.load())
 -- These handle migrating old settings structures to new ones
 function M.RunStructureMigrations(gConfig, defaults)
@@ -664,6 +698,7 @@ function M.RunStructureMigrations(gConfig, defaults)
     M.MigrateColorSettings(gConfig, defaults);
     M.MigratePerPetTypeColorSettings(gConfig, defaults);
     M.MigrateIndividualSettings(gConfig, defaults);
+    M.MigrateGilTrackerSettings(gConfig, defaults);
     M.MigrateCastCostSettings(gConfig, defaults);
 end
 
