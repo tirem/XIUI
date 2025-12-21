@@ -9,7 +9,7 @@ local windowBg = require('libs.windowbackground');
 
 local data = require('modules.hotbar.data');
 local display = require('modules.hotbar.display');
--- local actions = require('modules.hotbar.actions');
+local actions = require('modules.hotbar.actions');
 
 local M = {};
 
@@ -80,7 +80,7 @@ function M.Initialize(settings)
         return;
     end
 
-     //@TODO: 
+     --//@TODO: 
     -- -- Use pcall for safety during font creation
     -- local function safeCreateFont(settings)
     --     local success, result = pcall(function()
@@ -94,7 +94,7 @@ function M.Initialize(settings)
     -- end
 
 
-    //@TODO: 
+    --//@TODO: 
     data.SetAllFontsVisible(false);
 
     -- Initialize display layer (creates background primitive)
@@ -103,7 +103,7 @@ function M.Initialize(settings)
     M.initialized = true;
 end
 
-//@TODO:
+--//@TODO:
 -- Update visual elements (fonts, themes) when settings change
 function M.UpdateVisuals(settings)
     if not M.initialized then return; end
@@ -126,7 +126,7 @@ function M.DrawWindow(settings)
     if not M.initialized then return; end
     if not M.visible then return; end
 
-    //@TODO:
+    --//@TODO:
     -- -- Read pool state from memory (skip in preview mode)
     -- if not data.IsPreviewActive() then
     --     data.ReadFromMemory();
@@ -158,7 +158,7 @@ end
 function M.Cleanup()
     if not M.initialized then return; end
 
-    //@TODO:
+    --//@TODO:
     -- -- Destroy header and button fonts
     -- data.headerFont = FontManager.destroy(data.headerFont);
     -- data.lotAllFont = FontManager.destroy(data.lotAllFont);
@@ -254,7 +254,7 @@ end
 -- Command Interface
 -- ============================================
 
-//@TODO:
+--//@TODO:
 -- function M.LotAll()
 --     return actions.LotAll();
 -- end
@@ -275,7 +275,7 @@ end
 -- Query Interface
 -- ============================================
 
-//@TODO:
+--//@TODO:
 -- function M.GetPoolCount()
 --     return data.GetPoolCount();
 -- end
