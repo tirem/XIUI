@@ -553,9 +553,6 @@ function M.Remove(notificationId)
                 notification.state = M.STATE.EXITING;
                 notification.stateStartTime = os.clock();
                 notification.animationProgress = 0;
-                -- Clear minified state to ensure proper exit animation rendering
-                notification.isMinified = false;
-                notification.minifyProgress = 0;
             end
             return;
         end
@@ -568,9 +565,6 @@ function M.Remove(notificationId)
                 notification.state = M.STATE.EXITING;
                 notification.stateStartTime = os.clock();
                 notification.animationProgress = 0;
-                -- Clear minified state to ensure proper exit animation rendering
-                notification.isMinified = false;
-                notification.minifyProgress = 0;
             end
             return;
         end
@@ -594,9 +588,6 @@ function M.RemoveByType(notificationType, excludeId)
                 notification.state = M.STATE.EXITING;
                 notification.stateStartTime = os.clock();
                 notification.animationProgress = 0;
-                -- Clear minified state to ensure proper exit animation rendering
-                notification.isMinified = false;
-                notification.minifyProgress = 0;
             end
         end
     end
@@ -608,9 +599,6 @@ function M.RemoveByType(notificationType, excludeId)
                 notification.state = M.STATE.EXITING;
                 notification.stateStartTime = os.clock();
                 notification.animationProgress = 0;
-                -- Clear minified state to ensure proper exit animation rendering
-                notification.isMinified = false;
-                notification.minifyProgress = 0;
             end
         end
     end

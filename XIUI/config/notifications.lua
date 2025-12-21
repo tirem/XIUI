@@ -44,12 +44,25 @@ local function triggerTestNotification(notifType)
     notificationData.Add(notifType, testData[notifType] or {});
 end
 
+-- Clear notifications of a specific type
+local function clearNotificationType(notifType)
+    notificationData.RemoveByType(notifType);
+end
+
 -- Draw a checkbox with a test button on the same line
+-- For persistent types (party/trade), also add a clear button
 local function DrawCheckboxWithTest(label, configKey, notifType)
     components.DrawCheckbox(label, configKey);
     imgui.SameLine();
     if imgui.SmallButton('Test##' .. configKey) then
         triggerTestNotification(notifType);
+    end
+    -- Add clear button for persistent notification types
+    if notificationData.IsPersistentType(notifType) then
+        imgui.SameLine();
+        if imgui.SmallButton('Clear##' .. configKey) then
+            clearNotificationType(notifType);
+        end
     end
 end
 
