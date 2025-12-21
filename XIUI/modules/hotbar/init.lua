@@ -251,9 +251,11 @@ function M.HandleZonePacket()
 end
 
 -- ============================================
--- Packet Handler
+-- Key Handler
 -- ============================================
-
+function M.HandleKey(event)
+    return actions.HandleKey(event);
+end
 
 -- ============================================
 -- Command Interface

@@ -62,6 +62,7 @@ local petBar = uiMods.petbar;
 local castCost = uiMods.castcost;
 local notifications = uiMods.notifications;
 local treasurePool = uiMods.treasurepool;
+local hotbar = uiMods.hotbar;
 local configMenu = require('config');
 local debuffHandler = require('handlers.debuffhandler');
 local actionTracker = require('handlers.actiontracker');
@@ -238,7 +239,7 @@ uiModules.Register('treasurePool', {
 });
 if _XIUI_DEV_ALPHA_HOTBAR == true then
     uiModules.Register('hotbar', {
-        module = require('modules.hotbar.init'),
+        module = hotbar,
         settingsKey = 'hotbarSettings',
         configKey = 'showhotbar',
         hideOnEventKey = 'hotbarHideDuringEvents',
@@ -698,10 +699,8 @@ end);
         Blocking a press here will only block it during inputs of those types. It will not block
         in-game button handling for things such as movement, menu interactions, etc.
 --]]
-ashita.events.register('key', 'key_cb', function (e)
-    print("Key pressed wparam: " .. tostring(e.wparam) .. " lparam: " .. tostring(e.lparam)); 
-    if (e.wparam == 49) then
-        e.blocked = true;
-        AshitaCore:GetChatManager():QueueCommand(-1, '/ma Cure <t>')
+ashita.events.register('key', 'key_cb', function (event)
+    if(_XIUI_DEV_ALPHA_HOTBAR == true) then
+        hotbar.HandleKey(event);
     end
 end);
