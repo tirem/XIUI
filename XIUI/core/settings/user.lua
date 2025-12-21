@@ -46,16 +46,16 @@ function M.createUserSettingsDefaults()
         treasurePoolExpanded = false,         -- Expanded view (false = collapsed)
 
         -- Hotbar settings
-        treasurePoolEnabled = true,           -- Show treasure pool when items in pool
-        treasurePoolFontSize = 10,            -- Font size for text
-        treasurePoolScaleX = 1.0,             -- Horizontal scale
-        treasurePoolScaleY = 1.0,             -- Vertical scale
-        treasurePoolBgScale = 1.0,            -- Background texture scale
-        treasurePoolBorderScale = 1.0,        -- Border texture scale
-        treasurePoolBackgroundOpacity = 0.87, -- Background opacity
-        treasurePoolBorderOpacity = 1.0,      -- Border opacity
-        treasurePoolBackgroundTheme = 'Plain', -- Background theme
-        treasurePoolPreview = false,          -- Show preview with test data
+        hotbarEnabled = true,           -- Show treasure pool when items in pool
+        hotbarFontSize = 10,            -- Font size for text
+        hotbarScaleX = 1.0,             -- Horizontal scale
+        hotbarScaleY = 1.0,             -- Vertical scale
+        hotbarBgScale = 1.0,            -- Background texture scale
+        hotbarBorderScale = 1.0,        -- Border texture scale
+        hotbarBackgroundOpacity = 0.87, -- Background opacity
+        hotbarBorderOpacity = 1.0,      -- Border opacity
+        hotbarBackgroundTheme = 'Plain', -- Background theme
+        hotbarPreview = false,          -- Show preview with test data
 
         -- Notifications settings
         notificationsShowPartyInvite = true,
