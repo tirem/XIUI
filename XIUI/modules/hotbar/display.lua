@@ -66,7 +66,7 @@ local selectedTab = 1;
 local drawing = require('libs.drawing');
 
 function M.DrawWindow(settings)
-    -- Basic implementation: draw a square with text underneath
+    -- Render a themed hotbar with three primitive buttons
 
     -- Validate primitive
     if not bgPrimHandle then
@@ -80,18 +80,21 @@ function M.DrawWindow(settings)
     -- Dimensions
     local iconSize = math.floor(ICON_SIZE * scaleY);
     local padding = PADDING;
-    local text = 'Hotbar';
-    local textWidth = imgui.CalcTextSize(text) or 0;
 
-    local contentWidth = iconSize + (padding * 2);
-    local contentHeight = iconSize + 4 + imgui.GetTextLineHeight() + (padding * 2);
+    -- Button layout
+    local buttonSize = iconSize;
+    local buttonGap = 6;
+    local buttonCount = 3;
 
-    --@TODO: 
-    -- Position (default top-left offset). 
+    -- Compute content size to fit buttons + padding
+    local contentWidth = (padding * 2) + (buttonSize * buttonCount) + (buttonGap * (buttonCount - 1));
+    local contentHeight = (padding * 2) + buttonSize + 4 + imgui.GetTextLineHeight();
+
+    -- Position (default top-left offset)
     local winX = 100;
     local winY = 100;
 
-    -- Background options
+    -- Background options (use theme settings like partylist)
     local bgTheme = gConfig.hotbarBackgroundTheme or 'Plain';
     local bgScale = gConfig.hotbarBgScale or 1.0;
     local borderScale = gConfig.hotbarBorderScale or 1.0;
@@ -111,34 +114,60 @@ function M.DrawWindow(settings)
     -- Update background primitive
     windowBg.update(bgPrimHandle, winX, winY, contentWidth, contentHeight, bgOptions);
 
-    -- Draw the square and text using the appropriate draw list
+    -- Foreground draw list for text and overlays
     local drawList = drawing.GetUIDrawList();
 
-    local squareLeft = winX + padding;
-    local squareTop = winY + padding;
-    local squareRight = squareLeft + iconSize;
-    local squareBottom = squareTop + iconSize;
+    -- Draw title above the hotbar
+    local title = 'Hotbar';
+    local titleWidth = imgui.CalcTextSize(title) or 0;
+    local titleX = winX + (contentWidth / 2) - (titleWidth / 2);
+    local titleY = winY - imgui.GetTextLineHeight() - 6;
+    drawList:AddText({titleX, titleY}, imgui.GetColorU32({0.9, 0.9, 0.9, 1.0}), title);
 
-    -- Colors (simple neutral colors)
-    local squareColor = imgui.GetColorU32({0.32, 0.45, 0.34, 1.0});
-    local outlineColor = imgui.GetColorU32({0, 0, 0, 1.0});
-    local textColor = imgui.GetColorU32({0.9, 0.9, 0.9, 1.0});
+    -- Draw buttons inside the background using button.Draw
+    local btnX = winX + padding;
+    local btnY = winY + padding;
 
-    -- Draw filled square and outline
-    drawList:AddRectFilled({squareLeft, squareTop}, {squareRight, squareBottom}, squareColor, 4.0);
-    drawList:AddRect({squareLeft, squareTop}, {squareRight, squareBottom}, outlineColor, 4.0, ImDrawCornerFlags_All, 1);
+    for i = 1, buttonCount do
+        local id = 'hotbar_btn_' .. i;
+        local clicked, hovered = button.Draw(id, btnX, btnY, buttonSize, buttonSize, {
+            colors = button.COLORS_NEUTRAL,
+            rounding = 4,
+            borderThickness = 1,
+            tooltip = 'Hotbar Button #' .. i,
+        });
 
-    -- Center text under square
-    local centerX = squareLeft + (iconSize / 2);
-    local textX = centerX - (textWidth / 2);
-    local textY = squareBottom + 4;
-    drawList:AddText({textX, textY}, textColor, text);
+        -- Draw a simple numeric label beneath each button
+        local label = tostring(i);
+        local labelW = imgui.CalcTextSize(label) or 0;
+        local labelX = btnX + (buttonSize / 2) - (labelW / 2);
+        local labelY = btnY + buttonSize + 4;
+        drawList:AddText({labelX, labelY}, imgui.GetColorU32({0.9, 0.9, 0.9, 1.0}), label);
+
+        -- Demo actions for each button (replace with configurable actions later)
+        if clicked then
+            if i == 1 then
+                AshitaCore:GetChatManager():QueueCommand(-1, '/ma "Cure" <t>');
+            elseif i == 2 then
+                AshitaCore:GetChatManager():QueueCommand(-1, '/ma "Cure II" <t>');
+            elseif i == 3 then
+                AshitaCore:GetChatManager():QueueCommand(-1, '/ma "Protect" <t>');
+            end
+        end
+
+        btnX = btnX + buttonSize + buttonGap;
+    end
 end
 
 function M.HideWindow()
     if bgPrimHandle then
         windowBg.hide(bgPrimHandle);
     end
+
+    -- Hide primitive-backed buttons
+    button.HidePrim('hotbar_btn_1');
+    button.HidePrim('hotbar_btn_2');
+    button.HidePrim('hotbar_btn_3');
 end
 
 -- ============================================
@@ -185,6 +214,11 @@ function M.Cleanup()
         windowBg.destroy(bgPrimHandle);
         bgPrimHandle = nil;
     end
+
+    -- Destroy primitive-backed buttons
+    button.DestroyPrim('hotbar_btn_1');
+    button.DestroyPrim('hotbar_btn_2');
+    button.DestroyPrim('hotbar_btn_3');
 end
 
 return M;
