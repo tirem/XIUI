@@ -650,4 +650,106 @@ function M.DrawText(id, x, y, text, options)
     return clicked, hovered, width, height;
 end
 
+--[[
+    Draw a primitive-based minimize/maximize button
+
+    @param id string: Unique button identifier
+    @param x number: X position
+    @param y number: Y position
+    @param size number: Button size (square)
+    @param isMinimized boolean: True shows maximize icon (□), false shows minimize icon (_)
+    @param options table: Button options
+    @param drawList: ImGui draw list for icon rendering
+    @return boolean: True if clicked
+    @return boolean: True if hovered
+]]--
+function M.DrawMinimizePrim(id, x, y, size, isMinimized, options, drawList)
+    options = options or {};
+
+    local colors = options.colors or M.DEFAULT_COLORS;
+    local disabled = options.disabled or false;
+
+    -- Icon colors
+    local iconColors = options.iconColors or M.ARROW_COLORS;
+    local iconColor = options.iconColor or iconColors.normal or 0xFFCCCCCC;
+    local iconHoverColor = options.iconHoverColor or iconColors.hovered or 0xFFFFFFFF;
+
+    -- Get or create the primitive for background
+    local prim = M.GetOrCreatePrim(id);
+
+    -- Set cursor position for invisible button
+    imgui.SetCursorScreenPos({x, y});
+
+    -- Create invisible button for interaction
+    local clicked = false;
+    local hovered = false;
+    local held = false;
+
+    if not disabled then
+        imgui.InvisibleButton(id, {size, size});
+        clicked = imgui.IsItemClicked();
+        hovered = imgui.IsItemHovered();
+        held = imgui.IsItemActive();
+    else
+        imgui.Dummy({size, size});
+    end
+
+    -- Determine background color based on state
+    local bgColor;
+    if disabled then
+        bgColor = colors.disabled or M.DEFAULT_COLORS.disabled;
+    elseif held then
+        bgColor = colors.pressed or colors.hovered or M.DEFAULT_COLORS.pressed;
+    elseif hovered then
+        bgColor = colors.hovered or M.DEFAULT_COLORS.hovered;
+    else
+        bgColor = colors.normal or M.DEFAULT_COLORS.normal;
+    end
+
+    -- Update primitive background
+    prim.visible = true;
+    prim.position_x = x;
+    prim.position_y = y;
+    prim.width = size;
+    prim.height = size;
+    prim.color = bgColor;
+
+    -- Draw icon using ImGui draw list (renders on top of primitive)
+    drawList = drawList or imgui.GetForegroundDrawList();
+    local currentIconColor = (hovered or held) and iconHoverColor or iconColor;
+    local iconColorU32 = ARGBToU32(currentIconColor);
+
+    -- Calculate icon dimensions
+    local centerX = x + size / 2;
+    local centerY = y + size / 2;
+    local iconSize = size * 0.4;
+    local lineThickness = math.max(2, size * 0.1);
+
+    if isMinimized then
+        -- Maximize icon: small square (□)
+        local halfSize = iconSize * 0.5;
+        drawList:AddRect(
+            {centerX - halfSize, centerY - halfSize},
+            {centerX + halfSize, centerY + halfSize},
+            iconColorU32, 0, nil, lineThickness
+        );
+    else
+        -- Minimize icon: horizontal line at bottom (_)
+        local halfWidth = iconSize * 0.6;
+        local lineY = centerY + iconSize * 0.3;
+        drawList:AddLine(
+            {centerX - halfWidth, lineY},
+            {centerX + halfWidth, lineY},
+            iconColorU32, lineThickness
+        );
+    end
+
+    -- Show tooltip
+    if hovered and options.tooltip then
+        imgui.SetTooltip(options.tooltip);
+    end
+
+    return clicked, hovered;
+end
+
 return M;
