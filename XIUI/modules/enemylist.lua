@@ -305,19 +305,20 @@ enemylist.DrawWindow = function(settings)
 					nameColor = GetEntityNameColor(ent, k, gConfig.colorCustomization.shared);
 				end
 
-				-- Draw border first if this is the selected target
-				local borderColor;
-				if (subTargetIndex ~= nil and k == subTargetIndex) then
-					-- Subtarget border - use configured color
-					local rgba = ARGBToRGBA(gConfig.colorCustomization.enemyList.subtargetBorderColor);
-					borderColor = imgui.GetColorU32(rgba);
-				elseif (targetIndex ~= nil and k == targetIndex) then
-					-- Main target border - use configured color
-					local rgba = ARGBToRGBA(gConfig.colorCustomization.enemyList.targetBorderColor);
-					borderColor = imgui.GetColorU32(rgba);
-				end
+				if (gConfig.showEnemyListBorders) then
+					local borderColor;
+					if (subTargetIndex ~= nil and k == subTargetIndex) then
+						-- Subtarget border - use configured color
+						borderColor = imgui.GetColorU32(ARGBToRGBA(gConfig.colorCustomization.enemyList.subtargetBorderColor));
+					elseif (targetIndex ~= nil and k == targetIndex) then
+						-- Main target border - use configured color
+						borderColor = imgui.GetColorU32(ARGBToRGBA(gConfig.colorCustomization.enemyList.targetBorderColor));
+					elseif (gConfig.showEnemyListBordersUseNameColor) then
+						borderColor = imgui.GetColorU32(ARGBToRGBA(nameColor));
+					else
+						borderColor = imgui.GetColorU32(ARGBToRGBA(gConfig.colorCustomization.enemyList.borderColor));
+					end
 
-				if (borderColor) then
 					-- Draw border rectangle around the entire entry
 					-- Window margins ensure this won't be clipped
 					imgui.GetWindowDrawList():AddRect(
@@ -347,9 +348,7 @@ enemylist.DrawWindow = function(settings)
 					bg.position_y = entryStartY;
 					bg.width = entryWidth;
 					bg.height = entryHeight;
-					-- Set semi-transparent black color (ARGB format)
-					-- Alpha is the first byte: 0.4 * 255 = 102 = 0x66
-					bg.color = 0x66000000;  -- Semi-transparent black
+					bg.color = gConfig.colorCustomization.enemyList.backgroundColor;
 					bg.visible = true;
 				end
 

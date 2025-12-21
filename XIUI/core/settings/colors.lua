@@ -49,6 +49,8 @@ function M.createColorCustomizationDefaults()
             hpGradient = T{ enabled = true, start = '#e16c6c', stop = '#fb9494' },
             distanceTextColor = 0xFFFFFFFF,
             percentTextColor = 0xFFFFFFFF,
+            backgroundColor = 0x66000000,        -- Semi-transparent black - Alpha is the first byte: 0.4 * 255 = 102 = 0x66
+            borderColor = 0x00000000,            -- transparent black - default border
             targetBorderColor = 0xFFFFFFFF,      -- white - border for main target
             subtargetBorderColor = 0xFF8080FF,   -- blue - border for subtarget
             targetNameTextColor = 0xFFFFAA00,    -- orange - enemy's target name

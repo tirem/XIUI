@@ -199,6 +199,8 @@ function M.createUserSettingsDefaults()
         showEnemyDistance = true,
         showEnemyHPPText = true,
         showEnemyListBookends = false,
+        showEnemyListBorders = true,
+        showEnemyListBordersUseNameColor = false,
         -- Enemy target container settings
         enemyListTargetOffsetX = 0,
         enemyListTargetOffsetY = 43,
