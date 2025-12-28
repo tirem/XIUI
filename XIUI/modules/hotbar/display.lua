@@ -180,20 +180,22 @@ function M.DrawWindow(settings)
     };
 
     -- Use an imgui window (no decoration / no background) to get a consistent position/size like PartyWindow
-    local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
-    if (gConfig.lockPositions) then
-        windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
-    end
+    local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
 
     local windowName = 'Hotbar';
 
     imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {0,0});
     imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, { buttonGap, 0 });
-    imgui.SetNextWindowPos({savedX, savedY});
+    -- Only set position on first use, then let ImGui track dragging
+    imgui.SetNextWindowPos({savedX, savedY}, ImGuiCond_FirstUseEver);
 
     local imguiPosX, imguiPosY;
     if (imgui.Begin(windowName, true, windowFlags)) then
         imguiPosX, imguiPosY = imgui.GetWindowPos();
+
+        -- Reserve window space IMMEDIATELY after Begin()
+        -- This tells imgui about the window bounds before any button drawing
+        imgui.Dummy({contentWidth, contentHeight});
 
         -- Foreground draw list for text and overlays
         local drawList = drawing.GetUIDrawList();
@@ -330,9 +332,6 @@ function M.DrawWindow(settings)
             hotbarMargin = hotbarMargin + VERTICAL_HOTBAR_SPACING;
         end
 
-        -- Force window content size so the window background primitive matches
-        imgui.Dummy({contentWidth, contentHeight});
-
         -- Update background primitive using imgui window position
         pcall(function()
             windowBg.update(bgPrimHandle, imguiPosX, imguiPosY, contentWidth, contentHeight, bgOptions);
@@ -342,6 +341,23 @@ function M.DrawWindow(settings)
     end
 
     imgui.PopStyleVar(2);
+
+    -- Save window position after dragging
+    -- Get the current window position (in case it was dragged)
+    local finalX, finalY = imguiPosX, imguiPosY;
+    if imguiPosX ~= nil then
+        -- The window was rendered, so we can try to get its final position
+        -- Note: GetWindowPos only works inside Begin/End, so we use the value from inside
+        if gConfig.hotbarState == nil then
+            gConfig.hotbarState = {};
+        end
+        
+        -- Only save if position has changed
+        if gConfig.hotbarState.x ~= finalX or gConfig.hotbarState.y ~= finalY then
+            gConfig.hotbarState.x = finalX;
+            gConfig.hotbarState.y = finalY;
+        end
+    end
 end
 
 function M.HideWindow()
