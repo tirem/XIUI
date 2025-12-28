@@ -32,10 +32,9 @@ local KEYBIND_OFFSET = 0.04;  -- relative to button size
 local HORIZONTAL_COLUMNS = 10; -- buttons per row
 local HORIZONTAL_ROWS = 4; -- number of HORIZONTAL_ROWS
 
-local SIDE_HOTBAR_COLUMNS = 2;
-local SIDE_HOTBAR_ROWS = 4;
-local SIDE_HOTBARS_COUNT = 3;
-
+local VERTICAL_HOTBAR_COLUMNS = 2;
+local VERTICAL_HOTBAR_ROWS = 4;
+local VERTICAL_HOTBARS_COUNT = 2;local VERTICAL_HOTBAR_SPACING = 20; -- spacing between vertical hotbars
 -- Keybind constants for hotbar HORIZONTAL_ROWS
 local KEYBIND_SHIFT = 10;
 local KEYBIND_CTRL = 20;
@@ -116,13 +115,13 @@ function M.DrawWindow(settings)
     local mainHotbarHeight = (buttonSize + labelGap + textHeight) * HORIZONTAL_ROWS + (rowGap * (HORIZONTAL_ROWS - 1));
     
     -- Compute content size for side hotbars (5, 6, 7)
-    local sideHotbarWidth = (buttonSize * SIDE_HOTBAR_COLUMNS) + (buttonGap * (SIDE_HOTBAR_COLUMNS - 1));
-    local sideHotbarHeight = (buttonSize + labelGap + textHeight) * SIDE_HOTBAR_ROWS + (rowGap * (SIDE_HOTBAR_ROWS - 1));
+    local verticalHotbarWidth = (buttonSize * VERTICAL_HOTBAR_COLUMNS) + (buttonGap * (VERTICAL_HOTBAR_COLUMNS - 1));
+    local verticalHotbarHeight = (buttonSize + labelGap + textHeight) * VERTICAL_HOTBAR_ROWS + (rowGap * (VERTICAL_HOTBAR_ROWS - 1));
     
-    -- Compute total content size (main hotbar + gap + side hotbars)
-    local sideGap = 16; -- horizontal gap between main hotbar and side hotbars
-    local contentWidth = (padding * 2) + mainHotbarWidth + sideGap + (sideHotbarWidth * SIDE_HOTBARS_COUNT) + (buttonGap * (SIDE_HOTBARS_COUNT - 1));
-    local contentHeight = (padding * 2) + math.max(mainHotbarHeight, sideHotbarHeight);
+    -- Compute total content size (main hotbar + gap + vertical hotbars)
+    local verticalMargin = 50; -- margin between horizontal and vertical hotbars
+    local contentWidth = (padding * 2) + mainHotbarWidth + verticalMargin + (verticalHotbarWidth * VERTICAL_HOTBARS_COUNT) + (buttonGap * (VERTICAL_HOTBARS_COUNT - 1));
+    local contentHeight = (padding * 2) + math.max(mainHotbarHeight, verticalHotbarHeight);
 
     -- Background options (use theme settings like partylist)
     local bgTheme = gConfig.hotbarBackgroundTheme or 'Plain';
@@ -247,18 +246,19 @@ function M.DrawWindow(settings)
             end
         end
         
-        -- Draw side hotbars (5, 6, 7) - each with 4 rows x 2 columns
-        local sideStartX = imguiPosX + padding + mainHotbarWidth + sideGap;
-        for hotbarNum = 1, SIDE_HOTBARS_COUNT do
-            local hotbarOffsetX = sideStartX + (hotbarNum - 1) * (sideHotbarWidth + buttonGap);
-            local sideIdx = 1;
-            for row = 1, SIDE_HOTBAR_ROWS do
+        -- Draw vertical hotbars (5, 6, 7) - each with 4 rows x 2 columns
+        local verticalStartX = imguiPosX + padding + mainHotbarWidth + verticalMargin;
+        local hotbarMargin = 0;
+        for hotbarNum = 1, VERTICAL_HOTBARS_COUNT do
+            local hotbarOffsetX = verticalStartX + (hotbarNum - 1) * (verticalHotbarWidth + buttonGap) + hotbarMargin;
+            local verticalIdx = 1;
+            for row = 1, VERTICAL_HOTBAR_ROWS do
                 local btnX = hotbarOffsetX;
                 local btnY = imguiPosY + padding + (row - 1) * (buttonSize + labelGap + textHeight + rowGap);
-                for column = 1, SIDE_HOTBAR_COLUMNS do
-                    local buttonIndex = (hotbarNum - 1) * (SIDE_HOTBAR_ROWS * SIDE_HOTBAR_COLUMNS) + sideIdx;
-                    local id = 'hotbar_side_btn_' .. buttonIndex;
-                    local labelText = 'Side' .. hotbarNum;
+                for column = 1, VERTICAL_HOTBAR_COLUMNS do
+                    local buttonIndex = (hotbarNum - 1) * (VERTICAL_HOTBAR_ROWS * VERTICAL_HOTBAR_COLUMNS) + verticalIdx;
+                    local id = 'hotbar_vertical_btn_' .. buttonIndex;
+                    local labelText = 'Vertical' .. hotbarNum;
                     local clicked, hovered = button.Draw(id, btnX, btnY, buttonSize, buttonSize, {
                         colors = button.COLORS_NEUTRAL,
                         rounding = 4,
@@ -269,7 +269,7 @@ function M.DrawWindow(settings)
                     -- Draw keybind in top-left corner of button
                     local keybindX = btnX + buttonSize * KEYBIND_OFFSET;
                     local keybindY = btnY + buttonSize * KEYBIND_OFFSET;
-                    local keybindDisplay = (4 + hotbarNum) .. '-' .. tostring(sideIdx);
+                    local keybindDisplay = (4 + hotbarNum) .. '-' .. tostring(verticalIdx);
                     drawList:AddText({keybindX, keybindY}, imgui.GetColorU32({0.7, 0.7, 0.7, 1.0}), keybindDisplay);
 
                     -- Draw label beneath each button
@@ -278,9 +278,10 @@ function M.DrawWindow(settings)
                     drawList:AddText({labelX, labelY}, imgui.GetColorU32({0.9, 0.9, 0.9, 1.0}), labelText);
 
                     btnX = btnX + buttonSize + buttonGap;
-                    sideIdx = sideIdx + 1;
+                    verticalIdx = verticalIdx + 1;
                 end
             end
+            hotbarMargin = hotbarMargin + VERTICAL_HOTBAR_SPACING;
         end
 
         -- Force window content size so the window background primitive matches
@@ -306,8 +307,8 @@ function M.HideWindow()
     end
     
     -- Hide side hotbar buttons
-    for i = 1, SIDE_HOTBARS_COUNT * SIDE_HOTBAR_ROWS * SIDE_HOTBAR_COLUMNS do
-        button.HidePrim('hotbar_side_btn_' .. i);
+    for i = 1, VERTICAL_HOTBARS_COUNT * VERTICAL_HOTBAR_ROWS * VERTICAL_HOTBAR_COLUMNS do
+        button.HidePrim('hotbar_vertical_btn_' .. i);
     end
 end
 
@@ -362,8 +363,8 @@ function M.Cleanup()
     end
     
     -- Destroy side hotbar buttons
-    for i = 1, SIDE_HOTBARS_COUNT * SIDE_HOTBAR_ROWS * SIDE_HOTBAR_COLUMNS do
-        button.DestroyPrim('hotbar_side_btn_' .. i);
+    for i = 1, VERTICAL_HOTBARS_COUNT * VERTICAL_HOTBAR_ROWS * VERTICAL_HOTBAR_COLUMNS do
+        button.DestroyPrim('hotbar_vertical_btn_' .. i);
     end
 end
 
