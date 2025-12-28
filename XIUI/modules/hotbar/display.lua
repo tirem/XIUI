@@ -26,8 +26,15 @@ local ICON_TEXT_GAP = 6;
 local ROW_SPACING = 4;
 local BAR_HEIGHT = 3;
 
-local COLUMNS = 10; -- buttons per row
-local ROWS = 2; -- number of ROWS
+local HORIZONTAL_COLUMNS = 10; -- buttons per row
+local HORIZONTAL_ROWS = 4; -- number of HORIZONTAL_ROWS
+
+-- Keybind constants for hotbar HORIZONTAL_ROWS
+local KEYBIND_SHIFT = 10;
+local KEYBIND_CTRL = 20;
+local KEYBIND_ALT = 30;
+local KEYBIND_BASE = 40;
+
 
 -- ============================================
 -- State
@@ -67,7 +74,7 @@ local selectedTab = 1;
 local drawing = require('libs.drawing');
 
 function M.DrawWindow(settings)
-    -- Render a themed hotbar with two ROWS of buttons (10 per row, 20 total) using an imgui window
+    -- Render a themed hotbar with two HORIZONTAL_ROWS of buttons (10 per row, 20 total) using an imgui window
 
     -- Validate primitive
     if not bgPrimHandle then
@@ -95,11 +102,11 @@ function M.DrawWindow(settings)
     -- Label spacing and heights
     local labelGap = 4;
     local textHeight = imgui.GetTextLineHeight();
-    local rowGap = 6; -- vertical gap between ROWS
+    local rowGap = 6; -- vertical gap between HORIZONTAL_ROWS
 
     -- Compute content size to fit buttons + padding + labels and inter-row gap
-    local contentWidth = (padding * 2) + (buttonSize * COLUMNS) + (buttonGap * (COLUMNS - 1));
-    local contentHeight = (padding * 2) + (buttonSize + labelGap + textHeight) * ROWS + (rowGap * (ROWS - 1));
+    local contentWidth = (padding * 2) + (buttonSize * HORIZONTAL_COLUMNS) + (buttonGap * (HORIZONTAL_COLUMNS - 1));
+    local contentHeight = (padding * 2) + (buttonSize + labelGap + textHeight) * HORIZONTAL_ROWS + (rowGap * (HORIZONTAL_ROWS - 1));
 
     -- Background options (use theme settings like partylist)
     local bgTheme = gConfig.hotbarBackgroundTheme or 'Plain';
@@ -174,12 +181,12 @@ function M.DrawWindow(settings)
         local titleY = imguiPosY - imgui.GetTextLineHeight() - 6;
         drawList:AddText({titleX, titleY}, imgui.GetColorU32({0.9, 0.9, 0.9, 1.0}), title);
 
-        -- Draw buttons inside the background using button.Draw in a ROWS x COLUMNS grid
+        -- Draw buttons inside the background using button. Draw in a HORIZONTAL_ROWS x HORIZONTAL_COLUMNS grid
         local idx = 1;
-        for r = 1, ROWS do
+        for row = 1, HORIZONTAL_ROWS do
             local btnX = imguiPosX + padding;
-            local btnY = imguiPosY + padding + (r - 1) * (buttonSize + labelGap + textHeight + rowGap);
-            for c = 1, COLUMNS do
+            local btnY = imguiPosY + padding + (row - 1) * (buttonSize + labelGap + textHeight + rowGap);
+            for column = 1, HORIZONTAL_COLUMNS do
                 local id = 'hotbar_btn_' .. idx;
                 local labelText = (idx == 1) and 'Cure' or sampleLabel;
                 local clicked, hovered = button.Draw(id, btnX, btnY, buttonSize, buttonSize, {
@@ -189,9 +196,26 @@ function M.DrawWindow(settings)
                     tooltip = labelText,
                 });
 
+                -- Draw keybind in top-left corner of button
+                local keybindX = btnX + 4;
+                local keybindY = btnY + 2;
+
+                if(idx <= KEYBIND_SHIFT) then
+                    keybindDisplay = 'S-' .. tostring(column);
+                elseif(idx <= KEYBIND_CTRL) then
+                    keybindDisplay = 'C-' .. tostring(column);                    
+                elseif(idx <= KEYBIND_ALT) then
+                    keybindDisplay = 'A-' .. tostring(column);
+                else
+                    keybindDisplay = tostring(column);
+                end
+                        
+                
+
+                drawList:AddText({keybindX, keybindY}, imgui.GetColorU32({0.7, 0.7, 0.7, 1.0}), keybindDisplay);
+
                 -- Draw label beneath each button
-                local labelW = imgui.CalcTextSize(labelText) or 0;
-                local labelX = btnX + (buttonSize / 2) - (labelW / 2);
+                local labelX = btnX;
                 local labelY = btnY + buttonSize + labelGap;
                 drawList:AddText({labelX, labelY}, imgui.GetColorU32({0.9, 0.9, 0.9, 1.0}), labelText);
 
@@ -225,7 +249,7 @@ function M.HideWindow()
     end
 
     -- Hide primitive-backed buttons
-    for i = 1, ROWS * COLUMNS do
+    for i = 1, HORIZONTAL_ROWS * HORIZONTAL_COLUMNS do
         button.HidePrim('hotbar_btn_' .. i);
     end
 end
@@ -276,7 +300,7 @@ function M.Cleanup()
     end
 
     -- Destroy primitive-backed buttons
-    for i = 1, ROWS * COLUMNS do
+    for i = 1, HORIZONTAL_ROWS * HORIZONTAL_COLUMNS do
         button.DestroyPrim('hotbar_btn_' .. i);
     end
 end
