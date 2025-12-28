@@ -131,7 +131,8 @@ function M.DrawWindow(settings)
     local verticalMargin = 50; -- margin between horizontal and vertical hotbars
     local verticalHotbarsExtraMargin = (VERTICAL_HOTBARS_COUNT - 1) * VERTICAL_HOTBAR_SPACING; -- accumulated margin from loop
     local contentWidth = (padding * 2) + mainHotbarWidth + verticalMargin + (verticalHotbarWidth * VERTICAL_HOTBARS_COUNT) + (buttonGap * (VERTICAL_HOTBARS_COUNT - 1)) + verticalHotbarsExtraMargin;
-    local contentHeight = (padding * 2) + math.max(mainHotbarHeight, verticalHotbarHeight);
+    local horizontalContentHeight = padding + mainHotbarHeight + (padding / 2);
+    local verticalContentHeight = padding + verticalHotbarHeight + (padding / 2);
 
     -- Background options (use theme settings like partylist)
     local bgTheme = gConfig.hotbarBackgroundTheme or 'Plain';
@@ -205,7 +206,7 @@ function M.DrawWindow(settings)
 
         -- Reserve window space IMMEDIATELY after Begin()
         -- This tells imgui about the window bounds before any button drawing
-        imgui.Dummy({mainHotbarWidth + (padding * 2), contentHeight});
+        imgui.Dummy({mainHotbarWidth + padding, horizontalContentHeight});
 
         -- Draw title above the hotbar (centered)
         local title = 'Hotbar';
@@ -281,7 +282,7 @@ function M.DrawWindow(settings)
 
         -- Update background primitive using imgui window position
         pcall(function()
-            windowBg.update(bgPrimHandleHorizontal, imguiPosX, imguiPosY, mainHotbarWidth + (padding * 2), contentHeight, bgOptions);
+            windowBg.update(bgPrimHandleHorizontal, imguiPosX, imguiPosY, mainHotbarWidth + padding, horizontalContentHeight, bgOptions);
         end);
 
         imgui.End();
@@ -315,7 +316,7 @@ function M.DrawWindow(settings)
         local verticalHotbarsExtraMargin = (VERTICAL_HOTBARS_COUNT - 1) * VERTICAL_HOTBAR_SPACING;
         local totalVerticalWidth = (verticalHotbarWidth * VERTICAL_HOTBARS_COUNT) + (buttonGap * (VERTICAL_HOTBARS_COUNT - 1)) + verticalHotbarsExtraMargin + (padding * 2);
 
-        imgui.Dummy({totalVerticalWidth, contentHeight});
+        imgui.Dummy({totalVerticalWidth, verticalContentHeight});
 
         -- Draw vertical hotbars (5, 6, 7) - each with 4 rows x 2 columns
         local verticalStartX = imguiVerticalPosX + padding;
@@ -381,7 +382,7 @@ function M.DrawWindow(settings)
         local verticalHotbarsExtraMargin = (VERTICAL_HOTBARS_COUNT - 1) * VERTICAL_HOTBAR_SPACING;
         local totalVerticalWidth = (verticalHotbarWidth * VERTICAL_HOTBARS_COUNT) + (buttonGap * (VERTICAL_HOTBARS_COUNT - 1)) + verticalHotbarsExtraMargin + (padding * 2);
         pcall(function()
-            windowBg.update(bgPrimHandleVertical, imguiVerticalPosX, imguiVerticalPosY, totalVerticalWidth, contentHeight, bgOptions);
+            windowBg.update(bgPrimHandleVertical, imguiVerticalPosX, imguiVerticalPosY, totalVerticalWidth, verticalContentHeight, bgOptions);
         end);
 
         imgui.End();
