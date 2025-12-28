@@ -34,7 +34,15 @@ local HORIZONTAL_ROWS = 4; -- number of HORIZONTAL_ROWS
 
 local VERTICAL_HOTBAR_COLUMNS = 2;
 local VERTICAL_HOTBAR_ROWS = 4;
-local VERTICAL_HOTBARS_COUNT = 2;local VERTICAL_HOTBAR_SPACING = 20; -- spacing between vertical hotbars
+local VERTICAL_HOTBARS_COUNT = 2;
+local VERTICAL_HOTBAR_SPACING = 20; -- spacing between vertical hotbars
+
+-- Hotbar number label spacing
+local HORIZONTAL_HOTBAR_NUMBER_OFFSET = 12; -- horizontal offset for left-side hotbar numbers
+local HORIZONTAL_HOTBAR_NUMBER_POSITION = 2; -- x position of hotbar number text
+local VERTICAL_HOTBAR_NUMBER_SPACING = 10; -- vertical spacing below vertical hotbars for number
+local VERTICAL_HOTBAR_NUMBER_POSITION = 2; -- y position of hotbar number text below
+
 -- Keybind constants for hotbar HORIZONTAL_ROWS
 local KEYBIND_SHIFT = 10;
 local KEYBIND_CTRL = 20;
@@ -99,7 +107,7 @@ function M.DrawWindow(settings)
     local buttonGap = 12; -- increased horizontal spacing between buttons
 
     -- Determine button size to fit text ("Button Text") plus padding, then apply configured button scale
-    local sampleLabel = 'Shellra2';
+    local sampleLabel = 'Horizon2';
     local labelPadding = 12; -- horizontal padding to give breathing room for text
     local baseButtonSize = 100
     local button_scale = gConfig.hotbarButtonScale or 0.56; -- final scale (default ~56%)
@@ -111,16 +119,17 @@ function M.DrawWindow(settings)
     local rowGap = 6; -- vertical gap between HORIZONTAL_ROWS
 
     -- Compute content size for main hotbar
-    local mainHotbarWidth = (buttonSize * HORIZONTAL_COLUMNS) + (buttonGap * (HORIZONTAL_COLUMNS - 1));
+    local mainHotbarWidth = (buttonSize * HORIZONTAL_COLUMNS) + (buttonGap * (HORIZONTAL_COLUMNS - 1)) + HORIZONTAL_HOTBAR_NUMBER_OFFSET;
     local mainHotbarHeight = (buttonSize + labelGap + textHeight) * HORIZONTAL_ROWS + (rowGap * (HORIZONTAL_ROWS - 1));
     
     -- Compute content size for side hotbars (5, 6, 7)
     local verticalHotbarWidth = (buttonSize * VERTICAL_HOTBAR_COLUMNS) + (buttonGap * (VERTICAL_HOTBAR_COLUMNS - 1));
-    local verticalHotbarHeight = (buttonSize + labelGap + textHeight) * VERTICAL_HOTBAR_ROWS + (rowGap * (VERTICAL_HOTBAR_ROWS - 1));
+    local verticalHotbarHeight = (buttonSize + labelGap + textHeight) * VERTICAL_HOTBAR_ROWS + (rowGap * (VERTICAL_HOTBAR_ROWS - 1)) + VERTICAL_HOTBAR_NUMBER_SPACING;
     
     -- Compute total content size (main hotbar + gap + vertical hotbars)
     local verticalMargin = 50; -- margin between horizontal and vertical hotbars
-    local contentWidth = (padding * 2) + mainHotbarWidth + verticalMargin + (verticalHotbarWidth * VERTICAL_HOTBARS_COUNT) + (buttonGap * (VERTICAL_HOTBARS_COUNT - 1));
+    local verticalHotbarsExtraMargin = (VERTICAL_HOTBARS_COUNT - 1) * VERTICAL_HOTBAR_SPACING; -- accumulated margin from loop
+    local contentWidth = (padding * 2) + mainHotbarWidth + verticalMargin + (verticalHotbarWidth * VERTICAL_HOTBARS_COUNT) + (buttonGap * (VERTICAL_HOTBARS_COUNT - 1)) + verticalHotbarsExtraMargin;
     local contentHeight = (padding * 2) + math.max(mainHotbarHeight, verticalHotbarHeight);
 
     -- Background options (use theme settings like partylist)
@@ -199,8 +208,15 @@ function M.DrawWindow(settings)
         -- Draw main hotbar (4 rows x 10 columns)
         local idx = 1;
         for row = 1, HORIZONTAL_ROWS do
-            local btnX = imguiPosX + padding;
+            local btnX = imguiPosX + padding + HORIZONTAL_HOTBAR_NUMBER_OFFSET;
             local btnY = imguiPosY + padding + (row - 1) * (buttonSize + labelGap + textHeight + rowGap);
+            
+            -- Draw hotbar number to the left
+            local hotbarNumber = tostring(row);
+            local hotbarNumX = imguiPosX + padding + HORIZONTAL_HOTBAR_NUMBER_POSITION;
+            local hotbarNumY = btnY + (buttonSize - imgui.GetTextLineHeight()) / 2; -- center vertically
+            drawList:AddText({hotbarNumX, hotbarNumY}, imgui.GetColorU32({0.8, 0.8, 0.8, 1.0}), hotbarNumber);
+            
             for column = 1, HORIZONTAL_COLUMNS do
                 local id = 'hotbar_btn_' .. idx;
                 local labelText = (idx == 1) and 'Cure' or sampleLabel;
@@ -258,7 +274,7 @@ function M.DrawWindow(settings)
                 for column = 1, VERTICAL_HOTBAR_COLUMNS do
                     local buttonIndex = (hotbarNum - 1) * (VERTICAL_HOTBAR_ROWS * VERTICAL_HOTBAR_COLUMNS) + verticalIdx;
                     local id = 'hotbar_vertical_btn_' .. buttonIndex;
-                    local labelText = 'Vertical' .. hotbarNum;
+                    local labelText = 'Vertic' .. hotbarNum;
                     local clicked, hovered = button.Draw(id, btnX, btnY, buttonSize, buttonSize, {
                         colors = button.COLORS_NEUTRAL,
                         rounding = 4,
@@ -281,6 +297,13 @@ function M.DrawWindow(settings)
                     verticalIdx = verticalIdx + 1;
                 end
             end
+            
+            -- Draw hotbar number below vertical hotbar
+            local hotbarNumber = tostring(4 + hotbarNum);
+            local hotbarNumX = hotbarOffsetX + (verticalHotbarWidth / 2) - (imgui.CalcTextSize(hotbarNumber) / 2);
+            local hotbarNumY = imguiPosY + padding + VERTICAL_HOTBAR_ROWS * (buttonSize + labelGap + textHeight + rowGap) + VERTICAL_HOTBAR_NUMBER_POSITION;
+            drawList:AddText({hotbarNumX, hotbarNumY}, imgui.GetColorU32({0.8, 0.8, 0.8, 1.0}), hotbarNumber);
+            
             hotbarMargin = hotbarMargin + VERTICAL_HOTBAR_SPACING;
         end
 
