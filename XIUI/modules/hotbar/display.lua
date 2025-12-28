@@ -62,8 +62,6 @@ local selectedTab = 1;
 -- Treasure Pool Window
 -- ============================================
 
-
-
 -- Helper to build a comma-separated list of names
 
 local drawing = require('libs.drawing');
