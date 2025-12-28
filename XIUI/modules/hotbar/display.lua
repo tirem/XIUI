@@ -29,11 +29,11 @@ local BAR_HEIGHT = 3;
 -- Keybind text positioning
 local KEYBIND_OFFSET = 0.04;  -- relative to button size
 
-local HORIZONTAL_COLUMNS = 10; -- buttons per row
+local HORIZONTAL_COLUMNS = 12; -- buttons per row
 local HORIZONTAL_ROWS = 4; -- number of HORIZONTAL_ROWS
 
 local VERTICAL_HOTBAR_COLUMNS = 2;
-local VERTICAL_HOTBAR_ROWS = 4;
+local VERTICAL_HOTBAR_ROWS = 6;
 local VERTICAL_HOTBARS_COUNT = 2;
 local VERTICAL_HOTBAR_SPACING = 20; -- spacing between vertical hotbars
 
@@ -44,10 +44,10 @@ local VERTICAL_HOTBAR_NUMBER_SPACING = 10; -- vertical spacing below vertical ho
 local VERTICAL_HOTBAR_NUMBER_POSITION = 2; -- y position of hotbar number text below
 
 -- Keybind constants for hotbar HORIZONTAL_ROWS
-local KEYBIND_SHIFT = 10;
-local KEYBIND_CTRL = 20;
-local KEYBIND_ALT = 30;
-local KEYBIND_BASE = 40;
+local KEYBIND_SHIFT = 12;
+local KEYBIND_CTRL = 24;
+local KEYBIND_ALT = 36;
+local KEYBIND_BASE = 48;
 
 
 -- ============================================
@@ -220,17 +220,27 @@ function M.DrawWindow(settings)
             for column = 1, HORIZONTAL_COLUMNS do
                 local id = 'hotbar_btn_' .. idx;
                 local labelText = (idx == 1) and 'Cure' or sampleLabel;
+                
+                -- Determine display text for special buttons
+                local displayText = labelText;
+                if column == 11 then
+                    displayText = '-';
+                elseif column == 12 then
+                    displayText = '+';
+                end
+                
                 local clicked, hovered = button.Draw(id, btnX, btnY, buttonSize, buttonSize, {
                     colors = button.COLORS_NEUTRAL,
                     rounding = 4,
                     borderThickness = 1,
-                    tooltip = labelText,
+                    tooltip = displayText,
                 });
 
                 -- Draw keybind in top-left corner of button
                 local keybindX = btnX + buttonSize * KEYBIND_OFFSET;
                 local keybindY = btnY + buttonSize * KEYBIND_OFFSET;
 
+                local keybindDisplay = '';
                 if(idx <= KEYBIND_SHIFT) then
                     keybindDisplay = 'S-' .. tostring(column);
                 elseif(idx <= KEYBIND_CTRL) then
@@ -240,15 +250,13 @@ function M.DrawWindow(settings)
                 else
                     keybindDisplay = tostring(column);
                 end
-                        
-                
 
                 drawList:AddText({keybindX, keybindY}, imgui.GetColorU32({0.7, 0.7, 0.7, 1.0}), keybindDisplay);
 
                 -- Draw label beneath each button
                 local labelX = btnX;
                 local labelY = btnY + buttonSize + labelGap;
-                drawList:AddText({labelX, labelY}, imgui.GetColorU32({0.9, 0.9, 0.9, 1.0}), labelText);
+                drawList:AddText({labelX, labelY}, imgui.GetColorU32({0.9, 0.9, 0.9, 1.0}), displayText);
 
                 -- Demo action for the first button
                 if clicked then
@@ -275,11 +283,20 @@ function M.DrawWindow(settings)
                     local buttonIndex = (hotbarNum - 1) * (VERTICAL_HOTBAR_ROWS * VERTICAL_HOTBAR_COLUMNS) + verticalIdx;
                     local id = 'hotbar_vertical_btn_' .. buttonIndex;
                     local labelText = 'Vertic' .. hotbarNum;
+                    
+                    -- Determine display text for special buttons
+                    local displayText = labelText;
+                    if verticalIdx == 11 then
+                        displayText = '-';
+                    elseif verticalIdx == 12 then
+                        displayText = '+';
+                    end
+                    
                     local clicked, hovered = button.Draw(id, btnX, btnY, buttonSize, buttonSize, {
                         colors = button.COLORS_NEUTRAL,
                         rounding = 4,
                         borderThickness = 1,
-                        tooltip = labelText,
+                        tooltip = displayText,
                     });
 
                     -- Draw keybind in top-left corner of button
@@ -297,7 +314,7 @@ function M.DrawWindow(settings)
                     -- Draw label beneath each button
                     local labelX = btnX;
                     local labelY = btnY + buttonSize + labelGap;
-                    drawList:AddText({labelX, labelY}, imgui.GetColorU32({0.9, 0.9, 0.9, 1.0}), labelText);
+                    drawList:AddText({labelX, labelY}, imgui.GetColorU32({0.9, 0.9, 0.9, 1.0}), displayText);
 
                     btnX = btnX + buttonSize + buttonGap;
                     verticalIdx = verticalIdx + 1;
