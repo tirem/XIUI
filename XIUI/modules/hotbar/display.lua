@@ -285,7 +285,13 @@ function M.DrawWindow(settings)
                     -- Draw keybind in top-left corner of button
                     local keybindX = btnX + buttonSize * KEYBIND_OFFSET;
                     local keybindY = btnY + buttonSize * KEYBIND_OFFSET;
-                    local keybindDisplay = (4 + hotbarNum) .. '-' .. tostring(verticalIdx);
+                    
+                    if hotbarNum == 1 then
+                        keybindDisplay = 'C-S-' .. tostring(verticalIdx);
+                    else
+                        keybindDisplay = 'C-A-' .. tostring(verticalIdx);
+                    end
+                    
                     drawList:AddText({keybindX, keybindY}, imgui.GetColorU32({0.7, 0.7, 0.7, 1.0}), keybindDisplay);
 
                     -- Draw label beneath each button
