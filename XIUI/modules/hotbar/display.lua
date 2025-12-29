@@ -41,7 +41,7 @@ local VERTICAL_HOTBAR_SPACING = 20; -- spacing between vertical hotbars
 
 -- Hotbar number label spacing
 local HORIZONTAL_HOTBAR_NUMBER_OFFSET = 12; -- horizontal offset for left-side hotbar numbers
-local HORIZONTAL_HOTBAR_NUMBER_POSITION = 2; -- x position of hotbar number text
+local HORIZONTAL_HOTBAR_NUMBER_POSITION = -4; -- x position of hotbar number text
 local VERTICAL_HOTBAR_NUMBER_SPACING = 10; -- vertical spacing below vertical hotbars for number
 local VERTICAL_HOTBAR_NUMBER_POSITION = 2; -- y position of hotbar number text below
 
@@ -313,7 +313,7 @@ function M.DrawWindow(settings)
 
         -- Reserve window space IMMEDIATELY after Begin()
         -- This tells imgui about the window bounds before any button drawing
-        imgui.Dummy({mainHotbarWidth + padding, horizontalContentHeight});
+        imgui.Dummy({mainHotbarWidth + (padding * 2), horizontalContentHeight});
 
         -- Draw main hotbar (4 rows x 10 columns)
         local idx = 1;
@@ -386,7 +386,7 @@ function M.DrawWindow(settings)
 
         -- Update background primitive using imgui window position
         pcall(function()
-            windowBg.update(bgPrimHandleHorizontal, imguiPosX, imguiPosY, mainHotbarWidth + padding, horizontalContentHeight, bgOptions);
+            windowBg.update(bgPrimHandleHorizontal, imguiPosX, imguiPosY, mainHotbarWidth + (padding * 2), horizontalContentHeight, bgOptions);
         end);
 
         imgui.End();
