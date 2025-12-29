@@ -12,6 +12,8 @@ local progressbar = require('libs.progressbar');
 local button = require('libs.button');
 local data = require('modules.hotbar.data');
 local actions = require('modules.hotbar.actions');
+local textures = require('modules.hotbar.textures');
+local spells = require('modules.hotbar.spells');
 
 local M = {};
 
@@ -64,6 +66,9 @@ local loadedBgTheme = nil;
 -- Item icon cache (itemId -> texture table with .image)
 local iconCache = {};
 
+-- Textures initialized flag
+local texturesInitialized = false;
+
 -- Tab state: 1 = Pool view, 2 = History view
 local selectedTab = 1;
 
@@ -90,6 +95,12 @@ local drawing = require('libs.drawing');
 
 function M.DrawWindow(settings)
     -- Render a themed hotbar with two HORIZONTAL_ROWS of buttons (10 per row, 20 total) using an imgui window
+
+    -- Initialize textures on first draw
+    if not texturesInitialized then
+        textures:Initialize();
+        texturesInitialized = true;
+    end
 
     -- Validate primitives
     if not bgPrimHandleHorizontal or not bgPrimHandleVertical then
@@ -229,13 +240,42 @@ function M.DrawWindow(settings)
             
             for column = 1, HORIZONTAL_COLUMNS do
                 local id = 'hotbar_btn_' .. idx;
-                local labelText = (idx == 1) and 'Cure' or sampleLabel;
+                local labelText = sampleLabel;
+                local spellIcon = nil;
+                local command = nil;
+                
+                -- Demo: Show Cure spells on first 3 buttons
+                if idx == 1 then
+                    local cure = spells.getSpell('Cure');
+                    if cure then
+                        labelText = cure.name;
+                        spellIcon = textures:Get(cure.icon);
+                        command = cure.command;
+                       
+                    end
+                elseif idx == 2 then
+                    local cure2 = spells.getSpell('Cure II');
+                    if cure2 then
+                        labelText = cure2.name;
+                        spellIcon = textures:Get(cure2.icon);
+                        command = cure2.command;
+                    end
+                elseif idx == 3 then
+                    local cure3 = spells.getSpell('Cure III');
+                    if cure3 then
+                        labelText = cure3.name;
+                        spellIcon = textures:Get(cure3.icon);
+                        command = cure3.command;
+                    end
+                end
                 
                 local clicked, hovered = button.Draw(id, btnX, btnY, buttonSize, buttonSize, {
                     colors = button.COLORS_NEUTRAL,
                     rounding = 4,
                     borderThickness = 1,
                     tooltip = labelText,
+                    image = spellIcon,
+                    imageSize = {buttonSize * 0.7, buttonSize * 0.7},
                 });
 
                 -- Draw keybind in top-left corner of button
@@ -267,11 +307,9 @@ function M.DrawWindow(settings)
                 local labelY = btnY + buttonSize + labelGap;
                 drawList:AddText({labelX, labelY}, imgui.GetColorU32({0.9, 0.9, 0.9, 1.0}), labelText);
 
-                -- Demo action for the first button
-                if clicked then
-                    if idx == 1 then
-                        AshitaCore:GetChatManager():QueueCommand(-1, '/ma "Cure" <t>');
-                    end
+                -- Execute command when button is clicked
+                if clicked and command then
+                    AshitaCore:GetChatManager():QueueCommand(-1, command);
                 end
 
                 btnX = btnX + buttonSize + buttonGap;
