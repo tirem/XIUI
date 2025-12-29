@@ -80,6 +80,88 @@ local selectedTab = 1;
 -- Helper Functions
 -- ============================================
 
+--- Draws a single hotbar button with textures, keybind, and label
+--- Shared function for both horizontal and vertical bars. Handles layered rendering
+--- with slot background, button with icon, and frame overlay. Displays keybind text
+--- and label, and executes commands on click.
+---@param params table The parameters table
+---@param params.id string Unique identifier for the button
+---@param params.btnX number X position of the button (in pixels)
+---@param params.btnY number Y position of the button (in pixels)
+---@param params.buttonSize number Size of the button (in pixels)
+---@param params.labelText string Text label to display below the button
+---@param params.spellIcon table|nil Spell icon texture object (optional)
+---@param params.command string|nil Command to execute when button is clicked (optional)
+---@param params.drawList table ImGui draw list for rendering
+---@param params.keybindDisplay string Keybind text to display in top-left corner
+---@param params.labelGap number Gap between button and label text (optional, default 4)
+---@return boolean clicked Whether the button was clicked this frame
+---@return boolean hovered Whether the button is hovered
+local function DrawHotbarButton(params)
+    local id = params.id;
+    local btnX = params.btnX;
+    local btnY = params.btnY;
+    local buttonSize = params.buttonSize;
+    local labelText = params.labelText;
+    local spellIcon = params.spellIcon;
+    local command = params.command;
+    local drawList = params.drawList;
+    local keybindDisplay = params.keybindDisplay;
+    
+    -- Get slot background and frame textures
+    local slotBgTexture = textures:Get('slot');
+    local frameTexture = textures:Get('frame');
+    
+    -- Convert textures to pointers for ImGui
+    local slotBgPtr = slotBgTexture and tonumber(ffi.cast("uint32_t", slotBgTexture.image));
+    local framePtr = frameTexture and tonumber(ffi.cast("uint32_t", frameTexture.image));
+    
+    -- Draw layered button: slot background -> button (with icon) -> frame overlay
+    
+    -- Draw slot background first (behind everything)
+    if slotBgPtr then
+        drawList:AddImage(slotBgPtr, {btnX, btnY}, {btnX + buttonSize, btnY + buttonSize});
+    end
+    
+    -- Draw button with spell icon using button library (with transparent background)
+    local clicked, hovered = button.Draw(id, btnX, btnY, buttonSize, buttonSize, {
+        colors = {
+            normal = 0x00000000,   -- Fully transparent
+            hovered = 0x22FFFFFF,  -- Slight white tint on hover
+            pressed = 0x44FFFFFF,  -- Brighter tint when pressed
+            border = 0x00000000,   -- No border
+        },
+        rounding = 0,
+        borderThickness = 0,
+        tooltip = labelText,
+        image = spellIcon,
+        imageSize = {buttonSize * 0.75, buttonSize * 0.75},
+        drawList = drawList,
+    });
+    
+    -- Draw frame overlay on top
+    if framePtr then
+        drawList:AddImage(framePtr, {btnX, btnY}, {btnX + buttonSize, btnY + buttonSize});
+    end
+
+    -- Draw keybind in top-left corner of button
+    local keybindX = btnX + buttonSize * KEYBIND_OFFSET;
+    local keybindY = btnY + buttonSize * KEYBIND_OFFSET;
+    drawList:AddText({keybindX, keybindY}, imgui.GetColorU32({0.7, 0.7, 0.7, 1.0}), keybindDisplay);
+
+    -- Draw label beneath each button
+    local labelX = btnX;
+    local labelY = btnY + buttonSize + (params.labelGap or 4);
+    drawList:AddText({labelX, labelY}, imgui.GetColorU32({0.9, 0.9, 0.9, 1.0}), labelText);
+
+    -- Execute command when button is clicked
+    if clicked and command then
+        AshitaCore:GetChatManager():QueueCommand(-1, command);
+    end
+    
+    return clicked, hovered;
+end
+
 -- ============================================
 -- History View Constants
 -- ============================================
@@ -269,46 +351,7 @@ function M.DrawWindow(settings)
                     end
                 end
                 
-                -- Get slot background and frame textures
-                local slotBgTexture = textures:Get('slot');
-                local frameTexture = textures:Get('frame');
-                
-                -- Convert textures to pointers for ImGui
-                local slotBgPtr = slotBgTexture and tonumber(ffi.cast("uint32_t", slotBgTexture.image));
-                local framePtr = frameTexture and tonumber(ffi.cast("uint32_t", frameTexture.image));
-                
-                -- Draw layered button: slot background -> button (with icon) -> frame overlay
-                
-                -- 1. Draw slot background first (behind everything)
-                if slotBgPtr then
-                    drawList:AddImage(slotBgPtr, {btnX, btnY}, {btnX + buttonSize, btnY + buttonSize});
-                end
-                
-                -- 2. Draw button with spell icon using button library (with transparent background)
-                local clicked, hovered = button.Draw(id, btnX, btnY, buttonSize, buttonSize, {
-                    colors = {
-                        normal = 0x00000000,   -- Fully transparent
-                        hovered = 0x22FFFFFF,  -- Slight white tint on hover
-                        pressed = 0x44FFFFFF,  -- Brighter tint when pressed
-                        border = 0x00000000,   -- No border
-                    },
-                    rounding = 0,
-                    borderThickness = 0,
-                    tooltip = labelText,
-                    image = spellIcon,
-                    imageSize = {buttonSize * 0.75, buttonSize * 0.75},
-                    drawList = drawList,
-                });
-                
-                -- 3. Draw frame overlay on top
-                if framePtr then
-                    drawList:AddImage(framePtr, {btnX, btnY}, {btnX + buttonSize, btnY + buttonSize});
-                end
-
-                -- Draw keybind in top-left corner of button
-                local keybindX = btnX + buttonSize * KEYBIND_OFFSET;
-                local keybindY = btnY + buttonSize * KEYBIND_OFFSET;
-
+                -- Compute keybind display
                 local keybindDisplay = '';
                 local keybindKey = tostring(column);
                 if(keybindKey == '11') then
@@ -327,17 +370,19 @@ function M.DrawWindow(settings)
                     keybindDisplay = keybindKey;
                 end
 
-                drawList:AddText({keybindX, keybindY}, imgui.GetColorU32({0.7, 0.7, 0.7, 1.0}), keybindDisplay);
-
-                -- Draw label beneath each button
-                local labelX = btnX;
-                local labelY = btnY + buttonSize + labelGap;
-                drawList:AddText({labelX, labelY}, imgui.GetColorU32({0.9, 0.9, 0.9, 1.0}), labelText);
-
-                -- Execute command when button is clicked
-                if clicked and command then
-                    AshitaCore:GetChatManager():QueueCommand(-1, command);
-                end
+                -- Draw button using shared function
+                DrawHotbarButton({
+                    id = id,
+                    btnX = btnX,
+                    btnY = btnY,
+                    buttonSize = buttonSize,
+                    labelText = labelText,
+                    spellIcon = spellIcon,
+                    command = command,
+                    drawList = drawList,
+                    keybindDisplay = keybindDisplay,
+                    labelGap = labelGap,
+                });
 
                 btnX = btnX + buttonSize + buttonGap;
                 idx = idx + 1;
@@ -402,18 +447,10 @@ function M.DrawWindow(settings)
                     local buttonIndex = (hotbarNum - 1) * (VERTICAL_HOTBAR_ROWS * VERTICAL_HOTBAR_COLUMNS) + verticalIdx;
                     local id = 'hotbar_vertical_btn_' .. buttonIndex;
                     local labelText = 'Vertic' .. hotbarNum;
-                    
-                    local clicked, hovered = button.Draw(id, btnX, btnY, buttonSize, buttonSize, {
-                        colors = button.COLORS_NEUTRAL,
-                        rounding = 4,
-                        borderThickness = 1,
-                        tooltip = labelText,
-                    });
+                    local spellIcon = nil;
+                    local command = nil;
 
-                    -- Draw keybind in top-left corner of button
-                    local keybindX = btnX + buttonSize * KEYBIND_OFFSET;
-                    local keybindY = btnY + buttonSize * KEYBIND_OFFSET;
-                    
+                    -- Compute keybind display for vertical bars
                     local keybindDisplay = '';
                     local keybindKey = tostring(verticalIdx);
                     if(keybindKey == '11') then
@@ -423,17 +460,24 @@ function M.DrawWindow(settings)
                         keybindKey = '+';
                     end
                     if hotbarNum == 1 then
-                        keybindDisplay = 'C-S' .. keybindKey;
+                        keybindDisplay = 'CS' .. keybindKey;
                     else 
-                        keybindDisplay = 'C-A' .. keybindKey;                    
+                        keybindDisplay = 'CA' .. keybindKey;                    
                     end
 
-                    drawList:AddText({keybindX, keybindY}, imgui.GetColorU32({0.7, 0.7, 0.7, 1.0}), keybindDisplay);
-
-                    -- Draw label beneath each button
-                    local labelX = btnX;
-                    local labelY = btnY + buttonSize + labelGap;
-                    drawList:AddText({labelX, labelY}, imgui.GetColorU32({0.9, 0.9, 0.9, 1.0}), labelText);
+                    -- Draw button using shared function
+                    DrawHotbarButton({
+                        id = id,
+                        btnX = btnX,
+                        btnY = btnY,
+                        buttonSize = buttonSize,
+                        labelText = labelText,
+                        spellIcon = spellIcon,
+                        command = command,
+                        drawList = drawList,
+                        keybindDisplay = keybindDisplay,
+                        labelGap = labelGap,
+                    });
 
                     btnX = btnX + buttonSize + buttonGap;
                     verticalIdx = verticalIdx + 1;
