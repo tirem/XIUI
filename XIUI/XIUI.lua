@@ -32,6 +32,15 @@ addon.link      = 'https://github.com/tirem/XIUI'
 _G._XIUI_USE_ASHITA_4_3 = false;
 require('handlers.imgui_compat');
 
+-- =================
+-- = XIUI DEV ONLY =
+-- =================
+local _XIUI_DEV_HOT_RELOADING_ENABLED = true;
+local _XIUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS = 1;
+local _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME;
+local _XIUI_DEV_HOT_RELOAD_FILES = {};
+_XIUI_DEV_ALPHA_HOTBAR = false;
+
 require('common');
 local settings = require('settings');
 local gdi = require('submodules.gdifonts.include');
@@ -72,14 +81,7 @@ local statusHandler = require('handlers.statushandler');
 -- Global switch to hard-disable functionality that is limited on HX servers
 HzLimitedMode = false;
 
--- =================
--- = XIUI DEV ONLY =
--- =================
-local _XIUI_DEV_HOT_RELOADING_ENABLED = false;
-local _XIUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS = 1;
-local _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME;
-local _XIUI_DEV_HOT_RELOAD_FILES = {};
-local _XIUI_DEV_ALPHA_HOTBAR = false;
+
 
 -- Local split function for hot reload (avoids monkeypatching string metatable)
 local function _split_string(str, sep)
