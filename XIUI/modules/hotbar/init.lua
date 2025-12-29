@@ -132,6 +132,13 @@ function M.Initialize(settings)
     --     return nil;
     -- end
 
+    -- Create GDI fonts for hotbar numbers (1-6) using title font settings
+    for i = 1, 6 do
+        local numberFontSettings = deep_copy_table(titleFontSettings);
+        numberFontSettings.font_height = math.max(titleFontSettings.font_height or 12, 8);
+        data.hotbarNumberFonts[i] = FontManager.create(numberFontSettings);
+        data.hotbarNumberFonts[i]:set_visible(false);
+    end
 
     --//@TODO: 
     --data.SetAllFontsVisible(false);
@@ -154,6 +161,14 @@ function M.UpdateVisuals(settings)
         return;
     end
 
+    -- Recreate hotbar number fonts with updated settings
+    for i = 1, 6 do
+        if data.hotbarNumberFonts[i] then
+            local numberFontSettings = deep_copy_table(settings.title_font_settings);
+            numberFontSettings.font_height = math.max(settings.title_font_settings.font_height or 12, 8);
+            data.hotbarNumberFonts[i] = FontManager.recreate(data.hotbarNumberFonts[i], numberFontSettings);
+        end
+    end
    
     -- Clear color cache
     data.ClearColorCache();

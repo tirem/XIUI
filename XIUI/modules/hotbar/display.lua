@@ -41,10 +41,10 @@ local VERTICAL_HOTBAR_SPACING = 20; -- spacing between vertical hotbars
 
 -- Hotbar number label spacing
 local HORIZONTAL_HOTBAR_NUMBER_OFFSET = 12; -- horizontal offset for left-side hotbar numbers
-local HORIZONTAL_HOTBAR_NUMBER_POSITION = -4; -- x position of hotbar number text
-local VERTICAL_HOTBAR_NUMBER_SPACING = 10; -- vertical spacing below vertical hotbars for number
-local VERTICAL_HOTBAR_NUMBER_POSITION = 2; -- y position of hotbar number text below
-
+local HORIZONTAL_HOTBAR_NUMBER_POSITION = -2; -- x position of hotbar number text
+local VERTICAL_HOTBAR_NUMBER_SPACING = 16; -- vertical spacing below vertical hotbars for number
+local VERTICAL_HOTBAR_NUMBER_POSITION = 0; -- y position of hotbar number text below
+local VERTICAL_HOTBAR_NUMBER_OFFSET =  4; -- horizontal offset for vertical hotbar numbers
 -- Keybind constants for hotbar HORIZONTAL_ROWS
 local KEYBIND_SHIFT = 12;
 local KEYBIND_CTRL = 24;
@@ -325,7 +325,13 @@ function M.DrawWindow(settings)
             local hotbarNumber = HORIZONTAL_ROWS - row + 1;
             local hotbarNumX = imguiPosX + padding + HORIZONTAL_HOTBAR_NUMBER_POSITION;
             local hotbarNumY = btnY + (buttonSize - imgui.GetTextLineHeight()) / 2; -- center vertically
-            drawList:AddText({hotbarNumX, hotbarNumY}, imgui.GetColorU32({0.8, 0.8, 0.8, 1.0}), tostring(hotbarNumber));
+            -- Use GDI font for hotbar number (following party list pattern)
+            if data.hotbarNumberFonts[hotbarNumber] then
+                data.hotbarNumberFonts[hotbarNumber]:set_text(tostring(hotbarNumber));
+                data.hotbarNumberFonts[hotbarNumber]:set_position_x(hotbarNumX);
+                data.hotbarNumberFonts[hotbarNumber]:set_position_y(hotbarNumY);
+                data.hotbarNumberFonts[hotbarNumber]:set_visible(true);
+            end
             
             for column = 1, HORIZONTAL_COLUMNS do
                 local id = 'hotbar_btn_' .. idx;
@@ -429,10 +435,17 @@ function M.DrawWindow(settings)
             local hotbarOffsetX = verticalStartX + (hotbarNum - 1) * (verticalHotbarWidth + buttonGap) + hotbarMargin;
             
             -- Draw hotbar number above vertical hotbar
-            local hotbarNumber = tostring(4 + hotbarNum);
-            local hotbarNumX = hotbarOffsetX + (verticalHotbarWidth / 2) - (imgui.CalcTextSize(hotbarNumber) / 2);
-            local hotbarNumY = imguiVerticalPosY + (padding - VERTICAL_HOTBAR_NUMBER_SPACING);
-            drawList:AddText({hotbarNumX, hotbarNumY}, imgui.GetColorU32({0.8, 0.8, 0.8, 1.0}), hotbarNumber);
+            local hotbarNumber = 4 + hotbarNum;
+            local hotbarNumberStr = tostring(hotbarNumber);
+            local hotbarNumX = hotbarOffsetX + (verticalHotbarWidth / 2) - (imgui.CalcTextSize(hotbarNumberStr) / 2) + VERTICAL_HOTBAR_NUMBER_OFFSET;
+            local hotbarNumY = imguiVerticalPosY + VERTICAL_HOTBAR_NUMBER_POSITION;
+            -- Use GDI font for hotbar number (following party list pattern)
+            if data.hotbarNumberFonts[hotbarNumber] then
+                data.hotbarNumberFonts[hotbarNumber]:set_text(hotbarNumberStr);
+                data.hotbarNumberFonts[hotbarNumber]:set_position_x(hotbarNumX);
+                data.hotbarNumberFonts[hotbarNumber]:set_position_y(hotbarNumY);
+                data.hotbarNumberFonts[hotbarNumber]:set_visible(true);
+            end
             
             local verticalIdx = 1;
             for row = 1, VERTICAL_HOTBAR_ROWS do
@@ -526,6 +539,13 @@ function M.HideWindow()
     end
     if bgPrimHandleVertical then
         windowBg.hide(bgPrimHandleVertical);
+    end
+
+    -- Hide hotbar number fonts
+    for i = 1, 6 do
+        if data.hotbarNumberFonts[i] then
+            data.hotbarNumberFonts[i]:set_visible(false);
+        end
     end
 
     -- Hide main hotbar buttons

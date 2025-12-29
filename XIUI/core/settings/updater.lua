@@ -123,8 +123,8 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
         -- Hotbar fonts (dev-only)
         applyGlobalFontSettings(gAdjustedSettings.hotbarSettings.font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
         applyGlobalFontSettings(gAdjustedSettings.hotbarSettings.title_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
-        -- Title font uses bold
-        gAdjustedSettings.hotbarSettings.title_font_settings.font_flags = bit.bor(fontWeightFlags, gdi.FontFlags.Bold);
+        -- Title font uses italic (matching party list pattern)
+        gAdjustedSettings.hotbarSettings.title_font_settings.font_flags = bit.bor(fontWeightFlags, gdi.FontFlags.Italic);
         -- Apply font heights from user settings (ensure minimum)
         gAdjustedSettings.hotbarSettings.font_settings.font_height = math.max(us.hotbarFontSize or 10, 8);
         gAdjustedSettings.hotbarSettings.title_font_settings.font_height = math.max(us.hotbarFontSize or 10, 8);

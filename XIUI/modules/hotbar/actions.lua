@@ -9,6 +9,10 @@ local textures = require('modules.hotbar.textures');
 
 local M = {};
 
+local controlPressed = false;
+local altPressed = false;
+local shiftPressed = false;
+
 -- ============================================
 -- Helper Functions
 -- ============================================
@@ -60,9 +64,7 @@ function M.BuildCommand(bind)
     return command, spellIcon;
 end
 
-local controlPressed = false;
-local altPressed = false;
-local shiftPressed = false;
+
 
 -- Parse lParam bits per Keystroke Message Flags:
 -- bit 31 - transition state: 0 = key press, 1 = key release

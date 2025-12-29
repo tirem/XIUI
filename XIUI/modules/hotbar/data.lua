@@ -52,6 +52,7 @@ end
 -- ============================================
 
 M.allFonts = nil;
+M.hotbarNumberFonts = {};  -- GDI fonts for hotbar numbers (1-6)
 
 
 -- Set preview mode
