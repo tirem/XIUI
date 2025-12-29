@@ -23,8 +23,10 @@ local M = {};
 -- M.poolItems = {};
 
 -- Keybinds cache (job -> keybind entries)
-M.keybindsCache = {};
+M.allKeybinds = {};
+M.currentKeybinds = nil;  -- Cached parsed keybinds for current job/subjob
 M.jobId = nil;
+M.subjobId = nil;
 
 -- ============================================
 -- Helper Functions
@@ -57,15 +59,35 @@ end
 
 -- Get current keybinds 
 function M.GetKeybinds()
+    -- Return cached keybinds if available
+    if M.currentKeybinds then
+        return M.currentKeybinds;
+    end
+    
     local rawKeybinds = M.GetBaseKeybindsForJob(M.jobId);
     if not rawKeybinds then
         print(string.format("[XIUI hotbar] GetKeybinds returned nil for job %d", M.jobId or 0));
         return nil;
     end
     
+    -- Get subjob keybinds if available
+    local subjobKeybinds = M.GetSubjobKeybindsForJob(M.jobId, M.subjobId);
+    
+    -- Combine base and subjob keybinds
+    local combinedKeybinds = {};
+    for i, entry in ipairs(rawKeybinds) do
+        table.insert(combinedKeybinds, entry);
+    end
+    
+    if subjobKeybinds then
+        for i, entry in ipairs(subjobKeybinds) do
+            table.insert(combinedKeybinds, entry);
+        end
+    end
+    
     -- Parse raw array entries into object format
     local parsedKeybinds = {};
-    for i, entry in ipairs(rawKeybinds) do
+    for i, entry in ipairs(combinedKeybinds) do
         local parsed = M.ParseKeybindEntry(entry);
         if parsed then
             table.insert(parsedKeybinds, parsed);
@@ -73,6 +95,9 @@ function M.GetKeybinds()
             print(string.format("[XIUI hotbar] Failed to parse entry %d (has %d elements)", i, #entry));
         end
     end
+    
+    -- Cache the parsed keybinds
+    M.currentKeybinds = parsedKeybinds;
     
     return parsedKeybinds;
 end
@@ -84,7 +109,7 @@ function M.GetBaseKeybindsForJob(jobId)
         return nil;
     end
     
-    local jobKeybinds = M.keybindsCache[jobId];
+    local jobKeybinds = M.allKeybinds[jobId];
     if not jobKeybinds then
         print(string.format("[XIUI hotbar] Warning: No keybinds found for job %d", jobId));
         return nil;
@@ -98,14 +123,35 @@ function M.GetBaseKeybindsForJob(jobId)
     return jobKeybinds['Base'];
 end
 
+-- Get subjob-specific keybinds for a job
+function M.GetSubjobKeybindsForJob(jobId, subjobId)
+    if not jobId or not subjobId or subjobId == 0 then
+        return nil;
+    end
+    
+    local jobKeybinds = M.allKeybinds[jobId];
+    if not jobKeybinds then
+        return nil;
+    end
+    
+    local subjobName = jobs[subjobId];
+    if not subjobName then
+        return nil;
+    end
+    
+    local subjobKeybinds = jobKeybinds[subjobName];
+    
+    return subjobKeybinds;
+end
+
 -- Get all cached keybinds
 function M.GetAllKeybinds()
-    return M.keybindsCache;
+    return M.allKeybinds;
 end
 
 -- Check if keybinds are loaded
 function M.HasKeybinds()
-    return M.keybindsCache and next(M.keybindsCache) ~= nil;
+    return M.allKeybinds and next(M.allKeybinds) ~= nil;
 end
 
 
@@ -140,7 +186,8 @@ end
 -- Initialize data module
 function M.Initialize()
     -- Clear any existing cache
-    M.keybindsCache = {};
+    M.allKeybinds = {};
+    M.currentKeybinds = nil;
     
     -- Get the addon path
     local addonPath = AshitaCore:GetInstallPath();
@@ -156,7 +203,7 @@ function M.Initialize()
             if chunk then
                 local keybinds = chunk();
                 if keybinds and next(keybinds) ~= nil then
-                    M.keybindsCache[jobId] = keybinds;
+                    M.allKeybinds[jobId] = keybinds;
                     print(string.format("[XIUI hotbar] Loaded keybinds for %s (job %d)", jobName, jobId));
                 else
                     print(string.format("[XIUI hotbar] Warning: %s keybinds file returned empty table", jobName));
@@ -182,8 +229,22 @@ function M.SetPlayerJob()
     if(currentJobId == 0) then
        return;
     end
+    local currentSubjobId = player:GetSubJob();
+    
+    -- Clear cached keybinds if job changed
+    if M.jobId ~= currentJobId or M.subjobId ~= currentSubjobId then
+        M.currentKeybinds = nil;
+    end
+    
     M.jobId = currentJobId;
-    print(string.format("[XIUI hotbar] Current job changed to %s (%d)", jobs[M.jobId] or "Unknown", M.jobId));
+    M.subjobId = currentSubjobId;
+    
+    if currentSubjobId and currentSubjobId > 0 then
+        print(string.format("[XIUI hotbar] Current job changed to %s/%s (%d/%d)", 
+            jobs[M.jobId] or "Unknown", jobs[M.subjobId] or "Unknown", M.jobId, M.subjobId));
+    else
+        print(string.format("[XIUI hotbar] Current job changed to %s (%d)", jobs[M.jobId] or "Unknown", M.jobId));
+    end
 end
 
 -- Clear all state (call on zone change)
