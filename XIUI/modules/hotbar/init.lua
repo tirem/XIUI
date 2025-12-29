@@ -309,9 +309,12 @@ end
 -- ============================================
 
 function M.HandleJobChangePacket(e)
-    -- Reload keybinds for the new job
-    print("[XIUI hotbar] Job change detected, reloading keybinds...");
-    data.SetPlayerJob();
+    -- Delay keybind reload to allow Ashita's memory manager to update with the new job
+    -- Without this delay, GetMainJob() returns the previous job, causing wrong keybinds to load
+    ashita.tasks.once(0.5, function()
+        print("[XIUI hotbar] Job change detected, reloading keybinds...");
+        data.SetPlayerJob();
+    end);
 end
 
 -- ============================================
