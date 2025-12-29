@@ -344,25 +344,8 @@ function M.DrawWindow(settings)
                     for _, bind in ipairs(keybinds) do
                         if bind.hotbar == hotbarNumber and bind.slot == column then
                             labelText = bind.displayName or bind.action;
-                            
-                            -- Build command based on action type
-                            if bind.actionType == 'ma' then
-                                -- Magic spell
-                                local spell = GetSpellByName(bind.action);
-                                if spell then
-                                    spellIcon = textures:Get('spells' .. string.format('%05d', spell.id));
-                                end
-                                command = '/ma "' .. bind.action .. '" <' .. bind.target .. '>';
-                            elseif bind.actionType == 'ja' then
-                                -- Job ability
-                                command = '/ja "' .. bind.action .. '" <' .. bind.target .. '>';
-                            elseif bind.actionType == 'ws' then
-                                -- Weapon skill
-                                command = '/ws "' .. bind.action .. '" <' .. bind.target .. '>';
-                            elseif bind.actionType == 'macro' then
-                                -- Macro command
-                                command = bind.action;
-                            end
+                            -- Use centralized command builder
+                            command, spellIcon = actions.BuildCommand(bind);
                             break;
                         end
                     end
