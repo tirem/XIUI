@@ -368,7 +368,7 @@ function M.DrawWindow(settings)
                     end
                 end
                 
-                -- Compute keybind display
+                -- Compute keybind display based on hotbar number
                 local keybindDisplay = '';
                 local keybindKey = tostring(column);
                 if(keybindKey == '11') then
@@ -377,11 +377,11 @@ function M.DrawWindow(settings)
                 if(keybindKey == '12') then
                     keybindKey = '+';
                 end
-                if(idx > KEYBIND_ALT) then
+                if(hotbarNumber == 4) then
                     keybindDisplay = 'S' .. keybindKey;
-                elseif(idx > KEYBIND_CTRL) then
+                elseif(hotbarNumber == 3) then
                     keybindDisplay = 'A' .. keybindKey;                    
-                elseif(idx > KEYBIND_SHIFT) then
+                elseif(hotbarNumber == 2) then
                     keybindDisplay = 'C' .. keybindKey;
                 else
                     keybindDisplay = keybindKey;
