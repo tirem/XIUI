@@ -123,7 +123,7 @@ end
 
 -- Handle a keybind with the given modifier state
 function M.HandleKeybind(hotbar, slot)
-    local keybinds = data.GetKeybinds();
+    local keybinds = data.GetCurrentKeybinds();
     if not keybinds then
         return false;
     end

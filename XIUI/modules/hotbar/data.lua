@@ -58,7 +58,7 @@ function M.ParseKeybindEntry(entry)
 end
 
 -- Get current keybinds 
-function M.GetKeybinds()
+function M.GetCurrentKeybinds()
     -- Return cached keybinds if available
     if M.currentKeybinds then
         return M.currentKeybinds;
@@ -66,7 +66,6 @@ function M.GetKeybinds()
     
     local rawKeybinds = M.GetBaseKeybindsForJob(M.jobId);
     if not rawKeybinds then
-        print(string.format("[XIUI hotbar] GetKeybinds returned nil for job %d", M.jobId or 0));
         return nil;
     end
     

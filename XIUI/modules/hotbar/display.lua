@@ -340,7 +340,7 @@ function M.DrawWindow(settings)
                 local command = nil;
                 
                 -- Load keybind from data (using inverted hotbar number)
-                local keybinds = data.GetKeybinds();
+                local keybinds = data.GetCurrentKeybinds();
                 if keybinds then
                     for _, bind in ipairs(keybinds) do
                         if bind.hotbar == hotbarNumber and bind.slot == column then
@@ -460,7 +460,7 @@ function M.DrawWindow(settings)
 
                     -- Load keybind from data (using hotbarNumber 5 or 6)
                     local hotbarNumberVertical = 4 + hotbarNum; -- 5 or 6
-                    local keybinds = data.GetKeybinds();
+                    local keybinds = data.GetCurrentKeybinds();
                     if keybinds then
                         for _, bind in ipairs(keybinds) do
                             if bind.hotbar == hotbarNumberVertical and bind.slot == verticalIdx then
