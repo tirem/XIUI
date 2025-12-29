@@ -67,7 +67,7 @@ function M.Initialize(settings)
 
     print('[XIUI hotbar] Initialising...');
 
-    -- Ensure treasure pool settings have defaults BEFORE creating fonts
+    -- Ensure settings have defaults BEFORE creating fonts
     if gConfig then
         -- Clear any stale preview state
         gConfig.hotbarPreview = false;

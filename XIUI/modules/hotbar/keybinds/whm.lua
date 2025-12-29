@@ -16,9 +16,9 @@ keybinds_job['Base'] = {
    {'battle 1 8', 'ma', 'Flash', 'stnpc', 'Flash'},
 
    
-  {'battle 1 10', 'ja', 'Afflatus Solace', 'me', 'Solace'},
-  {'battle 1 11', 'ja', 'Afflatus Misery', 'me', 'Misery'},
-  {'battle 1 12', 'macro', 'input /item "Ginger Cookie" <me>;wait 2;input /heal', '', 'Cookie', 'item'},
+  --{'battle 1 10', 'ja', 'Afflatus Solace', 'me', 'Solace'},
+  --{'battle 1 11', 'ja', 'Afflatus Misery', 'me', 'Misery'},
+  --{'battle 1 12', 'macro', 'input /item "Ginger Cookie" <me>;wait 2;input /heal', '', 'Cookie', 'item'},
   
   -- Hotbar #2 (ALT 1-12)
   {'battle 2 1', 'ma', 'Poisona', 'stpc', 'Poisona'},

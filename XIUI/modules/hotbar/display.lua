@@ -178,11 +178,6 @@ end
 -- History View Constants
 -- ============================================
 
-
--- ============================================
--- Treasure Pool Window
--- ============================================
-
 -- Helper to build a comma-separated list of names
 
 local drawing = require('libs.drawing');
