@@ -33,6 +33,23 @@ textures.Initialize = function(self)
 
     self.Cache = {};
     
+    -- Load slot background and frame images
+    local imagesDirectory = string.format('%saddons\\XIUI\\modules\\hotbar\\images\\', AshitaCore:GetInstallPath());
+    
+    -- Load slot background
+    local slotBg = LoadTextureFromPath(imagesDirectory .. 'slot.png');
+    if slotBg then
+        self.Cache['slot'] = slotBg;
+        print('[Hotbar] Loaded slot background texture');
+    end
+    
+    -- Load frame overlay
+    local frame = LoadTextureFromPath(imagesDirectory .. 'frame.png');
+    if frame then
+        self.Cache['frame'] = frame;
+        print('[Hotbar] Loaded frame texture');
+    end
+    
     -- Load spell icons - use proper path separator for Windows
     local spellDirectory = string.format('%saddons\\XIUI\\modules\\hotbar\\images\\icons\\spells\\', AshitaCore:GetInstallPath());
     

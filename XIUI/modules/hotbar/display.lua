@@ -245,7 +245,7 @@ function M.DrawWindow(settings)
                 local command = nil;
                 
                 -- Demo: Show Cure spells on first 3 buttons
-                if idx == 1 then
+                if idx == 37 then
                     local cure = spells.getSpell('Cure');
                     if cure then
                         labelText = cure.name;
@@ -253,14 +253,14 @@ function M.DrawWindow(settings)
                         command = cure.command;
                        
                     end
-                elseif idx == 2 then
+                elseif idx == 38 then
                     local cure2 = spells.getSpell('Cure II');
                     if cure2 then
                         labelText = cure2.name;
                         spellIcon = textures:Get(cure2.icon);
                         command = cure2.command;
                     end
-                elseif idx == 3 then
+                elseif idx == 39 then
                     local cure3 = spells.getSpell('Cure III');
                     if cure3 then
                         labelText = cure3.name;
@@ -269,14 +269,41 @@ function M.DrawWindow(settings)
                     end
                 end
                 
+                -- Get slot background and frame textures
+                local slotBgTexture = textures:Get('slot');
+                local frameTexture = textures:Get('frame');
+                
+                -- Convert textures to pointers for ImGui
+                local slotBgPtr = slotBgTexture and tonumber(ffi.cast("uint32_t", slotBgTexture.image));
+                local framePtr = frameTexture and tonumber(ffi.cast("uint32_t", frameTexture.image));
+                
+                -- Draw layered button: slot background -> button (with icon) -> frame overlay
+                
+                -- 1. Draw slot background first (behind everything)
+                if slotBgPtr then
+                    drawList:AddImage(slotBgPtr, {btnX, btnY}, {btnX + buttonSize, btnY + buttonSize});
+                end
+                
+                -- 2. Draw button with spell icon using button library (with transparent background)
                 local clicked, hovered = button.Draw(id, btnX, btnY, buttonSize, buttonSize, {
-                    colors = button.COLORS_NEUTRAL,
-                    rounding = 4,
-                    borderThickness = 1,
+                    colors = {
+                        normal = 0x00000000,   -- Fully transparent
+                        hovered = 0x22FFFFFF,  -- Slight white tint on hover
+                        pressed = 0x44FFFFFF,  -- Brighter tint when pressed
+                        border = 0x00000000,   -- No border
+                    },
+                    rounding = 0,
+                    borderThickness = 0,
                     tooltip = labelText,
                     image = spellIcon,
-                    imageSize = {buttonSize * 0.7, buttonSize * 0.7},
+                    imageSize = {buttonSize * 0.75, buttonSize * 0.75},
+                    drawList = drawList,
                 });
+                
+                -- 3. Draw frame overlay on top
+                if framePtr then
+                    drawList:AddImage(framePtr, {btnX, btnY}, {btnX + buttonSize, btnY + buttonSize});
+                end
 
                 -- Draw keybind in top-left corner of button
                 local keybindX = btnX + buttonSize * KEYBIND_OFFSET;
