@@ -450,6 +450,20 @@ function M.DrawWindow(settings)
                     local spellIcon = nil;
                     local command = nil;
 
+                    -- Load keybind from data (using hotbarNumber 5 or 6)
+                    local hotbarNumberVertical = 4 + hotbarNum; -- 5 or 6
+                    local keybinds = data.GetKeybinds('Base');
+                    if keybinds then
+                        for _, bind in ipairs(keybinds) do
+                            if bind.hotbar == hotbarNumberVertical and bind.slot == verticalIdx then
+                                labelText = bind.displayName or bind.action;
+                                -- Use centralized command builder
+                                command, spellIcon = actions.BuildCommand(bind);
+                                break;
+                            end
+                        end
+                    end
+
                     -- Compute keybind display for vertical bars
                     local keybindDisplay = '';
                     local keybindKey = tostring(verticalIdx);
