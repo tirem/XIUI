@@ -326,11 +326,11 @@ function M.DrawWindow(settings)
             local btnX = imguiPosX + padding + HORIZONTAL_HOTBAR_NUMBER_OFFSET;
             local btnY = imguiPosY + padding + (row - 1) * (buttonSize + labelGap + textHeight + rowGap);
             
-            -- Draw hotbar number to the left
-            local hotbarNumber = tostring(row);
+            -- Invert hotbar number for display (row 1 = hotbar 4, row 4 = hotbar 1)
+            local hotbarNumber = HORIZONTAL_ROWS - row + 1;
             local hotbarNumX = imguiPosX + padding + HORIZONTAL_HOTBAR_NUMBER_POSITION;
             local hotbarNumY = btnY + (buttonSize - imgui.GetTextLineHeight()) / 2; -- center vertically
-            drawList:AddText({hotbarNumX, hotbarNumY}, imgui.GetColorU32({0.8, 0.8, 0.8, 1.0}), hotbarNumber);
+            drawList:AddText({hotbarNumX, hotbarNumY}, imgui.GetColorU32({0.8, 0.8, 0.8, 1.0}), tostring(hotbarNumber));
             
             for column = 1, HORIZONTAL_COLUMNS do
                 local id = 'hotbar_btn_' .. idx;
@@ -338,27 +338,33 @@ function M.DrawWindow(settings)
                 local spellIcon = nil;
                 local command = nil;
                 
-                -- Demo: Show Cure spells on first 3 buttons
-                if idx == 37 then
-                    local cure = GetSpellByName('Cure');
-                    if cure then
-                        labelText = cure.en;
-                        spellIcon = textures:Get('spells' .. string.format('%05d', cure.id));
-                        command = cure.prefix .. ' "' .. cure.en .. '" <t>';
-                    end
-                elseif idx == 38 then
-                    local cure2 = GetSpellByName('Cure II');
-                    if cure2 then
-                        labelText = cure2.en;
-                        spellIcon = textures:Get('spells' .. string.format('%05d', cure2.id));
-                        command = cure2.prefix .. ' "' .. cure2.en .. '" <t>';
-                    end
-                elseif idx == 39 then
-                    local cure3 = GetSpellByName('Cure III');
-                    if cure3 then
-                        labelText = cure3.en;
-                        spellIcon = textures:Get('spells' .. string.format('%05d', cure3.id));
-                        command = cure3.prefix .. ' "' .. cure3.en .. '" <t>';
+                -- Load keybind from data (using inverted hotbar number)
+                local keybinds = data.GetKeybinds('Base');
+                if keybinds then
+                    for _, bind in ipairs(keybinds) do
+                        if bind.hotbar == hotbarNumber and bind.slot == column then
+                            labelText = bind.displayName or bind.action;
+                            
+                            -- Build command based on action type
+                            if bind.actionType == 'ma' then
+                                -- Magic spell
+                                local spell = GetSpellByName(bind.action);
+                                if spell then
+                                    spellIcon = textures:Get('spells' .. string.format('%05d', spell.id));
+                                end
+                                command = '/ma "' .. bind.action .. '" <' .. bind.target .. '>';
+                            elseif bind.actionType == 'ja' then
+                                -- Job ability
+                                command = '/ja "' .. bind.action .. '" <' .. bind.target .. '>';
+                            elseif bind.actionType == 'ws' then
+                                -- Weapon skill
+                                command = '/ws "' .. bind.action .. '" <' .. bind.target .. '>';
+                            elseif bind.actionType == 'macro' then
+                                -- Macro command
+                                command = bind.action;
+                            end
+                            break;
+                        end
                     end
                 end
                 
@@ -371,12 +377,12 @@ function M.DrawWindow(settings)
                 if(keybindKey == '12') then
                     keybindKey = '+';
                 end
-                if(idx <= KEYBIND_SHIFT) then
+                if(idx > KEYBIND_ALT) then
                     keybindDisplay = 'S' .. keybindKey;
-                elseif(idx <= KEYBIND_CTRL) then
-                    keybindDisplay = 'C' .. keybindKey;                    
-                elseif(idx <= KEYBIND_ALT) then
-                    keybindDisplay = 'A' .. keybindKey;
+                elseif(idx > KEYBIND_CTRL) then
+                    keybindDisplay = 'A' .. keybindKey;                    
+                elseif(idx > KEYBIND_SHIFT) then
+                    keybindDisplay = 'C' .. keybindKey;
                 else
                     keybindDisplay = keybindKey;
                 end
