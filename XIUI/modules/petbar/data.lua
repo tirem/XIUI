@@ -160,6 +160,92 @@ data.jugPets = {
     {name = 'Left-HandedYoko', maxLevel = 99, duration = 30},
 };
 
+-- ============================================
+-- Charm Calculation Constants (from PetMe)
+-- ============================================
+
+data.charmGear = {
+    [17936] = 1, --De Saintre's Axe
+    [17950] = 2, --Marid Ancus
+    [12517] = 4, --Beast Helm
+    [15157] = 5, --Bison Warbonnet
+    [15158] = 6, --Brave's Warbonnet
+    [16104] = 5, --Khimaira Bonnet
+    [16105] = 6, --Stout Bonnet
+    [15080] = 5, --Monster Helm
+    [15233] = 4, --Beast Helm +1
+    [15253] = 5, --Monster Helm +1
+    [12646] = 5, --Beast Jackcoat
+    [14418] = 5, --Bison Jacket
+    [14419] = 6, --Brave's Jacket
+    [14566] = 5, --Khimaira Jacket
+    [14567] = 6, --Stout Jacket
+    [15095] = 6, --Monster Jackcoat
+    [14481] = 6, --Beast Jackcoat +1
+    [14508] = 7, --Monster Jackcoat +1
+    [13969] = 3, --Beast Gloves
+    [14850] = 5, --Bison Wristbands
+    [14851] = 6, --Brave's Wristbands
+    [14981] = 5, --Khimaira Wristbands
+    [14982] = 6, --Stout Wristbands
+    [14898] = 3, --Beast Gloves +1
+    [15110] = 4, --Monster Gloves
+    [14917] = 4, --Monster Gloves +1
+    [14222] = 6, --Beast Trousers
+    [14319] = 5, --Bison Kecks
+    [14320] = 6, --Brave's Kecks
+    [15645] = 5, --Khimaira Kecks
+    [15646] = 6, --Stout Kecks
+    [15125] = 2, --Monster Trousers
+    [15569] = 6, --Beast Trousers +1
+    [15588] = 2, --Monster Trousers +1
+    [14097] = 2, --Beast Gaiters
+    [15307] = 5, --Bison Gamashes
+    [15308] = 6, --Brave's Gamashes
+    [15731] = 5, --Khimaira Gamashes
+    [15732] = 6, --Stout Gamashes
+    [15360] = 2, --Beast Gaiters +1
+    [15140] = 3, --Monster Gaiters
+    [15673] = 3, --Monster Gaiters +1
+    [14658] = 4, --Atlaua's Ring
+    [13667] = 5, --Trimmer's Mantle (HorizonXI only, when /BST)
+};
+
+data.dLevel = {
+    {ld = -6, chg = 0.04},
+    {ld = -5, chg = 0.08},
+    {ld = -4, chg = 0.12},
+    {ld = -3, chg = 0.16},
+    {ld = -2, chg = 0.33},
+    {ld = -1, chg = 0.66},
+    {ld =  0, chg = 1.00},
+    {ld =  1, chg = 1.40},
+    {ld =  2, chg = 1.80},
+    {ld =  3, chg = 2.20},
+    {ld =  4, chg = 2.60},
+    {ld =  5, chg = 3.00},
+    {ld =  6, chg = 3.40},
+    {ld =  7, chg = 4.00},
+    {ld =  8, chg = 5.00},
+    {ld =  9, chg = 6.00},
+};
+
+data.PacketID = {
+    OUT_ACTION = 0x01A,
+    OUT_CHECK = 0x0DD,
+    IN_CHECK = 0x029,
+};
+
+data.ActionID = {
+    CHARM = 0x34,
+};
+
+data.CharmState = {
+    NONE = 0,
+    SENDING_PACKET = 1,
+    CHECK_PACKET = 2,
+};
+
 -- Build a lookup table for faster access
 data.jugPetLookup = {};
 for _, pet in ipairs(data.jugPets) do
@@ -208,14 +294,19 @@ function data.TrackPetSummon(petName, petJob)
         data.petExpireTime = nil;
         data.petType = nil;
         data.lastTrackedPetName = nil;
-        data.charmStartTime = nil;
+
+        -- Reset charm state only if we're not currently processing a charm
+        if (data.charmState == data.CharmState.NONE) then
+            data.charmTarget = nil;
+            data.charmTargetIdx = nil;
+        end
+
         -- Clear persisted timer data
         if gConfig then
             gConfig.petBarPetSummonTime = nil;
             gConfig.petBarPetExpireTime = nil;
             gConfig.petBarPetType = nil;
             gConfig.petBarPetName = nil;
-            gConfig.petBarCharmStartTime = nil;
         end
         return;
     end
@@ -233,28 +324,32 @@ function data.TrackPetSummon(petName, petJob)
     if jugInfo then
         data.petType = 'jug';
         data.petExpireTime = data.petSummonTime + (jugInfo.duration * 60);
-        data.charmStartTime = nil;
+        data.charmExpireTime = nil;
     elseif petJob == data.JOB_BST and not data.petImageMap[petName] then
         -- BST pet that isn't an avatar = charmed pet
         data.petType = 'charm';
-        data.petExpireTime = nil;  -- Charm duration is complex to calculate
-        data.charmStartTime = os.time();
+        data.petExpireTime = nil;
+        -- data.charmExpireTime set via packet interception (calculateCharmTime)
+        -- If we missed the packet (e.g. reload), we might not have a timer.
+        if data.charmExpireTime == nil then
+             -- Fallback or indicate unknown?
+        end
     elseif petJob == data.JOB_SMN then
         data.petType = 'avatar';
         data.petExpireTime = nil;  -- Avatars don't expire on timer
-        data.charmStartTime = nil;
+        data.charmExpireTime = nil;
     elseif petJob == data.JOB_DRG then
         data.petType = 'wyvern';
         data.petExpireTime = nil;  -- Wyverns don't expire on timer
-        data.charmStartTime = nil;
+        data.charmExpireTime = nil;
     elseif petJob == data.JOB_PUP then
         data.petType = 'automaton';
         data.petExpireTime = nil;  -- Automatons don't expire on timer
-        data.charmStartTime = nil;
+        data.charmExpireTime = nil;
     else
         data.petType = nil;
         data.petExpireTime = nil;
-        data.charmStartTime = nil;
+        data.charmExpireTime = nil;
     end
 
     -- Persist timer data for session survival
@@ -263,7 +358,7 @@ function data.TrackPetSummon(petName, petJob)
         gConfig.petBarPetExpireTime = data.petExpireTime;
         gConfig.petBarPetType = data.petType;
         gConfig.petBarPetName = petName;
-        gConfig.petBarCharmStartTime = data.charmStartTime;
+        gConfig.petBarCharmExpireTime = data.charmExpireTime;
     end
 end
 
@@ -278,34 +373,35 @@ function data.RestoreTimersFromConfig()
         -- For jug pets, check if timer hasn't expired
         if gConfig.petBarPetExpireTime then
             if gConfig.petBarPetExpireTime > now then
-                -- Timer still valid, restore it
+                 -- Timer still valid, restore it
                 data.petSummonTime = gConfig.petBarPetSummonTime;
                 data.petExpireTime = gConfig.petBarPetExpireTime;
                 data.petType = gConfig.petBarPetType;
                 data.lastTrackedPetName = gConfig.petBarPetName;
-                data.charmStartTime = gConfig.petBarCharmStartTime;
+                data.lastTrackedPetName = gConfig.petBarPetName;
+                data.charmExpireTime = gConfig.petBarCharmExpireTime;
             else
                 -- Timer expired, clear persisted data
                 gConfig.petBarPetSummonTime = nil;
                 gConfig.petBarPetExpireTime = nil;
                 gConfig.petBarPetType = nil;
                 gConfig.petBarPetName = nil;
-                gConfig.petBarCharmStartTime = nil;
+                gConfig.petBarCharmExpireTime = nil;
             end
-        elseif gConfig.petBarCharmStartTime then
-            -- Charm timer - restore if it was within last 30 min (reasonable max)
-            if now - gConfig.petBarCharmStartTime < 1800 then
+        elseif gConfig.petBarCharmExpireTime then
+            -- Charm timer - restore if valid
+            if gConfig.petBarCharmExpireTime > now then
                 data.petSummonTime = gConfig.petBarPetSummonTime;
                 data.petType = gConfig.petBarPetType;
                 data.lastTrackedPetName = gConfig.petBarPetName;
-                data.charmStartTime = gConfig.petBarCharmStartTime;
+                data.charmExpireTime = gConfig.petBarCharmExpireTime;
             else
-                -- Too old, clear
+                 -- Too old, clear
                 gConfig.petBarPetSummonTime = nil;
                 gConfig.petBarPetExpireTime = nil;
                 gConfig.petBarPetType = nil;
                 gConfig.petBarPetName = nil;
-                gConfig.petBarCharmStartTime = nil;
+                gConfig.petBarCharmExpireTime = nil;
             end
         end
     end
@@ -320,12 +416,13 @@ function data.GetJugTimeRemaining()
     return math.max(0, remaining);
 end
 
--- Get elapsed time for charm (in seconds)
-function data.GetCharmElapsedTime()
-    if data.petType ~= 'charm' or data.charmStartTime == nil then
+-- Get remaining time for charm (in seconds)
+function data.GetCharmTimeRemaining()
+    if data.petType ~= 'charm' or data.charmExpireTime == nil then
         return nil;
     end
-    return os.time() - data.charmStartTime;
+    local remaining = data.charmExpireTime - os.time();
+    return math.max(0, remaining);
 end
 
 -- Format seconds to MM:SS string
@@ -382,7 +479,10 @@ data.petSummonTime = nil;       -- os.time() when pet was summoned
 data.petExpireTime = nil;       -- os.time() when pet will despawn (jug only)
 data.petType = nil;             -- 'jug', 'charm', 'avatar', 'wyvern', 'automaton'
 data.lastTrackedPetName = nil;  -- Track pet name changes to detect new summons
-data.charmStartTime = nil;      -- os.time() when charm started (for elapsed timer)
+data.charmExpireTime = nil;     -- os.time() when charm expires
+data.charmState = 0;            -- Packet interception state
+data.charmTarget = nil;         -- Target ID for charm check
+data.charmTargetIdx = nil;      -- Target Index for charm check
 
 -- Background primitives
 data.backgroundPrim = {};
@@ -571,6 +671,8 @@ function data.GetPetData()
         isCharmed = isCharmed,
         jugTimeRemaining = jugTimeRemaining,
         charmElapsed = charmElapsed,
+        charmTimeRemaining = data.GetCharmTimeRemaining(),
+        isCharmCountDown = true,
         petType = data.petType,
     };
 end
@@ -587,6 +689,16 @@ function data.FormatTimer(rawTimer)
     else
         return string.format('%ds', secs);
     end
+end
+
+-- Format seconds into mm:ss
+function data.FormatTimeMMSS(seconds)
+    if (seconds == nil) then
+        return '0:00';
+    end
+    local mins = math.floor(seconds / 60);
+    local secs = seconds % 60;
+    return string.format('%d:%02d', mins, secs);
 end
 
 -- Check if an ability should be shown based on config settings
@@ -1128,7 +1240,82 @@ function data.Reset()
     data.petType = nil;
     data.lastTrackedPetName = nil;
     data.charmStartTime = nil;
+    data.charmExpireTime = nil;
     data.ClearColorCache();
+end
+
+-- ============================================
+-- Charm Calculation Functions
+-- ============================================
+
+function data.GetCharmTimeRemaining()
+    if (data.charmExpireTime == nil) then
+        return nil;
+    end
+    local remaining = data.charmExpireTime - os.time();
+    if (remaining < 0) then
+        return 0;
+    end
+    return remaining;
+end
+
+function data.GetCharmElapsedTime()
+    if (data.charmStartTime == nil) then
+        return 0;
+    end
+    return os.time() - data.charmStartTime;
+end
+
+
+
+function data.getCharmEquipValue()
+    local charmValue = 0;
+
+    for i = 0, 15 do
+        local equippedItem = AshitaCore:GetMemoryManager():GetInventory():GetEquippedItem(i);
+        local index = bit.band(equippedItem.Index, 0x00FF);
+        if index > 0 then
+            local container = bit.rshift(bit.band(equippedItem.Index, 0xFF00), 8);
+            local item = AshitaCore:GetMemoryManager():GetInventory():GetContainerItem(container, index);
+            if (item ~= nil and data.charmGear[item.Id] ~= nil) then
+                charmValue = charmValue + data.charmGear[item.Id];
+            end
+        end
+    end
+
+    return charmValue;
+end
+
+function data.calculateCharmTime(mobLevel)
+    -- Set base values
+    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    local playerLvl = player:GetMainJobLevel();
+    local baseChr   = player:GetStat(6);
+
+    -- calculate level difference between player & pet
+    local levelDifference = playerLvl - mobLevel;
+    if (levelDifference < -6) then
+        levelDifference = -6;
+    elseif (levelDifference > 9) then
+        levelDifference = 9;
+    end
+
+    -- determine the level modifier
+    local lvlModifier = 0;
+    for _, item in ipairs(data.dLevel) do
+        if item.ld == levelDifference then
+            lvlModifier = item.chg;
+        end
+    end
+
+    --Base Charm Duration (seconds) = floor(1.25 × CHR + 150 )
+    local baseCharmDuration = math.floor(1.25 * baseChr + 150);
+    --Pre-Gear Charm Duration = Base Charm Duration × % Change
+    local preGearDuration = baseCharmDuration * lvlModifier;
+    --Charm Duration = Pre-gear Charm Duration × ( 1 + 0.05×(Charm+ in gear) )
+    local charmDuration = preGearDuration * (1 + (0.05 * data.getCharmEquipValue()));
+
+    return os.time() + charmDuration;
 end
 
 return data;

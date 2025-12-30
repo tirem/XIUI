@@ -65,6 +65,7 @@ function M.createUserSettingsDefaults()
         notificationsSubtitleFontSize = 12,
         notificationsProgressBarScaleY = 1.0,
         notificationsHideDuringEvents = false,
+        notificationsProgressBarDirection = 'left',
 
         -- Background/Border settings
         notificationsBackgroundTheme = 'Plain',
