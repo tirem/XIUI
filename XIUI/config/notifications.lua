@@ -72,14 +72,14 @@ function M.DrawSettings()
     components.DrawCheckbox('Hide During Events', 'notificationsHideDuringEvents');
 
     if components.CollapsingSection('Display Options##notifications') then
-        -- Direction dropdown
-        local directions = {'Down', 'Up'};
-        local directionValues = {'down', 'up'};
+        -- Stack Direction dropdown
+        local stackDirections = {'Down', 'Up'};
+        local stackDirectionValues = {'down', 'up'};
         local currentDirIndex = gConfig.notificationsDirection == 'up' and 2 or 1;
-        if imgui.BeginCombo('Stack Direction', directions[currentDirIndex]) then
-            for i, label in ipairs(directions) do
+        if imgui.BeginCombo('Stack Direction', stackDirections[currentDirIndex]) then
+            for i, label in ipairs(stackDirections) do
                 if imgui.Selectable(label, i == currentDirIndex) then
-                    gConfig.notificationsDirection = directionValues[i];
+                    gConfig.notificationsDirection = stackDirectionValues[i];
                     -- Clear window anchors when direction changes
                     notificationData.ClearWindowAnchors();
                     SaveSettingsOnly();
@@ -88,6 +88,21 @@ function M.DrawSettings()
             imgui.EndCombo();
         end
         imgui.ShowHelp('Direction notifications stack. Up: window anchors at bottom, grows upward. Down: window anchors at top, grows downward.');
+
+        -- Progress Bar Direction dropdown
+        local progressBarDirections = {'Left', 'Right'};
+        local progressBarDirectionValues = {'left', 'right'};
+        local currentBarDirIndex = gConfig.notificationsProgressBarDirection == 'right' and 2 or 1;
+        if imgui.BeginCombo('Progress Bar Direction', progressBarDirections[currentBarDirIndex]) then
+            for i, label in ipairs(progressBarDirections) do
+                if imgui.Selectable(label, i == currentBarDirIndex) then
+                    gConfig.notificationsProgressBarDirection = progressBarDirectionValues[i];
+                    SaveSettingsOnly();
+                end
+            end
+            imgui.EndCombo();
+        end
+        imgui.ShowHelp('Direction the progress bar drains as time elapses.');
 
         components.DrawSlider('Max Visible', 'notificationsMaxVisible', 1, 10, '%.0f');
         imgui.ShowHelp('Maximum notifications shown at once');
