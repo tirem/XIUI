@@ -10,6 +10,7 @@ local gdi = require('submodules.gdifonts.include');
 local primitives = require('primitives');
 local ffi = require('ffi');
 local windowBg = require('libs.windowbackground');
+local abilityRecast = require('libs.abilityrecast');
 
 local data = require('modules.petbar.data');
 local display = require('modules.petbar.display');
@@ -138,6 +139,44 @@ petbar.Initialize = function(settings)
 
     -- Initialize pet target module
     pettarget.Initialize(settings);
+
+    -- ============================================
+    -- Packet Handler: Charm Duration Tracking
+    -- ============================================
+    -- Intercepts Charm ability usage and /check packets to calculate charm duration
+    -- based on mob level and player stats
+    ashita.events.register('packet_out', 'petbar_packet_out', function (e)
+        -- Modify outgoing /check packet to target the charmed mob
+        if (e.id == data.PacketID.OUT_CHECK) then
+            if (data.charmState == data.CharmState.SENDING_PACKET) then
+                local pktdata = e.data:totable();
+                local pckt = struct.pack("BBBBHBBHBBBBBB", 
+                    pktdata[1], pktdata[2], pktdata[3], pktdata[4],
+                    data.charmTarget, pktdata[7], pktdata[8], data.charmTargetIdx,
+                    pktdata[11], pktdata[12], pktdata[13], pktdata[14],
+                    pktdata[15], pktdata[16]);
+                e.data_modified = pckt;
+                data.charmState = data.CharmState.CHECK_PACKET;
+            end
+        end
+
+        -- Detect Charm ability usage and queue /check command
+        if (e.id == data.PacketID.OUT_ACTION) then
+            local category = struct.unpack('H', e.data, 0x0A + 0x01);
+            local actionId = struct.unpack('H', e.data, 0x0C + 0x01);
+
+            if (category == 0x09 and actionId == data.ActionID.CHARM) then
+                -- Validate: Player must not have a pet (check petType instead of entity for reliability)
+                if (data.petType ~= nil and data.petType ~= 'charm') then return; end
+
+                -- Force reset state and start fresh tracking
+                data.charmState = data.CharmState.SENDING_PACKET;
+                data.charmTarget = struct.unpack('H', e.data, 0x04 + 0x01);
+                data.charmTargetIdx = struct.unpack('H', e.data, 0x08 + 0x01);
+                AshitaCore:GetChatManager():QueueCommand(1, "/check");
+            end
+        end
+    end);
 end
 
 -- ============================================
@@ -264,6 +303,8 @@ petbar.Cleanup = function()
 
     -- Reset data state
     data.Reset();
+
+    ashita.events.unregister('packet_out', 'petbar_packet_out');
 end
 
 -- ============================================
@@ -306,6 +347,33 @@ petbar.HandlePacket = function(e)
             if targetId and targetId ~= 0 then
                 data.petTargetServerId = targetId;
             end
+        end
+        return;
+    end
+
+    -- Process incoming /check response to extract mob level for charm duration
+    -- Note: Only /check packets initiated by Charm are suppressed. Other /check output
+    -- (from checker addon, manual /check commands, etc.) will display normally.
+    if (e.id == data.PacketID.IN_CHECK) then
+        if (data.charmState == data.CharmState.CHECK_PACKET) then
+            local param1 = struct.unpack('l', e.data, 0x0C + 0x01);
+            local param2 = struct.unpack('L', e.data, 0x10 + 0x01);
+            local msg    = struct.unpack('H', e.data, 0x18 + 0x01);
+
+            -- Validate message type indicates check parameters
+            if ( ((msg >= 0xAA) and (msg <= 0xB2)) or ((param2 >= 0x40) and (param2 <= 0x47))) then
+                e.blocked = true; -- Suppress chat output
+
+                -- Calculate charm duration from mob level
+                data.charmExpireTime = data.calculateCharmTime(param1);
+                data.charmStartTime = os.time();
+
+                -- Persist to config
+                if gConfig then
+                    gConfig.petBarCharmExpireTime = data.charmExpireTime;
+                end
+            end
+            data.charmState = data.CharmState.NONE;
         end
         return;
     end
