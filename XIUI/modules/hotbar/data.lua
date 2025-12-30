@@ -342,6 +342,87 @@ function M.HasKeybinds()
 end
 
 -- ============================================
+-- Crossbar Slot Data Helpers
+-- ============================================
+
+-- Get slot data for a crossbar slot
+-- comboMode: 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', or 'R2x2'
+-- slotIndex: 1-8
+-- Returns nil if no data exists
+function M.GetCrossbarSlotData(comboMode, slotIndex)
+    local jobId = M.jobId or 1;
+
+    if not gConfig.hotbarCrossbar then return nil; end
+    if not gConfig.hotbarCrossbar.slotActions then return nil; end
+    if not gConfig.hotbarCrossbar.slotActions[jobId] then return nil; end
+    if not gConfig.hotbarCrossbar.slotActions[jobId][comboMode] then return nil; end
+
+    return gConfig.hotbarCrossbar.slotActions[jobId][comboMode][slotIndex];
+end
+
+-- Set slot data for a crossbar slot
+-- comboMode: 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', or 'R2x2'
+-- slotIndex: 1-8
+-- slotData: { actionType, action, target, displayName, equipSlot, macroText, itemId, customIconType, customIconId }
+--           or nil to clear the slot
+function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
+    local jobId = M.jobId or 1;
+
+    -- If slotData is nil, clear the slot instead
+    if not slotData then
+        M.ClearCrossbarSlotData(comboMode, slotIndex);
+        return;
+    end
+
+    -- Ensure config structure exists
+    if not gConfig.hotbarCrossbar then
+        gConfig.hotbarCrossbar = {};
+    end
+    if not gConfig.hotbarCrossbar.slotActions then
+        gConfig.hotbarCrossbar.slotActions = {};
+    end
+    if not gConfig.hotbarCrossbar.slotActions[jobId] then
+        gConfig.hotbarCrossbar.slotActions[jobId] = {};
+    end
+    if not gConfig.hotbarCrossbar.slotActions[jobId][comboMode] then
+        gConfig.hotbarCrossbar.slotActions[jobId][comboMode] = {};
+    end
+
+    -- Store the slot data
+    gConfig.hotbarCrossbar.slotActions[jobId][comboMode][slotIndex] = {
+        actionType = slotData.actionType,
+        action = slotData.action,
+        target = slotData.target,
+        displayName = slotData.displayName,
+        equipSlot = slotData.equipSlot,
+        macroText = slotData.macroText,
+        itemId = slotData.itemId,
+        customIconType = slotData.customIconType,
+        customIconId = slotData.customIconId,
+    };
+
+    SaveSettingsToDisk();
+end
+
+-- Clear a crossbar slot (sets to nil)
+-- comboMode: 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', or 'R2x2'
+-- slotIndex: 1-8
+function M.ClearCrossbarSlotData(comboMode, slotIndex)
+    local jobId = M.jobId or 1;
+
+    -- Early return if structure doesn't exist
+    if not gConfig.hotbarCrossbar then return; end
+    if not gConfig.hotbarCrossbar.slotActions then return; end
+    if not gConfig.hotbarCrossbar.slotActions[jobId] then return; end
+    if not gConfig.hotbarCrossbar.slotActions[jobId][comboMode] then return; end
+
+    -- Clear the slot
+    gConfig.hotbarCrossbar.slotActions[jobId][comboMode][slotIndex] = nil;
+
+    SaveSettingsToDisk();
+end
+
+-- ============================================
 -- Font Visibility Helpers
 -- ============================================
 

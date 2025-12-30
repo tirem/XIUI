@@ -911,6 +911,207 @@ local function DrawBarVisualSettings(configKey, barLabel)
     end
 end
 
+-- ============================================
+-- Crossbar Settings Functions
+-- ============================================
+
+local function DrawCrossbarSettings()
+    local crossbarSettings = gConfig.hotbarCrossbar;
+    if not crossbarSettings then
+        imgui.TextColored({1.0, 0.5, 0.5, 1.0}, 'Crossbar settings not initialized.');
+        return;
+    end
+
+    imgui.TextColored(components.TAB_STYLE.gold, 'Crossbar Settings');
+    imgui.TextColored({0.7, 0.7, 0.7, 1.0}, 'Controller-friendly layout with L2/R2 trigger groups.');
+    imgui.Spacing();
+
+    -- Layout section
+    if components.CollapsingSection('Layout##crossbar', true) then
+        components.DrawPartySliderInt(crossbarSettings, 'Slot Size (px)##crossbar', 'slotSize', 32, 64, '%d', nil, 48);
+        imgui.ShowHelp('Size of each slot in pixels.');
+
+        components.DrawPartySliderInt(crossbarSettings, 'Slot Gap (Vertical)##crossbar', 'slotGapV', 0, 128, '%d', nil, 4);
+        imgui.ShowHelp('Vertical gap between top and bottom slots in each diamond.');
+
+        components.DrawPartySliderInt(crossbarSettings, 'Slot Gap (Horizontal)##crossbar', 'slotGapH', 0, 128, '%d', nil, 4);
+        imgui.ShowHelp('Horizontal gap between left and right slots in each diamond.');
+
+        components.DrawPartySliderInt(crossbarSettings, 'Diamond Spacing##crossbar', 'diamondSpacing', 0, 128, '%d', nil, 20);
+        imgui.ShowHelp('Horizontal space between D-pad and face button diamonds.');
+
+        components.DrawPartySliderInt(crossbarSettings, 'Group Spacing##crossbar', 'groupSpacing', 0, 128, '%d', nil, 40);
+        imgui.ShowHelp('Space between L2 and R2 groups.');
+
+        components.DrawPartyCheckbox(crossbarSettings, 'Show Divider##crossbar', 'showDivider');
+        imgui.ShowHelp('Show a divider line between L2 and R2 groups.');
+    end
+
+    -- Background section
+    if components.CollapsingSection('Background##crossbar', false) then
+        local bgThemes = {'-None-', 'Plain', 'Window1', 'Window2', 'Window3', 'Window4', 'Window5', 'Window6', 'Window7', 'Window8'};
+        components.DrawPartyComboBox(crossbarSettings, 'Theme##bgcrossbar', 'backgroundTheme', bgThemes, DeferredUpdateVisuals);
+        imgui.ShowHelp('Select the background window theme.');
+
+        components.DrawPartySlider(crossbarSettings, 'Background Scale##crossbar', 'bgScale', 0.1, 3.0, '%.2f', nil, 1.0);
+        imgui.ShowHelp('Scale of the background texture.');
+
+        components.DrawPartySlider(crossbarSettings, 'Border Scale##crossbar', 'borderScale', 0.1, 3.0, '%.2f', nil, 1.0);
+        imgui.ShowHelp('Scale of the window borders.');
+
+        components.DrawPartySlider(crossbarSettings, 'Background Opacity##crossbar', 'backgroundOpacity', 0.0, 1.0, '%.2f');
+        imgui.ShowHelp('Opacity of the background.');
+
+        components.DrawPartySlider(crossbarSettings, 'Border Opacity##crossbar', 'borderOpacity', 0.0, 1.0, '%.2f');
+        imgui.ShowHelp('Opacity of the window borders.');
+    end
+
+    -- Controller Icons section
+    if components.CollapsingSection('Controller Icons##crossbar', false) then
+        local controllerThemes = { 'PlayStation', 'Xbox', 'Nintendo' };
+        components.DrawPartyComboBox(crossbarSettings, 'Controller Theme##crossbar', 'controllerTheme', controllerThemes);
+        imgui.ShowHelp('Select controller button icon style. Nintendo layout: X top, A right, B bottom, Y left.');
+
+        components.DrawPartyCheckbox(crossbarSettings, 'Show Button Icons##crossbar', 'showButtonIcons');
+        imgui.ShowHelp('Show d-pad and face button icons on slots.');
+
+        if crossbarSettings.showButtonIcons then
+            components.DrawPartySliderInt(crossbarSettings, 'Button Icon Size##crossbar', 'buttonIconSize', 8, 32, '%d', nil, 16);
+            imgui.ShowHelp('Size of controller button icons.');
+
+            components.DrawPartySliderInt(crossbarSettings, 'Button Icon Gap (H)##crossbar', 'buttonIconGapH', 0, 24, '%d', nil, 2);
+            imgui.ShowHelp('Horizontal spacing between center controller icons.');
+
+            components.DrawPartySliderInt(crossbarSettings, 'Button Icon Gap (V)##crossbar', 'buttonIconGapV', 0, 24, '%d', nil, 2);
+            imgui.ShowHelp('Vertical spacing between center controller icons.');
+        end
+
+        imgui.Separator();
+
+        components.DrawPartyCheckbox(crossbarSettings, 'Show Trigger Icons##crossbar', 'showTriggerLabels');
+        imgui.ShowHelp('Show L2/R2 trigger icons above the crossbar groups.');
+
+        if crossbarSettings.showTriggerLabels then
+            components.DrawPartySlider(crossbarSettings, 'Trigger Icon Scale##crossbar', 'triggerIconScale', 0.5, 2.0, '%.1f', nil, 1.0);
+            imgui.ShowHelp('Scale for L2/R2 trigger icons above groups (base size 49x28).');
+        end
+    end
+
+    -- Text section
+    if components.CollapsingSection('Text Settings##crossbar', false) then
+        components.DrawPartySliderInt(crossbarSettings, 'Keybind Font Size##crossbar', 'keybindFontSize', 6, 24, '%d', nil, 8);
+        imgui.ShowHelp('Font size for keybind labels.');
+
+        components.DrawPartySliderInt(crossbarSettings, 'Label Font Size##crossbar', 'labelFontSize', 6, 24, '%d', nil, 10);
+        imgui.ShowHelp('Font size for action labels.');
+
+        components.DrawPartySliderInt(crossbarSettings, 'Trigger Label Font Size##crossbar', 'triggerLabelFontSize', 8, 24, '%d', nil, 14);
+        imgui.ShowHelp('Font size for combo mode labels (L2, R2, etc.).');
+    end
+
+    -- Controller Input section
+    if components.CollapsingSection('Controller Input##crossbar', false) then
+        components.DrawPartySliderInt(crossbarSettings, 'Trigger Threshold##crossbar', 'triggerThreshold', 10, 200, '%d', nil, 30);
+        imgui.ShowHelp('Analog trigger threshold (0-255). Lower = more sensitive.');
+
+        imgui.Spacing();
+        imgui.TextColored({0.8, 0.8, 0.6, 1.0}, 'Expanded Crossbar');
+
+        components.DrawPartyCheckbox(crossbarSettings, 'Enable L2+R2 / R2+L2##crossbar', 'enableExpandedCrossbar');
+        imgui.ShowHelp('Enable L2+R2 and R2+L2 combo modes. Hold one trigger, then press the other to access expanded bars.');
+
+        components.DrawPartyCheckbox(crossbarSettings, 'Enable Double-Tap##crossbar', 'enableDoubleTap', DeferredUpdateVisuals);
+        imgui.ShowHelp('Enable L2x2 and R2x2 double-tap modes. Tap a trigger twice quickly (hold on second tap) to access double-tap bars.');
+
+        if crossbarSettings.enableDoubleTap then
+            components.DrawPartySlider(crossbarSettings, 'Double-Tap Window##crossbar', 'doubleTapWindow', 0.1, 0.6, '%.2f sec', DeferredUpdateVisuals, 0.3);
+            imgui.ShowHelp('Time window to register a double-tap (in seconds). Tap twice within this time to trigger double-tap mode.');
+        end
+    end
+
+    -- Visual Feedback section
+    if components.CollapsingSection('Visual Feedback##crossbar', false) then
+        components.DrawPartySlider(crossbarSettings, 'Inactive Dim##crossbar', 'inactiveSlotDim', 0.0, 1.0, '%.2f', nil, 0.5);
+        imgui.ShowHelp('Dim factor for inactive trigger side (0 = black, 1 = full brightness).');
+
+        imgui.Spacing();
+        components.DrawPartyCheckbox(crossbarSettings, 'Show Combo Text##crossbar', 'showComboText');
+        imgui.ShowHelp('Show current combo mode text in center (L2+R2, R2+L2, L2x2, R2x2).');
+
+        if crossbarSettings.showComboText then
+            components.DrawPartySlider(crossbarSettings, 'Combo Text Size##crossbar', 'comboTextFontSize', 8, 20, '%d', nil, 12);
+            imgui.ShowHelp('Font size for combo text.');
+        end
+    end
+end
+
+local function DrawCrossbarColorSettings()
+    local crossbarSettings = gConfig.hotbarCrossbar;
+    if not crossbarSettings then
+        imgui.TextColored({1.0, 0.5, 0.5, 1.0}, 'Crossbar settings not initialized.');
+        return;
+    end
+
+    local colorFlags = bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaPreviewHalf, ImGuiColorEditFlags_AlphaBar);
+
+    imgui.TextColored(components.TAB_STYLE.gold, 'Crossbar Color Settings');
+    imgui.Spacing();
+
+    if components.CollapsingSection('Window Colors##crossbarcolor', true) then
+        local bgColor = crossbarSettings.bgColor or 0xFFFFFFFF;
+        local bgColorTable = ARGBToImGui(bgColor);
+        if imgui.ColorEdit4('Background Color##crossbar', bgColorTable, colorFlags) then
+            crossbarSettings.bgColor = ImGuiToARGB(bgColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color tint for the window background.');
+
+        local borderColor = crossbarSettings.borderColor or 0xFFFFFFFF;
+        local borderColorTable = ARGBToImGui(borderColor);
+        if imgui.ColorEdit4('Border Color##crossbar', borderColorTable, colorFlags) then
+            crossbarSettings.borderColor = ImGuiToARGB(borderColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color tint for the window borders.');
+    end
+
+    if components.CollapsingSection('Slot Colors##crossbarcolor', true) then
+        local slotBgColor = crossbarSettings.slotBackgroundColor or 0x55000000;
+        local slotBgColorTable = ARGBToImGui(slotBgColor);
+        if imgui.ColorEdit4('Slot Background##crossbar', slotBgColorTable, colorFlags) then
+            crossbarSettings.slotBackgroundColor = ImGuiToARGB(slotBgColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color and transparency of slot backgrounds.');
+
+        local highlightColor = crossbarSettings.activeSlotHighlight or 0x44FFFFFF;
+        local highlightColorTable = ARGBToImGui(highlightColor);
+        if imgui.ColorEdit4('Active Highlight##crossbar', highlightColorTable, colorFlags) then
+            crossbarSettings.activeSlotHighlight = ImGuiToARGB(highlightColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Highlight color for slots when trigger is held.');
+    end
+
+    if components.CollapsingSection('Text Colors##crossbarcolor', true) then
+        local keybindColor = crossbarSettings.keybindFontColor or 0xFFFFFFFF;
+        local keybindColorTable = ARGBToImGui(keybindColor);
+        if imgui.ColorEdit4('Keybind Color##crossbar', keybindColorTable, colorFlags) then
+            crossbarSettings.keybindFontColor = ImGuiToARGB(keybindColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color for keybind labels.');
+
+        local triggerLabelColor = crossbarSettings.triggerLabelColor or 0xFFFFCC00;
+        local triggerLabelColorTable = ARGBToImGui(triggerLabelColor);
+        if imgui.ColorEdit4('Trigger Label Color##crossbar', triggerLabelColorTable, colorFlags) then
+            crossbarSettings.triggerLabelColor = ImGuiToARGB(triggerLabelColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color for combo mode labels (L2, R2, etc.).');
+    end
+end
+
 -- Section: Hotbar Settings
 function M.DrawSettings(state)
     local selectedBarTab = state and state.selectedHotbarTab or 1;
@@ -919,19 +1120,36 @@ function M.DrawSettings(state)
     components.DrawCheckbox('Enabled', 'hotbarEnabled');
     imgui.ShowHelp('Enable or disable the hotbar module.');
 
-    components.DrawCheckbox('Preview Mode', 'hotbarPreview');
-    imgui.ShowHelp('Show preview with test data.');
-
+    -- Macro Palette button (always visible at top)
     imgui.Spacing();
-
-    -- Macro Palette button
     if imgui.Button('Open Macro Palette', {160, 24}) then
         macropalette.OpenPalette();
     end
     imgui.ShowHelp('Create macros (per-job) and drag them to hotbar slots. Drag slots to rearrange. Right-click to clear.');
 
+    -- Crossbar Mode Toggle
+    imgui.Spacing();
+    local crossbarEnabled = { gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.enabled or false };
+    if imgui.Checkbox('Crossbar Mode (Controller Layout)', crossbarEnabled) then
+        if gConfig.hotbarCrossbar then
+            gConfig.hotbarCrossbar.enabled = crossbarEnabled[1];
+            SaveSettingsOnly();
+            DeferredUpdateVisuals();
+        end
+    end
+    imgui.ShowHelp('Enable crossbar layout for controller play. Uses L2/R2 trigger groups with 32 slots total (4 combo modes x 8 slots).');
+
     imgui.Spacing();
     imgui.Separator();
+    imgui.Spacing();
+
+    -- Show crossbar settings OR standard hotbar settings based on mode
+    if gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.enabled then
+        DrawCrossbarSettings();
+        return { selectedHotbarTab = selectedBarTab };
+    end
+
+    -- Standard hotbar settings below
     imgui.Spacing();
 
     -- Per-Bar Visual Settings header
@@ -1057,6 +1275,12 @@ end
 -- Section: Hotbar Color Settings
 function M.DrawColorSettings(state)
     local selectedBarTab = state and state.selectedHotbarTab or 1;
+
+    -- Show crossbar color settings if crossbar is enabled
+    if gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.enabled then
+        DrawCrossbarColorSettings();
+        return { selectedHotbarTab = selectedBarTab };
+    end
 
     -- Per-Bar Color Settings header
     imgui.TextColored(components.TAB_STYLE.gold, 'Per-Bar Color Settings');

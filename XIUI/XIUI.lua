@@ -451,6 +451,8 @@ ashita.events.register('unload', 'unload_cb', function ()
     ashita.events.unregister('d3d_present', 'present_cb');
     ashita.events.unregister('packet_in', 'packet_in_cb');
     ashita.events.unregister('command', 'command_cb');
+    ashita.events.unregister('key', 'key_cb');
+    ashita.events.unregister('xinput_state', 'xinput_state_cb');
 
     statusHandler.clear_cache();
     if ClearDebuffFontCache then ClearDebuffFontCache(); end
@@ -705,5 +707,15 @@ ashita.events.register('key', 'key_cb', function (event)
     if(_XIUI_DEV_ALPHA_HOTBAR == true) then
         hotbar.HandleKey(event);
     end
-   
 end);
+
+-- XInput controller state event (for crossbar mode)
+ashita.events.register('xinput_state', 'xinput_state_cb', function (e)
+    if(_XIUI_DEV_ALPHA_HOTBAR == true) then
+        hotbar.HandleXInputState(e);
+    end
+end);
+
+-- ============================================
+-- NOTE: Render order is fixed by Ashita core: Primitives > GDI Fonts > ImGui
+-- We cannot change this from addon level - ImGui always renders last.

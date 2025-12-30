@@ -116,7 +116,6 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
         local scale = buttonSize / textureSize;
         slotPrim.scale_x = scale;
         slotPrim.scale_y = scale;
-        slotPrim.visible = true;
 
         -- Get slot background color from per-bar settings
         local slotBgColor = barSettings and barSettings.slotBackgroundColor or 0xFFFFFFFF;
@@ -132,6 +131,9 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
         else
             slotPrim.color = slotBgColor;
         end
+
+        -- Set visibility last, after all other properties are set
+        slotPrim.visible = true;
     end
 
     -- Get keybind display text
@@ -357,6 +359,17 @@ local function DrawBarWindow(barIndex, settings)
     local posX = savedPos and savedPos.x or defaultX;
     local posY = savedPos and savedPos.y or defaultY;
 
+    -- Safety check: if position is at or near (0,0), use default instead
+    -- This prevents bars from being stuck in the corner due to bad saved positions
+    if posX < 10 and posY < 10 then
+        posX = defaultX;
+        posY = defaultY;
+        -- Clear the bad saved position
+        if gConfig.hotbarBarPositions and gConfig.hotbarBarPositions[barIndex] then
+            gConfig.hotbarBarPositions[barIndex] = nil;
+        end
+    end
+
     -- Get dimensions (now includes layout)
     local barWidth, barHeight, buttonSize, buttonGap, rowGap, layout = GetBarDimensions(barIndex);
 
@@ -488,8 +501,7 @@ end
 -- ============================================
 
 function M.DrawWindow(settings)
-    -- Update drag-drop state (must be called every frame)
-    dragdrop.Update();
+    -- Note: dragdrop.Update() is called from init.lua before this
 
     -- Initialize textures on first draw
     if not texturesInitialized then
@@ -514,20 +526,7 @@ function M.DrawWindow(settings)
         DrawBarWindow(barIndex, settings);
     end
 
-    -- Draw the macro palette window
-    macropalette.DrawPalette();
-
-    -- Render drag preview (must be called at end of frame)
-    dragdrop.Render();
-
-    -- Handle slot dragged outside (remove the action)
-    if dragdrop.WasDroppedOutside() then
-        local lastPayload = dragdrop.GetLastPayload();
-        if lastPayload and lastPayload.type == 'slot' then
-            -- Slot was dragged outside all drop zones - clear it
-            macropalette.ClearSlot(lastPayload.barIndex, lastPayload.slotIndex);
-        end
-    end
+    -- Note: Macro palette, dragdrop.Render(), and outside drop handling are in init.lua
 end
 
 function M.HideWindow()

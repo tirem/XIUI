@@ -63,6 +63,10 @@ function M.createUserSettingsDefaults()
         hotbarBar5 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
         hotbarBar6 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
 
+        -- Crossbar settings (controller-based hotbar mode)
+        -- When enabled, replaces the standard hotbar with a controller-friendly layout
+        hotbarCrossbar = factories.createCrossbarDefaults(),
+
         -- Notifications settings
         notificationsShowPartyInvite = true,
         notificationsShowTradeInvite = true,

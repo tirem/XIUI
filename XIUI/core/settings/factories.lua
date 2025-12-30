@@ -319,6 +319,78 @@ function M.createHotbarBarDefaults(overrides)
     return defaults;
 end
 
+-- Factory function to create crossbar settings (controller-based hotbar layout)
+-- The crossbar provides 4 combo modes: L2, R2, L2+R2, R2+L2 (32 total slots)
+function M.createCrossbarDefaults()
+    return T{
+        -- Master toggle
+        enabled = false,
+
+        -- Layout
+        slotSize = 48,              -- Slot size in pixels
+        slotGapV = 4,               -- Vertical gap between top and bottom slots
+        slotGapH = 4,               -- Horizontal gap between left and right slots
+        diamondSpacing = 20,        -- Space between dpad and face button diamonds
+        groupSpacing = 40,          -- Space between L2 and R2 groups
+        showDivider = true,         -- Show center divider line
+        showTriggerLabels = true,   -- Show "L2", "R2", "L2+R2", "R2+L2" labels
+
+        -- Visual settings
+        backgroundTheme = 'Window1',
+        bgScale = 1.0,
+        borderScale = 1.0,
+        backgroundOpacity = 0.87,
+        borderOpacity = 1.0,
+        slotBackgroundColor = 0x55000000,
+        activeSlotHighlight = 0x44FFFFFF,   -- Highlight color when trigger held
+        inactiveSlotDim = 0.5,              -- Dim multiplier for inactive side
+
+        -- Window colors
+        bgColor = 0xFFFFFFFF,
+        borderColor = 0xFFFFFFFF,
+
+        -- Button icons
+        showButtonIcons = true,             -- Show d-pad/face button icons on slots
+        buttonIconSize = 24,                -- Size of controller button icons
+        buttonIconGapH = 2,                 -- Horizontal spacing between center icons
+        buttonIconGapV = 2,                 -- Vertical spacing between center icons
+        buttonIconPosition = 'corner',      -- 'corner' or 'replace_keybind'
+        controllerTheme = 'PlayStation',    -- 'PlayStation' or 'Xbox' button icons
+        triggerIconScale = 1.0,             -- Scale for L2/R2 trigger icons (base 49x28)
+
+        -- Font settings
+        keybindFontSize = 8,
+        keybindFontColor = 0xFFFFFFFF,
+        labelFontSize = 10,
+        triggerLabelFontSize = 14,
+        triggerLabelColor = 0xFFFFCC00,     -- Gold color for trigger labels
+
+        -- Combo text (shows current mode in center for complex combos)
+        showComboText = true,               -- Show combo mode text in center
+        comboTextFontSize = 10,             -- Font size for combo text
+
+        -- Expanded crossbar (L2+R2 combos)
+        enableExpandedCrossbar = true,      -- Enable L2+R2 and R2+L2 combos
+
+        -- Double-tap crossbar (tap trigger twice quickly)
+        enableDoubleTap = false,            -- Enable L2x2 and R2x2 double-tap modes
+        doubleTapWindow = 0.3,              -- Time window for double-tap detection (seconds)
+
+        -- Controller settings
+        triggerThreshold = 30,              -- Analog trigger threshold (0-255)
+
+        -- Window position (saved on drag)
+        windowX = nil,                      -- nil = use default centered position
+        windowY = nil,
+
+        -- Per-job slot actions for each combo mode
+        -- slotActions[jobId][comboMode][slotIndex] = action
+        -- comboMode: 'L2', 'R2', 'L2R2', 'R2L2'
+        -- slotIndex: 1-8 (1-4 = d-pad, 5-8 = face buttons)
+        slotActions = {},
+    };
+end
+
 -- Factory function to create party color settings
 function M.createPartyColorDefaults(includeTP)
     local colors = T{
