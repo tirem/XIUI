@@ -635,7 +635,7 @@ function display.DrawWindow(settings)
     local isJug = petData.isJug;
     local isCharmed = petData.isCharmed;
     local jugTimeRemaining = petData.jugTimeRemaining;
-    local charmElapsed = petData.charmElapsed;
+    local charmTimeRemaining = petData.charmTimeRemaining;
 
     -- Set current pet name for background image rendering
     data.currentPetName = petName;
@@ -1118,8 +1118,14 @@ function display.DrawWindow(settings)
                 timerX = windowPosX + offsetX;
                 timerY = windowPosY + offsetY;
 
-                if charmElapsed then
-                    timerStr = data.FormatTimeMMSS(charmElapsed);
+                if charmTimeRemaining then
+                    timerStr = data.FormatTimeMMSS(charmTimeRemaining);
+                    -- Warning color if under 30 seconds
+                    if charmTimeRemaining < 30 then
+                         textColor = colorConfig.durationWarningColor or 0xFFFF6600;
+                    end
+                else
+                    timerStr = "??:??";
                 end
 
                 -- Charmed pet: Show heart icon
