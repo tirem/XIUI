@@ -166,8 +166,8 @@ petbar.Initialize = function(settings)
             local actionId = struct.unpack('H', e.data, 0x0C + 0x01);
 
             if (category == 0x09 and actionId == data.ActionID.CHARM) then
-                -- Validate: Player must not have a pet (check petType instead of entity for reliability)
-                if (data.petType ~= nil and data.petType ~= 'charm') then return; end
+                -- Validate: Player must not have a pet
+                if (data.petType ~= nil) then return; end
 
                 -- Force reset state and start fresh tracking
                 data.charmState = data.CharmState.SENDING_PACKET;
