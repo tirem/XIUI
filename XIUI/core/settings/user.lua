@@ -409,6 +409,7 @@ function M.createUserSettingsDefaults()
         partyListBgScale = 1.0,
         partyListBgColor = { 255, 255, 255, 255 },
         partyListBorderColor = { 255, 255, 255, 255 },
+        enablePartyListClickTarget = false,
 
         -- Legacy layout settings (kept for migration)
         partyListLayout1 = T{

@@ -188,12 +188,12 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
     local offsetSize = nameRefHeight > settings.baseIconSize and nameRefHeight or settings.baseIconSize;
     local nameIconAreaHeight = math.max(jobIconSize, nameRefHeight);
 
-    -- Calculate entrySize based on layout
-    local entrySize;
+    -- Calculate entryHeight based on layout
+    local entryHeight;
     if layout == 1 then
-        entrySize = nameRefHeight + settings.nameTextOffsetY + hpBarHeight + 1 + mpBarHeight;
+        entryHeight = nameRefHeight + settings.nameTextOffsetY + hpBarHeight + 1 + mpBarHeight;
     else
-        entrySize = nameRefHeight + settings.nameTextOffsetY + hpBarHeight + settings.hpTextOffsetY + hpRefHeight;
+        entryHeight = nameRefHeight + settings.nameTextOffsetY + hpBarHeight + settings.hpTextOffsetY + hpRefHeight;
     end
 
     -- Draw selection box
@@ -203,7 +203,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         local selectionWidth = allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2;
         local selectionScaleY = cache.selectionBoxScaleY or 1;
         local selectionOffsetY = cache.selectionBoxOffsetY or 0;
-        local unscaledHeight = entrySize + settings.cursorPaddingY1 + settings.cursorPaddingY2;
+        local unscaledHeight = entryHeight + settings.cursorPaddingY1 + settings.cursorPaddingY2;
         local selectionHeight = unscaledHeight * selectionScaleY;
         local topOfMember = hpStartY - nameRefHeight - settings.nameTextOffsetY;
         local centerOffsetY = (selectionHeight - unscaledHeight) / 2;
@@ -976,7 +976,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
                 local selectionScaleY = cache.selectionBoxScaleY or 1;
                 local selectionOffsetY = cache.selectionBoxOffsetY or 0;
-                local unscaledHeight = entrySize + settings.cursorPaddingY1 + settings.cursorPaddingY2;
+                local unscaledHeight = entryHeight + settings.cursorPaddingY1 + settings.cursorPaddingY2;
                 local selectionHeight = unscaledHeight * selectionScaleY;
                 local topOfMember = hpStartY - nameRefHeight - settings.nameTextOffsetY;
                 local centerOffsetY = (selectionHeight - unscaledHeight) / 2;
@@ -1138,6 +1138,34 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         local BASE_MEMBER_SPACING = 6;
         imgui.Dummy({0, BASE_MEMBER_SPACING + settings.entrySpacing[partyIndex]});
     end
+
+    -- Add a click target over party member entry if in zone and enabled
+    if (memInfo.inzone and not isPreviewMode and not showConfig[1] and gConfig.enablePartyListClickTarget) then
+        --Save off current cursor position
+        local currentCursorPositionX, currentCursorPositionY = imgui.GetCursorScreenPos();
+        
+        --Create button overlapping member
+        local entryStartX = hpStartX;
+        local entryStartY = hpStartY - nameRefHeight - settings.nameTextOffsetY;
+
+        imgui.SetCursorScreenPos({entryStartX, entryStartY});
+        if imgui.InvisibleButton('PartyMemberEntry' .. memIdx, {allBarsLengths, entryHeight}) then
+            AshitaCore:GetChatManager():QueueCommand(-1, '/target ' .. memInfo.serverid);
+        end
+
+        --Uncomment to visualize button boundaries
+        --local drawList = imgui.GetBackgroundDrawList();
+        --drawList:AddRect(
+        --    {entryStartX, entryStartY},
+        --    {entryStartX + allBarsLengths, entryStartY + entryHeight},
+        --    imgui.GetColorU32(0xFFFFFFFF),
+        --    4.0
+        --);
+
+        --Return cursor position to previously saved location
+        imgui.SetCursorScreenPos({currentCursorPositionX, currentCursorPositionY});
+    end
+
 end
 
 -- ============================================

@@ -294,7 +294,9 @@ function M.DrawSettings(state)
     components.DrawCheckbox('Show When Solo', 'showPartyListWhenSolo');
     components.DrawCheckbox('Hide During Events', 'partyListHideDuringEvents');
     components.DrawCheckbox('Alliance Windows', 'partyListAlliance');
-
+    components.DrawCheckbox('Click to Target', 'enablePartyListClickTarget');
+    imgui.ShowHelp('Click on a party member to target them. Requires /shorthand to be enabled.');
+    
     imgui.Spacing();
 
     -- Party tab buttons
