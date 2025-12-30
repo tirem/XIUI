@@ -591,6 +591,11 @@ local function drawNotification(slot, notification, x, y, width, height, setting
         local barColor2 = notificationData.GetCachedBarColor(colorKey2, barHex2);
         local filledWidth = barWidth * progress;
 
+        -- Inverse direction if configured
+        if (gConfig.notificationsProgressBarDirection == "right") then
+            barX = x + (barWidth - filledWidth);
+        end
+
         -- Draw filled portion with gradient
         if filledWidth > 0 then
             drawList:AddRectFilledMultiColor(
