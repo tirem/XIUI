@@ -196,8 +196,8 @@ function M.updateBackground(bgHandle, x, y, width, height, options)
     local bgWidth = width + (padding * 2);
     local bgHeight = height + (paddingY * 2);
 
-    -- Update background
-    bgPrim.visible = bgPrim.exists;
+    -- Update background - set position and size BEFORE visibility
+    -- to avoid a frame where primitive is visible at old position
     bgPrim.position_x = x - padding;
     bgPrim.position_y = y - paddingY;
     bgPrim.width = math.ceil(bgWidth / bgScale);
@@ -211,6 +211,9 @@ function M.updateBackground(bgHandle, x, y, width, height, options)
     else
         bgPrim.color = bgColor;
     end
+
+    -- Set visibility last, after all other properties are set
+    bgPrim.visible = bgPrim.exists;
 end
 
 --[[
@@ -268,9 +271,8 @@ function M.updateBorders(borderHandle, x, y, width, height, options)
         finalColor = borderColor;
     end
 
-    -- Bottom-right corner
+    -- Bottom-right corner - set properties before visibility
     local br = borderHandle.br;
-    br.visible = br.exists;
     br.position_x = bgX + bgWidth - math.floor((borderSize * borderScale) - (bgOffset * borderScale));
     br.position_y = bgY + bgHeight - math.floor((borderSize * borderScale) - (bgOffset * borderScale));
     br.width = borderSize;
@@ -279,9 +281,8 @@ function M.updateBorders(borderHandle, x, y, width, height, options)
     br.scale_x = borderScale;
     br.scale_y = borderScale;
 
-    -- Top-right edge (L-shaped from top to br)
+    -- Top-right edge (L-shaped from top to br) - set properties before visibility
     local tr = borderHandle.tr;
-    tr.visible = tr.exists;
     tr.position_x = br.position_x;
     tr.position_y = bgY - (bgOffset * borderScale);
     tr.width = borderSize;
@@ -290,9 +291,8 @@ function M.updateBorders(borderHandle, x, y, width, height, options)
     tr.scale_x = borderScale;
     tr.scale_y = borderScale;
 
-    -- Top-left (L-shaped: top and left edges)
+    -- Top-left (L-shaped: top and left edges) - set properties before visibility
     local tl = borderHandle.tl;
-    tl.visible = tl.exists;
     tl.position_x = bgX - (bgOffset * borderScale);
     tl.position_y = bgY - (bgOffset * borderScale);
     tl.width = math.ceil((tr.position_x - tl.position_x) / borderScale);
@@ -301,9 +301,8 @@ function M.updateBorders(borderHandle, x, y, width, height, options)
     tl.scale_x = borderScale;
     tl.scale_y = borderScale;
 
-    -- Bottom-left edge (L-shaped from left to br)
+    -- Bottom-left edge (L-shaped from left to br) - set properties before visibility
     local bl = borderHandle.bl;
-    bl.visible = bl.exists;
     bl.position_x = tl.position_x;
     bl.position_y = br.position_y;
     bl.width = tl.width;
@@ -311,6 +310,12 @@ function M.updateBorders(borderHandle, x, y, width, height, options)
     bl.color = finalColor;
     bl.scale_x = borderScale;
     bl.scale_y = borderScale;
+
+    -- Set visibility last for all borders, after all properties are set
+    br.visible = br.exists;
+    tr.visible = tr.exists;
+    tl.visible = tl.exists;
+    bl.visible = bl.exists;
 end
 
 --[[

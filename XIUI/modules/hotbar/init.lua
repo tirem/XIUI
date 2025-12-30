@@ -38,13 +38,29 @@ require('handlers.helpers');
 local gdi = require('submodules.gdifonts.include');
 local primitives = require('primitives');
 local windowBg = require('libs.windowbackground');
+local dragdrop = require('libs.dragdrop');
 
 local data = require('modules.hotbar.data');
 local display = require('modules.hotbar.display');
 local actions = require('modules.hotbar.actions');
 local macropalette = require('modules.hotbar.macropalette');
+local crossbar = require('modules.hotbar.crossbar');
+local controller = require('modules.hotbar.controller');
+local textures = require('modules.hotbar.textures');
 
 local M = {};
+
+-- ============================================
+-- State
+-- ============================================
+
+local texturesInitialized = false;
+
+-- ============================================
+-- Crossbar State
+-- ============================================
+
+local crossbarInitialized = false;
 
 -- ============================================
 -- Module State
@@ -167,6 +183,20 @@ function M.Initialize(settings)
     -- Initialize display layer
     display.Initialize(settings);
 
+    -- Initialize crossbar if enabled
+    if gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.enabled then
+        crossbar.Initialize(gConfig.hotbarCrossbar, gAdjustedSettings.crossbarSettings);
+        controller.Initialize({
+            triggerThreshold = gConfig.hotbarCrossbar.triggerThreshold or 30,
+            doubleTapEnabled = gConfig.hotbarCrossbar.enableDoubleTap or false,
+            doubleTapWindow = gConfig.hotbarCrossbar.doubleTapWindow or 0.3,
+        });
+        controller.SetSlotActivateCallback(function(comboMode, slotIndex)
+            crossbar.ActivateSlot(comboMode, slotIndex);
+        end);
+        crossbarInitialized = true;
+    end
+
     M.initialized = true;
 end
 
@@ -226,18 +256,90 @@ function M.UpdateVisuals(settings)
 
     -- Update display layer (handles theme changes)
     display.UpdateVisuals(settings);
+
+    -- Handle crossbar enable/disable toggle
+    local crossbarEnabled = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.enabled;
+
+    if crossbarEnabled and not crossbarInitialized then
+        -- Initialize crossbar when newly enabled
+        crossbar.Initialize(gConfig.hotbarCrossbar, gAdjustedSettings.crossbarSettings);
+        controller.Initialize({
+            triggerThreshold = gConfig.hotbarCrossbar.triggerThreshold or 30,
+            doubleTapEnabled = gConfig.hotbarCrossbar.enableDoubleTap or false,
+            doubleTapWindow = gConfig.hotbarCrossbar.doubleTapWindow or 0.3,
+        });
+        controller.SetSlotActivateCallback(function(comboMode, slotIndex)
+            crossbar.ActivateSlot(comboMode, slotIndex);
+        end);
+        crossbarInitialized = true;
+    elseif not crossbarEnabled and crossbarInitialized then
+        -- Cleanup crossbar when disabled
+        crossbar.Cleanup();
+        controller.Cleanup();
+        crossbarInitialized = false;
+    elseif crossbarInitialized then
+        -- Update crossbar visuals if already initialized
+        crossbar.UpdateVisuals(gConfig.hotbarCrossbar, gAdjustedSettings.crossbarSettings);
+        -- Update controller settings
+        controller.SetTriggerThreshold(gConfig.hotbarCrossbar.triggerThreshold or 30);
+        controller.SetDoubleTapEnabled(gConfig.hotbarCrossbar.enableDoubleTap or false);
+        controller.SetDoubleTapWindow(gConfig.hotbarCrossbar.doubleTapWindow or 0.3);
+    end
 end
 
 -- Main render function - called every frame
 function M.DrawWindow(settings)
     if not M.initialized then return; end
     if not M.visible then return; end
+
+    -- Update drag/drop state (must be called every frame, before drop zones)
+    dragdrop.Update();
+
+    -- Initialize textures on first draw (needed for icons in both modes)
+    if not texturesInitialized then
+        textures:Initialize();
+        texturesInitialized = true;
+    end
+
     if gConfig and gConfig.hotbarEnabled == false then
         display.HideWindow();
+        if crossbarInitialized then
+            crossbar.SetHidden(true);
+        end
         return;
     end
 
-    display.DrawWindow(settings);
+    -- Draw crossbar if enabled, otherwise draw standard hotbars
+    if crossbarInitialized and gConfig.hotbarCrossbar.enabled then
+        crossbar.DrawWindow(gConfig.hotbarCrossbar, gAdjustedSettings.crossbarSettings);
+        -- Hide standard hotbars when crossbar is active
+        display.HideWindow();
+    else
+        display.DrawWindow(settings);
+        if crossbarInitialized then
+            crossbar.SetHidden(true);
+        end
+    end
+
+    -- Always draw macro palette (regardless of mode)
+    macropalette.DrawPalette();
+
+    -- Render drag preview (must be called at end of frame, after all drop zones)
+    dragdrop.Render();
+
+    -- Handle slot dragged outside (remove the action)
+    if dragdrop.WasDroppedOutside() then
+        local lastPayload = dragdrop.GetLastPayload();
+        if lastPayload then
+            if lastPayload.type == 'slot' then
+                -- Standard hotbar slot was dragged outside - clear it
+                macropalette.ClearSlot(lastPayload.barIndex, lastPayload.slotIndex);
+            elseif lastPayload.type == 'crossbar_slot' then
+                -- Crossbar slot was dragged outside - clear it
+                data.ClearCrossbarSlotData(lastPayload.comboMode, lastPayload.slotIndex);
+            end
+        end
+    end
 end
 
 -- Set module visibility
@@ -252,6 +354,9 @@ function M.SetHidden(hidden)
         end
     end
     display.SetHidden(hidden);
+    if crossbarInitialized then
+        crossbar.SetHidden(hidden);
+    end
 end
 
 -- Cleanup on addon unload
@@ -302,6 +407,13 @@ function M.Cleanup()
     display.Cleanup();
     data.Cleanup();
 
+    -- Cleanup crossbar if initialized
+    if crossbarInitialized then
+        crossbar.Cleanup();
+        controller.Cleanup();
+        crossbarInitialized = false;
+    end
+
     M.initialized = false;
 end
 
@@ -325,6 +437,13 @@ function M.HandleKey(event)
         return;
     end
     return actions.HandleKey(event);
+end
+
+function M.HandleXInputState(e)
+    if not crossbarInitialized then return; end
+    if gConfig and gConfig.hotbarEnabled == false then return; end
+    if gConfig and gConfig.hotbarCrossbar and not gConfig.hotbarCrossbar.enabled then return; end
+    controller.HandleXInputState(e);
 end
 
 -- ============================================

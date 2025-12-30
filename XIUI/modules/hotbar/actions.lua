@@ -308,7 +308,7 @@ function M.HandleKeybind(hotbar, slot)
 end
 
 function M.HandleKey(event)
-   --print("Key pressed wparam: " .. tostring(event.wparam) .. " lparam: " .. tostring(event.lparam)); 
+   --print("Key pressed wparam: " .. tostring(event.wparam) .. " lparam: " .. tostring(event.lparam));
    --https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 
    local isRelease = parseKeyEventFlags(event)
@@ -330,7 +330,7 @@ function M.HandleKey(event)
 
    -- Determine hotbar and slot from key and modifiers
    local hotbar, slot = GetHotbarAndSlot(keyStr);
-   
+
    if hotbar and slot then
        -- Try to execute the keybind
        if M.HandleKeybind(hotbar, slot) then
@@ -339,6 +339,22 @@ function M.HandleKey(event)
    end
 end
 
+--- Execute an action directly from slot data
+--- Used by crossbar for controller input
+---@param slotAction table The slot action with actionType, action, target, etc.
+---@return boolean success Whether the action was executed
+function M.ExecuteAction(slotAction)
+    if not slotAction then return false; end
+    if not slotAction.actionType or not slotAction.action then return false; end
 
+    -- Build and execute command
+    local command, _ = M.BuildCommand(slotAction);
+    if command then
+        AshitaCore:GetChatManager():QueueCommand(-1, command);
+        return true;
+    end
+
+    return false;
+end
 
 return M

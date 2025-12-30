@@ -50,7 +50,7 @@ textures.Initialize = function(self)
     
     -- Load spell icons - use proper path separator for Windows
     local spellDirectory = string.format(assetsDirectory .. '\\spells\\', AshitaCore:GetInstallPath());
-    
+
     local spellContents = ashita.fs.get_directory(spellDirectory, '.*\\.png$');
     if spellContents then
         for _, file in pairs(spellContents) do
@@ -72,6 +72,38 @@ textures.Initialize = function(self)
         print('[Hotbar] No PNG files found or directory does not exist');
     end
 
+    -- Load controller button icons for crossbar (from subdirectories)
+    local controllerDirectory = assetsDirectory .. 'controller\\';
+
+    -- D-pad and triggers are in Shared folder
+    local sharedIcons = { 'UP', 'DOWN', 'LEFT', 'RIGHT', 'L1', 'L2', 'R1', 'R2' };
+    for _, iconName in ipairs(sharedIcons) do
+        local fullPath = controllerDirectory .. 'Shared\\' .. iconName .. '.png';
+        local texture = LoadTextureFromPath(fullPath);
+        if texture then
+            self.Cache['controller_' .. iconName] = texture;
+        end
+    end
+
+    -- PlayStation face buttons
+    local playstationIcons = { 'X', 'Square', 'Triangle', 'Circle' };
+    for _, iconName in ipairs(playstationIcons) do
+        local fullPath = controllerDirectory .. 'PlayStation\\' .. iconName .. '.png';
+        local texture = LoadTextureFromPath(fullPath);
+        if texture then
+            self.Cache['controller_' .. iconName] = texture;
+        end
+    end
+
+    -- Xbox face buttons (alternative naming)
+    local xboxIcons = { { name = 'A', key = 'A' }, { name = 'B', key = 'B' }, { name = 'X', key = 'Xbox_X' }, { name = 'Y', key = 'Y' } };
+    for _, icon in ipairs(xboxIcons) do
+        local fullPath = controllerDirectory .. 'Xbox\\' .. icon.name .. '.png';
+        local texture = LoadTextureFromPath(fullPath);
+        if texture then
+            self.Cache['controller_' .. icon.key] = texture;
+        end
+    end
 
 end
 
@@ -87,6 +119,32 @@ textures.Get = function(self, key)
         return nil;
     end
     return self.Cache[key];
+end
+
+-- Get controller button icon by name
+-- iconName: 'X', 'Square', 'Triangle', 'Circle', 'L1', 'L2', 'R1', 'R2', 'UP', 'DOWN', 'LEFT', 'RIGHT'
+textures.GetControllerIcon = function(self, iconName)
+    if not self.Cache then
+        return nil;
+    end
+    return self.Cache['controller_' .. iconName];
+end
+
+-- Map crossbar slot index to controller button name
+-- Slots 1-4 are d-pad (UP, RIGHT, DOWN, LEFT in diamond order)
+-- Slots 5-8 are face buttons (Triangle, Circle, X, Square in diamond order)
+textures.GetButtonNameForSlot = function(self, slotIndex)
+    local buttonMap = {
+        [1] = 'UP',
+        [2] = 'RIGHT',
+        [3] = 'DOWN',
+        [4] = 'LEFT',
+        [5] = 'Triangle',
+        [6] = 'Circle',
+        [7] = 'X',
+        [8] = 'Square',
+    };
+    return buttonMap[slotIndex];
 end
 
 return textures;
