@@ -269,6 +269,9 @@ function M.createHotbarBarDefaults(overrides)
         -- Global settings toggle (when true, uses hotbarGlobal settings for visuals)
         useGlobalSettings = true,
 
+        -- Job-specific toggle (when true, actions are stored per-job; when false, actions are shared across all jobs)
+        jobSpecific = true,
+
         -- Layout settings (always per-bar)
         enabled = true,
         rows = 1,               -- Number of rows (1-12)
@@ -331,6 +334,9 @@ function M.createCrossbarDefaults()
     return T{
         -- Layout mode: 'hotbar', 'crossbar', or 'both'
         mode = 'hotbar',
+
+        -- Job-specific toggle (when true, actions are stored per-job; when false, actions are shared across all jobs)
+        jobSpecific = true,
 
         -- Layout
         slotSize = 40,              -- Slot size in pixels

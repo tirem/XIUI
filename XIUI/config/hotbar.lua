@@ -14,6 +14,15 @@ local macropalette = require('modules.hotbar.macropalette');
 
 local M = {};
 
+-- Confirmation popup state for job-specific toggle
+local jobSpecificConfirmState = {
+    showPopup = false,
+    targetConfigKey = nil,
+    targetBarIndex = nil,
+    newValue = nil,
+    isCrossbar = false,
+};
+
 -- Action type options
 local ACTION_TYPES = { 'ma', 'ja', 'ws', 'item', 'equip', 'macro', 'pet' };
 local ACTION_TYPE_LABELS = {
@@ -289,12 +298,45 @@ end
 -- Keybind Editor Modal Functions
 -- ============================================
 
+-- Helper to normalize job ID to number (handles string keys from JSON)
+local function normalizeJobId(jobId)
+    if type(jobId) == 'string' then
+        return tonumber(jobId) or 1;
+    end
+    return jobId or 1;
+end
+
+-- Helper to get slotActions with normalized job ID key
+local function getSlotActionsForJob(slotActions, jobId)
+    if not slotActions then return nil; end
+    local numericKey = normalizeJobId(jobId);
+    local stringKey = tostring(numericKey);
+    return slotActions[numericKey] or slotActions[stringKey];
+end
+
+-- Helper to ensure slotActions structure exists for a job (with key normalization)
+local function ensureSlotActionsStructure(barSettings, jobId)
+    if not barSettings.slotActions then
+        barSettings.slotActions = {};
+    end
+    local numericKey = normalizeJobId(jobId);
+    if not barSettings.slotActions[numericKey] then
+        local stringKey = tostring(numericKey);
+        if barSettings.slotActions[stringKey] then
+            barSettings.slotActions[numericKey] = barSettings.slotActions[stringKey];
+            barSettings.slotActions[stringKey] = nil;
+        else
+            barSettings.slotActions[numericKey] = {};
+        end
+    end
+    return barSettings.slotActions[numericKey];
+end
+
 -- Get slot actions for a bar and job
 local function GetSlotActions(configKey, jobId)
     local barSettings = gConfig[configKey];
     if not barSettings then return nil; end
-    if not barSettings.slotActions then return nil; end
-    return barSettings.slotActions[jobId];
+    return getSlotActionsForJob(barSettings.slotActions, jobId);
 end
 
 -- Save slot action for a slot
@@ -302,15 +344,9 @@ local function SaveSlotAction(configKey, jobId, slotIndex, actionData)
     local barSettings = gConfig[configKey];
     if not barSettings then return; end
 
-    -- Initialize slotActions structure if needed
-    if not barSettings.slotActions then
-        barSettings.slotActions = {};
-    end
-    if not barSettings.slotActions[jobId] then
-        barSettings.slotActions[jobId] = {};
-    end
-
-    barSettings.slotActions[jobId][slotIndex] = actionData;
+    -- Ensure structure exists (with key normalization)
+    local jobSlotActions = ensureSlotActionsStructure(barSettings, jobId);
+    jobSlotActions[slotIndex] = actionData;
     SaveSettingsOnly();
 
     -- Reload keybinds in data module
@@ -322,16 +358,11 @@ local function ClearSlotAction(configKey, jobId, slotIndex)
     local barSettings = gConfig[configKey];
     if not barSettings then return; end
 
-    -- Initialize slotActions structure if needed
-    if not barSettings.slotActions then
-        barSettings.slotActions = {};
-    end
-    if not barSettings.slotActions[jobId] then
-        barSettings.slotActions[jobId] = {};
-    end
+    -- Ensure structure exists (with key normalization)
+    local jobSlotActions = ensureSlotActionsStructure(barSettings, jobId);
 
     -- Use "cleared" marker to override default keybinds from lua files
-    barSettings.slotActions[jobId][slotIndex] = { cleared = true };
+    jobSlotActions[slotIndex] = { cleared = true };
     SaveSettingsOnly();
 
     -- Reload keybinds in data module
@@ -733,6 +764,12 @@ local function DrawVisualSettingsContent(settings, configKey)
 
         components.DrawPartySliderInt(settings, 'Label Font Size##' .. configKey, 'labelFontSize', 6, 24, '%d', nil, 10);
         imgui.ShowHelp('Font size for action labels below buttons.');
+
+        components.DrawPartyCheckbox(settings, 'Show MP Cost##' .. configKey, 'showMpCost');
+        imgui.ShowHelp('Display MP cost in top-right corner of spell slots.');
+
+        components.DrawPartySliderInt(settings, 'MP Cost Font Size##' .. configKey, 'mpCostFontSize', 6, 24, '%d', nil, 8);
+        imgui.ShowHelp('Font size for MP cost display.');
     end
 end
 
@@ -768,6 +805,26 @@ local function DrawBarVisualSettings(configKey, barLabel)
     -- Use Global Settings checkbox
     components.DrawPartyCheckbox(barSettings, 'Use Global Settings##' .. configKey, 'useGlobalSettings');
     imgui.ShowHelp('When enabled, this bar uses the Global tab settings for visuals. Disable to customize this bar independently.');
+
+    imgui.Spacing();
+
+    -- Job-Specific Actions toggle
+    local jobSpecific = barSettings.jobSpecific ~= false;  -- Default to true if nil
+    local jobSpecificLabel = jobSpecific and 'Job-Specific Actions' or 'Global Actions (Shared)';
+    imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Action Storage:');
+    imgui.SameLine();
+    imgui.TextColored(jobSpecific and {0.5, 1.0, 0.5, 1.0} or {1.0, 0.8, 0.5, 1.0}, jobSpecificLabel);
+
+    if imgui.Button(jobSpecific and 'Switch to Global##' .. configKey or 'Switch to Job-Specific##' .. configKey, {160, 22}) then
+        -- Show confirmation popup
+        local barIndex = tonumber(configKey:match('hotbarBar(%d+)'));
+        jobSpecificConfirmState.showPopup = true;
+        jobSpecificConfirmState.targetConfigKey = configKey;
+        jobSpecificConfirmState.targetBarIndex = barIndex;
+        jobSpecificConfirmState.newValue = not jobSpecific;
+        jobSpecificConfirmState.isCrossbar = false;
+    end
+    imgui.ShowHelp('Job-Specific: Each job has its own hotbar actions.\nGlobal: All jobs share the same hotbar actions.\n\nWARNING: Switching modes will clear all slot actions for this bar!');
 
     imgui.Spacing();
 
@@ -824,6 +881,27 @@ local function DrawCrossbarSettings()
 
     imgui.TextColored(components.TAB_STYLE.gold, 'Crossbar Settings');
     imgui.TextColored({0.7, 0.7, 0.7, 1.0}, 'Controller-friendly layout with L2/R2 trigger groups.');
+    imgui.Spacing();
+
+    -- Job-Specific Actions toggle for crossbar
+    local jobSpecific = crossbarSettings.jobSpecific ~= false;  -- Default to true if nil
+    local jobSpecificLabel = jobSpecific and 'Job-Specific Actions' or 'Global Actions (Shared)';
+    imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Action Storage:');
+    imgui.SameLine();
+    imgui.TextColored(jobSpecific and {0.5, 1.0, 0.5, 1.0} or {1.0, 0.8, 0.5, 1.0}, jobSpecificLabel);
+
+    if imgui.Button(jobSpecific and 'Switch to Global##crossbar' or 'Switch to Job-Specific##crossbar', {160, 22}) then
+        -- Show confirmation popup
+        jobSpecificConfirmState.showPopup = true;
+        jobSpecificConfirmState.targetConfigKey = 'hotbarCrossbar';
+        jobSpecificConfirmState.targetBarIndex = nil;
+        jobSpecificConfirmState.newValue = not jobSpecific;
+        jobSpecificConfirmState.isCrossbar = true;
+    end
+    imgui.ShowHelp('Job-Specific: Each job has its own crossbar actions.\nGlobal: All jobs share the same crossbar actions.\n\nWARNING: Switching modes will clear all crossbar slot actions!');
+
+    imgui.Spacing();
+    imgui.Separator();
     imgui.Spacing();
 
     -- Layout section
@@ -907,6 +985,12 @@ local function DrawCrossbarSettings()
 
         components.DrawPartySliderInt(crossbarSettings, 'Trigger Label Font Size##crossbar', 'triggerLabelFontSize', 8, 24, '%d', nil, 14);
         imgui.ShowHelp('Font size for combo mode labels (L2, R2, etc.).');
+
+        components.DrawPartyCheckbox(crossbarSettings, 'Show MP Cost##crossbar', 'showMpCost');
+        imgui.ShowHelp('Display MP cost in top-right corner of spell slots.');
+
+        components.DrawPartySliderInt(crossbarSettings, 'MP Cost Font Size##crossbar', 'mpCostFontSize', 6, 24, '%d', nil, 8);
+        imgui.ShowHelp('Font size for MP cost display.');
     end
 
     -- Controller Input section
@@ -1009,6 +1093,14 @@ local function DrawCrossbarColorSettings()
             SaveSettingsOnly();
         end
         imgui.ShowHelp('Color for combo mode labels (L2, R2, etc.).');
+
+        local mpCostColor = crossbarSettings.mpCostFontColor or 0xFFD4FF97;
+        local mpCostColorTable = ARGBToImGui(mpCostColor);
+        if imgui.ColorEdit4('MP Cost Color##crossbar', mpCostColorTable, colorFlags) then
+            crossbarSettings.mpCostFontColor = ImGuiToARGB(mpCostColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color for MP cost display on spell slots.');
     end
 end
 
@@ -1135,6 +1227,58 @@ function M.DrawSettings(state)
         end
     end
 
+    -- Draw confirmation popup for job-specific toggle
+    if jobSpecificConfirmState.showPopup then
+        imgui.OpenPopup('Confirm Action Storage Change##jobSpecificConfirm');
+    end
+
+    if imgui.BeginPopupModal('Confirm Action Storage Change##jobSpecificConfirm', nil, ImGuiWindowFlags_AlwaysAutoResize) then
+        local targetName = jobSpecificConfirmState.isCrossbar and 'Crossbar' or ('Bar ' .. (jobSpecificConfirmState.targetBarIndex or 1));
+        local newModeName = jobSpecificConfirmState.newValue and 'Job-Specific' or 'Global';
+
+        imgui.TextColored({1.0, 0.8, 0.3, 1.0}, 'Warning: This will clear all slot actions!');
+        imgui.Spacing();
+        imgui.TextWrapped('Switching ' .. targetName .. ' to ' .. newModeName .. ' mode will clear all existing slot actions for this bar/crossbar.');
+        imgui.Spacing();
+        imgui.TextWrapped('This cannot be undone. Are you sure you want to continue?');
+        imgui.Spacing();
+        imgui.Separator();
+        imgui.Spacing();
+
+        -- Center the buttons
+        local buttonWidth = 100;
+        local spacing = 20;
+        local totalWidth = buttonWidth * 2 + spacing;
+        local windowWidth = imgui.GetWindowWidth();
+        imgui.SetCursorPosX((windowWidth - totalWidth) / 2);
+
+        imgui.PushStyleColor(ImGuiCol_Button, {0.6, 0.2, 0.2, 1.0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.8, 0.3, 0.3, 1.0});
+        if imgui.Button('Confirm', {buttonWidth, 28}) then
+            -- Apply the change
+            if jobSpecificConfirmState.isCrossbar then
+                gConfig.hotbarCrossbar.jobSpecific = jobSpecificConfirmState.newValue;
+                data.ClearAllCrossbarSlotActions();
+            else
+                gConfig[jobSpecificConfirmState.targetConfigKey].jobSpecific = jobSpecificConfirmState.newValue;
+                data.ClearAllBarSlotActions(jobSpecificConfirmState.targetBarIndex);
+            end
+            SaveSettingsOnly();
+            jobSpecificConfirmState.showPopup = false;
+            imgui.CloseCurrentPopup();
+        end
+        imgui.PopStyleColor(2);
+
+        imgui.SameLine(0, spacing);
+
+        if imgui.Button('Cancel', {buttonWidth, 28}) then
+            jobSpecificConfirmState.showPopup = false;
+            imgui.CloseCurrentPopup();
+        end
+
+        imgui.EndPopup();
+    end
+
     return { selectedHotbarTab = selectedBarTab };
 end
 
@@ -1182,6 +1326,15 @@ local function DrawColorSettingsContent(settings, configKey)
             SaveSettingsOnly();
         end
         imgui.ShowHelp('Color for keybind labels (e.g., "1", "C2", "A3").');
+
+        -- MP cost font color
+        local mpCostColor = settings.mpCostFontColor or 0xFFD4FF97;
+        local mpCostColorTable = ARGBToImGui(mpCostColor);
+        if imgui.ColorEdit4('MP Cost Color##' .. configKey, mpCostColorTable, colorFlags) then
+            settings.mpCostFontColor = ImGuiToARGB(mpCostColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color for MP cost display on spell slots.');
     end
 end
 

@@ -78,6 +78,55 @@ local EQUIP_SLOT_MASKS = {
 };
 
 -- ============================================
+-- Helper Functions for Job ID Key Normalization
+-- ============================================
+
+-- Special key for global (non-job-specific) slot storage
+local GLOBAL_SLOT_KEY = 'global';
+
+-- Helper to normalize job ID to number (handles string keys from JSON)
+local function normalizeJobId(jobId)
+    if type(jobId) == 'string' then
+        return tonumber(jobId) or 1;
+    end
+    return jobId or 1;
+end
+
+-- Helper to get the storage key based on jobSpecific setting
+local function getStorageKey(barSettings, jobId)
+    if barSettings.jobSpecific == false then
+        return GLOBAL_SLOT_KEY;
+    end
+    return normalizeJobId(jobId);
+end
+
+-- Helper to ensure slotActions structure exists for a storage key (with key normalization)
+local function ensureSlotActionsStructure(barSettings, storageKey)
+    if not barSettings.slotActions then
+        barSettings.slotActions = {};
+    end
+    -- Handle 'global' key specially
+    if storageKey == GLOBAL_SLOT_KEY then
+        if not barSettings.slotActions[GLOBAL_SLOT_KEY] then
+            barSettings.slotActions[GLOBAL_SLOT_KEY] = {};
+        end
+        return barSettings.slotActions[GLOBAL_SLOT_KEY];
+    end
+    local numericKey = normalizeJobId(storageKey);
+    if not barSettings.slotActions[numericKey] then
+        -- Also check for string key and migrate if found
+        local stringKey = tostring(numericKey);
+        if barSettings.slotActions[stringKey] then
+            barSettings.slotActions[numericKey] = barSettings.slotActions[stringKey];
+            barSettings.slotActions[stringKey] = nil;
+        else
+            barSettings.slotActions[numericKey] = {};
+        end
+    end
+    return barSettings.slotActions[numericKey];
+end
+
+-- ============================================
 -- State
 -- ============================================
 
@@ -103,6 +152,28 @@ local searchFilter = { '' };
 local iconPickerOpen = false;
 local iconPickerFilter = { '' };
 local iconPickerTab = 1;  -- 1 = Spells, 2 = Items
+local iconPickerPage = { 1, 1 };  -- Current page for each tab [spells, items]
+local iconPickerLastFilter = { '', '' };  -- Track filter changes to reset page
+
+-- Icon picker grid constants
+local ICON_GRID_COLUMNS = 12;
+local ICON_GRID_SIZE = 36;
+local ICON_GRID_GAP = 4;
+local ICONS_PER_PAGE = 500;
+
+-- Cached spell list for icon picker (all spells, not just player-known)
+local allSpellsCache = nil;
+
+-- Item icon loading state (for lazy loading)
+local itemIconLoadState = {
+    loaded = false,
+    loading = false,
+    items = {},
+    seenNames = {},  -- Hash table for O(1) duplicate checking
+    currentId = 0,
+    maxId = 65535,
+    batchSize = 500,  -- Load 500 items per frame (fast since we're just reading names)
+};
 
 -- ============================================
 -- Spell/Ability/Weaponskill Retrieval
@@ -300,6 +371,91 @@ local function RefreshCachedLists()
     cachedItems = GetPlayerItems();
 end
 
+-- Build cache of ALL spells from horizonspells database (for icon picker)
+local function GetAllSpells()
+    if allSpellsCache then
+        return allSpellsCache;
+    end
+
+    local horizonSpells = require('modules.hotbar.database.horizonspells');
+    allSpellsCache = {};
+
+    for _, spell in pairs(horizonSpells) do
+        if spell.en and spell.en ~= '' and spell.id and not IsGarbageSpellName(spell.en) then
+            table.insert(allSpellsCache, {
+                id = spell.id,
+                name = spell.en,
+                icon_id = spell.icon_id,
+                type = spell.type or 'Unknown',
+            });
+        end
+    end
+
+    -- Sort by name
+    table.sort(allSpellsCache, function(a, b)
+        return a.name < b.name;
+    end);
+
+    return allSpellsCache;
+end
+
+-- Load a batch of item icons (for lazy loading)
+local function LoadItemIconBatch()
+    if itemIconLoadState.loaded or not itemIconLoadState.loading then
+        return;
+    end
+
+    local resMgr = AshitaCore:GetResourceManager();
+    if not resMgr then return; end
+
+    local endId = math.min(itemIconLoadState.currentId + itemIconLoadState.batchSize, itemIconLoadState.maxId);
+
+    for itemId = itemIconLoadState.currentId + 1, endId do
+        local item = resMgr:GetItemById(itemId);
+        if item and item.Name and item.Name[1] and item.Name[1] ~= '' then
+            local itemName = item.Name[1];
+            -- Skip duplicate names using hash table (O(1) lookup)
+            if not itemIconLoadState.seenNames[itemName] then
+                itemIconLoadState.seenNames[itemName] = true;
+                table.insert(itemIconLoadState.items, {
+                    id = itemId,
+                    name = itemName,
+                });
+            end
+        end
+    end
+
+    itemIconLoadState.currentId = endId;
+
+    if itemIconLoadState.currentId >= itemIconLoadState.maxId then
+        itemIconLoadState.loaded = true;
+        itemIconLoadState.loading = false;
+        -- Sort items by name after all loaded
+        table.sort(itemIconLoadState.items, function(a, b)
+            return a.name < b.name;
+        end);
+    end
+end
+
+-- Start loading all item icons
+local function StartItemIconLoading()
+    if itemIconLoadState.loaded or itemIconLoadState.loading then
+        return;
+    end
+    itemIconLoadState.loading = true;
+    itemIconLoadState.currentId = 0;
+    itemIconLoadState.items = {};
+    itemIconLoadState.seenNames = {};
+end
+
+-- Get loading progress percentage
+local function GetItemLoadProgress()
+    if itemIconLoadState.loaded then
+        return 100;
+    end
+    return math.floor((itemIconLoadState.currentId / itemIconLoadState.maxId) * 100);
+end
+
 -- Draw a searchable dropdown combo box with XIUI styling
 -- showIcons: if true, will attempt to load and display item icons
 -- equipSlotFilter: if provided, only show items that can be equipped in this slot (e.g., 'main', 'head')
@@ -401,6 +557,19 @@ function M.SyncToCurrentJob()
     cachedAbilities = nil;
     cachedWeaponskills = nil;
     cacheJobId = nil;
+    -- Close editor window if open (spells/abilities are job-specific)
+    if editingMacro then
+        editingMacro = nil;
+        isCreatingNew = false;
+        searchFilter[1] = '';
+        iconPickerOpen = false;
+    end
+    -- Clear macro selection (macros are per-job)
+    selectedMacroIndex = nil;
+    -- If palette is open, immediately refresh the caches
+    if paletteOpen then
+        RefreshCachedLists();
+    end
 end
 
 -- Get the macro database for selected/current job
@@ -551,25 +720,22 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
         return false;
     end
 
-    local jobId = data.jobId or 1;
+    local jobId = normalizeJobId(data.jobId or 1);
     local configKey = 'hotbarBar' .. targetBarIndex;
 
-    -- Ensure config structure exists
+    -- Ensure config structure exists (with key normalization)
     if not gConfig[configKey] then
         gConfig[configKey] = {};
     end
-    if not gConfig[configKey].slotActions then
-        gConfig[configKey].slotActions = {};
-    end
-    if not gConfig[configKey].slotActions[jobId] then
-        gConfig[configKey].slotActions[jobId] = {};
-    end
+    -- Use storage key based on jobSpecific setting
+    local storageKey = getStorageKey(gConfig[configKey], jobId);
+    local jobSlotActions = ensureSlotActionsStructure(gConfig[configKey], storageKey);
 
     if payload.type == 'macro' then
         -- Dragging from palette to slot
         local macroData = payload.data;
         if macroData then
-            gConfig[configKey].slotActions[jobId][targetSlotIndex] = {
+            jobSlotActions[targetSlotIndex] = {
                 actionType = macroData.actionType,
                 action = macroData.action,
                 target = macroData.target,
@@ -579,6 +745,7 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
                 itemId = macroData.itemId,  -- Store item ID for fast icon lookup
                 customIconType = macroData.customIconType,  -- Custom icon override
                 customIconId = macroData.customIconId,
+                macroRef = macroData.id,  -- Store reference to source macro for live updates
             };
             data.currentKeybinds = nil;  -- Invalidate cache
             SaveSettingsToDisk();
@@ -628,20 +795,17 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
             targetData = { cleared = true };
         end
 
-        -- Ensure source config structure exists
+        -- Ensure source config structure exists (with key normalization)
         if not gConfig[sourceConfigKey] then
             gConfig[sourceConfigKey] = {};
         end
-        if not gConfig[sourceConfigKey].slotActions then
-            gConfig[sourceConfigKey].slotActions = {};
-        end
-        if not gConfig[sourceConfigKey].slotActions[jobId] then
-            gConfig[sourceConfigKey].slotActions[jobId] = {};
-        end
+        -- Use storage key based on source bar's jobSpecific setting
+        local sourceStorageKey = getStorageKey(gConfig[sourceConfigKey], jobId);
+        local sourceJobSlotActions = ensureSlotActionsStructure(gConfig[sourceConfigKey], sourceStorageKey);
 
         -- Swap the slots (write to slotActions to override any default keybinds)
-        gConfig[configKey].slotActions[jobId][targetSlotIndex] = sourceData;
-        gConfig[sourceConfigKey].slotActions[jobId][sourceSlotIndex] = targetData;
+        jobSlotActions[targetSlotIndex] = sourceData;
+        sourceJobSlotActions[sourceSlotIndex] = targetData;
 
         data.currentKeybinds = nil;  -- Invalidate cache
         SaveSettingsToDisk();
@@ -650,7 +814,7 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
         -- Dragging from crossbar to hotbar (one-way copy, doesn't clear source)
         local sourceBindData = payload.data;
         if sourceBindData then
-            gConfig[configKey].slotActions[jobId][targetSlotIndex] = {
+            jobSlotActions[targetSlotIndex] = {
                 actionType = sourceBindData.actionType,
                 action = sourceBindData.action,
                 target = sourceBindData.target,
@@ -671,22 +835,19 @@ end
 
 -- Clear a hotbar slot
 function M.ClearSlot(barIndex, slotIndex)
-    local jobId = data.jobId or 1;
+    local jobId = normalizeJobId(data.jobId or 1);
     local configKey = 'hotbarBar' .. barIndex;
 
-    -- Ensure config structure exists
+    -- Ensure config structure exists (with key normalization)
     if not gConfig[configKey] then
         gConfig[configKey] = {};
     end
-    if not gConfig[configKey].slotActions then
-        gConfig[configKey].slotActions = {};
-    end
-    if not gConfig[configKey].slotActions[jobId] then
-        gConfig[configKey].slotActions[jobId] = {};
-    end
+    -- Use storage key based on jobSpecific setting
+    local storageKey = getStorageKey(gConfig[configKey], jobId);
+    local jobSlotActions = ensureSlotActionsStructure(gConfig[configKey], storageKey);
 
     -- Use "cleared" marker to override default keybinds from lua files
-    gConfig[configKey].slotActions[jobId][slotIndex] = { cleared = true };
+    jobSlotActions[slotIndex] = { cleared = true };
     data.currentKeybinds = nil;
     SaveSettingsToDisk();
 end
@@ -787,30 +948,6 @@ local function DrawMacroTile(macro, index, x, y, size)
             M.StartDragMacro(index, macro);
         end
     end
-
-    -- Overlay text (action type indicator at top-left)
-    local typeLabel = '';
-    if macro.actionType == 'ma' then typeLabel = 'MA';
-    elseif macro.actionType == 'ja' then typeLabel = 'JA';
-    elseif macro.actionType == 'ws' then typeLabel = 'WS';
-    elseif macro.actionType == 'item' then typeLabel = 'IT';
-    elseif macro.actionType == 'equip' then typeLabel = 'EQ';
-    elseif macro.actionType == 'macro' then typeLabel = 'M';
-    elseif macro.actionType == 'pet' then typeLabel = 'PT';
-    end
-
-    if typeLabel ~= '' then
-        imgui.SetCursorScreenPos({x + 2, y + 1});
-        imgui.TextColored(COLORS.textMuted, typeLabel);
-    end
-
-    -- Display name at bottom
-    imgui.SetCursorScreenPos({x + 2, y + size - 14});
-    local displayText = macro.displayName or macro.action or '?';
-    if #displayText > 7 then
-        displayText = displayText:sub(1, 6) .. '..';
-    end
-    imgui.TextColored(isSelected and COLORS.gold or COLORS.text, displayText);
 
     -- Tooltip with full info
     if isHovered then
@@ -1197,8 +1334,22 @@ local function DrawIconPicker()
         return;
     end
 
+    -- Start item loading when items tab is selected
+    if iconPickerTab == 2 then
+        StartItemIconLoading();
+        LoadItemIconBatch();  -- Load a batch each frame
+    end
+
     local isOpen = { true };
-    imgui.SetNextWindowSize({420, 380}, ImGuiCond_FirstUseEver);
+
+    -- Calculate window size for 12 icons per row
+    -- Grid: 12 icons * 36px + 11 gaps * 4px = 432 + 44 = 476px
+    -- Add padding (16px) + scrollbar (~16px) + child border (4px) = 512px
+    local gridContentWidth = (ICON_GRID_SIZE * ICON_GRID_COLUMNS) + (ICON_GRID_GAP * (ICON_GRID_COLUMNS - 1));
+    local windowWidth = gridContentWidth + 40;  -- padding + scrollbar + borders
+    local windowHeight = 450;
+
+    imgui.SetNextWindowSize({windowWidth, windowHeight}, ImGuiCond_FirstUseEver);
 
     PushWindowStyle();
 
@@ -1219,6 +1370,7 @@ local function DrawIconPicker()
         if imgui.Button('Spells', {tabWidth, 24}) then
             iconPickerTab = 1;
             iconPickerFilter[1] = '';
+            iconPickerPage[1] = 1;  -- Reset page on tab switch
         end
         imgui.PopStyleColor(2);
 
@@ -1235,6 +1387,7 @@ local function DrawIconPicker()
         if imgui.Button('Items', {tabWidth, 24}) then
             iconPickerTab = 2;
             iconPickerFilter[1] = '';
+            iconPickerPage[2] = 1;  -- Reset page on tab switch
         end
         imgui.PopStyleColor(2);
 
@@ -1261,88 +1414,173 @@ local function DrawIconPicker()
         imgui.SetNextItemWidth(200);
         imgui.InputText('##iconSearch', iconPickerFilter, INPUT_BUFFER_SIZE);
 
+        -- Show item count / loading status for items tab
+        if iconPickerTab == 2 then
+            imgui.SameLine();
+            if itemIconLoadState.loading then
+                imgui.TextColored(COLORS.textMuted, string.format('Loading... %d%%', GetItemLoadProgress()));
+            else
+                imgui.TextColored(COLORS.textMuted, string.format('(%d items)', #itemIconLoadState.items));
+            end
+        elseif iconPickerTab == 1 then
+            local allSpells = GetAllSpells();
+            imgui.SameLine();
+            imgui.TextColored(COLORS.textMuted, string.format('(%d spells)', #allSpells));
+        end
+
         imgui.Spacing();
+
+        local filter = iconPickerFilter[1]:lower();
+        local currentPage = iconPickerPage[iconPickerTab];
+
+        -- Reset page to 1 if filter changed
+        if filter ~= iconPickerLastFilter[iconPickerTab] then
+            iconPickerPage[iconPickerTab] = 1;
+            currentPage = 1;
+            iconPickerLastFilter[iconPickerTab] = filter;
+        end
+
+        -- Build filtered list to calculate total pages
+        local filteredItems = {};
+        if iconPickerTab == 1 then
+            local allSpells = GetAllSpells();
+            for _, spell in ipairs(allSpells) do
+                local spellName = spell.name or '';
+                if filter == '' or spellName:lower():find(filter, 1, true) then
+                    table.insert(filteredItems, spell);
+                end
+            end
+        elseif iconPickerTab == 2 then
+            for _, item in ipairs(itemIconLoadState.items) do
+                local itemName = item.name or '';
+                if filter == '' or itemName:lower():find(filter, 1, true) then
+                    table.insert(filteredItems, item);
+                end
+            end
+        end
+
+        local totalItems = #filteredItems;
+        local totalPages = math.max(1, math.ceil(totalItems / ICONS_PER_PAGE));
+
+        -- Clamp current page
+        if currentPage > totalPages then
+            currentPage = totalPages;
+            iconPickerPage[iconPickerTab] = currentPage;
+        end
+
+        -- Page navigation UI
+        if totalPages > 1 then
+            imgui.PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1);
+            imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+
+            -- Previous button
+            local canGoPrev = currentPage > 1;
+            if not canGoPrev then
+                imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgDark);
+                imgui.PushStyleColor(ImGuiCol_ButtonHovered, COLORS.bgDark);
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.textMuted);
+            end
+            if imgui.Button('<##prevPage', {30, 22}) and canGoPrev then
+                iconPickerPage[iconPickerTab] = currentPage - 1;
+            end
+            if not canGoPrev then
+                imgui.PopStyleColor(3);
+            end
+
+            imgui.SameLine();
+
+            -- Page info
+            imgui.TextColored(COLORS.text, string.format('Page %d / %d', currentPage, totalPages));
+
+            imgui.SameLine();
+
+            -- Next button
+            local canGoNext = currentPage < totalPages;
+            if not canGoNext then
+                imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgDark);
+                imgui.PushStyleColor(ImGuiCol_ButtonHovered, COLORS.bgDark);
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.textMuted);
+            end
+            if imgui.Button('>##nextPage', {30, 22}) and canGoNext then
+                iconPickerPage[iconPickerTab] = currentPage + 1;
+            end
+            if not canGoNext then
+                imgui.PopStyleColor(3);
+            end
+
+            imgui.SameLine();
+            imgui.TextColored(COLORS.textMuted, string.format('(%d total)', totalItems));
+
+            imgui.PopStyleColor();
+            imgui.PopStyleVar();
+
+            imgui.Spacing();
+        end
+
         imgui.Separator();
         imgui.Spacing();
 
-        -- Icon grid
-        local iconSize = 36;
-        local iconGap = 4;
-        local contentWidth = imgui.GetContentRegionAvail();
-        local iconsPerRow = math.floor((contentWidth - 10) / (iconSize + iconGap));
-        if iconsPerRow < 1 then iconsPerRow = 1; end
+        -- Calculate page range
+        local startIdx = (currentPage - 1) * ICONS_PER_PAGE + 1;
+        local endIdx = math.min(currentPage * ICONS_PER_PAGE, totalItems);
 
-        local filter = iconPickerFilter[1]:lower();
+        -- Icon grid with scrollbar - use child window with border for scrolling
+        local childFlags = ImGuiWindowFlags_AlwaysVerticalScrollbar;
+        imgui.PushStyleColor(ImGuiCol_ChildBg, COLORS.bgDark);
+        imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+        imgui.BeginChild('IconGrid', {0, 0}, true, childFlags);
 
-        imgui.BeginChild('IconGrid', {0, -10}, false);
+        local displayedCount = 0;
 
         if iconPickerTab == 1 then
-            -- Spell icons - use player's known spells for better relevance
-            local horizonSpells = require('modules.hotbar.database.horizonspells');
-            local displayedCount = 0;
-            local maxDisplay = 200;
-
-            -- First show player's known spells (most relevant)
-            if cachedSpells and #cachedSpells > 0 then
-                for _, spell in ipairs(cachedSpells) do
-                    if displayedCount >= maxDisplay then break; end
-
-                    local spellName = spell.name or '';
-                    if filter == '' or spellName:lower():find(filter, 1, true) then
-                        -- Look up spell in horizonspells to get icon_id
-                        local spellData = nil;
-                        for _, hs in pairs(horizonSpells) do
-                            if hs.en == spellName then
-                                spellData = hs;
-                                break;
+            -- Spell icons - render current page from filtered list
+            if totalItems == 0 then
+                imgui.TextColored(COLORS.textMuted, 'No matching spells found');
+            else
+                for i = startIdx, endIdx do
+                    local spell = filteredItems[i];
+                    if spell then
+                        local icon = textures:Get('spells' .. string.format('%05d', spell.id));
+                        if icon and icon.image then
+                            -- Handle grid layout
+                            local col = displayedCount % ICON_GRID_COLUMNS;
+                            if col > 0 then
+                                imgui.SameLine(0, ICON_GRID_GAP);
                             end
-                        end
 
-                        if spellData then
-                            local icon = textures:Get('spells' .. string.format('%05d', spellData.id));
-                            if icon and icon.image then
-                                local col = displayedCount % iconsPerRow;
-                                if col > 0 then imgui.SameLine(); end
-
-                                local isSelected = editingMacro.customIconType == 'spell' and editingMacro.customIconId == spellData.id;
-                                if DrawIconButton('##spell' .. spellData.id, icon, iconSize, isSelected, spellName) then
-                                    editingMacro.customIconType = 'spell';
-                                    editingMacro.customIconId = spellData.id;
-                                    iconPickerOpen = false;
-                                end
-
-                                displayedCount = displayedCount + 1;
+                            local isSelected = editingMacro.customIconType == 'spell' and editingMacro.customIconId == spell.id;
+                            if DrawIconButton('##spell' .. spell.id, icon, ICON_GRID_SIZE, isSelected, spell.name) then
+                                editingMacro.customIconType = 'spell';
+                                editingMacro.customIconId = spell.id;
+                                iconPickerOpen = false;
                             end
+
+                            displayedCount = displayedCount + 1;
                         end
                     end
                 end
             end
 
-            if displayedCount == 0 then
-                imgui.TextColored(COLORS.textMuted, 'No spell icons available. Learn some spells first!');
-            elseif displayedCount >= maxDisplay then
-                imgui.Spacing();
-                imgui.TextColored(COLORS.textMuted, 'Showing first ' .. maxDisplay .. ' results. Use search to filter.');
-            end
-
         elseif iconPickerTab == 2 then
-            -- Item icons
-            if cachedItems and #cachedItems > 0 then
-                local displayedCount = 0;
-                local maxDisplay = 200;
-
-                for _, item in ipairs(cachedItems) do
-                    if displayedCount >= maxDisplay then break; end
-
-                    local itemName = item.name or '';
-                    if filter == '' or itemName:lower():find(filter, 1, true) then
+            -- Item icons - render current page from filtered list
+            if itemIconLoadState.loading and #itemIconLoadState.items == 0 then
+                imgui.TextColored(COLORS.textMuted, 'Loading item database...');
+            elseif totalItems == 0 then
+                imgui.TextColored(COLORS.textMuted, 'No matching items found');
+            else
+                for i = startIdx, endIdx do
+                    local item = filteredItems[i];
+                    if item then
                         local icon = actions.GetBindIcon({ actionType = 'item', itemId = item.id });
                         if icon and icon.image then
-                            local col = displayedCount % iconsPerRow;
-                            if col > 0 then imgui.SameLine(); end
+                            -- Handle grid layout
+                            local col = displayedCount % ICON_GRID_COLUMNS;
+                            if col > 0 then
+                                imgui.SameLine(0, ICON_GRID_GAP);
+                            end
 
                             local isSelected = editingMacro.customIconType == 'item' and editingMacro.customIconId == item.id;
-                            if DrawIconButton('##item' .. item.id, icon, iconSize, isSelected, itemName) then
+                            if DrawIconButton('##item' .. item.id, icon, ICON_GRID_SIZE, isSelected, item.name) then
                                 editingMacro.customIconType = 'item';
                                 editingMacro.customIconId = item.id;
                                 iconPickerOpen = false;
@@ -1352,19 +1590,11 @@ local function DrawIconPicker()
                         end
                     end
                 end
-
-                if displayedCount == 0 then
-                    imgui.TextColored(COLORS.textMuted, 'No matching items found');
-                elseif displayedCount >= maxDisplay then
-                    imgui.Spacing();
-                    imgui.TextColored(COLORS.textMuted, 'Showing first ' .. maxDisplay .. ' results. Use search to filter.');
-                end
-            else
-                imgui.TextColored(COLORS.textMuted, 'No items in inventory');
             end
         end
 
         imgui.EndChild();
+        imgui.PopStyleColor(2);  -- ChildBg, Border
 
         imgui.End();
     end
@@ -1374,6 +1604,8 @@ local function DrawIconPicker()
     if not isOpen[1] then
         iconPickerOpen = false;
         iconPickerFilter[1] = '';
+        iconPickerPage = { 1, 1 };  -- Reset pages
+        iconPickerLastFilter = { '', '' };
     end
 end
 

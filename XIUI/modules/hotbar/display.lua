@@ -36,6 +36,59 @@ local loadedBgTheme = nil;
 -- Textures initialized flag
 local texturesInitialized = false;
 
+-- Icon cache per slot: iconCache[barIndex][slotIndex] = { bind = lastBind, icon = cachedIcon }
+-- We compare the bind reference to detect changes
+local iconCache = {};
+
+-- Build a cache key that includes all fields that affect the icon
+local function BuildBindKey(bind)
+    if not bind then return 'nil'; end
+    -- Include customIconType and customIconId so icon changes invalidate the cache
+    local iconPart = '';
+    if bind.customIconType or bind.customIconId then
+        iconPart = ':icon:' .. (bind.customIconType or '') .. ':' .. tostring(bind.customIconId or '');
+    end
+    return (bind.actionType or '') .. ':' .. (bind.action or '') .. ':' .. (bind.target or '') .. iconPart;
+end
+
+-- Get cached icon for a slot, recompute only if bind changed
+local function GetCachedIcon(barIndex, slotIndex, bind)
+    if not iconCache[barIndex] then
+        iconCache[barIndex] = {};
+    end
+
+    local cached = iconCache[barIndex][slotIndex];
+
+    -- Check if we have a valid cache entry for this bind
+    -- Compare by actionType+action+target+icon to detect actual changes
+    if cached then
+        local bindKey = BuildBindKey(bind);
+        if cached.bindKey == bindKey then
+            return cached.icon;
+        end
+    end
+
+    -- Cache miss - compute icon
+    local icon = nil;
+    if bind then
+        _, icon = actions.BuildCommand(bind);
+    end
+
+    -- Store in cache
+    local bindKey = BuildBindKey(bind);
+    iconCache[barIndex][slotIndex] = {
+        bindKey = bindKey,
+        icon = icon,
+    };
+
+    return icon;
+end
+
+-- Clear icon cache (call when slots change)
+local function ClearIconCache()
+    iconCache = {};
+end
+
 -- ============================================
 -- Helper Functions
 -- ============================================
@@ -98,27 +151,19 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
         timerFont = data.timerFonts[barIndex] and data.timerFonts[barIndex][slotIndex],
         keybindFont = data.keybindFonts[barIndex] and data.keybindFonts[barIndex][slotIndex],
         labelFont = data.labelFonts[barIndex] and data.labelFonts[barIndex][slotIndex],
+        mpCostFont = data.mpCostFonts[barIndex] and data.mpCostFonts[barIndex][slotIndex],
     };
 
-    -- Get icon for this action
-    local icon = nil;
-    local labelText = '';
-    if bind then
-        labelText = bind.displayName or bind.action or '';
-        _, icon = actions.BuildCommand(bind);
-    end
+    -- Get icon for this action (cached - only rebuilds when bind changes)
+    local icon = GetCachedIcon(barIndex, slotIndex, bind);
+    local labelText = bind and (bind.displayName or bind.action or '') or '';
 
     -- Get per-bar display settings
     local showActionLabels = barSettings and barSettings.showActionLabels or false;
     local showSlotFrame = barSettings and barSettings.showSlotFrame or false;
 
-    -- Apply keybind font settings before rendering
-    if resources.keybindFont then
-        local keybindSize = barSettings and barSettings.keybindFontSize or 8;
-        local keybindColor = barSettings and barSettings.keybindFontColor or 0xFFFFFFFF;
-        resources.keybindFont:set_font_height(keybindSize);
-        resources.keybindFont:set_font_color(keybindColor);
-    end
+    -- NOTE: Keybind font settings are now applied in slotrenderer with caching
+    -- (removed redundant set_font_height/set_font_color calls that happened every frame)
 
     -- Hide cooldown overlay primitive (not used - we tint the icon instead)
     local cooldownPrim = data.cooldownPrims[barIndex] and data.cooldownPrims[barIndex][slotIndex];
@@ -151,6 +196,9 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
         labelOffsetY = (barSettings and barSettings.actionLabelOffsetY or 0) + data.LABEL_GAP,
         showFrame = showSlotFrame,
         isPressed = isPressed,
+        showMpCost = barSettings and barSettings.showMpCost ~= false,
+        mpCostFontSize = barSettings and barSettings.mpCostFontSize or 8,
+        mpCostFontColor = barSettings and barSettings.mpCostFontColor or 0xFFD4FF97,
 
         -- Interaction Config
         buttonId = string.format('##hotbarslot_%d_%d', barIndex, slotIndex),
@@ -241,6 +289,9 @@ local function DrawBarWindow(barIndex, settings)
         end
         if data.timerFonts[barIndex] and data.timerFonts[barIndex][hiddenSlot] then
             data.timerFonts[barIndex][hiddenSlot]:set_visible(false);
+        end
+        if data.mpCostFonts[barIndex] and data.mpCostFonts[barIndex][hiddenSlot] then
+            data.mpCostFonts[barIndex][hiddenSlot]:set_visible(false);
         end
     end
 
@@ -339,6 +390,9 @@ local function DrawBarWindow(barIndex, settings)
                         if data.timerFonts[barIndex] and data.timerFonts[barIndex][slotIndex] then
                             data.timerFonts[barIndex][slotIndex]:set_visible(false);
                         end
+                        if data.mpCostFonts[barIndex] and data.mpCostFonts[barIndex][slotIndex] then
+                            data.mpCostFonts[barIndex][slotIndex]:set_visible(false);
+                        end
                     else
                         DrawSlot(barIndex, slotIndex, slotX, slotY, buttonSize, bind, barSettings);
                     end
@@ -347,27 +401,8 @@ local function DrawBarWindow(barIndex, settings)
             end
         end
 
-        -- Hide unused slot primitives and fonts
-        for hiddenSlot = slotCount + 1, data.MAX_SLOTS_PER_BAR do
-            if data.slotPrims[barIndex] and data.slotPrims[barIndex][hiddenSlot] then
-                data.slotPrims[barIndex][hiddenSlot].visible = false;
-            end
-            if data.iconPrims[barIndex] and data.iconPrims[barIndex][hiddenSlot] then
-                data.iconPrims[barIndex][hiddenSlot].visible = false;
-            end
-            if data.cooldownPrims[barIndex] and data.cooldownPrims[barIndex][hiddenSlot] then
-                data.cooldownPrims[barIndex][hiddenSlot].visible = false;
-            end
-            if data.keybindFonts[barIndex] and data.keybindFonts[barIndex][hiddenSlot] then
-                data.keybindFonts[barIndex][hiddenSlot]:set_visible(false);
-            end
-            if data.labelFonts[barIndex] and data.labelFonts[barIndex][hiddenSlot] then
-                data.labelFonts[barIndex][hiddenSlot]:set_visible(false);
-            end
-            if data.timerFonts[barIndex] and data.timerFonts[barIndex][hiddenSlot] then
-                data.timerFonts[barIndex][hiddenSlot]:set_visible(false);
-            end
-        end
+        -- NOTE: Hide loop for unused slots already handled at lines 226-245
+        -- (removed duplicate hide loop that was here)
 
         imgui.End();
     end
@@ -503,6 +538,15 @@ function M.Cleanup()
     -- Background cleanup is handled in init.lua
     loadedBgTheme = nil;
     texturesInitialized = false;
+    -- Clear icon cache
+    ClearIconCache();
+    -- Clear slotrenderer cache
+    slotrenderer.ClearAllCache();
+end
+
+-- Expose cache clear for external callers (e.g., when slot actions change)
+function M.ClearIconCache()
+    ClearIconCache();
 end
 
 return M;

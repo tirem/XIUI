@@ -14,10 +14,38 @@ local actions = require('modules.hotbar.actions');
 local dragdrop = require('libs.dragdrop');
 local textures = require('modules.hotbar.textures');
 
+-- Cache for MP cost lookups (keyed by action key string)
+local mpCostCache = {};
+
 local M = {};
 
 -- Cached asset path
 local assetsPath = nil;
+
+-- Per-slot cache to avoid redundant updates
+-- Structure: slotCache[slotPrim] = { texturePath, iconPath, keybindText, keybindFontSize, keybindFontColor, timerText, ... }
+local slotCache = {};
+
+-- Get or create cache entry for a slot (keyed by slotPrim for uniqueness)
+local function GetSlotCache(slotPrim)
+    if not slotPrim then return nil; end
+    if not slotCache[slotPrim] then
+        slotCache[slotPrim] = {};
+    end
+    return slotCache[slotPrim];
+end
+
+-- Clear cache for a slot
+function M.ClearSlotCache(slotPrim)
+    if slotPrim then
+        slotCache[slotPrim] = nil;
+    end
+end
+
+-- Clear all cached state
+function M.ClearAllCache()
+    slotCache = {};
+end
 
 local function GetAssetsPath()
     if not assetsPath then
@@ -36,6 +64,7 @@ end
         - timerFont: GDI font for cooldown timer
         - keybindFont: (optional) GDI font for keybind label
         - labelFont: (optional) GDI font for action name
+        - mpCostFont: (optional) GDI font for MP cost display
 
     @param params: Table containing rendering and interaction parameters
         Position/Size:
@@ -55,6 +84,9 @@ end
         - labelText: (optional) Action label text
         - labelOffsetX/Y: (optional) Label position offsets
         - showFrame: (optional) Whether to show decorative frame overlay
+        - showMpCost: (optional) Whether to show MP cost for spells
+        - mpCostFontSize: (optional) MP cost font size
+        - mpCostFontColor: (optional) MP cost font color
 
         State Modifiers:
         - dimFactor: Dim multiplier for inactive states (default 1.0)
@@ -110,16 +142,30 @@ function M.DrawSlot(resources, params)
     -- ========================================
     -- 1. Slot Background Primitive
     -- ========================================
+    local cache = GetSlotCache(resources.slotPrim);
     if resources.slotPrim then
+        -- Only set texture once (cached)
         local texturePath = GetAssetsPath() .. 'slot.png';
-        resources.slotPrim.texture = texturePath;
-        resources.slotPrim.position_x = x;
-        resources.slotPrim.position_y = y;
+        if cache and cache.slotTexturePath ~= texturePath then
+            resources.slotPrim.texture = texturePath;
+            cache.slotTexturePath = texturePath;
+        end
+
+        -- Only update position if changed
+        if cache and (cache.slotX ~= x or cache.slotY ~= y) then
+            resources.slotPrim.position_x = x;
+            resources.slotPrim.position_y = y;
+            cache.slotX = x;
+            cache.slotY = y;
+        end
 
         -- Scale slot texture (40x40 base)
         local scale = size / 40;
-        resources.slotPrim.scale_x = scale;
-        resources.slotPrim.scale_y = scale;
+        if cache and cache.slotScale ~= scale then
+            resources.slotPrim.scale_x = scale;
+            resources.slotPrim.scale_y = scale;
+            cache.slotScale = scale;
+        end
 
         -- Calculate final color with hover darkening and dim factor
         local finalColor = slotBgColor;
@@ -140,7 +186,11 @@ function M.DrawSlot(resources, params)
             finalColor = bit.bor(bit.lshift(a, 24), bit.band(finalColor, 0x00FFFFFF));
         end
 
-        resources.slotPrim.color = finalColor;
+        -- Only update color if changed
+        if cache and cache.slotColor ~= finalColor then
+            resources.slotPrim.color = finalColor;
+            cache.slotColor = finalColor;
+        end
         resources.slotPrim.visible = true;
     end
 
@@ -165,20 +215,33 @@ function M.DrawSlot(resources, params)
     -- Try primitive rendering first (for icons with file paths like spell icons)
     if resources.iconPrim then
         if icon and icon.path then
-            -- Set texture first so we can read actual dimensions
-            resources.iconPrim.texture = icon.path;
+            -- Only set texture path if changed (expensive D3D operation)
+            if cache and cache.iconPath ~= icon.path then
+                resources.iconPrim.texture = icon.path;
+                cache.iconPath = icon.path;
+                -- Clear cached dimensions when texture changes
+                cache.iconTexWidth = nil;
+                cache.iconTexHeight = nil;
+            end
 
-            -- Read ACTUAL texture dimensions from primitive (not hardcoded values)
-            -- Ashita primitives expose width/height after texture is set
-            local texWidth = resources.iconPrim.width;
-            local texHeight = resources.iconPrim.height;
-
-            -- Fallback if dimensions not available
-            if not texWidth or texWidth <= 0 then texWidth = 40; end
-            if not texHeight or texHeight <= 0 then texHeight = 40; end
+            -- Read ACTUAL texture dimensions from primitive (cached after first read)
+            local texWidth, texHeight;
+            if cache and cache.iconTexWidth then
+                texWidth = cache.iconTexWidth;
+                texHeight = cache.iconTexHeight;
+            else
+                texWidth = resources.iconPrim.width;
+                texHeight = resources.iconPrim.height;
+                -- Fallback if dimensions not available
+                if not texWidth or texWidth <= 0 then texWidth = 40; end
+                if not texHeight or texHeight <= 0 then texHeight = 40; end
+                if cache then
+                    cache.iconTexWidth = texWidth;
+                    cache.iconTexHeight = texHeight;
+                end
+            end
 
             -- Calculate scale to fit icon within slot with padding
-            -- Use the larger dimension to ensure the icon fits
             local scale = targetIconSize / math.max(texWidth, texHeight);
 
             -- Calculate actual rendered size after scaling
@@ -189,26 +252,39 @@ function M.DrawSlot(resources, params)
             local iconX = x + (size - renderedWidth) / 2;
             local iconY = y + (size - renderedHeight) / 2;
 
-            resources.iconPrim.position_x = iconX;
-            resources.iconPrim.position_y = iconY;
-            resources.iconPrim.scale_x = scale;
-            resources.iconPrim.scale_y = scale;
+            -- Only update position/scale if changed
+            if cache and (cache.iconX ~= iconX or cache.iconY ~= iconY or cache.iconScale ~= scale) then
+                resources.iconPrim.position_x = iconX;
+                resources.iconPrim.position_y = iconY;
+                resources.iconPrim.scale_x = scale;
+                resources.iconPrim.scale_y = scale;
+                cache.iconX = iconX;
+                cache.iconY = iconY;
+                cache.iconScale = scale;
+            end
 
             -- Calculate color: cooldown darkening + dim factor + animation opacity
             local colorMult = isOnCooldown and 0.4 or 1.0;
             colorMult = colorMult * dimFactor;
             local rgb = math.floor(255 * colorMult);
             local alpha = math.floor(255 * animOpacity);
-            resources.iconPrim.color = bit.bor(
+            local iconColor = bit.bor(
                 bit.lshift(alpha, 24),
                 bit.lshift(rgb, 16),
                 bit.lshift(rgb, 8),
                 rgb
             );
+
+            -- Only update color if changed
+            if cache and cache.iconColor ~= iconColor then
+                resources.iconPrim.color = iconColor;
+                cache.iconColor = iconColor;
+            end
             resources.iconPrim.visible = true;
             iconRendered = true;
         else
             resources.iconPrim.visible = false;
+            if cache then cache.iconPath = nil; end
         end
     end
 
@@ -262,12 +338,24 @@ function M.DrawSlot(resources, params)
     -- ========================================
     if resources.timerFont then
         if recastText and animOpacity > 0.5 then
-            resources.timerFont:set_text(recastText);
-            resources.timerFont:set_position_x(x + size / 2);
-            resources.timerFont:set_position_y(y + size / 2 - 6);
+            -- Only update text if changed
+            if cache and cache.timerText ~= recastText then
+                resources.timerFont:set_text(recastText);
+                cache.timerText = recastText;
+            end
+            -- Only update position if changed
+            local timerX = x + size / 2;
+            local timerY = y + size / 2 - 6;
+            if cache and (cache.timerX ~= timerX or cache.timerY ~= timerY) then
+                resources.timerFont:set_position_x(timerX);
+                resources.timerFont:set_position_y(timerY);
+                cache.timerX = timerX;
+                cache.timerY = timerY;
+            end
             resources.timerFont:set_visible(true);
         else
             resources.timerFont:set_visible(false);
+            if cache then cache.timerText = nil; end
         end
     end
 
@@ -276,15 +364,28 @@ function M.DrawSlot(resources, params)
     -- ========================================
     if resources.keybindFont then
         if params.keybindText and params.keybindText ~= '' then
-            resources.keybindFont:set_text(params.keybindText);
-            resources.keybindFont:set_position_x(x + 2);
-            resources.keybindFont:set_position_y(y + 1);
-            -- Apply font settings if provided
-            if params.keybindFontSize then
-                resources.keybindFont:set_font_height(params.keybindFontSize);
+            -- Only update text if changed
+            if cache and cache.keybindText ~= params.keybindText then
+                resources.keybindFont:set_text(params.keybindText);
+                cache.keybindText = params.keybindText;
             end
-            if params.keybindFontColor then
+            -- Only update position if changed
+            local kbX = x + 2;
+            local kbY = y + 1;
+            if cache and (cache.keybindX ~= kbX or cache.keybindY ~= kbY) then
+                resources.keybindFont:set_position_x(kbX);
+                resources.keybindFont:set_position_y(kbY);
+                cache.keybindX = kbX;
+                cache.keybindY = kbY;
+            end
+            -- Only update font settings if changed
+            if params.keybindFontSize and cache and cache.keybindFontSize ~= params.keybindFontSize then
+                resources.keybindFont:set_font_height(params.keybindFontSize);
+                cache.keybindFontSize = params.keybindFontSize;
+            end
+            if params.keybindFontColor and cache and cache.keybindFontColor ~= params.keybindFontColor then
                 resources.keybindFont:set_font_color(params.keybindFontColor);
+                cache.keybindFontColor = params.keybindFontColor;
             end
             resources.keybindFont:set_visible(animOpacity > 0.5);
         else
@@ -297,9 +398,20 @@ function M.DrawSlot(resources, params)
     -- ========================================
     if resources.labelFont then
         if params.showLabel and params.labelText and params.labelText ~= '' then
-            resources.labelFont:set_text(params.labelText);
-            resources.labelFont:set_position_x(x + size / 2 + (params.labelOffsetX or 0));
-            resources.labelFont:set_position_y(y + size + 2 + (params.labelOffsetY or 0));
+            -- Only update text if changed
+            if cache and cache.labelText ~= params.labelText then
+                resources.labelFont:set_text(params.labelText);
+                cache.labelText = params.labelText;
+            end
+            -- Only update position if changed
+            local labelX = x + size / 2 + (params.labelOffsetX or 0);
+            local labelY = y + size + 2 + (params.labelOffsetY or 0);
+            if cache and (cache.labelX ~= labelX or cache.labelY ~= labelY) then
+                resources.labelFont:set_position_x(labelX);
+                resources.labelFont:set_position_y(labelY);
+                cache.labelX = labelX;
+                cache.labelY = labelY;
+            end
             resources.labelFont:set_visible(animOpacity > 0.5);
         else
             resources.labelFont:set_visible(false);
@@ -307,7 +419,55 @@ function M.DrawSlot(resources, params)
     end
 
     -- ========================================
-    -- 8. ImGui: Frame Overlay
+    -- 8. MP Cost Font (GDI - bottom right corner)
+    -- ========================================
+    if resources.mpCostFont then
+        local showMpCost = params.showMpCost ~= false;
+        if showMpCost and bind and animOpacity > 0.5 then
+            -- Get MP cost (cached per action)
+            local bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
+            local mpCost = mpCostCache[bindKey];
+            if mpCost == nil then
+                mpCost = actions.GetMPCost(bind) or false;  -- false = no MP cost
+                mpCostCache[bindKey] = mpCost;
+            end
+
+            if mpCost and mpCost ~= false then
+                local mpText = tostring(mpCost);
+                -- Only update text if changed
+                if cache and cache.mpCostText ~= mpText then
+                    resources.mpCostFont:set_text(mpText);
+                    cache.mpCostText = mpText;
+                end
+                -- Position at top-right corner with padding
+                local mpX = x + size - 3;  -- Right-aligned with small padding
+                local mpY = y + 1;         -- Top with small padding
+                if cache and (cache.mpCostX ~= mpX or cache.mpCostY ~= mpY) then
+                    resources.mpCostFont:set_position_x(mpX);
+                    resources.mpCostFont:set_position_y(mpY);
+                    cache.mpCostX = mpX;
+                    cache.mpCostY = mpY;
+                end
+                -- Only update font settings if changed
+                if params.mpCostFontSize and cache and cache.mpCostFontSize ~= params.mpCostFontSize then
+                    resources.mpCostFont:set_font_height(params.mpCostFontSize);
+                    cache.mpCostFontSize = params.mpCostFontSize;
+                end
+                if params.mpCostFontColor and cache and cache.mpCostFontColor ~= params.mpCostFontColor then
+                    resources.mpCostFont:set_font_color(params.mpCostFontColor);
+                    cache.mpCostFontColor = params.mpCostFontColor;
+                end
+                resources.mpCostFont:set_visible(true);
+            else
+                resources.mpCostFont:set_visible(false);
+            end
+        else
+            resources.mpCostFont:set_visible(false);
+        end
+    end
+
+    -- ========================================
+    -- 9. ImGui: Frame Overlay
     -- ========================================
     local drawList = imgui.GetWindowDrawList();
     if drawList and params.showFrame then
@@ -414,53 +574,62 @@ end
 --[[
     Draw tooltip for an action.
     Should be called inside ImGui context.
+    Matches the XIUI macro palette tooltip style.
 ]]--
 function M.DrawTooltip(bind)
     if not bind then return; end
 
+    -- XIUI Color Scheme (matching macro palette)
+    local COLORS = {
+        gold = {0.957, 0.855, 0.592, 1.0},
+        bgDark = {0.067, 0.063, 0.055, 0.95},
+        border = {0.3, 0.28, 0.24, 0.8},
+        textDim = {0.6, 0.6, 0.6, 1.0},
+    };
+
+    -- Action type labels (matching macro palette)
+    local ACTION_TYPE_LABELS = {
+        ma = 'Spell (ma)',
+        ja = 'Ability (ja)',
+        ws = 'Weaponskill (ws)',
+        item = 'Item',
+        equip = 'Equip',
+        macro = 'Macro',
+        pet = 'Pet Command',
+    };
+
     -- Style the tooltip
-    imgui.PushStyleColor(ImGuiCol_PopupBg, {0.067, 0.063, 0.055, 0.95});
-    imgui.PushStyleColor(ImGuiCol_Border, {0.3, 0.28, 0.24, 0.8});
-    imgui.PushStyleColor(ImGuiCol_Text, {0.9, 0.9, 0.9, 1.0});
+    imgui.PushStyleColor(ImGuiCol_PopupBg, COLORS.bgDark);
+    imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
     imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {8, 6});
-    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, 4);
 
     imgui.BeginTooltip();
 
-    -- Action name (yellow/gold)
+    -- Action name (gold)
     local displayName = bind.displayName or bind.action or 'Unknown';
-    imgui.TextColored({1.0, 0.84, 0.0, 1.0}, displayName);
+    imgui.TextColored(COLORS.gold, displayName);
 
-    -- Action type (gray)
-    local typeNames = {
-        ma = 'Magic',
-        ja = 'Ability',
-        ws = 'Weapon Skill',
-        item = 'Item',
-        equip = 'Equipment',
-        pet = 'Pet Command',
-        macro = 'Macro',
-    };
-    local typeName = typeNames[bind.actionType] or bind.actionType or '';
-    if typeName ~= '' then
-        imgui.TextColored({0.7, 0.7, 0.7, 1.0}, typeName);
-    end
+    imgui.Spacing();
 
-    -- Target (blue)
+    -- Action type
+    local typeLabel = ACTION_TYPE_LABELS[bind.actionType] or bind.actionType or '?';
+    imgui.TextColored(COLORS.textDim, 'Type: ' .. typeLabel);
+
+    -- Target
     if bind.target and bind.target ~= '' then
-        imgui.TextColored({0.6, 0.8, 1.0, 1.0}, '<' .. bind.target .. '>');
+        imgui.TextColored(COLORS.textDim, 'Target: <' .. bind.target .. '>');
     end
 
     -- Macro text preview (if macro type)
     if bind.actionType == 'macro' and bind.macroText then
-        imgui.Separator();
-        imgui.TextColored({0.6, 0.6, 0.6, 1.0}, bind.macroText);
+        imgui.Spacing();
+        imgui.TextColored(COLORS.textDim, bind.macroText);
     end
 
     imgui.EndTooltip();
 
-    imgui.PopStyleVar(2);
-    imgui.PopStyleColor(3);
+    imgui.PopStyleVar();
+    imgui.PopStyleColor(2);
 end
 
 --[[
@@ -474,6 +643,7 @@ function M.HideSlot(resources)
     if resources.timerFont then resources.timerFont:set_visible(false); end
     if resources.keybindFont then resources.keybindFont:set_visible(false); end
     if resources.labelFont then resources.labelFont:set_visible(false); end
+    if resources.mpCostFont then resources.mpCostFont:set_visible(false); end
 end
 
 return M;

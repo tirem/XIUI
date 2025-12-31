@@ -570,6 +570,10 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         MarkPartyCacheDirty();
         ClearEntityCache();
         bLoggedIn = true;
+        -- Initialize hotbar job on zone-in (handles initial login and job change during zone)
+        if gConfig.hotbarEnabled then
+            hotbar.HandleJobChangePacket(e);
+        end
     elseif (e.id == 0x0029) then
         local messagePacket = ParseMessagePacket(e.data);
         if messagePacket then
@@ -600,6 +604,15 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         notifications.HandleZonePacket();
         treasurePool.HandleZonePacket();
         bLoggedIn = false;
+        -- Also notify hotbar of zone (clears state)
+        if gConfig.hotbarEnabled then
+            hotbar.HandleZonePacket();
+        end
+    elseif (e.id == 0x001B) then
+        -- Job change packet - update hotbar to show new job's actions
+        if gConfig.hotbarEnabled then
+            hotbar.HandleJobChangePacket(e);
+        end
     elseif (e.id == 0x076) then
         statusHandler.ReadPartyBuffsFromPacket(e);
     elseif (e.id == 0x0DD) then

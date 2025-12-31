@@ -25,6 +25,41 @@ local slotrenderer = require('modules.hotbar.slotrenderer');
 local M = {};
 
 -- ============================================
+-- Helper Functions for Job ID Key Normalization
+-- ============================================
+
+-- Special key for global (non-job-specific) slot storage
+local GLOBAL_SLOT_KEY = 'global';
+
+-- Helper to normalize job ID to number (handles string keys from JSON)
+local function normalizeJobId(jobId)
+    if type(jobId) == 'string' then
+        return tonumber(jobId) or 1;
+    end
+    return jobId or 1;
+end
+
+-- Helper to get the storage key based on jobSpecific setting
+local function getStorageKey(crossbarSettings, jobId)
+    if crossbarSettings.jobSpecific == false then
+        return GLOBAL_SLOT_KEY;
+    end
+    return normalizeJobId(jobId);
+end
+
+-- Helper to get slotActions with normalized job ID key
+local function getSlotActionsForJob(slotActions, storageKey)
+    if not slotActions then return nil; end
+    -- Handle 'global' key specially
+    if storageKey == GLOBAL_SLOT_KEY then
+        return slotActions[GLOBAL_SLOT_KEY];
+    end
+    local numericKey = normalizeJobId(storageKey);
+    local stringKey = tostring(numericKey);
+    return slotActions[numericKey] or slotActions[stringKey];
+end
+
+-- ============================================
 -- Constants
 -- ============================================
 
@@ -170,6 +205,54 @@ end
 -- State
 -- ============================================
 
+-- Icon cache per slot: iconCache[comboMode][slotIndex] = { bindKey = key, icon = cachedIcon }
+local iconCache = {};
+
+-- Build a cache key that includes all fields that affect the icon
+local function BuildCrossbarBindKey(slotData)
+    if not slotData then return 'nil'; end
+    -- Include customIconType and customIconId so icon changes invalidate the cache
+    local iconPart = '';
+    if slotData.customIconType or slotData.customIconId then
+        iconPart = ':icon:' .. (slotData.customIconType or '') .. ':' .. tostring(slotData.customIconId or '');
+    end
+    return (slotData.actionType or '') .. ':' .. (slotData.action or '') .. ':' .. (slotData.target or '') .. iconPart;
+end
+
+-- Get cached icon for a crossbar slot, recompute only if bind changed
+local function GetCachedCrossbarIcon(comboMode, slotIndex, slotData)
+    if not iconCache[comboMode] then
+        iconCache[comboMode] = {};
+    end
+
+    local cached = iconCache[comboMode][slotIndex];
+
+    -- Check if we have a valid cache entry for this bind (including icon info)
+    local bindKey = BuildCrossbarBindKey(slotData);
+    if cached and cached.bindKey == bindKey then
+        return cached.icon;
+    end
+
+    -- Cache miss - compute icon
+    local icon = nil;
+    if slotData and slotData.actionType then
+        icon = actions.GetBindIcon(slotData);
+    end
+
+    -- Store in cache
+    iconCache[comboMode][slotIndex] = {
+        bindKey = bindKey,
+        icon = icon,
+    };
+
+    return icon;
+end
+
+-- Clear crossbar icon cache
+local function ClearCrossbarIconCache()
+    iconCache = {};
+end
+
 local state = {
     initialized = false,
 
@@ -187,6 +270,10 @@ local state = {
     -- Timer fonts per combo mode (cooldown timers)
     -- timerFonts[comboMode][slotIndex] = font
     timerFonts = {},
+
+    -- MP cost fonts per combo mode
+    -- mpCostFonts[comboMode][slotIndex] = font
+    mpCostFonts = {},
 
     -- Center icon primitives per combo mode (in the middle of each diamond)
     -- centerIconPrims[comboMode][diamondType][iconIndex] = primitive
@@ -471,6 +558,7 @@ function M.Initialize(settings, moduleSettings)
         state.slotPrims[comboMode] = {};
         state.iconPrims[comboMode] = {};
         state.timerFonts[comboMode] = {};
+        state.mpCostFonts[comboMode] = {};
         state.centerIconPrims[comboMode] = {};
         state.labelFonts[comboMode] = {};
 
@@ -492,6 +580,15 @@ function M.Initialize(settings, moduleSettings)
             timerFontSettings.outline_color = 0xFF000000;
             timerFontSettings.outline_width = 2;
             state.timerFonts[comboMode][slotIndex] = FontManager.create(timerFontSettings);
+
+            -- MP cost font (right-aligned, for spell MP cost display)
+            local mpCostFontSettings = moduleSettings and deep_copy_table(moduleSettings.label_font_settings) or {};
+            mpCostFontSettings.font_height = settings.mpCostFontSize or 8;
+            mpCostFontSettings.font_alignment = 2;  -- Right
+            mpCostFontSettings.font_color = settings.mpCostFontColor or 0xFFD4FF97;
+            mpCostFontSettings.outline_color = 0xFF000000;
+            mpCostFontSettings.outline_width = 2;
+            state.mpCostFonts[comboMode][slotIndex] = FontManager.create(mpCostFontSettings);
 
             -- Create label font for action names
             local labelFontSettings = moduleSettings and moduleSettings.label_font_settings or {};
@@ -547,11 +644,8 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
     -- Get slot data
     local slotData = data.GetCrossbarSlotData(comboMode, slotIndex);
 
-    -- Get icon for this action
-    local icon = nil;
-    if slotData and slotData.actionType then
-        icon = actions.GetBindIcon(slotData);
-    end
+    -- Get icon for this action (cached - only rebuilds when bind changes)
+    local icon = GetCachedCrossbarIcon(comboMode, slotIndex, slotData);
 
     -- Calculate dim factor for inactive slots
     local dimFactor = 1.0;
@@ -564,6 +658,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         slotPrim = state.slotPrims[comboMode] and state.slotPrims[comboMode][slotIndex],
         iconPrim = state.iconPrims[comboMode] and state.iconPrims[comboMode][slotIndex],
         timerFont = state.timerFonts[comboMode] and state.timerFonts[comboMode][slotIndex],
+        mpCostFont = state.mpCostFonts[comboMode] and state.mpCostFonts[comboMode][slotIndex],
     };
 
     -- Render slot using shared renderer (handles ALL rendering and interactions)
@@ -582,6 +677,9 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         dimFactor = dimFactor,
         animOpacity = animOpacity,
         isPressed = isPressed and isActive,
+        showMpCost = settings.showMpCost ~= false,
+        mpCostFontSize = settings.mpCostFontSize or 8,
+        mpCostFontColor = settings.mpCostFontColor or 0xFFD4FF97,
 
         -- Interaction Config (use original Y for interaction, not animated Y)
         buttonId = string.format('##crossbar_%s_%d', comboMode, slotIndex),
@@ -1082,6 +1180,9 @@ function M.SetHidden(hidden)
                 local timerFont = state.timerFonts[comboMode] and state.timerFonts[comboMode][slotIndex];
                 if timerFont then timerFont:set_visible(false); end
 
+                local mpCostFont = state.mpCostFonts[comboMode] and state.mpCostFonts[comboMode][slotIndex];
+                if mpCostFont then mpCostFont:set_visible(false); end
+
                 local labelFont = state.labelFonts[comboMode] and state.labelFonts[comboMode][slotIndex];
                 if labelFont then labelFont:set_visible(false); end
             end
@@ -1183,6 +1284,9 @@ function M.Cleanup()
             local timerFont = state.timerFonts[comboMode] and state.timerFonts[comboMode][slotIndex];
             if timerFont then FontManager.destroy(timerFont); end
 
+            local mpCostFont = state.mpCostFonts[comboMode] and state.mpCostFonts[comboMode][slotIndex];
+            if mpCostFont then FontManager.destroy(mpCostFont); end
+
             local labelFont = state.labelFonts[comboMode] and state.labelFonts[comboMode][slotIndex];
             if labelFont then FontManager.destroy(labelFont); end
         end
@@ -1202,6 +1306,7 @@ function M.Cleanup()
         state.slotPrims[comboMode] = nil;
         state.iconPrims[comboMode] = nil;
         state.timerFonts[comboMode] = nil;
+        state.mpCostFonts[comboMode] = nil;
         state.centerIconPrims[comboMode] = nil;
         state.labelFonts[comboMode] = nil;
     end
@@ -1217,6 +1322,12 @@ function M.Cleanup()
         FontManager.destroy(state.comboTextFont);
         state.comboTextFont = nil;
     end
+
+    -- Clear icon cache
+    ClearCrossbarIconCache();
+
+    -- Clear slotrenderer cache
+    slotrenderer.ClearAllCache();
 
     state.initialized = false;
 end
@@ -1249,11 +1360,13 @@ function M.ActivateSlot(comboMode, slotIndex)
     local jobId = player:GetMainJob();
     if not jobId or jobId == 0 then return; end
 
-    -- Get slot action from settings
-    local slotActions = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.slotActions;
+    -- Get slot action from settings (with storage key based on jobSpecific setting)
+    if not gConfig or not gConfig.hotbarCrossbar then return; end
+    local slotActions = gConfig.hotbarCrossbar.slotActions;
     if not slotActions then return; end
 
-    local jobActions = slotActions[jobId];
+    local storageKey = getStorageKey(gConfig.hotbarCrossbar, jobId);
+    local jobActions = getSlotActionsForJob(slotActions, storageKey);
     if not jobActions then return; end
 
     local modeActions = jobActions[comboMode];
@@ -1266,6 +1379,15 @@ function M.ActivateSlot(comboMode, slotIndex)
     if slotAction.actionType and slotAction.action then
         actions.ExecuteAction(slotAction);
     end
+end
+
+-- ============================================
+-- Cache Management
+-- ============================================
+
+-- Clear icon cache (call when job changes)
+function M.ClearIconCache()
+    ClearCrossbarIconCache();
 end
 
 return M;

@@ -53,6 +53,10 @@ M.cooldownPrims = {};
 -- Shows remaining recast time (e.g., "2:30", "45s")
 M.timerFonts = {};
 
+-- MP cost fonts (per bar, per slot)
+-- Shows MP cost for magic spells
+M.mpCostFonts = {};
+
 -- Fonts for hotbar numbers (1-6)
 M.hotbarNumberFonts = {};
 
@@ -72,6 +76,67 @@ M.subjobId = nil;
 -- ============================================
 -- Helper Functions
 -- ============================================
+
+-- Special key for global (non-job-specific) slot storage
+local GLOBAL_SLOT_KEY = 'global';
+
+-- Helper to normalize job ID to number (handles string keys from JSON)
+local function normalizeJobId(jobId)
+    if type(jobId) == 'string' then
+        return tonumber(jobId) or 1;
+    end
+    return jobId or 1;
+end
+
+-- Helper to get the storage key based on jobSpecific setting
+-- Returns 'global' for global mode, or numeric job ID for job-specific mode
+local function getStorageKey(barSettings, jobId)
+    if barSettings.jobSpecific == false then
+        return GLOBAL_SLOT_KEY;
+    end
+    return normalizeJobId(jobId);
+end
+
+-- Helper to get slotActions with normalized job ID key
+-- JSON serialization converts numeric keys to strings, so we need to check both
+local function getSlotActionsForJob(slotActions, jobId)
+    if not slotActions then return nil; end
+    -- Handle 'global' key specially
+    if jobId == GLOBAL_SLOT_KEY then
+        return slotActions[GLOBAL_SLOT_KEY];
+    end
+    local numericKey = normalizeJobId(jobId);
+    local stringKey = tostring(numericKey);
+    -- Check numeric key first (preferred), then string key (from JSON)
+    return slotActions[numericKey] or slotActions[stringKey];
+end
+
+-- Helper to ensure slotActions structure exists for a job (or global)
+local function ensureSlotActionsStructure(barSettings, storageKey)
+    if not barSettings.slotActions then
+        barSettings.slotActions = {};
+    end
+    -- Handle 'global' key specially
+    if storageKey == GLOBAL_SLOT_KEY then
+        if not barSettings.slotActions[GLOBAL_SLOT_KEY] then
+            barSettings.slotActions[GLOBAL_SLOT_KEY] = {};
+        end
+        return barSettings.slotActions[GLOBAL_SLOT_KEY];
+    end
+    local numericKey = normalizeJobId(storageKey);
+    if not barSettings.slotActions[numericKey] then
+        -- Also check for string key and migrate if found
+        local stringKey = tostring(numericKey);
+        if barSettings.slotActions[stringKey] then
+            -- Migrate string key to numeric key
+            barSettings.slotActions[numericKey] = barSettings.slotActions[stringKey];
+            barSettings.slotActions[stringKey] = nil;
+        else
+            barSettings.slotActions[numericKey] = {};
+        end
+    end
+    return barSettings.slotActions[numericKey];
+end
 
 -- Keys that are always per-bar (never pulled from global)
 local PER_BAR_ONLY_KEYS = {
@@ -116,6 +181,9 @@ function M.GetBarSettings(barIndex)
             keybindFontSize = 8,
             keybindFontColor = 0xFFFFFFFF,
             labelFontSize = 10,
+            showMpCost = true,
+            mpCostFontSize = 8,
+            mpCostFontColor = 0xFFD4FF97,
         };
     end
 
@@ -286,33 +354,61 @@ function M.GetCurrentKeybinds()
     return parsedKeybinds;
 end
 
+-- Helper to look up a macro from macroDB by id
+local function GetMacroById(macroId, jobId)
+    if not gConfig or not gConfig.macroDB then return nil; end
+    local jobMacros = gConfig.macroDB[jobId];
+    if not jobMacros then return nil; end
+    for _, macro in ipairs(jobMacros) do
+        if macro.id == macroId then
+            return macro;
+        end
+    end
+    return nil;
+end
+
 -- Get action assignment for a specific bar and slot
 function M.GetKeybindForSlot(barIndex, slotIndex)
     -- First check for custom slot actions in per-bar settings
     local configKey = 'hotbarBar' .. barIndex;
     if gConfig and gConfig[configKey] then
         local barSettings = gConfig[configKey];
-        if barSettings.slotActions and barSettings.slotActions[M.jobId] then
-            local slotAction = barSettings.slotActions[M.jobId][slotIndex];
+        -- Use storage key based on jobSpecific setting (either 'global' or job ID)
+        local storageKey = getStorageKey(barSettings, M.jobId);
+        local jobSlotActions = getSlotActionsForJob(barSettings.slotActions, storageKey);
+        if jobSlotActions then
+            local slotAction = jobSlotActions[slotIndex];
             if slotAction then
                 -- Check for "cleared" marker - slot was explicitly emptied
                 if slotAction.cleared then
                     return nil;  -- Don't fall back to defaults
                 end
+
+                -- If this slot has a macro reference, look up the current macro data
+                -- This ensures icon changes in the palette are reflected on the hotbar
+                local macroData = slotAction;
+                if slotAction.macroRef then
+                    local liveMacro = GetMacroById(slotAction.macroRef, M.jobId);
+                    if liveMacro then
+                        macroData = liveMacro;
+                    end
+                    -- If macro was deleted, fall back to the cached slotAction data
+                end
+
                 -- Return slot action in the same format as parsed keybinds
                 return {
                     context = 'battle',
                     hotbar = barIndex,
                     slot = slotIndex,
-                    actionType = slotAction.actionType,
-                    action = slotAction.action,
-                    target = slotAction.target,
-                    displayName = slotAction.displayName or slotAction.action,
-                    equipSlot = slotAction.equipSlot,
-                    macroText = slotAction.macroText,
-                    itemId = slotAction.itemId,
-                    customIconType = slotAction.customIconType,
-                    customIconId = slotAction.customIconId,
+                    actionType = macroData.actionType,
+                    action = macroData.action,
+                    target = macroData.target,
+                    displayName = macroData.displayName or macroData.action,
+                    equipSlot = macroData.equipSlot,
+                    macroText = macroData.macroText,
+                    itemId = macroData.itemId,
+                    customIconType = macroData.customIconType,
+                    customIconId = macroData.customIconId,
                 };
             end
         end
@@ -385,6 +481,58 @@ end
 -- Crossbar Slot Data Helpers
 -- ============================================
 
+-- Helper to get the crossbar storage key based on jobSpecific setting
+local function getCrossbarStorageKey(crossbarSettings, jobId)
+    if crossbarSettings.jobSpecific == false then
+        return GLOBAL_SLOT_KEY;
+    end
+    return normalizeJobId(jobId);
+end
+
+-- Helper to get crossbar slotActions with normalized job ID key
+local function getCrossbarSlotActionsForJob(slotActions, storageKey)
+    if not slotActions then return nil; end
+    -- Handle 'global' key specially
+    if storageKey == GLOBAL_SLOT_KEY then
+        return slotActions[GLOBAL_SLOT_KEY];
+    end
+    local numericKey = normalizeJobId(storageKey);
+    local stringKey = tostring(numericKey);
+    return slotActions[numericKey] or slotActions[stringKey];
+end
+
+-- Helper to ensure crossbar slotActions structure exists for a storage key and combo mode
+local function ensureCrossbarSlotActionsStructure(crossbarSettings, storageKey, comboMode)
+    if not crossbarSettings.slotActions then
+        crossbarSettings.slotActions = {};
+    end
+    -- Handle 'global' key specially
+    if storageKey == GLOBAL_SLOT_KEY then
+        if not crossbarSettings.slotActions[GLOBAL_SLOT_KEY] then
+            crossbarSettings.slotActions[GLOBAL_SLOT_KEY] = {};
+        end
+        if not crossbarSettings.slotActions[GLOBAL_SLOT_KEY][comboMode] then
+            crossbarSettings.slotActions[GLOBAL_SLOT_KEY][comboMode] = {};
+        end
+        return crossbarSettings.slotActions[GLOBAL_SLOT_KEY][comboMode];
+    end
+    local numericKey = normalizeJobId(storageKey);
+    if not crossbarSettings.slotActions[numericKey] then
+        -- Also check for string key and migrate if found
+        local stringKey = tostring(numericKey);
+        if crossbarSettings.slotActions[stringKey] then
+            crossbarSettings.slotActions[numericKey] = crossbarSettings.slotActions[stringKey];
+            crossbarSettings.slotActions[stringKey] = nil;
+        else
+            crossbarSettings.slotActions[numericKey] = {};
+        end
+    end
+    if not crossbarSettings.slotActions[numericKey][comboMode] then
+        crossbarSettings.slotActions[numericKey][comboMode] = {};
+    end
+    return crossbarSettings.slotActions[numericKey][comboMode];
+end
+
 -- Get slot data for a crossbar slot
 -- comboMode: 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', or 'R2x2'
 -- slotIndex: 1-8
@@ -393,11 +541,38 @@ function M.GetCrossbarSlotData(comboMode, slotIndex)
     local jobId = M.jobId or 1;
 
     if not gConfig.hotbarCrossbar then return nil; end
-    if not gConfig.hotbarCrossbar.slotActions then return nil; end
-    if not gConfig.hotbarCrossbar.slotActions[jobId] then return nil; end
-    if not gConfig.hotbarCrossbar.slotActions[jobId][comboMode] then return nil; end
+    -- Use storage key based on jobSpecific setting
+    local storageKey = getCrossbarStorageKey(gConfig.hotbarCrossbar, jobId);
+    local jobSlotActions = getCrossbarSlotActionsForJob(gConfig.hotbarCrossbar.slotActions, storageKey);
+    if not jobSlotActions then return nil; end
+    if not jobSlotActions[comboMode] then return nil; end
 
-    return gConfig.hotbarCrossbar.slotActions[jobId][comboMode][slotIndex];
+    local slotAction = jobSlotActions[comboMode][slotIndex];
+    if not slotAction then return nil; end
+
+    -- If this slot has a macro reference, look up the current macro data
+    -- This ensures icon changes in the palette are reflected on the crossbar
+    if slotAction.macroRef then
+        local liveMacro = GetMacroById(slotAction.macroRef, jobId);
+        if liveMacro then
+            -- Return fresh macro data (preserving any slot-specific overrides if needed)
+            return {
+                actionType = liveMacro.actionType,
+                action = liveMacro.action,
+                target = liveMacro.target,
+                displayName = liveMacro.displayName,
+                equipSlot = liveMacro.equipSlot,
+                macroText = liveMacro.macroText,
+                itemId = liveMacro.itemId,
+                customIconType = liveMacro.customIconType,
+                customIconId = liveMacro.customIconId,
+                macroRef = slotAction.macroRef,
+            };
+        end
+        -- If macro was deleted, fall back to cached slotAction data
+    end
+
+    return slotAction;
 end
 
 -- Set slot data for a crossbar slot
@@ -414,22 +589,17 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
         return;
     end
 
-    -- Ensure config structure exists
+    -- Ensure config structure exists using helper (handles key normalization)
     if not gConfig.hotbarCrossbar then
         gConfig.hotbarCrossbar = {};
     end
-    if not gConfig.hotbarCrossbar.slotActions then
-        gConfig.hotbarCrossbar.slotActions = {};
-    end
-    if not gConfig.hotbarCrossbar.slotActions[jobId] then
-        gConfig.hotbarCrossbar.slotActions[jobId] = {};
-    end
-    if not gConfig.hotbarCrossbar.slotActions[jobId][comboMode] then
-        gConfig.hotbarCrossbar.slotActions[jobId][comboMode] = {};
-    end
+    -- Use storage key based on jobSpecific setting
+    local storageKey = getCrossbarStorageKey(gConfig.hotbarCrossbar, jobId);
+    local comboSlots = ensureCrossbarSlotActionsStructure(gConfig.hotbarCrossbar, storageKey, comboMode);
 
     -- Store the slot data
-    gConfig.hotbarCrossbar.slotActions[jobId][comboMode][slotIndex] = {
+    -- Use macroRef if present (from slot swap), otherwise use id (from macro palette drop)
+    comboSlots[slotIndex] = {
         actionType = slotData.actionType,
         action = slotData.action,
         target = slotData.target,
@@ -439,6 +609,7 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
         itemId = slotData.itemId,
         customIconType = slotData.customIconType,
         customIconId = slotData.customIconId,
+        macroRef = slotData.macroRef or slotData.id,  -- Store reference to source macro for live updates
     };
 
     SaveSettingsToDisk();
@@ -452,14 +623,33 @@ function M.ClearCrossbarSlotData(comboMode, slotIndex)
 
     -- Early return if structure doesn't exist
     if not gConfig.hotbarCrossbar then return; end
-    if not gConfig.hotbarCrossbar.slotActions then return; end
-    if not gConfig.hotbarCrossbar.slotActions[jobId] then return; end
-    if not gConfig.hotbarCrossbar.slotActions[jobId][comboMode] then return; end
+    -- Use storage key based on jobSpecific setting
+    local storageKey = getCrossbarStorageKey(gConfig.hotbarCrossbar, jobId);
+    local jobSlotActions = getCrossbarSlotActionsForJob(gConfig.hotbarCrossbar.slotActions, storageKey);
+    if not jobSlotActions then return; end
+    if not jobSlotActions[comboMode] then return; end
 
     -- Clear the slot
-    gConfig.hotbarCrossbar.slotActions[jobId][comboMode][slotIndex] = nil;
+    jobSlotActions[comboMode][slotIndex] = nil;
 
     SaveSettingsToDisk();
+end
+
+-- Clear all slot actions for a hotbar (used when switching between job-specific and global modes)
+function M.ClearAllBarSlotActions(barIndex)
+    local configKey = 'hotbarBar' .. barIndex;
+    if gConfig and gConfig[configKey] then
+        gConfig[configKey].slotActions = {};
+        SaveSettingsToDisk();
+    end
+end
+
+-- Clear all slot actions for the crossbar (used when switching between job-specific and global modes)
+function M.ClearAllCrossbarSlotActions()
+    if gConfig.hotbarCrossbar then
+        gConfig.hotbarCrossbar.slotActions = {};
+        SaveSettingsToDisk();
+    end
 end
 
 -- ============================================
@@ -585,6 +775,7 @@ function M.Cleanup()
     M.keybindFonts = {};
     M.labelFonts = {};
     M.timerFonts = {};
+    M.mpCostFonts = {};
     M.hotbarNumberFonts = {};
     M.allFonts = nil;
 end

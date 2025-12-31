@@ -206,7 +206,24 @@ function M.Initialize(settings)
             table.insert(data.allFonts, font);
         end
 
-        -- 8. Create hotbar number font
+        -- 8. Create MP cost fonts (right-aligned at top-right corner)
+        local mpCostFontSize = barSettings.mpCostFontSize or 8;
+        local mpCostFontColor = barSettings.mpCostFontColor or 0xFFD4FF97;
+        data.mpCostFonts[barIndex] = {};
+        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
+            local mpSettings = deep_copy_table(fontSettings);
+            mpSettings.font_height = mpCostFontSize;
+            mpSettings.font_alignment = gdi.Alignment.Right;
+            mpSettings.font_color = mpCostFontColor;
+            mpSettings.outline_color = 0xFF000000;
+            mpSettings.outline_width = 2;
+            local font = FontManager.create(mpSettings);
+            font:set_visible(false);
+            data.mpCostFonts[barIndex][slotIndex] = font;
+            table.insert(data.allFonts, font);
+        end
+
+        -- 9. Create hotbar number font
         local numSettings = deep_copy_table(fontSettings);
         numSettings.font_height = 12;
         data.hotbarNumberFonts[barIndex] = FontManager.create(numSettings);
@@ -437,6 +454,15 @@ function M.Cleanup()
             end
         end
 
+        -- MP cost fonts
+        if data.mpCostFonts[barIndex] then
+            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
+                if data.mpCostFonts[barIndex][slotIndex] then
+                    FontManager.destroy(data.mpCostFonts[barIndex][slotIndex]);
+                end
+            end
+        end
+
         -- Hotbar number font
         if data.hotbarNumberFonts[barIndex] then
             FontManager.destroy(data.hotbarNumberFonts[barIndex]);
@@ -501,6 +527,11 @@ function M.HandleJobChangePacket(e)
     ashita.tasks.once(0.5, function()
         data.SetPlayerJob();
         macropalette.SyncToCurrentJob();
+        -- Clear icon caches to force refresh for new job's actions
+        display.ClearIconCache();
+        if crossbarInitialized then
+            crossbar.ClearIconCache();
+        end
     end);
 end
 

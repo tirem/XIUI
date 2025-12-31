@@ -38,6 +38,20 @@ local function GetSpellByName(spellName)
     return nil;
 end
 
+--- Get MP cost for an action (only applicable to magic spells)
+---@param bind table The keybind data with actionType and action fields
+---@return number|nil mpCost The MP cost, or nil if not applicable
+function M.GetMPCost(bind)
+    if not bind then return nil; end
+    if bind.actionType ~= 'ma' then return nil; end
+
+    local spell = GetSpellByName(bind.action);
+    if spell and spell.mp_cost and spell.mp_cost > 0 then
+        return spell.mp_cost;
+    end
+    return nil;
+end
+
 --- Load item icon from game resources by item ID
 ---@param itemId number The item ID
 ---@return table|nil texture The icon texture
@@ -132,7 +146,33 @@ function M.GetBindIcon(bind)
     local icon = nil;
     local iconId = nil;
 
-    -- Check for custom icon override first
+    -- Check if this slot references a macro - if so, get the macro's current icon
+    -- This enables live updates when macro icons are changed in the palette
+    if bind.macroRef and gConfig and gConfig.macroDB then
+        local jobId = data.jobId or 1;
+        local macroDB = gConfig.macroDB[jobId];
+        if macroDB then
+            for _, macro in ipairs(macroDB) do
+                if macro.id == bind.macroRef then
+                    -- Found the source macro - use its current custom icon if set
+                    if macro.customIconType and macro.customIconId then
+                        if macro.customIconType == 'spell' then
+                            icon = textures:Get('spells' .. string.format('%05d', macro.customIconId));
+                            iconId = macro.customIconId;
+                            if icon then return icon, iconId; end
+                        elseif macro.customIconType == 'item' then
+                            icon = LoadItemIconById(macro.customIconId);
+                            iconId = macro.customIconId;
+                            if icon then return icon, iconId; end
+                        end
+                    end
+                    break;
+                end
+            end
+        end
+    end
+
+    -- Check for custom icon override on the bind itself
     if bind.customIconType and bind.customIconId then
         if bind.customIconType == 'spell' then
             icon = textures:Get('spells' .. string.format('%05d', bind.customIconId));
