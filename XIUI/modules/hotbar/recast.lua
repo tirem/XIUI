@@ -16,6 +16,16 @@ M.spellRecasts = {};
 -- Frame tracking to prevent multiple updates per frame
 M.lastUpdateTime = 0;
 
+-- Reusable result table for GetCooldownInfo to avoid GC pressure
+-- (Creating ~7200 tables/sec with 120 slots @ 60fps causes periodic GC hitches)
+local cooldownResult = {
+    isOnCooldown = false,
+    recastText = nil,
+    remaining = 0,
+    spellId = nil,
+    abilityId = nil,
+};
+
 -- Update all spell recasts (call once per frame in DrawWindow)
 function M.Update()
     local currentTime = os.clock();
@@ -29,7 +39,10 @@ function M.Update()
     local recastMgr = AshitaCore:GetMemoryManager():GetRecast();
     if not recastMgr then return; end
 
-    M.spellRecasts = {};
+    -- Clear table instead of replacing to avoid GC pressure
+    for k in pairs(M.spellRecasts) do
+        M.spellRecasts[k] = nil;
+    end
 
     -- Scan spell recast timers (0-1024 covers all spells)
     for spellId = 0, 1024 do
@@ -98,15 +111,15 @@ end
 -- This is the main entry point for hotbar/crossbar cooldown display
 -- @param actionData: Table with actionType and action fields (bind or slotData)
 -- @return table: { isOnCooldown, recastText, remaining, spellId, abilityId }
+-- NOTE: Returns a reused table - do NOT cache the return value, read values immediately
 function M.GetCooldownInfo(actionData)
     if not actionData or not actionData.actionType then
-        return {
-            isOnCooldown = false,
-            recastText = nil,
-            remaining = 0,
-            spellId = nil,
-            abilityId = nil,
-        };
+        cooldownResult.isOnCooldown = false;
+        cooldownResult.recastText = nil;
+        cooldownResult.remaining = 0;
+        cooldownResult.spellId = nil;
+        cooldownResult.abilityId = nil;
+        return cooldownResult;
     end
 
     -- Look up action IDs based on action type
@@ -122,13 +135,13 @@ function M.GetCooldownInfo(actionData)
     -- Get recast state
     local remaining, recastText = M.GetActionRecast(actionData.actionType, spellId, abilityId);
 
-    return {
-        isOnCooldown = remaining > 0,
-        recastText = recastText,
-        remaining = remaining,
-        spellId = spellId,
-        abilityId = abilityId,
-    };
+    -- Reuse result table to avoid GC pressure
+    cooldownResult.isOnCooldown = remaining > 0;
+    cooldownResult.recastText = recastText;
+    cooldownResult.remaining = remaining;
+    cooldownResult.spellId = spellId;
+    cooldownResult.abilityId = abilityId;
+    return cooldownResult;
 end
 
 return M;

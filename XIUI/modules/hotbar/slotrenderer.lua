@@ -26,6 +26,10 @@ local assetsPath = nil;
 -- Structure: slotCache[slotPrim] = { texturePath, iconPath, keybindText, keybindFontSize, keybindFontColor, timerText, ... }
 local slotCache = {};
 
+-- Reusable result table for DrawSlot to avoid GC pressure
+-- (Creating tables per-slot per-frame causes ~7200 allocations/sec)
+local drawSlotResult = { isHovered = false, command = nil };
+
 -- Get or create cache entry for a slot (keyed by slotPrim for uniqueness)
 local function GetSlotCache(slotPrim)
     if not slotPrim then return nil; end
@@ -105,6 +109,7 @@ end
         - showTooltip: Whether to show tooltip on hover (default true)
 
     @return table: { isHovered, command }
+    NOTE: Returns a reused table - do NOT cache the return value, read values immediately
 ]]--
 function M.DrawSlot(resources, params)
     local x = params.x;
@@ -117,8 +122,11 @@ function M.DrawSlot(resources, params)
     local animOpacity = params.animOpacity or 1.0;
     local isPressed = params.isPressed or false;
 
-    -- Result
-    local result = { isHovered = false, command = nil };
+    -- Reuse result table to avoid GC pressure
+    -- NOTE: Caller must read values immediately, do not cache the return value
+    drawSlotResult.isHovered = false;
+    drawSlotResult.command = nil;
+    local result = drawSlotResult;
 
     -- Skip rendering if fully transparent
     if animOpacity <= 0.01 then
