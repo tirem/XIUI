@@ -41,6 +41,18 @@ M.keybindFonts = {};
 -- M.labelFonts[barIndex][slotIndex] = font
 M.labelFonts = {};
 
+-- Icon primitives (per bar, per slot)
+-- Renders action icons as primitives instead of ImGui
+M.iconPrims = {};
+
+-- Cooldown overlay primitives (per bar, per slot)
+-- Dark overlay shown when action is on cooldown
+M.cooldownPrims = {};
+
+-- Cooldown timer fonts (per bar, per slot)
+-- Shows remaining recast time (e.g., "2:30", "45s")
+M.timerFonts = {};
+
 -- Fonts for hotbar numbers (1-6)
 M.hotbarNumberFonts = {};
 
@@ -540,8 +552,11 @@ function M.Cleanup()
     M.Clear();
     M.bgHandles = {};
     M.slotPrims = {};
+    M.iconPrims = {};
+    M.cooldownPrims = {};
     M.keybindFonts = {};
     M.labelFonts = {};
+    M.timerFonts = {};
     M.hotbarNumberFonts = {};
     M.allFonts = nil;
 end

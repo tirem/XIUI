@@ -47,6 +47,7 @@ local macropalette = require('modules.hotbar.macropalette');
 local crossbar = require('modules.hotbar.crossbar');
 local controller = require('modules.hotbar.controller');
 local textures = require('modules.hotbar.textures');
+local hotbarConfig = require('config.hotbar');
 
 local M = {};
 
@@ -145,11 +146,29 @@ function M.Initialize(settings)
             data.slotPrims[barIndex][slotIndex] = prim;
         end
 
+        -- 3. Create icon primitives (render above slot backgrounds)
+        data.iconPrims[barIndex] = {};
+        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
+            local prim = primitives.new(primData);
+            prim.visible = false;
+            prim.can_focus = false;
+            data.iconPrims[barIndex][slotIndex] = prim;
+        end
+
+        -- 4. Create cooldown overlay primitives (render above icons)
+        data.cooldownPrims[barIndex] = {};
+        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
+            local prim = primitives.new(primData);
+            prim.visible = false;
+            prim.can_focus = false;
+            data.cooldownPrims[barIndex][slotIndex] = prim;
+        end
+
         -- Get per-bar font sizes
         local kbFontSize = barSettings.keybindFontSize or 8;
         local lblFontSize = barSettings.labelFontSize or 10;
 
-        -- 3. Create keybind fonts for each slot - up to MAX_SLOTS_PER_BAR
+        -- 5. Create keybind fonts for each slot - up to MAX_SLOTS_PER_BAR
         data.keybindFonts[barIndex] = {};
         for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
             local kbSettings = deep_copy_table(keybindFontSettings);
@@ -160,7 +179,7 @@ function M.Initialize(settings)
             table.insert(data.allFonts, font);
         end
 
-        -- 4. Create label fonts for each slot (centered alignment for labels below slots)
+        -- 6. Create label fonts for each slot (centered alignment for labels below slots)
         data.labelFonts[barIndex] = {};
         for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
             local lblSettings = deep_copy_table(labelFontSettings);
@@ -172,7 +191,22 @@ function M.Initialize(settings)
             table.insert(data.allFonts, font);
         end
 
-        -- 5. Create hotbar number font
+        -- 7. Create cooldown timer fonts (centered over slot)
+        data.timerFonts[barIndex] = {};
+        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
+            local timerSettings = deep_copy_table(fontSettings);
+            timerSettings.font_height = 11;
+            timerSettings.font_alignment = gdi.Alignment.Center;
+            timerSettings.font_color = 0xFFFFFFFF;
+            timerSettings.outline_color = 0xFF000000;
+            timerSettings.outline_width = 2;
+            local font = FontManager.create(timerSettings);
+            font:set_visible(false);
+            data.timerFonts[barIndex][slotIndex] = font;
+            table.insert(data.allFonts, font);
+        end
+
+        -- 8. Create hotbar number font
         local numSettings = deep_copy_table(fontSettings);
         numSettings.font_height = 12;
         data.hotbarNumberFonts[barIndex] = FontManager.create(numSettings);
@@ -321,8 +355,9 @@ function M.DrawWindow(settings)
         end
     end
 
-    -- Always draw macro palette (regardless of mode)
+    -- Always draw macro palette and keybind modal (regardless of mode)
     macropalette.DrawPalette();
+    hotbarConfig.DrawKeybindModal();
 
     -- Render drag preview (must be called at end of frame, after all drop zones)
     dragdrop.Render();
@@ -383,6 +418,15 @@ function M.Cleanup()
             end
         end
 
+        -- Timer fonts
+        if data.timerFonts[barIndex] then
+            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
+                if data.timerFonts[barIndex][slotIndex] then
+                    FontManager.destroy(data.timerFonts[barIndex][slotIndex]);
+                end
+            end
+        end
+
         -- Hotbar number font
         if data.hotbarNumberFonts[barIndex] then
             FontManager.destroy(data.hotbarNumberFonts[barIndex]);
@@ -398,6 +442,24 @@ function M.Cleanup()
             for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
                 if data.slotPrims[barIndex][slotIndex] then
                     data.slotPrims[barIndex][slotIndex]:destroy();
+                end
+            end
+        end
+
+        -- Destroy icon primitives
+        if data.iconPrims[barIndex] then
+            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
+                if data.iconPrims[barIndex][slotIndex] then
+                    data.iconPrims[barIndex][slotIndex]:destroy();
+                end
+            end
+        end
+
+        -- Destroy cooldown primitives
+        if data.cooldownPrims[barIndex] then
+            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
+                if data.cooldownPrims[barIndex][slotIndex] then
+                    data.cooldownPrims[barIndex][slotIndex]:destroy();
                 end
             end
         end

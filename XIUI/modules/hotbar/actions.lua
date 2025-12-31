@@ -15,6 +15,10 @@ local controlPressed = false;
 local altPressed = false;
 local shiftPressed = false;
 
+-- Track currently pressed hotbar/slot for visual feedback
+local currentPressedHotbar = nil;
+local currentPressedSlot = nil;
+
 -- Icon cache for items (keyed by item name since we look up by name)
 local itemIconCache = {};
 
@@ -70,7 +74,9 @@ local function LoadItemIconById(itemId)
             0xFF000000, nil, nil, dx_texture_ptr
         ) == ffi.C.S_OK then
             return {
-                image = d3d8.gc_safe_release(ffi.cast('IDirect3DTexture8*', dx_texture_ptr[0]))
+                image = d3d8.gc_safe_release(ffi.cast('IDirect3DTexture8*', dx_texture_ptr[0])),
+                width = 32,  -- FFXI item icons are 32x32
+                height = 32,
             };
         end
         return nil;
@@ -287,23 +293,19 @@ end
 
 -- Handle a keybind with the given modifier state
 function M.HandleKeybind(hotbar, slot)
-    local keybinds = data.GetCurrentKeybinds();
-    if not keybinds then
+    -- Use GetKeybindForSlot which checks both user slot actions AND default keybinds
+    local bind = data.GetKeybindForSlot(hotbar, slot);
+    if not bind then
         return false;
     end
-    
-    -- Find matching keybind
-    for _, bind in ipairs(keybinds) do
-        if bind.hotbar == hotbar and bind.slot == slot then
-            -- Build and execute command
-            local command, _ = M.BuildCommand(bind);
-            if command then
-                AshitaCore:GetChatManager():QueueCommand(-1, command);
-                return true;
-            end
-        end
+
+    -- Build and execute command
+    local command, _ = M.BuildCommand(bind);
+    if command then
+        AshitaCore:GetChatManager():QueueCommand(-1, command);
+        return true;
     end
-    
+
     return false;
 end
 
@@ -322,21 +324,41 @@ function M.HandleKey(event)
        shiftPressed = not isRelease
    end
 
-   if isRelease then
-       return
-   end
-
    local keyStr = keyCodeToString(event.wparam)
 
    -- Determine hotbar and slot from key and modifiers
    local hotbar, slot = GetHotbarAndSlot(keyStr);
 
    if hotbar and slot then
-       -- Try to execute the keybind
-       if M.HandleKeybind(hotbar, slot) then
-           event.blocked = true;
+       if isRelease then
+           -- Clear pressed state on release (only if it matches what was pressed)
+           if currentPressedHotbar == hotbar and currentPressedSlot == slot then
+               currentPressedHotbar = nil;
+               currentPressedSlot = nil;
+           end
+       else
+           -- Set pressed state and try to execute the keybind
+           currentPressedHotbar = hotbar;
+           currentPressedSlot = slot;
+           if M.HandleKeybind(hotbar, slot) then
+               event.blocked = true;
+           end
        end
+   elseif isRelease then
+       -- Modifier key released - clear pressed state since hotbar context changed
+       currentPressedHotbar = nil;
+       currentPressedSlot = nil;
    end
+end
+
+-- Get currently pressed hotbar index (1-6) or nil
+function M.GetPressedHotbar()
+    return currentPressedHotbar;
+end
+
+-- Get currently pressed slot index (1-12) or nil
+function M.GetPressedSlot()
+    return currentPressedSlot;
 end
 
 --- Execute an action directly from slot data

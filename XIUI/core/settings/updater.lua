@@ -135,6 +135,11 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
         gAdjustedSettings.hotbarSettings.borderScale = us.hotbarBorderScale or 1.0;
         gAdjustedSettings.hotbarSettings.background_opacity = us.hotbarBackgroundOpacity or 0.87;
         gAdjustedSettings.hotbarSettings.border_opacity = us.hotbarBorderOpacity or 1.0;
+
+        -- Crossbar fonts
+        applyGlobalFontSettings(gAdjustedSettings.crossbarSettings.keybind_font_settings, us.fontFamily, fontWeightFlags, 1);
+        applyGlobalFontSettings(gAdjustedSettings.crossbarSettings.label_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
+        applyGlobalFontSettings(gAdjustedSettings.crossbarSettings.trigger_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
     end;
 
     -- Target Bar dimensions and settings

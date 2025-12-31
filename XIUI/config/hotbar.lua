@@ -362,6 +362,11 @@ local function CloseKeybindModal()
     keybindModal.selectedSlot = nil;
 end
 
+-- Check if keybind modal is open (exported for use in display.lua)
+function M.IsKeybindModalOpen()
+    return keybindModal.isOpen;
+end
+
 -- Draw slot grid for keybind editor
 local function DrawSlotGrid(barIndex, barSettings)
     local slots = barSettings.slots or 12;
@@ -712,8 +717,8 @@ local function DrawSlotEditor(barIndex, slotIndex, configKey)
     end
 end
 
--- Draw the keybind editor modal
-local function DrawKeybindModal()
+-- Draw the keybind editor modal (exported for use in hotbar init)
+function M.DrawKeybindModal()
     if not keybindModal.isOpen then return; end
 
     local barIndex = keybindModal.barIndex;
@@ -825,6 +830,9 @@ local function DrawVisualSettingsContent(settings, configKey)
 
         components.DrawPartyCheckbox(settings, 'Show Hotbar Number##' .. configKey, 'showHotbarNumber');
         imgui.ShowHelp('Show the bar number (1-6) on the left side of the hotbar.');
+
+        components.DrawPartyCheckbox(settings, 'Hide Empty Slots##' .. configKey, 'hideEmptySlots');
+        imgui.ShowHelp('Hide slots that have no action assigned. Empty slots are shown when macro palette is open.');
     end
 
     if components.CollapsingSection('Text Settings##' .. configKey, false) then
@@ -1120,12 +1128,19 @@ function M.DrawSettings(state)
     components.DrawCheckbox('Enabled', 'hotbarEnabled');
     imgui.ShowHelp('Enable or disable the hotbar module.');
 
-    -- Macro Palette button (always visible at top)
+    -- Macro Palette and Edit Keybinds buttons (always visible at top)
     imgui.Spacing();
     if imgui.Button('Open Macro Palette', {160, 24}) then
         macropalette.OpenPalette();
     end
     imgui.ShowHelp('Create macros (per-job) and drag them to hotbar slots. Drag slots to rearrange. Right-click to clear.');
+    imgui.SameLine();
+    local editBarIndex = selectedBarTab or 1;
+    local editConfigKey = 'hotbarBar' .. editBarIndex;
+    if imgui.Button('Edit Keybinds', {120, 24}) then
+        OpenKeybindModal(editBarIndex, editConfigKey);
+    end
+    imgui.ShowHelp('Open keybind editor to configure slot actions for the selected hotbar.');
 
     -- Crossbar Mode Toggle
     imgui.Spacing();

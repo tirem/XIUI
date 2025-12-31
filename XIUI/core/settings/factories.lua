@@ -242,6 +242,7 @@ function M.createHotbarGlobalDefaults()
         showActionLabels = false,
         actionLabelOffsetX = 0,
         actionLabelOffsetY = 0,
+        hideEmptySlots = false, -- Hide slots with no action assigned
 
         -- Slot padding (gap between slots)
         slotXPadding = 8,
@@ -286,6 +287,7 @@ function M.createHotbarBarDefaults(overrides)
         showActionLabels = false,
         actionLabelOffsetX = 0,     -- X offset for action labels
         actionLabelOffsetY = 0,     -- Y offset for action labels
+        hideEmptySlots = false,     -- Hide slots with no action assigned
 
         -- Slot padding (gap between slots)
         slotXPadding = 8,       -- Horizontal gap between slots
@@ -327,19 +329,19 @@ function M.createCrossbarDefaults()
         enabled = false,
 
         -- Layout
-        slotSize = 48,              -- Slot size in pixels
-        slotGapV = 4,               -- Vertical gap between top and bottom slots
-        slotGapH = 4,               -- Horizontal gap between left and right slots
-        diamondSpacing = 20,        -- Space between dpad and face button diamonds
-        groupSpacing = 40,          -- Space between L2 and R2 groups
+        slotSize = 40,              -- Slot size in pixels
+        slotGapV = 2,               -- Vertical gap between top and bottom slots
+        slotGapH = 2,               -- Horizontal gap between left and right slots
+        diamondSpacing = 16,        -- Space between dpad and face button diamonds
+        groupSpacing = 24,          -- Space between L2 and R2 groups
         showDivider = true,         -- Show center divider line
-        showTriggerLabels = true,   -- Show "L2", "R2", "L2+R2", "R2+L2" labels
+        showTriggerLabels = true,   -- Show L2/R2 trigger icons
 
         -- Visual settings
-        backgroundTheme = 'Window1',
+        backgroundTheme = '-None-',
         bgScale = 1.0,
         borderScale = 1.0,
-        backgroundOpacity = 0.87,
+        backgroundOpacity = 0.10,
         borderOpacity = 1.0,
         slotBackgroundColor = 0x55000000,
         activeSlotHighlight = 0x44FFFFFF,   -- Highlight color when trigger held
@@ -351,12 +353,12 @@ function M.createCrossbarDefaults()
 
         -- Button icons
         showButtonIcons = true,             -- Show d-pad/face button icons on slots
-        buttonIconSize = 24,                -- Size of controller button icons
-        buttonIconGapH = 2,                 -- Horizontal spacing between center icons
+        buttonIconSize = 16,                -- Size of controller button icons
+        buttonIconGapH = 8,                 -- Horizontal spacing between center icons
         buttonIconGapV = 2,                 -- Vertical spacing between center icons
         buttonIconPosition = 'corner',      -- 'corner' or 'replace_keybind'
-        controllerTheme = 'PlayStation',    -- 'PlayStation' or 'Xbox' button icons
-        triggerIconScale = 1.0,             -- Scale for L2/R2 trigger icons (base 49x28)
+        controllerTheme = 'PlayStation',    -- 'PlayStation', 'Xbox', or 'Nintendo' button icons
+        triggerIconScale = 0.8,             -- Scale for L2/R2 trigger icons (base 49x28)
 
         -- Font settings
         keybindFontSize = 8,

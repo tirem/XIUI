@@ -8,20 +8,28 @@ local ffi = require('ffi');
 local d3d8 = require('d3d8');
 
 -- Load texture from full file path
+-- Returns: { image = IDirect3DTexture8*, path = filePath, width = 40, height = 40 }
 local function LoadTextureFromPath(filePath)
     local device = GetD3D8Device();
     if (device == nil) then return nil; end
 
-    local textures = T{};
+    local textureData = T{};
     local texture_ptr = ffi.new('IDirect3DTexture8*[1]');
     local res = ffi.C.D3DXCreateTextureFromFileA(device, filePath, texture_ptr);
     if (res ~= ffi.C.S_OK) then
         return nil;
     end
-    textures.image = ffi.new('IDirect3DTexture8*', texture_ptr[0]);
-    d3d8.gc_safe_release(textures.image);
+    textureData.image = ffi.new('IDirect3DTexture8*', texture_ptr[0]);
+    d3d8.gc_safe_release(textureData.image);
 
-    return textures;
+    -- Store path for primitive rendering
+    textureData.path = filePath;
+
+    -- Default size (spell icons are typically 40x40)
+    textureData.width = 40;
+    textureData.height = 40;
+
+    return textureData;
 end
 
 local textures = {};
@@ -119,6 +127,16 @@ textures.Get = function(self, key)
         return nil;
     end
     return self.Cache[key];
+end
+
+-- Get texture path by key (for primitive rendering)
+textures.GetPath = function(self, key)
+    if not self.Cache then return nil; end
+    local entry = self.Cache[key];
+    if entry and entry.path then
+        return entry.path;
+    end
+    return nil;
 end
 
 -- Get controller button icon by name

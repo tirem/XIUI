@@ -19,6 +19,8 @@ local data = require('modules.hotbar.data');
 local actions = require('modules.hotbar.actions');
 local textures = require('modules.hotbar.textures');
 local controller = require('modules.hotbar.controller');
+local recast = require('modules.hotbar.recast');
+local slotrenderer = require('modules.hotbar.slotrenderer');
 
 local M = {};
 
@@ -177,6 +179,14 @@ local state = {
     -- Slot primitives per combo mode
     -- slotPrims[comboMode][slotIndex] = primitive
     slotPrims = {},
+
+    -- Icon primitives per combo mode (action icons)
+    -- iconPrims[comboMode][slotIndex] = primitive
+    iconPrims = {},
+
+    -- Timer fonts per combo mode (cooldown timers)
+    -- timerFonts[comboMode][slotIndex] = font
+    timerFonts = {},
 
     -- Center icon primitives per combo mode (in the middle of each diamond)
     -- centerIconPrims[comboMode][diamondType][iconIndex] = primitive
@@ -459,13 +469,29 @@ function M.Initialize(settings, moduleSettings)
 
     for _, comboMode in ipairs(comboModes) do
         state.slotPrims[comboMode] = {};
+        state.iconPrims[comboMode] = {};
+        state.timerFonts[comboMode] = {};
         state.centerIconPrims[comboMode] = {};
         state.labelFonts[comboMode] = {};
 
-        -- Create slot background primitives
+        -- Create slot background primitives, icon primitives, and fonts
         for slotIndex = 1, SLOTS_PER_SIDE do
+            -- Slot background primitive
             local slotPrim = CreatePrimitive(basePrimData);
             state.slotPrims[comboMode][slotIndex] = slotPrim;
+
+            -- Icon primitive (renders above slot background)
+            local iconPrim = CreatePrimitive(basePrimData);
+            state.iconPrims[comboMode][slotIndex] = iconPrim;
+
+            -- Timer font for cooldowns (centered, with outline)
+            local timerFontSettings = moduleSettings and deep_copy_table(moduleSettings.label_font_settings) or {};
+            timerFontSettings.font_height = 11;
+            timerFontSettings.font_alignment = 1;  -- Center
+            timerFontSettings.font_color = 0xFFFFFFFF;
+            timerFontSettings.outline_color = 0xFF000000;
+            timerFontSettings.outline_width = 2;
+            state.timerFonts[comboMode][slotIndex] = FontManager.create(timerFontSettings);
 
             -- Create label font for action names
             local labelFontSettings = moduleSettings and moduleSettings.label_font_settings or {};
@@ -508,87 +534,59 @@ end
 -- Rendering
 -- ============================================
 
--- Draw a single slot with drag/drop support
+-- Draw a single slot with drag/drop support using shared renderer
 -- animOpacity: 0-1 for animation fade (default 1.0)
 -- yOffset: Y offset in pixels for animation (default 0)
 local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive, isPressed, animOpacity, yOffset)
     animOpacity = animOpacity or 1.0;
     yOffset = yOffset or 0;
-    if animOpacity <= 0.01 then return; end  -- Skip if nearly transparent
 
     -- Apply Y offset for animation
     local drawY = y + yOffset;
 
-    local slotPrim = state.slotPrims[comboMode] and state.slotPrims[comboMode][slotIndex];
-
     -- Get slot data
     local slotData = data.GetCrossbarSlotData(comboMode, slotIndex);
 
-    -- Update slot background primitive
-    if slotPrim then
-        local texturePath = GetAssetsPath() .. 'slot.png';
-        slotPrim.texture = texturePath;
-        slotPrim.position_x = x;
-        slotPrim.position_y = drawY;
-
-        -- Scale slot texture to match slot size
-        local textureSize = 40;
-        local scale = slotSize / textureSize;
-        slotPrim.scale_x = scale;
-        slotPrim.scale_y = scale;
-        slotPrim.visible = animOpacity > 0.01;
-
-        -- Get slot background color
-        local slotBgColor = settings.slotBackgroundColor or 0x55000000;
-
-        -- Dim inactive side
-        local dimFactor = 1.0;
-        if not isActive then
-            dimFactor = settings.inactiveSlotDim or 0.5;
-        end
-
-        -- Apply animation opacity to alpha channel
-        local baseAlpha = bit.rshift(bit.band(slotBgColor, 0xFF000000), 24);
-        local a = math.floor(baseAlpha * animOpacity);
-        local r = math.floor(bit.rshift(bit.band(slotBgColor, 0x00FF0000), 16) * dimFactor);
-        local g = math.floor(bit.rshift(bit.band(slotBgColor, 0x0000FF00), 8) * dimFactor);
-        local b = math.floor(bit.band(slotBgColor, 0x000000FF) * dimFactor);
-        slotPrim.color = bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
+    -- Get icon for this action
+    local icon = nil;
+    if slotData and slotData.actionType then
+        icon = actions.GetBindIcon(slotData);
     end
 
-    -- Draw pressed effect overlay via ImGui (similar to hover effect in display.lua)
-    if isPressed and isActive and animOpacity > 0.5 then
-        local fgDrawList = imgui.GetForegroundDrawList();
-        if fgDrawList then
-            local pressedTintColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.25 * animOpacity});
-            local pressedBorderColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.5 * animOpacity});
-            local rounding = 4;
-
-            -- Draw filled highlight
-            fgDrawList:AddRectFilled(
-                {x, drawY},
-                {x + slotSize, drawY + slotSize},
-                pressedTintColor,
-                rounding
-            );
-
-            -- Draw border highlight
-            fgDrawList:AddRect(
-                {x, drawY},
-                {x + slotSize, drawY + slotSize},
-                pressedBorderColor,
-                rounding,
-                0,
-                2
-            );
-        end
+    -- Calculate dim factor for inactive slots
+    local dimFactor = 1.0;
+    if not isActive then
+        dimFactor = settings.inactiveSlotDim or 0.5;
     end
 
-    -- Register drop zone for this slot (use original Y, not animated Y, for interaction)
-    local zoneId = string.format('crossbar_%s_%d', comboMode, slotIndex);
-    local dropped = dragdrop.DropZone(zoneId, x, y, slotSize, slotSize, {
-        accepts = {'macro', 'crossbar_slot'},
-        highlightColor = 0xA8FFFFFF,  -- White at 66% opacity
+    -- Gather resources for this slot
+    local resources = {
+        slotPrim = state.slotPrims[comboMode] and state.slotPrims[comboMode][slotIndex],
+        iconPrim = state.iconPrims[comboMode] and state.iconPrims[comboMode][slotIndex],
+        timerFont = state.timerFonts[comboMode] and state.timerFonts[comboMode][slotIndex],
+    };
+
+    -- Render slot using shared renderer (handles ALL rendering and interactions)
+    slotrenderer.DrawSlot(resources, {
+        -- Position/Size
+        x = x,
+        y = drawY,
+        size = slotSize,
+
+        -- Action Data
+        bind = slotData,
+        icon = icon,
+
+        -- Visual Settings
+        slotBgColor = settings.slotBackgroundColor or 0x55000000,
+        dimFactor = dimFactor,
+        animOpacity = animOpacity,
+        isPressed = isPressed and isActive,
+
+        -- Interaction Config (use original Y for interaction, not animated Y)
+        buttonId = string.format('##crossbar_%s_%d', comboMode, slotIndex),
+        dropZoneId = string.format('crossbar_%s_%d', comboMode, slotIndex),
+        dropAccepts = {'macro', 'crossbar_slot'},
         onDrop = function(payload)
             if payload.type == 'macro' then
                 data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
@@ -599,84 +597,24 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
                 data.SetCrossbarSlotData(payload.comboMode, payload.slotIndex, targetData);
             end
         end,
-    });
-
-    -- Draw action icon if slot has data
-    if slotData and slotData.actionType and animOpacity > 0.01 then
-        local icon = actions.GetBindIcon(slotData);
-        if icon and icon.image then
-            local drawList = imgui.GetForegroundDrawList();
-            if drawList then
-                local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
-                if iconPtr then
-                    local padding = 4;
-                    local iconX = x + padding;
-                    local iconDrawY = drawY + padding;  -- Use animated Y position
-                    local iconSize = slotSize - (padding * 2);
-
-                    -- Calculate dim factor for inactive slots
-                    local dimFactor = 1.0;
-                    if not isActive then
-                        dimFactor = settings.inactiveSlotDim or 0.5;
-                    end
-
-                    -- Apply both animation opacity and dim factor to icon alpha (opacity-based dimming)
-                    local tintAlpha = math.floor(255 * animOpacity * dimFactor);
-                    local tintColor = bit.bor(bit.lshift(tintAlpha, 24), 0x00FFFFFF);
-                    drawList:AddImage(
-                        iconPtr,
-                        {iconX, iconDrawY},
-                        {iconX + iconSize, iconDrawY + iconSize},
-                        {0, 0}, {1, 1},
-                        tintColor
-                    );
-                end
-            end
-        end
-    end
-end
-
--- Handle slot interactions (must be called within ImGui window context)
-local function HandleSlotInteraction(comboMode, slotIndex, x, y, slotSize)
-    local slotData = data.GetCrossbarSlotData(comboMode, slotIndex);
-
-    -- Create invisible button for interaction
-    local buttonId = string.format('crossbar_btn_%s_%d', comboMode, slotIndex);
-    imgui.SetCursorScreenPos({x, y});
-    imgui.InvisibleButton(buttonId, {slotSize, slotSize});
-
-    local isHovered = imgui.IsItemHovered();
-    local isActive = imgui.IsItemActive();
-
-    -- Drag source (if slot has content)
-    if slotData and isActive and imgui.IsMouseDragging(0, 3) then
-        if not dragdrop.IsDragging() and not dragdrop.IsDragPending() then
-            local icon = actions.GetBindIcon(slotData);
-            dragdrop.StartDrag('crossbar_slot', {
+        dragType = 'crossbar_slot',
+        getDragData = function()
+            return {
                 comboMode = comboMode,
                 slotIndex = slotIndex,
                 data = slotData,
                 icon = icon,
                 label = slotData and (slotData.displayName or slotData.action) or ('Slot ' .. slotIndex),
-            });
-        end
-    end
-
-    -- Handle click to execute action
-    if isHovered and imgui.IsMouseReleased(0) and slotData then
-        if not dragdrop.IsDragging() and not dragdrop.WasDragAttempted() then
-            local command = actions.BuildCommand(slotData);
-            if command then
-                AshitaCore:GetChatManager():QueueCommand(-1, command);
-            end
-        end
-    end
-
-    -- Right-click to clear slot
-    if isHovered and imgui.IsMouseClicked(1) and slotData then
-        data.ClearCrossbarSlotData(comboMode, slotIndex);
-    end
+            };
+        end,
+        onRightClick = function()
+            data.ClearCrossbarSlotData(comboMode, slotIndex);
+        end,
+        showTooltip = true,
+    });
 end
+
+-- Note: HandleSlotInteraction removed - now handled by slotrenderer.DrawSlot
 
 -- Draw center icons for a diamond via ImGui (renders on top of everything)
 -- animOpacity: 0-1 for animation fade (default 1.0)
@@ -911,6 +849,9 @@ end
 function M.DrawWindow(settings, moduleSettings)
     if not state.initialized then return; end
 
+    -- Update recast timers once per frame
+    recast.Update();
+
     local slotSize = settings.slotSize or 48;
     local slotGapV = settings.slotGapV or 4;
     local slotGapH = settings.slotGapH or 4;
@@ -948,42 +889,7 @@ function M.DrawWindow(settings, moduleSettings)
     -- Window position will be updated by ImGui's built-in dragging
     local windowPosX, windowPosY = state.windowX, state.windowY;
 
-    if imgui.Begin('Crossbar', true, windowFlags) then
-        windowPosX, windowPosY = imgui.GetWindowPos();
-
-        -- Update stored position for primitives
-        state.windowX = windowPosX;
-        state.windowY = windowPosY;
-
-        -- Handle slot interactions for currently displayed modes
-        local displayLeftMode = state.animation.active and state.animation.toLeftMode or state.currentLeftMode;
-        local displayRightMode = state.animation.active and state.animation.toRightMode or state.currentRightMode;
-
-        for slotIndex = 1, SLOTS_PER_SIDE do
-            local leftSlotX, leftSlotY = GetSlotPositionInWindow('L2', slotIndex, state.windowX, state.windowY, settings);
-            HandleSlotInteraction(displayLeftMode, slotIndex, leftSlotX, leftSlotY, slotSize);
-
-            local rightSlotX, rightSlotY = GetSlotPositionInWindow('R2', slotIndex, state.windowX, state.windowY, settings);
-            HandleSlotInteraction(displayRightMode, slotIndex, rightSlotX, rightSlotY, slotSize);
-        end
-
-        imgui.End();
-    end
-
-    -- Update window background
-    if state.bgHandle then
-        windowBg.update(state.bgHandle, state.windowX, state.windowY, width, height, {
-            theme = settings.backgroundTheme,
-            bgScale = settings.bgScale,
-            borderScale = settings.borderScale,
-            bgOpacity = settings.backgroundOpacity,
-            borderOpacity = settings.borderOpacity,
-            bgColor = settings.bgColor,
-            borderColor = settings.borderColor,
-        });
-    end
-
-    -- Calculate group positions
+    -- Calculate group positions (needed before window for proper sizing)
     local leftGroupX = state.windowX;
     local leftGroupY = state.windowY;
     local rightGroupX = state.windowX + groupWidth + groupSpacing;
@@ -1018,7 +924,7 @@ function M.DrawWindow(settings, moduleSettings)
     local leftShowPressed = leftActive and activeCombo ~= COMBO_MODES.NONE;
     local rightShowPressed = rightActive and activeCombo ~= COMBO_MODES.NONE;
 
-    -- Get draw list for ImGui-based rendering
+    -- Get draw list for ImGui-based rendering (foreground works outside window context)
     local drawList = imgui.GetForegroundDrawList();
 
     -- Hide all slot primitives first (we'll show the ones we need)
@@ -1030,63 +936,94 @@ function M.DrawWindow(settings, moduleSettings)
         end
     end
 
-    -- Draw bar sets based on animation state
-    if state.animation.active then
-        -- Get animation values for outgoing and incoming elements
-        local outOpacity, outYOffset = GetOutgoingAnimationValues();
-        local inOpacity, inYOffset = GetIncomingAnimationValues();
+    -- Begin ImGui window - ALL slot rendering happens inside to enable interactions
+    if imgui.Begin('Crossbar', true, windowFlags) then
+        windowPosX, windowPosY = imgui.GetWindowPos();
 
-        -- Determine active states for "from" bar set
-        local fromExpanded = state.animation.fromBarSet == 'expanded';
-        local fromLeftActive = fromExpanded or state.animation.fromLeftMode == 'L2';
-        local fromRightActive = fromExpanded or state.animation.fromRightMode == 'R2';
+        -- Update stored position for primitives
+        state.windowX = windowPosX;
+        state.windowY = windowPosY;
 
-        -- Draw LEFT side
-        if state.animation.leftChanged then
-            -- Left side changed - animate it
-            if outOpacity > 0.01 then
-                DrawLeftSide(state.animation.fromLeftMode, leftGroupX, leftGroupY, slotSize, settings,
-                    fromLeftActive, pressedSlot, false, outOpacity, drawList, outYOffset);
-            end
-            if inOpacity > 0.01 then
+        -- Recalculate group positions with updated window position
+        leftGroupX = state.windowX;
+        leftGroupY = state.windowY;
+        rightGroupX = state.windowX + groupWidth + groupSpacing;
+        rightGroupY = state.windowY;
+
+        -- Draw bar sets based on animation state
+        -- NOTE: DrawSlot calls must be inside imgui.Begin/End for interactions to work
+        if state.animation.active then
+            -- Get animation values for outgoing and incoming elements
+            local outOpacity, outYOffset = GetOutgoingAnimationValues();
+            local inOpacity, inYOffset = GetIncomingAnimationValues();
+
+            -- Determine active states for "from" bar set
+            local fromExpanded = state.animation.fromBarSet == 'expanded';
+            local fromLeftActive = fromExpanded or state.animation.fromLeftMode == 'L2';
+            local fromRightActive = fromExpanded or state.animation.fromRightMode == 'R2';
+
+            -- Draw LEFT side
+            if state.animation.leftChanged then
+                -- Left side changed - animate it
+                if outOpacity > 0.01 then
+                    DrawLeftSide(state.animation.fromLeftMode, leftGroupX, leftGroupY, slotSize, settings,
+                        fromLeftActive, pressedSlot, false, outOpacity, drawList, outYOffset);
+                end
+                if inOpacity > 0.01 then
+                    DrawLeftSide(state.animation.toLeftMode, leftGroupX, leftGroupY, slotSize, settings,
+                        leftActive, pressedSlot, leftShowPressed, inOpacity, drawList, inYOffset);
+                end
+            else
+                -- Left side didn't change - draw at full opacity
                 DrawLeftSide(state.animation.toLeftMode, leftGroupX, leftGroupY, slotSize, settings,
-                    leftActive, pressedSlot, leftShowPressed, inOpacity, drawList, inYOffset);
+                    leftActive, pressedSlot, leftShowPressed, 1.0, drawList, 0);
+            end
+
+            -- Draw RIGHT side
+            if state.animation.rightChanged then
+                -- Right side changed - animate it
+                if outOpacity > 0.01 then
+                    DrawRightSide(state.animation.fromRightMode, rightGroupX, rightGroupY, slotSize, settings,
+                        fromRightActive, pressedSlot, false, outOpacity, drawList, outYOffset);
+                end
+                if inOpacity > 0.01 then
+                    DrawRightSide(state.animation.toRightMode, rightGroupX, rightGroupY, slotSize, settings,
+                        rightActive, pressedSlot, rightShowPressed, inOpacity, drawList, inYOffset);
+                end
+            else
+                -- Right side didn't change - draw at full opacity
+                DrawRightSide(state.animation.toRightMode, rightGroupX, rightGroupY, slotSize, settings,
+                    rightActive, pressedSlot, rightShowPressed, 1.0, drawList, 0);
             end
         else
-            -- Left side didn't change - draw at full opacity
-            DrawLeftSide(state.animation.toLeftMode, leftGroupX, leftGroupY, slotSize, settings,
-                leftActive, pressedSlot, leftShowPressed, 1.0, drawList, 0);
+            -- No animation, draw current bar set at full opacity with no offset
+            DrawBarSet(
+                state.currentLeftMode, state.currentRightMode,
+                leftGroupX, leftGroupY, rightGroupX, rightGroupY,
+                slotSize, settings,
+                leftActive, rightActive,
+                pressedSlot, leftShowPressed, rightShowPressed,
+                1.0, drawList, 0
+            );
         end
 
-        -- Draw RIGHT side
-        if state.animation.rightChanged then
-            -- Right side changed - animate it
-            if outOpacity > 0.01 then
-                DrawRightSide(state.animation.fromRightMode, rightGroupX, rightGroupY, slotSize, settings,
-                    fromRightActive, pressedSlot, false, outOpacity, drawList, outYOffset);
-            end
-            if inOpacity > 0.01 then
-                DrawRightSide(state.animation.toRightMode, rightGroupX, rightGroupY, slotSize, settings,
-                    rightActive, pressedSlot, rightShowPressed, inOpacity, drawList, inYOffset);
-            end
-        else
-            -- Right side didn't change - draw at full opacity
-            DrawRightSide(state.animation.toRightMode, rightGroupX, rightGroupY, slotSize, settings,
-                rightActive, pressedSlot, rightShowPressed, 1.0, drawList, 0);
-        end
-    else
-        -- No animation, draw current bar set at full opacity with no offset
-        DrawBarSet(
-            state.currentLeftMode, state.currentRightMode,
-            leftGroupX, leftGroupY, rightGroupX, rightGroupY,
-            slotSize, settings,
-            leftActive, rightActive,
-            pressedSlot, leftShowPressed, rightShowPressed,
-            1.0, drawList, 0
-        );
+        imgui.End();
     end
 
-    -- Draw center divider (optional)
+    -- Update window background (can happen after window closes)
+    if state.bgHandle then
+        windowBg.update(state.bgHandle, state.windowX, state.windowY, width, height, {
+            theme = settings.backgroundTheme,
+            bgScale = settings.bgScale,
+            borderScale = settings.borderScale,
+            bgOpacity = settings.backgroundOpacity,
+            borderOpacity = settings.borderOpacity,
+            bgColor = settings.bgColor,
+            borderColor = settings.borderColor,
+        });
+    end
+
+    -- Draw center divider (optional) - uses foreground draw list, works outside window
     if settings.showDivider and drawList then
         local dividerX = state.windowX + groupWidth + (groupSpacing / 2);
         local dividerY1 = state.windowY + 10;
@@ -1133,6 +1070,12 @@ function M.SetHidden(hidden)
             for slotIndex = 1, SLOTS_PER_SIDE do
                 local slotPrim = state.slotPrims[comboMode] and state.slotPrims[comboMode][slotIndex];
                 if slotPrim then slotPrim.visible = false; end
+
+                local iconPrim = state.iconPrims[comboMode] and state.iconPrims[comboMode][slotIndex];
+                if iconPrim then iconPrim.visible = false; end
+
+                local timerFont = state.timerFonts[comboMode] and state.timerFonts[comboMode][slotIndex];
+                if timerFont then timerFont:set_visible(false); end
 
                 local labelFont = state.labelFonts[comboMode] and state.labelFonts[comboMode][slotIndex];
                 if labelFont then labelFont:set_visible(false); end
@@ -1224,12 +1167,17 @@ function M.Cleanup()
     -- Destroy all primitives and fonts
     local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2' };
     for _, comboMode in ipairs(comboModes) do
-        -- Destroy slot primitives
+        -- Destroy slot primitives, icon primitives, and fonts
         for slotIndex = 1, SLOTS_PER_SIDE do
             local slotPrim = state.slotPrims[comboMode] and state.slotPrims[comboMode][slotIndex];
             if slotPrim then slotPrim:destroy(); end
 
-            -- Destroy label fonts
+            local iconPrim = state.iconPrims[comboMode] and state.iconPrims[comboMode][slotIndex];
+            if iconPrim then iconPrim:destroy(); end
+
+            local timerFont = state.timerFonts[comboMode] and state.timerFonts[comboMode][slotIndex];
+            if timerFont then FontManager.destroy(timerFont); end
+
             local labelFont = state.labelFonts[comboMode] and state.labelFonts[comboMode][slotIndex];
             if labelFont then FontManager.destroy(labelFont); end
         end
@@ -1247,6 +1195,8 @@ function M.Cleanup()
         end
 
         state.slotPrims[comboMode] = nil;
+        state.iconPrims[comboMode] = nil;
+        state.timerFonts[comboMode] = nil;
         state.centerIconPrims[comboMode] = nil;
         state.labelFonts[comboMode] = nil;
     end
