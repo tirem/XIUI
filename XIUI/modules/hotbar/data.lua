@@ -267,8 +267,9 @@ function M.GetKeybindDisplay(barIndex, slotIndex)
     -- Check for custom keybind first
     local configKey = 'hotbarBar' .. barIndex;
     local barSettings = gConfig and gConfig[configKey];
-    if barSettings and barSettings.keyBindings and barSettings.keyBindings[slotIndex] then
-        local binding = barSettings.keyBindings[slotIndex];
+    if barSettings and barSettings.keyBindings then
+        -- Handle both numeric and string keys (JSON serialization converts numeric keys to strings)
+        local binding = barSettings.keyBindings[slotIndex] or barSettings.keyBindings[tostring(slotIndex)];
         if binding and binding.key then
             return FormatKeybindShort(binding);
         end

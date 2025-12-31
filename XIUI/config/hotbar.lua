@@ -519,7 +519,8 @@ function M.DrawKeybindModal()
         local draw_list = imgui.GetWindowDrawList();
 
         for slotIndex = 1, slots do
-            local binding = barSettings.keyBindings[slotIndex];
+            -- Handle both numeric and string keys (JSON serialization converts numeric keys to strings)
+            local binding = barSettings.keyBindings[slotIndex] or barSettings.keyBindings[tostring(slotIndex)];
             local hasKeybind = binding and binding.key;
             local isSelected = keybindModal.selectedSlot == slotIndex;
 
@@ -580,7 +581,8 @@ function M.DrawKeybindModal()
         -- Key assignment section below
         if keybindModal.selectedSlot then
             local selectedSlot = keybindModal.selectedSlot;
-            local currentBinding = barSettings.keyBindings[selectedSlot];
+            -- Handle both numeric and string keys (JSON serialization converts numeric keys to strings)
+            local currentBinding = barSettings.keyBindings[selectedSlot] or barSettings.keyBindings[tostring(selectedSlot)];
 
             -- Current keybind display inline
             imgui.Text(string.format('Slot %d:', selectedSlot));
@@ -606,7 +608,9 @@ function M.DrawKeybindModal()
                 if currentBinding and currentBinding.key then
                     imgui.SameLine();
                     if imgui.Button('Clear##clear', {60, 0}) then
+                        -- Clear both numeric and string key versions
                         barSettings.keyBindings[selectedSlot] = nil;
+                        barSettings.keyBindings[tostring(selectedSlot)] = nil;
                         SaveSettingsOnly();
                     end
                 end
@@ -665,8 +669,9 @@ function M.HandleKeybindCapture(keyCode, ctrl, alt, shift)
             local checkBarSettings = gConfig[checkConfigKey];
             if checkBarSettings and checkBarSettings.keyBindings then
                 for slotIndex, existingBinding in pairs(checkBarSettings.keyBindings) do
-                    -- Skip the slot we're assigning to
-                    local isSameSlot = (checkConfigKey == configKey and slotIndex == selectedSlot);
+                    -- Skip the slot we're assigning to (handle both numeric and string keys)
+                    local slotNum = tonumber(slotIndex) or slotIndex;
+                    local isSameSlot = (checkConfigKey == configKey and slotNum == selectedSlot);
                     if not isSameSlot and existingBinding and existingBinding.key then
                         -- Check if this binding matches the new one
                         if existingBinding.key == keyCode and

@@ -1280,6 +1280,9 @@ function M.UpdateVisuals(settings, moduleSettings)
         comboTextSettings.font_alignment = 1;  -- Center alignment
         state.comboTextFont = FontManager.recreate(state.comboTextFont, comboTextSettings);
     end
+
+    -- Clear slot cache since fonts were recreated (cache tracks font text state)
+    slotrenderer.ClearAllCache();
 end
 
 -- ============================================

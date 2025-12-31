@@ -49,6 +49,7 @@ local controller = require('modules.hotbar.controller');
 local textures = require('modules.hotbar.textures');
 local hotbarConfig = require('config.hotbar');
 local macrobarpatch = require('modules.hotbar.macrobarpatch');
+local slotrenderer = require('modules.hotbar.slotrenderer');
 
 local M = {};
 
@@ -311,6 +312,9 @@ function M.UpdateVisuals(settings)
             );
         end
     end
+
+    -- Clear slot cache since fonts were recreated (cache tracks font text state)
+    slotrenderer.ClearAllCache();
 
     -- Update display layer (handles theme changes)
     display.UpdateVisuals(settings);

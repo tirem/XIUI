@@ -21,6 +21,7 @@ local M = {};
 -- ============================================
 
 local INPUT_BUFFER_SIZE = 64;
+local MACRO_BUFFER_SIZE = 512;  -- 8 lines * ~60 chars each
 local PALETTE_COLUMNS = 6;
 local PALETTE_ROWS = 6;
 local PALETTE_MACROS_PER_PAGE = PALETTE_COLUMNS * PALETTE_ROWS;  -- 36 macros per page
@@ -215,6 +216,8 @@ local function GetPlayerSpells()
 
                 -- Skip garbage/test spell names
                 if not IsGarbageSpellName(spellName) then
+                    -- LevelRequired array is 0-indexed in C (0=None, 1=WAR, 2=MNK, 3=WHM...)
+                    -- but Lua uses 1-indexing, so add 1 to jobId
                     local reqLevel = spell.LevelRequired[jobId + 1] or 0;
                     if reqLevel > 0 and reqLevel <= jobLevel then
                         table.insert(spells, {
@@ -459,6 +462,25 @@ local function GetItemLoadProgress()
     return math.floor((itemIconLoadState.currentId / itemIconLoadState.maxId) * 100);
 end
 
+-- Push XIUI styling for combo popups
+local function PushComboStyle()
+    imgui.PushStyleColor(ImGuiCol_PopupBg, COLORS.bgDark);
+    imgui.PushStyleColor(ImGuiCol_ChildBg, COLORS.bgDark);
+    imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+    imgui.PushStyleColor(ImGuiCol_FrameBg, COLORS.bgMedium);
+    imgui.PushStyleColor(ImGuiCol_FrameBgHovered, COLORS.bgLight);
+    imgui.PushStyleColor(ImGuiCol_Header, COLORS.bgLight);
+    imgui.PushStyleColor(ImGuiCol_HeaderHovered, COLORS.bgLighter);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarBg, COLORS.bgDark);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrab, COLORS.bgLight);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabHovered, COLORS.bgLighter);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabActive, COLORS.gold);
+end
+
+local function PopComboStyle()
+    imgui.PopStyleColor(11);
+end
+
 -- Draw a searchable dropdown combo box with XIUI styling
 -- showIcons: if true, will attempt to load and display item icons
 -- equipSlotFilter: if provided, only show items that can be equipped in this slot (e.g., 'main', 'head')
@@ -468,9 +490,13 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
     -- Get the slot mask for filtering if provided
     local slotMask = equipSlotFilter and EQUIP_SLOT_MASKS[equipSlotFilter] or nil;
 
+    -- Apply XIUI styling to combo popup
+    PushComboStyle();
+
     imgui.SetNextItemWidth(220);
-    if imgui.BeginCombo(label, displayText) then
-        -- Search input at top of dropdown with placeholder styling
+    -- Use HeightLargest so popup fits our child window without its own scrollbar
+    if imgui.BeginCombo(label, displayText, ImGuiComboFlags_HeightLargest) then
+        -- Search input at top (fixed, not scrollable)
         imgui.SetNextItemWidth(200);
         imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
         imgui.InputText('##search' .. label, searchFilter, INPUT_BUFFER_SIZE);
@@ -484,6 +510,10 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
         end
 
         imgui.Separator();
+
+        -- Scrollable child region for items only
+        local childHeight = 200;
+        imgui.BeginChild('##comboScroll' .. label, {0, childHeight}, false);
 
         local filter = searchFilter[1]:lower();
         local matchCount = 0;
@@ -523,6 +553,7 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
                 if imgui.Selectable(itemLabel .. '##item' .. (item.id or matchCount), isSelected) then
                     onSelect(item);
                     searchFilter[1] = '';
+                    imgui.CloseCurrentPopup();
                 end
 
                 if isSelected then
@@ -535,8 +566,12 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
             imgui.TextColored(COLORS.textMuted, 'No matches');
         end
 
+        imgui.EndChild();
+
         imgui.EndCombo();
     end
+
+    PopComboStyle();
 end
 
 
@@ -625,13 +660,64 @@ function M.UpdateMacro(macroId, macroData)
     return false;
 end
 
+-- Clear all hotbar/crossbar slots that reference a specific macro ID
+local function ClearSlotsReferencingMacro(macroId, jobId)
+    local numericJobId = normalizeJobId(jobId);
+
+    -- Clear from all hotbars (1-6)
+    for barIndex = 1, 6 do
+        local configKey = 'hotbarBar' .. barIndex;
+        if gConfig[configKey] and gConfig[configKey].slotActions then
+            local barSettings = gConfig[configKey];
+            local storageKey = getStorageKey(barSettings, numericJobId);
+            local jobSlotActions = barSettings.slotActions[storageKey];
+
+            if jobSlotActions then
+                for slotIndex, slotAction in pairs(jobSlotActions) do
+                    if slotAction and slotAction.macroRef == macroId then
+                        jobSlotActions[slotIndex] = { cleared = true };
+                    end
+                end
+            end
+        end
+    end
+
+    -- Clear from crossbar (all combo modes)
+    if gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.slotActions then
+        local crossbarSettings = gConfig.hotbarCrossbar;
+        local storageKey;
+        if crossbarSettings.jobSpecific == false then
+            storageKey = GLOBAL_SLOT_KEY;
+        else
+            storageKey = numericJobId;
+        end
+
+        local jobSlotActions = crossbarSettings.slotActions[storageKey];
+        if jobSlotActions then
+            local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2' };
+            for _, comboMode in ipairs(comboModes) do
+                local comboSlots = jobSlotActions[comboMode];
+                if comboSlots then
+                    for slotIndex, slotAction in pairs(comboSlots) do
+                        if slotAction and slotAction.macroRef == macroId then
+                            comboSlots[slotIndex] = nil;
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 -- Delete a macro from the database
 function M.DeleteMacro(macroId)
-    local db = M.GetMacroDatabase();
+    local db, jobId = M.GetMacroDatabase();
 
     for i, macro in ipairs(db) do
         if macro.id == macroId then
             table.remove(db, i);
+            -- Clear any hotbar/crossbar slots referencing this macro
+            ClearSlotsReferencingMacro(macroId, jobId);
             SaveSettingsToDisk();
             return true;
         end
@@ -1073,20 +1159,54 @@ function M.DrawPalette()
         imgui.TextColored(COLORS.textDim, 'Job:');
         imgui.SameLine();
 
-        imgui.PushItemWidth(80);
-        local selectedIndex = { JOB_ID_MAP[jobId] or 1 };
-        local jobLabels = {};
-        for _, job in ipairs(JOB_LIST) do
-            table.insert(jobLabels, job.name);
+        -- Style the combo popup
+        PushComboStyle();
+        imgui.PushItemWidth(100);
+
+        -- Helper to get macro count for a job
+        local function getMacroCount(jid)
+            if gConfig.macroDB and gConfig.macroDB[jid] then
+                return #gConfig.macroDB[jid];
+            end
+            return 0;
         end
 
-        if imgui.BeginCombo('##JobSelect', jobName, ImGuiComboFlags_None) then
+        -- Build display label with macro count
+        local macroCount = getMacroCount(jobId);
+        local displayLabel = macroCount > 0 and string.format('%s (%d)', jobName, macroCount) or jobName;
+
+        if imgui.BeginCombo('##JobSelect', displayLabel, ImGuiComboFlags_None) then
             for i, job in ipairs(JOB_LIST) do
                 local isSelected = (job.id == jobId);
+                local jobMacroCount = getMacroCount(job.id);
+
+                -- Build label with indicators
                 local label = job.name;
-                if job.id == currentPlayerJob then
-                    label = label .. ' *';  -- Mark current job
+
+                -- Add macro count if > 0
+                if jobMacroCount > 0 then
+                    label = string.format('%s (%d)', label, jobMacroCount);
                 end
+
+                -- Add main job indicator
+                if job.id == currentPlayerJob then
+                    label = label .. '  *';
+                end
+
+                -- Add subjob indicator
+                if job.id == data.subjobId then
+                    label = label .. '  /sub';
+                end
+
+                -- Highlight jobs with macros
+                if jobMacroCount > 0 and not isSelected then
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+                elseif isSelected then
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+                else
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+                end
+
                 if imgui.Selectable(label, isSelected) then
                     selectedPaletteJob = job.id;
                     selectedMacroIndex = nil;  -- Clear selection when switching jobs
@@ -1097,6 +1217,9 @@ function M.DrawPalette()
                     cachedWeaponskills = nil;
                     cacheJobId = nil;
                 end
+
+                imgui.PopStyleColor();
+
                 if isSelected then
                     imgui.SetItemDefaultFocus();
                 end
@@ -1104,6 +1227,7 @@ function M.DrawPalette()
             imgui.EndCombo();
         end
         imgui.PopItemWidth();
+        PopComboStyle();
 
         imgui.Spacing();
 
@@ -1131,24 +1255,38 @@ function M.DrawPalette()
 
         imgui.SameLine();
 
-        -- Edit/Delete buttons (normal styling)
-        if selectedMacroIndex and db[selectedMacroIndex] then
-            if imgui.Button('Edit', {60, 26}) then
-                editingMacro = deep_copy_table(db[selectedMacroIndex]);
-                isCreatingNew = false;
-            end
+        -- Edit/Delete buttons (always visible, disabled when no selection)
+        local hasSelection = selectedMacroIndex and db[selectedMacroIndex];
 
-            imgui.SameLine();
+        if not hasSelection then
+            imgui.PushStyleVar(ImGuiStyleVar_Alpha, 0.4);
+        end
 
-            -- Delete button with danger styling
+        if imgui.Button('Edit', {60, 26}) and hasSelection then
+            editingMacro = deep_copy_table(db[selectedMacroIndex]);
+            isCreatingNew = false;
+        end
+
+        imgui.SameLine();
+
+        -- Delete button with danger styling (or dimmed when disabled)
+        if hasSelection then
             imgui.PushStyleColor(ImGuiCol_Button, COLORS.dangerDim);
             imgui.PushStyleColor(ImGuiCol_ButtonHovered, COLORS.danger);
             imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.9, 0.35, 0.35, 1.0});
-            if imgui.Button('Delete', {60, 26}) then
-                M.DeleteMacro(db[selectedMacroIndex].id);
-                selectedMacroIndex = nil;
-            end
+        end
+
+        if imgui.Button('Delete', {60, 26}) and hasSelection then
+            M.DeleteMacro(db[selectedMacroIndex].id);
+            selectedMacroIndex = nil;
+        end
+
+        if hasSelection then
             imgui.PopStyleColor(3);
+        end
+
+        if not hasSelection then
+            imgui.PopStyleVar();
         end
 
         imgui.Spacing();
@@ -1296,10 +1434,9 @@ function M.DrawPalette()
         if not canGoNext then
             imgui.PopStyleVar();
         end
-
-        imgui.End();
     end
 
+    imgui.End();
     PopWindowStyle();
 
     -- Handle window close
@@ -1722,10 +1859,9 @@ local function DrawIconPicker()
 
         imgui.EndChild();
         imgui.PopStyleColor(2);  -- ChildBg, Border
-
-        imgui.End();
     end
 
+    imgui.End();
     PopWindowStyle();
 
     if not isOpen[1] then
@@ -1784,6 +1920,7 @@ function M.DrawMacroEditor()
 
         -- Action Type dropdown with label
         imgui.TextColored(COLORS.goldDim, 'Action Type');
+        PushComboStyle();
         imgui.SetNextItemWidth(240);
         local currentType = ACTION_TYPES[editorFields.actionType[1]];
         if imgui.BeginCombo('##actionType', ACTION_TYPE_LABELS[currentType] or 'Select...') then
@@ -1806,6 +1943,7 @@ function M.DrawMacroEditor()
             end
             imgui.EndCombo();
         end
+        PopComboStyle();
 
         imgui.Spacing();
         imgui.Spacing();
@@ -1832,6 +1970,7 @@ function M.DrawMacroEditor()
             -- Target dropdown
             imgui.Spacing();
             imgui.TextColored(COLORS.goldDim, 'Target');
+            PushComboStyle();
             imgui.SetNextItemWidth(240);
             if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[editorFields.target[1]]] or 'Select...') then
                 for i, target in ipairs(TARGET_OPTIONS) do
@@ -1845,6 +1984,7 @@ function M.DrawMacroEditor()
                 end
                 imgui.EndCombo();
             end
+            PopComboStyle();
 
         elseif currentType == 'ja' then
             -- Ability: Show searchable dropdown
@@ -1865,6 +2005,7 @@ function M.DrawMacroEditor()
             -- Target dropdown
             imgui.Spacing();
             imgui.TextColored(COLORS.goldDim, 'Target');
+            PushComboStyle();
             imgui.SetNextItemWidth(240);
             if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[editorFields.target[1]]] or 'Select...') then
                 for i, target in ipairs(TARGET_OPTIONS) do
@@ -1878,6 +2019,7 @@ function M.DrawMacroEditor()
                 end
                 imgui.EndCombo();
             end
+            PopComboStyle();
 
         elseif currentType == 'ws' then
             -- Weaponskill: Show searchable dropdown
@@ -1898,6 +2040,7 @@ function M.DrawMacroEditor()
             -- Target dropdown (default to <t>)
             imgui.Spacing();
             imgui.TextColored(COLORS.goldDim, 'Target');
+            PushComboStyle();
             imgui.SetNextItemWidth(240);
             if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[editorFields.target[1]]] or 'Select...') then
                 for i, target in ipairs(TARGET_OPTIONS) do
@@ -1911,6 +2054,7 @@ function M.DrawMacroEditor()
                 end
                 imgui.EndCombo();
             end
+            PopComboStyle();
 
         elseif currentType == 'item' then
             -- Item: Searchable dropdown or manual input
@@ -1940,6 +2084,7 @@ function M.DrawMacroEditor()
             -- Target dropdown
             imgui.Spacing();
             imgui.TextColored(COLORS.goldDim, 'Target');
+            PushComboStyle();
             imgui.SetNextItemWidth(240);
             if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[editorFields.target[1]]] or 'Select...') then
                 for i, target in ipairs(TARGET_OPTIONS) do
@@ -1953,10 +2098,12 @@ function M.DrawMacroEditor()
                 end
                 imgui.EndCombo();
             end
+            PopComboStyle();
 
         elseif currentType == 'equip' then
             -- Equipment slot dropdown
             imgui.TextColored(COLORS.goldDim, 'Equipment Slot');
+            PushComboStyle();
             imgui.SetNextItemWidth(240);
             if imgui.BeginCombo('##equipSlot', EQUIP_SLOT_LABELS[EQUIP_SLOTS[editorFields.equipSlot[1]]] or 'Select...') then
                 for i, slot in ipairs(EQUIP_SLOTS) do
@@ -1976,6 +2123,7 @@ function M.DrawMacroEditor()
                 end
                 imgui.EndCombo();
             end
+            PopComboStyle();
 
             -- Item: Searchable dropdown or manual input (filtered by selected equipment slot)
             imgui.Spacing();
@@ -2004,14 +2152,25 @@ function M.DrawMacroEditor()
             end
 
         elseif currentType == 'macro' then
-            -- Raw macro command
-            imgui.TextColored(COLORS.goldDim, 'Macro Command');
-            imgui.SetNextItemWidth(280);
-            if imgui.InputText('##macroText', editorFields.macroText, 256) then
+            -- Raw macro command (8 lines like native FFXI macro editor)
+            imgui.TextColored(COLORS.goldDim, 'Macro Commands (8 lines)');
+
+            -- Style the multiline input
+            imgui.PushStyleColor(ImGuiCol_FrameBg, COLORS.bgMedium);
+            imgui.PushStyleColor(ImGuiCol_FrameBgHovered, COLORS.bgLight);
+            imgui.PushStyleColor(ImGuiCol_FrameBgActive, COLORS.bgLight);
+
+            -- 8 rows * ~16px line height + padding
+            local lineHeight = imgui.GetTextLineHeight();
+            local inputHeight = (lineHeight * 8) + 8;
+
+            if imgui.InputTextMultiline('##macroText', editorFields.macroText, MACRO_BUFFER_SIZE, {280, inputHeight}) then
                 editingMacro.macroText = editorFields.macroText[1];
                 editingMacro.action = editorFields.macroText[1];
             end
-            imgui.ShowHelp('Enter the full command (e.g., /ma "Cure" <stpc>)');
+
+            imgui.PopStyleColor(3);
+            imgui.ShowHelp('Enter commands, one per line (e.g., /ma "Cure" <stpc>)');
 
         elseif currentType == 'pet' then
             -- Pet command input
@@ -2025,6 +2184,7 @@ function M.DrawMacroEditor()
             -- Target dropdown
             imgui.Spacing();
             imgui.TextColored(COLORS.goldDim, 'Target');
+            PushComboStyle();
             imgui.SetNextItemWidth(240);
             if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[editorFields.target[1]]] or 'Select...') then
                 for i, target in ipairs(TARGET_OPTIONS) do
@@ -2038,6 +2198,7 @@ function M.DrawMacroEditor()
                 end
                 imgui.EndCombo();
             end
+            PopComboStyle();
         end
 
         -- Slot Label input (for all types)
@@ -2109,10 +2270,9 @@ function M.DrawMacroEditor()
             iconPickerOpen = false;
             iconPickerFilter[1] = '';
         end
-
-        imgui.End();
     end
 
+    imgui.End();
     PopWindowStyle();
 
     if not isOpen[1] then
