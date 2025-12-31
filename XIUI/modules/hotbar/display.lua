@@ -155,7 +155,7 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
         -- Interaction Config
         buttonId = string.format('##hotbarslot_%d_%d', barIndex, slotIndex),
         dropZoneId = string.format('hotbar_%d_%d', barIndex, slotIndex),
-        dropAccepts = {'macro', 'slot'},
+        dropAccepts = {'macro', 'slot', 'crossbar_slot'},
         onDrop = function(payload)
             macropalette.HandleDropOnSlot(payload, barIndex, slotIndex);
         end,
@@ -311,6 +311,7 @@ local function DrawBarWindow(barIndex, settings)
         local hideEmptySlots = barSettings.hideEmptySlots or false;
         local paletteOpen = macropalette.IsPaletteOpen();
         local keybindEditorOpen = hotbarConfig.IsKeybindModalOpen();
+        local isDragging = dragdrop.IsDragging();
 
         for row = 1, layout.rows do
             for col = 1, layout.columns do
@@ -320,8 +321,8 @@ local function DrawBarWindow(barIndex, settings)
 
                     local bind = data.GetKeybindForSlot(barIndex, slotIndex);
 
-                    -- Hide empty slots if setting enabled and neither palette nor keybind editor is open
-                    if hideEmptySlots and not paletteOpen and not keybindEditorOpen and not bind then
+                    -- Hide empty slots if setting enabled and not editing/dragging
+                    if hideEmptySlots and not paletteOpen and not keybindEditorOpen and not isDragging and not bind then
                         -- Hide this slot's primitives and fonts
                         if data.slotPrims[barIndex] and data.slotPrims[barIndex][slotIndex] then
                             data.slotPrims[barIndex][slotIndex].visible = false;

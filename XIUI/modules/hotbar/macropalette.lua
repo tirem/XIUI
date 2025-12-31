@@ -645,6 +645,25 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
 
         data.currentKeybinds = nil;  -- Invalidate cache
         SaveSettingsToDisk();
+
+    elseif payload.type == 'crossbar_slot' then
+        -- Dragging from crossbar to hotbar (one-way copy, doesn't clear source)
+        local sourceBindData = payload.data;
+        if sourceBindData then
+            gConfig[configKey].slotActions[jobId][targetSlotIndex] = {
+                actionType = sourceBindData.actionType,
+                action = sourceBindData.action,
+                target = sourceBindData.target,
+                displayName = sourceBindData.displayName or sourceBindData.action,
+                equipSlot = sourceBindData.equipSlot,
+                macroText = sourceBindData.macroText,
+                itemId = sourceBindData.itemId,
+                customIconType = sourceBindData.customIconType,
+                customIconId = sourceBindData.customIconId,
+            };
+            data.currentKeybinds = nil;  -- Invalidate cache
+            SaveSettingsToDisk();
+        end
     end
 
     return true;
@@ -931,21 +950,6 @@ function M.DrawPalette()
             imgui.EndCombo();
         end
         imgui.PopItemWidth();
-
-        -- Show indicator if viewing different job
-        if not isViewingCurrentJob then
-            imgui.SameLine();
-            imgui.TextColored(COLORS.textMuted, '(viewing)');
-            imgui.SameLine();
-            if imgui.SmallButton('Go to ' .. jobs[currentPlayerJob]) then
-                selectedPaletteJob = currentPlayerJob;
-                selectedMacroIndex = nil;
-                cachedSpells = nil;
-                cachedAbilities = nil;
-                cachedWeaponskills = nil;
-                cacheJobId = nil;
-            end
-        end
 
         imgui.Spacing();
 

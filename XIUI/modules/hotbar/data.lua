@@ -164,29 +164,57 @@ function M.GetBarSlotCount(barIndex)
     return layout.slots;
 end
 
+-- Virtual key code to short display string mapping
+local VK_SHORT_NAMES = {
+    [8] = 'Bksp', [9] = 'Tab', [13] = 'Ent', [27] = 'Esc', [32] = 'Spc',
+    [33] = 'PgU', [34] = 'PgD', [35] = 'End', [36] = 'Hom',
+    [37] = 'L', [38] = 'U', [39] = 'R', [40] = 'D',
+    [45] = 'Ins', [46] = 'Del',
+    [96] = 'N0', [97] = 'N1', [98] = 'N2', [99] = 'N3', [100] = 'N4',
+    [101] = 'N5', [102] = 'N6', [103] = 'N7', [104] = 'N8', [105] = 'N9',
+    [106] = 'N*', [107] = 'N+', [109] = 'N-', [110] = 'N.', [111] = 'N/',
+    [112] = 'F1', [113] = 'F2', [114] = 'F3', [115] = 'F4', [116] = 'F5', [117] = 'F6',
+    [118] = 'F7', [119] = 'F8', [120] = 'F9', [121] = 'F10', [122] = 'F11', [123] = 'F12',
+    [186] = ';', [187] = '=', [188] = ',', [189] = '-', [190] = '.', [191] = '/',
+    [192] = '`', [219] = '[', [220] = '\\', [221] = ']', [222] = "'",
+};
+
+-- Convert virtual key code to short display string
+local function VKToShortString(vk)
+    if VK_SHORT_NAMES[vk] then return VK_SHORT_NAMES[vk]; end
+    if vk >= 48 and vk <= 57 then return tostring(vk - 48); end  -- 0-9
+    if vk >= 65 and vk <= 90 then return string.char(vk); end    -- A-Z
+    return '?';
+end
+
+-- Format a keybind for short display (e.g., "C+A" for Ctrl+A)
+local function FormatKeybindShort(binding)
+    if not binding or not binding.key then return ''; end
+    local prefix = '';
+    if binding.ctrl then prefix = prefix .. 'C'; end
+    if binding.alt then prefix = prefix .. 'A'; end
+    if binding.shift then prefix = prefix .. 'S'; end
+    local keyStr = VKToShortString(binding.key);
+    if prefix ~= '' then
+        return prefix .. '+' .. keyStr;
+    end
+    return keyStr;
+end
+
 -- Get keybind display string for a slot
 function M.GetKeybindDisplay(barIndex, slotIndex)
-    local keybindKey = tostring(slotIndex);
-    if slotIndex == 11 then
-        keybindKey = '-';
-    elseif slotIndex == 12 then
-        keybindKey = '+';
+    -- Check for custom keybind first
+    local configKey = 'hotbarBar' .. barIndex;
+    local barSettings = gConfig and gConfig[configKey];
+    if barSettings and barSettings.keyBindings and barSettings.keyBindings[slotIndex] then
+        local binding = barSettings.keyBindings[slotIndex];
+        if binding and binding.key then
+            return FormatKeybindShort(binding);
+        end
     end
 
-    if barIndex == 1 then
-        return keybindKey;           -- 1-12
-    elseif barIndex == 2 then
-        return 'C' .. keybindKey;    -- Ctrl+1-12
-    elseif barIndex == 3 then
-        return 'A' .. keybindKey;    -- Alt+1-12
-    elseif barIndex == 4 then
-        return 'S' .. keybindKey;    -- Shift+1-12
-    elseif barIndex == 5 then
-        return 'CS' .. keybindKey;   -- Ctrl+Shift+1-12
-    elseif barIndex == 6 then
-        return 'CA' .. keybindKey;   -- Ctrl+Alt+1-12
-    end
-    return keybindKey;
+    -- No custom keybind - return empty or slot number
+    return '';
 end
 
 -- Parse a keybind entry from array format to object format

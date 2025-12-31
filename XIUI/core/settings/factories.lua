@@ -308,6 +308,10 @@ function M.createHotbarBarDefaults(overrides)
         -- Keybind assignments per job (nil = use job file defaults)
         -- Structure: keybinds[jobId][slotIndex] = { type, action, target, display }
         keybinds = nil,
+
+        -- Keyboard shortcut bindings per slot (not job-specific)
+        -- Structure: keyBindings[slotIndex] = { key = virtualKeyCode, ctrl = bool, alt = bool, shift = bool }
+        keyBindings = {},
     };
     if overrides then
         for k, v in pairs(overrides) do
@@ -325,8 +329,8 @@ end
 -- The crossbar provides 4 combo modes: L2, R2, L2+R2, R2+L2 (32 total slots)
 function M.createCrossbarDefaults()
     return T{
-        -- Master toggle
-        enabled = false,
+        -- Layout mode: 'hotbar', 'crossbar', or 'both'
+        mode = 'hotbar',
 
         -- Layout
         slotSize = 40,              -- Slot size in pixels

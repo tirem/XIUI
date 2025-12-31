@@ -309,25 +309,58 @@ function M.HandleKeybind(hotbar, slot)
     return false;
 end
 
+-- Find hotbar and slot that matches the pressed key + modifiers
+local function FindMatchingKeybind(keyCode, ctrl, alt, shift)
+    -- Search through all bars for a matching keybind
+    for barIndex = 1, 6 do
+        local configKey = 'hotbarBar' .. barIndex;
+        local barSettings = gConfig and gConfig[configKey];
+        if barSettings and barSettings.enabled and barSettings.keyBindings then
+            for slotIndex, binding in pairs(barSettings.keyBindings) do
+                if binding and binding.key == keyCode then
+                    -- Check modifiers match
+                    local ctrlMatch = (binding.ctrl or false) == (ctrl or false);
+                    local altMatch = (binding.alt or false) == (alt or false);
+                    local shiftMatch = (binding.shift or false) == (shift or false);
+                    if ctrlMatch and altMatch and shiftMatch then
+                        return barIndex, slotIndex;
+                    end
+                end
+            end
+        end
+    end
+    return nil, nil;
+end
+
 function M.HandleKey(event)
    --print("Key pressed wparam: " .. tostring(event.wparam) .. " lparam: " .. tostring(event.lparam));
    --https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
 
    local isRelease = parseKeyEventFlags(event)
+   local keyCode = event.wparam;
 
    -- Update modifier key states
-   if (event.wparam == 17 or event.wparam == 162 or event.wparam == 163) then -- Ctrl keys
+   if (keyCode == 17 or keyCode == 162 or keyCode == 163) then -- Ctrl keys
        controlPressed = not isRelease
-   elseif (event.wparam == 18 or event.wparam == 164 or event.wparam == 165) then -- Alt keys
+   elseif (keyCode == 18 or keyCode == 164 or keyCode == 165) then -- Alt keys
        altPressed = not isRelease
-   elseif (event.wparam == 16 or event.wparam == 160 or event.wparam == 161) then -- Shift keys
+   elseif (keyCode == 16 or keyCode == 160 or keyCode == 161) then -- Shift keys
        shiftPressed = not isRelease
    end
 
-   local keyStr = keyCodeToString(event.wparam)
+   -- Check if keybind editor is capturing input
+   local hotbarConfig = require('config.hotbar');
+   if hotbarConfig.IsCapturingKeybind() then
+       if not isRelease then
+           if hotbarConfig.HandleKeybindCapture(keyCode, controlPressed, altPressed, shiftPressed) then
+               event.blocked = true;
+           end
+       end
+       return;
+   end
 
-   -- Determine hotbar and slot from key and modifiers
-   local hotbar, slot = GetHotbarAndSlot(keyStr);
+   -- Find matching keybind from custom key assignments
+   local hotbar, slot = FindMatchingKeybind(keyCode, controlPressed, altPressed, shiftPressed);
 
    if hotbar and slot then
        if isRelease then
@@ -345,7 +378,7 @@ function M.HandleKey(event)
            end
        end
    elseif isRelease then
-       -- Modifier key released - clear pressed state since hotbar context changed
+       -- Clear pressed state on any release when no match
        currentPressedHotbar = nil;
        currentPressedSlot = nil;
    end

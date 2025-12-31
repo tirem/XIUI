@@ -586,15 +586,20 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         -- Interaction Config (use original Y for interaction, not animated Y)
         buttonId = string.format('##crossbar_%s_%d', comboMode, slotIndex),
         dropZoneId = string.format('crossbar_%s_%d', comboMode, slotIndex),
-        dropAccepts = {'macro', 'crossbar_slot'},
+        dropAccepts = {'macro', 'crossbar_slot', 'slot'},
         onDrop = function(payload)
             if payload.type == 'macro' then
                 data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
             elseif payload.type == 'crossbar_slot' then
-                -- Swap slots
+                -- Swap crossbar slots
                 local targetData = data.GetCrossbarSlotData(comboMode, slotIndex);
                 data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
                 data.SetCrossbarSlotData(payload.comboMode, payload.slotIndex, targetData);
+            elseif payload.type == 'slot' then
+                -- Copy from hotbar slot to crossbar (one-way copy, doesn't clear source)
+                if payload.data then
+                    data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
+                end
             end
         end,
         dragType = 'crossbar_slot',

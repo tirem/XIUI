@@ -338,7 +338,7 @@ function dragdrop.Render()
             local iconX = mouseX - 4;
             local iconY = mouseY - 4;
 
-            -- Draw the icon (no border)
+            -- Draw the icon
             local iconPtr = tonumber(ffi.cast("uint32_t", payload.icon.image));
             if iconPtr then
                 drawList:AddImage(
@@ -346,6 +346,48 @@ function dragdrop.Render()
                     {iconX, iconY},
                     {iconX + iconSize, iconY + iconSize}
                 );
+            end
+
+            -- Draw native ImGui tooltip (same style as slot hover tooltip)
+            local data = payload.data;
+            if data then
+                -- Style the tooltip to match slot tooltips
+                imgui.PushStyleColor(ImGuiCol_PopupBg, {0.067, 0.063, 0.055, 0.95});
+                imgui.PushStyleColor(ImGuiCol_Border, {0.3, 0.28, 0.24, 0.8});
+                imgui.PushStyleColor(ImGuiCol_Text, {0.9, 0.9, 0.9, 1.0});
+                imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {8, 6});
+                imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, 4);
+
+                imgui.BeginTooltip();
+
+                -- Action name (yellow/gold)
+                local displayName = data.displayName or data.action or payload.label or 'Unknown';
+                imgui.TextColored({1.0, 0.84, 0.0, 1.0}, displayName);
+
+                -- Action type (gray)
+                local typeNames = {
+                    ma = 'Magic',
+                    ja = 'Ability',
+                    ws = 'Weapon Skill',
+                    item = 'Item',
+                    equip = 'Equipment',
+                    pet = 'Pet Command',
+                    macro = 'Macro',
+                };
+                local typeName = typeNames[data.actionType] or data.actionType or '';
+                if typeName ~= '' then
+                    imgui.TextColored({0.7, 0.7, 0.7, 1.0}, typeName);
+                end
+
+                -- Target (blue)
+                if data.target and data.target ~= '' then
+                    imgui.TextColored({0.6, 0.8, 1.0, 1.0}, '<' .. data.target .. '>');
+                end
+
+                imgui.EndTooltip();
+
+                imgui.PopStyleVar(2);
+                imgui.PopStyleColor(3);
             end
         else
             -- No icon - fall back to text label at cursor

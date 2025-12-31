@@ -217,8 +217,10 @@ function M.Initialize(settings)
     -- Initialize display layer
     display.Initialize(settings);
 
-    -- Initialize crossbar if enabled
-    if gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.enabled then
+    -- Initialize crossbar if mode includes crossbar
+    local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
+    local crossbarNeeded = crossbarMode == 'crossbar' or crossbarMode == 'both';
+    if crossbarNeeded then
         crossbar.Initialize(gConfig.hotbarCrossbar, gAdjustedSettings.crossbarSettings);
         controller.Initialize({
             triggerThreshold = gConfig.hotbarCrossbar.triggerThreshold or 30,
@@ -291,11 +293,12 @@ function M.UpdateVisuals(settings)
     -- Update display layer (handles theme changes)
     display.UpdateVisuals(settings);
 
-    -- Handle crossbar enable/disable toggle
-    local crossbarEnabled = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.enabled;
+    -- Handle crossbar enable/disable based on mode
+    local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
+    local crossbarNeeded = crossbarMode == 'crossbar' or crossbarMode == 'both';
 
-    if crossbarEnabled and not crossbarInitialized then
-        -- Initialize crossbar when newly enabled
+    if crossbarNeeded and not crossbarInitialized then
+        -- Initialize crossbar when newly needed
         crossbar.Initialize(gConfig.hotbarCrossbar, gAdjustedSettings.crossbarSettings);
         controller.Initialize({
             triggerThreshold = gConfig.hotbarCrossbar.triggerThreshold or 30,
@@ -306,8 +309,8 @@ function M.UpdateVisuals(settings)
             crossbar.ActivateSlot(comboMode, slotIndex);
         end);
         crossbarInitialized = true;
-    elseif not crossbarEnabled and crossbarInitialized then
-        -- Cleanup crossbar when disabled
+    elseif not crossbarNeeded and crossbarInitialized then
+        -- Cleanup crossbar when no longer needed
         crossbar.Cleanup();
         controller.Cleanup();
         crossbarInitialized = false;
@@ -343,16 +346,23 @@ function M.DrawWindow(settings)
         return;
     end
 
-    -- Draw crossbar if enabled, otherwise draw standard hotbars
-    if crossbarInitialized and gConfig.hotbarCrossbar.enabled then
-        crossbar.DrawWindow(gConfig.hotbarCrossbar, gAdjustedSettings.crossbarSettings);
-        -- Hide standard hotbars when crossbar is active
-        display.HideWindow();
-    else
+    -- Determine what to draw based on mode
+    local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
+    local showHotbar = crossbarMode == 'hotbar' or crossbarMode == 'both';
+    local showCrossbar = crossbarMode == 'crossbar' or crossbarMode == 'both';
+
+    -- Draw hotbar if mode includes it
+    if showHotbar then
         display.DrawWindow(settings);
-        if crossbarInitialized then
-            crossbar.SetHidden(true);
-        end
+    else
+        display.HideWindow();
+    end
+
+    -- Draw crossbar if mode includes it
+    if showCrossbar and crossbarInitialized then
+        crossbar.DrawWindow(gConfig.hotbarCrossbar, gAdjustedSettings.crossbarSettings);
+    elseif crossbarInitialized then
+        crossbar.SetHidden(true);
     end
 
     -- Always draw macro palette and keybind modal (regardless of mode)
@@ -504,7 +514,8 @@ end
 function M.HandleXInputState(e)
     if not crossbarInitialized then return; end
     if gConfig and gConfig.hotbarEnabled == false then return; end
-    if gConfig and gConfig.hotbarCrossbar and not gConfig.hotbarCrossbar.enabled then return; end
+    local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
+    if crossbarMode ~= 'crossbar' and crossbarMode ~= 'both' then return; end
     controller.HandleXInputState(e);
 end
 

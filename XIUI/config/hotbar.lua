@@ -192,16 +192,45 @@ local keybindModal = {
     barIndex = nil,
     configKey = nil,
     selectedSlot = nil,
-    -- Edit fields (as single-element arrays for ImGui)
-    editActionType = { 1 },      -- Index into ACTION_TYPES
-    editAction = { '' },         -- Action name string
-    editTarget = { 1 },          -- Index into TARGET_OPTIONS
-    editDisplayName = { '' },    -- Slot label string
-    editEquipSlot = { 1 },       -- Index into EQUIP_SLOTS (for equip action type)
-    editMacroText = { '' },      -- Full macro text (for macro action type)
-    -- Search/filter state
-    searchFilter = { '' },
+    waitingForKey = false,       -- True when capturing key input
+    lastCapturedKey = nil,       -- Last captured key info for display
 };
+
+-- Virtual key code to display string mapping
+local VK_NAMES = {
+    [8] = 'Backspace', [9] = 'Tab', [13] = 'Enter', [16] = 'Shift', [17] = 'Ctrl', [18] = 'Alt',
+    [19] = 'Pause', [20] = 'CapsLock', [27] = 'Esc', [32] = 'Space',
+    [33] = 'PgUp', [34] = 'PgDn', [35] = 'End', [36] = 'Home',
+    [37] = 'Left', [38] = 'Up', [39] = 'Right', [40] = 'Down',
+    [45] = 'Insert', [46] = 'Delete',
+    [96] = 'Num0', [97] = 'Num1', [98] = 'Num2', [99] = 'Num3', [100] = 'Num4',
+    [101] = 'Num5', [102] = 'Num6', [103] = 'Num7', [104] = 'Num8', [105] = 'Num9',
+    [106] = 'Num*', [107] = 'Num+', [109] = 'Num-', [110] = 'Num.', [111] = 'Num/',
+    [112] = 'F1', [113] = 'F2', [114] = 'F3', [115] = 'F4', [116] = 'F5', [117] = 'F6',
+    [118] = 'F7', [119] = 'F8', [120] = 'F9', [121] = 'F10', [122] = 'F11', [123] = 'F12',
+    [144] = 'NumLock', [145] = 'ScrollLock',
+    [186] = ';', [187] = '=', [188] = ',', [189] = '-', [190] = '.', [191] = '/',
+    [192] = '`', [219] = '[', [220] = '\\', [221] = ']', [222] = "'",
+};
+
+-- Convert virtual key code to display string
+local function VKToString(vk)
+    if VK_NAMES[vk] then return VK_NAMES[vk]; end
+    if vk >= 48 and vk <= 57 then return tostring(vk - 48); end  -- 0-9
+    if vk >= 65 and vk <= 90 then return string.char(vk); end    -- A-Z
+    return string.format('Key%d', vk);
+end
+
+-- Format a keybind for display (e.g., "Ctrl+Shift+A")
+local function FormatKeybind(binding)
+    if not binding or not binding.key then return ''; end
+    local parts = {};
+    if binding.ctrl then table.insert(parts, 'Ctrl'); end
+    if binding.alt then table.insert(parts, 'Alt'); end
+    if binding.shift then table.insert(parts, 'Shift'); end
+    table.insert(parts, VKToString(binding.key));
+    return table.concat(parts, '+');
+end
 
 -- Input buffer sizes
 local INPUT_BUFFER_SIZE = 64;
@@ -322,36 +351,13 @@ local function FindIndex(array, value)
     return 1;
 end
 
--- Load keybind data into edit fields
-local function LoadKeybindToEditFields(bind)
-    if bind then
-        keybindModal.editActionType[1] = FindIndex(ACTION_TYPES, bind.actionType or 'ma');
-        keybindModal.editAction[1] = bind.action or '';
-        keybindModal.editTarget[1] = FindIndex(TARGET_OPTIONS, bind.target or 'me');
-        keybindModal.editDisplayName[1] = bind.displayName or bind.action or '';
-        keybindModal.editEquipSlot[1] = FindIndex(EQUIP_SLOTS, bind.equipSlot or 'main');
-        keybindModal.editMacroText[1] = bind.macroText or '';
-    else
-        keybindModal.editActionType[1] = 1;
-        keybindModal.editAction[1] = '';
-        keybindModal.editTarget[1] = 1;
-        keybindModal.editDisplayName[1] = '';
-        keybindModal.editEquipSlot[1] = 1;
-        keybindModal.editMacroText[1] = '';
-    end
-    keybindModal.searchFilter[1] = '';
-end
-
 -- Open keybind modal for a bar
 local function OpenKeybindModal(barIndex, configKey)
     keybindModal.isOpen = true;
     keybindModal.barIndex = barIndex;
     keybindModal.configKey = configKey;
     keybindModal.selectedSlot = nil;
-    LoadKeybindToEditFields(nil);
-
-    -- Refresh spell/ability/weaponskill caches
-    RefreshCachedLists();
+    keybindModal.waitingForKey = false;
 end
 
 -- Close keybind modal
@@ -365,356 +371,6 @@ end
 -- Check if keybind modal is open (exported for use in display.lua)
 function M.IsKeybindModalOpen()
     return keybindModal.isOpen;
-end
-
--- Draw slot grid for keybind editor
-local function DrawSlotGrid(barIndex, barSettings)
-    local slots = barSettings.slots or 12;
-    local columns = barSettings.columns or 12;
-    local rows = barSettings.rows or 1;
-
-    local buttonSize = 40;
-    local buttonPadding = 4;
-
-    imgui.Text('Click a slot to edit:');
-    imgui.Spacing();
-
-    local slotIndex = 1;
-    for row = 1, rows do
-        for col = 1, columns do
-            if slotIndex <= slots then
-                local keybindText = GetKeybindDisplayText(barIndex, slotIndex);
-                local bind = data.GetKeybindForSlot(barIndex, slotIndex);
-                local hasAction = bind ~= nil;
-
-                -- Style based on selection and action state
-                local isSelected = keybindModal.selectedSlot == slotIndex;
-                if isSelected then
-                    imgui.PushStyleColor(ImGuiCol_Button, {0.3, 0.5, 0.8, 1.0});
-                    imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.4, 0.6, 0.9, 1.0});
-                elseif hasAction then
-                    imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.4, 0.3, 1.0});
-                    imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.5, 0.4, 1.0});
-                else
-                    imgui.PushStyleColor(ImGuiCol_Button, {0.15, 0.15, 0.15, 1.0});
-                    imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.25, 0.25, 0.25, 1.0});
-                end
-
-                local buttonLabel = string.format('%s##slot%d', keybindText, slotIndex);
-                if imgui.Button(buttonLabel, {buttonSize, buttonSize}) then
-                    keybindModal.selectedSlot = slotIndex;
-                    LoadKeybindToEditFields(bind);
-                end
-
-                imgui.PopStyleColor(2);
-
-                -- Tooltip with action info
-                if imgui.IsItemHovered() then
-                    imgui.BeginTooltip();
-                    imgui.Text(string.format('Slot %d (%s)', slotIndex, keybindText));
-                    if bind then
-                        imgui.Text(string.format('Action: %s', bind.action or 'None'));
-                        imgui.Text(string.format('Type: %s', bind.actionType or ''));
-                        imgui.Text(string.format('Target: <%s>', bind.target or ''));
-                    else
-                        imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'Empty');
-                    end
-                    imgui.EndTooltip();
-                end
-
-                if col < columns and slotIndex < slots then
-                    imgui.SameLine(0, buttonPadding);
-                end
-            end
-            slotIndex = slotIndex + 1;
-        end
-    end
-end
-
--- Draw a searchable dropdown combo box
-local function DrawSearchableCombo(label, items, searchFilter, onSelect, currentValue)
-    local displayText = currentValue ~= '' and currentValue or 'Select...';
-
-    imgui.SetNextItemWidth(250);
-    if imgui.BeginCombo(label, displayText) then
-        -- Search input at top of dropdown
-        imgui.SetNextItemWidth(230);
-        imgui.InputText('##search' .. label, searchFilter, INPUT_BUFFER_SIZE);
-
-        imgui.Separator();
-
-        local filter = searchFilter[1]:lower();
-        local matchCount = 0;
-
-        for _, item in ipairs(items) do
-            local itemName = item.name or '';
-            if filter == '' or itemName:lower():find(filter, 1, true) then
-                matchCount = matchCount + 1;
-                local itemLabel = item.level and string.format('[%d] %s', item.level, itemName) or itemName;
-                local isSelected = currentValue == itemName;
-                if imgui.Selectable(itemLabel .. '##item' .. (item.id or matchCount), isSelected) then
-                    onSelect(item);
-                    searchFilter[1] = '';  -- Clear search after selection
-                end
-            end
-        end
-
-        if matchCount == 0 then
-            imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'No matches');
-        end
-
-        imgui.EndCombo();
-    end
-end
-
--- Draw slot editor panel
-local function DrawSlotEditor(barIndex, slotIndex, configKey)
-    local keybindText = GetKeybindDisplayText(barIndex, slotIndex);
-    local jobId = data.jobId or 1;
-    local jobName = jobs[jobId] or 'Unknown';
-
-    imgui.Separator();
-    imgui.Spacing();
-    imgui.TextColored({0.9, 0.8, 0.4, 1.0}, string.format('Editing Slot %d (%s) - Job: %s', slotIndex, keybindText, jobName));
-    imgui.Spacing();
-
-    -- Action Type dropdown
-    imgui.Text('Action Type:');
-    imgui.SetNextItemWidth(200);
-    local currentActionType = ACTION_TYPES[keybindModal.editActionType[1]];
-    if imgui.BeginCombo('##actionType', ACTION_TYPE_LABELS[currentActionType] or 'Select...') then
-        for i, actionType in ipairs(ACTION_TYPES) do
-            local isSelected = keybindModal.editActionType[1] == i;
-            if imgui.Selectable(ACTION_TYPE_LABELS[actionType], isSelected) then
-                keybindModal.editActionType[1] = i;
-                -- Clear action when type changes
-                keybindModal.editAction[1] = '';
-                keybindModal.searchFilter[1] = '';
-            end
-        end
-        imgui.EndCombo();
-    end
-
-    imgui.Spacing();
-
-    -- Show different fields based on action type
-    if currentActionType == 'ma' then
-        -- Spell: Show searchable dropdown
-        imgui.Text('Spell:');
-        if cachedSpells and #cachedSpells > 0 then
-            DrawSearchableCombo('##spellCombo', cachedSpells, keybindModal.searchFilter, function(spell)
-                keybindModal.editAction[1] = spell.name;
-                if keybindModal.editDisplayName[1] == '' then
-                    keybindModal.editDisplayName[1] = spell.name;
-                end
-            end, keybindModal.editAction[1]);
-        else
-            imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'No spells available for this job');
-        end
-
-        -- Target dropdown
-        imgui.Spacing();
-        imgui.Text('Target:');
-        imgui.SetNextItemWidth(200);
-        if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[keybindModal.editTarget[1]]] or 'Select...') then
-            for i, target in ipairs(TARGET_OPTIONS) do
-                local isSelected = keybindModal.editTarget[1] == i;
-                if imgui.Selectable(TARGET_LABELS[target], isSelected) then
-                    keybindModal.editTarget[1] = i;
-                end
-            end
-            imgui.EndCombo();
-        end
-
-    elseif currentActionType == 'ja' then
-        -- Ability: Show searchable dropdown
-        imgui.Text('Ability:');
-        if cachedAbilities and #cachedAbilities > 0 then
-            DrawSearchableCombo('##abilityCombo', cachedAbilities, keybindModal.searchFilter, function(ability)
-                keybindModal.editAction[1] = ability.name;
-                if keybindModal.editDisplayName[1] == '' then
-                    keybindModal.editDisplayName[1] = ability.name;
-                end
-            end, keybindModal.editAction[1]);
-        else
-            imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'No abilities available');
-        end
-
-        -- Target dropdown
-        imgui.Spacing();
-        imgui.Text('Target:');
-        imgui.SetNextItemWidth(200);
-        if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[keybindModal.editTarget[1]]] or 'Select...') then
-            for i, target in ipairs(TARGET_OPTIONS) do
-                local isSelected = keybindModal.editTarget[1] == i;
-                if imgui.Selectable(TARGET_LABELS[target], isSelected) then
-                    keybindModal.editTarget[1] = i;
-                end
-            end
-            imgui.EndCombo();
-        end
-
-    elseif currentActionType == 'ws' then
-        -- Weaponskill: Show searchable dropdown
-        imgui.Text('Weaponskill:');
-        if cachedWeaponskills and #cachedWeaponskills > 0 then
-            DrawSearchableCombo('##wsCombo', cachedWeaponskills, keybindModal.searchFilter, function(ws)
-                keybindModal.editAction[1] = ws.name;
-                if keybindModal.editDisplayName[1] == '' then
-                    keybindModal.editDisplayName[1] = ws.name;
-                end
-            end, keybindModal.editAction[1]);
-        else
-            imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'No weaponskills available');
-        end
-
-        -- Target dropdown (usually <t> for WS)
-        imgui.Spacing();
-        imgui.Text('Target:');
-        imgui.SetNextItemWidth(200);
-        if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[keybindModal.editTarget[1]]] or 'Select...') then
-            for i, target in ipairs(TARGET_OPTIONS) do
-                local isSelected = keybindModal.editTarget[1] == i;
-                if imgui.Selectable(TARGET_LABELS[target], isSelected) then
-                    keybindModal.editTarget[1] = i;
-                end
-            end
-            imgui.EndCombo();
-        end
-
-    elseif currentActionType == 'item' then
-        -- Item: Manual item name input
-        imgui.Text('Item Name:');
-        imgui.SetNextItemWidth(200);
-        imgui.InputText('##itemName', keybindModal.editAction, INPUT_BUFFER_SIZE);
-        imgui.ShowHelp('Enter the exact item name to use.');
-
-        -- Target dropdown
-        imgui.Spacing();
-        imgui.Text('Target:');
-        imgui.SetNextItemWidth(200);
-        if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[keybindModal.editTarget[1]]] or 'Select...') then
-            for i, target in ipairs(TARGET_OPTIONS) do
-                local isSelected = keybindModal.editTarget[1] == i;
-                if imgui.Selectable(TARGET_LABELS[target], isSelected) then
-                    keybindModal.editTarget[1] = i;
-                end
-            end
-            imgui.EndCombo();
-        end
-
-    elseif currentActionType == 'equip' then
-        -- Equip: Slot dropdown + Item name input
-        imgui.Text('Equipment Slot:');
-        imgui.SetNextItemWidth(200);
-        if imgui.BeginCombo('##equipSlot', EQUIP_SLOT_LABELS[EQUIP_SLOTS[keybindModal.editEquipSlot[1]]] or 'Select...') then
-            for i, slot in ipairs(EQUIP_SLOTS) do
-                local isSelected = keybindModal.editEquipSlot[1] == i;
-                if imgui.Selectable(EQUIP_SLOT_LABELS[slot], isSelected) then
-                    keybindModal.editEquipSlot[1] = i;
-                end
-            end
-            imgui.EndCombo();
-        end
-
-        imgui.Spacing();
-        imgui.Text('Item Name:');
-        imgui.SetNextItemWidth(200);
-        imgui.InputText('##equipItemName', keybindModal.editAction, INPUT_BUFFER_SIZE);
-        imgui.ShowHelp('Enter the exact equipment name to equip.');
-
-    elseif currentActionType == 'macro' then
-        -- Macro: Full macro text input
-        imgui.Text('Macro Command:');
-        imgui.SetNextItemWidth(280);
-        imgui.InputText('##macroText', keybindModal.editMacroText, 256);
-        imgui.ShowHelp('Enter the full command (e.g., /ma "Cure" <stpc>)');
-
-    elseif currentActionType == 'pet' then
-        -- Pet: Pet command input
-        imgui.Text('Pet Command:');
-        imgui.SetNextItemWidth(200);
-        imgui.InputText('##petCommand', keybindModal.editAction, INPUT_BUFFER_SIZE);
-        imgui.ShowHelp('Enter pet command name (e.g., "Assault", "Retreat")');
-
-        -- Target dropdown
-        imgui.Spacing();
-        imgui.Text('Target:');
-        imgui.SetNextItemWidth(200);
-        if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[keybindModal.editTarget[1]]] or 'Select...') then
-            for i, target in ipairs(TARGET_OPTIONS) do
-                local isSelected = keybindModal.editTarget[1] == i;
-                if imgui.Selectable(TARGET_LABELS[target], isSelected) then
-                    keybindModal.editTarget[1] = i;
-                end
-            end
-            imgui.EndCombo();
-        end
-    end
-
-    -- Slot label input (for all types except macro)
-    if currentActionType ~= 'macro' then
-        imgui.Spacing();
-        imgui.Text('Slot Label:');
-        imgui.SetNextItemWidth(200);
-        imgui.InputText('##slotLabel', keybindModal.editDisplayName, INPUT_BUFFER_SIZE);
-        imgui.ShowHelp('Short label shown on the slot (e.g., "Cure3"). Leave empty to use action name.');
-    end
-
-    imgui.Spacing();
-    imgui.Separator();
-    imgui.Spacing();
-
-    -- Action buttons
-    if imgui.Button('Save##keybindSave', {80, 0}) then
-        local actionType = ACTION_TYPES[keybindModal.editActionType[1]];
-        local action = keybindModal.editAction[1];
-        local target = TARGET_OPTIONS[keybindModal.editTarget[1]];
-        local displayName = keybindModal.editDisplayName[1];
-        local equipSlot = EQUIP_SLOTS[keybindModal.editEquipSlot[1]];
-        local macroText = keybindModal.editMacroText[1];
-
-        local canSave = false;
-        local keybindData = {
-            actionType = actionType,
-            target = target,
-            displayName = displayName,
-        };
-
-        if actionType == 'macro' then
-            if macroText ~= '' then
-                keybindData.macroText = macroText;
-                keybindData.action = macroText;
-                keybindData.displayName = displayName ~= '' and displayName or 'Macro';
-                canSave = true;
-            end
-        elseif actionType == 'equip' then
-            if action ~= '' then
-                keybindData.action = action;
-                keybindData.equipSlot = equipSlot;
-                keybindData.displayName = displayName ~= '' and displayName or action;
-                canSave = true;
-            end
-        else
-            if action ~= '' then
-                keybindData.action = action;
-                keybindData.displayName = displayName ~= '' and displayName or action;
-                canSave = true;
-            end
-        end
-
-        if canSave then
-            SaveSlotAction(configKey, jobId, slotIndex, keybindData);
-            print(string.format('[XIUI] Saved slot action: Slot %d = %s (%s)', slotIndex, keybindData.action or macroText, actionType));
-        end
-    end
-    imgui.SameLine();
-
-    if imgui.Button('Clear##keybindClear', {80, 0}) then
-        ClearSlotAction(configKey, jobId, slotIndex);
-        LoadKeybindToEditFields(nil);
-        print(string.format('[XIUI] Cleared slot action for slot %d', slotIndex));
-    end
 end
 
 -- Draw the keybind editor modal (exported for use in hotbar init)
@@ -734,54 +390,290 @@ function M.DrawKeybindModal()
         return;
     end
 
+    -- Ensure keyBindings table exists
+    if not barSettings.keyBindings then
+        barSettings.keyBindings = {};
+    end
+
     local windowFlags = bit.bor(
         ImGuiWindowFlags_NoCollapse,
-        ImGuiWindowFlags_AlwaysAutoResize
+        ImGuiWindowFlags_NoResize
     );
 
-    local modalTitle = string.format('Keybind Editor - Bar %d###keybindModal', barIndex);
+    local modalTitle = 'Keybind Editor###keybindModal';
     local isOpen = { true };
 
-    imgui.SetNextWindowSize({450, 500}, ImGuiCond_FirstUseEver);
+    -- XIUI Theme Colors (matching main config window)
+    local gold = {0.957, 0.855, 0.592, 1.0};
+    local goldDark = {0.765, 0.684, 0.474, 1.0};
+    local goldDarker = {0.573, 0.512, 0.355, 1.0};
+    local bgDark = {0.051, 0.051, 0.051, 0.95};
+    local bgMedium = {0.098, 0.090, 0.075, 1.0};
+    local bgLight = {0.137, 0.125, 0.106, 1.0};
+    local bgLighter = {0.176, 0.161, 0.137, 1.0};
+    local textLight = {0.878, 0.855, 0.812, 1.0};
+    local borderDark = {0.3, 0.275, 0.235, 1.0};
+
+    -- Push style colors
+    imgui.PushStyleColor(ImGuiCol_WindowBg, bgDark);
+    imgui.PushStyleColor(ImGuiCol_ChildBg, {0, 0, 0, 0});
+    imgui.PushStyleColor(ImGuiCol_TitleBg, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_TitleBgActive, bgLight);
+    imgui.PushStyleColor(ImGuiCol_TitleBgCollapsed, bgDark);
+    imgui.PushStyleColor(ImGuiCol_FrameBg, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_FrameBgHovered, bgLight);
+    imgui.PushStyleColor(ImGuiCol_FrameBgActive, bgLighter);
+    imgui.PushStyleColor(ImGuiCol_Header, bgLight);
+    imgui.PushStyleColor(ImGuiCol_HeaderHovered, bgLighter);
+    imgui.PushStyleColor(ImGuiCol_HeaderActive, {gold[1], gold[2], gold[3], 0.3});
+    imgui.PushStyleColor(ImGuiCol_Border, borderDark);
+    imgui.PushStyleColor(ImGuiCol_Text, textLight);
+    imgui.PushStyleColor(ImGuiCol_TextDisabled, goldDark);
+    imgui.PushStyleColor(ImGuiCol_Button, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_ButtonHovered, bgLight);
+    imgui.PushStyleColor(ImGuiCol_ButtonActive, bgLighter);
+    imgui.PushStyleColor(ImGuiCol_CheckMark, gold);
+    imgui.PushStyleColor(ImGuiCol_SliderGrab, goldDark);
+    imgui.PushStyleColor(ImGuiCol_SliderGrabActive, gold);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarBg, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrab, bgLighter);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabHovered, borderDark);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabActive, goldDark);
+    imgui.PushStyleColor(ImGuiCol_Separator, borderDark);
+    imgui.PushStyleColor(ImGuiCol_PopupBg, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_Tab, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_TabHovered, bgLight);
+    imgui.PushStyleColor(ImGuiCol_TabActive, {gold[1], gold[2], gold[3], 0.3});
+    imgui.PushStyleColor(ImGuiCol_TabUnfocused, bgDark);
+    imgui.PushStyleColor(ImGuiCol_TabUnfocusedActive, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_ResizeGrip, goldDarker);
+    imgui.PushStyleColor(ImGuiCol_ResizeGripHovered, goldDark);
+    imgui.PushStyleColor(ImGuiCol_ResizeGripActive, gold);
+
+    -- Push style vars
+    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {12, 12});
+    imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {6, 4});
+    imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {8, 6});
+    imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0);
+    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0);
+    imgui.PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0);
+    imgui.PushStyleVar(ImGuiStyleVar_PopupRounding, 4.0);
+    imgui.PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 4.0);
+    imgui.PushStyleVar(ImGuiStyleVar_GrabRounding, 4.0);
+
+    imgui.SetNextWindowSize({560, 215}, ImGuiCond_Always);
 
     if imgui.Begin(modalTitle, isOpen, windowFlags) then
-        -- Job info
-        local jobId = data.jobId or 1;
-        local jobName = jobs[jobId] or 'Unknown';
-        local subjobId = data.subjobId or 0;
-        local subjobName = subjobId > 0 and jobs[subjobId] or 'None';
-
-        imgui.TextColored({0.9, 0.8, 0.4, 1.0}, string.format('Editing for: %s', jobName));
-        imgui.TextColored({0.6, 0.6, 0.6, 1.0}, 'Actions assigned to slots are saved per-job.');
-        imgui.Spacing();
-
-        -- Slot grid
-        DrawSlotGrid(barIndex, barSettings);
-
-        -- Slot editor (if slot selected)
-        if keybindModal.selectedSlot then
-            DrawSlotEditor(barIndex, keybindModal.selectedSlot, configKey);
-        else
-            imgui.Separator();
-            imgui.Spacing();
-            imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'Select a slot above to edit its keybind.');
+        -- Bar selector using styled tabs (like the bar tabs in hotbar settings)
+        for i = 1, 6 do
+            local clicked, _ = components.DrawStyledTab(
+                'Bar ' .. i,
+                'keybindBar' .. i,
+                barIndex == i,
+                nil,
+                components.TAB_STYLE.smallHeight,
+                components.TAB_STYLE.smallPadding
+            );
+            if clicked and barIndex ~= i then
+                keybindModal.barIndex = i;
+                keybindModal.configKey = 'hotbarBar' .. i;
+                keybindModal.selectedSlot = nil;
+                keybindModal.waitingForKey = false;
+            end
+            if i < 6 then
+                imgui.SameLine();
+            end
         end
 
         imgui.Spacing();
         imgui.Separator();
         imgui.Spacing();
 
-        -- Close button
-        if imgui.Button('Close##keybindClose', {100, 0}) then
-            CloseKeybindModal();
+        -- Slot buttons across the top (all 12 visible) using styled tabs
+        local slots = barSettings.slots or 12;
+        local draw_list = imgui.GetWindowDrawList();
+
+        for slotIndex = 1, slots do
+            local binding = barSettings.keyBindings[slotIndex];
+            local hasKeybind = binding and binding.key;
+            local isSelected = keybindModal.selectedSlot == slotIndex;
+
+            -- Get position before drawing button for indicator
+            local btnPosX, btnPosY = imgui.GetCursorScreenPos();
+            local slotWidth = 32;
+            local slotHeight = components.TAB_STYLE.height;
+
+            -- Use DrawStyledTab for consistent styling
+            local clicked, _ = components.DrawStyledTab(
+                tostring(slotIndex),
+                'keybindSlot' .. slotIndex,
+                isSelected,
+                slotWidth,
+                slotHeight,
+                4
+            );
+
+            -- Draw indicator dot for slots with keybinds (below the button)
+            if hasKeybind then
+                local dotRadius = 3;
+                local dotX = btnPosX + (slotWidth / 2);
+                local dotY = btnPosY + slotHeight + 4;
+                draw_list:AddCircleFilled(
+                    {dotX, dotY},
+                    dotRadius,
+                    imgui.GetColorU32(gold),
+                    8
+                );
+            end
+
+            if clicked then
+                keybindModal.selectedSlot = slotIndex;
+                keybindModal.waitingForKey = false;
+            end
+
+            -- Tooltip with keybind info
+            if imgui.IsItemHovered() then
+                imgui.BeginTooltip();
+                imgui.Text(string.format('Slot %d', slotIndex));
+                if hasKeybind then
+                    imgui.TextColored(components.TAB_STYLE.gold, FormatKeybind(binding));
+                else
+                    imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'No keybind');
+                end
+                imgui.EndTooltip();
+            end
+
+            if slotIndex < slots then
+                imgui.SameLine();
+            end
+        end
+
+        imgui.Spacing();
+        imgui.Separator();
+        imgui.Spacing();
+
+        -- Key assignment section below
+        if keybindModal.selectedSlot then
+            local selectedSlot = keybindModal.selectedSlot;
+            local currentBinding = barSettings.keyBindings[selectedSlot];
+
+            -- Current keybind display inline
+            imgui.Text(string.format('Slot %d:', selectedSlot));
+            imgui.SameLine();
+            if currentBinding and currentBinding.key then
+                imgui.TextColored(components.TAB_STYLE.gold, FormatKeybind(currentBinding));
+            else
+                imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'No keybind assigned');
+            end
+
+            imgui.Spacing();
+
+            -- Key capture button and clear button on same line
+            if keybindModal.waitingForKey then
+                imgui.TextColored(components.TAB_STYLE.gold, 'Press any key...');
+                imgui.SameLine();
+                imgui.TextColored({0.5, 0.5, 0.5, 1.0}, '(Escape to cancel)');
+            else
+                if imgui.Button('Set Keybind##set', {120, 0}) then
+                    keybindModal.waitingForKey = true;
+                end
+                -- Clear button next to set button if keybind exists
+                if currentBinding and currentBinding.key then
+                    imgui.SameLine();
+                    if imgui.Button('Clear##clear', {60, 0}) then
+                        barSettings.keyBindings[selectedSlot] = nil;
+                        SaveSettingsOnly();
+                    end
+                end
+            end
+        else
+            imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'Select a slot above to assign a keyboard shortcut.');
         end
     end
     imgui.End();
+
+    -- Pop style vars and colors (must match push count)
+    imgui.PopStyleVar(9);
+    imgui.PopStyleColor(34);
 
     -- Handle window close via X button
     if not isOpen[1] then
         CloseKeybindModal();
     end
+end
+
+-- Handle key capture for keybind editor (called from hotbar key handler)
+function M.HandleKeybindCapture(keyCode, ctrl, alt, shift)
+    if not keybindModal.isOpen or not keybindModal.waitingForKey then
+        return false;
+    end
+
+    -- Escape cancels capture
+    if keyCode == 27 then
+        keybindModal.waitingForKey = false;
+        return true;
+    end
+
+    -- Ignore standalone modifier keys
+    if keyCode == 16 or keyCode == 17 or keyCode == 18 or
+       keyCode == 160 or keyCode == 161 or keyCode == 162 or
+       keyCode == 163 or keyCode == 164 or keyCode == 165 then
+        return true;
+    end
+
+    local configKey = keybindModal.configKey;
+    local selectedSlot = keybindModal.selectedSlot;
+
+    if configKey and selectedSlot and gConfig[configKey] then
+        local barSettings = gConfig[configKey];
+        if not barSettings.keyBindings then
+            barSettings.keyBindings = {};
+        end
+
+        -- Check for duplicate keybind across ALL bars and clear it
+        local ctrlVal = ctrl or false;
+        local altVal = alt or false;
+        local shiftVal = shift or false;
+
+        for barNum = 1, 6 do
+            local checkConfigKey = 'hotbarBar' .. barNum;
+            local checkBarSettings = gConfig[checkConfigKey];
+            if checkBarSettings and checkBarSettings.keyBindings then
+                for slotIndex, existingBinding in pairs(checkBarSettings.keyBindings) do
+                    -- Skip the slot we're assigning to
+                    local isSameSlot = (checkConfigKey == configKey and slotIndex == selectedSlot);
+                    if not isSameSlot and existingBinding and existingBinding.key then
+                        -- Check if this binding matches the new one
+                        if existingBinding.key == keyCode and
+                           (existingBinding.ctrl or false) == ctrlVal and
+                           (existingBinding.alt or false) == altVal and
+                           (existingBinding.shift or false) == shiftVal then
+                            -- Clear the duplicate binding
+                            checkBarSettings.keyBindings[slotIndex] = nil;
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Store the keybind
+        barSettings.keyBindings[selectedSlot] = {
+            key = keyCode,
+            ctrl = ctrlVal,
+            alt = altVal,
+            shift = shiftVal,
+        };
+
+        SaveSettingsOnly();
+        keybindModal.waitingForKey = false;
+    end
+
+    return true;
+end
+
+-- Check if waiting for key capture
+function M.IsCapturingKeybind()
+    return keybindModal.isOpen and keybindModal.waitingForKey;
 end
 
 -- Helper: Draw visual settings (shared between global and per-bar when not using global)
@@ -1142,25 +1034,64 @@ function M.DrawSettings(state)
     end
     imgui.ShowHelp('Open keybind editor to configure slot actions for the selected hotbar.');
 
-    -- Crossbar Mode Toggle
+    -- Layout Mode dropdown
     imgui.Spacing();
-    local crossbarEnabled = { gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.enabled or false };
-    if imgui.Checkbox('Crossbar Mode (Controller Layout)', crossbarEnabled) then
-        if gConfig.hotbarCrossbar then
-            gConfig.hotbarCrossbar.enabled = crossbarEnabled[1];
-            SaveSettingsOnly();
-            DeferredUpdateVisuals();
+    imgui.TextColored(components.TAB_STYLE.gold, 'Layout Mode');
+    imgui.SameLine();
+
+    local modeOptions = { 'Hotbar', 'Crossbar', 'Both' };
+    local modeValues = { 'hotbar', 'crossbar', 'both' };
+    local currentMode = gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
+
+    -- Find current mode index
+    local currentModeIndex = 1;
+    for i, v in ipairs(modeValues) do
+        if v == currentMode then
+            currentModeIndex = i;
+            break;
         end
     end
-    imgui.ShowHelp('Enable crossbar layout for controller play. Uses L2/R2 trigger groups with 32 slots total (4 combo modes x 8 slots).');
+
+    imgui.SetNextItemWidth(120);
+    if imgui.BeginCombo('##layoutMode', modeOptions[currentModeIndex]) then
+        for i, label in ipairs(modeOptions) do
+            local isSelected = currentModeIndex == i;
+            if imgui.Selectable(label, isSelected) then
+                if gConfig.hotbarCrossbar then
+                    gConfig.hotbarCrossbar.mode = modeValues[i];
+                    SaveSettingsOnly();
+                    DeferredUpdateVisuals();
+                end
+            end
+            if isSelected then
+                imgui.SetItemDefaultFocus();
+            end
+        end
+        imgui.EndCombo();
+    end
+    imgui.ShowHelp('Hotbar: Standard keyboard hotbars (Bars 1-6)\nCrossbar: Controller layout with L2/R2 triggers\nBoth: Show both hotbar and crossbar');
 
     imgui.Spacing();
     imgui.Separator();
     imgui.Spacing();
 
-    -- Show crossbar settings OR standard hotbar settings based on mode
-    if gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.enabled then
+    -- Determine what to show based on mode
+    local showHotbar = currentMode == 'hotbar' or currentMode == 'both';
+    local showCrossbar = currentMode == 'crossbar' or currentMode == 'both';
+
+    -- Show crossbar settings if mode includes crossbar
+    if showCrossbar then
         DrawCrossbarSettings();
+        if not showHotbar then
+            return { selectedHotbarTab = selectedBarTab };
+        end
+        imgui.Spacing();
+        imgui.Separator();
+        imgui.Spacing();
+    end
+
+    -- Show hotbar settings if mode includes hotbar
+    if not showHotbar then
         return { selectedHotbarTab = selectedBarTab };
     end
 
@@ -1291,9 +1222,24 @@ end
 function M.DrawColorSettings(state)
     local selectedBarTab = state and state.selectedHotbarTab or 1;
 
-    -- Show crossbar color settings if crossbar is enabled
-    if gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.enabled then
+    -- Determine what to show based on mode
+    local currentMode = gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
+    local showHotbar = currentMode == 'hotbar' or currentMode == 'both';
+    local showCrossbar = currentMode == 'crossbar' or currentMode == 'both';
+
+    -- Show crossbar color settings if mode includes crossbar
+    if showCrossbar then
         DrawCrossbarColorSettings();
+        if not showHotbar then
+            return { selectedHotbarTab = selectedBarTab };
+        end
+        imgui.Spacing();
+        imgui.Separator();
+        imgui.Spacing();
+    end
+
+    -- Show hotbar color settings if mode includes hotbar
+    if not showHotbar then
         return { selectedHotbarTab = selectedBarTab };
     end
 
