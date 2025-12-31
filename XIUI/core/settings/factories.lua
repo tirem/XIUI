@@ -230,6 +230,9 @@ end
 -- Factory function to create global hotbar settings (shared across all bars when useGlobalSettings is true)
 function M.createHotbarGlobalDefaults()
     return T{
+        -- Game UI patches
+        disableMacroBars = false,  -- Disable native macro bar display when Ctrl/Alt held
+
         -- Visual settings
         slotSize = 48,          -- Slot size in pixels
         bgScale = 1.0,

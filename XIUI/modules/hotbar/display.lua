@@ -26,12 +26,21 @@ local M = {};
 local KEYBIND_OFFSET_X = 2;
 local KEYBIND_OFFSET_Y = 2;
 
+-- Move anchor constants
+local ANCHOR_SIZE = 20;
+local ANCHOR_DOT_SIZE = 2;
+local ANCHOR_DOT_SPACING = 5;
+local ANCHOR_PADDING = 4; -- Distance from window edge
+
 -- ============================================
 -- State
 -- ============================================
 
 -- Loaded theme tracking
 local loadedBgTheme = nil;
+
+-- Move anchor state per bar
+local anchorDragState = {}; -- [barIndex] = { dragging = false, offsetX = 0, offsetY = 0 }
 
 -- Textures initialized flag
 local texturesInitialized = false;
@@ -49,6 +58,93 @@ local function BuildBindKey(bind)
         iconPart = ':icon:' .. (bind.customIconType or '') .. ':' .. tostring(bind.customIconId or '');
     end
     return (bind.actionType or '') .. ':' .. (bind.action or '') .. ':' .. (bind.target or '') .. iconPart;
+end
+
+-- Draw a move anchor for repositioning the window
+-- Returns new x, y position if dragged, or nil if not changed
+local function DrawMoveAnchor(barIndex, windowX, windowY, barWidth, barHeight)
+    -- Only show when config menu is open
+    if not showConfig or not showConfig[1] then
+        return nil, nil;
+    end
+
+    -- Initialize drag state for this bar
+    if not anchorDragState[barIndex] then
+        anchorDragState[barIndex] = { dragging = false, offsetX = 0, offsetY = 0 };
+    end
+
+    local dragState = anchorDragState[barIndex];
+
+    -- Position anchor at top-left corner of the window
+    local anchorX = windowX - ANCHOR_SIZE - ANCHOR_PADDING;
+    local anchorY = windowY;
+
+    -- Get foreground draw list to draw on top
+    local drawList = imgui.GetForegroundDrawList();
+
+    -- Draw anchor background
+    local bgColor = dragState.dragging and 0xCC4488FF or 0xAA333333;
+    local borderColor = dragState.dragging and 0xFFFFFFFF or 0xAA888888;
+
+    drawList:AddRectFilled(
+        { anchorX, anchorY },
+        { anchorX + ANCHOR_SIZE, anchorY + ANCHOR_SIZE },
+        imgui.GetColorU32(bgColor),
+        3  -- rounding
+    );
+    drawList:AddRect(
+        { anchorX, anchorY },
+        { anchorX + ANCHOR_SIZE, anchorY + ANCHOR_SIZE },
+        imgui.GetColorU32(borderColor),
+        3,  -- rounding
+        0,  -- flags
+        1   -- thickness
+    );
+
+    -- Draw 3x3 dot grid
+    local dotColor = dragState.dragging and 0xFFFFFFFF or 0xFFAAAAAA;
+    local gridStartX = anchorX + (ANCHOR_SIZE - (2 * ANCHOR_DOT_SPACING)) / 2;
+    local gridStartY = anchorY + (ANCHOR_SIZE - (2 * ANCHOR_DOT_SPACING)) / 2;
+
+    for row = 0, 2 do
+        for col = 0, 2 do
+            local dotX = gridStartX + (col * ANCHOR_DOT_SPACING);
+            local dotY = gridStartY + (row * ANCHOR_DOT_SPACING);
+            drawList:AddCircleFilled(
+                { dotX, dotY },
+                ANCHOR_DOT_SIZE,
+                imgui.GetColorU32(dotColor)
+            );
+        end
+    end
+
+    -- Handle mouse interaction
+    local mouseX, mouseY = imgui.GetMousePos();
+    local isHovered = mouseX >= anchorX and mouseX <= anchorX + ANCHOR_SIZE
+                  and mouseY >= anchorY and mouseY <= anchorY + ANCHOR_SIZE;
+
+    local isMouseDown = imgui.IsMouseDown(0);
+
+    if isHovered and imgui.IsMouseClicked(0) then
+        -- Start dragging
+        dragState.dragging = true;
+        dragState.offsetX = mouseX - windowX;
+        dragState.offsetY = mouseY - windowY;
+    end
+
+    if dragState.dragging then
+        if isMouseDown then
+            -- Calculate new position
+            local newX = mouseX - dragState.offsetX;
+            local newY = mouseY - dragState.offsetY;
+            return newX, newY;
+        else
+            -- Stop dragging
+            dragState.dragging = false;
+        end
+    end
+
+    return nil, nil;
 end
 
 -- Get cached icon for a slot, recompute only if bind changed
@@ -300,7 +396,10 @@ local function DrawBarWindow(barIndex, settings)
 
     local windowName = string.format('Hotbar%d', barIndex);
 
-    imgui.SetNextWindowPos({posX, posY}, ImGuiCond_FirstUseEver);
+    -- Check if anchor is currently being dragged - if so, force position from saved config
+    local anchorDragging = anchorDragState[barIndex] and anchorDragState[barIndex].dragging;
+    local posCondition = anchorDragging and ImGuiCond_Always or ImGuiCond_FirstUseEver;
+    imgui.SetNextWindowPos({posX, posY}, posCondition);
     imgui.SetNextWindowSize({barWidth, barHeight}, ImGuiCond_Always);
 
     local windowPosX, windowPosY;
@@ -405,6 +504,16 @@ local function DrawBarWindow(barIndex, settings)
         -- (removed duplicate hide loop that was here)
 
         imgui.End();
+    end
+
+    -- Draw move anchor (only visible when config is open)
+    -- Must be called after we have window position
+    if windowPosX ~= nil then
+        local anchorNewX, anchorNewY = DrawMoveAnchor(barIndex, windowPosX, windowPosY, barWidth, barHeight);
+        if anchorNewX ~= nil then
+            windowPosX = anchorNewX;
+            windowPosY = anchorNewY;
+        end
     end
 
     -- Save position if changed

@@ -492,8 +492,10 @@ function M.DrawSlot(resources, params)
 
     -- ========================================
     -- 9. ImGui: Hover/Pressed Visual Effects
+    -- Use foreground draw list to avoid window clipping issues
     -- ========================================
-    if drawList and animOpacity > 0.5 then
+    local fgDrawList = imgui.GetForegroundDrawList();
+    if fgDrawList and animOpacity > 0.5 then
         if isPressed then
             -- Pressed effect - red if on cooldown, white otherwise
             local pressedTintColor, pressedBorderColor;
@@ -504,14 +506,14 @@ function M.DrawSlot(resources, params)
                 pressedTintColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.25 * animOpacity});
                 pressedBorderColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.5 * animOpacity});
             end
-            drawList:AddRectFilled({x, y}, {x + size, y + size}, pressedTintColor, 4);
-            drawList:AddRect({x, y}, {x + size, y + size}, pressedBorderColor, 4, 0, 2);
+            fgDrawList:AddRectFilled({x, y}, {x + size, y + size}, pressedTintColor, 4);
+            fgDrawList:AddRect({x, y}, {x + size, y + size}, pressedBorderColor, 4, 0, 2);
         elseif isHovered and not dragdrop.IsDragging() then
             -- Hover effect (mouse)
             local hoverTintColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.15 * animOpacity});
             local hoverBorderColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.10 * animOpacity});
-            drawList:AddRectFilled({x, y}, {x + size, y + size}, hoverTintColor, 2);
-            drawList:AddRect({x, y}, {x + size, y + size}, hoverBorderColor, 2, 0, 1);
+            fgDrawList:AddRectFilled({x, y}, {x + size, y + size}, hoverTintColor, 2);
+            fgDrawList:AddRect({x, y}, {x + size, y + size}, hoverBorderColor, 2, 0, 1);
         end
     end
 

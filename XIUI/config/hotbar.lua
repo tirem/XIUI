@@ -1102,23 +1102,38 @@ end
 function M.DrawSettings(state)
     local selectedBarTab = state and state.selectedHotbarTab or 1;
 
-    -- Global settings
+    -- Global settings with action buttons on same row
     components.DrawCheckbox('Enabled', 'hotbarEnabled');
-    imgui.ShowHelp('Enable or disable the hotbar module.');
+    imgui.SameLine();
 
-    -- Macro Palette and Edit Keybinds buttons (always visible at top)
-    imgui.Spacing();
-    if imgui.Button('Open Macro Palette', {160, 24}) then
+    -- Gold-styled action buttons
+    local goldDark = {0.573, 0.512, 0.355, 1.0};
+    local gold = {0.765, 0.684, 0.474, 1.0};
+    local goldBright = {0.957, 0.855, 0.592, 1.0};
+    imgui.PushStyleColor(ImGuiCol_Button, goldDark);
+    imgui.PushStyleColor(ImGuiCol_ButtonHovered, gold);
+    imgui.PushStyleColor(ImGuiCol_ButtonActive, goldBright);
+
+    if imgui.Button('Macro Palette', {140, 0}) then
         macropalette.OpenPalette();
     end
-    imgui.ShowHelp('Create macros (per-job) and drag them to hotbar slots. Drag slots to rearrange. Right-click to clear.');
     imgui.SameLine();
     local editBarIndex = selectedBarTab or 1;
     local editConfigKey = 'hotbarBar' .. editBarIndex;
-    if imgui.Button('Edit Keybinds', {120, 24}) then
+    if imgui.Button('Keybinds', {100, 0}) then
         OpenKeybindModal(editBarIndex, editConfigKey);
     end
-    imgui.ShowHelp('Open keybind editor to configure slot actions for the selected hotbar.');
+
+    imgui.PopStyleColor(3);
+
+    -- Disable native macro bars checkbox (stored in hotbarGlobal)
+    local disableMacroBars = { gConfig.hotbarGlobal.disableMacroBars or false };
+    if imgui.Checkbox('Disable Native Macro Bars', disableMacroBars) then
+        gConfig.hotbarGlobal.disableMacroBars = disableMacroBars[1];
+        SaveSettingsOnly();
+        DeferredUpdateVisuals();
+    end
+    imgui.ShowHelp('Disable the native macro bar display when Ctrl/Alt keys are held. Useful if you only use XIUI hotbars.');
 
     -- Layout Mode dropdown
     imgui.Spacing();

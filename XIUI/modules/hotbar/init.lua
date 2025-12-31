@@ -48,6 +48,7 @@ local crossbar = require('modules.hotbar.crossbar');
 local controller = require('modules.hotbar.controller');
 local textures = require('modules.hotbar.textures');
 local hotbarConfig = require('config.hotbar');
+local macrobarpatch = require('modules.hotbar.macrobarpatch');
 
 local M = {};
 
@@ -249,6 +250,11 @@ function M.Initialize(settings)
         crossbarInitialized = true;
     end
 
+    -- Apply macro bar patch if setting is enabled
+    if gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars then
+        macrobarpatch.Apply();
+    end
+
     M.initialized = true;
 end
 
@@ -338,6 +344,10 @@ function M.UpdateVisuals(settings)
         controller.SetDoubleTapEnabled(gConfig.hotbarCrossbar.enableDoubleTap or false);
         controller.SetDoubleTapWindow(gConfig.hotbarCrossbar.doubleTapWindow or 0.3);
     end
+
+    -- Update macro bar patch state based on setting
+    local disableMacroBars = gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars or false;
+    macrobarpatch.Update(disableMacroBars);
 end
 
 -- Main render function - called every frame
@@ -510,6 +520,9 @@ function M.Cleanup()
         controller.Cleanup();
         crossbarInitialized = false;
     end
+
+    -- Remove macro bar patches to restore native behavior
+    macrobarpatch.Remove();
 
     M.initialized = false;
 end
