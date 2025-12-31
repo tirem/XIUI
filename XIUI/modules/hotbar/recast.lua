@@ -1,10 +1,11 @@
 --[[
 * XIUI hotbar - Recast Tracking Module
-* Tracks spell and ability cooldowns via Ashita memory
+* Tracks spell, ability, and item cooldowns via Ashita memory
 * Provides shared cooldown info for hotbar and crossbar
 ]]--
 
 local abilityRecast = require('libs.abilityrecast');
+local itemRecast = require('libs.itemrecast');
 local actiondb = require('modules.hotbar.actiondb');
 
 local M = {};
@@ -24,6 +25,7 @@ local cooldownResult = {
     remaining = 0,
     spellId = nil,
     abilityId = nil,
+    itemId = nil,
 };
 
 -- Update all spell recasts (call once per frame in DrawWindow)
@@ -69,6 +71,15 @@ function M.GetAbilityRecast(abilityId)
     return abilityRecast.GetAbilityRecastByAbilityId(abilityId);
 end
 
+-- Get item/equipment recast by item ID
+-- Uses itemrecast.lua which reads from item.Extra data
+-- Returns: remaining seconds, or 0 if ready
+function M.GetItemRecast(itemId)
+    if not itemId then return 0; end
+    local recast, count = itemRecast.GetRecast(itemId);
+    return recast or 0;
+end
+
 -- Format recast time for display
 -- Returns: formatted string or nil if ready
 function M.FormatRecast(seconds)
@@ -92,7 +103,7 @@ end
 
 -- Get recast for any action type
 -- Returns: remainingSeconds, formattedText
-function M.GetActionRecast(actionType, spellId, abilityId)
+function M.GetActionRecast(actionType, spellId, abilityId, itemId)
     local remaining = 0;
 
     if actionType == 'ma' and spellId then
@@ -101,6 +112,8 @@ function M.GetActionRecast(actionType, spellId, abilityId)
         remaining = M.GetAbilityRecast(abilityId);
     elseif actionType == 'pet' and abilityId then
         remaining = M.GetAbilityRecast(abilityId);
+    elseif (actionType == 'item' or actionType == 'equip') and itemId then
+        remaining = M.GetItemRecast(itemId);
     end
     -- Note: 'ws' (weaponskills) don't have individual recasts
 
@@ -110,7 +123,7 @@ end
 -- Get complete cooldown info for an action
 -- This is the main entry point for hotbar/crossbar cooldown display
 -- @param actionData: Table with actionType and action fields (bind or slotData)
--- @return table: { isOnCooldown, recastText, remaining, spellId, abilityId }
+-- @return table: { isOnCooldown, recastText, remaining, spellId, abilityId, itemId }
 -- NOTE: Returns a reused table - do NOT cache the return value, read values immediately
 function M.GetCooldownInfo(actionData)
     if not actionData or not actionData.actionType then
@@ -119,21 +132,26 @@ function M.GetCooldownInfo(actionData)
         cooldownResult.remaining = 0;
         cooldownResult.spellId = nil;
         cooldownResult.abilityId = nil;
+        cooldownResult.itemId = nil;
         return cooldownResult;
     end
 
     -- Look up action IDs based on action type
     local spellId = nil;
     local abilityId = nil;
+    local itemId = nil;
 
     if actionData.actionType == 'ma' then
         spellId = actiondb.GetSpellId(actionData.action);
     elseif actionData.actionType == 'ja' or actionData.actionType == 'pet' then
         abilityId = actiondb.GetAbilityId(actionData.action);
+    elseif actionData.actionType == 'item' or actionData.actionType == 'equip' then
+        -- itemId should already be stored in the action data
+        itemId = actionData.itemId;
     end
 
     -- Get recast state
-    local remaining, recastText = M.GetActionRecast(actionData.actionType, spellId, abilityId);
+    local remaining, recastText = M.GetActionRecast(actionData.actionType, spellId, abilityId, itemId);
 
     -- Reuse result table to avoid GC pressure
     cooldownResult.isOnCooldown = remaining > 0;
@@ -141,6 +159,7 @@ function M.GetCooldownInfo(actionData)
     cooldownResult.remaining = remaining;
     cooldownResult.spellId = spellId;
     cooldownResult.abilityId = abilityId;
+    cooldownResult.itemId = itemId;
     return cooldownResult;
 end
 
