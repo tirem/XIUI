@@ -567,33 +567,33 @@ function M.DrawWindow(settings)
                     SaveSettingsToDisk();
                 end
 
-                -- Draw Lot All and Pass All buttons (disabled in HzLimitedMode)
+                -- Draw Pass All button (Always enabled)
+                local passAllClicked = button.DrawPrim('tpPassAll', passAllX, btnY, textBtnWidth, btnHeight, {
+                    colors = button.COLORS_NEGATIVE,
+                    tooltip = 'Pass on all items',
+                });
+                if passAllClicked then
+                    actions.PassAll();
+                end
+
+                -- Draw Pass All label (GDI font renders on top of primitive)
+                if data.passAllFont then
+                    data.passAllFont:set_font_height(fontSize);
+                    data.passAllFont:set_text('Pass All');
+                    local passTextW, passTextH = data.passAllFont:get_text_size();
+                    passTextW = passTextW or (fontSize * 2.5);
+                    passTextH = passTextH or fontSize;
+                    data.passAllFont:set_position_x(passAllX + (textBtnWidth - passTextW) / 2);
+                    data.passAllFont:set_position_y(btnY + (btnHeight - passTextH) / 2);
+                    data.passAllFont:set_visible(true);
+                    if data.lastColors.passAll ~= 0xFFFFFFFF then
+                        data.passAllFont:set_font_color(0xFFFFFFFF);
+                        data.lastColors.passAll = 0xFFFFFFFF;
+                    end
+                end
+
+                -- Draw Lot All button (disabled in HzLimitedMode)
                 if (not HzLimitedMode) then
-                    -- Draw Pass All button (negative/red) using primitive
-                    local passAllClicked = button.DrawPrim('tpPassAll', passAllX, btnY, textBtnWidth, btnHeight, {
-                        colors = button.COLORS_NEGATIVE,
-                        tooltip = 'Pass on all items',
-                    });
-                    if passAllClicked then
-                        actions.PassAll();
-                    end
-
-                    -- Draw Pass All label (GDI font renders on top of primitive)
-                    if data.passAllFont then
-                        data.passAllFont:set_font_height(fontSize);
-                        data.passAllFont:set_text('Pass All');
-                        local passTextW, passTextH = data.passAllFont:get_text_size();
-                        passTextW = passTextW or (fontSize * 2.5);
-                        passTextH = passTextH or fontSize;
-                        data.passAllFont:set_position_x(passAllX + (textBtnWidth - passTextW) / 2);
-                        data.passAllFont:set_position_y(btnY + (btnHeight - passTextH) / 2);
-                        data.passAllFont:set_visible(true);
-                        if data.lastColors.passAll ~= 0xFFFFFFFF then
-                            data.passAllFont:set_font_color(0xFFFFFFFF);
-                            data.lastColors.passAll = 0xFFFFFFFF;
-                        end
-                    end
-
                     -- Draw Lot All button (positive/green) using primitive
                     local lotAllClicked = button.DrawPrim('tpLotAll', lotAllX, btnY, textBtnWidth, btnHeight, {
                         colors = button.COLORS_POSITIVE,
@@ -619,11 +619,9 @@ function M.DrawWindow(settings)
                         end
                     end
                 else
-                    -- Hide Lot All / Pass All in HzLimitedMode
+                    -- Hide Lot All in HzLimitedMode
                     button.HidePrim('tpLotAll');
-                    button.HidePrim('tpPassAll');
                     if data.lotAllFont then data.lotAllFont:set_visible(false); end
-                    if data.passAllFont then data.passAllFont:set_visible(false); end
                 end
 
                 -- Hide toggle font (not needed, using arrow button)
