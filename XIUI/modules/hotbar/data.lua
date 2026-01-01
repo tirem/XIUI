@@ -18,7 +18,7 @@ M.MAX_SLOTS_PER_BAR = 12;          -- Maximum slots per hotbar
 -- Layout constants
 M.PADDING = 4;
 M.BUTTON_GAP = 8;
-M.LABEL_GAP = 4;
+M.LABEL_GAP = -8;  -- Default label position offset (was 4, moved up by 12px)
 M.ROW_GAP = 6;
 
 -- ============================================
@@ -55,6 +55,10 @@ M.timerFonts = {};
 -- MP cost fonts (per bar, per slot)
 -- Shows MP cost for magic spells
 M.mpCostFonts = {};
+
+-- Item quantity fonts (per bar, per slot)
+-- Shows quantity of usable items (e.g., "x5")
+M.quantityFonts = {};
 
 -- Fonts for hotbar numbers (1-6)
 M.hotbarNumberFonts = {};
@@ -163,7 +167,7 @@ function M.GetBarSettings(barIndex)
             borderScale = 1.0,
             backgroundOpacity = 0.87,
             borderOpacity = 1.0,
-            backgroundTheme = 'Window1',
+            backgroundTheme = '-None-',
             showHotbarNumber = true,
             showSlotFrame = false,
             showActionLabels = false,
@@ -174,12 +178,15 @@ function M.GetBarSettings(barIndex)
             slotBackgroundColor = 0x55000000,
             bgColor = 0xFFFFFFFF,
             borderColor = 0xFFFFFFFF,
-            keybindFontSize = 8,
+            keybindFontSize = 10,
             keybindFontColor = 0xFFFFFFFF,
             labelFontSize = 10,
             showMpCost = true,
-            mpCostFontSize = 8,
+            mpCostFontSize = 10,
             mpCostFontColor = 0xFFD4FF97,
+            showQuantity = true,
+            quantityFontSize = 10,
+            quantityFontColor = 0xFFFFFFFF,
         };
     end
 
@@ -601,6 +608,7 @@ function M.Cleanup()
     M.labelFonts = {};
     M.timerFonts = {};
     M.mpCostFonts = {};
+    M.quantityFonts = {};
     M.hotbarNumberFonts = {};
     M.allFonts = nil;
 end

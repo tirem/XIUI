@@ -46,6 +46,7 @@ local COLORS = {
     success = {0.4, 0.7, 0.4, 1.0},
     danger = {0.8, 0.3, 0.3, 1.0},
     dangerDim = {0.6, 0.25, 0.25, 1.0},
+    usable = {0.5, 0.7, 1.0, 1.0},  -- Blue tint for usable items
 };
 
 -- Action type constants (needed by DrawMacroTile and DrawMacroEditor)
@@ -398,12 +399,20 @@ local function GetPlayerItems()
                         -- Only add if we haven't seen this item name yet
                         if not seenItems[itemName] then
                             seenItems[itemName] = true;
+                            -- Check if item is usable (has activation time or recast delay)
+                            local isUsable = false;
+                            if itemRes.CastTime and itemRes.CastTime > 0 then
+                                isUsable = true;
+                            elseif itemRes.RecastDelay and itemRes.RecastDelay > 0 then
+                                isUsable = true;
+                            end
                             table.insert(items, {
                                 id = item.Id,
                                 name = itemName,
                                 container = container.name,
                                 count = item.Count or 1,
                                 slots = itemRes.Slots or 0,  -- Equipment slot bitmask
+                                usable = isUsable,
                             });
                         end
                     end
@@ -595,9 +604,16 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
                 matchCount = matchCount + 1;
                 local isSelected = currentValue == itemName;
 
-                -- Highlight selected item with gold
+                -- Determine text color: gold if selected, blue if usable, default otherwise
+                local textColor = nil;
                 if isSelected then
-                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+                    textColor = COLORS.gold;
+                elseif item.usable then
+                    textColor = COLORS.usable;
+                end
+
+                if textColor then
+                    imgui.PushStyleColor(ImGuiCol_Text, textColor);
                 end
 
                 -- Show icon if enabled and item has an id
@@ -613,13 +629,17 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
                 end
 
                 local itemLabel = item.level and string.format('[%d] %s', item.level, itemName) or itemName;
+                -- Add quantity for items with count > 1
+                if item.count and item.count > 1 then
+                    itemLabel = itemLabel .. ' x' .. item.count;
+                end
                 if imgui.Selectable(itemLabel .. '##item' .. (item.id or matchCount), isSelected) then
                     onSelect(item);
                     searchFilter[1] = '';
                     imgui.CloseCurrentPopup();
                 end
 
-                if isSelected then
+                if textColor then
                     imgui.PopStyleColor();
                 end
             end

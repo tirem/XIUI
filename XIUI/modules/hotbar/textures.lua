@@ -1,21 +1,40 @@
 --[[
 * XIUI hotbar - Texture Loading Module
-* Loads and caches spell/ability icons
+* Loads and caches spell/ability icons and item icons
 ]]--
 
 require('handlers.helpers');
 local ffi = require('ffi');
 local d3d8 = require('d3d8');
+local pngencoder = require('libs.pngencoder');
 
--- Load texture from full file path
--- Returns: { image = IDirect3DTexture8*, path = filePath, width = 40, height = 40 }
+-- Item icon cache directory (initialized lazily)
+local itemCacheDir = nil;
+
+-- Load texture from full file path with high quality (no filtering)
+-- Returns: { image = IDirect3DTexture8*, path = filePath, width, height }
 local function LoadTextureFromPath(filePath)
     local device = GetD3D8Device();
     if (device == nil) then return nil; end
 
     local textureData = T{};
     local texture_ptr = ffi.new('IDirect3DTexture8*[1]');
-    local res = ffi.C.D3DXCreateTextureFromFileA(device, filePath, texture_ptr);
+
+    -- Use D3DXCreateTextureFromFileExA with D3DX_FILTER_NONE for best quality
+    local res = ffi.C.D3DXCreateTextureFromFileExA(
+        device, filePath,
+        0xFFFFFFFF, 0xFFFFFFFF,  -- D3DX_DEFAULT size
+        1,                        -- MipLevels
+        0,                        -- Usage
+        ffi.C.D3DFMT_A8R8G8B8,   -- Format with alpha
+        ffi.C.D3DPOOL_MANAGED,   -- Pool
+        1,                        -- D3DX_FILTER_NONE
+        1,                        -- D3DX_FILTER_NONE for mips
+        0,                        -- No color key
+        nil, nil,
+        texture_ptr
+    );
+
     if (res ~= ffi.C.S_OK) then
         return nil;
     end
@@ -163,6 +182,130 @@ textures.GetButtonNameForSlot = function(self, slotIndex)
         [8] = 'Square',
     };
     return buttonMap[slotIndex];
+end
+
+-- ============================================
+-- Item Icon File Cache System
+-- Saves item bitmaps to disk for primitive rendering
+-- ============================================
+
+-- Get the item icon cache directory (creates if needed)
+local function GetItemCacheDir()
+    if not itemCacheDir then
+        itemCacheDir = string.format('%saddons\\XIUI\\assets\\hotbar\\items\\', AshitaCore:GetInstallPath());
+        -- Create directory if it doesn't exist
+        ashita.fs.create_directory(itemCacheDir);
+    end
+    return itemCacheDir;
+end
+
+-- Get cached item icon path, creating cache file if needed
+-- Loads texture with color key, extracts pixels, saves as PNG with alpha
+-- @param itemId: The item ID to get icon for
+-- @return: File path string if successfully cached, nil otherwise
+textures.GetItemIconPath = function(self, itemId)
+    if not itemId or itemId == 0 or itemId == 65535 then
+        return nil;
+    end
+
+    local cacheDir = GetItemCacheDir();
+    local fileName = string.format('%05d.png', itemId);
+    local filePath = cacheDir .. fileName;
+
+    -- Check if already cached on disk
+    if ashita.fs.exists(filePath) then
+        return filePath;
+    end
+
+    -- Get device
+    local device = GetD3D8Device();
+    if not device then return nil; end
+
+    -- Get item bitmap from game resources
+    local resMgr = AshitaCore:GetResourceManager();
+    if not resMgr then return nil; end
+
+    local item = resMgr:GetItemById(itemId);
+    if not item then return nil; end
+    if not item.Bitmap or not item.ImageSize or item.ImageSize <= 0 then
+        return nil;
+    end
+
+    -- Load texture from memory with color key (black = transparent)
+    -- D3DPOOL_SCRATCH (2) is lockable for pixel extraction
+    local dx_texture_ptr = ffi.new('IDirect3DTexture8*[1]');
+    local loadRes = ffi.C.D3DXCreateTextureFromFileInMemoryEx(
+        device, item.Bitmap, item.ImageSize,
+        0xFFFFFFFF, 0xFFFFFFFF, 1, 0,
+        ffi.C.D3DFMT_A8R8G8B8,
+        2,  -- D3DPOOL_SCRATCH
+        1, 1,  -- D3DX_FILTER_NONE
+        0xFF000000,  -- Color key: black = transparent
+        nil, nil, dx_texture_ptr
+    );
+
+    if loadRes ~= ffi.C.S_OK or dx_texture_ptr[0] == nil then
+        return nil;
+    end
+
+    local texture = dx_texture_ptr[0];
+
+    -- Get texture dimensions
+    local descRes, desc = texture:GetLevelDesc(0);
+    if descRes ~= ffi.C.S_OK or desc == nil then
+        texture:Release();
+        return nil;
+    end
+    local texWidth = desc.Width;
+    local texHeight = desc.Height;
+
+    -- Lock texture to read pixels
+    local lockRes, lockedRect = texture:LockRect(0, nil, 0);
+    if lockRes ~= ffi.C.S_OK or lockedRect == nil then
+        texture:Release();
+        return nil;
+    end
+
+    -- Upscale to 40x40 (matching spell icon size) with bilinear interpolation
+    -- This improves quality because primitives use point sampling when scaling
+    local targetSize = 40;
+    local success, err = pngencoder.SavePNGFromLockedRectUpscaled(
+        filePath,
+        texWidth,
+        texHeight,
+        lockedRect.pBits,
+        lockedRect.Pitch,
+        targetSize,
+        targetSize
+    );
+
+    texture:UnlockRect(0);
+    texture:Release();
+
+    if success and ashita.fs.exists(filePath) then
+        return filePath;
+    end
+
+    return nil;
+end
+
+-- Load item icon with file path for primitive rendering
+-- @param itemId: The item ID to load icon for
+-- @return: Texture table { image, path, width, height } or nil
+textures.LoadItemIcon = function(self, itemId)
+    -- Get or create cached file path
+    local iconPath = self:GetItemIconPath(itemId);
+    if not iconPath then
+        return nil;
+    end
+
+    -- Load PNG file (alpha already baked in, no color key needed)
+    return LoadTextureFromPath(iconPath);
+end
+
+-- Expose LoadTextureFromPath for external use
+textures.LoadTextureFromPath = function(self, filePath)
+    return LoadTextureFromPath(filePath);
 end
 
 return textures;

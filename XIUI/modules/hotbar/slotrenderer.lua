@@ -17,7 +17,50 @@ local textures = require('modules.hotbar.textures');
 -- Cache for MP cost lookups (keyed by action key string)
 local mpCostCache = {};
 
+-- Containers to search for item quantities
+local ITEM_CONTAINERS = { 0, 8, 10, 11, 12, 13, 14, 15, 16 };  -- Inventory, wardrobes, satchel, etc.
+
 local M = {};
+
+-- Get total quantity of an item across all containers
+-- @param itemId: Item ID to look up
+-- @param itemName: Item name (fallback for lookup)
+-- @return: Total quantity or nil
+function M.GetItemQuantity(itemId, itemName)
+    local memMgr = AshitaCore:GetMemoryManager();
+    if not memMgr then return nil; end
+
+    local inventory = memMgr:GetInventory();
+    if not inventory then return nil; end
+
+    local resMgr = AshitaCore:GetResourceManager();
+    local totalCount = 0;
+
+    for _, containerId in ipairs(ITEM_CONTAINERS) do
+        local maxSlots = inventory:GetContainerCountMax(containerId);
+        if maxSlots and maxSlots > 0 then
+            for slotIndex = 1, maxSlots do
+                local item = inventory:GetContainerItem(containerId, slotIndex);
+                if item and item.Id and item.Id > 0 and item.Id ~= 65535 then
+                    local match = false;
+                    if itemId and item.Id == itemId then
+                        match = true;
+                    elseif itemName and resMgr then
+                        local itemRes = resMgr:GetItemById(item.Id);
+                        if itemRes and itemRes.Name and itemRes.Name[1] == itemName then
+                            match = true;
+                        end
+                    end
+                    if match then
+                        totalCount = totalCount + (item.Count or 1);
+                    end
+                end
+            end
+        end
+    end
+
+    return totalCount > 0 and totalCount or nil;
+end
 
 -- Cached asset path
 local assetsPath = nil;
@@ -475,7 +518,49 @@ function M.DrawSlot(resources, params)
     end
 
     -- ========================================
-    -- 9. ImGui: Frame Overlay
+    -- 9. Item Quantity Font (GDI - bottom right corner)
+    -- ========================================
+    if resources.quantityFont then
+        local showQuantity = params.showQuantity ~= false;
+        if showQuantity and bind and animOpacity > 0.5 and (bind.actionType == 'item') then
+            -- Get item quantity from inventory
+            local quantity = M.GetItemQuantity(bind.itemId, bind.action) or 0;
+
+            -- Always show quantity for items (x0 in red, x1+)
+            local qtyText = 'x' .. tostring(quantity);
+            -- Only update text if changed
+            if cache and cache.quantityText ~= qtyText then
+                resources.quantityFont:set_text(qtyText);
+                cache.quantityText = qtyText;
+            end
+            -- Position at bottom-right corner with padding
+            local qtyX = x + size - 3;  -- Right-aligned with small padding
+            local qtyY = y + size - 14; -- Bottom with padding for font height
+            if cache and (cache.quantityX ~= qtyX or cache.quantityY ~= qtyY) then
+                resources.quantityFont:set_position_x(qtyX);
+                resources.quantityFont:set_position_y(qtyY);
+                cache.quantityX = qtyX;
+                cache.quantityY = qtyY;
+            end
+            -- Only update font settings if changed
+            if params.quantityFontSize and cache and cache.quantityFontSize ~= params.quantityFontSize then
+                resources.quantityFont:set_font_height(params.quantityFontSize);
+                cache.quantityFontSize = params.quantityFontSize;
+            end
+            -- Use red color for 0 quantity, normal color otherwise
+            local qtyColor = quantity == 0 and 0xFFFF4444 or (params.quantityFontColor or 0xFFFFFFFF);
+            if cache and cache.quantityFontColor ~= qtyColor then
+                resources.quantityFont:set_font_color(qtyColor);
+                cache.quantityFontColor = qtyColor;
+            end
+            resources.quantityFont:set_visible(true);
+        else
+            resources.quantityFont:set_visible(false);
+        end
+    end
+
+    -- ========================================
+    -- 10. ImGui: Frame Overlay
     -- ========================================
     local drawList = imgui.GetWindowDrawList();
     if drawList and params.showFrame then
@@ -654,6 +739,7 @@ function M.HideSlot(resources)
     if resources.keybindFont then resources.keybindFont:set_visible(false); end
     if resources.labelFont then resources.labelFont:set_visible(false); end
     if resources.mpCostFont then resources.mpCostFont:set_visible(false); end
+    if resources.quantityFont then resources.quantityFont:set_visible(false); end
 end
 
 return M;
