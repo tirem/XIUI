@@ -50,6 +50,7 @@ local textures = require('modules.hotbar.textures');
 local hotbarConfig = require('config.hotbar');
 local macrobarpatch = require('modules.hotbar.macrobarpatch');
 local slotrenderer = require('modules.hotbar.slotrenderer');
+local petpalette = require('modules.hotbar.petpalette');
 
 local M = {};
 
@@ -252,6 +253,16 @@ function M.Initialize(settings)
     -- Initialize display layer
     display.Initialize(settings);
 
+    -- Register pet change callback to clear slot caches
+    petpalette.OnPetChanged(function(oldPetKey, newPetKey)
+        -- Clear ALL caches when pet changes to force full refresh
+        slotrenderer.ClearAllCache();
+        display.ClearIconCache();
+        if crossbarInitialized then
+            crossbar.ClearIconCache();
+        end
+    end);
+
     -- Initialize crossbar if mode includes crossbar
     local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
     local crossbarNeeded = crossbarMode == 'crossbar' or crossbarMode == 'both';
@@ -272,6 +283,11 @@ function M.Initialize(settings)
     if gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars then
         macrobarpatch.Apply();
     end
+
+    -- Check pet state on initialization (detects existing pet after reload)
+    ashita.tasks.once(0.1, function()
+        petpalette.CheckPetState();
+    end);
 
     M.initialized = true;
 end
@@ -429,6 +445,10 @@ function M.DrawWindow(settings)
             elseif lastPayload.type == 'crossbar_slot' then
                 -- Crossbar slot was dragged outside - clear it
                 data.ClearCrossbarSlotData(lastPayload.comboMode, lastPayload.slotIndex);
+                -- Clear icon cache so slot updates immediately
+                if crossbarInitialized then
+                    crossbar.ClearIconCache();
+                end
             end
         end
     end
@@ -542,6 +562,9 @@ function M.Cleanup()
         crossbarInitialized = false;
     end
 
+    -- Reset pet palette state
+    petpalette.Reset();
+
     -- Remove macro bar patches to restore native behavior
     macrobarpatch.Remove();
 
@@ -554,6 +577,7 @@ end
 
 function M.HandleZonePacket()
     data.Clear();
+    petpalette.ClearPetState();
 end
 
 function M.HandleJobChangePacket(e)
@@ -565,7 +589,55 @@ function M.HandleJobChangePacket(e)
         if crossbarInitialized then
             crossbar.ClearIconCache();
         end
+        -- Check pet state after job change
+        petpalette.CheckPetState();
     end);
+end
+
+-- Handle pet sync packet (0x0068)
+-- Called from main XIUI.lua packet handler
+function M.HandlePetSyncPacket()
+    -- Use delayed check to ensure entity is available
+    ashita.tasks.once(0.3, function()
+        petpalette.CheckPetState();
+    end);
+end
+
+-- Cycle pet palette for a bar
+-- direction: 1 for next, -1 for previous
+function M.CyclePetPalette(barIndex, direction)
+    if not barIndex then barIndex = 1; end
+    direction = direction or 1;
+    local result = petpalette.CyclePalette(barIndex, direction, data.jobId);
+    if result then
+        -- Clear slot cache to force refresh
+        slotrenderer.ClearAllCache();
+    end
+    return result;
+end
+
+-- Return bar to auto pet palette mode
+function M.SetPetPaletteAuto(barIndex)
+    if not barIndex then barIndex = 1; end
+    petpalette.ClearManualOverride(barIndex);
+    -- Clear slot cache to force refresh
+    slotrenderer.ClearAllCache();
+end
+
+-- Get current pet palette display name for a bar
+function M.GetPetPaletteDisplayName(barIndex)
+    return petpalette.GetPaletteDisplayName(barIndex, data.jobId);
+end
+
+-- Check if bar has pet-aware mode enabled
+function M.IsPetAwareBar(barIndex)
+    local barSettings = data.GetBarSettings(barIndex);
+    return barSettings and barSettings.petAware == true;
+end
+
+-- Check if bar has manual palette override
+function M.HasPetPaletteOverride(barIndex)
+    return petpalette.HasManualOverride(barIndex);
 end
 
 function M.HandleKey(event)

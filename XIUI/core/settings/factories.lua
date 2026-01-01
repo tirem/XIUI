@@ -269,6 +269,9 @@ function M.createHotbarGlobalDefaults()
         -- Game UI patches
         disableMacroBars = false,  -- Disable native macro bar display when Ctrl/Alt held
 
+        -- Pet palette settings
+        clearOverrideOnPetChange = true,  -- Clear manual palette override when pet changes
+
         -- Visual settings
         slotSize = 48,          -- Slot size in pixels
         bgScale = 1.0,
@@ -298,6 +301,9 @@ function M.createHotbarGlobalDefaults()
         keybindFontSize = 8,
         keybindFontColor = 0xFFFFFFFF,
         labelFontSize = 10,
+        labelFontColor = 0xFFFFFFFF,
+        labelCooldownColor = 0xFF888888,
+        labelNoMpColor = 0xFFFF4444,
     };
 end
 
@@ -310,6 +316,9 @@ function M.createHotbarBarDefaults(overrides)
 
         -- Job-specific toggle (when true, actions are stored per-job; when false, actions are shared across all jobs)
         jobSpecific = true,
+
+        -- Pet-aware toggle (when true, hotbar can have different palettes per pet for SMN/BST/DRG/PUP)
+        petAware = false,
 
         -- Layout settings (always per-bar)
         enabled = true,
@@ -346,6 +355,9 @@ function M.createHotbarBarDefaults(overrides)
         keybindFontSize = 8,
         keybindFontColor = 0xFFFFFFFF,     -- Keybind text color (ARGB)
         labelFontSize = 10,
+        labelFontColor = 0xFFFFFFFF,       -- Action label text color (ARGB)
+        labelCooldownColor = 0xFF888888,   -- Action label color when on cooldown (grey)
+        labelNoMpColor = 0xFFFF4444,       -- Action label color when not enough MP (red)
 
         -- Keybind assignments per job (nil = use job file defaults)
         -- Structure: keybinds[jobId][slotIndex] = { type, action, target, display }
@@ -415,6 +427,8 @@ function M.createCrossbarDefaults()
         labelFontSize = 10,
         triggerLabelFontSize = 14,
         triggerLabelColor = 0xFFFFCC00,     -- Gold color for trigger labels
+        mpCostFontColor = 0xFFD4FF97,       -- MP cost text color
+        mpCostNoMpColor = 0xFFFF4444,       -- MP cost color when not enough MP
 
         -- Combo text (shows current mode in center for complex combos)
         showComboText = true,               -- Show combo mode text in center
