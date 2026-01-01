@@ -217,6 +217,108 @@ function M.GetMPCost(bind)
     return nil;
 end
 
+--- Check if an action is currently available to use
+--- Takes into account job, level, subjob, and level sync
+---@param bind table The keybind data with actionType and action fields
+---@return boolean isAvailable True if the action can be used
+---@return string|nil reason Reason if not available (e.g., "Level 50 required", "Wrong job")
+function M.IsActionAvailable(bind)
+    if not bind then return true, nil; end
+
+    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    if not player then return true, nil; end
+
+    local mainJobId = player:GetMainJob();
+    local mainJobLevel = player:GetMainJobLevel();
+    local subJobId = player:GetSubJob();
+    local subJobLevel = player:GetSubJobLevel();
+
+    -- Handle magic spells
+    if bind.actionType == 'ma' then
+        local spell = GetSpellByName(bind.action);
+        if not spell then return true, nil; end  -- Unknown spell, assume available
+
+        local levels = spell.levels;
+        if not levels then return true, nil; end  -- No level requirements
+
+        -- Check if main job can cast this spell
+        local mainReqLevel = levels[mainJobId];
+        local subReqLevel = subJobId and levels[subJobId] or nil;
+
+        -- Check main job first
+        if mainReqLevel then
+            if mainJobLevel >= mainReqLevel then
+                return true, nil;  -- Can cast with main job
+            end
+        end
+
+        -- Check subjob
+        if subReqLevel then
+            if subJobLevel >= subReqLevel then
+                return true, nil;  -- Can cast with subjob
+            end
+        end
+
+        -- Spell exists but can't be cast
+        if mainReqLevel then
+            -- Has the job but not the level
+            return false, string.format("Lv%d", mainReqLevel);
+        elseif subReqLevel then
+            -- Subjob has it but not the level
+            return false, string.format("Lv%d", subReqLevel);
+        else
+            -- Job can't cast this spell at all
+            return false, "Job";
+        end
+
+    -- Handle job abilities
+    elseif bind.actionType == 'ja' then
+        -- Check if player has this ability
+        local hasAbility = false;
+        local resMgr = AshitaCore:GetResourceManager();
+        if resMgr then
+            for abilityId = 1, 1024 do
+                if player:HasAbility(abilityId) then
+                    local ability = resMgr:GetAbilityById(abilityId);
+                    if ability and ability.Name and ability.Name[1] == bind.action then
+                        hasAbility = true;
+                        break;
+                    end
+                end
+            end
+        end
+        if not hasAbility then
+            return false, "N/A";
+        end
+
+    -- Handle weapon skills
+    elseif bind.actionType == 'ws' then
+        -- Check if player has this weapon skill
+        local hasWS = false;
+        local resMgr = AshitaCore:GetResourceManager();
+        if resMgr then
+            for abilityId = 1, 1024 do
+                if player:HasAbility(abilityId) then
+                    local ability = resMgr:GetAbilityById(abilityId);
+                    if ability and ability.Name and ability.Name[1] == bind.action then
+                        -- Verify it's a weapon skill (Type 3)
+                        local abilityType = ability.Type and bit.band(ability.Type, 7) or 0;
+                        if abilityType == 3 then
+                            hasWS = true;
+                            break;
+                        end
+                    end
+                end
+            end
+        end
+        if not hasWS then
+            return false, "N/A";
+        end
+    end
+
+    return true, nil;
+end
+
 --- Load item icon from game resources by item ID
 --- Uses file cache for primitive rendering compatibility
 ---@param itemId number The item ID

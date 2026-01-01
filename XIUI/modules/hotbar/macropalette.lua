@@ -2067,14 +2067,10 @@ local function DrawIconPicker()
         imgui.SetNextItemWidth(200);
         imgui.InputText('##iconSearch', iconPickerFilter, INPUT_BUFFER_SIZE);
 
-        -- Show item count / loading status for items tab
-        if iconPickerTab == 2 then
+        -- Show loading status for items tab (count shown near page navigation)
+        if iconPickerTab == 2 and itemIconLoadState.loading then
             imgui.SameLine();
-            if itemIconLoadState.loading then
-                imgui.TextColored(COLORS.textMuted, string.format('Loading... %d%%', GetItemLoadProgress()));
-            else
-                imgui.TextColored(COLORS.textMuted, string.format('(%d items)', #itemIconLoadState.items));
-            end
+            imgui.TextColored(COLORS.textMuted, string.format('Loading... %d%%', GetItemLoadProgress()));
         end
 
         imgui.Spacing();
@@ -2100,31 +2096,14 @@ local function DrawIconPicker()
 
                 -- Get job/trust icon
                 local icon = GetFilterIcon(spellType);
-                local clicked = false;
 
-                if icon and icon.image then
-                    local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
-                    if iconPtr then
-                        clicked = imgui.ImageButton('##spellFilter' .. i, iconPtr, {filterIconSize, filterIconSize});
-                    end
-                else
-                    -- Fallback to text if icon not loaded
-                    clicked = imgui.Button(tooltip:sub(1, 3) .. '##typeFilter' .. i, {filterIconSize + 4, filterIconSize + 4});
-                end
+                imgui.PopStyleColor(2);
 
-                if clicked then
+                -- Use DrawIconButton which works on all Ashita versions
+                if DrawIconButton('##spellFilter' .. i, icon, filterIconSize, isSelected, tooltip) then
                     iconPickerSpellType = spellType;
                     iconPickerPage[1] = 1;
                 end
-
-                -- Tooltip on hover
-                if imgui.IsItemHovered() then
-                    imgui.BeginTooltip();
-                    imgui.Text(tooltip);
-                    imgui.EndTooltip();
-                end
-
-                imgui.PopStyleColor(2);
 
                 if i < #SPELL_TYPE_ORDER then
                     imgui.SameLine();
@@ -2147,41 +2126,14 @@ local function DrawIconPicker()
                 local isSelected = iconPickerItemType == itemType;
                 local itemId = ITEM_TYPE_ICONS[itemType];
 
-                if isSelected then
-                    imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
-                    imgui.PushStyleColor(ImGuiCol_Border, COLORS.gold);
-                else
-                    imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgDark);
-                    imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
-                end
-
                 -- Get item icon texture
                 local icon = actions.GetBindIcon({ actionType = 'item', itemId = itemId });
-                local clicked = false;
 
-                if icon and icon.image then
-                    local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
-                    if iconPtr then
-                        clicked = imgui.ImageButton('##itemFilter' .. i, iconPtr, {filterIconSize, filterIconSize});
-                    end
-                else
-                    -- Fallback to text if icon not loaded
-                    clicked = imgui.Button(tooltip:sub(1, 3) .. '##itemTypeFilter' .. i, {filterIconSize + 4, filterIconSize + 4});
-                end
-
-                if clicked then
+                -- Use DrawIconButton which works on all Ashita versions
+                if DrawIconButton('##itemFilter' .. i, icon, filterIconSize, isSelected, tooltip) then
                     iconPickerItemType = itemType;
                     iconPickerPage[2] = 1;
                 end
-
-                -- Tooltip on hover
-                if imgui.IsItemHovered() then
-                    imgui.BeginTooltip();
-                    imgui.Text(tooltip);
-                    imgui.EndTooltip();
-                end
-
-                imgui.PopStyleColor(2);
 
                 if i < #ITEM_TYPE_ORDER then
                     imgui.SameLine();
@@ -2238,7 +2190,12 @@ local function DrawIconPicker()
                 filteredSpellsCache = filteredItems;
             end
         elseif iconPickerTab == 2 then
-            if filteredItemsCache and not itemIconLoadState.loading then
+            -- Only use cache if: cache exists, not loading, and cache has items (or items DB is empty)
+            local cacheValid = filteredItemsCache
+                and not itemIconLoadState.loading
+                and (#filteredItemsCache > 0 or #itemIconLoadState.items == 0);
+
+            if cacheValid then
                 filteredItems = filteredItemsCache;
             else
                 -- Use pre-filtered type list if available and a specific type is selected
@@ -2250,20 +2207,23 @@ local function DrawIconPicker()
                 end
 
                 -- Only filter by text search (type already filtered by source list)
-                if filter == '' then
-                    -- No text filter - use source directly
-                    filteredItems = sourceItems;
-                else
-                    -- Apply text filter
-                    for _, item in ipairs(sourceItems) do
-                        local itemName = item.name or '';
-                        if itemName:lower():find(filter, 1, true) then
-                            table.insert(filteredItems, item);
+                if sourceItems and #sourceItems > 0 then
+                    if filter == '' then
+                        -- No text filter - use source directly
+                        filteredItems = sourceItems;
+                    else
+                        -- Apply text filter
+                        for _, item in ipairs(sourceItems) do
+                            local itemName = item.name or '';
+                            if itemName:lower():find(filter, 1, true) then
+                                table.insert(filteredItems, item);
+                            end
                         end
                     end
                 end
 
-                if not itemIconLoadState.loading then
+                -- Only cache if loading is complete and we have results (or filter should return empty)
+                if not itemIconLoadState.loading and (#filteredItems > 0 or filter ~= '') then
                     filteredItemsCache = filteredItems;
                 end
             end
@@ -2272,18 +2232,12 @@ local function DrawIconPicker()
         local totalItems = #filteredItems;
         local totalPages = math.max(1, math.ceil(totalItems / ICONS_PER_PAGE));
 
-        -- Show filtered count for spells
+        -- Show filtered count for spells (items count shown near page navigation only)
         if iconPickerTab == 1 then
             local allSpells = GetAllSpells();
             local countText = string.format('%d of %d spells', totalItems, #allSpells);
             if iconPickerSpellType ~= 'All' then
                 countText = countText .. ' (' .. (SPELL_TYPE_LABELS[iconPickerSpellType] or iconPickerSpellType) .. ')';
-            end
-            imgui.TextColored(COLORS.textMuted, countText);
-        elseif iconPickerTab == 2 and not itemIconLoadState.loading then
-            local countText = string.format('%d of %d items', totalItems, #itemIconLoadState.items);
-            if iconPickerItemType ~= 0 then
-                countText = countText .. ' (' .. (ITEM_TYPE_LABELS[iconPickerItemType] or 'Type ' .. iconPickerItemType) .. ')';
             end
             imgui.TextColored(COLORS.textMuted, countText);
         end
@@ -2520,7 +2474,7 @@ function M.DrawMacroEditor()
     -- Initialize editor fields from editing macro
     editorFields.actionType[1] = FindIndex(ACTION_TYPES, editingMacro.actionType or 'ma');
     editorFields.action[1] = editingMacro.action or '';
-    editorFields.target[1] = FindIndex(TARGET_OPTIONS, editingMacro.target or 'me');
+    editorFields.target[1] = FindIndex(TARGET_OPTIONS, editingMacro.target or 't');
     editorFields.displayName[1] = editingMacro.displayName or '';
     editorFields.equipSlot[1] = FindIndex(EQUIP_SLOTS, editingMacro.equipSlot or 'main');
     editorFields.macroText[1] = editingMacro.macroText or '';

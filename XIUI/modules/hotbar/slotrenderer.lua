@@ -17,6 +17,10 @@ local textures = require('modules.hotbar.textures');
 -- Cache for MP cost lookups (keyed by action key string)
 local mpCostCache = {};
 
+-- Cache for action availability checks (keyed by action key string)
+-- Structure: { isAvailable = bool, reason = string|nil }
+local availabilityCache = {};
+
 -- Containers to search for item quantities
 local ITEM_CONTAINERS = { 0, 8, 10, 11, 12, 13, 14, 15, 16 };  -- Inventory, wardrobes, satchel, etc.
 
@@ -92,6 +96,13 @@ end
 -- Clear all cached state
 function M.ClearAllCache()
     slotCache = {};
+    availabilityCache = {};
+    mpCostCache = {};
+end
+
+-- Clear availability cache (call on job change, level sync, etc.)
+function M.ClearAvailabilityCache()
+    availabilityCache = {};
 end
 
 local function GetAssetsPath()
@@ -252,7 +263,7 @@ function M.DrawSlot(resources, params)
     local targetIconSize = size - (iconPadding * 2);
 
     -- ========================================
-    -- 3. Cooldown Info & MP Check
+    -- 3. Cooldown Info, MP Check & Availability Check
     -- ========================================
     local cooldown = recast.GetCooldownInfo(bind);
     local isOnCooldown = cooldown.isOnCooldown;
@@ -260,8 +271,8 @@ function M.DrawSlot(resources, params)
 
     -- Check if player has enough MP for spells
     local notEnoughMp = false;
+    local bindKey = bind and ((bind.actionType or '') .. ':' .. (bind.action or '')) or '';
     if bind and bind.actionType == 'ma' then
-        local bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
         local mpCost = mpCostCache[bindKey];
         if mpCost == nil then
             mpCost = actions.GetMPCost(bind) or false;
@@ -272,6 +283,20 @@ function M.DrawSlot(resources, params)
             local playerMp = party and party:GetMemberMP(0) or 0;
             notEnoughMp = playerMp < mpCost;
         end
+    end
+
+    -- Check if action is available (job/level requirements)
+    local isUnavailable = false;
+    local unavailableReason = nil;
+    if bind and (bind.actionType == 'ma' or bind.actionType == 'ja' or bind.actionType == 'ws') then
+        local cached = availabilityCache[bindKey];
+        if cached == nil then
+            local available, reason = actions.IsActionAvailable(bind);
+            availabilityCache[bindKey] = { isAvailable = available, reason = reason };
+            cached = availabilityCache[bindKey];
+        end
+        isUnavailable = not cached.isAvailable;
+        unavailableReason = cached.reason;
     end
 
     -- ========================================
@@ -330,21 +355,36 @@ function M.DrawSlot(resources, params)
                 cache.iconScale = scale;
             end
 
-            -- Calculate color: cooldown/noMP darkening + dim factor + animation opacity
+            -- Calculate color: unavailable/cooldown/noMP darkening + dim factor + animation opacity
             local colorMult = 1.0;
-            if isOnCooldown then
+            local applyGreyTint = false;
+            if isUnavailable then
+                colorMult = 0.35;  -- Significantly dimmed when unavailable
+                applyGreyTint = true;  -- Apply grey/desaturated tint
+            elseif isOnCooldown then
                 colorMult = 0.4;
             elseif notEnoughMp then
                 colorMult = 0.6;  -- Slightly dimmed when not enough MP
             end
             colorMult = colorMult * dimFactor;
-            local rgb = math.floor(255 * colorMult);
-            local alpha = math.floor(255 * animOpacity);
+
+            -- Calculate RGB values
+            local r, g, b;
+            if applyGreyTint then
+                -- Grey tint for unavailable actions (desaturated)
+                local grey = math.floor(180 * colorMult);  -- Lighter grey base
+                r, g, b = grey, grey, grey;
+            else
+                local rgb = math.floor(255 * colorMult);
+                r, g, b = rgb, rgb, rgb;
+            end
+
+            local alpha = math.floor(255 * animOpacity * (isUnavailable and 0.7 or 1.0));  -- Lower opacity when unavailable
             local iconColor = bit.bor(
                 bit.lshift(alpha, 24),
-                bit.lshift(rgb, 16),
-                bit.lshift(rgb, 8),
-                rgb
+                bit.lshift(r, 16),
+                bit.lshift(g, 8),
+                b
             );
 
             -- Only update color if changed
@@ -381,21 +421,35 @@ function M.DrawSlot(resources, params)
                 local iconX = x + (size - renderedWidth) / 2;
                 local iconY = y + (size - renderedHeight) / 2;
 
-                -- Calculate color: cooldown/noMP darkening + dim factor + animation opacity
+                -- Calculate color: unavailable/cooldown/noMP darkening + dim factor + animation opacity
                 local colorMult = 1.0;
-                if isOnCooldown then
+                local applyGreyTint = false;
+                if isUnavailable then
+                    colorMult = 0.35;  -- Significantly dimmed when unavailable
+                    applyGreyTint = true;
+                elseif isOnCooldown then
                     colorMult = 0.4;
                 elseif notEnoughMp then
                     colorMult = 0.6;  -- Slightly dimmed when not enough MP
                 end
                 colorMult = colorMult * dimFactor;
-                local rgb = math.floor(255 * colorMult);
-                local alpha = math.floor(255 * animOpacity);
+
+                -- Calculate RGB values
+                local r, g, b;
+                if applyGreyTint then
+                    local grey = math.floor(180 * colorMult);
+                    r, g, b = grey, grey, grey;
+                else
+                    local rgb = math.floor(255 * colorMult);
+                    r, g, b = rgb, rgb, rgb;
+                end
+
+                local alpha = math.floor(255 * animOpacity * (isUnavailable and 0.7 or 1.0));
                 local tintColor = bit.bor(
                     bit.lshift(alpha, 24),
-                    bit.lshift(rgb, 16),
-                    bit.lshift(rgb, 8),
-                    rgb
+                    bit.lshift(r, 16),
+                    bit.lshift(g, 8),
+                    b
                 );
 
                 drawList:AddImage(
@@ -496,10 +550,13 @@ function M.DrawSlot(resources, params)
             end
 
             -- Determine label color based on state
-            -- Priority: Cooldown (grey) > Not enough MP (red) > Normal
+            -- Priority: Unavailable (grey) > Cooldown (grey) > Not enough MP (red) > Normal
             local labelColor = params.labelFontColor or 0xFFFFFFFF;
 
-            if isOnCooldown then
+            if isUnavailable then
+                -- Grey when action is unavailable (wrong job, under synced, etc)
+                labelColor = 0xFF888888;
+            elseif isOnCooldown then
                 -- Grey when on cooldown
                 labelColor = params.labelCooldownColor or 0xFF888888;
             elseif notEnoughMp then
@@ -521,53 +578,82 @@ function M.DrawSlot(resources, params)
 
     -- ========================================
     -- 8. MP Cost Font (GDI - top right corner)
+    -- Shows "X" when action is unavailable, otherwise shows MP cost
     -- ========================================
     if resources.mpCostFont then
         local showMpCost = params.showMpCost ~= false;
         if showMpCost and bind and animOpacity > 0.5 then
-            -- Get MP cost (cached per action)
-            local bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
-            local mpCost = mpCostCache[bindKey];
-            if mpCost == nil then
-                mpCost = actions.GetMPCost(bind) or false;  -- false = no MP cost
-                mpCostCache[bindKey] = mpCost;
-            end
-
-            if mpCost and mpCost ~= false then
-                local mpText = tostring(mpCost);
-                -- Only update text if changed
-                if cache and cache.mpCostText ~= mpText then
-                    resources.mpCostFont:set_text(mpText);
-                    cache.mpCostText = mpText;
+            -- If action is unavailable, show "X" instead of MP cost
+            if isUnavailable then
+                local xText = "X";
+                if cache and cache.mpCostText ~= xText then
+                    resources.mpCostFont:set_text(xText);
+                    cache.mpCostText = xText;
                 end
                 -- Position at top-right corner with padding
-                local mpX = x + size - 3;  -- Right-aligned with small padding
-                local mpY = y + 1;         -- Top with small padding
+                local mpX = x + size - 3;
+                local mpY = y + 1;
                 if cache and (cache.mpCostX ~= mpX or cache.mpCostY ~= mpY) then
                     resources.mpCostFont:set_position_x(mpX);
                     resources.mpCostFont:set_position_y(mpY);
                     cache.mpCostX = mpX;
                     cache.mpCostY = mpY;
                 end
-                -- Only update font settings if changed
                 if params.mpCostFontSize and cache and cache.mpCostFontSize ~= params.mpCostFontSize then
                     resources.mpCostFont:set_font_height(params.mpCostFontSize);
                     cache.mpCostFontSize = params.mpCostFontSize;
                 end
-
-                -- Determine MP cost color - red if not enough MP
-                local mpCostColor = params.mpCostFontColor or 0xFFD4FF97;
-                if notEnoughMp then
-                    mpCostColor = params.mpCostNoMpColor or 0xFFFF4444;
-                end
-
-                if cache and cache.mpCostFontColor ~= mpCostColor then
-                    resources.mpCostFont:set_font_color(mpCostColor);
-                    cache.mpCostFontColor = mpCostColor;
+                -- Grey color for unavailable "X"
+                local xColor = 0xFF888888;
+                if cache and cache.mpCostFontColor ~= xColor then
+                    resources.mpCostFont:set_font_color(xColor);
+                    cache.mpCostFontColor = xColor;
                 end
                 resources.mpCostFont:set_visible(true);
             else
-                resources.mpCostFont:set_visible(false);
+                -- Normal MP cost display
+                local mpCost = mpCostCache[bindKey];
+                if mpCost == nil then
+                    mpCost = actions.GetMPCost(bind) or false;  -- false = no MP cost
+                    mpCostCache[bindKey] = mpCost;
+                end
+
+                if mpCost and mpCost ~= false then
+                    local mpText = tostring(mpCost);
+                    -- Only update text if changed
+                    if cache and cache.mpCostText ~= mpText then
+                        resources.mpCostFont:set_text(mpText);
+                        cache.mpCostText = mpText;
+                    end
+                    -- Position at top-right corner with padding
+                    local mpX = x + size - 3;  -- Right-aligned with small padding
+                    local mpY = y + 1;         -- Top with small padding
+                    if cache and (cache.mpCostX ~= mpX or cache.mpCostY ~= mpY) then
+                        resources.mpCostFont:set_position_x(mpX);
+                        resources.mpCostFont:set_position_y(mpY);
+                        cache.mpCostX = mpX;
+                        cache.mpCostY = mpY;
+                    end
+                    -- Only update font settings if changed
+                    if params.mpCostFontSize and cache and cache.mpCostFontSize ~= params.mpCostFontSize then
+                        resources.mpCostFont:set_font_height(params.mpCostFontSize);
+                        cache.mpCostFontSize = params.mpCostFontSize;
+                    end
+
+                    -- Determine MP cost color - red if not enough MP
+                    local mpCostColor = params.mpCostFontColor or 0xFFD4FF97;
+                    if notEnoughMp then
+                        mpCostColor = params.mpCostNoMpColor or 0xFFFF4444;
+                    end
+
+                    if cache and cache.mpCostFontColor ~= mpCostColor then
+                        resources.mpCostFont:set_font_color(mpCostColor);
+                        cache.mpCostFontColor = mpCostColor;
+                    end
+                    resources.mpCostFont:set_visible(true);
+                else
+                    resources.mpCostFont:set_visible(false);
+                end
             end
         else
             resources.mpCostFont:set_visible(false);
