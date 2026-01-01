@@ -837,6 +837,23 @@ local function DrawBarVisualSettings(configKey, barLabel)
 
     imgui.Spacing();
 
+    -- Pet-Aware Palettes toggle (only available when job-specific is enabled)
+    if jobSpecific then
+        local petAware = barSettings.petAware == true;
+        local petAwareLabel = petAware and 'Pet Palettes Enabled' or 'Pet Palettes Disabled';
+        imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Pet Palettes:');
+        imgui.SameLine();
+        imgui.TextColored(petAware and {0.5, 1.0, 0.8, 1.0} or {0.6, 0.6, 0.6, 1.0}, petAwareLabel);
+
+        if imgui.Button(petAware and 'Disable Pet Palettes##' .. configKey or 'Enable Pet Palettes##' .. configKey, {160, 22}) then
+            barSettings.petAware = not petAware;
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Pet Palettes: Each summoned pet can have its own hotbar configuration.\nSMN: Per-avatar palettes (Ifrit, Shiva, etc.)\nDRG: Wyvern palette\nBST: Jug pet / Charm palettes\nPUP: Automaton palette\n\nWhen disabled, uses base job palette only.');
+
+        imgui.Spacing();
+    end
+
     -- Layout section (always per-bar)
     if components.CollapsingSection('Layout##' .. configKey, true) then
         -- Rows slider
@@ -1168,6 +1185,14 @@ function M.DrawSettings(state)
     end
     imgui.ShowHelp('Disable the native macro bar display when Ctrl/Alt keys are held. Useful if you only use XIUI hotbars.');
 
+    -- Clear override on pet change checkbox
+    local clearOverride = { gConfig.hotbarGlobal.clearOverrideOnPetChange ~= false };  -- Default true
+    if imgui.Checkbox('Auto-reset Pet Palette on Summon', clearOverride) then
+        gConfig.hotbarGlobal.clearOverrideOnPetChange = clearOverride[1];
+        SaveSettingsOnly();
+    end
+    imgui.ShowHelp('When enabled, manually selected pet palettes will reset to auto-detect when you summon a new pet.\nWhen disabled, your manual palette selection persists until you explicitly change it.');
+
     -- Layout Mode dropdown
     imgui.Spacing();
     imgui.TextColored(components.TAB_STYLE.gold, 'Layout Mode');
@@ -1368,6 +1393,33 @@ local function DrawColorSettingsContent(settings, configKey)
             SaveSettingsOnly();
         end
         imgui.ShowHelp('Color for keybind labels (e.g., "1", "C2", "A3").');
+
+        -- Label font color
+        local labelColor = settings.labelFontColor or 0xFFFFFFFF;
+        local labelColorTable = ARGBToImGui(labelColor);
+        if imgui.ColorEdit4('Label Color##' .. configKey, labelColorTable, colorFlags) then
+            settings.labelFontColor = ImGuiToARGB(labelColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color for action labels below slots.');
+
+        -- Label cooldown color (grey)
+        local cooldownColor = settings.labelCooldownColor or 0xFF888888;
+        local cooldownColorTable = ARGBToImGui(cooldownColor);
+        if imgui.ColorEdit4('Label Cooldown Color##' .. configKey, cooldownColorTable, colorFlags) then
+            settings.labelCooldownColor = ImGuiToARGB(cooldownColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color for action labels when the spell/ability is on cooldown.');
+
+        -- Label no MP color (red)
+        local noMpColor = settings.labelNoMpColor or 0xFFFF4444;
+        local noMpColorTable = ARGBToImGui(noMpColor);
+        if imgui.ColorEdit4('Label No MP Color##' .. configKey, noMpColorTable, colorFlags) then
+            settings.labelNoMpColor = ImGuiToARGB(noMpColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color for spell labels when you do not have enough MP to cast.');
 
         -- MP cost font color
         local mpCostColor = settings.mpCostFontColor or 0xFFD4FF97;

@@ -697,6 +697,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         showMpCost = settings.showMpCost ~= false,
         mpCostFontSize = settings.mpCostFontSize or 10,
         mpCostFontColor = settings.mpCostFontColor or 0xFFD4FF97,
+        mpCostNoMpColor = settings.mpCostNoMpColor or 0xFFFF4444,
         showQuantity = settings.showQuantity ~= false,
         quantityFontSize = settings.quantityFontSize or 10,
         quantityFontColor = settings.quantityFontColor or 0xFFFFFFFF,
@@ -719,6 +720,8 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
                     data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
                 end
             end
+            -- Clear icon cache so slots update immediately
+            M.ClearIconCache();
         end,
         dragType = 'crossbar_slot',
         getDragData = function()
@@ -732,6 +735,8 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         end,
         onRightClick = function()
             data.ClearCrossbarSlotData(comboMode, slotIndex);
+            -- Clear icon cache so slot updates immediately
+            M.ClearIconCache();
         end,
         showTooltip = true,
     });

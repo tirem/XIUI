@@ -13,6 +13,11 @@ local textures = require('modules.hotbar.textures');
 local jobs = require('libs.jobs');
 local components = require('config.components');
 local dragdrop = require('libs.dragdrop');
+local petpalette = require('modules.hotbar.petpalette');
+local petregistry = require('modules.hotbar.petregistry');
+-- display and crossbar are loaded lazily to avoid circular dependencies
+local display = nil;
+local crossbar = nil;
 
 local M = {};
 
@@ -48,6 +53,26 @@ local COLORS = {
     dangerDim = {0.6, 0.25, 0.25, 1.0},
     usable = {0.5, 0.7, 1.0, 1.0},  -- Blue tint for usable items
 };
+
+-- Helper to clear all hotbar/crossbar icon caches
+local function ClearAllIconCaches()
+    -- Lazy-load display to avoid circular dependency
+    if display == nil then
+        local success, mod = pcall(require, 'modules.hotbar.display');
+        if success then display = mod; end
+    end
+    if display and display.ClearIconCache then
+        display.ClearIconCache();
+    end
+    -- Lazy-load crossbar to avoid circular dependency
+    if crossbar == nil then
+        local success, mod = pcall(require, 'modules.hotbar.crossbar');
+        if success then crossbar = mod; end
+    end
+    if crossbar and crossbar.ClearIconCache then
+        crossbar.ClearIconCache();
+    end
+end
 
 -- Action type constants (needed by DrawMacroTile and DrawMacroEditor)
 local ACTION_TYPES = { 'ma', 'ja', 'ws', 'item', 'equip', 'macro', 'pet' };
@@ -107,7 +132,14 @@ local function getStorageKey(barSettings, jobId)
     return normalizeJobId(jobId);
 end
 
--- Helper to ensure slotActions structure exists for a storage key (with key normalization)
+-- Check if a storage key is a pet-aware composite key (e.g., "15:avatar:ifrit")
+local function isPetCompositeKey(key)
+    if type(key) ~= 'string' then return false; end
+    return key:find(':') ~= nil;
+end
+
+-- Helper to ensure slotActions structure exists for a storage key
+-- Handles: 'global', numeric job IDs, and pet-aware composite keys
 local function ensureSlotActionsStructure(barSettings, storageKey)
     if not barSettings.slotActions then
         barSettings.slotActions = {};
@@ -119,6 +151,14 @@ local function ensureSlotActionsStructure(barSettings, storageKey)
         end
         return barSettings.slotActions[GLOBAL_SLOT_KEY];
     end
+    -- Handle pet-aware composite keys (stored as strings, e.g., "15:avatar:ifrit")
+    if isPetCompositeKey(storageKey) then
+        if not barSettings.slotActions[storageKey] then
+            barSettings.slotActions[storageKey] = {};
+        end
+        return barSettings.slotActions[storageKey];
+    end
+    -- Handle regular job ID keys
     local numericKey = normalizeJobId(storageKey);
     if not barSettings.slotActions[numericKey] then
         -- Also check for string key and migrate if found
@@ -145,14 +185,17 @@ local currentPalettePage = 1;  -- Current page in macro palette (1-indexed)
 
 -- Selected job for viewing/editing macros (nil = use current player job)
 local selectedPaletteType = nil;  -- Can be GLOBAL_MACRO_KEY or a job ID
+local selectedAvatarPalette = nil;  -- For SMN: nil = base, or avatar name like 'Ifrit'
 
 -- Cached spell/ability/weaponskill/item lists
 local cachedSpells = nil;
 local cachedAbilities = nil;
 local cachedWeaponskills = nil;
 local cachedItems = nil;
+local cachedPetCommands = nil;
 local cacheJobId = nil;
 local cacheSubJobId = nil;
+local petAvatarFilter = 1;  -- 1 = All, 2+ = specific avatar index
 
 -- Search filter for dropdowns
 local searchFilter = { '' };
@@ -163,12 +206,129 @@ local iconPickerFilter = { '' };
 local iconPickerTab = 1;  -- 1 = Spells, 2 = Items
 local iconPickerPage = { 1, 1 };  -- Current page for each tab [spells, items]
 local iconPickerLastFilter = { '', '' };  -- Track filter changes to reset page
+local iconPickerSpellType = 'All';  -- Current spell type filter
+
+-- Spell type display names and order
+local SPELL_TYPE_ORDER = {
+    'All', 'WhiteMagic', 'BlackMagic', 'BlueMagic', 'BardSong',
+    'Ninjutsu', 'SummonerPact', 'Trust'
+};
+local SPELL_TYPE_LABELS = {
+    ['All'] = 'All Spells',
+    ['WhiteMagic'] = 'White Magic',
+    ['BlackMagic'] = 'Black Magic',
+    ['BlueMagic'] = 'Blue Magic',
+    ['BardSong'] = 'Bard Songs',
+    ['Ninjutsu'] = 'Ninjutsu',
+    ['SummonerPact'] = 'Summoning',
+    ['Trust'] = 'Trusts',
+};
+-- Job icon file names for spell type filters (from assets/jobs/FFXIV)
+local SPELL_TYPE_JOB_ICONS = {
+    ['All'] = 'infinite',   -- Infinite symbol for "All"
+    ['WhiteMagic'] = 'whm',
+    ['BlackMagic'] = 'blm',
+    ['BlueMagic'] = 'blu',
+    ['BardSong'] = 'brd',
+    ['Ninjutsu'] = 'nin',
+    ['SummonerPact'] = 'smn',
+    ['Trust'] = nil,        -- Use custom trust icon instead
+};
+
+-- Cache for filter icons
+local filterIconCache = {};
+
+-- Load a filter icon (job icon or trust icon)
+local function GetFilterIcon(spellType)
+    -- Check cache first
+    if filterIconCache[spellType] then
+        return filterIconCache[spellType];
+    end
+
+    local icon = nil;
+
+    if spellType == 'Trust' then
+        -- Load custom trust icon (Shantotto)
+        local path = string.format('%saddons\\XIUI\\assets\\hotbar\\custom\\trusts\\trust-shantotto.png', AshitaCore:GetInstallPath());
+        icon = textures:LoadTextureFromPath(path);
+    else
+        -- Load job icon from FFXIV theme
+        local jobAbbr = SPELL_TYPE_JOB_ICONS[spellType];
+        if jobAbbr then
+            local path = string.format('%saddons\\XIUI\\assets\\jobs\\FFXIV\\%s.png', AshitaCore:GetInstallPath(), jobAbbr);
+            icon = textures:LoadTextureFromPath(path);
+        end
+    end
+
+    filterIconCache[spellType] = icon;
+    return icon;
+end
+
+-- Item type constants from FFXI (item.Type field)
+-- Note: Only include types that have significant item counts
+local ITEM_TYPE_ORDER = {
+    0,   -- All
+    4,   -- Weapon
+    5,   -- Armor
+    7,   -- Usable (food, medicine, etc.)
+    1,   -- General
+    8,   -- Crystal
+    10,  -- Furnishing
+};
+local ITEM_TYPE_LABELS = {
+    [0] = 'All Items',
+    [1] = 'General',
+    [4] = 'Weapons',
+    [5] = 'Armor',
+    [7] = 'Usable',
+    [8] = 'Crystals',
+    [10] = 'Furniture',
+};
+-- Representative item IDs for each type
+local ITEM_TYPE_ICONS = {
+    [0] = 6378,   -- All - Beist's Coffer (chest icon)
+    [4] = 16535,  -- Bronze Sword
+    [5] = 12505,  -- Bronze Cap
+    [7] = 4112,   -- Potion
+    [1] = 880,    -- Flint Stone
+    [8] = 4096,   -- Fire Crystal
+    [10] = 6232,  -- Furnishing item
+};
+local iconPickerItemType = 0;  -- 0 = All
+
+-- Cached filtered results for icon picker (avoid recalculating every frame)
+local filteredSpellsCache = nil;
+local filteredSpellsCacheKey = nil;  -- "filter:type" key for cache invalidation
+local filteredItemsCache = nil;
+local filteredItemsCacheKey = nil;  -- "filter" key for cache invalidation
 
 -- Icon picker grid constants
 local ICON_GRID_COLUMNS = 12;
 local ICON_GRID_SIZE = 36;
 local ICON_GRID_GAP = 4;
-local ICONS_PER_PAGE = 500;
+local ICONS_PER_PAGE = 120;  -- 10 rows of 12 icons - loads in ~1 second
+
+-- Progressive icon loading state (to prevent game freeze)
+local iconLoadState = {
+    currentPage = -1,        -- Track which page we're loading
+    currentTab = -1,         -- Track which tab
+    currentCacheKey = '',    -- Track filter/type changes
+    loadedCount = 0,         -- How many icons loaded on current page
+    iconsPerFrame = 3,       -- Load only 3 icons per frame (very smooth)
+    frameSkip = 0,           -- Skip frames between loads for extra smoothness
+    frameCounter = 0,        -- Current frame counter
+    pageIconCache = {},      -- Cache of loaded icons for current page: [index] = icon
+};
+
+-- Reset progressive icon loading (call when page/filter/type changes)
+local function ResetIconLoading()
+    iconLoadState.currentPage = -1;
+    iconLoadState.currentTab = -1;
+    iconLoadState.currentCacheKey = '';
+    iconLoadState.loadedCount = 0;
+    iconLoadState.frameCounter = 0;
+    iconLoadState.pageIconCache = {};
+end
 
 -- Cached spell list for icon picker (all spells, not just player-known)
 local allSpellsCache = nil;
@@ -178,6 +338,7 @@ local itemIconLoadState = {
     loaded = false,
     loading = false,
     items = {},
+    itemsByType = {},  -- Pre-filtered lists by type for instant filtering
     seenNames = {},  -- Hash table for O(1) duplicate checking
     currentId = 0,
     maxId = 65535,
@@ -436,17 +597,33 @@ local function RefreshCachedLists()
     local currentJobId = player:GetMainJob();
     local currentSubJobId = player:GetSubJob();
 
+    -- Ignore invalid job IDs (can happen during menu transitions)
+    -- This prevents the cache from being corrupted with job 0
+    if not currentJobId or currentJobId == 0 then return; end
+
     -- Refresh if main job, sub job changed, or cache is empty
     if cacheJobId ~= currentJobId or cacheSubJobId ~= currentSubJobId or not cachedSpells then
         cachedSpells = GetPlayerSpells();
         cachedAbilities = GetPlayerAbilities();
         cachedWeaponskills = GetPlayerWeaponskills();
+        cachedPetCommands = nil;  -- Clear pet commands to refresh for new job
         cacheJobId = currentJobId;
         cacheSubJobId = currentSubJobId;
     end
 
     -- Always refresh items (they don't depend on job)
     cachedItems = GetPlayerItems();
+end
+
+-- Get pet commands for the current job
+local function GetPetCommandsForJob(jobId, avatarName)
+    return petregistry.GetPetCommandsForJob(jobId, avatarName);
+end
+
+-- Spell type sort order lookup for grouping
+local SPELL_TYPE_SORT_ORDER = {};
+for i, spellType in ipairs(SPELL_TYPE_ORDER) do
+    SPELL_TYPE_SORT_ORDER[spellType] = i;
 end
 
 -- Build cache of ALL spells from horizonspells database (for icon picker)
@@ -469,8 +646,13 @@ local function GetAllSpells()
         end
     end
 
-    -- Sort by name
+    -- Sort by type (grouped) then by name within each type
     table.sort(allSpellsCache, function(a, b)
+        local aOrder = SPELL_TYPE_SORT_ORDER[a.type] or 999;
+        local bOrder = SPELL_TYPE_SORT_ORDER[b.type] or 999;
+        if aOrder ~= bOrder then
+            return aOrder < bOrder;
+        end
         return a.name < b.name;
     end);
 
@@ -495,9 +677,12 @@ local function LoadItemIconBatch()
             -- Skip duplicate names using hash table (O(1) lookup)
             if not itemIconLoadState.seenNames[itemName] then
                 itemIconLoadState.seenNames[itemName] = true;
+                -- Capture item type for filtering (Type field from FFXI item data)
+                local itemType = item.Type or 1;
                 table.insert(itemIconLoadState.items, {
                     id = itemId,
                     name = itemName,
+                    itemType = itemType,
                 });
             end
         end
@@ -508,10 +693,21 @@ local function LoadItemIconBatch()
     if itemIconLoadState.currentId >= itemIconLoadState.maxId then
         itemIconLoadState.loaded = true;
         itemIconLoadState.loading = false;
-        -- Sort items by name after all loaded
+
+        -- Sort items alphabetically (simple sort for All view)
         table.sort(itemIconLoadState.items, function(a, b)
             return a.name < b.name;
         end);
+
+        -- Build pre-filtered lists by type for instant filtering
+        itemIconLoadState.itemsByType = {};
+        for _, item in ipairs(itemIconLoadState.items) do
+            local itemType = item.itemType or 1;
+            if not itemIconLoadState.itemsByType[itemType] then
+                itemIconLoadState.itemsByType[itemType] = {};
+            end
+            table.insert(itemIconLoadState.itemsByType[itemType], item);
+        end
     end
 end
 
@@ -523,6 +719,7 @@ local function StartItemIconLoading()
     itemIconLoadState.loading = true;
     itemIconLoadState.currentId = 0;
     itemIconLoadState.items = {};
+    itemIconLoadState.itemsByType = {};
     itemIconLoadState.seenNames = {};
 end
 
@@ -663,20 +860,50 @@ end
 -- ============================================
 
 -- Get current effective type for the palette (selected type or player's current job)
--- Returns GLOBAL_MACRO_KEY for global macros, or a job ID for job-specific macros
+-- Returns GLOBAL_MACRO_KEY for global macros, a job ID, or a composite key like "15:avatar:ifrit"
 local function GetEffectivePaletteType()
     if selectedPaletteType then
         -- If Global is selected, return the global key
         if selectedPaletteType == GLOBAL_MACRO_KEY then
             return GLOBAL_MACRO_KEY;
         end
-        -- If a valid job ID is selected, return it
+        -- If a valid job ID is selected
         if type(selectedPaletteType) == 'number' and selectedPaletteType > 0 then
+            -- Check for SMN avatar-specific palette
+            if selectedPaletteType == petregistry.JOB_SMN and selectedAvatarPalette then
+                local avatarKey = petregistry.avatars[selectedAvatarPalette];
+                if avatarKey then
+                    return string.format('%d:avatar:%s', selectedPaletteType, avatarKey);
+                end
+            end
             return selectedPaletteType;
         end
     end
     -- Default to current player job
     return data.jobId or 1;
+end
+
+-- Get display name for a palette type key
+local function GetPaletteDisplayName(typeKey)
+    if typeKey == GLOBAL_MACRO_KEY then
+        return 'Global';
+    end
+    if type(typeKey) == 'number' then
+        return jobs[typeKey] or 'Unknown';
+    end
+    -- Composite key like "15:avatar:ifrit"
+    if type(typeKey) == 'string' then
+        local jobId, petType, petId = typeKey:match('^(%d+):([^:]+):(.+)$');
+        if jobId and petType == 'avatar' and petId then
+            -- Find avatar display name
+            for name, key in pairs(petregistry.avatars) do
+                if key == petId then
+                    return string.format('%s (%s)', jobs[tonumber(jobId)] or 'SMN', name);
+                end
+            end
+        end
+    end
+    return tostring(typeKey);
 end
 
 -- Sync palette to current player job (call on job change)
@@ -689,6 +916,9 @@ function M.SyncToCurrentJob()
     cachedSpells = nil;
     cachedAbilities = nil;
     cachedWeaponskills = nil;
+    cachedPetCommands = nil;
+    petAvatarFilter = 1;
+    selectedAvatarPalette = nil;
     cacheJobId = nil;
     -- Close editor window if open (spells/abilities are job-specific)
     if editingMacro then
@@ -748,6 +978,8 @@ function M.UpdateMacro(macroId, macroData)
             macroData.id = macroId;  -- Preserve ID
             db[i] = macroData;
             SaveSettingsToDisk();
+            -- Clear icon cache so hotbar slots referencing this macro update
+            ClearAllIconCaches();
             return true;
         end
     end
@@ -853,6 +1085,8 @@ function M.DeleteMacro(macroId)
             -- Clear any hotbar/crossbar slots referencing this macro
             ClearSlotsReferencingMacro(macroId, typeKey);
             SaveSettingsToDisk();
+            -- Clear icon cache so hotbar slots update immediately
+            ClearAllIconCaches();
             return true;
         end
     end
@@ -943,21 +1177,22 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
         return false;
     end
 
-    local jobId = normalizeJobId(data.jobId or 1);
     local configKey = 'hotbarBar' .. targetBarIndex;
 
-    -- Ensure config structure exists (with key normalization)
+    -- Ensure config structure exists
     if not gConfig[configKey] then
         gConfig[configKey] = {};
     end
-    -- Use storage key based on jobSpecific setting
-    local storageKey = getStorageKey(gConfig[configKey], jobId);
+    -- Use pet-aware storage key (handles global, job-specific, and pet palettes)
+    local storageKey = data.GetStorageKeyForBar(targetBarIndex);
     local jobSlotActions = ensureSlotActionsStructure(gConfig[configKey], storageKey);
 
     if payload.type == 'macro' then
         -- Dragging from palette to slot
         local macroData = payload.data;
         if macroData then
+            -- Get the current macro palette key to store with the reference
+            local macroPaletteKey = GetEffectivePaletteType();
             jobSlotActions[targetSlotIndex] = {
                 actionType = macroData.actionType,
                 action = macroData.action,
@@ -969,6 +1204,7 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
                 customIconType = macroData.customIconType,  -- Custom icon override
                 customIconId = macroData.customIconId,
                 macroRef = macroData.id,  -- Store reference to source macro for live updates
+                macroPaletteKey = macroPaletteKey,  -- Store which palette the macro came from
             };
             SaveSettingsToDisk();
         end
@@ -993,6 +1229,8 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
                 itemId = sourceBindData.itemId,  -- Preserve item ID for icon lookup
                 customIconType = sourceBindData.customIconType,  -- Preserve custom icon
                 customIconId = sourceBindData.customIconId,
+                macroRef = sourceBindData.macroRef,  -- Preserve macro reference
+                macroPaletteKey = sourceBindData.macroPaletteKey,  -- Preserve palette key
             };
         end
 
@@ -1010,18 +1248,20 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
                 itemId = targetBind.itemId,  -- Preserve item ID for icon lookup
                 customIconType = targetBind.customIconType,  -- Preserve custom icon
                 customIconId = targetBind.customIconId,
+                macroRef = targetBind.macroRef,  -- Preserve macro reference
+                macroPaletteKey = targetBind.macroPaletteKey,  -- Preserve palette key
             };
         else
             -- Target slot is empty - mark as cleared
             targetData = { cleared = true };
         end
 
-        -- Ensure source config structure exists (with key normalization)
+        -- Ensure source config structure exists
         if not gConfig[sourceConfigKey] then
             gConfig[sourceConfigKey] = {};
         end
-        -- Use storage key based on source bar's jobSpecific setting
-        local sourceStorageKey = getStorageKey(gConfig[sourceConfigKey], jobId);
+        -- Use pet-aware storage key for source bar
+        local sourceStorageKey = data.GetStorageKeyForBar(sourceBarIndex);
         local sourceJobSlotActions = ensureSlotActionsStructure(gConfig[sourceConfigKey], sourceStorageKey);
 
         -- Swap the slots
@@ -1044,30 +1284,24 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
                 itemId = sourceBindData.itemId,
                 customIconType = sourceBindData.customIconType,
                 customIconId = sourceBindData.customIconId,
+                macroRef = sourceBindData.macroRef,  -- Preserve macro reference
+                macroPaletteKey = sourceBindData.macroPaletteKey,  -- Preserve palette key
             };
             SaveSettingsToDisk();
         end
     end
 
+    -- Clear icon cache so slots update immediately after drag/drop
+    ClearAllIconCaches();
     return true;
 end
 
 -- Clear a hotbar slot
 function M.ClearSlot(barIndex, slotIndex)
-    local jobId = normalizeJobId(data.jobId or 1);
-    local configKey = 'hotbarBar' .. barIndex;
-
-    -- Ensure config structure exists (with key normalization)
-    if not gConfig[configKey] then
-        gConfig[configKey] = {};
-    end
-    -- Use storage key based on jobSpecific setting
-    local storageKey = getStorageKey(gConfig[configKey], jobId);
-    local jobSlotActions = ensureSlotActionsStructure(gConfig[configKey], storageKey);
-
-    -- Mark slot as cleared
-    jobSlotActions[slotIndex] = { cleared = true };
-    SaveSettingsToDisk();
+    -- Use the pet-aware clear function from data.lua
+    data.ClearSlotData(barIndex, slotIndex);
+    -- Clear icon cache so the slot updates immediately
+    ClearAllIconCaches();
 end
 
 -- ============================================
@@ -1250,9 +1484,11 @@ function M.DrawPalette()
 
     local db, typeKey = M.GetMacroDatabase();
     local isGlobal = (typeKey == GLOBAL_MACRO_KEY);
-    local typeName = isGlobal and 'Global' or (jobs[typeKey] or 'Unknown');
+    local typeName = GetPaletteDisplayName(typeKey);
     local currentPlayerJob = data.jobId or 1;
-    local isViewingCurrentJob = (not isGlobal and typeKey == currentPlayerJob);
+    -- For SMN with avatar selected, check base job ID
+    local baseJobId = type(typeKey) == 'number' and typeKey or tonumber(tostring(typeKey):match('^(%d+)'));
+    local isViewingCurrentJob = (not isGlobal and baseJobId == currentPlayerJob);
 
     -- Calculate pagination
     local totalMacros = #db;
@@ -1332,11 +1568,14 @@ function M.DrawPalette()
 
             if imgui.Selectable(globalLabel, globalSelected) then
                 selectedPaletteType = GLOBAL_MACRO_KEY;
+                selectedAvatarPalette = nil;
                 selectedMacroIndex = nil;
                 currentPalettePage = 1;
                 cachedSpells = nil;
                 cachedAbilities = nil;
                 cachedWeaponskills = nil;
+                cachedPetCommands = nil;
+                petAvatarFilter = 1;
                 cacheJobId = nil;
             end
             imgui.PopStyleColor();
@@ -1382,12 +1621,15 @@ function M.DrawPalette()
 
                 if imgui.Selectable(label, isSelected) then
                     selectedPaletteType = job.id;
+                    selectedAvatarPalette = nil;  -- Clear avatar selection when switching jobs
                     selectedMacroIndex = nil;  -- Clear selection when switching types
                     currentPalettePage = 1;    -- Reset to page 1 when switching types
                     -- Clear spell cache when switching types
                     cachedSpells = nil;
                     cachedAbilities = nil;
                     cachedWeaponskills = nil;
+                    cachedPetCommands = nil;
+                    petAvatarFilter = 1;
                     cacheJobId = nil;
                 end
 
@@ -1401,6 +1643,223 @@ function M.DrawPalette()
         end
         imgui.PopItemWidth();
         PopComboStyle();
+
+        -- Avatar sub-palette dropdown (only for SMN)
+        -- Use selectedPaletteType (the job ID) not typeKey (which may be composite like "15:avatar:ifrit")
+        if not isGlobal and selectedPaletteType == petregistry.JOB_SMN then
+            imgui.SameLine();
+            local avatarList = petregistry.GetAvatarList();
+            local avatarLabel = selectedAvatarPalette or 'Base SMN';
+
+            -- Count macros for current avatar selection
+            local avatarMacroCount = 0;
+            local currentAvatarKey = GetEffectivePaletteType();
+            if gConfig.macroDB and gConfig.macroDB[currentAvatarKey] then
+                avatarMacroCount = #gConfig.macroDB[currentAvatarKey];
+            end
+            if avatarMacroCount > 0 then
+                avatarLabel = string.format('%s (%d)', avatarLabel, avatarMacroCount);
+            end
+
+            PushComboStyle();
+            imgui.SetNextItemWidth(140);
+            if imgui.BeginCombo('##AvatarPalette', avatarLabel, ImGuiComboFlags_None) then
+                -- Base SMN option
+                local isBaseSelected = selectedAvatarPalette == nil;
+                local baseMacroCount = 0;
+                if gConfig.macroDB and gConfig.macroDB[petregistry.JOB_SMN] then
+                    baseMacroCount = #gConfig.macroDB[petregistry.JOB_SMN];
+                end
+                local baseLabel = baseMacroCount > 0 and string.format('Base SMN (%d)', baseMacroCount) or 'Base SMN';
+
+                if isBaseSelected then
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+                elseif baseMacroCount > 0 then
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+                else
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+                end
+
+                if imgui.Selectable(baseLabel, isBaseSelected) then
+                    selectedAvatarPalette = nil;
+                    selectedMacroIndex = nil;
+                    currentPalettePage = 1;
+                    cachedPetCommands = nil;  -- Refresh pet commands for new avatar
+                end
+                imgui.PopStyleColor();
+
+                if isBaseSelected then
+                    imgui.SetItemDefaultFocus();
+                end
+
+                imgui.Separator();
+
+                -- Avatar options
+                for _, avatar in ipairs(avatarList) do
+                    local isSelected = selectedAvatarPalette == avatar;
+                    local avatarKey = petregistry.avatars[avatar];
+                    local fullKey = string.format('%d:avatar:%s', petregistry.JOB_SMN, avatarKey);
+                    local macroCount = 0;
+                    if gConfig.macroDB and gConfig.macroDB[fullKey] then
+                        macroCount = #gConfig.macroDB[fullKey];
+                    end
+                    local label = macroCount > 0 and string.format('%s (%d)', avatar, macroCount) or avatar;
+
+                    if isSelected then
+                        imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+                    elseif macroCount > 0 then
+                        imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+                    else
+                        imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+                    end
+
+                    if imgui.Selectable(label, isSelected) then
+                        selectedAvatarPalette = avatar;
+                        selectedMacroIndex = nil;
+                        currentPalettePage = 1;
+                        cachedPetCommands = nil;  -- Refresh pet commands for new avatar
+                    end
+                    imgui.PopStyleColor();
+
+                    if isSelected then
+                        imgui.SetItemDefaultFocus();
+                    end
+                end
+                imgui.EndCombo();
+            end
+            PopComboStyle();
+        end
+
+        -- Pet Palette section (only show if any bar has petAware enabled)
+        local hasPetAwareBar = false;
+        for barIndex = 1, data.NUM_BARS do
+            local barSettings = data.GetBarSettings(barIndex);
+            if barSettings and barSettings.petAware then
+                hasPetAwareBar = true;
+                break;
+            end
+        end
+
+        if hasPetAwareBar then
+            imgui.Spacing();
+            imgui.Separator();
+            imgui.Spacing();
+
+            -- Show current pet detection
+            local currentPetKey = petpalette.GetCurrentPetKey();
+            local petDisplayName = currentPetKey and petregistry.GetDisplayNameForKey(currentPetKey) or 'No Pet';
+
+            imgui.TextColored(COLORS.textDim, 'Active Pet:');
+            imgui.SameLine();
+            if currentPetKey then
+                imgui.TextColored({0.5, 1.0, 0.8, 1.0}, petDisplayName);
+            else
+                imgui.TextColored(COLORS.textMuted, petDisplayName);
+            end
+
+            -- Show per-bar palette status with dropdown
+            imgui.Spacing();
+            local allSummons = petregistry.GetAllSummonsList();
+
+            for barIndex = 1, data.NUM_BARS do
+                local barSettings = data.GetBarSettings(barIndex);
+                if barSettings and barSettings.petAware and barSettings.enabled then
+                    local paletteName = petpalette.GetPaletteDisplayName(barIndex, data.jobId);
+                    local hasOverride = petpalette.HasManualOverride(barIndex);
+
+                    imgui.TextColored(COLORS.textDim, string.format('Bar %d:', barIndex));
+                    imgui.SameLine();
+
+                    -- Dropdown for palette selection
+                    local currentLabel = hasOverride and paletteName or 'Automatic';
+
+                    PushComboStyle();
+                    imgui.SetNextItemWidth(130);
+                    if imgui.BeginCombo('##petPalette' .. barIndex, currentLabel, ImGuiComboFlags_None) then
+                        -- Automatic option (first)
+                        local isAutoSelected = not hasOverride;
+                        if isAutoSelected then
+                            imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+                        else
+                            imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+                        end
+
+                        if imgui.Selectable('Automatic', isAutoSelected) then
+                            petpalette.SetPalette(barIndex, nil);
+                            local slotrenderer = require('modules.hotbar.slotrenderer');
+                            slotrenderer.ClearAllCache();
+                            ClearAllIconCaches();
+                        end
+                        imgui.PopStyleColor();
+
+                        if isAutoSelected then
+                            imgui.SetItemDefaultFocus();
+                        end
+
+                        imgui.Separator();
+
+                        -- Avatars section
+                        imgui.TextColored(COLORS.textDim, 'Avatars');
+                        for _, summon in ipairs(allSummons) do
+                            if summon.category == 'avatar' then
+                                local petKey = petregistry.GetPetKeyForSummon(summon.name);
+                                local isSelected = hasOverride and petpalette.GetPaletteDisplayName(barIndex, data.jobId) == summon.name;
+
+                                if isSelected then
+                                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+                                else
+                                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+                                end
+
+                                if imgui.Selectable('  ' .. summon.name, isSelected) then
+                                    petpalette.SetPalette(barIndex, petKey);
+                                    local slotrenderer = require('modules.hotbar.slotrenderer');
+                                    slotrenderer.ClearAllCache();
+                                    ClearAllIconCaches();
+                                end
+                                imgui.PopStyleColor();
+
+                                if isSelected then
+                                    imgui.SetItemDefaultFocus();
+                                end
+                            end
+                        end
+
+                        imgui.Separator();
+
+                        -- Spirits section
+                        imgui.TextColored(COLORS.textDim, 'Spirits');
+                        for _, summon in ipairs(allSummons) do
+                            if summon.category == 'spirit' then
+                                local petKey = petregistry.GetPetKeyForSummon(summon.name);
+                                local isSelected = hasOverride and petpalette.GetPaletteDisplayName(barIndex, data.jobId) == summon.name;
+
+                                if isSelected then
+                                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+                                else
+                                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+                                end
+
+                                if imgui.Selectable('  ' .. summon.name, isSelected) then
+                                    petpalette.SetPalette(barIndex, petKey);
+                                    local slotrenderer = require('modules.hotbar.slotrenderer');
+                                    slotrenderer.ClearAllCache();
+                                    ClearAllIconCaches();
+                                end
+                                imgui.PopStyleColor();
+
+                                if isSelected then
+                                    imgui.SetItemDefaultFocus();
+                                end
+                            end
+                        end
+
+                        imgui.EndCombo();
+                    end
+                    PopComboStyle();
+                end
+            end
+        end
 
         imgui.Spacing();
 
@@ -1784,7 +2243,7 @@ local function DrawIconPicker()
     -- Add padding (16px) + scrollbar (~16px) + child border (4px) = 512px
     local gridContentWidth = (ICON_GRID_SIZE * ICON_GRID_COLUMNS) + (ICON_GRID_GAP * (ICON_GRID_COLUMNS - 1));
     local windowWidth = gridContentWidth + 40;  -- padding + scrollbar + borders
-    local windowHeight = 450;
+    local windowHeight = 500;  -- Extra height for spell type filter buttons
 
     imgui.SetNextWindowSize({windowWidth, windowHeight}, ImGuiCond_FirstUseEver);
 
@@ -1806,8 +2265,7 @@ local function DrawIconPicker()
         end
         if imgui.Button('Spells', {tabWidth, 24}) then
             iconPickerTab = 1;
-            iconPickerFilter[1] = '';
-            iconPickerPage[1] = 1;  -- Reset page on tab switch
+            -- Keep filter text, don't reset - reduces lag from cache rebuilds
         end
         imgui.PopStyleColor(2);
 
@@ -1823,8 +2281,7 @@ local function DrawIconPicker()
         end
         if imgui.Button('Items', {tabWidth, 24}) then
             iconPickerTab = 2;
-            iconPickerFilter[1] = '';
-            iconPickerPage[2] = 1;  -- Reset page on tab switch
+            -- Keep filter text, don't reset - reduces lag from cache rebuilds
         end
         imgui.PopStyleColor(2);
 
@@ -1859,45 +2316,218 @@ local function DrawIconPicker()
             else
                 imgui.TextColored(COLORS.textMuted, string.format('(%d items)', #itemIconLoadState.items));
             end
-        elseif iconPickerTab == 1 then
-            local allSpells = GetAllSpells();
-            imgui.SameLine();
-            imgui.TextColored(COLORS.textMuted, string.format('(%d spells)', #allSpells));
         end
 
         imgui.Spacing();
 
+        -- Spell type filter buttons with icons (only for spells tab)
+        if iconPickerTab == 1 then
+            local filterIconSize = 24;
+            imgui.PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2);
+            imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {3, 3});
+            imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {2, 2});
+
+            for i, spellType in ipairs(SPELL_TYPE_ORDER) do
+                local tooltip = SPELL_TYPE_LABELS[spellType] or spellType;
+                local isSelected = iconPickerSpellType == spellType;
+
+                if isSelected then
+                    imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
+                    imgui.PushStyleColor(ImGuiCol_Border, COLORS.gold);
+                else
+                    imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgDark);
+                    imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+                end
+
+                -- Get job/trust icon
+                local icon = GetFilterIcon(spellType);
+                local clicked = false;
+
+                if icon and icon.image then
+                    local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
+                    if iconPtr then
+                        clicked = imgui.ImageButton('##spellFilter' .. i, iconPtr, {filterIconSize, filterIconSize});
+                    end
+                else
+                    -- Fallback to text if icon not loaded
+                    clicked = imgui.Button(tooltip:sub(1, 3) .. '##typeFilter' .. i, {filterIconSize + 4, filterIconSize + 4});
+                end
+
+                if clicked then
+                    iconPickerSpellType = spellType;
+                    iconPickerPage[1] = 1;
+                end
+
+                -- Tooltip on hover
+                if imgui.IsItemHovered() then
+                    imgui.BeginTooltip();
+                    imgui.Text(tooltip);
+                    imgui.EndTooltip();
+                end
+
+                imgui.PopStyleColor(2);
+
+                if i < #SPELL_TYPE_ORDER then
+                    imgui.SameLine();
+                end
+            end
+
+            imgui.PopStyleVar(3);
+            imgui.Spacing();
+        end
+
+        -- Item type filter buttons with icons (only for items tab)
+        if iconPickerTab == 2 then
+            local filterIconSize = 24;
+            imgui.PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2);
+            imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {3, 3});
+            imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {2, 2});
+
+            for i, itemType in ipairs(ITEM_TYPE_ORDER) do
+                local tooltip = ITEM_TYPE_LABELS[itemType] or tostring(itemType);
+                local isSelected = iconPickerItemType == itemType;
+                local itemId = ITEM_TYPE_ICONS[itemType];
+
+                if isSelected then
+                    imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
+                    imgui.PushStyleColor(ImGuiCol_Border, COLORS.gold);
+                else
+                    imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgDark);
+                    imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+                end
+
+                -- Get item icon texture
+                local icon = actions.GetBindIcon({ actionType = 'item', itemId = itemId });
+                local clicked = false;
+
+                if icon and icon.image then
+                    local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
+                    if iconPtr then
+                        clicked = imgui.ImageButton('##itemFilter' .. i, iconPtr, {filterIconSize, filterIconSize});
+                    end
+                else
+                    -- Fallback to text if icon not loaded
+                    clicked = imgui.Button(tooltip:sub(1, 3) .. '##itemTypeFilter' .. i, {filterIconSize + 4, filterIconSize + 4});
+                end
+
+                if clicked then
+                    iconPickerItemType = itemType;
+                    iconPickerPage[2] = 1;
+                end
+
+                -- Tooltip on hover
+                if imgui.IsItemHovered() then
+                    imgui.BeginTooltip();
+                    imgui.Text(tooltip);
+                    imgui.EndTooltip();
+                end
+
+                imgui.PopStyleColor(2);
+
+                if i < #ITEM_TYPE_ORDER then
+                    imgui.SameLine();
+                end
+            end
+
+            imgui.PopStyleVar(3);
+            imgui.Spacing();
+        end
+
         local filter = iconPickerFilter[1]:lower();
         local currentPage = iconPickerPage[iconPickerTab];
 
-        -- Reset page to 1 if filter changed
-        if filter ~= iconPickerLastFilter[iconPickerTab] then
-            iconPickerPage[iconPickerTab] = 1;
-            currentPage = 1;
-            iconPickerLastFilter[iconPickerTab] = filter;
+        -- Build cache key for filtered results
+        local cacheKey;
+        if iconPickerTab == 1 then
+            cacheKey = filter .. ':spell:' .. iconPickerSpellType;
+        else
+            cacheKey = filter .. ':item:' .. tostring(iconPickerItemType);
         end
 
-        -- Build filtered list to calculate total pages
+        -- Reset page and invalidate cache if filter/type changed
+        if iconPickerTab == 1 then
+            if cacheKey ~= filteredSpellsCacheKey then
+                iconPickerPage[1] = 1;
+                currentPage = 1;
+                filteredSpellsCache = nil;
+                filteredSpellsCacheKey = cacheKey;
+            end
+        else
+            if cacheKey ~= filteredItemsCacheKey then
+                iconPickerPage[2] = 1;
+                currentPage = 1;
+                filteredItemsCache = nil;
+                filteredItemsCacheKey = cacheKey;
+            end
+        end
+
+        -- Build filtered list (with caching to avoid rebuilding every frame)
         local filteredItems = {};
         if iconPickerTab == 1 then
-            local allSpells = GetAllSpells();
-            for _, spell in ipairs(allSpells) do
-                local spellName = spell.name or '';
-                if filter == '' or spellName:lower():find(filter, 1, true) then
-                    table.insert(filteredItems, spell);
+            if filteredSpellsCache then
+                filteredItems = filteredSpellsCache;
+            else
+                local allSpells = GetAllSpells();
+                for _, spell in ipairs(allSpells) do
+                    local spellName = spell.name or '';
+                    local matchesFilter = (filter == '' or spellName:lower():find(filter, 1, true));
+                    local matchesType = (iconPickerSpellType == 'All' or spell.type == iconPickerSpellType);
+                    if matchesFilter and matchesType then
+                        table.insert(filteredItems, spell);
+                    end
                 end
+                filteredSpellsCache = filteredItems;
             end
         elseif iconPickerTab == 2 then
-            for _, item in ipairs(itemIconLoadState.items) do
-                local itemName = item.name or '';
-                if filter == '' or itemName:lower():find(filter, 1, true) then
-                    table.insert(filteredItems, item);
+            if filteredItemsCache and not itemIconLoadState.loading then
+                filteredItems = filteredItemsCache;
+            else
+                -- Use pre-filtered type list if available and a specific type is selected
+                local sourceItems;
+                if iconPickerItemType ~= 0 and itemIconLoadState.itemsByType[iconPickerItemType] then
+                    sourceItems = itemIconLoadState.itemsByType[iconPickerItemType];
+                else
+                    sourceItems = itemIconLoadState.items;
+                end
+
+                -- Only filter by text search (type already filtered by source list)
+                if filter == '' then
+                    -- No text filter - use source directly
+                    filteredItems = sourceItems;
+                else
+                    -- Apply text filter
+                    for _, item in ipairs(sourceItems) do
+                        local itemName = item.name or '';
+                        if itemName:lower():find(filter, 1, true) then
+                            table.insert(filteredItems, item);
+                        end
+                    end
+                end
+
+                if not itemIconLoadState.loading then
+                    filteredItemsCache = filteredItems;
                 end
             end
         end
 
         local totalItems = #filteredItems;
         local totalPages = math.max(1, math.ceil(totalItems / ICONS_PER_PAGE));
+
+        -- Show filtered count for spells
+        if iconPickerTab == 1 then
+            local allSpells = GetAllSpells();
+            local countText = string.format('%d of %d spells', totalItems, #allSpells);
+            if iconPickerSpellType ~= 'All' then
+                countText = countText .. ' (' .. (SPELL_TYPE_LABELS[iconPickerSpellType] or iconPickerSpellType) .. ')';
+            end
+            imgui.TextColored(COLORS.textMuted, countText);
+        elseif iconPickerTab == 2 and not itemIconLoadState.loading then
+            local countText = string.format('%d of %d items', totalItems, #itemIconLoadState.items);
+            if iconPickerItemType ~= 0 then
+                countText = countText .. ' (' .. (ITEM_TYPE_LABELS[iconPickerItemType] or 'Type ' .. iconPickerItemType) .. ')';
+            end
+            imgui.TextColored(COLORS.textMuted, countText);
+        end
 
         -- Clamp current page
         if currentPage > totalPages then
@@ -1977,7 +2607,18 @@ local function DrawIconPicker()
                 for i = startIdx, endIdx do
                     local spell = filteredItems[i];
                     if spell then
-                        local icon = textures:Get('spells' .. string.format('%05d', spell.id));
+                        local icon = nil;
+
+                        -- For Trusts, Summons, and Blue Magic, try to get custom icons first
+                        if spell.type == 'Trust' or spell.type == 'SummonerPact' or spell.type == 'BlueMagic' then
+                            icon = actions.GetBindIcon({ actionType = 'ma', action = spell.name });
+                        end
+
+                        -- Fall back to spell icon from game resources
+                        if not icon or not icon.image then
+                            icon = textures:Get('spells' .. string.format('%05d', spell.id));
+                        end
+
                         if icon and icon.image then
                             -- Handle grid layout
                             local col = displayedCount % ICON_GRID_COLUMNS;
@@ -1985,8 +2626,14 @@ local function DrawIconPicker()
                                 imgui.SameLine(0, ICON_GRID_GAP);
                             end
 
+                            -- Show spell type in tooltip for trusts
+                            local tooltipText = spell.name;
+                            if spell.type and spell.type ~= 'Unknown' then
+                                tooltipText = spell.name .. ' (' .. (SPELL_TYPE_LABELS[spell.type] or spell.type) .. ')';
+                            end
+
                             local isSelected = editingMacro.customIconType == 'spell' and editingMacro.customIconId == spell.id;
-                            if DrawIconButton('##spell' .. spell.id, icon, ICON_GRID_SIZE, isSelected, spell.name) then
+                            if DrawIconButton('##spell' .. spell.id, icon, ICON_GRID_SIZE, isSelected, tooltipText) then
                                 editingMacro.customIconType = 'spell';
                                 editingMacro.customIconId = spell.id;
                                 iconPickerOpen = false;
@@ -1999,32 +2646,84 @@ local function DrawIconPicker()
             end
 
         elseif iconPickerTab == 2 then
-            -- Item icons - render current page from filtered list
+            -- Item icons - render current page from filtered list with progressive loading
             if itemIconLoadState.loading and #itemIconLoadState.items == 0 then
                 imgui.TextColored(COLORS.textMuted, 'Loading item database...');
             elseif totalItems == 0 then
                 imgui.TextColored(COLORS.textMuted, 'No matching items found');
             else
-                for i = startIdx, endIdx do
-                    local item = filteredItems[i];
-                    if item then
-                        local icon = actions.GetBindIcon({ actionType = 'item', itemId = item.id });
-                        if icon and icon.image then
-                            -- Handle grid layout
-                            local col = displayedCount % ICON_GRID_COLUMNS;
-                            if col > 0 then
-                                imgui.SameLine(0, ICON_GRID_GAP);
-                            end
+                -- Check if page/tab/filter changed - reset icon cache
+                local loadCacheKey = cacheKey .. ':' .. tostring(currentPage);
+                if iconLoadState.currentCacheKey ~= loadCacheKey then
+                    iconLoadState.currentPage = currentPage;
+                    iconLoadState.currentTab = iconPickerTab;
+                    iconLoadState.currentCacheKey = loadCacheKey;
+                    iconLoadState.loadedCount = 0;
+                    iconLoadState.pageIconCache = {};
+                end
 
-                            local isSelected = editingMacro.customIconType == 'item' and editingMacro.customIconId == item.id;
-                            if DrawIconButton('##item' .. item.id, icon, ICON_GRID_SIZE, isSelected, item.name) then
-                                editingMacro.customIconType = 'item';
-                                editingMacro.customIconId = item.id;
-                                iconPickerOpen = false;
-                            end
+                local pageItemCount = endIdx - startIdx + 1;
 
-                            displayedCount = displayedCount + 1;
+                -- Progressive loading: load only a few icons per frame to prevent lag
+                -- Frame skip allows even more breathing room for the game
+                iconLoadState.frameCounter = iconLoadState.frameCounter + 1;
+                local shouldLoadThisFrame = (iconLoadState.frameCounter > iconLoadState.frameSkip);
+
+                if shouldLoadThisFrame and iconLoadState.loadedCount < pageItemCount then
+                    iconLoadState.frameCounter = 0;  -- Reset frame counter
+
+                    local iconsToLoad = math.min(iconLoadState.iconsPerFrame, pageItemCount - iconLoadState.loadedCount);
+
+                    for _ = 1, iconsToLoad do
+                        local cacheIdx = iconLoadState.loadedCount + 1;
+                        local itemIdx = startIdx + iconLoadState.loadedCount;
+                        local item = filteredItems[itemIdx];
+
+                        if item then
+                            local icon = actions.GetBindIcon({ actionType = 'item', itemId = item.id });
+                            iconLoadState.pageIconCache[cacheIdx] = icon;
                         end
+
+                        iconLoadState.loadedCount = iconLoadState.loadedCount + 1;
+                    end
+                end
+
+                -- Show loading progress if still loading
+                local isStillLoading = iconLoadState.loadedCount < pageItemCount;
+                if isStillLoading then
+                    local pct = math.floor((iconLoadState.loadedCount / pageItemCount) * 100);
+                    imgui.TextColored(COLORS.gold, string.format('Loading icons... %d%%', pct));
+                    imgui.Spacing();
+                end
+
+                -- Render loaded icons
+                for cacheIdx = 1, iconLoadState.loadedCount do
+                    local itemIdx = startIdx + cacheIdx - 1;
+                    local item = filteredItems[itemIdx];
+                    local icon = iconLoadState.pageIconCache[cacheIdx];
+
+                    if item and icon and icon.image then
+                        -- Handle grid layout
+                        local col = displayedCount % ICON_GRID_COLUMNS;
+                        if col > 0 then
+                            imgui.SameLine(0, ICON_GRID_GAP);
+                        end
+
+                        -- Show item type in tooltip
+                        local tooltipText = item.name;
+                        local typeLabel = ITEM_TYPE_LABELS[item.itemType];
+                        if typeLabel and typeLabel ~= 'All' then
+                            tooltipText = item.name .. ' (' .. typeLabel .. ')';
+                        end
+
+                        local isSelected = editingMacro.customIconType == 'item' and editingMacro.customIconId == item.id;
+                        if DrawIconButton('##item' .. item.id, icon, ICON_GRID_SIZE, isSelected, tooltipText) then
+                            editingMacro.customIconType = 'item';
+                            editingMacro.customIconId = item.id;
+                            iconPickerOpen = false;
+                        end
+
+                        displayedCount = displayedCount + 1;
                     end
                 end
             end
@@ -2042,6 +2741,15 @@ local function DrawIconPicker()
         iconPickerFilter[1] = '';
         iconPickerPage = { 1, 1 };  -- Reset pages
         iconPickerLastFilter = { '', '' };
+        iconPickerSpellType = 'All';  -- Reset spell type filter
+        iconPickerItemType = 0;  -- Reset item type filter (0 = All)
+        -- Clear filter caches when picker closes
+        filteredSpellsCache = nil;
+        filteredSpellsCacheKey = nil;
+        filteredItemsCache = nil;
+        filteredItemsCacheKey = nil;
+        -- Reset progressive icon loading
+        ResetIconLoading();
     end
 end
 
@@ -2346,13 +3054,83 @@ function M.DrawMacroEditor()
             imgui.ShowHelp('Enter commands, one per line (e.g., /ma "Cure" <stpc>)');
 
         elseif currentType == 'pet' then
-            -- Pet command input
+            -- For SMN, show avatar filter dropdown
+            -- Use the VIEWED palette's job, not necessarily the player's current job
+            local viewedJobId = selectedPaletteType;
+            if type(viewedJobId) ~= 'number' then
+                viewedJobId = cacheJobId or 0;
+            end
+            local avatarList = petregistry.GetAvatarList();
+
+            if viewedJobId == petregistry.JOB_SMN then
+                imgui.TextColored(COLORS.goldDim, 'Avatar Filter');
+                PushComboStyle();
+                imgui.SetNextItemWidth(240);
+                local filterLabel = petAvatarFilter == 1 and 'All Avatars' or avatarList[petAvatarFilter - 1];
+                if imgui.BeginCombo('##avatarFilter', filterLabel) then
+                    -- "All" option
+                    local isAllSelected = petAvatarFilter == 1;
+                    if isAllSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
+                    if imgui.Selectable('All Avatars', isAllSelected) then
+                        petAvatarFilter = 1;
+                        cachedPetCommands = nil;  -- Clear cache to rebuild
+                    end
+                    if isAllSelected then imgui.PopStyleColor(); end
+
+                    imgui.Separator();
+
+                    -- Individual avatars
+                    for i, avatar in ipairs(avatarList) do
+                        local isSelected = petAvatarFilter == i + 1;
+                        if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
+                        if imgui.Selectable(avatar, isSelected) then
+                            petAvatarFilter = i + 1;
+                            cachedPetCommands = nil;  -- Clear cache to rebuild
+                        end
+                        if isSelected then imgui.PopStyleColor(); end
+                    end
+                    imgui.EndCombo();
+                end
+                PopComboStyle();
+                imgui.Spacing();
+            end
+
+            -- Build pet commands cache if needed
+            if not cachedPetCommands then
+                local avatarName = nil;
+                if viewedJobId == petregistry.JOB_SMN then
+                    -- Prefer the macro palette's avatar selection, then the filter
+                    if selectedAvatarPalette then
+                        avatarName = selectedAvatarPalette;
+                    elseif petAvatarFilter > 1 then
+                        avatarName = avatarList[petAvatarFilter - 1];
+                    end
+                end
+                cachedPetCommands = GetPetCommandsForJob(viewedJobId, avatarName);
+            end
+
+            -- Pet command dropdown
             imgui.TextColored(COLORS.goldDim, 'Pet Command');
-            imgui.SetNextItemWidth(240);
-            if imgui.InputText('##petCommand', editorFields.action, INPUT_BUFFER_SIZE) then
+            if cachedPetCommands and #cachedPetCommands > 0 then
+                DrawSearchableCombo('##petCommandCombo', cachedPetCommands, editingMacro.action or '', function(cmd)
+                    editingMacro.action = cmd.name;
+                    editorFields.action[1] = cmd.name;
+                    if (editingMacro.displayName or '') == '' then
+                        editingMacro.displayName = cmd.name;
+                        editorFields.displayName[1] = cmd.name;
+                    end
+                end);
+            else
+                imgui.TextColored(COLORS.textMuted, 'No pet commands available for this job');
+            end
+
+            -- Manual input fallback
+            imgui.Spacing();
+            imgui.TextColored(COLORS.goldDim, 'Or type command:');
+            imgui.SetNextItemWidth(220);
+            if imgui.InputText('##petCommandManual', editorFields.action, INPUT_BUFFER_SIZE) then
                 editingMacro.action = editorFields.action[1];
             end
-            imgui.ShowHelp('Enter pet command name (e.g., "Assault", "Retreat")');
 
             -- Target dropdown
             imgui.Spacing();

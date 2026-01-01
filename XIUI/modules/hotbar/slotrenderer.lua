@@ -252,11 +252,27 @@ function M.DrawSlot(resources, params)
     local targetIconSize = size - (iconPadding * 2);
 
     -- ========================================
-    -- 3. Cooldown Info
+    -- 3. Cooldown Info & MP Check
     -- ========================================
     local cooldown = recast.GetCooldownInfo(bind);
     local isOnCooldown = cooldown.isOnCooldown;
     local recastText = cooldown.recastText;
+
+    -- Check if player has enough MP for spells
+    local notEnoughMp = false;
+    if bind and bind.actionType == 'ma' then
+        local bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
+        local mpCost = mpCostCache[bindKey];
+        if mpCost == nil then
+            mpCost = actions.GetMPCost(bind) or false;
+            mpCostCache[bindKey] = mpCost;
+        end
+        if mpCost and mpCost ~= false then
+            local party = AshitaCore:GetMemoryManager():GetParty();
+            local playerMp = party and party:GetMemberMP(0) or 0;
+            notEnoughMp = playerMp < mpCost;
+        end
+    end
 
     -- ========================================
     -- 4. Icon Rendering (Primitive for file-based, ImGui for memory-based)
@@ -314,8 +330,13 @@ function M.DrawSlot(resources, params)
                 cache.iconScale = scale;
             end
 
-            -- Calculate color: cooldown darkening + dim factor + animation opacity
-            local colorMult = isOnCooldown and 0.4 or 1.0;
+            -- Calculate color: cooldown/noMP darkening + dim factor + animation opacity
+            local colorMult = 1.0;
+            if isOnCooldown then
+                colorMult = 0.4;
+            elseif notEnoughMp then
+                colorMult = 0.6;  -- Slightly dimmed when not enough MP
+            end
             colorMult = colorMult * dimFactor;
             local rgb = math.floor(255 * colorMult);
             local alpha = math.floor(255 * animOpacity);
@@ -360,8 +381,13 @@ function M.DrawSlot(resources, params)
                 local iconX = x + (size - renderedWidth) / 2;
                 local iconY = y + (size - renderedHeight) / 2;
 
-                -- Calculate color: cooldown darkening + dim factor + animation opacity
-                local colorMult = isOnCooldown and 0.4 or 1.0;
+                -- Calculate color: cooldown/noMP darkening + dim factor + animation opacity
+                local colorMult = 1.0;
+                if isOnCooldown then
+                    colorMult = 0.4;
+                elseif notEnoughMp then
+                    colorMult = 0.6;  -- Slightly dimmed when not enough MP
+                end
                 colorMult = colorMult * dimFactor;
                 local rgb = math.floor(255 * colorMult);
                 local alpha = math.floor(255 * animOpacity);
@@ -463,6 +489,25 @@ function M.DrawSlot(resources, params)
                 cache.labelX = labelX;
                 cache.labelY = labelY;
             end
+
+            -- Determine label color based on state
+            -- Priority: Cooldown (grey) > Not enough MP (red) > Normal
+            local labelColor = params.labelFontColor or 0xFFFFFFFF;
+
+            if isOnCooldown then
+                -- Grey when on cooldown
+                labelColor = params.labelCooldownColor or 0xFF888888;
+            elseif notEnoughMp then
+                -- Red when not enough MP
+                labelColor = params.labelNoMpColor or 0xFFFF4444;
+            end
+
+            -- Only update color if changed
+            if cache and cache.labelFontColor ~= labelColor then
+                resources.labelFont:set_font_color(labelColor);
+                cache.labelFontColor = labelColor;
+            end
+
             resources.labelFont:set_visible(animOpacity > 0.5);
         else
             resources.labelFont:set_visible(false);
@@ -470,7 +515,7 @@ function M.DrawSlot(resources, params)
     end
 
     -- ========================================
-    -- 8. MP Cost Font (GDI - bottom right corner)
+    -- 8. MP Cost Font (GDI - top right corner)
     -- ========================================
     if resources.mpCostFont then
         local showMpCost = params.showMpCost ~= false;
@@ -504,9 +549,16 @@ function M.DrawSlot(resources, params)
                     resources.mpCostFont:set_font_height(params.mpCostFontSize);
                     cache.mpCostFontSize = params.mpCostFontSize;
                 end
-                if params.mpCostFontColor and cache and cache.mpCostFontColor ~= params.mpCostFontColor then
-                    resources.mpCostFont:set_font_color(params.mpCostFontColor);
-                    cache.mpCostFontColor = params.mpCostFontColor;
+
+                -- Determine MP cost color - red if not enough MP
+                local mpCostColor = params.mpCostFontColor or 0xFFD4FF97;
+                if notEnoughMp then
+                    mpCostColor = params.mpCostNoMpColor or 0xFFFF4444;
+                end
+
+                if cache and cache.mpCostFontColor ~= mpCostColor then
+                    resources.mpCostFont:set_font_color(mpCostColor);
+                    cache.mpCostFontColor = mpCostColor;
                 end
                 resources.mpCostFont:set_visible(true);
             else

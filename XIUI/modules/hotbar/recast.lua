@@ -7,8 +7,42 @@
 local abilityRecast = require('libs.abilityrecast');
 local itemRecast = require('libs.itemrecast');
 local actiondb = require('modules.hotbar.actiondb');
+local petregistry = require('modules.hotbar.petregistry');
 
 local M = {};
+
+-- Blood Pact timer IDs
+local BP_RAGE_TIMER_ID = 173;
+local BP_WARD_TIMER_ID = 174;
+
+-- Get Blood Pact timer ID by command name
+-- Returns timer ID (173 for Rage, 174 for Ward) or nil if not a blood pact
+local function GetBloodPactTimerId(commandName)
+    if not commandName then return nil; end
+
+    -- Check if it's a Rage pact
+    for _, pact in ipairs(petregistry.bloodPactsRage or {}) do
+        if pact.name == commandName then
+            return BP_RAGE_TIMER_ID;
+        end
+    end
+
+    -- Check if it's a Ward pact
+    for _, pact in ipairs(petregistry.bloodPactsWard or {}) do
+        if pact.name == commandName then
+            return BP_WARD_TIMER_ID;
+        end
+    end
+
+    return nil;
+end
+
+-- Get pet command recast by timer ID
+-- Returns: remaining seconds, or 0 if ready
+function M.GetPetCommandRecast(timerId)
+    if not timerId then return 0; end
+    return abilityRecast.GetAbilityRecastSeconds(timerId);
+end
 
 -- Cached spell recasts (refreshed periodically)
 -- Key: spellId, Value: remaining seconds
@@ -140,18 +174,32 @@ function M.GetCooldownInfo(actionData)
     local spellId = nil;
     local abilityId = nil;
     local itemId = nil;
+    local remaining = 0;
+    local recastText = nil;
 
     if actionData.actionType == 'ma' then
         spellId = actiondb.GetSpellId(actionData.action);
-    elseif actionData.actionType == 'ja' or actionData.actionType == 'pet' then
+        remaining, recastText = M.GetActionRecast(actionData.actionType, spellId, nil, nil);
+    elseif actionData.actionType == 'pet' then
+        -- Pet commands (Blood Pacts, Ready, etc.) - check for known timer IDs
+        local bpTimerId = GetBloodPactTimerId(actionData.action);
+        if bpTimerId then
+            -- Blood Pact - use timer ID directly
+            remaining = M.GetPetCommandRecast(bpTimerId);
+            recastText = M.FormatRecast(remaining);
+        else
+            -- Other pet commands - try ability lookup
+            abilityId = actiondb.GetAbilityId(actionData.action);
+            remaining, recastText = M.GetActionRecast(actionData.actionType, nil, abilityId, nil);
+        end
+    elseif actionData.actionType == 'ja' then
         abilityId = actiondb.GetAbilityId(actionData.action);
+        remaining, recastText = M.GetActionRecast(actionData.actionType, nil, abilityId, nil);
     elseif actionData.actionType == 'item' or actionData.actionType == 'equip' then
         -- itemId should already be stored in the action data
         itemId = actionData.itemId;
+        remaining, recastText = M.GetActionRecast(actionData.actionType, nil, nil, itemId);
     end
-
-    -- Get recast state
-    local remaining, recastText = M.GetActionRecast(actionData.actionType, spellId, abilityId, itemId);
 
     -- Reuse result table to avoid GC pressure
     cooldownResult.isOnCooldown = remaining > 0;

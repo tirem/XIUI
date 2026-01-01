@@ -7,6 +7,15 @@ require('common');
 
 local M = {};
 
+-- Lazy-loaded to avoid circular dependency (petpalette requires data in future)
+local petpalette = nil;
+local function getPetPalette()
+    if not petpalette then
+        petpalette = require('modules.hotbar.petpalette');
+    end
+    return petpalette;
+end
+
 -- ============================================
 -- Constants
 -- ============================================
@@ -97,21 +106,34 @@ local function getStorageKey(barSettings, jobId)
     return normalizeJobId(jobId);
 end
 
+-- Check if a storage key is a pet-aware composite key (e.g., "15:avatar:ifrit")
+local function isPetCompositeKey(key)
+    if type(key) ~= 'string' then return false; end
+    return key:find(':') ~= nil;
+end
+
 -- Helper to get slotActions with normalized job ID key
 -- JSON serialization converts numeric keys to strings, so we need to check both
-local function getSlotActionsForJob(slotActions, jobId)
+-- Also handles pet-aware composite keys (e.g., "15:avatar:ifrit")
+local function getSlotActionsForJob(slotActions, storageKey)
     if not slotActions then return nil; end
     -- Handle 'global' key specially
-    if jobId == GLOBAL_SLOT_KEY then
+    if storageKey == GLOBAL_SLOT_KEY then
         return slotActions[GLOBAL_SLOT_KEY];
     end
-    local numericKey = normalizeJobId(jobId);
+    -- Handle pet-aware composite keys (stored as strings)
+    if isPetCompositeKey(storageKey) then
+        return slotActions[storageKey];
+    end
+    -- Handle regular job ID keys (numeric or string)
+    local numericKey = normalizeJobId(storageKey);
     local stringKey = tostring(numericKey);
     -- Check numeric key first (preferred), then string key (from JSON)
     return slotActions[numericKey] or slotActions[stringKey];
 end
 
--- Helper to ensure slotActions structure exists for a job (or global)
+-- Helper to ensure slotActions structure exists for a storage key
+-- Handles: 'global', numeric job IDs, and pet-aware composite keys
 local function ensureSlotActionsStructure(barSettings, storageKey)
     if not barSettings.slotActions then
         barSettings.slotActions = {};
@@ -123,6 +145,14 @@ local function ensureSlotActionsStructure(barSettings, storageKey)
         end
         return barSettings.slotActions[GLOBAL_SLOT_KEY];
     end
+    -- Handle pet-aware composite keys (stored as strings, e.g., "15:avatar:ifrit")
+    if isPetCompositeKey(storageKey) then
+        if not barSettings.slotActions[storageKey] then
+            barSettings.slotActions[storageKey] = {};
+        end
+        return barSettings.slotActions[storageKey];
+    end
+    -- Handle regular job ID keys
     local numericKey = normalizeJobId(storageKey);
     if not barSettings.slotActions[numericKey] then
         -- Also check for string key and migrate if found
@@ -147,7 +177,69 @@ local PER_BAR_ONLY_KEYS = {
     useGlobalSettings = true,
     keybinds = true,
     slotActions = true,
+    jobSpecific = true,
+    petAware = true,
 };
+
+-- ============================================
+-- Pet-Aware Storage Key Resolution
+-- ============================================
+
+-- Build full storage key for a bar, considering pet awareness
+-- Returns: 'global', '{jobId}', or '{jobId}:{petKey}' (e.g., '15:avatar:ifrit')
+function M.GetStorageKeyForBar(barIndex)
+    local configKey = 'hotbarBar' .. barIndex;
+    local barSettings = gConfig and gConfig[configKey];
+    local jobId = M.jobId or 1;
+
+    if not barSettings then
+        return normalizeJobId(jobId);
+    end
+
+    -- Global mode (non-job-specific)
+    if barSettings.jobSpecific == false then
+        return GLOBAL_SLOT_KEY;
+    end
+
+    -- Check if pet-aware mode is enabled for this bar
+    if not barSettings.petAware then
+        return normalizeJobId(jobId);
+    end
+
+    -- Get pet palette module (lazy load)
+    local pp = getPetPalette();
+    if not pp then
+        return normalizeJobId(jobId);
+    end
+
+    -- Check for manual override first
+    local effectivePetKey = pp.GetEffectivePetKey(barIndex);
+    if effectivePetKey then
+        return string.format('%d:%s', normalizeJobId(jobId), effectivePetKey);
+    end
+
+    -- No pet - fall back to base job
+    return normalizeJobId(jobId);
+end
+
+-- Get available storage keys (palettes) for a bar
+-- Used for cycling and display
+function M.GetAvailablePalettes(barIndex)
+    local configKey = 'hotbarBar' .. barIndex;
+    local barSettings = gConfig and gConfig[configKey];
+    local jobId = M.jobId or 1;
+
+    if not barSettings or not barSettings.petAware then
+        return {};
+    end
+
+    local pp = getPetPalette();
+    if not pp then
+        return {};
+    end
+
+    return pp.GetAvailablePalettes(barIndex, jobId);
+end
 
 -- Get per-bar settings from gConfig, merging with global if useGlobalSettings is true
 function M.GetBarSettings(barIndex)
@@ -181,6 +273,9 @@ function M.GetBarSettings(barIndex)
             keybindFontSize = 10,
             keybindFontColor = 0xFFFFFFFF,
             labelFontSize = 10,
+            labelFontColor = 0xFFFFFFFF,
+            labelCooldownColor = 0xFF888888,
+            labelNoMpColor = 0xFFFF4444,
             showMpCost = true,
             mpCostFontSize = 10,
             mpCostFontColor = 0xFFD4FF97,
@@ -287,15 +382,35 @@ function M.GetKeybindDisplay(barIndex, slotIndex)
 end
 
 -- Helper to look up a macro from macroDB by id
-local function GetMacroById(macroId, jobId)
+-- paletteKey can be a job ID (number) or composite key (string like "15:avatar:ifrit")
+local function GetMacroById(macroId, paletteKey)
     if not gConfig or not gConfig.macroDB then return nil; end
-    local jobMacros = gConfig.macroDB[jobId];
-    if not jobMacros then return nil; end
-    for _, macro in ipairs(jobMacros) do
-        if macro.id == macroId then
-            return macro;
+
+    -- Try the specific palette key first
+    local macros = gConfig.macroDB[paletteKey];
+    if macros then
+        for _, macro in ipairs(macros) do
+            if macro.id == macroId then
+                return macro;
+            end
         end
     end
+
+    -- If paletteKey is a composite key and macro not found, try base job palette
+    if type(paletteKey) == 'string' then
+        local baseJobId = tonumber(paletteKey:match('^(%d+)'));
+        if baseJobId then
+            local baseMacros = gConfig.macroDB[baseJobId];
+            if baseMacros then
+                for _, macro in ipairs(baseMacros) do
+                    if macro.id == macroId then
+                        return macro;
+                    end
+                end
+            end
+        end
+    end
+
     return nil;
 end
 
@@ -305,9 +420,13 @@ function M.GetKeybindForSlot(barIndex, slotIndex)
     local configKey = 'hotbarBar' .. barIndex;
     if gConfig and gConfig[configKey] then
         local barSettings = gConfig[configKey];
-        -- Use storage key based on jobSpecific setting (either 'global' or job ID)
-        local storageKey = getStorageKey(barSettings, M.jobId);
+        -- Use pet-aware storage key (handles global, job-specific, and pet palettes)
+        local storageKey = M.GetStorageKeyForBar(barIndex);
         local jobSlotActions = getSlotActionsForJob(barSettings.slotActions, storageKey);
+
+        -- NOTE: Do NOT fall back to base job when pet palette is active
+        -- If user has a pet out and petAware enabled, show the pet-specific palette (even if empty)
+        -- This prevents the base job summon macros from showing when an avatar is summoned
         if jobSlotActions then
             local slotAction = jobSlotActions[slotIndex];
             if slotAction then
@@ -320,7 +439,9 @@ function M.GetKeybindForSlot(barIndex, slotIndex)
                 -- This ensures icon changes in the palette are reflected on the hotbar
                 local macroData = slotAction;
                 if slotAction.macroRef then
-                    local liveMacro = GetMacroById(slotAction.macroRef, M.jobId);
+                    -- Use stored palette key if available, otherwise fall back to job ID
+                    local paletteKey = slotAction.macroPaletteKey or M.jobId;
+                    local liveMacro = GetMacroById(slotAction.macroRef, paletteKey);
                     if liveMacro then
                         macroData = liveMacro;
                     end
@@ -425,7 +546,9 @@ function M.GetCrossbarSlotData(comboMode, slotIndex)
     -- If this slot has a macro reference, look up the current macro data
     -- This ensures icon changes in the palette are reflected on the crossbar
     if slotAction.macroRef then
-        local liveMacro = GetMacroById(slotAction.macroRef, jobId);
+        -- Use stored palette key if available, otherwise fall back to job ID
+        local paletteKey = slotAction.macroPaletteKey or jobId;
+        local liveMacro = GetMacroById(slotAction.macroRef, paletteKey);
         if liveMacro then
             -- Return fresh macro data (preserving any slot-specific overrides if needed)
             return {
@@ -439,6 +562,7 @@ function M.GetCrossbarSlotData(comboMode, slotIndex)
                 customIconType = liveMacro.customIconType,
                 customIconId = liveMacro.customIconId,
                 macroRef = slotAction.macroRef,
+                macroPaletteKey = slotAction.macroPaletteKey,
             };
         end
         -- If macro was deleted, fall back to cached slotAction data
@@ -482,6 +606,7 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
         customIconType = slotData.customIconType,
         customIconId = slotData.customIconId,
         macroRef = slotData.macroRef or slotData.id,  -- Store reference to source macro for live updates
+        macroPaletteKey = slotData.macroPaletteKey,  -- Store which palette the macro came from
     };
 
     SaveSettingsToDisk();
@@ -522,6 +647,63 @@ function M.ClearAllCrossbarSlotActions()
         gConfig.hotbarCrossbar.slotActions = {};
         SaveSettingsToDisk();
     end
+end
+
+-- ============================================
+-- Pet-Aware Slot Data Functions
+-- ============================================
+
+-- Set slot data for a hotbar slot (pet-aware)
+-- Uses current storage key (which considers pet-aware mode)
+function M.SetSlotData(barIndex, slotIndex, slotData)
+    local configKey = 'hotbarBar' .. barIndex;
+    if not gConfig or not gConfig[configKey] then return; end
+
+    local barSettings = gConfig[configKey];
+    local storageKey = M.GetStorageKeyForBar(barIndex);
+    local jobSlotActions = ensureSlotActionsStructure(barSettings, storageKey);
+
+    if slotData then
+        jobSlotActions[slotIndex] = {
+            actionType = slotData.actionType,
+            action = slotData.action,
+            target = slotData.target,
+            displayName = slotData.displayName,
+            equipSlot = slotData.equipSlot,
+            macroText = slotData.macroText,
+            itemId = slotData.itemId,
+            customIconType = slotData.customIconType,
+            customIconId = slotData.customIconId,
+            macroRef = slotData.macroRef or slotData.id,
+            macroPaletteKey = slotData.macroPaletteKey,  -- Store which palette the macro came from
+        };
+    else
+        -- Mark as explicitly cleared
+        jobSlotActions[slotIndex] = { cleared = true };
+    end
+
+    SaveSettingsToDisk();
+end
+
+-- Clear slot data for a hotbar slot (pet-aware)
+function M.ClearSlotData(barIndex, slotIndex)
+    local configKey = 'hotbarBar' .. barIndex;
+    if not gConfig or not gConfig[configKey] then return; end
+
+    local barSettings = gConfig[configKey];
+    local storageKey = M.GetStorageKeyForBar(barIndex);
+    local jobSlotActions = getSlotActionsForJob(barSettings.slotActions, storageKey);
+
+    if jobSlotActions then
+        -- Mark as explicitly cleared
+        jobSlotActions[slotIndex] = { cleared = true };
+        SaveSettingsToDisk();
+    end
+end
+
+-- Get the current storage key for external use (e.g., macropalette)
+function M.GetCurrentStorageKey(barIndex)
+    return M.GetStorageKeyForBar(barIndex);
 end
 
 -- ============================================

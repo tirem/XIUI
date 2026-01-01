@@ -545,6 +545,11 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         petBar.HandlePacket(e);
     end
 
+    -- Hotbar pet palette sync (0x0068 Pet Sync)
+    if e.id == 0x0068 and gConfig.hotbarEnabled then
+        hotbar.HandlePetSyncPacket();
+    end
+
     if (e.id == 0x0028) then
         local actionPacket = ParseActionPacket(e);
         if actionPacket then

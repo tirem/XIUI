@@ -132,6 +132,164 @@ textures.Initialize = function(self)
         end
     end
 
+    -- Load SMN icons (summons, abilities, pet commands) from hotbar/SMN directory
+    local smnDirectory = string.format('%saddons\\XIUI\\assets\\hotbar\\SMN\\', AshitaCore:GetInstallPath());
+    local smnIcons = {
+        -- Summoning magic (avatars)
+        { file = 'Carbuncle', key = 'summon_Carbuncle' },
+        { file = 'Ifrit', key = 'summon_Ifrit' },
+        { file = 'Shiva', key = 'summon_Shiva' },
+        { file = 'Garuda', key = 'summon_Garuda' },
+        { file = 'Titan', key = 'summon_Titan' },
+        { file = 'Ramuh', key = 'summon_Ramuh' },
+        { file = 'Leviathan', key = 'summon_Leviathan' },
+        { file = 'Fenrir', key = 'summon_Fenrir' },
+        { file = 'Diabolos', key = 'summon_Diabolos' },
+        { file = 'CaitSith', key = 'summon_CaitSith' },
+        { file = 'Alexander', key = 'summon_Alexander' },
+        { file = 'Odin', key = 'summon_Odin' },
+        { file = 'Atomos', key = 'summon_Atomos' },
+        { file = 'Siren', key = 'summon_Siren' },
+        -- Summoning magic (spirits)
+        { file = 'FireSpirit', key = 'summon_FireSpirit' },
+        { file = 'IceSpirit', key = 'summon_IceSpirit' },
+        { file = 'AirSpirit', key = 'summon_AirSpirit' },
+        { file = 'EarthSpirit', key = 'summon_EarthSpirit' },
+        { file = 'ThunderSpirit', key = 'summon_ThunderSpirit' },
+        { file = 'WaterSpirit', key = 'summon_WaterSpirit' },
+        { file = 'LightSpirit', key = 'summon_LightSpirit' },
+        { file = 'DarkSpirit', key = 'summon_DarkSpirit' },
+        -- Pet commands
+        { file = 'Assault', key = 'ability_Assault' },
+        { file = 'Release', key = 'ability_Release' },
+        { file = 'Retreat', key = 'ability_Retreat' },
+        -- SMN job abilities
+        { file = 'Apogee', key = 'ability_Apogee' },
+        { file = 'AstralConduit1', key = 'ability_AstralConduit' },
+        { file = 'AstralFlow', key = 'ability_AstralFlow' },
+        { file = 'AvatarsFavor', key = 'ability_AvatarsFavor' },
+        { file = 'ElementalSiphon', key = 'ability_ElementalSiphon' },
+        { file = 'ManaCede', key = 'ability_ManaCede' },
+    };
+    for _, icon in ipairs(smnIcons) do
+        local fullPath = smnDirectory .. icon.file .. '.png';
+        local texture = LoadTextureFromPath(fullPath);
+        if texture then
+            self.Cache[icon.key] = texture;
+        end
+    end
+
+    -- Load custom icons from hotbar/custom directory
+    local customDirectory = string.format('%saddons\\XIUI\\assets\\hotbar\\custom\\', AshitaCore:GetInstallPath());
+
+    -- Trust icons
+    local trustIcons = {
+        'ajido-marujido', 'amchuchu', 'ayame', 'cid', 'curilla', 'darrcuiln',
+        'excenmille', 'halver', 'iron-eater', 'joachim', 'king-of-hearts',
+        'koru-moru', 'kupipi', 'kuyin-hathdenna', 'lion', 'makki-chebukki',
+        'mildaurion', 'mnejing', 'morimar', 'naja', 'naji', 'nanaa-mihgo',
+        'ovjang', 'prishe', 'qultada', 'rahal', 'rongelouts', 'rughadjeen',
+        'sakura', 'semih-lafihna', 'shantotto', 'shantotto-II', 'star-sibyl',
+        'tenzen', 'trion', 'valaineral', 'volker', 'yoran-oran', 'zazarg',
+        'zeid', 'zeid-II',
+    };
+    for _, name in ipairs(trustIcons) do
+        local fullPath = customDirectory .. 'trusts\\trust-' .. name .. '.png';
+        local texture = LoadTextureFromPath(fullPath);
+        if texture then
+            self.Cache['trust_' .. name] = texture;
+        end
+    end
+
+    -- Blue magic icons
+    local blueIcons = {
+        'battle-dance', 'blank-gaze', 'cocoon', 'foot-kick', 'grand-slam',
+        'headbutt', 'healing-breeze', 'jet-stream', 'light-of-penance',
+        'magic-fruit', 'metallic-body', 'power-attack', 'sheep-song',
+        'terror-touch', 'uppercut', 'wild-oats', 'zephyr-mantle',
+    };
+    for _, name in ipairs(blueIcons) do
+        local fullPath = customDirectory .. 'blue\\blue-' .. name .. '.png';
+        local texture = LoadTextureFromPath(fullPath);
+        if texture then
+            self.Cache['blue_' .. name:gsub('-', '_')] = texture;
+        end
+    end
+
+    -- Mount icons
+    local mountIcons = {
+        'beetle', 'bomb', 'chocobo', 'crab', 'crawler', 'fenrir',
+        'magic-pot', 'moogle', 'morbol', 'raptor', 'red-crab',
+        'sheep', 'tiger', 'tulfaire', 'warmachine',
+    };
+    for _, name in ipairs(mountIcons) do
+        local fullPath = customDirectory .. 'mounts\\mount-' .. name .. '.png';
+        local texture = LoadTextureFromPath(fullPath);
+        if texture then
+            self.Cache['mount_' .. name:gsub('-', '_')] = texture;
+        end
+    end
+
+    -- Rune Fencer rune icons (from custom root)
+    local runeIcons = {
+        { file = 'ignis-icon', key = 'rune_ignis' },
+        { file = 'gelus-icon', key = 'rune_gelus' },
+        { file = 'flabra-icon', key = 'rune_flabra' },
+        { file = 'tellus-icon', key = 'rune_tellus' },
+        { file = 'sulpor-icon', key = 'rune_sulpor' },
+        { file = 'unda-icon', key = 'rune_unda' },
+        { file = 'lux-icon', key = 'rune_lux' },
+        { file = 'tenebrae-icon', key = 'rune_tenebrae' },
+        -- RUN abilities
+        { file = 'battuta-icon', key = 'ability_battuta' },
+        { file = 'gambit-icon', key = 'ability_gambit' },
+        { file = 'liement-icon', key = 'ability_liement' },
+        { file = 'pflug-icon', key = 'ability_pflug' },
+        { file = 'pulse-icon', key = 'ability_pulse' },
+        { file = 'foil-icon', key = 'ability_foil' },
+    };
+    for _, icon in ipairs(runeIcons) do
+        local fullPath = customDirectory .. icon.file .. '.png';
+        local texture = LoadTextureFromPath(fullPath);
+        if texture then
+            self.Cache[icon.key] = texture;
+        end
+    end
+
+    -- Misc utility icons
+    local utilityIcons = {
+        { file = 'attack', key = 'cmd_attack' },
+        { file = 'disengage', key = 'cmd_disengage' },
+        { file = 'fish', key = 'cmd_fish' },
+        { file = 'fish2', key = 'cmd_fish2' },
+        { file = 'dig', key = 'cmd_dig' },
+        { file = 'mining', key = 'cmd_mining' },
+        { file = 'harvest', key = 'cmd_harvest' },
+        { file = 'mount', key = 'cmd_mount' },
+        { file = 'dismount', key = 'cmd_dismount' },
+        { file = 'check', key = 'cmd_check' },
+        { file = 'claim', key = 'cmd_claim' },
+        { file = 'heal', key = 'cmd_heal' },
+        { file = 'synth', key = 'cmd_synth' },
+        { file = 'return-trust', key = 'cmd_returntrust' },
+        { file = 'macro', key = 'cmd_macro' },
+        { file = 'gear', key = 'cmd_gear' },
+        { file = 'gear2', key = 'cmd_gear2' },
+        { file = 'gear3', key = 'cmd_gear3' },
+        { file = 'gobbie', key = 'cmd_gobbie' },
+        { file = 'jump', key = 'ability_jump' },
+        { file = 'chainspell', key = 'ability_chainspell' },
+        { file = 'stymie', key = 'ability_stymie' },
+        { file = '2hr', key = 'ability_2hr' },
+    };
+    for _, icon in ipairs(utilityIcons) do
+        local fullPath = customDirectory .. icon.file .. '.png';
+        local texture = LoadTextureFromPath(fullPath);
+        if texture then
+            self.Cache[icon.key] = texture;
+        end
+    end
+
 end
 
 textures.Release = function(self)

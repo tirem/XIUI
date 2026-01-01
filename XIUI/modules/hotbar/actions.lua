@@ -11,6 +11,168 @@ local textures = require('modules.hotbar.textures');
 
 local M = {};
 
+-- Mapping from summoning spell names to texture cache keys
+-- Spell names (as they appear in-game) -> texture key (as loaded in textures.lua)
+local summonSpellToIconKey = {
+    -- Avatars
+    ['Carbuncle'] = 'summon_Carbuncle',
+    ['Ifrit'] = 'summon_Ifrit',
+    ['Shiva'] = 'summon_Shiva',
+    ['Garuda'] = 'summon_Garuda',
+    ['Titan'] = 'summon_Titan',
+    ['Ramuh'] = 'summon_Ramuh',
+    ['Leviathan'] = 'summon_Leviathan',
+    ['Fenrir'] = 'summon_Fenrir',
+    ['Diabolos'] = 'summon_Diabolos',
+    ['Cait Sith'] = 'summon_CaitSith',
+    ['Alexander'] = 'summon_Alexander',
+    ['Odin'] = 'summon_Odin',
+    ['Atomos'] = 'summon_Atomos',
+    ['Siren'] = 'summon_Siren',
+    -- Spirits
+    ['Fire Spirit'] = 'summon_FireSpirit',
+    ['Ice Spirit'] = 'summon_IceSpirit',
+    ['Air Spirit'] = 'summon_AirSpirit',
+    ['Earth Spirit'] = 'summon_EarthSpirit',
+    ['Thunder Spirit'] = 'summon_ThunderSpirit',
+    ['Water Spirit'] = 'summon_WaterSpirit',
+    ['Light Spirit'] = 'summon_LightSpirit',
+    ['Dark Spirit'] = 'summon_DarkSpirit',
+};
+
+-- Mapping from pet command names to texture cache keys
+local petCommandToIconKey = {
+    ['Assault'] = 'ability_Assault',
+    ['Release'] = 'ability_Release',
+    ['Retreat'] = 'ability_Retreat',
+};
+
+-- Mapping from SMN job ability names to texture cache keys
+local smnAbilityToIconKey = {
+    ['Apogee'] = 'ability_Apogee',
+    ['Astral Conduit'] = 'ability_AstralConduit',
+    ['Astral Flow'] = 'ability_AstralFlow',
+    ["Avatar's Favor"] = 'ability_AvatarsFavor',
+    ['Elemental Siphon'] = 'ability_ElementalSiphon',
+    ['Mana Cede'] = 'ability_ManaCede',
+};
+
+-- Mapping from Trust names to texture cache keys
+local trustToIconKey = {
+    ['Ajido-Marujido'] = 'trust_ajido-marujido',
+    ['Amchuchu'] = 'trust_amchuchu',
+    ['Ayame'] = 'trust_ayame',
+    ['Cid'] = 'trust_cid',
+    ['Curilla'] = 'trust_curilla',
+    ['Darrcuiln'] = 'trust_darrcuiln',
+    ['Excenmille'] = 'trust_excenmille',
+    ['Halver'] = 'trust_halver',
+    ['Iron Eater'] = 'trust_iron-eater',
+    ['Joachim'] = 'trust_joachim',
+    ['King of Hearts'] = 'trust_king-of-hearts',
+    ['Koru-Moru'] = 'trust_koru-moru',
+    ['Kupipi'] = 'trust_kupipi',
+    ['Kuyin Hathdenna'] = 'trust_kuyin-hathdenna',
+    ['Lion'] = 'trust_lion',
+    ['Makki-Chebukki'] = 'trust_makki-chebukki',
+    ['Mildaurion'] = 'trust_mildaurion',
+    ['Mnejing'] = 'trust_mnejing',
+    ['Morimar'] = 'trust_morimar',
+    ['Naja Salaheem'] = 'trust_naja',
+    ['Naji'] = 'trust_naji',
+    ['Nanaa Mihgo'] = 'trust_nanaa-mihgo',
+    ['Ovjang'] = 'trust_ovjang',
+    ['Prishe'] = 'trust_prishe',
+    ['Qultada'] = 'trust_qultada',
+    ['Rahal'] = 'trust_rahal',
+    ['Rongelouts'] = 'trust_rongelouts',
+    ['Rughadjeen'] = 'trust_rughadjeen',
+    ['Sakura'] = 'trust_sakura',
+    ['Semih Lafihna'] = 'trust_semih-lafihna',
+    ['Shantotto'] = 'trust_shantotto',
+    ['Shantotto II'] = 'trust_shantotto-II',
+    ['Star Sibyl'] = 'trust_star-sibyl',
+    ['Tenzen'] = 'trust_tenzen',
+    ['Trion'] = 'trust_trion',
+    ['Valaineral'] = 'trust_valaineral',
+    ['Volker'] = 'trust_volker',
+    ['Yoran-Oran'] = 'trust_yoran-oran',
+    ['Zazarg'] = 'trust_zazarg',
+    ['Zeid'] = 'trust_zeid',
+    ['Zeid II'] = 'trust_zeid-II',
+};
+
+-- Mapping from Blue Magic spell names to texture cache keys
+local blueMagicToIconKey = {
+    ['Battle Dance'] = 'blue_battle_dance',
+    ['Blank Gaze'] = 'blue_blank_gaze',
+    ['Cocoon'] = 'blue_cocoon',
+    ['Foot Kick'] = 'blue_foot_kick',
+    ['Grand Slam'] = 'blue_grand_slam',
+    ['Head Butt'] = 'blue_headbutt',
+    ['Healing Breeze'] = 'blue_healing_breeze',
+    ['Jet Stream'] = 'blue_jet_stream',
+    ['Light of Penance'] = 'blue_light_of_penance',
+    ['Magic Fruit'] = 'blue_magic_fruit',
+    ['Metallic Body'] = 'blue_metallic_body',
+    ['Power Attack'] = 'blue_power_attack',
+    ['Sheep Song'] = 'blue_sheep_song',
+    ['Terror Touch'] = 'blue_terror_touch',
+    ['Uppercut'] = 'blue_uppercut',
+    ['Wild Oats'] = 'blue_wild_oats',
+    ['Zephyr Mantle'] = 'blue_zephyr_mantle',
+};
+
+-- Mapping from Mount names to texture cache keys
+local mountToIconKey = {
+    ['Beetle'] = 'mount_beetle',
+    ['Bomb'] = 'mount_bomb',
+    ['Chocobo'] = 'mount_chocobo',
+    ['Crab'] = 'mount_crab',
+    ['Crawler'] = 'mount_crawler',
+    ['Fenrir'] = 'mount_fenrir',
+    ['Magic Pot'] = 'mount_magic_pot',
+    ['Moogle'] = 'mount_moogle',
+    ['Morbol'] = 'mount_morbol',
+    ['Raptor'] = 'mount_raptor',
+    ['Red Crab'] = 'mount_red_crab',
+    ['Sheep'] = 'mount_sheep',
+    ['Tiger'] = 'mount_tiger',
+    ['Tulfaire'] = 'mount_tulfaire',
+    ['Warmachine'] = 'mount_warmachine',
+};
+
+-- Mapping from Rune Fencer abilities to texture cache keys
+local runAbilityToIconKey = {
+    -- Runes
+    ['Ignis'] = 'rune_ignis',
+    ['Gelus'] = 'rune_gelus',
+    ['Flabra'] = 'rune_flabra',
+    ['Tellus'] = 'rune_tellus',
+    ['Sulpor'] = 'rune_sulpor',
+    ['Unda'] = 'rune_unda',
+    ['Lux'] = 'rune_lux',
+    ['Tenebrae'] = 'rune_tenebrae',
+    -- Abilities
+    ['Battuta'] = 'ability_battuta',
+    ['Gambit'] = 'ability_gambit',
+    ['Liement'] = 'ability_liement',
+    ['Pflug'] = 'ability_pflug',
+    ['Rayke'] = 'ability_pulse',
+    ['Foil'] = 'ability_foil',
+};
+
+-- Mapping from other job abilities to texture cache keys
+local otherAbilityToIconKey = {
+    -- DRG
+    ['Jump'] = 'ability_jump',
+    ['High Jump'] = 'ability_jump',
+    ['Super Jump'] = 'ability_jump',
+    -- RDM
+    ['Chainspell'] = 'ability_chainspell',
+    ['Stymie'] = 'ability_stymie',
+};
+
 local controlPressed = false;
 local altPressed = false;
 local shiftPressed = false;
@@ -160,8 +322,9 @@ function M.GetBindIcon(bind)
     -- Check if this slot references a macro - if so, get the macro's current icon
     -- This enables live updates when macro icons are changed in the palette
     if bind.macroRef and gConfig and gConfig.macroDB then
-        local jobId = data.jobId or 1;
-        local macroDB = gConfig.macroDB[jobId];
+        -- Use stored palette key if available, otherwise fall back to job ID
+        local paletteKey = bind.macroPaletteKey or data.jobId or 1;
+        local macroDB = gConfig.macroDB[paletteKey];
         if macroDB then
             for _, macro in ipairs(macroDB) do
                 if macro.id == bind.macroRef then
@@ -197,6 +360,36 @@ function M.GetBindIcon(bind)
     end
 
     if bind.actionType == 'ma' then
+        -- Check for summoning magic first (custom icons)
+        local summonIconKey = summonSpellToIconKey[bind.action];
+        if summonIconKey then
+            icon = textures:Get(summonIconKey);
+            if icon then
+                local spell = GetSpellByName(bind.action);
+                if spell then iconId = spell.id; end
+                return icon, iconId;
+            end
+        end
+        -- Check for Trust icons
+        local trustIconKey = trustToIconKey[bind.action];
+        if trustIconKey then
+            icon = textures:Get(trustIconKey);
+            if icon then
+                local spell = GetSpellByName(bind.action);
+                if spell then iconId = spell.id; end
+                return icon, iconId;
+            end
+        end
+        -- Check for Blue Magic icons
+        local blueIconKey = blueMagicToIconKey[bind.action];
+        if blueIconKey then
+            icon = textures:Get(blueIconKey);
+            if icon then
+                local spell = GetSpellByName(bind.action);
+                if spell then iconId = spell.id; end
+                return icon, iconId;
+            end
+        end
         -- Magic spell - look up in horizonspells database
         local spell = GetSpellByName(bind.action);
         if spell then
@@ -204,6 +397,24 @@ function M.GetBindIcon(bind)
             icon = textures:Get('spells' .. string.format('%05d', spell.id));
         end
     elseif bind.actionType == 'ja' then
+        -- Check for SMN ability icons first
+        local smnIconKey = smnAbilityToIconKey[bind.action];
+        if smnIconKey then
+            icon = textures:Get(smnIconKey);
+            if icon then return icon, iconId; end
+        end
+        -- Check for RUN ability icons
+        local runIconKey = runAbilityToIconKey[bind.action];
+        if runIconKey then
+            icon = textures:Get(runIconKey);
+            if icon then return icon, iconId; end
+        end
+        -- Check for other job ability icons
+        local otherIconKey = otherAbilityToIconKey[bind.action];
+        if otherIconKey then
+            icon = textures:Get(otherIconKey);
+            if icon then return icon, iconId; end
+        end
         -- Job ability - try to get from game resources
         local resMgr = AshitaCore:GetResourceManager();
         if resMgr then
@@ -211,10 +422,17 @@ function M.GetBindIcon(bind)
                 local ability = resMgr:GetAbilityById(abilityId);
                 if ability and ability.Name and ability.Name[1] == bind.action then
                     iconId = abilityId;
-                    -- Abilities don't have separate icon files in our assets yet
-                    -- but we store the ID for future use
                     break;
                 end
+            end
+        end
+    elseif bind.actionType == 'pet' then
+        -- Check for pet command icons first
+        local petIconKey = petCommandToIconKey[bind.action];
+        if petIconKey then
+            icon = textures:Get(petIconKey);
+            if icon then
+                return icon, iconId;
             end
         end
     elseif bind.actionType == 'ws' then

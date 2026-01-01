@@ -17,6 +17,7 @@ local dragdrop = require('libs.dragdrop');
 local recast = require('modules.hotbar.recast');
 local slotrenderer = require('modules.hotbar.slotrenderer');
 local hotbarConfig = require('config.hotbar');
+local petpalette = require('modules.hotbar.petpalette');
 
 local M = {};
 
@@ -197,11 +198,15 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
         labelText = labelText,
         labelOffsetX = barSettings and barSettings.actionLabelOffsetX or 0,
         labelOffsetY = (barSettings and barSettings.actionLabelOffsetY or 0) + data.LABEL_GAP,
+        labelFontColor = barSettings and barSettings.labelFontColor or 0xFFFFFFFF,
+        labelCooldownColor = barSettings and barSettings.labelCooldownColor or 0xFF888888,
+        labelNoMpColor = barSettings and barSettings.labelNoMpColor or 0xFFFF4444,
         showFrame = showSlotFrame,
         isPressed = isPressed,
         showMpCost = barSettings and barSettings.showMpCost ~= false,
         mpCostFontSize = barSettings and barSettings.mpCostFontSize or 10,
         mpCostFontColor = barSettings and barSettings.mpCostFontColor or 0xFFD4FF97,
+        mpCostNoMpColor = barSettings and barSettings.labelNoMpColor or 0xFFFF4444,
         showQuantity = barSettings and barSettings.showQuantity ~= false,
         quantityFontSize = barSettings and barSettings.quantityFontSize or 10,
         quantityFontColor = barSettings and barSettings.quantityFontColor or 0xFFFFFFFF,
@@ -423,6 +428,47 @@ local function DrawBarWindow(barIndex, settings)
         -- (removed duplicate hide loop that was here)
 
         imgui.End();
+    end
+
+    -- Draw pet indicator dot OUTSIDE window bounds (above bar number)
+    -- Must be after End() and use ForegroundDrawList to avoid clipping
+    if windowPosX and barSettings.petAware then
+        local dotX = windowPosX - 12;  -- Centered above bar number
+        local dotY = windowPosY + (barHeight / 2) - 20;  -- Above the number
+        local dotRadius = 5;
+        local fgDrawList = imgui.GetForegroundDrawList();
+        fgDrawList:AddCircleFilled({dotX, dotY}, dotRadius, imgui.GetColorU32({1.0, 0.8, 0.2, 1.0}), 12);
+        fgDrawList:AddCircle({dotX, dotY}, dotRadius, imgui.GetColorU32({0.0, 0.0, 0.0, 1.0}), 12, 1.0);
+
+        -- Check hover for tooltip
+        local mouseX, mouseY = imgui.GetMousePos();
+        local dx = mouseX - dotX;
+        local dy = mouseY - dotY;
+        local hoverRadius = dotRadius + 3;
+        if (dx * dx + dy * dy) <= (hoverRadius * hoverRadius) then
+            imgui.BeginTooltip();
+            imgui.TextColored({1.0, 0.8, 0.2, 1.0}, 'Pet Palette Bar ' .. barIndex);
+            imgui.Separator();
+
+            -- Current pet info
+            local currentPet = petpalette.GetCurrentPetDisplayName();
+            if currentPet then
+                imgui.Text('Current Pet: ' .. currentPet);
+            else
+                imgui.TextColored({0.6, 0.6, 0.6, 1.0}, 'No pet summoned');
+            end
+
+            -- Palette mode
+            local hasOverride = petpalette.HasManualOverride(barIndex);
+            if hasOverride then
+                local overrideName = petpalette.GetPaletteDisplayName(barIndex, data.jobId);
+                imgui.Text('Palette: ' .. overrideName .. ' (Manual)');
+            else
+                imgui.Text('Palette: Auto');
+            end
+
+            imgui.EndTooltip();
+        end
     end
 
     -- Draw move anchor (only visible when config is open)
