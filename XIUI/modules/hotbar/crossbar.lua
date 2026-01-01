@@ -228,12 +228,13 @@ local function GetCachedCrossbarIcon(comboMode, slotIndex, slotData)
     local cached = iconCache[comboMode][slotIndex];
 
     -- Check if we have a valid cache entry for this bind (including icon info)
+    -- Also invalidate if cached icon doesn't have path (try to get primitive-enabled icon)
     local bindKey = BuildCrossbarBindKey(slotData);
-    if cached and cached.bindKey == bindKey then
+    if cached and cached.bindKey == bindKey and cached.icon and cached.icon.path then
         return cached.icon;
     end
 
-    -- Cache miss - compute icon
+    -- Cache miss or icon needs path - compute icon
     local icon = nil;
     if slotData and slotData.actionType then
         icon = actions.GetBindIcon(slotData);
@@ -274,6 +275,10 @@ local state = {
     -- MP cost fonts per combo mode
     -- mpCostFonts[comboMode][slotIndex] = font
     mpCostFonts = {},
+
+    -- Item quantity fonts per combo mode
+    -- quantityFonts[comboMode][slotIndex] = font
+    quantityFonts = {},
 
     -- Center icon primitives per combo mode (in the middle of each diamond)
     -- centerIconPrims[comboMode][diamondType][iconIndex] = primitive
@@ -560,6 +565,7 @@ function M.Initialize(settings, moduleSettings)
         state.iconPrims[comboMode] = {};
         state.timerFonts[comboMode] = {};
         state.mpCostFonts[comboMode] = {};
+        state.quantityFonts[comboMode] = {};
         state.centerIconPrims[comboMode] = {};
         state.labelFonts[comboMode] = {};
 
@@ -584,12 +590,21 @@ function M.Initialize(settings, moduleSettings)
 
             -- MP cost font (right-aligned, for spell MP cost display)
             local mpCostFontSettings = moduleSettings and deep_copy_table(moduleSettings.label_font_settings) or {};
-            mpCostFontSettings.font_height = settings.mpCostFontSize or 8;
+            mpCostFontSettings.font_height = settings.mpCostFontSize or 10;
             mpCostFontSettings.font_alignment = 2;  -- Right
             mpCostFontSettings.font_color = settings.mpCostFontColor or 0xFFD4FF97;
             mpCostFontSettings.outline_color = 0xFF000000;
             mpCostFontSettings.outline_width = 2;
             state.mpCostFonts[comboMode][slotIndex] = FontManager.create(mpCostFontSettings);
+
+            -- Item quantity font (right-aligned, for item count display)
+            local quantityFontSettings = moduleSettings and deep_copy_table(moduleSettings.label_font_settings) or {};
+            quantityFontSettings.font_height = settings.quantityFontSize or 10;
+            quantityFontSettings.font_alignment = 2;  -- Right
+            quantityFontSettings.font_color = settings.quantityFontColor or 0xFFFFFFFF;
+            quantityFontSettings.outline_color = 0xFF000000;
+            quantityFontSettings.outline_width = 2;
+            state.quantityFonts[comboMode][slotIndex] = FontManager.create(quantityFontSettings);
 
             -- Create label font for action names
             local labelFontSettings = moduleSettings and moduleSettings.label_font_settings or {};
@@ -660,6 +675,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         iconPrim = state.iconPrims[comboMode] and state.iconPrims[comboMode][slotIndex],
         timerFont = state.timerFonts[comboMode] and state.timerFonts[comboMode][slotIndex],
         mpCostFont = state.mpCostFonts[comboMode] and state.mpCostFonts[comboMode][slotIndex],
+        quantityFont = state.quantityFonts[comboMode] and state.quantityFonts[comboMode][slotIndex],
     };
 
     -- Render slot using shared renderer (handles ALL rendering and interactions)
@@ -679,8 +695,11 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         animOpacity = animOpacity,
         isPressed = isPressed and isActive,
         showMpCost = settings.showMpCost ~= false,
-        mpCostFontSize = settings.mpCostFontSize or 8,
+        mpCostFontSize = settings.mpCostFontSize or 10,
         mpCostFontColor = settings.mpCostFontColor or 0xFFD4FF97,
+        showQuantity = settings.showQuantity ~= false,
+        quantityFontSize = settings.quantityFontSize or 10,
+        quantityFontColor = settings.quantityFontColor or 0xFFFFFFFF,
 
         -- Interaction Config (use original Y for interaction, not animated Y)
         buttonId = string.format('##crossbar_%s_%d', comboMode, slotIndex),
@@ -1208,6 +1227,9 @@ function M.SetHidden(hidden)
                 local mpCostFont = state.mpCostFonts[comboMode] and state.mpCostFonts[comboMode][slotIndex];
                 if mpCostFont then mpCostFont:set_visible(false); end
 
+                local quantityFont = state.quantityFonts[comboMode] and state.quantityFonts[comboMode][slotIndex];
+                if quantityFont then quantityFont:set_visible(false); end
+
                 local labelFont = state.labelFonts[comboMode] and state.labelFonts[comboMode][slotIndex];
                 if labelFont then labelFont:set_visible(false); end
             end
@@ -1315,6 +1337,9 @@ function M.Cleanup()
             local mpCostFont = state.mpCostFonts[comboMode] and state.mpCostFonts[comboMode][slotIndex];
             if mpCostFont then FontManager.destroy(mpCostFont); end
 
+            local quantityFont = state.quantityFonts[comboMode] and state.quantityFonts[comboMode][slotIndex];
+            if quantityFont then FontManager.destroy(quantityFont); end
+
             local labelFont = state.labelFonts[comboMode] and state.labelFonts[comboMode][slotIndex];
             if labelFont then FontManager.destroy(labelFont); end
         end
@@ -1335,6 +1360,7 @@ function M.Cleanup()
         state.iconPrims[comboMode] = nil;
         state.timerFonts[comboMode] = nil;
         state.mpCostFonts[comboMode] = nil;
+        state.quantityFonts[comboMode] = nil;
         state.centerIconPrims[comboMode] = nil;
         state.labelFonts[comboMode] = nil;
     end

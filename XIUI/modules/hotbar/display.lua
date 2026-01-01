@@ -62,14 +62,15 @@ local function GetCachedIcon(barIndex, slotIndex, bind)
 
     -- Check if we have a valid cache entry for this bind
     -- Compare by actionType+action+target+icon to detect actual changes
+    -- Also invalidate if cached icon doesn't have path (try to get primitive-enabled icon)
     if cached then
         local bindKey = BuildBindKey(bind);
-        if cached.bindKey == bindKey then
+        if cached.bindKey == bindKey and cached.icon and cached.icon.path then
             return cached.icon;
         end
     end
 
-    -- Cache miss - compute icon
+    -- Cache miss or icon needs path - compute icon
     local icon = nil;
     if bind then
         _, icon = actions.BuildCommand(bind);
@@ -153,6 +154,7 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
         keybindFont = data.keybindFonts[barIndex] and data.keybindFonts[barIndex][slotIndex],
         labelFont = data.labelFonts[barIndex] and data.labelFonts[barIndex][slotIndex],
         mpCostFont = data.mpCostFonts[barIndex] and data.mpCostFonts[barIndex][slotIndex],
+        quantityFont = data.quantityFonts[barIndex] and data.quantityFonts[barIndex][slotIndex],
     };
 
     -- Get icon for this action (cached - only rebuilds when bind changes)
@@ -189,7 +191,7 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
         -- Visual Settings
         slotBgColor = barSettings and barSettings.slotBackgroundColor or 0xFFFFFFFF,
         keybindText = data.GetKeybindDisplay(barIndex, slotIndex),
-        keybindFontSize = barSettings and barSettings.keybindFontSize or 8,
+        keybindFontSize = barSettings and barSettings.keybindFontSize or 10,
         keybindFontColor = barSettings and barSettings.keybindFontColor or 0xFFFFFFFF,
         showLabel = showActionLabels,
         labelText = labelText,
@@ -198,8 +200,11 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
         showFrame = showSlotFrame,
         isPressed = isPressed,
         showMpCost = barSettings and barSettings.showMpCost ~= false,
-        mpCostFontSize = barSettings and barSettings.mpCostFontSize or 8,
+        mpCostFontSize = barSettings and barSettings.mpCostFontSize or 10,
         mpCostFontColor = barSettings and barSettings.mpCostFontColor or 0xFFD4FF97,
+        showQuantity = barSettings and barSettings.showQuantity ~= false,
+        quantityFontSize = barSettings and barSettings.quantityFontSize or 10,
+        quantityFontColor = barSettings and barSettings.quantityFontColor or 0xFFFFFFFF,
 
         -- Interaction Config
         buttonId = string.format('##hotbarslot_%d_%d', barIndex, slotIndex),
@@ -294,6 +299,9 @@ local function DrawBarWindow(barIndex, settings)
         if data.mpCostFonts[barIndex] and data.mpCostFonts[barIndex][hiddenSlot] then
             data.mpCostFonts[barIndex][hiddenSlot]:set_visible(false);
         end
+        if data.quantityFonts[barIndex] and data.quantityFonts[barIndex][hiddenSlot] then
+            data.quantityFonts[barIndex][hiddenSlot]:set_visible(false);
+        end
     end
 
     -- Window flags (dummy window for positioning)
@@ -316,7 +324,7 @@ local function DrawBarWindow(barIndex, settings)
         imgui.Dummy({barWidth, barHeight});
 
         -- Update background using per-bar settings
-        local bgTheme = barSettings.backgroundTheme or 'Window1';
+        local bgTheme = barSettings.backgroundTheme or '-None-';
         local bgScale = barSettings.bgScale or 1.0;
         local borderScale = barSettings.borderScale or 1.0;
         local bgOpacity = barSettings.backgroundOpacity or 0.87;
@@ -399,6 +407,9 @@ local function DrawBarWindow(barIndex, settings)
                         end
                         if data.mpCostFonts[barIndex] and data.mpCostFonts[barIndex][slotIndex] then
                             data.mpCostFonts[barIndex][slotIndex]:set_visible(false);
+                        end
+                        if data.quantityFonts[barIndex] and data.quantityFonts[barIndex][slotIndex] then
+                            data.quantityFonts[barIndex][slotIndex]:set_visible(false);
                         end
                     else
                         DrawSlot(barIndex, slotIndex, slotX, slotY, buttonSize, bind, barSettings);
@@ -535,7 +546,7 @@ function M.UpdateVisuals(settings)
     -- Update each bar's theme from per-bar settings
     for barIndex = 1, data.NUM_BARS do
         local barSettings = data.GetBarSettings(barIndex);
-        local bgTheme = barSettings.backgroundTheme or 'Plain';
+        local bgTheme = barSettings.backgroundTheme or '-None-';
         local bgScale = barSettings.bgScale or 1.0;
         local borderScale = barSettings.borderScale or 1.0;
 

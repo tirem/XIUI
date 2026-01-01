@@ -53,18 +53,28 @@ function M.GetMPCost(bind)
 end
 
 --- Load item icon from game resources by item ID
+--- Uses file cache for primitive rendering compatibility
 ---@param itemId number The item ID
----@return table|nil texture The icon texture
+---@return table|nil texture The icon texture with path field for primitive rendering
 local function LoadItemIconById(itemId)
     if not itemId or itemId == 0 or itemId == 65535 then
         return nil;
     end
 
-    -- Check cache first
-    if itemIconCache[itemId] then
+    -- Check cache first - only use if it has a path (for primitive rendering)
+    -- If cached without path, try to reload in case PNG is now available
+    if itemIconCache[itemId] and itemIconCache[itemId].path then
         return itemIconCache[itemId];
     end
 
+    -- Try to load via file cache (enables primitive rendering)
+    local texture = textures:LoadItemIcon(itemId);
+    if texture then
+        itemIconCache[itemId] = texture;
+        return texture;
+    end
+
+    -- Fallback to memory loading (no path field, uses ImGui rendering)
     local success, result = pcall(function()
         local device = GetD3D8Device();
         if device == nil then return nil; end
@@ -91,6 +101,7 @@ local function LoadItemIconById(itemId)
                 image = d3d8.gc_safe_release(ffi.cast('IDirect3DTexture8*', dx_texture_ptr[0])),
                 width = 32,  -- FFXI item icons are 32x32
                 height = 32,
+                -- Note: No 'path' field, will use ImGui fallback in slotrenderer
             };
         end
         return nil;

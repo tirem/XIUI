@@ -130,7 +130,7 @@ function M.Initialize(settings)
     for barIndex = 1, data.NUM_BARS do
         -- Get per-bar settings
         local barSettings = data.GetBarSettings(barIndex);
-        local bgTheme = barSettings.backgroundTheme or 'Plain';
+        local bgTheme = barSettings.backgroundTheme or '-None-';
         local bgScale = barSettings.bgScale or 1.0;
         local borderScale = barSettings.borderScale or 1.0;
         local slotCount = data.GetBarSlotCount(barIndex);
@@ -166,7 +166,7 @@ function M.Initialize(settings)
         end
 
         -- Get per-bar font sizes
-        local kbFontSize = barSettings.keybindFontSize or 8;
+        local kbFontSize = barSettings.keybindFontSize or 10;
         local lblFontSize = barSettings.labelFontSize or 10;
 
         -- 5. Create keybind fonts for each slot - up to MAX_SLOTS_PER_BAR
@@ -208,7 +208,7 @@ function M.Initialize(settings)
         end
 
         -- 8. Create MP cost fonts (right-aligned at top-right corner)
-        local mpCostFontSize = barSettings.mpCostFontSize or 8;
+        local mpCostFontSize = barSettings.mpCostFontSize or 10;
         local mpCostFontColor = barSettings.mpCostFontColor or 0xFFD4FF97;
         data.mpCostFonts[barIndex] = {};
         for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
@@ -224,7 +224,24 @@ function M.Initialize(settings)
             table.insert(data.allFonts, font);
         end
 
-        -- 9. Create hotbar number font
+        -- 9. Create item quantity fonts (right-aligned at bottom-right corner)
+        local quantityFontSize = barSettings.quantityFontSize or 10;
+        local quantityFontColor = barSettings.quantityFontColor or 0xFFFFFFFF;
+        data.quantityFonts[barIndex] = {};
+        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
+            local qtySettings = deep_copy_table(fontSettings);
+            qtySettings.font_height = quantityFontSize;
+            qtySettings.font_alignment = gdi.Alignment.Right;
+            qtySettings.font_color = quantityFontColor;
+            qtySettings.outline_color = 0xFF000000;
+            qtySettings.outline_width = 2;
+            local font = FontManager.create(qtySettings);
+            font:set_visible(false);
+            data.quantityFonts[barIndex][slotIndex] = font;
+            table.insert(data.allFonts, font);
+        end
+
+        -- 10. Create hotbar number font
         local numSettings = deep_copy_table(fontSettings);
         numSettings.font_height = 12;
         data.hotbarNumberFonts[barIndex] = FontManager.create(numSettings);
@@ -273,7 +290,7 @@ function M.UpdateVisuals(settings)
     for barIndex = 1, data.NUM_BARS do
         -- Get per-bar font sizes
         local barSettings = data.GetBarSettings(barIndex);
-        local kbFontSize = barSettings.keybindFontSize or 8;
+        local kbFontSize = barSettings.keybindFontSize or 10;
         local lblFontSize = barSettings.labelFontSize or 10;
 
         -- Keybind fonts

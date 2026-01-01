@@ -71,6 +71,7 @@ local castCost = uiMods.castcost;
 local notifications = uiMods.notifications;
 local treasurePool = uiMods.treasurepool;
 local hotbar = uiMods.hotbar;
+local macropalette = require('modules.hotbar.macropalette');
 local configMenu = require('config');
 local debuffHandler = require('handlers.debuffhandler');
 local actionTracker = require('handlers.actiontracker');
@@ -476,6 +477,12 @@ ashita.events.register('command', 'command_cb', function (e)
         if (#command_args == 2 and command_args[2]:any('partylist')) then
             gConfig.showPartyList = not gConfig.showPartyList;
             CheckVisibility();
+            return;
+        end
+
+        -- Open macro palette: /xiui macro or /xiui macros
+        if (#command_args == 2 and command_args[2]:any('macro', 'macros')) then
+            macropalette.TogglePalette();
             return;
         end
 

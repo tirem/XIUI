@@ -736,9 +736,6 @@ local function DrawVisualSettingsContent(settings, configKey)
         components.DrawPartySliderInt(settings, 'Slot Y Padding##' .. configKey, 'slotYPadding', 0, 32, '%d', nil, 6);
         imgui.ShowHelp('Vertical gap between rows.');
 
-        components.DrawPartyCheckbox(settings, 'Show Slot Frame##' .. configKey, 'showSlotFrame');
-        imgui.ShowHelp('Show a frame overlay around each slot.');
-
         components.DrawPartyCheckbox(settings, 'Show Action Labels##' .. configKey, 'showActionLabels');
         imgui.ShowHelp('Show spell/ability names below slots (outside the bar).');
 
@@ -753,22 +750,35 @@ local function DrawVisualSettingsContent(settings, configKey)
         components.DrawPartyCheckbox(settings, 'Show Hotbar Number##' .. configKey, 'showHotbarNumber');
         imgui.ShowHelp('Show the bar number (1-6) on the left side of the hotbar.');
 
+        components.DrawPartyCheckbox(settings, 'Show MP Cost##' .. configKey, 'showMpCost');
+        imgui.ShowHelp('Display MP cost in top-right corner of spell slots.');
+
+        components.DrawPartyCheckbox(settings, 'Show Item Quantity##' .. configKey, 'showQuantity');
+        imgui.ShowHelp('Display item quantity in bottom-right corner of item slots.');
+
+        components.DrawPartyCheckbox(settings, 'Show Slot Frame##' .. configKey, 'showSlotFrame');
+        imgui.ShowHelp('Show a frame overlay around each slot.');
+
         components.DrawPartyCheckbox(settings, 'Hide Empty Slots##' .. configKey, 'hideEmptySlots');
         imgui.ShowHelp('Hide slots that have no action assigned. Empty slots are shown when macro palette is open.');
     end
 
     if components.CollapsingSection('Text Settings##' .. configKey, false) then
-        components.DrawPartySliderInt(settings, 'Keybind Font Size##' .. configKey, 'keybindFontSize', 6, 24, '%d', nil, 8);
+        components.DrawPartySliderInt(settings, 'Keybind Font Size##' .. configKey, 'keybindFontSize', 6, 24, '%d', nil, 10);
         imgui.ShowHelp('Font size for keybind labels (e.g., "C1", "A2").');
 
         components.DrawPartySliderInt(settings, 'Label Font Size##' .. configKey, 'labelFontSize', 6, 24, '%d', nil, 10);
         imgui.ShowHelp('Font size for action labels below buttons.');
 
-        components.DrawPartyCheckbox(settings, 'Show MP Cost##' .. configKey, 'showMpCost');
-        imgui.ShowHelp('Display MP cost in top-right corner of spell slots.');
+        if settings.showMpCost then
+            components.DrawPartySliderInt(settings, 'MP Cost Font Size##' .. configKey, 'mpCostFontSize', 6, 24, '%d', nil, 10);
+            imgui.ShowHelp('Font size for MP cost display.');
+        end
 
-        components.DrawPartySliderInt(settings, 'MP Cost Font Size##' .. configKey, 'mpCostFontSize', 6, 24, '%d', nil, 8);
-        imgui.ShowHelp('Font size for MP cost display.');
+        if settings.showQuantity then
+            components.DrawPartySliderInt(settings, 'Quantity Font Size##' .. configKey, 'quantityFontSize', 6, 24, '%d', nil, 10);
+            imgui.ShowHelp('Font size for item quantity display.');
+        end
     end
 end
 
@@ -922,6 +932,12 @@ local function DrawCrossbarSettings()
 
         components.DrawPartyCheckbox(crossbarSettings, 'Show Divider##crossbar', 'showDivider');
         imgui.ShowHelp('Show a divider line between L2 and R2 groups.');
+
+        components.DrawPartyCheckbox(crossbarSettings, 'Show MP Cost##crossbar', 'showMpCost');
+        imgui.ShowHelp('Display MP cost in top-right corner of spell slots.');
+
+        components.DrawPartyCheckbox(crossbarSettings, 'Show Item Quantity##crossbar', 'showQuantity');
+        imgui.ShowHelp('Display item quantity in bottom-right corner of item slots.');
     end
 
     -- Background section
@@ -976,7 +992,7 @@ local function DrawCrossbarSettings()
 
     -- Text section
     if components.CollapsingSection('Text Settings##crossbar', false) then
-        components.DrawPartySliderInt(crossbarSettings, 'Keybind Font Size##crossbar', 'keybindFontSize', 6, 24, '%d', nil, 8);
+        components.DrawPartySliderInt(crossbarSettings, 'Keybind Font Size##crossbar', 'keybindFontSize', 6, 24, '%d', nil, 10);
         imgui.ShowHelp('Font size for keybind labels.');
 
         components.DrawPartySliderInt(crossbarSettings, 'Label Font Size##crossbar', 'labelFontSize', 6, 24, '%d', nil, 10);
@@ -985,11 +1001,15 @@ local function DrawCrossbarSettings()
         components.DrawPartySliderInt(crossbarSettings, 'Trigger Label Font Size##crossbar', 'triggerLabelFontSize', 8, 24, '%d', nil, 14);
         imgui.ShowHelp('Font size for combo mode labels (L2, R2, etc.).');
 
-        components.DrawPartyCheckbox(crossbarSettings, 'Show MP Cost##crossbar', 'showMpCost');
-        imgui.ShowHelp('Display MP cost in top-right corner of spell slots.');
+        if crossbarSettings.showMpCost then
+            components.DrawPartySliderInt(crossbarSettings, 'MP Cost Font Size##crossbar', 'mpCostFontSize', 6, 24, '%d', nil, 10);
+            imgui.ShowHelp('Font size for MP cost display.');
+        end
 
-        components.DrawPartySliderInt(crossbarSettings, 'MP Cost Font Size##crossbar', 'mpCostFontSize', 6, 24, '%d', nil, 8);
-        imgui.ShowHelp('Font size for MP cost display.');
+        if crossbarSettings.showQuantity then
+            components.DrawPartySliderInt(crossbarSettings, 'Quantity Font Size##crossbar', 'quantityFontSize', 6, 24, '%d', nil, 10);
+            imgui.ShowHelp('Font size for item quantity display.');
+        end
     end
 
     -- Controller Input section
@@ -1100,6 +1120,14 @@ local function DrawCrossbarColorSettings()
             SaveSettingsOnly();
         end
         imgui.ShowHelp('Color for MP cost display on spell slots.');
+
+        local quantityColor = crossbarSettings.quantityFontColor or 0xFFFFFFFF;
+        local quantityColorTable = ARGBToImGui(quantityColor);
+        if imgui.ColorEdit4('Quantity Color##crossbar', quantityColorTable, colorFlags) then
+            crossbarSettings.quantityFontColor = ImGuiToARGB(quantityColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color for item quantity display. Note: Shows red when quantity is 0.');
     end
 end
 
@@ -1349,6 +1377,15 @@ local function DrawColorSettingsContent(settings, configKey)
             SaveSettingsOnly();
         end
         imgui.ShowHelp('Color for MP cost display on spell slots.');
+
+        -- Item quantity font color
+        local quantityColor = settings.quantityFontColor or 0xFFFFFFFF;
+        local quantityColorTable = ARGBToImGui(quantityColor);
+        if imgui.ColorEdit4('Quantity Color##' .. configKey, quantityColorTable, colorFlags) then
+            settings.quantityFontColor = ImGuiToARGB(quantityColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color for item quantity display. Note: Shows red when quantity is 0.');
     end
 end
 
