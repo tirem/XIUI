@@ -11,6 +11,7 @@ local imgui = require('imgui');
 local data = require('modules.hotbar.data');
 local jobs = require('libs.jobs');
 local macropalette = require('modules.hotbar.macropalette');
+local playerdata = require('modules.hotbar.playerdata');
 
 local M = {};
 
@@ -76,123 +77,26 @@ local TARGET_LABELS = {
     p5 = '<p5> (Party Member 6)',
 };
 
--- Cached spell/ability/weaponskill lists (refreshed when modal opens)
-local cachedSpells = nil;
-local cachedAbilities = nil;
-local cachedWeaponskills = nil;
-local cacheJobId = nil;  -- Track which job the cache is for
+-- ============================================
+-- Spell/Ability/Weaponskill Retrieval (via shared playerdata module)
+-- ============================================
 
--- Get player's known spells for current job
-local function GetPlayerSpells()
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
-    if not player then return {}; end
-
-    local jobId = player:GetMainJob();
-    local jobLevel = player:GetMainJobLevel();
-    local resMgr = AshitaCore:GetResourceManager();
-
-    local spells = {};
-    -- Iterate through all possible spell IDs
-    for spellId = 1, 1024 do
-        if player:HasSpell(spellId) then
-            local spell = resMgr:GetSpellById(spellId);
-            if spell and spell.Name and spell.Name[1] and spell.Name[1] ~= '' then
-                -- Check if this job can cast it at current level
-                local reqLevel = spell.LevelRequired[jobId + 1] or 0;
-                if reqLevel > 0 and reqLevel <= jobLevel then
-                    table.insert(spells, {
-                        id = spellId,
-                        name = spell.Name[1],
-                        level = reqLevel,
-                    });
-                end
-            end
-        end
-    end
-
-    -- Sort by level then name
-    table.sort(spells, function(a, b)
-        if a.level == b.level then
-            return a.name < b.name;
-        end
-        return a.level < b.level;
-    end);
-
-    return spells;
-end
-
--- Get player's available job abilities
-local function GetPlayerAbilities()
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
-    if not player then return {}; end
-
-    local resMgr = AshitaCore:GetResourceManager();
-    local abilities = {};
-
-    -- Iterate through ability IDs
-    for abilityId = 1, 1024 do
-        if player:HasAbility(abilityId) then
-            local ability = resMgr:GetAbilityById(abilityId);
-            if ability and ability.Name and ability.Name[1] and ability.Name[1] ~= '' then
-                table.insert(abilities, {
-                    id = abilityId,
-                    name = ability.Name[1],
-                });
-            end
-        end
-    end
-
-    -- Sort by name
-    table.sort(abilities, function(a, b)
-        return a.name < b.name;
-    end);
-
-    return abilities;
-end
-
--- Get player's available weaponskills
-local function GetPlayerWeaponskills()
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
-    if not player then return {}; end
-
-    local resMgr = AshitaCore:GetResourceManager();
-    local weaponskills = {};
-
-    -- Weaponskill IDs typically range from 1-255
-    for wsId = 1, 255 do
-        if player:HasWeaponSkill(wsId) then
-            local ability = resMgr:GetAbilityById(wsId + 256);  -- WS abilities offset
-            if ability and ability.Name and ability.Name[1] and ability.Name[1] ~= '' then
-                table.insert(weaponskills, {
-                    id = wsId,
-                    name = ability.Name[1],
-                });
-            end
-        end
-    end
-
-    -- Sort by name
-    table.sort(weaponskills, function(a, b)
-        return a.name < b.name;
-    end);
-
-    return weaponskills;
-end
-
--- Refresh cached lists if needed
+-- Refresh cached lists if needed (delegates to shared playerdata module)
 local function RefreshCachedLists()
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
-    if not player then return; end
+    playerdata.RefreshCachedLists(data);
+end
 
-    local currentJobId = player:GetMainJob();
+-- Convenience accessors for cached data
+local function GetCachedSpells()
+    return playerdata.GetCachedSpells();
+end
 
-    -- Refresh if job changed or not cached
-    if cacheJobId ~= currentJobId or not cachedSpells then
-        cachedSpells = GetPlayerSpells();
-        cachedAbilities = GetPlayerAbilities();
-        cachedWeaponskills = GetPlayerWeaponskills();
-        cacheJobId = currentJobId;
-    end
+local function GetCachedAbilities()
+    return playerdata.GetCachedAbilities();
+end
+
+local function GetCachedWeaponskills()
+    return playerdata.GetCachedWeaponskills();
 end
 
 -- Keybind editor modal state

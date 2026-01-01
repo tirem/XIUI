@@ -171,6 +171,9 @@ local otherAbilityToIconKey = {
     -- RDM
     ['Chainspell'] = 'ability_chainspell',
     ['Stymie'] = 'ability_stymie',
+    ['Convert'] = 'ability_2hr',
+    -- BLM
+    ['Elemental Seal'] = 'ability_2hr',
 };
 
 local controlPressed = false;

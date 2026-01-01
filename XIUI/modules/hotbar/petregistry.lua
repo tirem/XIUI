@@ -312,15 +312,14 @@ M.genericPetCommands = {
 -- SMN Blood Pacts - Rage (offensive)
 M.bloodPactsRage = {
     -- Shared
-    { name = 'Punch', avatars = {'Ifrit', 'Titan', 'Carbuncle'} },
+    { name = 'Punch', avatars = {'Ifrit'} },
     { name = 'Fire II', avatars = {'Ifrit'} },
     { name = 'Burning Strike', avatars = {'Ifrit'} },
-    { name = 'Double Punch', avatars = {'Ifrit', 'Titan'} },
+    { name = 'Double Punch', avatars = {'Ifrit'} },
     { name = 'Flaming Crush', avatars = {'Ifrit'} },
     { name = 'Meteor Strike', avatars = {'Ifrit'} },
     { name = 'Conflag Strike', avatars = {'Ifrit'} },
     { name = 'Fire IV', avatars = {'Ifrit'} },
-    { name = 'Impact', avatars = {'Ifrit', 'Titan', 'Leviathan'} },
     -- Shiva
     { name = 'Axe Kick', avatars = {'Shiva'} },
     { name = 'Blizzard II', avatars = {'Shiva'} },
@@ -329,7 +328,7 @@ M.bloodPactsRage = {
     { name = 'Rush', avatars = {'Shiva'} },
     { name = 'Heavenly Strike', avatars = {'Shiva'} },
     -- Garuda
-    { name = 'Claw', avatars = {'Garuda', 'Fenrir'} },
+    { name = 'Claw', avatars = {'Garuda'} },
     { name = 'Aero II', avatars = {'Garuda'} },
     { name = 'Aero IV', avatars = {'Garuda'} },
     { name = 'Predator Claws', avatars = {'Garuda'} },

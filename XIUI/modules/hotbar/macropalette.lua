@@ -15,6 +15,7 @@ local components = require('config.components');
 local dragdrop = require('libs.dragdrop');
 local petpalette = require('modules.hotbar.petpalette');
 local petregistry = require('modules.hotbar.petregistry');
+local playerdata = require('modules.hotbar.playerdata');
 -- display and crossbar are loaded lazily to avoid circular dependencies
 local display = nil;
 local crossbar = nil;
@@ -187,14 +188,8 @@ local currentPalettePage = 1;  -- Current page in macro palette (1-indexed)
 local selectedPaletteType = nil;  -- Can be GLOBAL_MACRO_KEY or a job ID
 local selectedAvatarPalette = nil;  -- For SMN: nil = base, or avatar name like 'Ifrit'
 
--- Cached spell/ability/weaponskill/item lists
-local cachedSpells = nil;
-local cachedAbilities = nil;
-local cachedWeaponskills = nil;
-local cachedItems = nil;
+-- Cached pet commands (managed locally, not in shared module)
 local cachedPetCommands = nil;
-local cacheJobId = nil;
-local cacheSubJobId = nil;
 local petAvatarFilter = 1;  -- 1 = All, 2+ = specific avatar index
 
 -- Search filter for dropdowns
@@ -346,285 +341,34 @@ local itemIconLoadState = {
 };
 
 -- ============================================
--- Spell/Ability/Weaponskill Retrieval
+-- Spell/Ability/Weaponskill Retrieval (via shared playerdata module)
 -- ============================================
 
--- Check if a spell name looks like a garbage/test entry (e.g., AAEV, AAGK)
-local function IsGarbageSpellName(name)
-    if not name or #name < 2 then return true; end
-    -- Check if it's all uppercase letters with no spaces (garbage codes)
-    if #name <= 5 and name:match('^[A-Z]+$') then
-        return true;
-    end
-    return false;
-end
-
--- Get player's known spells for current job (excludes trusts and garbage entries)
-local function GetPlayerSpells()
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
-    if not player then return {}; end
-
-    local mainJobId = player:GetMainJob();
-    local mainJobLevel = player:GetMainJobLevel();
-    local subJobId = player:GetSubJob();
-    local subJobLevel = player:GetSubJobLevel();
-    local resMgr = AshitaCore:GetResourceManager();
-
-    local spells = {};
-    local addedSpells = {};  -- Track by spell ID to avoid duplicates
-
-    for spellId = 1, 1024 do
-        -- Skip trust spells (IDs 896+)
-        if spellId >= 896 then
-            break;
-        end
-
-        if player:HasSpell(spellId) then
-            local spell = resMgr:GetSpellById(spellId);
-            if spell and spell.Name and spell.Name[1] and spell.Name[1] ~= '' then
-                local spellName = spell.Name[1];
-
-                -- Skip garbage/test spell names
-                if not IsGarbageSpellName(spellName) then
-                    -- LevelRequired array uses jobId + 1 offset (matches config/hotbar.lua pattern)
-                    -- WHM (jobId=3) -> LevelRequired[4], BLM (jobId=4) -> LevelRequired[5]
-                    local mainReqLevel = spell.LevelRequired[mainJobId + 1] or 0;
-                    local subReqLevel = subJobId > 0 and (spell.LevelRequired[subJobId + 1] or 0) or 0;
-
-                    -- Filter invalid level values (0 = can't learn, 255 = can't learn)
-                    local validMainReq = mainReqLevel > 0 and mainReqLevel < 255;
-                    local validSubReq = subReqLevel > 0 and subReqLevel < 255;
-
-                    -- Check if castable by main job
-                    local canCastMain = validMainReq and mainReqLevel <= mainJobLevel;
-                    -- Check if castable by sub job
-                    local canCastSub = validSubReq and subReqLevel <= subJobLevel;
-
-                    if (canCastMain or canCastSub) and not addedSpells[spellId] then
-                        -- Use main job level if castable, otherwise sub job level
-                        local displayLevel = canCastMain and mainReqLevel or subReqLevel;
-                        local source = canCastMain and 'main' or 'sub';
-
-                        table.insert(spells, {
-                            id = spellId,
-                            name = spellName,
-                            level = displayLevel,
-                            source = source,
-                        });
-                        addedSpells[spellId] = true;
-                    end
-                end
-            end
-        end
-    end
-
-    table.sort(spells, function(a, b)
-        if a.level == b.level then
-            return a.name < b.name;
-        end
-        return a.level < b.level;
-    end);
-
-    return spells;
-end
-
--- Get player's available job abilities (includes both main job and subjob abilities)
-local function GetPlayerAbilities()
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
-    if not player then return {}; end
-
-    local mainJobId = player:GetMainJob();
-    local mainJobLevel = player:GetMainJobLevel();
-    local subJobId = player:GetSubJob();
-    local subJobLevel = player:GetSubJobLevel();
-    local resMgr = AshitaCore:GetResourceManager();
-
-    local abilities = {};
-    local addedAbilities = {};  -- Track by ability ID to avoid duplicates
-
-    for abilityId = 1, 1024 do
-        if player:HasAbility(abilityId) then
-            local ability = resMgr:GetAbilityById(abilityId);
-            if ability and ability.Name and ability.Name[1] and ability.Name[1] ~= '' then
-                local abilityName = ability.Name[1];
-
-                if not addedAbilities[abilityId] then
-                    -- Determine source based on level requirements if available
-                    -- RecastId[0] is often the job index that grants the ability
-                    local source = 'main';
-
-                    -- Check level requirements if available
-                    -- Level array uses jobId + 1 offset (matches spell pattern)
-                    if ability.Level then
-                        local mainReqLevel = ability.Level[mainJobId + 1] or 0;
-                        local subReqLevel = subJobId > 0 and (ability.Level[subJobId + 1] or 0) or 0;
-
-                        -- Filter invalid level values
-                        local validMainReq = mainReqLevel > 0 and mainReqLevel < 255;
-                        local validSubReq = subReqLevel > 0 and subReqLevel < 255;
-
-                        local canUseMain = validMainReq and mainReqLevel <= mainJobLevel;
-                        local canUseSub = validSubReq and subReqLevel <= subJobLevel;
-
-                        -- Prefer main job if both can use it
-                        if canUseSub and not canUseMain then
-                            source = 'sub';
-                        end
-                    end
-
-                    table.insert(abilities, {
-                        id = abilityId,
-                        name = abilityName,
-                        source = source,
-                    });
-                    addedAbilities[abilityId] = true;
-                end
-            end
-        end
-    end
-
-    table.sort(abilities, function(a, b)
-        return a.name < b.name;
-    end);
-
-    return abilities;
-end
-
--- Get player's available weaponskills
-local function GetPlayerWeaponskills()
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
-    if not player then return {}; end
-
-    local resMgr = AshitaCore:GetResourceManager();
-    local weaponskills = {};
-
-    for wsId = 1, 255 do
-        if player:HasWeaponSkill(wsId) then
-            local ability = resMgr:GetAbilityById(wsId + 256);
-            if ability and ability.Name and ability.Name[1] and ability.Name[1] ~= '' then
-                table.insert(weaponskills, {
-                    id = wsId,
-                    name = ability.Name[1],
-                });
-            end
-        end
-    end
-
-    table.sort(weaponskills, function(a, b)
-        return a.name < b.name;
-    end);
-
-    return weaponskills;
-end
-
--- Container definitions for item browsing
-local CONTAINERS = {
-    { id = 0, name = 'Inventory' },
-    { id = 5, name = 'Satchel' },
-    { id = 6, name = 'Sack' },
-    { id = 7, name = 'Case' },
-    { id = 1, name = 'Safe' },
-    { id = 2, name = 'Storage' },
-    { id = 4, name = 'Locker' },
-    { id = 8, name = 'Wardrobe' },
-    { id = 10, name = 'Wardrobe 2' },
-    { id = 11, name = 'Wardrobe 3' },
-    { id = 12, name = 'Wardrobe 4' },
-    { id = 13, name = 'Wardrobe 5' },
-    { id = 14, name = 'Wardrobe 6' },
-    { id = 15, name = 'Wardrobe 7' },
-    { id = 16, name = 'Wardrobe 8' },
-};
-
--- Get items from all player storage containers
-local function GetPlayerItems()
-    local memMgr = AshitaCore:GetMemoryManager();
-    if not memMgr then return {}; end
-
-    local inventory = memMgr:GetInventory();
-    if not inventory then return {}; end
-
-    local resMgr = AshitaCore:GetResourceManager();
-    local items = {};
-    local seenItems = {};  -- Track unique items by name to avoid duplicates
-
-    for _, container in ipairs(CONTAINERS) do
-        local maxSlots = inventory:GetContainerCountMax(container.id);
-        if maxSlots and maxSlots > 0 then
-            for slotIndex = 1, maxSlots do
-                local item = inventory:GetContainerItem(container.id, slotIndex);
-                if item and item.Id and item.Id > 0 and item.Id ~= 65535 then
-                    local itemRes = resMgr:GetItemById(item.Id);
-                    if itemRes and itemRes.Name and itemRes.Name[1] and itemRes.Name[1] ~= '' then
-                        local itemName = itemRes.Name[1];
-                        -- Only add if we haven't seen this item name yet
-                        if not seenItems[itemName] then
-                            seenItems[itemName] = true;
-                            -- Check if item is usable (has activation time or recast delay)
-                            local isUsable = false;
-                            if itemRes.CastTime and itemRes.CastTime > 0 then
-                                isUsable = true;
-                            elseif itemRes.RecastDelay and itemRes.RecastDelay > 0 then
-                                isUsable = true;
-                            end
-                            table.insert(items, {
-                                id = item.Id,
-                                name = itemName,
-                                container = container.name,
-                                count = item.Count or 1,
-                                slots = itemRes.Slots or 0,  -- Equipment slot bitmask
-                                usable = isUsable,
-                            });
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    table.sort(items, function(a, b)
-        return a.name < b.name;
-    end);
-
-    return items;
-end
-
--- Refresh cached lists if needed
+-- Refresh cached lists if needed (delegates to shared playerdata module)
 local function RefreshCachedLists()
-    local player = AshitaCore:GetMemoryManager():GetPlayer();
-    if not player then return; end
-
-    local currentJobId = player:GetMainJob();
-    local currentSubJobId = player:GetSubJob();
-
-    -- Ignore invalid job IDs (can happen during menu transitions)
-    -- This prevents the cache from being corrupted with job 0
-    if not currentJobId or currentJobId == 0 then return; end
-
-    -- Check if data.jobId indicates a pending job change we haven't processed yet
-    -- This catches cases where the packet handler updated data.jobId but player API was slower
-    local dataJobId = data.jobId or currentJobId;
-    local dataSubjobId = data.subjobId or currentSubJobId;
-
-    -- Refresh if main job, sub job changed, or cache is empty
-    -- Also refresh if data.jobId differs from cache (pending job change)
-    local jobChanged = cacheJobId ~= currentJobId or cacheSubJobId ~= currentSubJobId;
-    local pendingChange = cacheJobId ~= nil and (cacheJobId ~= dataJobId or cacheSubJobId ~= dataSubjobId);
-
-    if jobChanged or pendingChange or not cachedSpells then
-        cachedSpells = GetPlayerSpells();
-        cachedAbilities = GetPlayerAbilities();
-        cachedWeaponskills = GetPlayerWeaponskills();
-        cachedPetCommands = nil;  -- Clear pet commands to refresh for new job
-        cachedItems = nil;  -- Clear items cache to refresh
-        cacheJobId = currentJobId;
-        cacheSubJobId = currentSubJobId;
+    -- Pass data module for pending job change detection
+    playerdata.RefreshCachedLists(data);
+    -- Clear local pet commands cache when job changes
+    if playerdata.GetCacheJobId() ~= data.jobId then
+        cachedPetCommands = nil;
     end
+end
 
-    -- Only refresh items if cache is empty (they don't depend on job but are expensive to scan)
-    if not cachedItems then
-        cachedItems = GetPlayerItems();
-    end
+-- Convenience accessors for cached data
+local function GetCachedSpells()
+    return playerdata.GetCachedSpells();
+end
+
+local function GetCachedAbilities()
+    return playerdata.GetCachedAbilities();
+end
+
+local function GetCachedWeaponskills()
+    return playerdata.GetCachedWeaponskills();
+end
+
+local function GetCachedItems()
+    return playerdata.GetCachedItems();
 end
 
 -- Get pet commands for the current job
@@ -648,7 +392,7 @@ local function GetAllSpells()
     allSpellsCache = {};
 
     for _, spell in pairs(horizonSpells) do
-        if spell.en and spell.en ~= '' and spell.id and not IsGarbageSpellName(spell.en) then
+        if spell.en and spell.en ~= '' and spell.id and not playerdata.IsGarbageSpellName(spell.en) then
             table.insert(allSpellsCache, {
                 id = spell.id,
                 name = spell.en,
@@ -925,15 +669,10 @@ function M.SyncToCurrentJob()
         selectedPaletteType = data.jobId or 1;
     end
     -- Clear spell/ability/item caches so they rebuild for new job
-    cachedSpells = nil;
-    cachedAbilities = nil;
-    cachedWeaponskills = nil;
+    playerdata.ClearCache();
     cachedPetCommands = nil;
-    cachedItems = nil;
     petAvatarFilter = 1;
     selectedAvatarPalette = nil;
-    cacheJobId = nil;
-    cacheSubJobId = nil;
     -- Close editor window if open (spells/abilities are job-specific)
     if editingMacro then
         editingMacro = nil;
@@ -1590,14 +1329,9 @@ function M.DrawPalette()
                 selectedMacroIndex = nil;
                 currentPalettePage = 1;
                 -- Clear caches to force refresh
-                cachedSpells = nil;
-                cachedAbilities = nil;
-                cachedWeaponskills = nil;
+                playerdata.ClearCache();
                 cachedPetCommands = nil;
-                cachedItems = nil;
                 petAvatarFilter = 1;
-                cacheJobId = nil;
-                cacheSubJobId = nil;
             end
             imgui.PopStyleColor();
 
@@ -1646,14 +1380,9 @@ function M.DrawPalette()
                     selectedMacroIndex = nil;  -- Clear selection when switching types
                     currentPalettePage = 1;    -- Reset to page 1 when switching types
                     -- Clear caches to force refresh
-                    cachedSpells = nil;
-                    cachedAbilities = nil;
-                    cachedWeaponskills = nil;
+                    playerdata.ClearCache();
                     cachedPetCommands = nil;
-                    cachedItems = nil;
                     petAvatarFilter = 1;
-                    cacheJobId = nil;
-                    cacheSubJobId = nil;
                 end
 
                 imgui.PopStyleColor();
@@ -2865,8 +2594,9 @@ function M.DrawMacroEditor()
         if currentType == 'ma' then
             -- Spell: Show searchable dropdown
             imgui.TextColored(COLORS.goldDim, 'Spell');
-            if cachedSpells and #cachedSpells > 0 then
-                DrawSearchableCombo('##spellCombo', cachedSpells, editingMacro.action or '', function(spell)
+            local spells = GetCachedSpells();
+            if spells and #spells > 0 then
+                DrawSearchableCombo('##spellCombo', spells, editingMacro.action or '', function(spell)
                     editingMacro.action = spell.name;
                     editorFields.action[1] = spell.name;
                     if (editingMacro.displayName or '') == '' then
@@ -2900,8 +2630,9 @@ function M.DrawMacroEditor()
         elseif currentType == 'ja' then
             -- Ability: Show searchable dropdown
             imgui.TextColored(COLORS.goldDim, 'Ability');
-            if cachedAbilities and #cachedAbilities > 0 then
-                DrawSearchableCombo('##abilityCombo', cachedAbilities, editingMacro.action or '', function(ability)
+            local abilities = GetCachedAbilities();
+            if abilities and #abilities > 0 then
+                DrawSearchableCombo('##abilityCombo', abilities, editingMacro.action or '', function(ability)
                     editingMacro.action = ability.name;
                     editorFields.action[1] = ability.name;
                     if (editingMacro.displayName or '') == '' then
@@ -2935,8 +2666,9 @@ function M.DrawMacroEditor()
         elseif currentType == 'ws' then
             -- Weaponskill: Show searchable dropdown
             imgui.TextColored(COLORS.goldDim, 'Weaponskill');
-            if cachedWeaponskills and #cachedWeaponskills > 0 then
-                DrawSearchableCombo('##wsCombo', cachedWeaponskills, editingMacro.action or '', function(ws)
+            local weaponskills = GetCachedWeaponskills();
+            if weaponskills and #weaponskills > 0 then
+                DrawSearchableCombo('##wsCombo', weaponskills, editingMacro.action or '', function(ws)
                     editingMacro.action = ws.name;
                     editorFields.action[1] = ws.name;
                     if (editingMacro.displayName or '') == '' then
@@ -2970,8 +2702,9 @@ function M.DrawMacroEditor()
         elseif currentType == 'item' then
             -- Item: Searchable dropdown or manual input
             imgui.TextColored(COLORS.goldDim, 'Item');
-            if cachedItems and #cachedItems > 0 then
-                DrawSearchableCombo('##itemCombo', cachedItems, editingMacro.action or '', function(item)
+            local items = GetCachedItems();
+            if items and #items > 0 then
+                DrawSearchableCombo('##itemCombo', items, editingMacro.action or '', function(item)
                     editingMacro.action = item.name;
                     editingMacro.itemId = item.id;  -- Store item ID for fast icon lookup
                     editorFields.action[1] = item.name;
@@ -2979,7 +2712,7 @@ function M.DrawMacroEditor()
                     editorFields.displayName[1] = item.name;
                 end, true);  -- Show icons
                 imgui.SameLine();
-                imgui.TextColored(COLORS.textMuted, '(' .. #cachedItems .. ')');
+                imgui.TextColored(COLORS.textMuted, '(' .. #items .. ')');
             else
                 imgui.TextColored(COLORS.textMuted, 'No items found in storage');
             end
@@ -3040,8 +2773,9 @@ function M.DrawMacroEditor()
             imgui.Spacing();
             local selectedSlot = EQUIP_SLOTS[editorFields.equipSlot[1]];
             imgui.TextColored(COLORS.goldDim, 'Item (' .. EQUIP_SLOT_LABELS[selectedSlot] .. ')');
-            if cachedItems and #cachedItems > 0 then
-                DrawSearchableCombo('##equipItemCombo', cachedItems, editingMacro.action or '', function(item)
+            local equipItems = GetCachedItems();
+            if equipItems and #equipItems > 0 then
+                DrawSearchableCombo('##equipItemCombo', equipItems, editingMacro.action or '', function(item)
                     editingMacro.action = item.name;
                     editingMacro.itemId = item.id;  -- Store item ID for fast icon lookup
                     editorFields.action[1] = item.name;
@@ -3049,7 +2783,7 @@ function M.DrawMacroEditor()
                     editorFields.displayName[1] = item.name;
                 end, true, selectedSlot);  -- Show icons, filter by selected slot
                 imgui.SameLine();
-                imgui.TextColored(COLORS.textMuted, '(' .. #cachedItems .. ')');
+                imgui.TextColored(COLORS.textMuted, '(' .. #equipItems .. ')');
             else
                 imgui.TextColored(COLORS.textMuted, 'No items found in storage');
             end
@@ -3088,7 +2822,7 @@ function M.DrawMacroEditor()
             -- Use the VIEWED palette's job, not necessarily the player's current job
             local viewedJobId = selectedPaletteType;
             if type(viewedJobId) ~= 'number' then
-                viewedJobId = cacheJobId or 0;
+                viewedJobId = playerdata.GetCacheJobId() or 0;
             end
             local avatarList = petregistry.GetAvatarList();
 
