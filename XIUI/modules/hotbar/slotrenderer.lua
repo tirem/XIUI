@@ -26,6 +26,33 @@ local ITEM_CONTAINERS = { 0, 8, 10, 11, 12, 13, 14, 15, 16 };  -- Inventory, war
 
 local M = {};
 
+-- Get abbreviated text for an action (used when no icon available)
+-- @param bind: Action bind data with displayName or action field
+-- @return: 3-5 character abbreviation string
+local function GetActionAbbreviation(bind)
+    if not bind then return '?'; end
+    local name = bind.displayName or bind.action or '';
+    if name == '' then return '?'; end
+
+    -- Check if multi-word (contains space)
+    local words = {};
+    for word in name:gmatch('%S+') do
+        table.insert(words, word);
+    end
+
+    if #words > 1 then
+        -- Multi-word: take first letter of each word (up to 5)
+        local abbr = '';
+        for i = 1, math.min(#words, 5) do
+            abbr = abbr .. words[i]:sub(1, 1):upper();
+        end
+        return abbr;
+    else
+        -- Single word: take first 5 characters
+        return name:sub(1, 5);
+    end
+end
+
 -- Get total quantity of an item across all containers
 -- @param itemId: Item ID to look up
 -- @param itemName: Item name (fallback for lookup)
@@ -461,6 +488,23 @@ function M.DrawSlot(resources, params)
                 );
                 iconRendered = true;
             end
+        end
+    end
+
+    -- ========================================
+    -- 4b. Abbreviation Text Fallback (when no icon available)
+    -- ========================================
+    if not iconRendered and bind and animOpacity > 0.5 then
+        local drawList = imgui.GetWindowDrawList();
+        if drawList then
+            local abbr = GetActionAbbreviation(bind);
+            local textSize = imgui.CalcTextSize(abbr);
+            local textX = x + (size - textSize) / 2;
+            local textY = y + (size - 14) / 2;  -- Approximate font height
+
+            -- Gold color for abbreviation text (matching XIUI style)
+            local textColor = imgui.GetColorU32({0.957, 0.855, 0.592, animOpacity});
+            drawList:AddText({textX, textY}, textColor, abbr);
         end
     end
 
