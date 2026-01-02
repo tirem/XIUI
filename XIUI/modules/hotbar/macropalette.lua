@@ -55,6 +55,44 @@ local COLORS = {
     usable = {0.5, 0.7, 1.0, 1.0},  -- Blue tint for usable items
 };
 
+-- Helper to generate abbreviated text from action name (3-5 chars)
+-- If preferAction is true, prioritize action name over displayName (for previews)
+local function GetActionAbbreviation(macro, preferAction)
+    local name;
+    if preferAction then
+        name = macro.action or macro.displayName or '';
+    else
+        name = macro.displayName or macro.action or '';
+    end
+    if name == '' then return '?'; end
+
+    -- Remove common prefixes/suffixes
+    name = name:gsub('^%s+', ''):gsub('%s+$', '');  -- Trim whitespace
+
+    -- If short enough, just use it
+    if #name <= 5 then
+        return name:upper();
+    end
+
+    -- Check for multi-word names (take first letter of each word)
+    local words = {};
+    for word in name:gmatch('%S+') do
+        table.insert(words, word);
+    end
+
+    if #words >= 2 then
+        -- Multi-word: take first letter of each word (up to 5)
+        local abbr = '';
+        for i = 1, math.min(#words, 5) do
+            abbr = abbr .. words[i]:sub(1, 1):upper();
+        end
+        return abbr;
+    end
+
+    -- Single word: take first 4-5 chars
+    return name:sub(1, 5):upper();
+end
+
 -- Helper to clear all hotbar/crossbar icon caches
 local function ClearAllIconCaches()
     -- Lazy-load display to avoid circular dependency
@@ -1136,8 +1174,10 @@ local function DrawMacroTile(macro, index, x, y, size)
 
     isHovered = imgui.IsItemHovered();
 
-    -- Draw icon if available
+    -- Draw icon if available, otherwise show abbreviated text
     local icon = actions.GetBindIcon(macro);
+    local iconRendered = false;
+
     if icon and icon.image then
         local drawList = imgui.GetWindowDrawList();
         if drawList then
@@ -1145,13 +1185,27 @@ local function DrawMacroTile(macro, index, x, y, size)
             local iconX = x + 4;
             local iconY = y + 4;
             local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
-            if iconPtr then
+            if iconPtr and iconPtr ~= 0 then
                 drawList:AddImage(
                     iconPtr,
                     {iconX, iconY},
                     {iconX + iconSize, iconY + iconSize}
                 );
+                iconRendered = true;
             end
+        end
+    end
+
+    -- No icon rendered - show abbreviated action name
+    if not iconRendered then
+        local drawList = imgui.GetForegroundDrawList();
+        if drawList then
+            local abbr = GetActionAbbreviation(macro);
+            local textSize = imgui.CalcTextSize(abbr);
+            local textX = x + (size - textSize) / 2;
+            local textY = y + (size - 14) / 2;
+            local textColor = imgui.GetColorU32(COLORS.gold);
+            drawList:AddText({textX, textY}, textColor, abbr);
         end
     end
 
@@ -1732,8 +1786,9 @@ function M.DrawPalette()
                             imgui.PopStyleColor(4);
                             imgui.PopStyleVar(2);
 
-                            -- Draw icon on top of button
+                            -- Draw icon on top of button, or abbreviation if no icon
                             local icon = actions.GetBindIcon(macro);
+                            local iconRendered = false;
                             if icon and icon.image then
                                 local drawList = imgui.GetWindowDrawList();
                                 if drawList then
@@ -1741,9 +1796,23 @@ function M.DrawPalette()
                                     local iconX = buttonPos[1] + 4;
                                     local iconY = buttonPos[2] + 4;
                                     local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
-                                    if iconPtr then
+                                    if iconPtr and iconPtr ~= 0 then
                                         drawList:AddImage(iconPtr, {iconX, iconY}, {iconX + iconSize, iconY + iconSize});
+                                        iconRendered = true;
                                     end
+                                end
+                            end
+
+                            -- No icon - show abbreviated action name
+                            if not iconRendered then
+                                local drawList = imgui.GetWindowDrawList();
+                                if drawList then
+                                    local abbr = GetActionAbbreviation(macro);
+                                    local textSize = imgui.CalcTextSize(abbr);
+                                    local textX = buttonPos[1] + (PALETTE_TILE_SIZE - textSize) / 2;
+                                    local textY = buttonPos[2] + (PALETTE_TILE_SIZE - 14) / 2;
+                                    local textColor = imgui.GetColorU32(COLORS.gold);
+                                    drawList:AddText({textX, textY}, textColor, abbr);
                                 end
                             end
 
@@ -1930,9 +1999,13 @@ local function DrawIconPreview(macro, x, y, size)
             );
         end
     else
-        -- No icon - show placeholder text
-        imgui.SetCursorScreenPos({x + 8, y + size/2 - 6});
-        imgui.TextColored(COLORS.textMuted, 'No Icon');
+        -- No icon - show abbreviated action name (prefer action for preview)
+        local abbr = GetActionAbbreviation(macro, true);
+        local textSize = imgui.CalcTextSize(abbr);
+        local textX = x + (size - textSize) / 2;
+        local textY = y + (size - 14) / 2;
+        local textColor = imgui.GetColorU32(COLORS.gold);
+        drawList:AddText({textX, textY}, textColor, abbr);
     end
 end
 
