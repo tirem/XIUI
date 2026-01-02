@@ -178,7 +178,6 @@ function M.Initialize(settings)
             local font = FontManager.create(kbSettings);
             font:set_visible(false);
             data.keybindFonts[barIndex][slotIndex] = font;
-            table.insert(data.allFonts, font);
         end
 
         -- 6. Create label fonts for each slot (centered alignment for labels below slots)
@@ -190,7 +189,6 @@ function M.Initialize(settings)
             local font = FontManager.create(lblSettings);
             font:set_visible(false);
             data.labelFonts[barIndex][slotIndex] = font;
-            table.insert(data.allFonts, font);
         end
 
         -- 7. Create cooldown timer fonts (centered over slot)
@@ -205,7 +203,6 @@ function M.Initialize(settings)
             local font = FontManager.create(timerSettings);
             font:set_visible(false);
             data.timerFonts[barIndex][slotIndex] = font;
-            table.insert(data.allFonts, font);
         end
 
         -- 8. Create MP cost fonts (right-aligned at top-right corner)
@@ -222,7 +219,6 @@ function M.Initialize(settings)
             local font = FontManager.create(mpSettings);
             font:set_visible(false);
             data.mpCostFonts[barIndex][slotIndex] = font;
-            table.insert(data.allFonts, font);
         end
 
         -- 9. Create item quantity fonts (right-aligned at bottom-right corner)
@@ -239,7 +235,6 @@ function M.Initialize(settings)
             local font = FontManager.create(qtySettings);
             font:set_visible(false);
             data.quantityFonts[barIndex][slotIndex] = font;
-            table.insert(data.allFonts, font);
         end
 
         -- 10. Create hotbar number font
@@ -247,8 +242,11 @@ function M.Initialize(settings)
         numSettings.font_height = 12;
         data.hotbarNumberFonts[barIndex] = FontManager.create(numSettings);
         data.hotbarNumberFonts[barIndex]:set_visible(false);
-        table.insert(data.allFonts, data.hotbarNumberFonts[barIndex]);
     end
+
+    -- Build the flattened font list for batch visibility operations.
+    -- (Must be rebuilt after any recreate() calls, too.)
+    data.RebuildAllFonts();
 
     -- Initialize display layer
     display.Initialize(settings);
@@ -347,6 +345,9 @@ function M.UpdateVisuals(settings)
             );
         end
     end
+
+    -- IMPORTANT: recreate() changes object references; rebuild the batch list so hiding works reliably.
+    data.RebuildAllFonts();
 
     -- Clear slot cache since fonts were recreated (cache tracks font text state)
     slotrenderer.ClearAllCache();
@@ -511,6 +512,15 @@ function M.Cleanup()
             for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
                 if data.mpCostFonts[barIndex][slotIndex] then
                     FontManager.destroy(data.mpCostFonts[barIndex][slotIndex]);
+                end
+            end
+        end
+
+        -- Item quantity fonts
+        if data.quantityFonts[barIndex] then
+            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
+                if data.quantityFonts[barIndex][slotIndex] then
+                    FontManager.destroy(data.quantityFonts[barIndex][slotIndex]);
                 end
             end
         end

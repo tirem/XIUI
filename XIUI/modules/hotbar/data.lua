@@ -711,6 +711,42 @@ end
 -- Font Visibility Helpers
 -- ============================================
 
+-- Rebuild the flattened all-fonts list used for batch operations.
+-- IMPORTANT: When fonts are recreated (FontManager.recreate), references change, so we must refresh this list
+-- or SetAllFontsVisible() will toggle stale/destroyed objects and leave the new fonts visible.
+function M.RebuildAllFonts()
+    local all = {};
+
+    for barIndex = 1, M.NUM_BARS do
+        -- Per-slot fonts
+        for slotIndex = 1, M.MAX_SLOTS_PER_BAR do
+            local f;
+
+            f = M.keybindFonts[barIndex] and M.keybindFonts[barIndex][slotIndex];
+            if f then table.insert(all, f); end
+
+            f = M.labelFonts[barIndex] and M.labelFonts[barIndex][slotIndex];
+            if f then table.insert(all, f); end
+
+            f = M.timerFonts[barIndex] and M.timerFonts[barIndex][slotIndex];
+            if f then table.insert(all, f); end
+
+            f = M.mpCostFonts[barIndex] and M.mpCostFonts[barIndex][slotIndex];
+            if f then table.insert(all, f); end
+
+            f = M.quantityFonts[barIndex] and M.quantityFonts[barIndex][slotIndex];
+            if f then table.insert(all, f); end
+        end
+
+        -- Per-bar fonts
+        if M.hotbarNumberFonts[barIndex] then
+            table.insert(all, M.hotbarNumberFonts[barIndex]);
+        end
+    end
+
+    M.allFonts = all;
+end
+
 function M.SetAllFontsVisible(visible)
     if M.allFonts then
         SetFontsVisible(M.allFonts, visible);
@@ -735,6 +771,33 @@ function M.SetBarFontsVisible(barIndex, visible)
     -- Label fonts for this bar
     if M.labelFonts[barIndex] then
         for _, font in pairs(M.labelFonts[barIndex]) do
+            if font then
+                font:set_visible(visible);
+            end
+        end
+    end
+
+    -- Timer fonts for this bar
+    if M.timerFonts[barIndex] then
+        for _, font in pairs(M.timerFonts[barIndex]) do
+            if font then
+                font:set_visible(visible);
+            end
+        end
+    end
+
+    -- MP cost fonts for this bar
+    if M.mpCostFonts[barIndex] then
+        for _, font in pairs(M.mpCostFonts[barIndex]) do
+            if font then
+                font:set_visible(visible);
+            end
+        end
+    end
+
+    -- Item quantity fonts for this bar
+    if M.quantityFonts[barIndex] then
+        for _, font in pairs(M.quantityFonts[barIndex]) do
             if font then
                 font:set_visible(visible);
             end
