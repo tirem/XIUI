@@ -477,6 +477,7 @@ function M.createCrossbarDefaults()
 
         -- Controller settings
         triggerThreshold = 30,              -- Analog trigger threshold (0-255)
+        blockGameMacros = true,             -- Block native FFXI macros when crossbar buttons are pressed
 
         -- Window position (saved on drag)
         windowX = nil,                      -- nil = use default centered position

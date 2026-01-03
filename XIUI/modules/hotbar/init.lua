@@ -285,6 +285,10 @@ function M.Initialize(settings)
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
             crossbar.ActivateSlot(comboMode, slotIndex);
         end);
+        -- Set blocking enabled state from config (default to true)
+        local blockGameMacros = gConfig.hotbarCrossbar.blockGameMacros;
+        if blockGameMacros == nil then blockGameMacros = true; end
+        controller.SetBlockingEnabled(blockGameMacros);
         crossbarInitialized = true;
     end
 
@@ -383,6 +387,10 @@ function M.UpdateVisuals(settings)
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
             crossbar.ActivateSlot(comboMode, slotIndex);
         end);
+        -- Set blocking enabled state from config (default to true)
+        local blockGameMacros = gConfig.hotbarCrossbar.blockGameMacros;
+        if blockGameMacros == nil then blockGameMacros = true; end
+        controller.SetBlockingEnabled(blockGameMacros);
         crossbarInitialized = true;
     elseif not crossbarNeeded and crossbarInitialized then
         -- Cleanup crossbar when no longer needed
@@ -396,6 +404,10 @@ function M.UpdateVisuals(settings)
         controller.SetTriggerThreshold(gConfig.hotbarCrossbar.triggerThreshold or 30);
         controller.SetDoubleTapEnabled(gConfig.hotbarCrossbar.enableDoubleTap or false);
         controller.SetDoubleTapWindow(gConfig.hotbarCrossbar.doubleTapWindow or 0.3);
+        -- Update blocking state
+        local blockGameMacros = gConfig.hotbarCrossbar.blockGameMacros;
+        if blockGameMacros == nil then blockGameMacros = true; end
+        controller.SetBlockingEnabled(blockGameMacros);
     end
 
     -- Update macro bar patch state based on setting
@@ -693,6 +705,16 @@ function M.HandleXInputState(e)
     local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
     if crossbarMode ~= 'crossbar' and crossbarMode ~= 'both' then return; end
     controller.HandleXInputState(e);
+end
+
+-- Handle xinput_button event for blocking game macros
+-- Returns true if the button should be blocked
+function M.HandleXInputButton(e)
+    if not crossbarInitialized then return false; end
+    if gConfig and gConfig.hotbarEnabled == false then return false; end
+    local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
+    if crossbarMode ~= 'crossbar' and crossbarMode ~= 'both' then return false; end
+    return controller.HandleXInputButton(e);
 end
 
 -- ============================================

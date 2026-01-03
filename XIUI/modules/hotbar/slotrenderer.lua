@@ -377,7 +377,9 @@ function M.DrawSlot(resources, params)
     -- 2. Icon Positioning
     -- ========================================
     local iconPadding = 4;
-    local targetIconSize = size - (iconPadding * 2);
+    local baseIconSize = size - (iconPadding * 2);
+    local iconPressScale = params.iconPressScale or 1.0;
+    local targetIconSize = baseIconSize * iconPressScale;
 
     -- ========================================
     -- 3. Cooldown Info, MP Check & Availability Check

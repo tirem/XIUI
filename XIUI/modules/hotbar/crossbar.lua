@@ -21,6 +21,7 @@ local textures = require('modules.hotbar.textures');
 local controller = require('modules.hotbar.controller');
 local recast = require('modules.hotbar.recast');
 local slotrenderer = require('modules.hotbar.slotrenderer');
+local animation = require('libs.animation');
 
 local M = {};
 
@@ -657,6 +658,10 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
     -- Apply Y offset for animation
     local drawY = y + yOffset;
 
+    -- Get press scale animation for icon (scales up when pressed, animates back down on release)
+    local pressKey = comboMode .. '_' .. slotIndex;
+    local iconPressScale = animation.getPressScale(pressKey, isPressed and isActive);
+
     -- Get slot data
     local slotData = data.GetCrossbarSlotData(comboMode, slotIndex);
 
@@ -694,6 +699,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         dimFactor = dimFactor,
         animOpacity = animOpacity,
         isPressed = isPressed and isActive,
+        iconPressScale = iconPressScale,
         showMpCost = settings.showMpCost ~= false,
         mpCostFontSize = settings.mpCostFontSize or 10,
         mpCostFontColor = settings.mpCostFontColor or 0xFFD4FF97,
@@ -821,16 +827,9 @@ local function DrawTriggerIcons(activeCombo, l2GroupX, r2GroupX, groupY, groupWi
     if not drawList then return; end
 
     -- Trigger icons base size is 49x28 pixels, scaled by triggerIconScale
-    local scale = settings.triggerIconScale or 1.0;
-    local iconWidth = 49 * scale;
-    local iconHeight = 28 * scale;
-    local iconY = groupY - (iconHeight * 0.5); -- Position overlapping top edge
-
-    -- L2 icon position (centered above L2 group)
-    local l2IconX = l2GroupX + (groupWidth / 2) - (iconWidth / 2);
-
-    -- R2 icon position (centered above R2 group)
-    local r2IconX = r2GroupX + (groupWidth / 2) - (iconWidth / 2);
+    local baseScale = settings.triggerIconScale or 1.0;
+    local baseIconWidth = 49 * baseScale;
+    local baseIconHeight = 28 * baseScale;
 
     -- Determine active state for each trigger
     local l2Active = activeCombo == COMBO_MODES.L2 or activeCombo == COMBO_MODES.L2_THEN_R2 or activeCombo == COMBO_MODES.R2_THEN_L2 or activeCombo == COMBO_MODES.L2_DOUBLE;
@@ -842,32 +841,44 @@ local function DrawTriggerIcons(activeCombo, l2GroupX, r2GroupX, groupY, groupWi
         r2Active = false;
     end
 
-    -- Draw L2 icon
+    -- Get press scale animations for triggers
+    local l2PressScale = animation.getPressScale('trigger_L2', l2Active);
+    local r2PressScale = animation.getPressScale('trigger_R2', r2Active);
+
+    -- Draw L2 icon with press scale
     local l2Texture = textures:GetControllerIcon('L2');
     if l2Texture and l2Texture.image then
         local iconPtr = tonumber(ffi.cast("uint32_t", l2Texture.image));
         if iconPtr then
+            local l2Width = baseIconWidth * l2PressScale;
+            local l2Height = baseIconHeight * l2PressScale;
+            local l2IconX = l2GroupX + (groupWidth / 2) - (l2Width / 2);
+            local l2IconY = groupY - (l2Height * 0.5);
             local tintColor = l2Active and 0xFFFFFFFF or 0x88FFFFFF;
             drawList:AddImage(
                 iconPtr,
-                {l2IconX, iconY},
-                {l2IconX + iconWidth, iconY + iconHeight},
+                {l2IconX, l2IconY},
+                {l2IconX + l2Width, l2IconY + l2Height},
                 {0, 0}, {1, 1},
                 tintColor
             );
         end
     end
 
-    -- Draw R2 icon
+    -- Draw R2 icon with press scale
     local r2Texture = textures:GetControllerIcon('R2');
     if r2Texture and r2Texture.image then
         local iconPtr = tonumber(ffi.cast("uint32_t", r2Texture.image));
         if iconPtr then
+            local r2Width = baseIconWidth * r2PressScale;
+            local r2Height = baseIconHeight * r2PressScale;
+            local r2IconX = r2GroupX + (groupWidth / 2) - (r2Width / 2);
+            local r2IconY = groupY - (r2Height * 0.5);
             local tintColor = r2Active and 0xFFFFFFFF or 0x88FFFFFF;
             drawList:AddImage(
                 iconPtr,
-                {r2IconX, iconY},
-                {r2IconX + iconWidth, iconY + iconHeight},
+                {r2IconX, r2IconY},
+                {r2IconX + r2Width, r2IconY + r2Height},
                 {0, 0}, {1, 1},
                 tintColor
             );

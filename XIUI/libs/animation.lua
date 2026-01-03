@@ -192,6 +192,91 @@ function M.pulse(period, minValue, maxValue, currentTime)
 end
 
 -- ========================================
+-- Press Scale Animation
+-- ========================================
+-- Quick scale up/down effect for button presses
+
+-- Storage for press animations (keyed by unique ID)
+local pressAnimations = {};
+
+-- Press animation configuration
+local PRESS_SCALE_UP = 1.12;        -- Scale when pressed
+local PRESS_SCALE_DOWN = 1.0;       -- Normal scale
+local PRESS_ANIM_DURATION = 0.08;   -- Duration in seconds
+
+-- Start or update a press scale animation
+-- Parameters:
+--   key: unique identifier for this button/slot
+--   isPressed: whether the button is currently pressed
+--   currentTime: os.clock() value (optional)
+-- Returns: current scale factor (1.0 when not animating)
+function M.getPressScale(key, isPressed, currentTime)
+    currentTime = currentTime or os.clock();
+
+    local anim = pressAnimations[key];
+
+    if isPressed then
+        -- Start or maintain pressed state
+        if not anim or not anim.pressed then
+            -- Start new press animation
+            pressAnimations[key] = {
+                pressed = true,
+                startTime = currentTime,
+                phase = 'up',  -- 'up' = scaling up, 'down' = scaling down
+            };
+            anim = pressAnimations[key];
+        end
+
+        local elapsed = currentTime - anim.startTime;
+
+        if anim.phase == 'up' then
+            -- Scale up phase
+            local progress = math.min(elapsed / PRESS_ANIM_DURATION, 1.0);
+            local easedProgress = M.easeOutBack(progress);
+            local scale = PRESS_SCALE_DOWN + (PRESS_SCALE_UP - PRESS_SCALE_DOWN) * easedProgress;
+
+            if progress >= 1.0 then
+                -- Stay at max scale while pressed
+                return PRESS_SCALE_UP;
+            end
+            return scale;
+        else
+            -- Already scaled up, stay there
+            return PRESS_SCALE_UP;
+        end
+    else
+        -- Not pressed
+        if anim and anim.pressed then
+            -- Transition to release animation
+            anim.pressed = false;
+            anim.startTime = currentTime;
+            anim.phase = 'down';
+        end
+
+        if anim and anim.phase == 'down' then
+            local elapsed = currentTime - anim.startTime;
+            local progress = math.min(elapsed / PRESS_ANIM_DURATION, 1.0);
+            local easedProgress = M.easeOutQuad(progress);
+            local scale = PRESS_SCALE_UP - (PRESS_SCALE_UP - PRESS_SCALE_DOWN) * easedProgress;
+
+            if progress >= 1.0 then
+                -- Animation complete, clean up
+                pressAnimations[key] = nil;
+                return PRESS_SCALE_DOWN;
+            end
+            return scale;
+        end
+
+        return PRESS_SCALE_DOWN;
+    end
+end
+
+-- Clear all press animations (call on cleanup)
+function M.clearPressAnimations()
+    pressAnimations = {};
+end
+
+-- ========================================
 -- Animation Pool
 -- ========================================
 -- Manage multiple named animations

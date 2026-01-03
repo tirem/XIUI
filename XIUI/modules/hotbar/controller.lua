@@ -112,6 +112,9 @@ local state = {
     previousButtons = 0,
     currentButtons = 0,         -- Currently held buttons (for pressed visual state)
     currentPressedSlot = nil,   -- Currently pressed slot index (1-8) or nil
+    lastPressedSlot = nil,      -- Last pressed slot (for minimum display duration)
+    pressedSlotTime = 0,        -- Timestamp when pressed slot was set
+    heldButtons = {},           -- Track which button slots are currently held
 
     -- Callback for slot activation
     onSlotActivate = nil,
@@ -119,6 +122,9 @@ local state = {
     -- Debug: track if we've received any events
     receivedFirstEvent = false,
 };
+
+-- Track whether game macro blocking is enabled (must be before HandleXInputState)
+local blockingEnabled = true;
 
 -- Initialize the controller module
 function Controller.Initialize(settings)
@@ -191,9 +197,23 @@ function Controller.IsR2Held()
     return state.rightTriggerHeld;
 end
 
+-- Minimum time to show pressed visual (in seconds)
+local PRESSED_VISUAL_MIN_DURATION = 0.15;
+
 -- Get currently pressed slot index (1-8) or nil if no slot button is pressed
 function Controller.GetPressedSlot()
-    return state.currentPressedSlot;
+    -- Return pressed slot if set and within minimum display duration
+    if state.currentPressedSlot then
+        return state.currentPressedSlot;
+    end
+    -- Also return last pressed slot if within minimum duration (for quick taps)
+    if state.lastPressedSlot and state.pressedSlotTime > 0 then
+        local elapsed = GetTime() - state.pressedSlotTime;
+        if elapsed < PRESSED_VISUAL_MIN_DURATION then
+            return state.lastPressedSlot;
+        end
+    end
+    return nil;
 end
 
 -- Update combo state based on trigger held states
@@ -290,6 +310,11 @@ local function UpdateComboState(leftHeld, rightHeld)
         state.comboFirstTrigger = nil;
         state.isLeftDoubleTap = false;
         state.isRightDoubleTap = false;
+        -- Clear pressed state when crossbar deactivates
+        state.currentPressedSlot = nil;
+        state.lastPressedSlot = nil;
+        state.pressedSlotTime = 0;
+        state.heldButtons = {};
     end
 
     -- Log combo mode change
@@ -356,6 +381,12 @@ local function CheckSlotActivation(currentButtons)
     end
 end
 
+-- Bitmask for crossbar buttons (D-pad + face buttons)
+local CROSSBAR_BUTTONS_MASK = bit.bor(
+    XINPUT.DPAD_UP, XINPUT.DPAD_DOWN, XINPUT.DPAD_LEFT, XINPUT.DPAD_RIGHT,
+    XINPUT.A, XINPUT.B, XINPUT.X, XINPUT.Y
+);
+
 -- Handle XInput state event
 -- Call this from the xinput_state event handler
 function Controller.HandleXInputState(e)
@@ -404,16 +435,32 @@ function Controller.HandleXInputState(e)
     -- Check for slot activation (button + trigger combo)
     CheckSlotActivation(currentButtons);
 
-    -- Track currently held buttons and pressed slot for visual feedback
+    -- Track button state for legacy wButtons-based detection (not used for pressed visual)
+    -- NOTE: currentPressedSlot is now managed by HandleXInputButton since buttons
+    -- come through xinput_button events, not xinput_state.wButtons
     state.currentButtons = currentButtons;
-    if state.activeCombo ~= COMBO_MODES.NONE then
-        state.currentPressedSlot = GetSlotIndexFromButtons(currentButtons);
-    else
-        state.currentPressedSlot = nil;
-    end
 
     -- Store current button state for next frame comparison
     state.previousButtons = currentButtons;
+
+    -- ============================================
+    -- Block game macros by modifying e.state_modified
+    -- This prevents FFXI from seeing the triggers/buttons we consume
+    -- ============================================
+    if blockingEnabled and (leftHeld or rightHeld) then
+        if e.state_modified then
+            local modifiedState = ffi.cast('XINPUT_STATE*', e.state_modified);
+            if modifiedState then
+                local modifiedGamepad = modifiedState.Gamepad;
+                -- Zero out the triggers to prevent FFXI macro palette
+                modifiedGamepad.bLeftTrigger = 0;
+                modifiedGamepad.bRightTrigger = 0;
+                -- Zero out the crossbar buttons (D-pad + face buttons)
+                local buttonsToKeep = bit.band(modifiedGamepad.wButtons, bit.bnot(CROSSBAR_BUTTONS_MASK));
+                modifiedGamepad.wButtons = buttonsToKeep;
+            end
+        end
+    end
 end
 
 -- Reset controller state (call on zone change, etc.)
@@ -425,6 +472,9 @@ function Controller.Reset()
     state.previousButtons = 0;
     state.currentButtons = 0;
     state.currentPressedSlot = nil;
+    state.lastPressedSlot = nil;
+    state.pressedSlotTime = 0;
+    state.heldButtons = {};
     -- Reset double-tap state
     state.leftTriggerLastRelease = 0;
     state.rightTriggerLastRelease = 0;
@@ -441,8 +491,136 @@ function Controller.Cleanup()
     Controller.Reset();
 end
 
+-- ============================================
+-- Game Macro Blocking
+-- When a trigger is held and a crossbar button is pressed,
+-- block the button from reaching the game to prevent native macros from firing
+-- ============================================
+
+-- Set whether game macro blocking is enabled
+function Controller.SetBlockingEnabled(enabled)
+    blockingEnabled = enabled;
+    DebugLog('Game macro blocking ' .. (enabled and 'enabled' or 'disabled'));
+end
+
+-- Check if game macro blocking is enabled
+function Controller.IsBlockingEnabled()
+    return blockingEnabled;
+end
+
+-- XInput button IDs for the xinput_button event
+-- These correspond to the bit positions in XINPUT_GAMEPAD.wButtons
+local XINPUT_BUTTON_IDS = {
+    -- D-Pad buttons (bit positions)
+    DPAD_UP = 0,        -- 0x0001
+    DPAD_DOWN = 1,      -- 0x0002
+    DPAD_LEFT = 2,      -- 0x0004
+    DPAD_RIGHT = 3,     -- 0x0008
+    -- Face buttons
+    A = 12,             -- 0x1000
+    B = 13,             -- 0x2000
+    X = 14,             -- 0x4000
+    Y = 15,             -- 0x8000
+};
+
+-- Set of button IDs that are crossbar slot buttons (D-pad and face buttons)
+local CROSSBAR_BUTTON_IDS = {
+    [XINPUT_BUTTON_IDS.DPAD_UP] = true,
+    [XINPUT_BUTTON_IDS.DPAD_DOWN] = true,
+    [XINPUT_BUTTON_IDS.DPAD_LEFT] = true,
+    [XINPUT_BUTTON_IDS.DPAD_RIGHT] = true,
+    [XINPUT_BUTTON_IDS.A] = true,
+    [XINPUT_BUTTON_IDS.B] = true,
+    [XINPUT_BUTTON_IDS.X] = true,
+    [XINPUT_BUTTON_IDS.Y] = true,
+};
+
+-- Map button IDs to slot indices (1-8)
+-- Crossbar visual layout for D-pad diamond:
+--     Up(1)
+-- Left(4)  Right(2)
+--    Down(3)
+-- Crossbar visual layout for face button diamond:
+--     Y(5)
+--  X(8)  B(6)
+--     A(7)
+local BUTTON_ID_TO_SLOT = {
+    -- D-pad: matches visual layout
+    [XINPUT_BUTTON_IDS.DPAD_UP] = 1,
+    [XINPUT_BUTTON_IDS.DPAD_RIGHT] = 2,
+    [XINPUT_BUTTON_IDS.DPAD_DOWN] = 3,
+    [XINPUT_BUTTON_IDS.DPAD_LEFT] = 4,
+    -- Face buttons: matches visual layout
+    [XINPUT_BUTTON_IDS.Y] = 5,  -- Top
+    [XINPUT_BUTTON_IDS.B] = 6,  -- Right
+    [XINPUT_BUTTON_IDS.A] = 7,  -- Bottom
+    [XINPUT_BUTTON_IDS.X] = 8,  -- Left
+};
+
+-- Handle xinput_button event for blocking
+-- Returns true if the button should be blocked
+-- @param e The xinput_button event { button, state, blocked, injected }
+function Controller.HandleXInputButton(e)
+    -- Don't block if module is not active
+    if not state.initialized or not state.enabled then
+        return false;
+    end
+
+    -- Don't block if blocking is disabled
+    if not blockingEnabled then
+        return false;
+    end
+
+    -- Don't block if no trigger is held (crossbar is not active)
+    if state.activeCombo == COMBO_MODES.NONE then
+        return false;
+    end
+
+    -- On button release, track release but DON'T clear pressed visual yet
+    -- The visual will clear when the trigger is released (crossbar deactivates)
+    if e.state == 0 then
+        local buttonId = e.button;
+        local slotIndex = BUTTON_ID_TO_SLOT[buttonId];
+        if slotIndex and state.heldButtons then
+            state.heldButtons[slotIndex] = nil;
+            -- Only clear pressed slot if no buttons are held anymore
+            local anyHeld = false;
+            for _, held in pairs(state.heldButtons) do
+                if held then anyHeld = true; break; end
+            end
+            if not anyHeld then
+                state.currentPressedSlot = nil;
+            end
+        end
+        return false; -- Don't block releases
+    end
+
+    -- Check if this is a crossbar button (D-pad or face button)
+    local buttonId = e.button;
+    local slotIndex = BUTTON_ID_TO_SLOT[buttonId];
+
+    if slotIndex then
+        -- Track held button and set pressed slot for visual feedback
+        state.heldButtons[slotIndex] = true;
+        state.currentPressedSlot = slotIndex;
+        state.lastPressedSlot = slotIndex;
+        state.pressedSlotTime = GetTime();
+
+        -- ACTIVATE the crossbar slot first, then block the input
+        DebugLog(string.format('Button PRESS: button=%d -> slot=%d (combo: %s)',
+            buttonId, slotIndex, state.activeCombo));
+        if state.onSlotActivate then
+            state.onSlotActivate(state.activeCombo, slotIndex);
+        end
+        return true; -- Block the button from reaching the game
+    end
+
+    return false;
+end
+
 -- Export constants for external use
 Controller.COMBO_MODES = COMBO_MODES;
 Controller.XINPUT = XINPUT;
+Controller.XINPUT_BUTTON_IDS = XINPUT_BUTTON_IDS;
 
 return Controller;

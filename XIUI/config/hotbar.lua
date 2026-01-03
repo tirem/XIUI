@@ -1085,6 +1085,13 @@ local function DrawCrossbarSettings()
         components.DrawPartySliderInt(crossbarSettings, 'Trigger Threshold##crossbar', 'triggerThreshold', 10, 200, '%d', nil, 30);
         imgui.ShowHelp('Analog trigger threshold (0-255). Lower = more sensitive.');
 
+        -- Default to true if not set (for existing users upgrading)
+        if crossbarSettings.blockGameMacros == nil then
+            crossbarSettings.blockGameMacros = true;
+        end
+        components.DrawPartyCheckbox(crossbarSettings, 'Block Game Macros##crossbar', 'blockGameMacros', DeferredUpdateVisuals);
+        imgui.ShowHelp('Block native FFXI macros from firing when crossbar buttons are pressed. This prevents double-execution when using controller.');
+
         imgui.Spacing();
         imgui.TextColored({0.8, 0.8, 0.6, 1.0}, 'Expanded Crossbar');
 

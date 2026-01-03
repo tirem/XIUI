@@ -451,6 +451,7 @@ ashita.events.register('unload', 'unload_cb', function ()
     ashita.events.unregister('command', 'command_cb');
     ashita.events.unregister('key', 'key_cb');
     ashita.events.unregister('xinput_state', 'xinput_state_cb');
+    ashita.events.unregister('xinput_button', 'xinput_button_cb');
 
     statusHandler.clear_cache();
     if ClearDebuffFontCache then ClearDebuffFontCache(); end
@@ -744,6 +745,20 @@ end);
 -- XInput controller state event (for crossbar mode)
 ashita.events.register('xinput_state', 'xinput_state_cb', function (e)
     hotbar.HandleXInputState(e);
+end);
+
+-- XInput button event (for blocking game macros when crossbar is active)
+--[[ Valid Arguments
+    e.button    - (Writable) The controller button id.
+    e.state     - (Writable) The controller button state value.
+    e.blocked   - (Writable) Flag that states if the button has been, or should be, blocked.
+    e.injected  - (ReadOnly) Flag that states if the button was injected by Ashita or an addon/plugin.
+--]]
+ashita.events.register('xinput_button', 'xinput_button_cb', function (e)
+    local shouldBlock = hotbar.HandleXInputButton(e);
+    if shouldBlock then
+        e.blocked = true;
+    end
 end);
 
 -- ============================================
