@@ -434,7 +434,9 @@ function M.GetKeybindForSlot(barIndex, slotIndex)
         -- If user has a pet out and petAware enabled, show the pet-specific palette (even if empty)
         -- This prevents the base job summon macros from showing when an avatar is summoned
         if jobSlotActions then
-            local slotAction = jobSlotActions[slotIndex];
+            -- Handle both numeric and string keys (JSON serialization converts numeric keys to strings)
+            local numericSlot = tonumber(slotIndex) or slotIndex;
+            local slotAction = jobSlotActions[numericSlot] or jobSlotActions[tostring(numericSlot)];
             if slotAction then
                 -- Check for "cleared" marker - slot was explicitly emptied
                 if slotAction.cleared then

@@ -708,7 +708,13 @@ function M.ExecuteCommandString(commandText)
             return;
         end
 
-        local line = lines[index];
+        local line = lines[index]:match('^%s*(.-)%s*$');  -- Trim whitespace
+        if line == '' then
+            ashita.tasks.once(0, function()
+                executeNextLine(index + 1);
+            end);
+            return;
+        end
 
         -- Check for wait/pause/sleep commands
         local waitMatch = line:match('^/wait%s*(%d*%.?%d*)') or
@@ -722,13 +728,24 @@ function M.ExecuteCommandString(commandText)
                 executeNextLine(index + 1);
             end);
         else
-            -- It's a regular command - execute it
-            local chatManager = AshitaCore:GetChatManager();
-            if chatManager then
-                chatManager:QueueCommand(-1, line);
+            -- PROTECTED command execution
+            local ok, err = pcall(function()
+                local chatManager = AshitaCore:GetChatManager();
+                if chatManager then
+                    chatManager:QueueCommand(-1, line);
+                end
+            end);
+
+            if not ok then
+                print('[XIUI] Command execution error: ' .. tostring(err));
             end
-            -- Continue to next line immediately
-            executeNextLine(index + 1);
+
+            -- Defer next line to avoid blocking
+            if index < #lines then
+                ashita.tasks.once(0, function()
+                    executeNextLine(index + 1);
+                end);
+            end
         end
     end
 
@@ -764,7 +781,9 @@ local function FindMatchingKeybind(keyCode, ctrl, alt, shift)
                     local altMatch = (binding.alt or false) == (alt or false);
                     local shiftMatch = (binding.shift or false) == (shift or false);
                     if ctrlMatch and altMatch and shiftMatch then
-                        return barIndex, slotIndex;
+                        -- Normalize slotIndex to number (JSON may store keys as strings)
+                        local normalizedSlot = tonumber(slotIndex) or slotIndex;
+                        return barIndex, normalizedSlot;
                     end
                 end
             end
@@ -982,6 +1001,12 @@ function M.RegisterKeybinds()
     if not ENABLE_ASHITA_BINDS then return; end
     if isCleaningUp then return; end
 
+    -- Check if hotbar is globally disabled - clear binds instead of registering
+    if gConfig and gConfig.hotbarEnabled == false then
+        M.ClearAllBinds();
+        return;
+    end
+
     -- Wrap everything in pcall for safety
     local ok, err = pcall(function()
         local chatManager = AshitaCore:GetChatManager();
@@ -1056,6 +1081,24 @@ function M.RegisterKeybinds()
 
     if not ok then
         print('[XIUI] Warning: Failed to register keybinds: ' .. tostring(err));
+    end
+end
+
+--- Clear all registered keybinds (used when hotbar is disabled)
+--- Sends /unbind commands for all registered binds
+function M.ClearAllBinds()
+    local ok, err = pcall(function()
+        local chatManager = AshitaCore:GetChatManager();
+        if not chatManager then return; end
+
+        for _, bindKey in ipairs(registeredBinds) do
+            chatManager:QueueCommand(-1, '/unbind ' .. bindKey);
+        end
+        registeredBinds = {};
+    end);
+
+    if not ok then
+        print('[XIUI] Warning: Failed to clear keybinds: ' .. tostring(err));
     end
 end
 

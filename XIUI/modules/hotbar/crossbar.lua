@@ -1460,4 +1460,13 @@ function M.ClearIconCache()
     ClearCrossbarIconCache();
 end
 
+-- Reset crossbar position to default (called when settings are reset)
+function M.ResetPositions()
+    if not state.initialized then return; end
+    local settings = gConfig and gConfig.hotbarCrossbar or {};
+    local defaultX, defaultY = GetDefaultPosition(settings);
+    state.windowX = defaultX;
+    state.windowY = defaultY;
+end
+
 return M;

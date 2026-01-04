@@ -13,6 +13,7 @@ local actions = require('modules.hotbar.actions');
 local jobs = require('libs.jobs');
 local macropalette = require('modules.hotbar.macropalette');
 local playerdata = require('modules.hotbar.playerdata');
+local controller = require('modules.hotbar.controller');
 
 local M = {};
 
@@ -1071,20 +1072,6 @@ local function DrawCrossbarSettings()
         imgui.ShowHelp('Select your controller type. XInput works for most controllers. DirectInput devices (PS, Switch) use different button mappings.');
 
         imgui.Spacing();
-        imgui.Separator();
-        imgui.Spacing();
-
-        components.DrawPartySliderInt(crossbarSettings, 'Trigger Threshold##crossbar', 'triggerThreshold', 10, 200, '%d', nil, 30);
-        imgui.ShowHelp('Analog trigger threshold (0-255). Lower = more sensitive. Only applies to XInput controllers.');
-
-        -- Default to true if not set (for existing users upgrading)
-        if crossbarSettings.blockGameMacros == nil then
-            crossbarSettings.blockGameMacros = true;
-        end
-        components.DrawPartyCheckbox(crossbarSettings, 'Block Game Macros##crossbar', 'blockGameMacros', DeferredUpdateVisuals);
-        imgui.ShowHelp('Block native FFXI macros from firing when crossbar buttons are pressed. This prevents double-execution when using controller.');
-
-        imgui.Spacing();
         imgui.TextColored({0.8, 0.8, 0.6, 1.0}, 'Expanded Crossbar');
 
         components.DrawPartyCheckbox(crossbarSettings, 'Enable L2+R2 / R2+L2##crossbar', 'enableExpandedCrossbar');
@@ -1094,7 +1081,9 @@ local function DrawCrossbarSettings()
         imgui.ShowHelp('Enable L2x2 and R2x2 double-tap modes. Tap a trigger twice quickly (hold on second tap) to access double-tap bars.');
 
         if crossbarSettings.enableDoubleTap then
-            components.DrawPartySlider(crossbarSettings, 'Double-Tap Window##crossbar', 'doubleTapWindow', 0.1, 0.6, '%.2f sec', DeferredUpdateVisuals, 0.3);
+            components.DrawPartySlider(crossbarSettings, 'Double-Tap Window##crossbar', 'doubleTapWindow', 0.1, 0.6, '%.2f sec', function()
+                controller.SetDoubleTapWindow(crossbarSettings.doubleTapWindow);
+            end, 0.3);
             imgui.ShowHelp('Time window to register a double-tap (in seconds). Tap twice within this time to trigger double-tap mode.');
         end
     end
@@ -1251,10 +1240,8 @@ end
 function M.DrawSettings(state)
     local selectedBarTab = state and state.selectedHotbarTab or 1;
 
-    -- Global settings with action buttons on same row
+    -- Global settings with action buttons on same row as Enabled
     components.DrawCheckbox('Enabled', 'hotbarEnabled');
-    components.DrawCheckbox('Hide When Menu Open', 'hotbarHideOnMenuFocus');
-    imgui.ShowHelp('Hide hotbars when a game menu is open (equipment, map, etc.).');
     imgui.SameLine();
 
     -- Gold-styled action buttons
@@ -1279,14 +1266,17 @@ function M.DrawSettings(state)
 
     imgui.PopStyleColor(3);
 
-    -- Disable native macro bars checkbox (stored in hotbarGlobal)
+    components.DrawCheckbox('Hide When Menu Open', 'hotbarHideOnMenuFocus');
+    imgui.ShowHelp('Hide hotbars when a game menu is open (equipment, map, etc.).');
+
+    -- Disable XI macros checkbox (stored in hotbarGlobal)
     local disableMacroBars = { gConfig.hotbarGlobal.disableMacroBars or false };
-    if imgui.Checkbox('Disable Native Macro Bars', disableMacroBars) then
+    if imgui.Checkbox('Disable XI Macros', disableMacroBars) then
         gConfig.hotbarGlobal.disableMacroBars = disableMacroBars[1];
         SaveSettingsOnly();
         DeferredUpdateVisuals();
     end
-    imgui.ShowHelp('Disable the native macro bar display when Ctrl/Alt keys are held. Useful if you only use XIUI hotbars.');
+    imgui.ShowHelp('Disable native XI macros. Hides macro bar display when Ctrl/Alt is held and blocks game macros from firing when using crossbar controller input.');
 
     -- Clear override on pet change checkbox
     local clearOverride = { gConfig.hotbarGlobal.clearOverrideOnPetChange ~= false };  -- Default true

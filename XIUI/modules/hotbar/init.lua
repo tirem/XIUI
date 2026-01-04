@@ -73,6 +73,9 @@ local crossbarInitialized = false;
 M.initialized = false;
 M.visible = true;
 
+-- Track hotbar enable/disable state for transitions
+local wasHotbarEnabled = nil;
+
 -- ============================================
 -- Module Lifecycle
 -- ============================================
@@ -278,7 +281,7 @@ function M.Initialize(settings)
     if crossbarNeeded then
         crossbar.Initialize(gConfig.hotbarCrossbar, gAdjustedSettings.crossbarSettings);
         controller.Initialize({
-            triggerThreshold = gConfig.hotbarCrossbar.triggerThreshold or 30,
+            expandedCrossbarEnabled = gConfig.hotbarCrossbar.enableExpandedCrossbar ~= false,
             doubleTapEnabled = gConfig.hotbarCrossbar.enableDoubleTap or false,
             doubleTapWindow = gConfig.hotbarCrossbar.doubleTapWindow or 0.3,
             controllerScheme = gConfig.hotbarCrossbar.controllerScheme or 'xbox',
@@ -286,10 +289,9 @@ function M.Initialize(settings)
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
             crossbar.ActivateSlot(comboMode, slotIndex);
         end);
-        -- Set blocking enabled state from config (default to true)
-        local blockGameMacros = gConfig.hotbarCrossbar.blockGameMacros;
-        if blockGameMacros == nil then blockGameMacros = true; end
-        controller.SetBlockingEnabled(blockGameMacros);
+        -- Set blocking enabled state from global disableMacroBars setting
+        local disableMacroBars = gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars or false;
+        controller.SetBlockingEnabled(disableMacroBars);
         crossbarInitialized = true;
     end
 
@@ -303,9 +305,14 @@ function M.Initialize(settings)
         petpalette.CheckPetState();
     end);
 
-    -- Register keybinds with Ashita's /bind system
+    -- Register keybinds with Ashita's /bind system (only if hotbar is enabled)
     -- This blocks native FFXI macros from firing on bound keys
-    actions.RegisterKeybinds();
+    if gConfig.hotbarEnabled ~= false then
+        actions.RegisterKeybinds();
+    end
+
+    -- Initialize state tracking
+    wasHotbarEnabled = (gConfig.hotbarEnabled ~= false);
 
     M.initialized = true;
 end
@@ -381,7 +388,7 @@ function M.UpdateVisuals(settings)
         -- Initialize crossbar when newly needed
         crossbar.Initialize(gConfig.hotbarCrossbar, gAdjustedSettings.crossbarSettings);
         controller.Initialize({
-            triggerThreshold = gConfig.hotbarCrossbar.triggerThreshold or 30,
+            expandedCrossbarEnabled = gConfig.hotbarCrossbar.enableExpandedCrossbar ~= false,
             doubleTapEnabled = gConfig.hotbarCrossbar.enableDoubleTap or false,
             doubleTapWindow = gConfig.hotbarCrossbar.doubleTapWindow or 0.3,
             controllerScheme = gConfig.hotbarCrossbar.controllerScheme or 'xbox',
@@ -389,10 +396,9 @@ function M.UpdateVisuals(settings)
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
             crossbar.ActivateSlot(comboMode, slotIndex);
         end);
-        -- Set blocking enabled state from config (default to true)
-        local blockGameMacros = gConfig.hotbarCrossbar.blockGameMacros;
-        if blockGameMacros == nil then blockGameMacros = true; end
-        controller.SetBlockingEnabled(blockGameMacros);
+        -- Set blocking enabled state from global disableMacroBars setting
+        local disableMacroBars = gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars or false;
+        controller.SetBlockingEnabled(disableMacroBars);
         crossbarInitialized = true;
     elseif not crossbarNeeded and crossbarInitialized then
         -- Cleanup crossbar when no longer needed
@@ -403,22 +409,32 @@ function M.UpdateVisuals(settings)
         -- Update crossbar visuals if already initialized
         crossbar.UpdateVisuals(gConfig.hotbarCrossbar, gAdjustedSettings.crossbarSettings);
         -- Update controller settings
-        controller.SetTriggerThreshold(gConfig.hotbarCrossbar.triggerThreshold or 30);
+        controller.SetExpandedCrossbarEnabled(gConfig.hotbarCrossbar.enableExpandedCrossbar ~= false);
         controller.SetDoubleTapEnabled(gConfig.hotbarCrossbar.enableDoubleTap or false);
         controller.SetDoubleTapWindow(gConfig.hotbarCrossbar.doubleTapWindow or 0.3);
         controller.SetControllerScheme(gConfig.hotbarCrossbar.controllerScheme or 'xbox');
-        -- Update blocking state
-        local blockGameMacros = gConfig.hotbarCrossbar.blockGameMacros;
-        if blockGameMacros == nil then blockGameMacros = true; end
-        controller.SetBlockingEnabled(blockGameMacros);
+        -- Update blocking state from global disableMacroBars setting
+        local disableMacroBars = gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars or false;
+        controller.SetBlockingEnabled(disableMacroBars);
     end
 
     -- Update macro bar patch state based on setting
     local disableMacroBars = gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars or false;
     macrobarpatch.Update(disableMacroBars);
 
-    -- Re-register keybinds in case they changed
-    actions.RegisterKeybinds();
+    -- Detect hotbar enable/disable transitions
+    local isHotbarEnabled = (gConfig and gConfig.hotbarEnabled ~= false);
+
+    if wasHotbarEnabled and not isHotbarEnabled then
+        -- Transitioning from enabled to disabled - clear all keybinds
+        actions.ClearAllBinds();
+    elseif isHotbarEnabled then
+        -- Hotbar is enabled - re-register keybinds in case they changed
+        actions.RegisterKeybinds();
+    end
+
+    -- Update state tracking
+    wasHotbarEnabled = isHotbarEnabled;
 end
 
 -- Main render function - called every frame
@@ -749,6 +765,12 @@ end
 
 function M.ClearPreview()
     data.ClearPreview();
+end
+
+-- Reset all hotbar and crossbar positions to defaults (called when settings are reset)
+function M.ResetPositions()
+    display.ResetPositions();
+    crossbar.ResetPositions();
 end
 
 return M;

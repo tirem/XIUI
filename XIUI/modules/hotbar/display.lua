@@ -38,6 +38,9 @@ local loadedBgTheme = nil;
 -- Textures initialized flag
 local texturesInitialized = false;
 
+-- Force position reset flag (set by ResetPositions, cleared after applying)
+local forcePositionReset = false;
+
 -- Icon cache per slot: iconCache[barIndex][slotIndex] = { bind = lastBind, icon = cachedIcon }
 -- We compare the bind reference to detect changes
 local iconCache = {};
@@ -333,9 +336,9 @@ local function DrawBarWindow(barIndex, settings)
 
     local windowName = string.format('Hotbar%d', barIndex);
 
-    -- Check if anchor is currently being dragged - if so, force position from saved config
+    -- Check if anchor is currently being dragged or positions are being reset - if so, force position
     local anchorDragging = drawing.IsAnchorDragging('hotbar_' .. barIndex);
-    local posCondition = anchorDragging and ImGuiCond_Always or ImGuiCond_FirstUseEver;
+    local posCondition = (anchorDragging or forcePositionReset) and ImGuiCond_Always or ImGuiCond_FirstUseEver;
     imgui.SetNextWindowPos({posX, posY}, posCondition);
     imgui.SetNextWindowSize({barWidth, barHeight}, ImGuiCond_Always);
 
@@ -554,6 +557,11 @@ function M.DrawWindow(settings)
         DrawBarWindow(barIndex, settings);
     end
 
+    -- Clear force position reset flag after all bars have been drawn
+    if forcePositionReset then
+        forcePositionReset = false;
+    end
+
     -- Note: Macro palette, dragdrop.Render(), and outside drop handling are in init.lua
 end
 
@@ -656,6 +664,11 @@ end
 -- Expose cache clear for external callers (e.g., when slot actions change)
 function M.ClearIconCache()
     ClearIconCache();
+end
+
+-- Reset all bar positions to defaults (called when settings are reset)
+function M.ResetPositions()
+    forcePositionReset = true;
 end
 
 return M;

@@ -7,6 +7,7 @@
 
 local ffi = require('ffi');
 local devices = require('modules.hotbar.devices');
+local buttondetect = require('modules.hotbar.buttondetect');
 
 -- Define XINPUT structures for FFI access (only used for XInput devices)
 ffi.cdef[[
@@ -67,11 +68,46 @@ local function GetTime()
     return os.clock();
 end
 
+-- Trigger hysteresis function - prevents jitter at threshold boundary
+local function IsTriggerHeld(triggerValue, wasHeld, pressThreshold, releaseThreshold)
+    if wasHeld then
+        return triggerValue >= releaseThreshold;
+    else
+        return triggerValue >= pressThreshold;
+    end
+end
+
+-- Auto-detect game's expected controller type from padmode000 registry setting
+local function DetectGameControllerMode()
+    local ok, result = pcall(function()
+        local configMgr = AshitaCore:GetConfigurationManager();
+        if not configMgr then return nil; end
+
+        local padmodeStr = configMgr:GetString('boot', 'ffxi.registry', 'padmode000');
+        if padmodeStr and padmodeStr ~= '' then
+            local parts = {};
+            for part in padmodeStr:gmatch('[^,]+') do
+                table.insert(parts, part);
+            end
+            -- 6th value = XInput enabled (1) or DirectInput (0)
+            if parts[6] == '1' then
+                return 'xinput';
+            else
+                return 'dinput';
+            end
+        end
+        return nil;
+    end);
+    return ok and result or nil;
+end
+
 -- Module state
 local state = {
     initialized = false,
     enabled = false,
     triggerThreshold = DEFAULT_TRIGGER_THRESHOLD,
+    triggerPressThreshold = DEFAULT_TRIGGER_THRESHOLD,  -- Threshold for press detection (hysteresis)
+    triggerReleaseThreshold = 15,  -- Lower threshold for release detection (hysteresis)
 
     -- Device mapping (current controller scheme)
     deviceName = 'xbox',
@@ -82,6 +118,10 @@ local state = {
     rightTriggerHeld = false,
     activeCombo = COMBO_MODES.NONE,
     comboFirstTrigger = nil,
+    comboStartTime = nil,  -- Track when combo started
+
+    -- Expanded crossbar (L2+R2, R2+L2)
+    expandedCrossbarEnabled = true,
 
     -- Double-tap detection
     doubleTapEnabled = false,
@@ -126,8 +166,8 @@ function Controller.Initialize(settings)
     state.device = devices.GetDevice(state.deviceName);
 
     if settings then
-        if settings.triggerThreshold then
-            state.triggerThreshold = settings.triggerThreshold;
+        if settings.expandedCrossbarEnabled ~= nil then
+            state.expandedCrossbarEnabled = settings.expandedCrossbarEnabled;
         end
         if settings.doubleTapEnabled ~= nil then
             state.doubleTapEnabled = settings.doubleTapEnabled;
@@ -156,11 +196,6 @@ function Controller.SetEnabled(enabled)
     state.enabled = enabled;
 end
 
--- Update trigger threshold
-function Controller.SetTriggerThreshold(threshold)
-    state.triggerThreshold = threshold or DEFAULT_TRIGGER_THRESHOLD;
-end
-
 -- Update double-tap settings
 function Controller.SetDoubleTapEnabled(enabled)
     state.doubleTapEnabled = enabled;
@@ -169,6 +204,12 @@ end
 
 function Controller.SetDoubleTapWindow(window)
     state.doubleTapWindow = window or DEFAULT_DOUBLE_TAP_WINDOW;
+end
+
+-- Update expanded crossbar setting
+function Controller.SetExpandedCrossbarEnabled(enabled)
+    state.expandedCrossbarEnabled = enabled;
+    DebugLog('Expanded crossbar ' .. (enabled and 'enabled' or 'disabled'));
 end
 
 -- Set controller scheme (device mapping)
@@ -243,6 +284,10 @@ local function UpdateComboState(leftHeld, rightHeld)
     local oldCombo = state.activeCombo;
     local currentTime = GetTime();
 
+    -- Track trigger transitions
+    local leftJustPressed = leftHeld and not wasLeftHeld;
+    local rightJustPressed = rightHeld and not wasRightHeld;
+
     -- Track trigger releases for double-tap detection
     if wasLeftHeld and not leftHeld then
         state.leftTriggerLastRelease = currentTime;
@@ -255,70 +300,89 @@ local function UpdateComboState(leftHeld, rightHeld)
         DebugLog('R2 released');
     end
 
-    -- Detect L2 press (transition from not held to held)
-    if leftHeld and not wasLeftHeld then
-        local timeSinceRelease = currentTime - state.leftTriggerLastRelease;
-        local isDoubleTap = state.doubleTapEnabled
-            and oldCombo == COMBO_MODES.NONE
-            and timeSinceRelease <= state.doubleTapWindow
-            and state.leftTriggerLastRelease > 0;
-        DebugLog(string.format('L2 press - doubleTapEnabled=%s, oldCombo=%s, timeSinceRelease=%.3f, window=%.3f',
-            tostring(state.doubleTapEnabled), tostring(oldCombo), timeSinceRelease, state.doubleTapWindow));
+    -- Handle combo state based on trigger combinations
+    if leftHeld and rightHeld then
+        -- Both triggers held - determine which expanded crossbar (only if enabled)
+        if state.expandedCrossbarEnabled then
+            if leftJustPressed and state.activeCombo == COMBO_MODES.R2 then
+                -- R2 was held, now L2 added -> R2+L2
+                DebugLog('L2 pressed (R2 held) -> R2+L2');
+                state.activeCombo = COMBO_MODES.R2_THEN_L2;
+            elseif rightJustPressed and state.activeCombo == COMBO_MODES.L2 then
+                -- L2 was held, now R2 added -> L2+R2
+                DebugLog('R2 pressed (L2 held) -> L2+R2');
+                state.activeCombo = COMBO_MODES.L2_THEN_R2;
+            elseif leftJustPressed and rightJustPressed then
+                -- Both pressed at same time (rare) - default to L2+R2
+                DebugLog('Both triggers pressed simultaneously');
+                state.activeCombo = COMBO_MODES.L2_THEN_R2;
+            end
+            -- If already in an expanded combo, stay in it
+        end
+    elseif leftHeld and not rightHeld then
+        -- Only L2 held
+        if leftJustPressed then
+            -- Check for double-tap
+            local timeSinceRelease = currentTime - state.leftTriggerLastRelease;
+            local isDoubleTap = state.doubleTapEnabled
+                and oldCombo == COMBO_MODES.NONE
+                and timeSinceRelease <= state.doubleTapWindow
+                and state.leftTriggerLastRelease > 0;
+            DebugLog(string.format('L2 press - doubleTapEnabled=%s, oldCombo=%s, timeSinceRelease=%.3f, window=%.3f',
+                tostring(state.doubleTapEnabled), tostring(oldCombo), timeSinceRelease, state.doubleTapWindow));
 
-        if isDoubleTap then
-            DebugLog('L2 double-tap detected');
-            state.isLeftDoubleTap = true;
-            state.activeCombo = COMBO_MODES.L2_DOUBLE;
-            state.comboFirstTrigger = 'L2x2';
-        elseif state.rightTriggerHeld then
-            DebugLog('L2 pressed (R2 held)');
-            state.activeCombo = COMBO_MODES.R2_THEN_L2;
-        else
-            DebugLog('L2 pressed');
+            if isDoubleTap then
+                DebugLog('L2 double-tap detected');
+                state.isLeftDoubleTap = true;
+                state.activeCombo = COMBO_MODES.L2_DOUBLE;
+                state.comboFirstTrigger = 'L2x2';
+            else
+                DebugLog('L2 pressed');
+                state.activeCombo = COMBO_MODES.L2;
+                state.comboFirstTrigger = 'L2';
+            end
+        elseif state.activeCombo ~= COMBO_MODES.L2 and state.activeCombo ~= COMBO_MODES.L2_DOUBLE then
+            -- Returning to L2 from expanded combo
+            DebugLog('Returning to L2 (R2 released from expanded)');
             state.activeCombo = COMBO_MODES.L2;
             state.comboFirstTrigger = 'L2';
         end
-    -- Detect R2 press (transition from not held to held)
-    elseif rightHeld and not wasRightHeld then
-        local timeSinceRelease = currentTime - state.rightTriggerLastRelease;
-        local isDoubleTap = state.doubleTapEnabled
-            and oldCombo == COMBO_MODES.NONE
-            and timeSinceRelease <= state.doubleTapWindow
-            and state.rightTriggerLastRelease > 0;
-        DebugLog(string.format('R2 press - doubleTapEnabled=%s, oldCombo=%s, timeSinceRelease=%.3f, window=%.3f',
-            tostring(state.doubleTapEnabled), tostring(oldCombo), timeSinceRelease, state.doubleTapWindow));
+    elseif rightHeld and not leftHeld then
+        -- Only R2 held
+        if rightJustPressed then
+            -- Check for double-tap
+            local timeSinceRelease = currentTime - state.rightTriggerLastRelease;
+            local isDoubleTap = state.doubleTapEnabled
+                and oldCombo == COMBO_MODES.NONE
+                and timeSinceRelease <= state.doubleTapWindow
+                and state.rightTriggerLastRelease > 0;
+            DebugLog(string.format('R2 press - doubleTapEnabled=%s, oldCombo=%s, timeSinceRelease=%.3f, window=%.3f',
+                tostring(state.doubleTapEnabled), tostring(oldCombo), timeSinceRelease, state.doubleTapWindow));
 
-        if isDoubleTap then
-            DebugLog('R2 double-tap detected');
-            state.isRightDoubleTap = true;
-            state.activeCombo = COMBO_MODES.R2_DOUBLE;
-            state.comboFirstTrigger = 'R2x2';
-        elseif state.leftTriggerHeld then
-            DebugLog('R2 pressed (L2 held)');
-            state.activeCombo = COMBO_MODES.L2_THEN_R2;
-        else
-            DebugLog('R2 pressed');
+            if isDoubleTap then
+                DebugLog('R2 double-tap detected');
+                state.isRightDoubleTap = true;
+                state.activeCombo = COMBO_MODES.R2_DOUBLE;
+                state.comboFirstTrigger = 'R2x2';
+            else
+                DebugLog('R2 pressed');
+                state.activeCombo = COMBO_MODES.R2;
+                state.comboFirstTrigger = 'R2';
+            end
+        elseif state.activeCombo ~= COMBO_MODES.R2 and state.activeCombo ~= COMBO_MODES.R2_DOUBLE then
+            -- Returning to R2 from expanded combo
+            DebugLog('Returning to R2 (L2 released from expanded)');
             state.activeCombo = COMBO_MODES.R2;
             state.comboFirstTrigger = 'R2';
         end
-    -- Handle partial release from expanded combos
-    elseif wasLeftHeld and wasRightHeld then
-        if leftHeld and not rightHeld then
-            DebugLog('R2 released from expanded combo, returning to L2');
-            state.activeCombo = COMBO_MODES.L2;
-            state.comboFirstTrigger = 'L2';
-        elseif rightHeld and not leftHeld then
-            DebugLog('L2 released from expanded combo, returning to R2');
-            state.activeCombo = COMBO_MODES.R2;
-            state.comboFirstTrigger = 'R2';
-        end
-    -- Both triggers released
-    elseif not leftHeld and not rightHeld then
+    else
+        -- Both triggers released
         if state.activeCombo ~= COMBO_MODES.NONE then
             DebugLog('Triggers released');
         end
         state.activeCombo = COMBO_MODES.NONE;
         state.comboFirstTrigger = nil;
+        state.comboStartTime = nil;
         state.isLeftDoubleTap = false;
         state.isRightDoubleTap = false;
         state.currentPressedSlot = nil;
@@ -341,10 +405,20 @@ local function ActivateSlot(slotIndex)
     if not slotIndex then return; end
     if state.activeCombo == COMBO_MODES.NONE then return; end
 
+    -- Update visual state immediately
+    state.currentPressedSlot = slotIndex;
+    state.lastPressedSlot = slotIndex;
+    state.pressedSlotTime = GetTime();
+
     DebugLog(string.format('Activating slot: %s[%d]', state.activeCombo, slotIndex));
-    if state.onSlotActivate then
-        state.onSlotActivate(state.activeCombo, slotIndex);
-    end
+
+    -- Defer actual action to next frame (avoids event handler context issues)
+    local comboAtPress = state.activeCombo;
+    ashita.tasks.once(0, function()
+        if state.onSlotActivate then
+            state.onSlotActivate(comboAtPress, slotIndex);
+        end
+    end);
 end
 
 -- ============================================
@@ -393,9 +467,12 @@ function Controller.HandleXInputState(e)
         DebugLogVerbose(string.format('Raw input: L2=%d R2=%d buttons=0x%04X', leftTrigger, rightTrigger, currentButtons));
     end
 
-    -- Determine if triggers are "pressed" based on threshold
-    local leftHeld = leftTrigger >= state.triggerThreshold;
-    local rightHeld = rightTrigger >= state.triggerThreshold;
+    -- Determine if triggers are "pressed" using hysteresis to prevent jitter
+    local pressThreshold = state.triggerPressThreshold or 30;
+    local releaseThreshold = state.triggerReleaseThreshold or 15;
+
+    local leftHeld = IsTriggerHeld(leftTrigger, state.leftTriggerHeld, pressThreshold, releaseThreshold);
+    local rightHeld = IsTriggerHeld(rightTrigger, state.rightTriggerHeld, pressThreshold, releaseThreshold);
 
     -- Update combo state based on trigger changes
     UpdateComboState(leftHeld, rightHeld);
@@ -410,8 +487,14 @@ function Controller.HandleXInputState(e)
     state.currentButtons = currentButtons;
     state.previousButtons = currentButtons;
 
-    -- Block game macros by modifying e.state_modified
-    if blockingEnabled and (leftHeld or rightHeld) then
+    -- Block when crossbar is active OR triggers are being used
+    local shouldBlock = blockingEnabled and (
+        state.activeCombo ~= COMBO_MODES.NONE or
+        state.leftTriggerHeld or state.rightTriggerHeld or
+        leftHeld or rightHeld
+    );
+
+    if shouldBlock then
         if e.state_modified then
             local modifiedState = ffi.cast('XINPUT_STATE*', e.state_modified);
             if modifiedState then
@@ -489,6 +572,14 @@ end
 function Controller.HandleDInputButton(e)
     if not state.initialized or not state.enabled then
         return false;
+    end
+
+    -- Check if button detection wizard is active first
+    if buttondetect.IsActive() then
+        if e.state == 1 then  -- Button pressed
+            buttondetect.HandleButtonPress(e.button);
+        end
+        return true;  -- Block button during detection
     end
 
     -- Only process if using DirectInput device
@@ -678,5 +769,6 @@ end
 -- ============================================
 
 Controller.COMBO_MODES = COMBO_MODES;
+Controller.DetectGameControllerMode = DetectGameControllerMode;
 
 return Controller;

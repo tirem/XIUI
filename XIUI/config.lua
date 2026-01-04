@@ -91,7 +91,7 @@ local githubTexture = nil;
 local heartTexture = nil;
 
 -- Credits popup state
-local showCreditsPopup = false;
+local creditsWindowOpen = { false };
 
 -- Navigation state
 local selectedCategory = 1;  -- 1-indexed category selection
@@ -462,34 +462,38 @@ config.DrawWindow = function(us)
 
         -- Credits button (heart)
         RenderSocialButton(heartTexture, "credits_btn", function()
-            showCreditsPopup = true;
+            creditsWindowOpen[1] = not creditsWindowOpen[1];
         end, bgLight, bgLighter, borderDark, boxSize, iconSize);
 
         -- Track modal state for foreground elements dimming
         local anyModalOpen = false;
 
-        -- Credits popup
-        if showCreditsPopup then
-            imgui.OpenPopup("Attributions");
-            showCreditsPopup = false;
-        end
+        -- Credits window (simple floating popup)
+        if creditsWindowOpen[1] then
+            local creditsFlags = bit.bor(
+                ImGuiWindowFlags_AlwaysAutoResize,
+                ImGuiWindowFlags_NoCollapse,
+                ImGuiWindowFlags_NoSavedSettings
+            );
+            imgui.PushStyleColor(ImGuiCol_WindowBg, bgDark);
+            imgui.PushStyleColor(ImGuiCol_TitleBg, bgMedium);
+            imgui.PushStyleColor(ImGuiCol_TitleBgActive, bgLight);
+            imgui.PushStyleColor(ImGuiCol_Border, borderDark);
+            imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0);
+            imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {12, 12});
 
-        if imgui.BeginPopupModal("Attributions", true, ImGuiWindowFlags_AlwaysAutoResize) then
-            anyModalOpen = true;
-            imgui.Text("XIUI - A UI Addon for Final Fantasy XI");
-            imgui.Separator();
+            if imgui.Begin("Attributions###CreditsWindow", creditsWindowOpen, creditsFlags) then
+                imgui.Text("XIUI - A UI Addon for Final Fantasy XI");
+                imgui.Separator();
 
-            imgui.TextColored({1.0, 0.84, 0.0, 1.0}, "Special Thanks");
-            imgui.BulletText("atom0s - Ashita framework, and additional support");
-            imgui.BulletText("Thorny - GdiFonts library & MobDB, and additional support");
-            imgui.NewLine();
-
-            imgui.Separator();
-            if imgui.Button("Close", { 120, 0 }) then
-                imgui.CloseCurrentPopup();
+                imgui.TextColored({1.0, 0.84, 0.0, 1.0}, "Special Thanks");
+                imgui.BulletText("atom0s - Ashita framework, and additional support");
+                imgui.BulletText("Thorny - GdiFonts library & MobDB, and additional support");
             end
+            imgui.End();
 
-            imgui.EndPopup();
+            imgui.PopStyleVar(2);
+            imgui.PopStyleColor(4);
         end
 
         -- Reset Settings confirmation popup

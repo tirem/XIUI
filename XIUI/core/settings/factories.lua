@@ -268,7 +268,7 @@ end
 function M.createHotbarGlobalDefaults()
     return T{
         -- Game UI patches
-        disableMacroBars = false,  -- Disable native macro bar display when Ctrl/Alt held
+        disableMacroBars = false,  -- Disable native XI macros (macro bar display + controller macro blocking)
 
         -- Pet palette settings
         clearOverrideOnPetChange = true,  -- Clear manual palette override when pet changes
@@ -477,10 +477,6 @@ function M.createCrossbarDefaults()
         -- Double-tap crossbar (tap trigger twice quickly)
         enableDoubleTap = false,            -- Enable L2x2 and R2x2 double-tap modes
         doubleTapWindow = 0.3,              -- Time window for double-tap detection (seconds)
-
-        -- Controller settings
-        triggerThreshold = 30,              -- Analog trigger threshold (0-255)
-        blockGameMacros = true,             -- Block native FFXI macros when crossbar buttons are pressed
 
         -- Window position (saved on drag)
         windowX = nil,                      -- nil = use default centered position

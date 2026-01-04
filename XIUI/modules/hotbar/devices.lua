@@ -1,22 +1,26 @@
 --[[
 * XIUI Crossbar - Device Mapping System
-* Provides controller-specific button mappings for different input APIs
 *
-* Supported devices:
-*   - xbox: XInput (Xbox controllers, most modern Windows controllers)
-*   - dualsense: DirectInput (PlayStation DualSense/DualShock)
-*   - switchpro: DirectInput (Nintendo Switch Pro Controller)
+* Controller input handling for XInput and DirectInput devices.
+*
+* Acknowledgments:
+*   - atom0s for XInput/DirectInput API guidance
+*   - Thorny (tCrossBar author) for DirectInput button ID reference
+*     https://github.com/ThornyFFXI/tCrossBar
 ]]--
 
 local M = {};
 
 -- ============================================
--- Xbox / XInput Device Mapping
+-- XInput Device Mapping (Microsoft standardized)
 -- ============================================
-local xbox = {
+-- XInput button IDs are bit positions, standardized across all XInput controllers.
+-- No configuration needed - Xbox, most modern Windows controllers use this.
+
+local xinput = {
     XInput = true,
     DirectInput = false,
-    Name = 'Xbox / XInput',
+    Name = 'XInput (Xbox)',
 
     -- XInput button IDs (bit positions in xinput_button event)
     Buttons = {
@@ -37,199 +41,226 @@ local xbox = {
     },
 };
 
--- Button to slot mapping for Xbox
-xbox.ButtonToSlot = {
-    [xbox.Buttons.DPAD_UP] = 1,
-    [xbox.Buttons.DPAD_RIGHT] = 2,
-    [xbox.Buttons.DPAD_DOWN] = 3,
-    [xbox.Buttons.DPAD_LEFT] = 4,
-    [xbox.Buttons.Y] = 5,
-    [xbox.Buttons.B] = 6,
-    [xbox.Buttons.A] = 7,
-    [xbox.Buttons.X] = 8,
+-- Button to slot mapping for XInput
+xinput.ButtonToSlot = {
+    [xinput.Buttons.DPAD_UP] = 1,
+    [xinput.Buttons.DPAD_RIGHT] = 2,
+    [xinput.Buttons.DPAD_DOWN] = 3,
+    [xinput.Buttons.DPAD_LEFT] = 4,
+    [xinput.Buttons.Y] = 5,
+    [xinput.Buttons.B] = 6,
+    [xinput.Buttons.A] = 7,
+    [xinput.Buttons.X] = 8,
 };
 
-xbox.CrossbarButtons = {
-    [xbox.Buttons.DPAD_UP] = true, [xbox.Buttons.DPAD_DOWN] = true,
-    [xbox.Buttons.DPAD_LEFT] = true, [xbox.Buttons.DPAD_RIGHT] = true,
-    [xbox.Buttons.A] = true, [xbox.Buttons.B] = true,
-    [xbox.Buttons.X] = true, [xbox.Buttons.Y] = true,
+xinput.CrossbarButtons = {
+    [xinput.Buttons.DPAD_UP] = true, [xinput.Buttons.DPAD_DOWN] = true,
+    [xinput.Buttons.DPAD_LEFT] = true, [xinput.Buttons.DPAD_RIGHT] = true,
+    [xinput.Buttons.A] = true, [xinput.Buttons.B] = true,
+    [xinput.Buttons.X] = true, [xinput.Buttons.Y] = true,
 };
 
-xbox.CrossbarButtonsMask = bit.bor(
-    xbox.ButtonMasks.DPAD_UP, xbox.ButtonMasks.DPAD_DOWN,
-    xbox.ButtonMasks.DPAD_LEFT, xbox.ButtonMasks.DPAD_RIGHT,
-    xbox.ButtonMasks.A, xbox.ButtonMasks.B,
-    xbox.ButtonMasks.X, xbox.ButtonMasks.Y
+xinput.CrossbarButtonsMask = bit.bor(
+    xinput.ButtonMasks.DPAD_UP, xinput.ButtonMasks.DPAD_DOWN,
+    xinput.ButtonMasks.DPAD_LEFT, xinput.ButtonMasks.DPAD_RIGHT,
+    xinput.ButtonMasks.A, xinput.ButtonMasks.B,
+    xinput.ButtonMasks.X, xinput.ButtonMasks.Y
 );
 
-function xbox.GetSlotFromButton(buttonId)
-    return xbox.ButtonToSlot[buttonId];
+function xinput.GetSlotFromButton(buttonId)
+    return xinput.ButtonToSlot[buttonId];
 end
 
-function xbox.IsCrossbarButton(buttonId)
-    return xbox.CrossbarButtons[buttonId] == true;
+function xinput.IsCrossbarButton(buttonId)
+    return xinput.CrossbarButtons[buttonId] == true;
 end
 
-function xbox.GetSlotFromButtonMask(buttons)
-    if bit.band(buttons, xbox.ButtonMasks.DPAD_UP) ~= 0 then return 1; end
-    if bit.band(buttons, xbox.ButtonMasks.DPAD_RIGHT) ~= 0 then return 2; end
-    if bit.band(buttons, xbox.ButtonMasks.DPAD_DOWN) ~= 0 then return 3; end
-    if bit.band(buttons, xbox.ButtonMasks.DPAD_LEFT) ~= 0 then return 4; end
-    if bit.band(buttons, xbox.ButtonMasks.Y) ~= 0 then return 5; end
-    if bit.band(buttons, xbox.ButtonMasks.B) ~= 0 then return 6; end
-    if bit.band(buttons, xbox.ButtonMasks.A) ~= 0 then return 7; end
-    if bit.band(buttons, xbox.ButtonMasks.X) ~= 0 then return 8; end
+function xinput.GetSlotFromButtonMask(buttons)
+    if bit.band(buttons, xinput.ButtonMasks.DPAD_UP) ~= 0 then return 1; end
+    if bit.band(buttons, xinput.ButtonMasks.DPAD_RIGHT) ~= 0 then return 2; end
+    if bit.band(buttons, xinput.ButtonMasks.DPAD_DOWN) ~= 0 then return 3; end
+    if bit.band(buttons, xinput.ButtonMasks.DPAD_LEFT) ~= 0 then return 4; end
+    if bit.band(buttons, xinput.ButtonMasks.Y) ~= 0 then return 5; end
+    if bit.band(buttons, xinput.ButtonMasks.B) ~= 0 then return 6; end
+    if bit.band(buttons, xinput.ButtonMasks.A) ~= 0 then return 7; end
+    if bit.band(buttons, xinput.ButtonMasks.X) ~= 0 then return 8; end
     return nil;
 end
 
 -- ============================================
--- DualSense / PlayStation DirectInput Mapping
+-- DirectInput Device Factory
 -- ============================================
-local dualsense = {
-    XInput = false,
-    DirectInput = true,
-    Name = 'DualSense / PS5',
+-- DirectInput button IDs vary by controller manufacturer.
+-- Defaults from tCrossBar (PlayStation layout, most common for DirectInput).
+-- Users can override any button ID via userConfig.
 
-    Buttons = {
-        SQUARE = 0, CROSS = 1, CIRCLE = 2, TRIANGLE = 3,
-        L1 = 4, R1 = 5, L2 = 6, R2 = 7,
-        CREATE = 8, OPTIONS = 9, L3 = 10, R3 = 11,
-        PS = 12, TOUCHPAD = 13,
-    },
-
-    DPadAngleToSlot = {
-        [0] = 1, [9000] = 2, [18000] = 3, [27000] = 4,
-    },
+-- Default DirectInput button IDs (from tCrossBar)
+-- These work for most PlayStation controllers (DualShock, DualSense)
+local DINPUT_DEFAULTS = {
+    SQUARE = 48,
+    CROSS = 49,
+    CIRCLE = 50,
+    TRIANGLE = 51,
+    L1 = 52,
+    R1 = 53,
+    L2 = 54,
+    R2 = 55,
+    L3 = 58,
+    R3 = 59,
 };
 
-dualsense.ButtonToSlot = {
-    [dualsense.Buttons.TRIANGLE] = 5,
-    [dualsense.Buttons.CIRCLE] = 6,
-    [dualsense.Buttons.CROSS] = 7,
-    [dualsense.Buttons.SQUARE] = 8,
+-- D-pad angles (POV hat) - standard across all DirectInput controllers
+local DPAD_ANGLES = {
+    UP = 0,
+    RIGHT = 9000,
+    DOWN = 18000,
+    LEFT = 27000,
 };
 
-dualsense.CrossbarButtons = {
-    [dualsense.Buttons.TRIANGLE] = true, [dualsense.Buttons.CIRCLE] = true,
-    [dualsense.Buttons.CROSS] = true, [dualsense.Buttons.SQUARE] = true,
-};
+-- Factory function to create a DirectInput device with configurable button IDs
+local function CreateDInputDevice(userConfig)
+    userConfig = userConfig or {};
 
-function dualsense.GetSlotFromButton(buttonId)
-    return dualsense.ButtonToSlot[buttonId];
-end
-
-function dualsense.GetSlotFromDPad(angle)
-    if angle == nil or angle == -1 then return nil; end
-    return dualsense.DPadAngleToSlot[angle];
-end
-
-function dualsense.IsCrossbarButton(buttonId)
-    return dualsense.CrossbarButtons[buttonId] == true;
-end
-
-function dualsense.IsTriggerButton(buttonId)
-    return buttonId == dualsense.Buttons.L2 or buttonId == dualsense.Buttons.R2;
-end
-
-function dualsense.IsL2Button(buttonId)
-    return buttonId == dualsense.Buttons.L2;
-end
-
-function dualsense.IsR2Button(buttonId)
-    return buttonId == dualsense.Buttons.R2;
-end
-
--- ============================================
--- Switch Pro DirectInput Mapping
--- ============================================
-local switchpro = {
-    XInput = false,
-    DirectInput = true,
-    Name = 'Switch Pro',
-
-    Buttons = {
-        B = 0, A = 1, Y = 2, X = 3,
-        L = 4, R = 5, ZL = 6, ZR = 7,
-        MINUS = 8, PLUS = 9, L3 = 10, R3 = 11,
-        HOME = 12, CAPTURE = 13,
-    },
-
-    DPadAngleToSlot = {
-        [0] = 1, [9000] = 2, [18000] = 3, [27000] = 4,
-    },
-};
-
-switchpro.ButtonToSlot = {
-    [switchpro.Buttons.X] = 5,
-    [switchpro.Buttons.A] = 6,
-    [switchpro.Buttons.B] = 7,
-    [switchpro.Buttons.Y] = 8,
-};
-
-switchpro.CrossbarButtons = {
-    [switchpro.Buttons.X] = true, [switchpro.Buttons.A] = true,
-    [switchpro.Buttons.B] = true, [switchpro.Buttons.Y] = true,
-};
-
-function switchpro.GetSlotFromButton(buttonId)
-    return switchpro.ButtonToSlot[buttonId];
-end
-
-function switchpro.GetSlotFromDPad(angle)
-    if angle == nil or angle == -1 then return nil; end
-    return switchpro.DPadAngleToSlot[angle];
-end
-
-function switchpro.IsCrossbarButton(buttonId)
-    return switchpro.CrossbarButtons[buttonId] == true;
-end
-
-function switchpro.IsTriggerButton(buttonId)
-    return buttonId == switchpro.Buttons.ZL or buttonId == switchpro.Buttons.ZR;
-end
-
-function switchpro.IsL2Button(buttonId)
-    return buttonId == switchpro.Buttons.ZL;
-end
-
-function switchpro.IsR2Button(buttonId)
-    return buttonId == switchpro.Buttons.ZR;
-end
-
--- ============================================
--- Device Registry
--- ============================================
-local devices = {
-    xbox = xbox,
-    dualsense = dualsense,
-    switchpro = switchpro,
-};
-
-function M.GetDevice(name)
-    return devices[name] or devices.xbox;
-end
-
-function M.GetDeviceNames()
-    return { 'xbox', 'dualsense', 'switchpro' };
-end
-
-function M.GetDeviceDisplayNames()
-    return {
-        xbox = 'Xbox / XInput',
-        dualsense = 'DualSense / PS5',
-        switchpro = 'Switch Pro',
+    -- Merge user config with defaults
+    local buttons = {
+        SQUARE = userConfig.SQUARE or DINPUT_DEFAULTS.SQUARE,
+        CROSS = userConfig.CROSS or DINPUT_DEFAULTS.CROSS,
+        CIRCLE = userConfig.CIRCLE or DINPUT_DEFAULTS.CIRCLE,
+        TRIANGLE = userConfig.TRIANGLE or DINPUT_DEFAULTS.TRIANGLE,
+        L1 = userConfig.L1 or DINPUT_DEFAULTS.L1,
+        R1 = userConfig.R1 or DINPUT_DEFAULTS.R1,
+        L2 = userConfig.L2 or DINPUT_DEFAULTS.L2,
+        R2 = userConfig.R2 or DINPUT_DEFAULTS.R2,
+        L3 = userConfig.L3 or DINPUT_DEFAULTS.L3,
+        R3 = userConfig.R3 or DINPUT_DEFAULTS.R3,
     };
+
+    local device = {
+        XInput = false,
+        DirectInput = true,
+        Name = 'DirectInput',
+        Buttons = buttons,
+
+        -- D-pad angle to slot mapping (POV hat)
+        DPadAngleToSlot = {
+            [DPAD_ANGLES.UP] = 1,
+            [DPAD_ANGLES.RIGHT] = 2,
+            [DPAD_ANGLES.DOWN] = 3,
+            [DPAD_ANGLES.LEFT] = 4,
+        },
+    };
+
+    -- Face button to slot mapping
+    device.ButtonToSlot = {
+        [buttons.TRIANGLE] = 5,
+        [buttons.CIRCLE] = 6,
+        [buttons.CROSS] = 7,
+        [buttons.SQUARE] = 8,
+    };
+
+    -- Crossbar buttons (face buttons only, D-pad uses POV)
+    device.CrossbarButtons = {
+        [buttons.TRIANGLE] = true,
+        [buttons.CIRCLE] = true,
+        [buttons.CROSS] = true,
+        [buttons.SQUARE] = true,
+    };
+
+    -- Methods
+    function device.GetSlotFromButton(buttonId)
+        return device.ButtonToSlot[buttonId];
+    end
+
+    function device.GetSlotFromDPad(angle)
+        if angle == nil or angle == -1 then return nil; end
+        return device.DPadAngleToSlot[angle];
+    end
+
+    function device.IsCrossbarButton(buttonId)
+        return device.CrossbarButtons[buttonId] == true;
+    end
+
+    function device.IsTriggerButton(buttonId)
+        return buttonId == buttons.L2 or buttonId == buttons.R2;
+    end
+
+    function device.IsL2Button(buttonId)
+        return buttonId == buttons.L2;
+    end
+
+    function device.IsR2Button(buttonId)
+        return buttonId == buttons.R2;
+    end
+
+    return device;
 end
 
-function M.UsesXInput(name)
-    local device = M.GetDevice(name);
-    return device and device.XInput == true;
+-- ============================================
+-- Public API
+-- ============================================
+
+-- Scheme names
+local SCHEME_NAMES = { 'xinput', 'dinput' };
+
+-- Display names for UI
+local SCHEME_DISPLAY_NAMES = {
+    xinput = 'XInput (Xbox)',
+    dinput = 'DirectInput (PlayStation/Other)',
+};
+
+-- Get a device by scheme name
+-- @param schemeName: 'xinput' or 'dinput'
+-- @param userConfig: (optional) for dinput, table of button ID overrides
+-- @return device table with all required methods
+function M.GetDevice(schemeName, userConfig)
+    if schemeName == 'xinput' or schemeName == 'xbox' then
+        return xinput;
+    elseif schemeName == 'dinput' or schemeName == 'dualsense' or schemeName == 'switchpro' then
+        return CreateDInputDevice(userConfig);
+    else
+        -- Default to xinput
+        return xinput;
+    end
 end
 
-function M.UsesDirectInput(name)
-    local device = M.GetDevice(name);
-    return device and device.DirectInput == true;
+-- Get list of scheme names
+function M.GetSchemeNames()
+    return SCHEME_NAMES;
+end
+
+-- Legacy alias for backwards compatibility
+function M.GetDeviceNames()
+    return M.GetSchemeNames();
+end
+
+-- Get display names for UI
+function M.GetSchemeDisplayNames()
+    return SCHEME_DISPLAY_NAMES;
+end
+
+-- Legacy alias for backwards compatibility
+function M.GetDeviceDisplayNames()
+    return M.GetSchemeDisplayNames();
+end
+
+-- Check if a scheme uses XInput
+function M.UsesXInput(schemeName)
+    return schemeName == 'xinput' or schemeName == 'xbox';
+end
+
+-- Check if a scheme uses DirectInput
+function M.UsesDirectInput(schemeName)
+    return schemeName == 'dinput' or schemeName == 'dualsense' or schemeName == 'switchpro';
+end
+
+-- Get default DirectInput button IDs (for config UI)
+function M.GetDInputDefaults()
+    return DINPUT_DEFAULTS;
+end
+
+-- Get D-pad angles (for reference)
+function M.GetDPadAngles()
+    return DPAD_ANGLES;
 end
 
 return M;

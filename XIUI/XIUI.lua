@@ -331,6 +331,8 @@ function ResetSettings()
     config.userSettings = gConfig;
     UpdateSettings();
     settings.save();
+    -- Reset hotbar positions to defaults
+    hotbar.ResetPositions();
 end
 
 function SavePartyListLayoutSetting(key, value)
@@ -468,15 +470,6 @@ ashita.events.register('load', 'load_cb', function ()
 end);
 
 ashita.events.register('unload', 'unload_cb', function ()
-    ashita.events.unregister('d3d_present', 'present_cb');
-    ashita.events.unregister('packet_in', 'packet_in_cb');
-    ashita.events.unregister('command', 'command_cb');
-    ashita.events.unregister('key', 'key_cb');
-    ashita.events.unregister('xinput_state', 'xinput_state_cb');
-    ashita.events.unregister('xinput_button', 'xinput_button_cb');
-    ashita.events.unregister('dinput_button', 'dinput_button_cb');
-    ashita.events.unregister('dinput_state', 'dinput_state_cb');
-
     statusHandler.clear_cache();
     progressbar.ClearCache();
     if ClearDebuffFontCache then ClearDebuffFontCache(); end
