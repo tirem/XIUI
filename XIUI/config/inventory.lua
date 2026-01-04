@@ -66,6 +66,8 @@ end
 -- Helper function to draw settings for a tracker
 local function DrawTrackerSettings(tab)
     components.DrawCheckbox('Enabled', tab.configKey, CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'inventoryTrackerHideOnMenuFocus');
+    imgui.ShowHelp('Hide all inventory trackers when a game menu is open (equipment, map, etc.).');
 
     if components.CollapsingSection('Display Options##' .. tab.colorKey) then
         components.DrawCheckbox('Show Dots', tab.showDotsKey);

@@ -542,4 +542,18 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 	end
 end
 
+-- ============================================
+-- Cache Cleanup
+-- ============================================
+-- Clear all cached gradient textures and colors
+-- Call this on addon unload to prevent VRAM accumulation
+-- Note: gc_safe_release handles actual D3D Release() via finalizers,
+-- clearing references allows GC to run those finalizers
+progressbar.ClearCache = function()
+	progressbar.gradientTexturesByKey = {};
+	progressbar.gradientTextures = {};
+	progressbar.colorU32Cache = {};
+	progressbar.bookendTexture = nil;
+end
+
 return progressbar;

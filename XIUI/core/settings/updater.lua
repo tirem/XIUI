@@ -119,6 +119,27 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
     -- Title font uses bold
     gAdjustedSettings.treasurePoolSettings.title_font_settings.font_flags = bit.bor(fontWeightFlags, gdi.FontFlags.Bold);
 
+    -- Hotbar fonts
+    applyGlobalFontSettings(gAdjustedSettings.hotbarSettings.font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
+    applyGlobalFontSettings(gAdjustedSettings.hotbarSettings.keybind_font_settings, us.fontFamily, fontWeightFlags, 1);
+    applyGlobalFontSettings(gAdjustedSettings.hotbarSettings.label_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
+    -- Apply font heights from user settings (ensure minimum)
+    gAdjustedSettings.hotbarSettings.font_settings.font_height = math.max(us.hotbarFontSize or 10, 8);
+    gAdjustedSettings.hotbarSettings.keybind_font_settings.font_height = math.max(us.hotbarKeybindFontSize or 8, 6);
+    gAdjustedSettings.hotbarSettings.label_font_settings.font_height = math.max(us.hotbarLabelFontSize or 10, 8);
+    -- Hotbar background and scaling settings (mirrors config defaults)
+    gAdjustedSettings.hotbarSettings.scaleX = us.hotbarScaleX or 1.0;
+    gAdjustedSettings.hotbarSettings.scaleY = us.hotbarScaleY or 1.0;
+    gAdjustedSettings.hotbarSettings.bgScale = us.hotbarBgScale or 1.0;
+    gAdjustedSettings.hotbarSettings.borderScale = us.hotbarBorderScale or 1.0;
+    gAdjustedSettings.hotbarSettings.background_opacity = us.hotbarBackgroundOpacity or 0.87;
+    gAdjustedSettings.hotbarSettings.border_opacity = us.hotbarBorderOpacity or 1.0;
+
+    -- Crossbar fonts
+    applyGlobalFontSettings(gAdjustedSettings.crossbarSettings.keybind_font_settings, us.fontFamily, fontWeightFlags, 1);
+    applyGlobalFontSettings(gAdjustedSettings.crossbarSettings.label_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
+    applyGlobalFontSettings(gAdjustedSettings.crossbarSettings.trigger_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
+
     -- Target Bar dimensions and settings
     gAdjustedSettings.targetBarSettings.barWidth = ds.targetBarSettings.barWidth * us.targetBarScaleX;
     gAdjustedSettings.targetBarSettings.barHeight = ds.targetBarSettings.barHeight * us.targetBarScaleY;

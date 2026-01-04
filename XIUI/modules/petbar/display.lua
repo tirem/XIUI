@@ -8,6 +8,7 @@ require('handlers.helpers');
 local imgui = require('imgui');
 local ffi = require('ffi');
 local progressbar = require('libs.progressbar');
+local drawing = require('libs.drawing');
 
 local data = require('modules.petbar.data');
 local color = require('libs.color');
@@ -954,16 +955,16 @@ function display.DrawWindow(settings)
                     -- Absolute positioning: relative to window top-left
                     iconX = windowPosX + iconOffsetX;
                     iconY = windowPosY + iconOffsetY;
-                    -- Use background draw list: renders behind config menu but not clipped to window bounds
-                    drawList = imgui.GetBackgroundDrawList();
+                    -- Use UI draw list for consistent rendering
+                    drawList = drawing.GetUIDrawList();
                 else
                     -- Anchored: flow within the pet bar container
                     -- Use recastTopSpacing for vertical offset, no X offset in anchored mode
                     local topSpacing = typeSettings.recastTopSpacing or 2;
                     iconX, iconY = imgui.GetCursorScreenPos();
                     iconY = iconY + topSpacing;
-                    -- Use background draw list for consistency (anchored may also use offsets outside content area)
-                    drawList = imgui.GetBackgroundDrawList();
+                    -- Use UI draw list for consistent rendering
+                    drawList = drawing.GetUIDrawList();
                 end
 
                 if displayStyle == 'full' then
@@ -1076,7 +1077,7 @@ function display.DrawWindow(settings)
         local showCharmTimer = isCharmed and gConfig.petBarShowCharmIndicator ~= false;
 
         if showJugTimer or showCharmTimer then
-            local drawList = imgui.GetBackgroundDrawList();
+            local drawList = drawing.GetUIDrawList();
 
             -- Get timer text for positioning
             local timerStr = nil;

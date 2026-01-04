@@ -283,6 +283,8 @@ function M.DrawSettings(state)
     local selectedPartyTab = state.selectedPartyTab or 1;
 
     components.DrawCheckbox('Enabled', 'showPartyList', CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'partyListHideOnMenuFocus');
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
     components.DrawCheckbox('Preview Full Party (when config open)', 'partyListPreview');
 
     -- Global settings (shared across all parties)

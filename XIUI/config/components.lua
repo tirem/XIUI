@@ -6,11 +6,129 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
+local ffi = require('ffi');
 
 local components = {};
 
 -- Column spacing for horizontal color picker layouts
 components.COLOR_COLUMN_SPACING = 200;
+
+-- ============================================
+-- Icon Button Helper
+-- ============================================
+
+-- Draw a simple icon button using a texture
+-- @param id: Unique button ID (e.g., '##myButton')
+-- @param texture: Texture object with .image property (from LoadTexture)
+-- @param size: Button size in pixels (default 22)
+-- @param tooltipText: Optional tooltip text to show on hover
+-- @return: true if button was clicked
+function components.DrawIconButton(id, texture, size, tooltipText)
+    size = size or 22;
+    local clicked = false;
+    local drawList = imgui.GetWindowDrawList();
+    
+    -- Get position before button
+    local cursorPos = {imgui.GetCursorScreenPos()};
+    
+    -- Style for icon button (subtle background)
+    imgui.PushStyleColor(ImGuiCol_Button, {0.15, 0.14, 0.12, 1.0});
+    imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.25, 0.23, 0.18, 1.0});
+    imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.3, 0.27, 0.2, 1.0});
+    
+    -- Draw button
+    if imgui.Button(id, {size, size}) then
+        clicked = true;
+    end
+    
+    imgui.PopStyleColor(3);
+    
+    -- Draw icon on top
+    if texture and texture.image and drawList then
+        local iconPtr = tonumber(ffi.cast("uint32_t", texture.image));
+        if iconPtr then
+            local padding = 2;
+            drawList:AddImage(
+                iconPtr,
+                {cursorPos[1] + padding, cursorPos[2] + padding},
+                {cursorPos[1] + size - padding, cursorPos[2] + size - padding}
+            );
+        end
+    end
+    
+    -- Tooltip
+    if imgui.IsItemHovered() and tooltipText then
+        imgui.BeginTooltip();
+        imgui.Text(tooltipText);
+        imgui.EndTooltip();
+    end
+    
+    return clicked;
+end
+
+-- Position anchor options
+components.ANCHOR_OPTIONS = { 'topLeft', 'topRight', 'bottomLeft', 'bottomRight' };
+components.ANCHOR_LABELS = {
+    topLeft = 'Top Left',
+    topRight = 'Top Right',
+    bottomLeft = 'Bottom Left',
+    bottomRight = 'Bottom Right',
+};
+
+-- Draw inline XY offset controls (compact, for same-row layouts)
+-- @param settings: Settings table to modify
+-- @param idSuffix: Unique suffix for IDs
+-- @param xKey: Key for X offset value
+-- @param yKey: Key for Y offset value
+-- @param width: Width of each input (default 40)
+function components.DrawInlineOffsets(settings, idSuffix, xKey, yKey, width)
+    width = width or 40;
+    
+    imgui.Text('X:');
+    imgui.SameLine();
+    imgui.SetNextItemWidth(width);
+    local xVal = { settings[xKey] or 0 };
+    if imgui.InputInt('##' .. xKey .. idSuffix, xVal, 0, 0) then
+        settings[xKey] = xVal[1];
+        SaveSettingsOnly();
+    end
+    
+    imgui.SameLine();
+    imgui.Text('Y:');
+    imgui.SameLine();
+    imgui.SetNextItemWidth(width);
+    local yVal = { settings[yKey] or 0 };
+    if imgui.InputInt('##' .. yKey .. idSuffix, yVal, 0, 0) then
+        settings[yKey] = yVal[1];
+        SaveSettingsOnly();
+    end
+end
+
+-- Draw position anchor dropdown (compact)
+-- @param settings: Settings table to modify
+-- @param idSuffix: Unique suffix for ID
+-- @param anchorKey: Key for anchor value
+-- @param width: Width of dropdown (default 90)
+function components.DrawAnchorDropdown(settings, idSuffix, anchorKey, width)
+    width = width or 90;
+    local currentAnchor = settings[anchorKey] or 'topLeft';
+    local currentLabel = components.ANCHOR_LABELS[currentAnchor] or 'Top Left';
+    
+    imgui.SetNextItemWidth(width);
+    if imgui.BeginCombo('##' .. anchorKey .. idSuffix, currentLabel) then
+        for _, anchor in ipairs(components.ANCHOR_OPTIONS) do
+            local isSelected = (anchor == currentAnchor);
+            if imgui.Selectable(components.ANCHOR_LABELS[anchor], isSelected) then
+                settings[anchorKey] = anchor;
+                SaveSettingsOnly();
+            end
+            if isSelected then
+                imgui.SetItemDefaultFocus();
+            end
+        end
+        imgui.EndCombo();
+    end
+end
 
 -- List of common Windows fonts
 components.available_fonts = {
@@ -455,6 +573,31 @@ function components.DrawPartySlider(partyTable, label, configKey, min, max, form
     end
 end
 
+-- Helper function for per-party integer slider (uses SliderInt with proper format)
+function components.DrawPartySliderInt(partyTable, label, configKey, min, max, format, callback, default)
+    local defaultValue = default or min;
+    local currentValue = partyTable[configKey];
+    if currentValue == nil then
+        currentValue = defaultValue;
+        partyTable[configKey] = defaultValue;  -- Initialize missing value
+    end
+    local value = { math.floor(currentValue) };
+    local uniqueLabel = label .. '##party_' .. configKey;
+
+    imgui.SetNextItemWidth(150);
+    local changed = imgui.SliderInt(uniqueLabel, value, min, max, format);
+
+    if changed then
+        partyTable[configKey] = value[1];
+        if callback then callback() end
+        UpdateUserSettings();
+    end
+
+    if (imgui.IsItemDeactivatedAfterEdit()) then
+        SaveSettingsToDisk();
+    end
+end
+
 -- Helper function for per-party combo box
 function components.DrawPartyComboBox(partyTable, label, configKey, items, callback)
     local currentValue = partyTable[configKey];
@@ -569,7 +712,7 @@ end
 
 -- Anchor dropdown (left/right only, no center)
 -- Use for positioning elements relative to a container edge
-function components.DrawAnchorDropdown(label, parentTable, configKey, helpText)
+function components.DrawLeftRightAnchorDropdown(label, parentTable, configKey, helpText)
     local anchorLabels = {
         left = 'Left',
         right = 'Right'

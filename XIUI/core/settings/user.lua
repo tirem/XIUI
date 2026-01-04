@@ -29,6 +29,22 @@ function M.createUserSettingsDefaults()
         showCastCost = true,
         showNotifications = true,
 
+        -- Hide when game menu is open (default off)
+        playerBarHideOnMenuFocus = false,
+        targetBarHideOnMenuFocus = false,
+        enemyListHideOnMenuFocus = false,
+        expBarHideOnMenuFocus = false,
+        gilTrackerHideOnMenuFocus = false,
+        inventoryTrackerHideOnMenuFocus = false,
+        partyListHideOnMenuFocus = false,
+        castBarHideOnMenuFocus = false,
+        petBarHideOnMenuFocus = false,
+        castCostHideOnMenuFocus = false,
+        notificationsHideOnMenuFocus = false,
+        treasurePoolHideOnMenuFocus = false,
+        hotbarHideOnMenuFocus = false,
+        mobInfoHideOnMenuFocus = false,
+
         -- Treasure Pool settings
         treasurePoolEnabled = true,           -- Show treasure pool when items in pool
         treasurePoolShowTimerBar = true,      -- Show countdown progress bar
@@ -44,6 +60,38 @@ function M.createUserSettingsDefaults()
         treasurePoolBackgroundTheme = 'Plain', -- Background theme
         treasurePoolPreview = false,          -- Show preview with test data
         treasurePoolExpanded = false,         -- Expanded view (false = collapsed)
+
+        -- Hotbar settings (global)
+        hotbarEnabled = true,                 -- Show hotbar module
+        hotbarPreview = false,                -- Show preview with test data
+        hotbarBarPositions = nil,             -- Per-bar positions (nil = defaults)
+
+        -- Global hotbar visual settings (used when bar's useGlobalSettings = true)
+        hotbarGlobal = factories.createHotbarGlobalDefaults(),
+
+        -- Per-bar hotbar settings (Bar 1-6 each have independent configurations)
+        -- Bars 1-3 enabled by default, bars 4-6 disabled by default
+        -- By default, useGlobalSettings = true, so bars use hotbarGlobal for visuals
+        -- Default keybindings: Bar1=1-0/-/=, Bar2=Ctrl+1-0/-/=, Bar3=Shift+1-0/-/=
+        hotbarBar1 = factories.createHotbarBarDefaults({
+            rows = 1, columns = 12,
+            keyBindings = factories.createNumberRowKeybindings(false, false, false),
+        }),
+        hotbarBar2 = factories.createHotbarBarDefaults({
+            rows = 1, columns = 12,
+            keyBindings = factories.createNumberRowKeybindings(true, false, false),  -- Ctrl modifier
+        }),
+        hotbarBar3 = factories.createHotbarBarDefaults({
+            rows = 1, columns = 12,
+            keyBindings = factories.createNumberRowKeybindings(false, false, true),  -- Shift modifier
+        }),
+        hotbarBar4 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
+        hotbarBar5 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
+        hotbarBar6 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
+
+        -- Crossbar settings (controller-based hotbar mode)
+        -- When enabled, replaces the standard hotbar with a controller-friendly layout
+        hotbarCrossbar = factories.createCrossbarDefaults(),
 
         -- Notifications settings
         notificationsShowPartyInvite = true,

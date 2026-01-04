@@ -246,6 +246,13 @@ statusHandler.clear_cache = function()
     jobIcons = T{};
 end;
 
+-- Clear status icon cache on zone change to prevent unbounded accumulation
+-- Preserves job icons since those are reused across zones
+-- Preserves buff/debuff background icons as they're constant
+statusHandler.clear_zone_cache = function()
+    icon_cache = T{};
+end;
+
 -- return a table of status ids for a party member based on server id.
 ---@param server_id number the party memer or target server id to check
 ---@return table status_ids a list of the targets status ids or nil

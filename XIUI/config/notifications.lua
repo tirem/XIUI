@@ -69,6 +69,8 @@ end
 -- Section: Notifications Settings
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showNotifications', CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'notificationsHideOnMenuFocus');
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
     components.DrawCheckbox('Hide During Events', 'notificationsHideDuringEvents');
 
     if components.CollapsingSection('Display Options##notifications') then

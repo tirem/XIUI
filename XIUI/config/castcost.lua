@@ -14,6 +14,8 @@ local M = {};
 -- Section: Cast Cost Settings
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showCastCost', CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'castCostHideOnMenuFocus');
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
 
     if components.CollapsingSection('Display Options##castCost') then
         components.DrawPartyCheckbox(gConfig.castCost, 'Spell/Ability Name', 'showName');

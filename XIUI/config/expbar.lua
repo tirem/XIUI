@@ -13,6 +13,8 @@ local M = {};
 -- Section: Exp Bar Settings
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showExpBar', CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'expBarHideOnMenuFocus');
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
 
     if components.CollapsingSection('Display Options##expBar') then
         components.DrawCheckbox('Limit Points Mode', 'expBarLimitPointsMode');

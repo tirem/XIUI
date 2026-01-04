@@ -1,0 +1,5 @@
+# Ignore cached item icon files (generated at runtime)
+*.dat
+*.png
+*.bmp
+*.tga

@@ -18,9 +18,14 @@ local imgui = require('imgui');
 -- Store original functions
 local orig_imgui_BeginChild = imgui.BeginChild;
 
--- Check if we're targeting Ashita 4.3 or main branch
--- This global should be set in XIUI.lua before requiring this module
-local use43 = rawget(_G, '_XIUI_USE_ASHITA_4_3') or false;
+-- Auto-detect Ashita 4.3 vs main branch based on ImGui constants
+-- 4.3 has ImGuiChildFlags_Borders constant, main branch does not
+-- Manual override via _XIUI_USE_ASHITA_4_3 global is still supported
+local use43 = rawget(_G, '_XIUI_USE_ASHITA_4_3');
+if use43 == nil then
+    -- Auto-detect: ImGuiChildFlags_Borders exists only in 4.3
+    use43 = (ImGuiChildFlags_Borders ~= nil);
+end
 
 -- ImDrawCornerFlags -> ImDrawFlags_RoundCorners* aliases
 -- 4.3 uses ImDrawFlags_RoundCorners* (new naming), main uses ImDrawCornerFlags_* (old naming)

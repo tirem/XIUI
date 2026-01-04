@@ -32,6 +32,14 @@ addon.link      = 'https://github.com/tirem/XIUI'
 _G._XIUI_USE_ASHITA_4_3 = false;
 require('handlers.imgui_compat');
 
+-- =================
+-- = XIUI DEV ONLY =
+-- =================
+local _XIUI_DEV_HOT_RELOADING_ENABLED = false;
+local _XIUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS = 1;
+local _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME;
+local _XIUI_DEV_HOT_RELOAD_FILES = {};
+
 require('common');
 local settings = require('settings');
 local gdi = require('submodules.gdifonts.include');
@@ -62,22 +70,20 @@ local petBar = uiMods.petbar;
 local castCost = uiMods.castcost;
 local notifications = uiMods.notifications;
 local treasurePool = uiMods.treasurepool;
+local hotbar = uiMods.hotbar;
+local macropalette = require('modules.hotbar.macropalette');
 local configMenu = require('config');
 local debuffHandler = require('handlers.debuffhandler');
 local actionTracker = require('handlers.actiontracker');
 local mobInfo = require('modules.mobinfo.init');
 local statusHandler = require('handlers.statushandler');
+local progressbar = require('libs.progressbar');
+local diagnostics = require('libs.diagnostics');
 
 -- Global switch to hard-disable functionality that is limited on HX servers
 HzLimitedMode = false;
 
--- =================
--- = XIUI DEV ONLY =
--- =================
-local _XIUI_DEV_HOT_RELOADING_ENABLED = false;
-local _XIUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS = 1;
-local _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME;
-local _XIUI_DEV_HOT_RELOAD_FILES = {};
+
 
 -- Local split function for hot reload (avoids monkeypatching string metatable)
 local function _split_string(str, sep)
@@ -127,6 +133,7 @@ uiModules.Register('playerBar', {
     settingsKey = 'playerBarSettings',
     configKey = 'showPlayerBar',
     hideOnEventKey = 'playerBarHideDuringEvents',
+    hideOnMenuFocusKey = 'playerBarHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('targetBar', {
@@ -134,60 +141,70 @@ uiModules.Register('targetBar', {
     settingsKey = 'targetBarSettings',
     configKey = 'showTargetBar',
     hideOnEventKey = 'targetBarHideDuringEvents',
+    hideOnMenuFocusKey = 'targetBarHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('enemyList', {
     module = enemyList,
     settingsKey = 'enemyListSettings',
     configKey = 'showEnemyList',
+    hideOnMenuFocusKey = 'enemyListHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('expBar', {
     module = expBar,
     settingsKey = 'expBarSettings',
     configKey = 'showExpBar',
+    hideOnMenuFocusKey = 'expBarHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('gilTracker', {
     module = gilTracker,
     settingsKey = 'gilTrackerSettings',
     configKey = 'showGilTracker',
+    hideOnMenuFocusKey = 'gilTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('inventoryTracker', {
     module = inventoryTracker,
     settingsKey = 'inventoryTrackerSettings',
     configKey = 'showInventoryTracker',
+    hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('satchelTracker', {
     module = satchelTracker,
     settingsKey = 'satchelTrackerSettings',
     configKey = 'showSatchelTracker',
+    hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('lockerTracker', {
     module = lockerTracker,
     settingsKey = 'lockerTrackerSettings',
     configKey = 'showLockerTracker',
+    hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('safeTracker', {
     module = safeTracker,
     settingsKey = 'safeTrackerSettings',
     configKey = 'showSafeTracker',
+    hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('storageTracker', {
     module = storageTracker,
     settingsKey = 'storageTrackerSettings',
     configKey = 'showStorageTracker',
+    hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('wardrobeTracker', {
     module = wardrobeTracker,
     settingsKey = 'wardrobeTrackerSettings',
     configKey = 'showWardrobeTracker',
+    hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('partyList', {
@@ -195,24 +212,28 @@ uiModules.Register('partyList', {
     settingsKey = 'partyListSettings',
     configKey = 'showPartyList',
     hideOnEventKey = 'partyListHideDuringEvents',
+    hideOnMenuFocusKey = 'partyListHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('castBar', {
     module = castBar,
     settingsKey = 'castBarSettings',
     configKey = 'showCastBar',
+    hideOnMenuFocusKey = 'castBarHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('castCost', {
     module = castCost,
     settingsKey = 'castCostSettings',
     configKey = 'showCastCost',
+    hideOnMenuFocusKey = 'castCostHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('mobInfo', {
     module = mobInfo.display,
     settingsKey = 'mobInfoSettings',
     configKey = 'showMobInfo',
+    hideOnMenuFocusKey = 'mobInfoHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('petBar', {
@@ -220,6 +241,7 @@ uiModules.Register('petBar', {
     settingsKey = 'petBarSettings',
     configKey = 'showPetBar',
     hideOnEventKey = 'petBarHideDuringEvents',
+    hideOnMenuFocusKey = 'petBarHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('notifications', {
@@ -227,12 +249,22 @@ uiModules.Register('notifications', {
     settingsKey = 'notificationsSettings',
     configKey = 'showNotifications',
     hideOnEventKey = 'notificationsHideDuringEvents',
+    hideOnMenuFocusKey = 'notificationsHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('treasurePool', {
     module = treasurePool,
     settingsKey = 'treasurePoolSettings',
     configKey = 'treasurePoolEnabled',
+    hideOnMenuFocusKey = 'treasurePoolHideOnMenuFocus',
+    hasSetHidden = true,
+});
+uiModules.Register('hotbar', {
+    module = hotbar,
+    settingsKey = 'hotbarSettings',
+    configKey = 'showhotbar',
+    hideOnEventKey = 'hotbarHideDuringEvents',
+    hideOnMenuFocusKey = 'hotbarHideOnMenuFocus',
     hasSetHidden = true,
 });
 
@@ -299,6 +331,8 @@ function ResetSettings()
     config.userSettings = gConfig;
     UpdateSettings();
     settings.save();
+    -- Reset hotbar positions to defaults
+    hotbar.ResetPositions();
 end
 
 function SavePartyListLayoutSetting(key, value)
@@ -384,6 +418,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
     end
 
     local eventSystemActive = gameState.GetEventSystemActive();
+    local menuOpen = gameState.GetMenuName() ~= '';
 
     if not gameState.ShouldHideUI(gConfig.hideDuringEvents, bLoggedIn) then
         -- Sync treasure pool from memory (authoritative source of truth)
@@ -397,7 +432,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 
         -- Render all registered modules
         for name, _ in pairs(uiModules.GetAll()) do
-            uiModules.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive);
+            uiModules.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive, menuOpen);
         end
 
         configMenu.DrawWindow();
@@ -435,11 +470,8 @@ ashita.events.register('load', 'load_cb', function ()
 end);
 
 ashita.events.register('unload', 'unload_cb', function ()
-    ashita.events.unregister('d3d_present', 'present_cb');
-    ashita.events.unregister('packet_in', 'packet_in_cb');
-    ashita.events.unregister('command', 'command_cb');
-
     statusHandler.clear_cache();
+    progressbar.ClearCache();
     if ClearDebuffFontCache then ClearDebuffFontCache(); end
 
     uiModules.CleanupAll();
@@ -464,6 +496,12 @@ ashita.events.register('command', 'command_cb', function (e)
         if (#command_args == 2 and command_args[2]:any('partylist')) then
             gConfig.showPartyList = not gConfig.showPartyList;
             CheckVisibility();
+            return;
+        end
+
+        -- Open macro palette: /xiui macro or /xiui macros
+        if (#command_args == 2 and command_args[2]:any('macro', 'macros')) then
+            macropalette.TogglePalette();
             return;
         end
 
@@ -516,6 +554,37 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
+        -- Hotbar keybind execution: /xiui hotbar <bar> <slot>
+        -- Called by Ashita /bind system to execute hotbar actions
+        if (command_args[2] == 'hotbar' and #command_args >= 4) then
+            local barIndex = tonumber(command_args[3]);
+            local slotIndex = tonumber(command_args[4]);
+            if barIndex and slotIndex then
+                local hotbarActions = require('modules.hotbar.actions');
+                hotbarActions.HandleKeybind(barIndex, slotIndex);
+            end
+            return;
+        end
+
+        -- Diagnostics commands: /xiui diag [on|off|stats|reset]
+        if (command_args[2] == 'diag') then
+            local subCmd = command_args[3] or 'stats';
+            if subCmd == 'on' or subCmd == 'enable' then
+                diagnostics.Enable();
+                print('[XIUI] Diagnostics enabled - resource tracking active');
+            elseif subCmd == 'off' or subCmd == 'disable' then
+                diagnostics.Disable();
+                print('[XIUI] Diagnostics disabled');
+            elseif subCmd == 'reset' then
+                diagnostics.ResetStats();
+                print('[XIUI] Diagnostics counters reset');
+            else
+                -- Default: print stats
+                diagnostics.PrintStats();
+            end
+            return;
+        end
+
         -- Reset gil per hour tracking: /xiui resetgil
         if (command_args[2] == 'resetgil') then
             gilTracker.ResetTracking();
@@ -530,6 +599,11 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
     -- Pet bar packet handling (0x0028 Action, 0x0068 Pet Sync)
     if gConfig.showPetBar then
         petBar.HandlePacket(e);
+    end
+
+    -- Hotbar pet palette sync (0x0068 Pet Sync)
+    if e.id == 0x0068 and gConfig.hotbarEnabled then
+        hotbar.HandlePetSyncPacket();
     end
 
     if (e.id == 0x0028) then
@@ -558,9 +632,14 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         debuffHandler.HandleZonePacket(e);
         actionTracker.HandleZonePacket();
         mobInfo.data.HandleZonePacket(e);
+        statusHandler.clear_zone_cache();  -- Clear status icon cache to prevent accumulation
         MarkPartyCacheDirty();
         ClearEntityCache();
         bLoggedIn = true;
+        -- Initialize hotbar job on zone-in (handles initial login and job change during zone)
+        if gConfig.hotbarEnabled then
+            hotbar.HandleJobChangePacket(e);
+        end
     elseif (e.id == 0x0029) then
         local messagePacket = ParseMessagePacket(e.data);
         if messagePacket then
@@ -591,6 +670,15 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         notifications.HandleZonePacket();
         treasurePool.HandleZonePacket();
         bLoggedIn = false;
+        -- Also notify hotbar of zone (clears state)
+        if gConfig.hotbarEnabled then
+            hotbar.HandleZonePacket();
+        end
+    elseif (e.id == 0x001B) then
+        -- Job change packet - update hotbar to show new job's actions
+        if gConfig.hotbarEnabled then
+            hotbar.HandleJobChangePacket(e);
+        end
     elseif (e.id == 0x076) then
         statusHandler.ReadPartyBuffsFromPacket(e);
     elseif (e.id == 0x0DD) then
@@ -669,3 +757,68 @@ ashita.events.register('packet_out', 'packet_out_cb', function (e)
         end
     end
 end);
+
+-- ============================================
+--Key Handler
+-- ============================================
+
+--[[ Valid Arguments
+
+    e.wparam     - (ReadOnly) The wparam of the event.
+    e.lparam     - (ReadOnly) The lparam of the event.
+    e.blocked    - (Writable) Flag that states if the key has been, or should be, blocked.
+
+    See the following article for how to process and use wparam/lparam values:
+    https://docs.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ms644984(v=vs.85)
+
+    Note: Key codes used here are considered 'virtual key codes'.
+--]]
+
+--[[ Note
+
+        The game uses WNDPROC keyboard information to process keyboard input for chat and other
+        user-inputted text prompts. (Bazaar comment, search comment, etc.)
+
+        Blocking a press here will only block it during inputs of those types. It will not block
+        in-game button handling for things such as movement, menu interactions, etc.
+--]]
+ashita.events.register('key', 'key_cb', function (event)
+    hotbar.HandleKey(event);
+end);
+
+-- XInput controller state event (for crossbar mode)
+ashita.events.register('xinput_state', 'xinput_state_cb', function (e)
+    hotbar.HandleXInputState(e);
+end);
+
+-- XInput button event (for blocking game macros when crossbar is active)
+--[[ Valid Arguments
+    e.button    - (Writable) The controller button id.
+    e.state     - (Writable) The controller button state value.
+    e.blocked   - (Writable) Flag that states if the button has been, or should be, blocked.
+    e.injected  - (ReadOnly) Flag that states if the button was injected by Ashita or an addon/plugin.
+--]]
+ashita.events.register('xinput_button', 'xinput_button_cb', function (e)
+    local shouldBlock = hotbar.HandleXInputButton(e);
+    if shouldBlock then
+        e.blocked = true;
+    end
+end);
+
+-- DirectInput controller button event (for crossbar mode with DirectInput controllers)
+-- Used by: DualSense, Switch Pro, Stadia controllers
+ashita.events.register('dinput_button', 'dinput_button_cb', function (e)
+    local shouldBlock = hotbar.HandleDInputButton(e);
+    if shouldBlock then
+        e.blocked = true;
+    end
+end);
+
+-- DirectInput controller state event (for D-pad POV on DirectInput controllers)
+ashita.events.register('dinput_state', 'dinput_state_cb', function (e)
+    hotbar.HandleDInputState(e);
+end);
+
+-- ============================================
+-- NOTE: Render order is fixed by Ashita core: Primitives > GDI Fonts > ImGui
+-- We cannot change this from addon level - ImGui always renders last.
