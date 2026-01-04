@@ -44,6 +44,7 @@ local function ensureDefaults()
     if gConfig.treasurePoolBorderOpacity == nil then gConfig.treasurePoolBorderOpacity = 1.0; end
     if gConfig.treasurePoolBackgroundTheme == nil then gConfig.treasurePoolBackgroundTheme = 'Plain'; end
     if gConfig.treasurePoolExpanded == nil then gConfig.treasurePoolExpanded = false; end
+    if gConfig.treasurePoolShowButtonsInCollapsed == nil then gConfig.treasurePoolShowButtonsInCollapsed = true; end
 end
 
 -- Get available background themes
@@ -73,6 +74,9 @@ function M.DrawSettings()
 
             components.DrawCheckbox('Show Lots', 'treasurePoolShowLots');
             imgui.ShowHelp('Show winning lot info');
+
+            components.DrawCheckbox('Show Buttons In Collapsed View', 'treasurePoolShowButtonsInCollapsed');
+            imgui.ShowHelp('Show Lot/Pass buttons even when not in expanded view');
 
             components.DrawCheckbox('Start Expanded', 'treasurePoolExpanded');
             imgui.ShowHelp('Start with expanded view showing all lot details');

@@ -74,6 +74,7 @@ function M.Initialize(settings)
         if gConfig.treasurePoolBackgroundTheme == nil then gConfig.treasurePoolBackgroundTheme = 'Plain'; end
         if gConfig.treasurePoolExpanded == nil then gConfig.treasurePoolExpanded = false; end
         if gConfig.treasurePoolMinimized == nil then gConfig.treasurePoolMinimized = false; end
+        if gConfig.treasurePoolShowButtonsInCollapsed == nil then gConfig.treasurePoolShowButtonsInCollapsed = true; end
     end
 
     -- Initialize data layer first

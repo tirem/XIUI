@@ -69,7 +69,7 @@ local mobInfo = require('modules.mobinfo.init');
 local statusHandler = require('handlers.statushandler');
 
 -- Global switch to hard-disable functionality that is limited on HX servers
-HzLimitedMode = false;
+HzLimitedMode = true;
 
 -- =================
 -- = XIUI DEV ONLY =
