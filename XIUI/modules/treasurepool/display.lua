@@ -887,8 +887,9 @@ function M.DrawWindow(settings)
                 end
             end
 
-            -- 4. Draw per-item Lot/Pass buttons (expanded view only)
-            if isExpanded then
+            -- 4. Draw per-item Lot/Pass buttons (expanded view or explicitly enabled)
+            local showButtons = isExpanded or gConfig.treasurePoolShowButtonsInCollapsed;
+            if showButtons then
                 local itemBtnHeight = fontSize + 4;
                 local itemBtnWidth = fontSize * 2.5;
                 local itemBtnSpacing = 4;
@@ -1004,9 +1005,11 @@ function M.DrawWindow(settings)
                     if data.passItemFonts[slot] then data.passItemFonts[slot]:set_visible(false); end
                 end
             else
-                -- Hide per-item button primitives when collapsed
+                -- Hide per-item button primitives when not showing buttons
                 button.HidePrim(string.format('tpLotItem%d', slot));
                 button.HidePrim(string.format('tpPassItem%d', slot));
+                if data.lotItemFonts[slot] then data.lotItemFonts[slot]:set_visible(false); end
+                if data.passItemFonts[slot] then data.passItemFonts[slot]:set_visible(false); end
             end
 
             -- 5. Draw lot info (collapsed: inline; expanded: hidden)
@@ -1046,8 +1049,6 @@ function M.DrawWindow(settings)
                 if data.lottersFonts[slot] then data.lottersFonts[slot]:set_visible(false); end
                 if data.passersFonts[slot] then data.passersFonts[slot]:set_visible(false); end
                 if data.pendingFonts[slot] then data.pendingFonts[slot]:set_visible(false); end
-                if data.lotItemFonts[slot] then data.lotItemFonts[slot]:set_visible(false); end
-                if data.passItemFonts[slot] then data.passItemFonts[slot]:set_visible(false); end
                 -- Hide member fonts when collapsed
                 if data.memberFonts[slot] then
                     for memberIdx = 0, data.MAX_MEMBERS_PER_ITEM - 1 do
