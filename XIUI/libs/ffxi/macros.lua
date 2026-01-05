@@ -326,10 +326,15 @@ end
 -- Macro Bar UI Hiding (via memory patching)
 -- Based on nomacrobars addon by jquick
 -- Patches the timer check that triggers macro bar display
+--
+-- Note: The game maps controller L2/R2 to Ctrl/Alt internally for macros.
+-- So patching these two timer checks blocks the macro bar UI for BOTH:
+--   - Keyboard: Ctrl and Alt keys
+--   - Controller: L2 and R2 triggers
 -- ============================================
 
 local macroBarPatches = {
-    -- Ctrl timer pattern
+    -- Ctrl timer pattern (also handles L2 on controller)
     ctrl = {
         pattern = '2B46103BC3????????????68????????B9',
         offset = 0x03,
@@ -337,7 +342,7 @@ local macroBarPatches = {
         address = nil,
         backup = nil,
     },
-    -- Alt timer pattern
+    -- Alt timer pattern (also handles R2 on controller)
     alt = {
         pattern = '2B46103BC3????68????????B9',
         offset = 0x03,
