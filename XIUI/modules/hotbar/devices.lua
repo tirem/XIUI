@@ -88,69 +88,83 @@ function xinput.GetSlotFromButtonMask(buttons)
 end
 
 -- ============================================
--- DirectInput Device Factory
+-- DirectInput Device Profiles
 -- ============================================
 -- DirectInput button IDs vary by controller manufacturer.
--- Defaults from tCrossBar (PlayStation layout, most common for DirectInput).
--- Users can override any button ID via userConfig.
+-- Each controller type has its own profile with correct button offsets.
+-- Based on tCrossBar controller definitions.
 
--- Default DirectInput button IDs (from tCrossBar)
--- These work for most PlayStation controllers (DualShock, DualSense)
-local DINPUT_DEFAULTS = {
-    SQUARE = 48,
-    CROSS = 49,
-    CIRCLE = 50,
-    TRIANGLE = 51,
-    L1 = 52,
-    R1 = 53,
-    L2 = 54,
-    R2 = 55,
-    L3 = 58,
-    R3 = 59,
-};
-
--- D-pad angles (POV hat) - standard across all DirectInput controllers
+-- D-pad angles - standard across all DirectInput controllers
+-- D-Pad is reported at button offset 32 with angle values
 local DPAD_ANGLES = {
     UP = 0,
+    UP_RIGHT = 4500,
     RIGHT = 9000,
+    DOWN_RIGHT = 13500,
     DOWN = 18000,
+    DOWN_LEFT = 22500,
     LEFT = 27000,
+    UP_LEFT = 31500,
+    CENTERED = -1,  -- D-pad released
 };
 
--- Factory function to create a DirectInput device with configurable button IDs
-local function CreateDInputDevice(userConfig)
-    userConfig = userConfig or {};
+-- D-Pad button offset (same for all DirectInput controllers)
+local DPAD_BUTTON_OFFSET = 32;
 
-    -- Merge user config with defaults
+-- ============================================
+-- DualSense / DualShock Profile (PlayStation)
+-- ============================================
+local function CreateDualSenseDevice()
     local buttons = {
-        SQUARE = userConfig.SQUARE or DINPUT_DEFAULTS.SQUARE,
-        CROSS = userConfig.CROSS or DINPUT_DEFAULTS.CROSS,
-        CIRCLE = userConfig.CIRCLE or DINPUT_DEFAULTS.CIRCLE,
-        TRIANGLE = userConfig.TRIANGLE or DINPUT_DEFAULTS.TRIANGLE,
-        L1 = userConfig.L1 or DINPUT_DEFAULTS.L1,
-        R1 = userConfig.R1 or DINPUT_DEFAULTS.R1,
-        L2 = userConfig.L2 or DINPUT_DEFAULTS.L2,
-        R2 = userConfig.R2 or DINPUT_DEFAULTS.R2,
-        L3 = userConfig.L3 or DINPUT_DEFAULTS.L3,
-        R3 = userConfig.R3 or DINPUT_DEFAULTS.R3,
+        -- Face buttons
+        SQUARE = 48,
+        CROSS = 49,
+        CIRCLE = 50,
+        TRIANGLE = 51,
+        -- Shoulder buttons
+        L1 = 52,
+        R1 = 53,
+        -- Trigger buttons (press state)
+        L2 = 54,
+        R2 = 55,
+        -- Other buttons
+        CREATE = 56,
+        OPTIONS = 57,
+        L3 = 58,
+        R3 = 59,
+        PLAYSTATION = 60,
+        TOUCHPAD = 61,
+        MICROPHONE = 62,
+        -- Analog trigger intensity offsets (for advanced use)
+        L2_INTENSITY = 12,
+        R2_INTENSITY = 16,
+        -- D-Pad offset
+        DPAD = DPAD_BUTTON_OFFSET,
     };
 
     local device = {
         XInput = false,
         DirectInput = true,
-        Name = 'DirectInput',
+        Name = 'DualSense',
+        DisplayName = 'PlayStation (DualSense/DualShock)',
         Buttons = buttons,
-
-        -- D-pad angle to slot mapping (POV hat)
-        DPadAngleToSlot = {
-            [DPAD_ANGLES.UP] = 1,
-            [DPAD_ANGLES.RIGHT] = 2,
-            [DPAD_ANGLES.DOWN] = 3,
-            [DPAD_ANGLES.LEFT] = 4,
+        -- Track analog trigger intensity
+        HasAnalogTriggers = true,
+        TriggerIntensityOffsets = {
+            L2 = 12,
+            R2 = 16,
         },
     };
 
-    -- Face button to slot mapping
+    -- D-pad angle to slot mapping
+    device.DPadAngleToSlot = {
+        [DPAD_ANGLES.UP] = 1,
+        [DPAD_ANGLES.RIGHT] = 2,
+        [DPAD_ANGLES.DOWN] = 3,
+        [DPAD_ANGLES.LEFT] = 4,
+    };
+
+    -- Face button to slot mapping (PlayStation layout: Triangle/Circle/Cross/Square)
     device.ButtonToSlot = {
         [buttons.TRIANGLE] = 5,
         [buttons.CIRCLE] = 6,
@@ -158,7 +172,7 @@ local function CreateDInputDevice(userConfig)
         [buttons.SQUARE] = 8,
     };
 
-    -- Crossbar buttons (face buttons only, D-pad uses POV)
+    -- Crossbar buttons (face buttons - D-pad handled separately)
     device.CrossbarButtons = {
         [buttons.TRIANGLE] = true,
         [buttons.CIRCLE] = true,
@@ -172,16 +186,230 @@ local function CreateDInputDevice(userConfig)
     end
 
     function device.GetSlotFromDPad(angle)
-        if angle == nil or angle == -1 then return nil; end
+        if angle == nil or angle == -1 or angle == 65535 then return nil; end
         return device.DPadAngleToSlot[angle];
+    end
+
+    function device.GetSlotFromDPadButton(buttonId, buttonState)
+        if buttonId ~= DPAD_BUTTON_OFFSET then return nil; end
+        return device.GetSlotFromDPad(buttonState);
     end
 
     function device.IsCrossbarButton(buttonId)
         return device.CrossbarButtons[buttonId] == true;
     end
 
+    function device.IsDPadButton(buttonId)
+        return buttonId == DPAD_BUTTON_OFFSET;
+    end
+
     function device.IsTriggerButton(buttonId)
         return buttonId == buttons.L2 or buttonId == buttons.R2;
+    end
+
+    function device.IsTriggerIntensity(buttonId)
+        return buttonId == buttons.L2_INTENSITY or buttonId == buttons.R2_INTENSITY;
+    end
+
+    function device.IsL2Button(buttonId)
+        return buttonId == buttons.L2 or buttonId == buttons.L2_INTENSITY;
+    end
+
+    function device.IsR2Button(buttonId)
+        return buttonId == buttons.R2 or buttonId == buttons.R2_INTENSITY;
+    end
+
+    return device;
+end
+
+-- ============================================
+-- Switch Pro Profile (Nintendo)
+-- ============================================
+local function CreateSwitchProDevice()
+    local buttons = {
+        -- Face buttons (Nintendo layout: B/A/Y/X - different from PlayStation!)
+        B = 48,      -- Bottom (like Cross)
+        A = 49,      -- Right (like Circle)
+        Y = 50,      -- Left (like Square)
+        X = 51,      -- Top (like Triangle)
+        -- Shoulder buttons
+        L = 52,
+        R = 53,
+        -- Trigger buttons
+        ZL = 54,
+        ZR = 55,
+        -- Other buttons
+        MINUS = 56,
+        PLUS = 57,
+        LSTICK_BUTTON = 58,
+        RSTICK_BUTTON = 59,
+        HOME = 60,
+        CAPTURE = 61,
+        -- D-Pad offset
+        DPAD = DPAD_BUTTON_OFFSET,
+    };
+
+    local device = {
+        XInput = false,
+        DirectInput = true,
+        Name = 'SwitchPro',
+        DisplayName = 'Nintendo Switch Pro',
+        Buttons = buttons,
+        HasAnalogTriggers = false,  -- Switch Pro triggers are digital
+    };
+
+    -- D-pad angle to slot mapping
+    device.DPadAngleToSlot = {
+        [DPAD_ANGLES.UP] = 1,
+        [DPAD_ANGLES.RIGHT] = 2,
+        [DPAD_ANGLES.DOWN] = 3,
+        [DPAD_ANGLES.LEFT] = 4,
+    };
+
+    -- Face button to slot mapping (Nintendo layout: X/A/B/Y mapped to slots 5/6/7/8)
+    -- Slot 5 = Top button (X on Switch, Triangle on PS, Y on Xbox)
+    -- Slot 6 = Right button (A on Switch, Circle on PS, B on Xbox)
+    -- Slot 7 = Bottom button (B on Switch, Cross on PS, A on Xbox)
+    -- Slot 8 = Left button (Y on Switch, Square on PS, X on Xbox)
+    device.ButtonToSlot = {
+        [buttons.X] = 5,  -- Top
+        [buttons.A] = 6,  -- Right
+        [buttons.B] = 7,  -- Bottom
+        [buttons.Y] = 8,  -- Left
+    };
+
+    -- Crossbar buttons
+    device.CrossbarButtons = {
+        [buttons.X] = true,
+        [buttons.A] = true,
+        [buttons.B] = true,
+        [buttons.Y] = true,
+    };
+
+    -- Methods
+    function device.GetSlotFromButton(buttonId)
+        return device.ButtonToSlot[buttonId];
+    end
+
+    function device.GetSlotFromDPad(angle)
+        if angle == nil or angle == -1 or angle == 65535 then return nil; end
+        return device.DPadAngleToSlot[angle];
+    end
+
+    function device.GetSlotFromDPadButton(buttonId, buttonState)
+        if buttonId ~= DPAD_BUTTON_OFFSET then return nil; end
+        return device.GetSlotFromDPad(buttonState);
+    end
+
+    function device.IsCrossbarButton(buttonId)
+        return device.CrossbarButtons[buttonId] == true;
+    end
+
+    function device.IsDPadButton(buttonId)
+        return buttonId == DPAD_BUTTON_OFFSET;
+    end
+
+    function device.IsTriggerButton(buttonId)
+        return buttonId == buttons.ZL or buttonId == buttons.ZR;
+    end
+
+    function device.IsTriggerIntensity(buttonId)
+        return false;  -- Switch Pro has no analog triggers
+    end
+
+    function device.IsL2Button(buttonId)
+        return buttonId == buttons.ZL;
+    end
+
+    function device.IsR2Button(buttonId)
+        return buttonId == buttons.ZR;
+    end
+
+    return device;
+end
+
+-- ============================================
+-- Generic DirectInput Profile (Fallback)
+-- ============================================
+-- For controllers that don't match DualSense or Switch Pro
+local function CreateGenericDInputDevice(userConfig)
+    userConfig = userConfig or {};
+
+    -- Default to DualSense-style offsets
+    local buttons = {
+        FACE_TOP = userConfig.FACE_TOP or 51,      -- Triangle/X
+        FACE_RIGHT = userConfig.FACE_RIGHT or 50,  -- Circle/A
+        FACE_BOTTOM = userConfig.FACE_BOTTOM or 49, -- Cross/B
+        FACE_LEFT = userConfig.FACE_LEFT or 48,    -- Square/Y
+        L1 = userConfig.L1 or 52,
+        R1 = userConfig.R1 or 53,
+        L2 = userConfig.L2 or 54,
+        R2 = userConfig.R2 or 55,
+        DPAD = DPAD_BUTTON_OFFSET,
+    };
+
+    local device = {
+        XInput = false,
+        DirectInput = true,
+        Name = 'Generic',
+        DisplayName = 'Generic DirectInput',
+        Buttons = buttons,
+        HasAnalogTriggers = false,
+    };
+
+    -- D-pad angle to slot mapping
+    device.DPadAngleToSlot = {
+        [DPAD_ANGLES.UP] = 1,
+        [DPAD_ANGLES.RIGHT] = 2,
+        [DPAD_ANGLES.DOWN] = 3,
+        [DPAD_ANGLES.LEFT] = 4,
+    };
+
+    -- Face button to slot mapping
+    device.ButtonToSlot = {
+        [buttons.FACE_TOP] = 5,
+        [buttons.FACE_RIGHT] = 6,
+        [buttons.FACE_BOTTOM] = 7,
+        [buttons.FACE_LEFT] = 8,
+    };
+
+    -- Crossbar buttons
+    device.CrossbarButtons = {
+        [buttons.FACE_TOP] = true,
+        [buttons.FACE_RIGHT] = true,
+        [buttons.FACE_BOTTOM] = true,
+        [buttons.FACE_LEFT] = true,
+    };
+
+    -- Methods
+    function device.GetSlotFromButton(buttonId)
+        return device.ButtonToSlot[buttonId];
+    end
+
+    function device.GetSlotFromDPad(angle)
+        if angle == nil or angle == -1 or angle == 65535 then return nil; end
+        return device.DPadAngleToSlot[angle];
+    end
+
+    function device.GetSlotFromDPadButton(buttonId, buttonState)
+        if buttonId ~= DPAD_BUTTON_OFFSET then return nil; end
+        return device.GetSlotFromDPad(buttonState);
+    end
+
+    function device.IsCrossbarButton(buttonId)
+        return device.CrossbarButtons[buttonId] == true;
+    end
+
+    function device.IsDPadButton(buttonId)
+        return buttonId == DPAD_BUTTON_OFFSET;
+    end
+
+    function device.IsTriggerButton(buttonId)
+        return buttonId == buttons.L2 or buttonId == buttons.R2;
+    end
+
+    function device.IsTriggerIntensity(buttonId)
+        return false;
     end
 
     function device.IsL2Button(buttonId)
@@ -199,29 +427,30 @@ end
 -- Public API
 -- ============================================
 
--- Scheme names
-local SCHEME_NAMES = { 'xinput', 'dinput' };
+-- Scheme names (ordered for UI display)
+local SCHEME_NAMES = { 'xbox', 'dualsense', 'switchpro', 'dinput' };
 
 -- Display names for UI
 local SCHEME_DISPLAY_NAMES = {
-    xinput = 'XInput (Xbox)',
-    dinput = 'DirectInput (PlayStation/Other)',
+    xbox = 'Xbox / XInput',
+    dualsense = 'PlayStation (DualSense/DualShock)',
+    switchpro = 'Nintendo Switch Pro',
+    dinput = 'Generic DirectInput',
 };
 
 -- Get a device by scheme name
--- @param schemeName: 'xinput', 'dinput', 'xbox', 'dualsense', 'switchpro'
--- @param userConfig: (optional) for dinput, table of button ID overrides
+-- @param schemeName: 'xbox', 'xinput', 'dualsense', 'switchpro', 'dinput'
+-- @param userConfig: (optional) for generic dinput, table of button ID overrides
 -- @return device table with all required methods
 function M.GetDevice(schemeName, userConfig)
-    -- Normalize scheme name
-    local normalizedScheme = schemeName;
-    if schemeName == 'xbox' then normalizedScheme = 'xinput'; end
-    if schemeName == 'dualsense' or schemeName == 'switchpro' then normalizedScheme = 'dinput'; end
-
-    if normalizedScheme == 'xinput' then
+    if schemeName == 'xbox' or schemeName == 'xinput' then
         return xinput;
-    elseif normalizedScheme == 'dinput' then
-        return CreateDInputDevice(userConfig);
+    elseif schemeName == 'dualsense' or schemeName == 'playstation' then
+        return CreateDualSenseDevice();
+    elseif schemeName == 'switchpro' or schemeName == 'switch' then
+        return CreateSwitchProDevice();
+    elseif schemeName == 'dinput' or schemeName == 'generic' then
+        return CreateGenericDInputDevice(userConfig);
     else
         -- Default to xinput
         return xinput;
@@ -248,11 +477,16 @@ function M.GetDeviceDisplayNames()
     return M.GetSchemeDisplayNames();
 end
 
--- Normalize scheme name to canonical form ('xinput' or 'dinput')
+-- Get display name for a specific scheme
+function M.GetDisplayName(schemeName)
+    return SCHEME_DISPLAY_NAMES[schemeName] or schemeName;
+end
+
+-- Normalize scheme name to input type ('xinput' or 'dinput')
 function M.NormalizeScheme(schemeName)
     if schemeName == 'xbox' or schemeName == 'xinput' then
         return 'xinput';
-    elseif schemeName == 'dualsense' or schemeName == 'switchpro' or schemeName == 'dinput' then
+    elseif schemeName == 'dualsense' or schemeName == 'switchpro' or schemeName == 'dinput' or schemeName == 'generic' then
         return 'dinput';
     end
     return 'xinput';  -- Default
@@ -268,14 +502,14 @@ function M.UsesDirectInput(schemeName)
     return M.NormalizeScheme(schemeName) == 'dinput';
 end
 
--- Get default DirectInput button IDs (for config UI)
-function M.GetDInputDefaults()
-    return DINPUT_DEFAULTS;
-end
-
 -- Get D-pad angles (for reference)
 function M.GetDPadAngles()
     return DPAD_ANGLES;
+end
+
+-- Get D-pad button offset
+function M.GetDPadButtonOffset()
+    return DPAD_BUTTON_OFFSET;
 end
 
 return M;
