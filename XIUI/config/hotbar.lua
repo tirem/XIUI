@@ -14,6 +14,7 @@ local jobs = require('libs.jobs');
 local macropalette = require('modules.hotbar.macropalette');
 local playerdata = require('modules.hotbar.playerdata');
 local controller = require('modules.hotbar.controller');
+local macrosLib = require('libs.ffxi.macros');
 
 local M = {};
 
@@ -1299,7 +1300,65 @@ function M.DrawSettings(state)
         SaveSettingsOnly();
         DeferredUpdateVisuals();
     end
-    imgui.ShowHelp('Disable native XI macros. Hides macro bar display when Ctrl/Alt is held and blocks game macros from firing when using crossbar controller input.');
+    imgui.SameLine();
+    -- Get diagnostic info for tooltip
+    local diag = macrosLib.get_diagnostics();
+    -- Show status indicator with color based on mode
+    if diag.mode == 'hide' then
+        imgui.TextColored({0.5, 1.0, 0.5, 1.0}, '(hidden)');  -- Green when hidden
+    elseif diag.mode == 'macrofix' then
+        imgui.TextColored({0.5, 0.8, 1.0, 1.0}, '(macrofix)');  -- Cyan for macrofix mode
+    else
+        imgui.TextColored({1.0, 0.7, 0.3, 1.0}, '(init...)');  -- Orange if still initializing
+    end
+    if imgui.IsItemHovered() then
+        imgui.BeginTooltip();
+        imgui.Text('Macro Patch Diagnostics');
+        imgui.Separator();
+        local modeStr = diag.mode or 'initializing';
+        if diag.mode == 'hide' then
+            modeStr = 'hide (macro bar hidden)';
+        elseif diag.mode == 'macrofix' then
+            modeStr = 'macrofix (fast built-in macros)';
+        end
+        imgui.Text('Mode: ' .. modeStr);
+
+        -- Check if macrofix addon is loaded (safely - GetAddonManager may not exist)
+        local macrofixLoaded = false;
+        local ok, addonManager = pcall(function() return AshitaCore:GetAddonManager(); end);
+        if ok and addonManager then
+            local ok2, state = pcall(function() return addonManager:GetAddonState('macrofix'); end);
+            if ok2 and state and state > 0 then
+                macrofixLoaded = true;
+            end
+        end
+        if macrofixLoaded then
+            imgui.Spacing();
+            imgui.TextColored({1.0, 0.6, 0.0, 1.0}, 'Warning: macrofix addon detected!');
+            imgui.TextWrapped('You can unload macrofix - XIUI includes this functionality. Use /addon unload macrofix');
+        end
+
+        imgui.Spacing();
+        imgui.Text('Hide patches (nomacrobars):');
+        for _, p in ipairs(diag.hidePatches) do
+            local color = p.status == 'active' and {0.5, 1.0, 0.5, 1.0} or
+                          p.status == 'ready' and {0.7, 0.7, 0.7, 1.0} or
+                          {1.0, 0.5, 0.3, 1.0};
+            imgui.TextColored(color, '  ' .. p.name .. ': ' .. p.status);
+        end
+        imgui.Spacing();
+        imgui.Text('Macrofix patches (speed fix):');
+        for _, p in ipairs(diag.macrofixPatches) do
+            local color = p.status == 'active' and {0.5, 1.0, 0.5, 1.0} or
+                          p.status == 'ready' and {0.7, 0.7, 0.7, 1.0} or
+                          {1.0, 0.5, 0.3, 1.0};
+            imgui.TextColored(color, '  ' .. p.name .. ': ' .. p.status);
+        end
+        imgui.Spacing();
+        imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'active = applied, ready = available');
+        imgui.EndTooltip();
+    end
+    imgui.ShowHelp('Toggle macro bar behavior:\n- OFF: Built-in macros work with speed fix (macrofix)\n- ON: Macro bar hidden, XIUI hotbar/crossbar only\n\nNote: When ON, also blocks native macro commands.');
 
     -- Clear override on pet change checkbox
     local clearOverride = { gConfig.hotbarGlobal.clearOverrideOnPetChange ~= false };  -- Default true

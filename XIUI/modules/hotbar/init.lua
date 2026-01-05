@@ -275,13 +275,15 @@ function M.Initialize(settings)
         macropalette.ClearPetCommandsCache();
     end);
 
-    -- Apply macro bar UI hiding via memory patch (works for all modes: hotbar, crossbar, both)
+    -- Initialize macro patching system (backups original bytes, applies macrofix by default)
+    macrosLib.initialize_patches();
+
+    -- Apply correct mode based on setting
     local disableMacroBars = gConfig and gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars or false;
     if disableMacroBars then
-        macrosLib.hide_macro_bar();
-    else
-        macrosLib.show_macro_bar();
+        macrosLib.hide_macro_bar();  -- Switch to hide mode
     end
+    -- If checkbox is OFF, macrofix is already applied by initialize_patches()
 
     -- Initialize crossbar if mode includes crossbar
     -- Defensive: validate gConfig.hotbarCrossbar is a table before accessing
@@ -378,12 +380,12 @@ function M.UpdateVisuals(settings)
     -- Update display layer (handles theme changes)
     display.UpdateVisuals(settings);
 
-    -- Apply macro bar UI hiding via memory patch (works for all modes: hotbar, crossbar, both)
+    -- Apply correct macro bar mode based on setting
     local disableMacroBars = gConfig and gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars or false;
     if disableMacroBars then
-        macrosLib.hide_macro_bar();
+        macrosLib.hide_macro_bar();  -- Hide mode: macro bar hidden
     else
-        macrosLib.show_macro_bar();
+        macrosLib.show_macro_bar();  -- Macrofix mode: fast built-in macros
     end
 
     -- Handle crossbar enable/disable based on mode
@@ -622,8 +624,8 @@ function M.Cleanup()
     -- Reset pet palette state
     petpalette.Reset();
 
-    -- Restore native macro bar UI (undo memory patch)
-    macrosLib.show_macro_bar();
+    -- Restore native macro bar UI to original game state (undo all memory patches)
+    macrosLib.restore_default();
 
     M.initialized = false;
 end

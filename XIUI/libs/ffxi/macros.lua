@@ -327,120 +327,297 @@ macrolib.stop = function ()
 end
 
 -- ============================================
--- Macro Bar UI Hiding (via memory patching)
--- Based on nomacrobars addon by jquick
--- Patches the timer check that triggers macro bar display
+-- Macro Bar Patching System
+-- ============================================
 --
--- Note: The game maps controller L2/R2 to Ctrl/Alt internally for macros.
--- So patching these two timer checks blocks the macro bar UI for BOTH:
---   - Keyboard: Ctrl and Alt keys
---   - Controller: L2 and R2 triggers
+-- Two modes (always one or the other is active):
+--   1. "macrofix" mode (default): Removes macro bar delay, shows instantly
+--   2. "hide" mode: Completely hides macro bar UI
+--
+-- Flow:
+--   - On addon load: backup original bytes, apply macrofix (default)
+--   - Checkbox OFF: macrofix mode (fast built-in macros)
+--   - Checkbox ON: hide mode (macro bar hidden, use stop() to block commands)
+--   - On addon unload: restore original bytes
 -- ============================================
 
-local macroBarPatches = {
-    -- Ctrl timer pattern (also handles L2 on controller)
-    ctrl = {
-        pattern = '2B46103BC3????????????68????????B9',
-        offset = 0x03,
-        patch = { 0xF9, 0x90 },
-        address = nil,
-        backup = nil,
-    },
-    -- Alt timer pattern (also handles R2 on controller)
-    alt = {
-        pattern = '2B46103BC3????68????????B9',
-        offset = 0x03,
-        patch = { 0xF9, 0x90 },
-        address = nil,
-        backup = nil,
-    },
+-- Macrofix patch data - NOPs out the macro bar delay timer
+-- These are the core patches that make built-in macros instant (same pattern as hide, different offset)
+local macrofixData = {
+    { name = 'macrofix_ctrl', pattern = '2B46103BC3????????????68????????B9', altPattern = '2B4610F990????????????68????????B9', offset = 0x05, count = 0, patch = { 0x90, 0x90, 0x90, 0x90, 0x90, 0x90 }, addr = 0, backup = {} },
+    { name = 'macrofix_alt', pattern = '2B46103BC3????68????????B9', altPattern = '2B4610F990????68????????B9', offset = 0x05, count = 0, patch = { 0x90, 0x90 }, addr = 0, backup = {} },
 };
 
-local macroBarHidden = false;
+-- Hide patch data (nomacrobars) - addresses and backups stored here
+-- Also includes alternative patterns for when hide patches are already applied (F990 instead of 3BC3)
+local hideData = {
+    { name = 'hide_ctrl', pattern = '2B46103BC3????????????68????????B9', altPattern = '2B4610F990????????????68????????B9', offset = 0x03, count = 0, patch = { 0xF9, 0x90 }, original = { 0x3B, 0xC3 }, addr = 0, backup = {} },
+    { name = 'hide_alt', pattern = '2B46103BC3????68????????B9', altPattern = '2B4610F990????68????????B9', offset = 0x03, count = 0, patch = { 0xF9, 0x90 }, original = { 0x3B, 0xC3 }, addr = 0, backup = {} },
+};
 
---[[
-* Hides the native macro bar UI by patching memory.
-* This prevents the macro bar from appearing when Ctrl/Alt is held.
---]]
-macrolib.hide_macro_bar = function ()
-    if macroBarHidden then
-        return true;  -- Already hidden
+-- Current state
+local currentMode = nil;  -- 'macrofix' or 'hide'
+local initialized = false;
+
+-- Find a pattern and return the address (0 if not found)
+local function findPattern(pattern, offset, count)
+    local ptr = ashita.memory.find('FFXiMain.dll', 0, pattern, offset, count);
+    if ptr == nil then ptr = 0; end
+    return ptr;
+end
+
+-- Try to find pattern, with fallback to alternate pattern if provided
+local function findPatternWithFallback(pattern, altPattern, offset, count)
+    local ptr = findPattern(pattern, offset, count);
+    if ptr == 0 and altPattern then
+        ptr = findPattern(altPattern, offset, count);
+        if ptr ~= 0 then
+            MacroBlockLog(string.format('  (found via alt pattern - leftover patch detected)'));
+        end
     end
+    return ptr;
+end
 
-    local success = true;
+-- Initialize: find all patterns and backup original bytes
+local function initializePatches()
+    if initialized then return; end
 
-    for name, patchInfo in pairs(macroBarPatches) do
-        -- Find the pattern
-        local addr = memory_find_compat(patchInfo.pattern, patchInfo.offset, 0);
-        if addr == nil or addr == 0 then
-            MacroBlockLog(string.format('hide_macro_bar: could not find %s pattern', name));
-            success = false;
+    MacroBlockLog('initializePatches: starting...');
+
+    -- First, find hide patterns and check for leftover patches from previous session
+    local leftoverHideDetected = false;
+    for _, p in ipairs(hideData) do
+        p.addr = findPatternWithFallback(p.pattern, p.altPattern, p.offset, p.count);
+        if p.addr ~= 0 then
+            local byte1 = ashita.memory.read_uint8(p.addr);
+            local byte2 = ashita.memory.read_uint8(p.addr + 1);
+            local alreadyPatched = (byte1 == p.patch[1] and byte2 == p.patch[2]);
+
+            -- Always use known original bytes for hide patches (we know what they should be)
+            p.backup = { p.original[1], p.original[2] };
+
+            if alreadyPatched then
+                leftoverHideDetected = true;
+                MacroBlockLog(string.format('  %s: found at 0x%08X (LEFTOVER HIDE PATCH DETECTED)', p.name, p.addr));
+                -- Restore to original immediately
+                ashita.memory.write_uint8(p.addr, p.original[1]);
+                ashita.memory.write_uint8(p.addr + 1, p.original[2]);
+                MacroBlockLog(string.format('  %s: restored to original bytes', p.name));
+            else
+                MacroBlockLog(string.format('  %s: found at 0x%08X, bytes: 0x%02X 0x%02X', p.name, p.addr, byte1, byte2));
+            end
         else
-            patchInfo.address = addr;
-            -- Backup original bytes
-            patchInfo.backup = {
-                ashita.memory.read_uint8(addr),
-                ashita.memory.read_uint8(addr + 1),
-            };
-            -- Apply patch
-            ashita.memory.write_uint8(addr, patchInfo.patch[1]);
-            ashita.memory.write_uint8(addr + 1, patchInfo.patch[2]);
-            MacroBlockLog(string.format('hide_macro_bar: patched %s at 0x%08X', name, addr));
+            MacroBlockLog(string.format('  %s: pattern not found', p.name));
         end
     end
 
-    if success then
-        macroBarHidden = true;
+    if leftoverHideDetected then
+        MacroBlockLog('  Leftover hide patches cleaned up - searching patterns again...');
     end
-    return success;
+
+    -- Now find macrofix patterns (should work better if we cleaned up hide patches)
+    for _, p in ipairs(macrofixData) do
+        -- Try primary pattern first, then alt
+        p.addr = findPatternWithFallback(p.pattern, p.altPattern, p.offset, p.count);
+        if p.addr ~= 0 then
+            -- Backup current bytes
+            p.backup = {};
+            for i = 1, #p.patch do
+                p.backup[i] = ashita.memory.read_uint8(p.addr + i - 1);
+            end
+            MacroBlockLog(string.format('  %s: found at 0x%08X, backup: %s', p.name, p.addr, table.concat(p.backup, ',')));
+        else
+            MacroBlockLog(string.format('  %s: pattern not found', p.name));
+        end
+    end
+
+    initialized = true;
+    MacroBlockLog('initializePatches: done');
+end
+
+-- Apply macrofix patches
+local function applyMacrofix()
+    local count = 0;
+    for _, p in ipairs(macrofixData) do
+        if p.addr ~= 0 then
+            for i = 1, #p.patch do
+                ashita.memory.write_uint8(p.addr + i - 1, p.patch[i]);
+            end
+            count = count + 1;
+        end
+    end
+    return count;
+end
+
+-- Apply hide patches
+local function applyHide()
+    local count = 0;
+    for _, p in ipairs(hideData) do
+        if p.addr ~= 0 then
+            for i = 1, #p.patch do
+                ashita.memory.write_uint8(p.addr + i - 1, p.patch[i]);
+            end
+            count = count + 1;
+        end
+    end
+    return count;
+end
+
+-- Restore macrofix locations to original bytes
+local function restoreMacrofix()
+    for _, p in ipairs(macrofixData) do
+        if p.addr ~= 0 and #p.backup > 0 then
+            for i = 1, #p.backup do
+                ashita.memory.write_uint8(p.addr + i - 1, p.backup[i]);
+            end
+        end
+    end
+end
+
+-- Restore hide locations to original bytes (use known original, not backup)
+local function restoreHide()
+    for _, p in ipairs(hideData) do
+        if p.addr ~= 0 and p.original then
+            for i = 1, #p.original do
+                ashita.memory.write_uint8(p.addr + i - 1, p.original[i]);
+            end
+        end
+    end
 end
 
 --[[
-* Shows the native macro bar UI by restoring original memory.
+* Initialize the patching system and apply macrofix (default mode).
 --]]
-macrolib.show_macro_bar = function ()
-    if not macroBarHidden then
-        return true;  -- Already showing
+macrolib.initialize_patches = function()
+    if initialized then return; end
+    print('[XIUI] Macro patch system initializing...');
+    initializePatches();
+    -- Apply macrofix as default
+    local count = applyMacrofix();
+    if count > 0 then
+        currentMode = 'macrofix';
+        print(string.format('[XIUI] Macrofix mode active (%d/%d patches applied)', count, #macrofixData));
+    else
+        print('[XIUI] Warning: No macrofix patches could be applied');
+    end
+end
+
+--[[
+* Sets the macro bar mode.
+* @param {string} mode - 'hide' or 'macrofix'
+--]]
+macrolib.set_macro_bar_mode = function(mode)
+    if not initialized then
+        initializePatches();
     end
 
-    for name, patchInfo in pairs(macroBarPatches) do
-        if patchInfo.address and patchInfo.backup then
-            -- Restore original bytes
-            ashita.memory.write_uint8(patchInfo.address, patchInfo.backup[1]);
-            ashita.memory.write_uint8(patchInfo.address + 1, patchInfo.backup[2]);
-            MacroBlockLog(string.format('show_macro_bar: restored %s at 0x%08X', name, patchInfo.address));
-            patchInfo.address = nil;
-            patchInfo.backup = nil;
-        end
+    if mode ~= 'hide' and mode ~= 'macrofix' then
+        return false;
     end
 
-    macroBarHidden = false;
+    if currentMode == mode then
+        return true;
+    end
+
+    -- Restore current mode to original
+    if currentMode == 'hide' then
+        restoreHide();
+    elseif currentMode == 'macrofix' then
+        restoreMacrofix();
+    end
+
+    -- Apply new mode
+    local count = 0;
+    if mode == 'hide' then
+        count = applyHide();
+    else
+        count = applyMacrofix();
+    end
+
+    if count > 0 then
+        currentMode = mode;
+        MacroBlockLog(string.format('set_macro_bar_mode: switched to %s (%d patches)', mode, count));
+        return true;
+    end
+    return false;
+end
+
+macrolib.hide_macro_bar = function()
+    return macrolib.set_macro_bar_mode('hide');
+end
+
+macrolib.show_macro_bar = function()
+    return macrolib.set_macro_bar_mode('macrofix');
+end
+
+macrolib.restore_default = function()
+    if not initialized then return true; end
+    if currentMode == 'hide' then
+        restoreHide();
+    elseif currentMode == 'macrofix' then
+        restoreMacrofix();
+    end
+    currentMode = nil;
+    MacroBlockLog('restore_default: restored original game state');
     return true;
 end
 
---[[
-* Returns whether macro bar UI is currently hidden.
---]]
-macrolib.is_macro_bar_hidden = function ()
-    return macroBarHidden;
+macrolib.is_macro_bar_hidden = function()
+    return currentMode == 'hide';
 end
 
---[[
-* Set debug logging enabled/disabled for macro block.
-* @param {boolean} enabled - True to enable debug logging
---]]
-macrolib.set_debug_enabled = function (enabled)
+macrolib.get_macro_bar_mode = function()
+    return currentMode;
+end
+
+macrolib.set_debug_enabled = function(enabled)
     DEBUG_ENABLED = enabled;
-    local state = enabled and 'ON' or 'OFF';
-    print('[XIUI] Macro block debug mode: ' .. state);
+    print('[XIUI] Macro block debug mode: ' .. (enabled and 'ON' or 'OFF'));
 end
 
---[[
-* Returns whether debug logging is enabled for macro block.
-* @return {boolean} True if debug logging is enabled
---]]
-macrolib.is_debug_enabled = function ()
+macrolib.is_debug_enabled = function()
     return DEBUG_ENABLED;
+end
+
+macrolib.get_diagnostics = function()
+    local diag = {
+        mode = currentMode,
+        hidePatches = {},
+        macrofixPatches = {},
+    };
+
+    for _, p in ipairs(hideData) do
+        local status = 'not found';
+        if p.addr ~= 0 then
+            -- Check if patch bytes are currently applied
+            local isActive = true;
+            for i = 1, #p.patch do
+                if ashita.memory.read_uint8(p.addr + i - 1) ~= p.patch[i] then
+                    isActive = false;
+                    break;
+                end
+            end
+            status = isActive and 'active' or 'ready';
+        end
+        table.insert(diag.hidePatches, { name = p.name, status = status });
+    end
+
+    for _, p in ipairs(macrofixData) do
+        local status = 'not found';
+        if p.addr ~= 0 then
+            local isActive = true;
+            for i = 1, #p.patch do
+                if ashita.memory.read_uint8(p.addr + i - 1) ~= p.patch[i] then
+                    isActive = false;
+                    break;
+                end
+            end
+            status = isActive and 'active' or 'ready';
+        end
+        table.insert(diag.macrofixPatches, { name = p.name, status = status });
+    end
+
+    return diag;
 end
 
 return macrolib;
