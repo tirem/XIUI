@@ -994,25 +994,73 @@ local function DrawCrossbarSettings()
     imgui.Separator();
     imgui.Spacing();
 
-    -- Device Selection (moved above Slot Settings for visibility)
-    imgui.TextColored({0.8, 0.8, 0.6, 1.0}, 'Controller Device');
-
-    -- Device mapping dropdown - specific controller profiles
+    -- Controller Status (auto-detected)
     local devices = require('modules.hotbar.devices');
-    local deviceSchemes = devices.GetSchemeNames();  -- {'xbox', 'dualsense', 'switchpro', 'dinput'}
-    local deviceDisplayNames = devices.GetSchemeDisplayNames();
-    local currentScheme = crossbarSettings.controllerScheme or 'xbox';
-    -- Normalize old scheme name
-    if currentScheme == 'xinput' then currentScheme = 'xbox'; end
-    local currentDisplayName = deviceDisplayNames[currentScheme] or devices.GetDisplayName(currentScheme) or currentScheme;
+    local deviceInfo = controller.GetDetectedDeviceInfo();
+    local isAutoDetected = controller.IsAutoDetected();
+    local currentScheme = controller.GetControllerScheme();
+    local currentDisplayName = devices.GetDisplayName(currentScheme) or currentScheme;
 
-    imgui.SetNextItemWidth(280);
-    if imgui.BeginCombo('Controller##crossbar', currentDisplayName, ImGuiComboFlags_None) then
-        for _, scheme in ipairs(deviceSchemes) do
-            local isSelected = (currentScheme == scheme);
-            if imgui.Selectable(deviceDisplayNames[scheme], isSelected) then
-                crossbarSettings.controllerScheme = scheme;
-                controller.SetControllerScheme(scheme);
+    imgui.Text('Controller:');
+    imgui.SameLine();
+
+    -- Show current profile with status color
+    if deviceInfo.status == 'active' then
+        imgui.TextColored({0.5, 1.0, 0.5, 1.0}, currentDisplayName);
+    elseif deviceInfo.status == 'waiting' then
+        imgui.TextColored({1.0, 0.8, 0.3, 1.0}, currentDisplayName);
+    else
+        imgui.TextColored({0.8, 0.8, 0.8, 1.0}, currentDisplayName);
+    end
+
+    -- Show auto/manual indicator
+    imgui.SameLine();
+    if isAutoDetected then
+        imgui.TextColored({0.5, 0.5, 0.5, 1.0}, '(auto)');
+    else
+        imgui.TextColored({0.6, 0.8, 1.0, 1.0}, '(manual)');
+    end
+
+    imgui.ShowHelp('Controller profile is auto-detected based on your game settings.\n\n- Green = Active (receiving input)\n- Yellow = Waiting for input\n\nXInput mode (game setting) = Xbox profile\nDirectInput mode = PlayStation profile\n\nUse the override below if auto-detection picked the wrong profile.');
+
+    -- Override dropdown (only show DirectInput alternatives when in DirectInput mode)
+    local deviceSchemes = devices.GetSchemeNames();
+    local deviceDisplayNames = devices.GetSchemeDisplayNames();
+
+    -- Build override options: "Auto" + all profiles
+    local overrideOptions = { 'Auto-detect' };
+    local overrideValues = { nil };  -- nil = auto
+    for _, scheme in ipairs(deviceSchemes) do
+        table.insert(overrideOptions, deviceDisplayNames[scheme]);
+        table.insert(overrideValues, scheme);
+    end
+
+    -- Find current selection index
+    local currentOverrideIndex = 1;  -- Default to Auto
+    if not isAutoDetected then
+        for i, val in ipairs(overrideValues) do
+            if val == currentScheme then
+                currentOverrideIndex = i;
+                break;
+            end
+        end
+    end
+
+    imgui.SetNextItemWidth(200);
+    if imgui.BeginCombo('Override##controllerOverride', overrideOptions[currentOverrideIndex], ImGuiComboFlags_None) then
+        for i, label in ipairs(overrideOptions) do
+            local isSelected = (currentOverrideIndex == i);
+            if imgui.Selectable(label, isSelected) then
+                local newScheme = overrideValues[i];
+                if newScheme then
+                    -- Set manual override
+                    crossbarSettings.controllerSchemeOverride = newScheme;
+                    controller.SetControllerSchemeOverride(newScheme);
+                else
+                    -- Clear override, use auto-detection
+                    crossbarSettings.controllerSchemeOverride = nil;
+                    controller.SetControllerSchemeOverride(nil);
+                end
                 SaveSettingsOnly();
             end
             if isSelected then
@@ -1021,20 +1069,7 @@ local function DrawCrossbarSettings()
         end
         imgui.EndCombo();
     end
-    imgui.ShowHelp('Select your controller type:\n\n- Xbox / XInput: Xbox controllers, most Windows PC controllers\n- PlayStation: DualSense, DualShock 4 (via DirectInput)\n- Switch Pro: Nintendo Switch Pro Controller\n- Generic: Other DirectInput controllers\n\nIf your controller isn\'t working, try a different profile.');
-
-    -- Detected device line
-    local deviceInfo = controller.GetDetectedDeviceInfo();
-    imgui.Text('Detected:');
-    imgui.SameLine();
-    if deviceInfo.inputReceived then
-        imgui.TextColored({0.5, 1.0, 0.5, 1.0}, deviceInfo.name);
-    elseif deviceInfo.gameMode then
-        imgui.TextColored({1.0, 0.8, 0.3, 1.0}, deviceInfo.name);
-    else
-        imgui.TextColored({0.6, 0.6, 0.6, 1.0}, deviceInfo.name);
-    end
-    imgui.ShowHelp('Shows the detected controller based on input received.\nGreen = Active input detected\nYellow = Game configured but no input yet\nGray = No controller detected\n\nTry pressing buttons on your controller to detect it.');
+    imgui.ShowHelp('Override auto-detection if needed:\n\n- Auto-detect: Uses game settings (recommended)\n- Xbox: Force XInput mode\n- PlayStation: Force DirectInput (DualSense/DualShock)\n- Switch Pro: Force DirectInput (Nintendo layout)\n- Generic: Force DirectInput (other controllers)');
 
     imgui.Spacing();
 

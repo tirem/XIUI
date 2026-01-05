@@ -20,7 +20,8 @@ local M = {};
 local xinput = {
     XInput = true,
     DirectInput = false,
-    Name = 'XInput (Xbox)',
+    Name = 'xbox',
+    DisplayName = 'Xbox / XInput',
 
     -- XInput button IDs (bit positions in xinput_button event)
     Buttons = {

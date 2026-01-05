@@ -194,15 +194,43 @@ local state = {
 -- Track whether game macro blocking is enabled
 local blockingEnabled = true;
 
+-- Auto-detect the best controller profile based on game settings
+-- Returns: profile name ('xbox', 'dualsense', 'switchpro', 'dinput')
+local function AutoDetectControllerProfile()
+    local gameMode = DetectGameControllerMode();
+
+    if gameMode == 'xinput' then
+        -- XInput mode = Xbox/XInput controllers
+        return 'xbox';
+    elseif gameMode == 'dinput' then
+        -- DirectInput mode = PlayStation is most common, default to DualSense
+        return 'dualsense';
+    else
+        -- Unknown or not configured, default to Xbox (most compatible)
+        return 'xbox';
+    end
+end
+
 -- Initialize the controller module
 function Controller.Initialize(settings)
     state.initialized = true;
     state.enabled = true;
 
-    -- Load device mapping
-    if settings and settings.controllerScheme then
-        state.deviceName = settings.controllerScheme;
+    -- Auto-detect controller profile based on game settings
+    local autoDetectedProfile = AutoDetectControllerProfile();
+
+    -- Use auto-detected profile unless user has explicitly set an override
+    if settings and settings.controllerSchemeOverride then
+        -- User has explicitly overridden the auto-detection
+        state.deviceName = settings.controllerSchemeOverride;
+        state.autoDetected = false;
+    else
+        -- Use auto-detected profile
+        state.deviceName = autoDetectedProfile;
+        state.autoDetected = true;
     end
+
+    state.autoDetectedProfile = autoDetectedProfile;
     state.device = devices.GetDevice(state.deviceName);
 
     if settings then
@@ -217,12 +245,38 @@ function Controller.Initialize(settings)
         end
     end
 
-    DebugLog(string.format('Controller initialized (device: %s, XInput: %s, DirectInput: %s, threshold: %d, doubleTap: %s)',
+    DebugLog(string.format('Controller initialized (device: %s, auto: %s, XInput: %s, DirectInput: %s, threshold: %d, doubleTap: %s)',
         state.deviceName,
+        tostring(state.autoDetected),
         tostring(state.device.XInput),
         tostring(state.device.DirectInput),
         state.triggerThreshold,
         tostring(state.doubleTapEnabled)));
+end
+
+-- Get auto-detected profile info
+function Controller.GetAutoDetectedProfile()
+    return state.autoDetectedProfile;
+end
+
+-- Check if currently using auto-detected profile
+function Controller.IsAutoDetected()
+    return state.autoDetected == true;
+end
+
+-- Set controller scheme override (nil to use auto-detection)
+function Controller.SetControllerSchemeOverride(schemeName)
+    if schemeName then
+        state.deviceName = schemeName;
+        state.autoDetected = false;
+    else
+        -- Clear override, use auto-detected
+        state.deviceName = state.autoDetectedProfile or AutoDetectControllerProfile();
+        state.autoDetected = true;
+    end
+    state.device = devices.GetDevice(state.deviceName);
+    DebugLog(string.format('Controller scheme set to: %s (auto: %s, XInput: %s, DirectInput: %s)',
+        state.deviceName, tostring(state.autoDetected), tostring(state.device.XInput), tostring(state.device.DirectInput)));
 end
 
 -- Set the callback for slot activation
@@ -252,12 +306,9 @@ function Controller.SetExpandedCrossbarEnabled(enabled)
     DebugLog('Expanded crossbar ' .. (enabled and 'enabled' or 'disabled'));
 end
 
--- Set controller scheme (device mapping)
+-- Set controller scheme (device mapping) - legacy function, use SetControllerSchemeOverride instead
 function Controller.SetControllerScheme(schemeName)
-    state.deviceName = schemeName or 'xbox';
-    state.device = devices.GetDevice(state.deviceName);
-    DebugLog(string.format('Controller scheme set to: %s (XInput: %s, DirectInput: %s)',
-        state.deviceName, tostring(state.device.XInput), tostring(state.device.DirectInput)));
+    Controller.SetControllerSchemeOverride(schemeName);
 end
 
 -- Get current controller scheme name
@@ -984,43 +1035,42 @@ end
 -- ============================================
 
 -- Get detected controller info for display
--- Returns: { detected = bool, deviceType = string, name = string, inputReceived = bool, activeProfile = string }
+-- Returns: { detected = bool, inputType = string, name = string, inputReceived = bool, activeProfile = string, status = string }
 function Controller.GetDetectedDeviceInfo()
+    -- Get input type from current device profile
+    local inputType = 'unknown';
+    if state.device then
+        if state.device.XInput then
+            inputType = 'XInput';
+        elseif state.device.DirectInput then
+            inputType = 'DirectInput';
+        end
+    end
+
     local info = {
         detected = false,
-        deviceType = 'unknown',
-        name = 'No controller detected',
+        inputType = inputType,
+        name = 'No controller',
         inputReceived = false,
-        gameMode = nil,  -- 'xinput' or 'dinput' from game settings
-        activeProfile = state.deviceName or 'xbox',  -- Current selected profile
+        gameMode = DetectGameControllerMode(),
+        activeProfile = state.deviceName or 'xbox',
+        status = 'none',  -- 'none', 'waiting', 'active'
     };
-
-    -- Check game's controller mode setting
-    info.gameMode = DetectGameControllerMode();
 
     -- Get display name from device
     local profileDisplayName = state.device and state.device.DisplayName or state.deviceName;
 
     -- Check if we've received any input events
-    if state.receivedFirstEvent then
+    if state.receivedFirstEvent or state.receivedFirstDInputEvent then
         info.detected = true;
         info.inputReceived = true;
-        info.deviceType = 'xinput';
-        info.name = (profileDisplayName or 'XInput Controller') .. ' (active)';
-    elseif state.receivedFirstDInputEvent then
-        info.detected = true;
-        info.inputReceived = true;
-        info.deviceType = 'dinput';
-        info.name = (profileDisplayName or 'DirectInput Controller') .. ' (active)';
+        info.name = profileDisplayName or 'Controller';
+        info.status = 'active';
     elseif info.gameMode then
-        -- Haven't received input yet, but game is configured for a mode
+        -- Haven't received input yet, but game is configured
         info.detected = false;
-        info.deviceType = info.gameMode;
-        if info.gameMode == 'xinput' then
-            info.name = 'XInput mode (waiting for input)';
-        else
-            info.name = 'DirectInput mode (waiting for input)';
-        end
+        info.status = 'waiting';
+        info.name = profileDisplayName or 'Controller';
     end
 
     return info;

@@ -296,7 +296,7 @@ function M.Initialize(settings)
             expandedCrossbarEnabled = crossbarConfig.enableExpandedCrossbar ~= false,
             doubleTapEnabled = crossbarConfig.enableDoubleTap or false,
             doubleTapWindow = crossbarConfig.doubleTapWindow or 0.3,
-            controllerScheme = crossbarConfig.controllerScheme or 'xbox',
+            controllerSchemeOverride = crossbarConfig.controllerSchemeOverride,  -- nil = auto-detect
         });
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
             crossbar.ActivateSlot(comboMode, slotIndex);
@@ -399,7 +399,7 @@ function M.UpdateVisuals(settings)
             expandedCrossbarEnabled = gConfig.hotbarCrossbar.enableExpandedCrossbar ~= false,
             doubleTapEnabled = gConfig.hotbarCrossbar.enableDoubleTap or false,
             doubleTapWindow = gConfig.hotbarCrossbar.doubleTapWindow or 0.3,
-            controllerScheme = gConfig.hotbarCrossbar.controllerScheme or 'xbox',
+            controllerSchemeOverride = gConfig.hotbarCrossbar.controllerSchemeOverride,  -- nil = auto-detect
         });
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
             crossbar.ActivateSlot(comboMode, slotIndex);
@@ -419,7 +419,13 @@ function M.UpdateVisuals(settings)
         controller.SetExpandedCrossbarEnabled(gConfig.hotbarCrossbar.enableExpandedCrossbar ~= false);
         controller.SetDoubleTapEnabled(gConfig.hotbarCrossbar.enableDoubleTap or false);
         controller.SetDoubleTapWindow(gConfig.hotbarCrossbar.doubleTapWindow or 0.3);
-        controller.SetControllerScheme(gConfig.hotbarCrossbar.controllerScheme or 'xbox');
+        -- Only update controller scheme if override changed (preserves auto-detection)
+        if gConfig.hotbarCrossbar.controllerSchemeOverride then
+            controller.SetControllerSchemeOverride(gConfig.hotbarCrossbar.controllerSchemeOverride);
+        elseif not controller.IsAutoDetected() then
+            -- Reset to auto-detect if override was cleared
+            controller.SetControllerSchemeOverride(nil);
+        end
         -- Update controller blocking state (crossbar-specific)
         controller.SetBlockingEnabled(disableMacroBars);
     end
