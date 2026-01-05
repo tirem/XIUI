@@ -997,26 +997,23 @@ local function DrawCrossbarSettings()
     -- Device Selection (moved above Slot Settings for visibility)
     imgui.TextColored({0.8, 0.8, 0.6, 1.0}, 'Controller Device');
 
-    -- Device mapping dropdown (affects which input API is used)
-    local deviceSchemes = { 'xinput', 'dinput' };
-    local deviceDisplayNames = {
-        xinput = 'XInput (Xbox / Most Controllers)',
-        dinput = 'DirectInput (PlayStation / Switch)',
-    };
+    -- Device mapping dropdown - specific controller profiles
+    local devices = require('modules.hotbar.devices');
+    local deviceSchemes = devices.GetSchemeNames();  -- {'xbox', 'dualsense', 'switchpro', 'dinput'}
+    local deviceDisplayNames = devices.GetSchemeDisplayNames();
     local currentScheme = crossbarSettings.controllerScheme or 'xbox';
-    -- Normalize old scheme names to new ones
-    if currentScheme == 'xbox' then currentScheme = 'xinput'; end
-    if currentScheme == 'dualsense' or currentScheme == 'switchpro' then currentScheme = 'dinput'; end
-    local currentDisplayName = deviceDisplayNames[currentScheme] or currentScheme;
+    -- Normalize old scheme name
+    if currentScheme == 'xinput' then currentScheme = 'xbox'; end
+    local currentDisplayName = deviceDisplayNames[currentScheme] or devices.GetDisplayName(currentScheme) or currentScheme;
 
-    imgui.SetNextItemWidth(250);
-    if imgui.BeginCombo('Device Type##crossbar', currentDisplayName, ImGuiComboFlags_None) then
+    imgui.SetNextItemWidth(280);
+    if imgui.BeginCombo('Controller##crossbar', currentDisplayName, ImGuiComboFlags_None) then
         for _, scheme in ipairs(deviceSchemes) do
             local isSelected = (currentScheme == scheme);
             if imgui.Selectable(deviceDisplayNames[scheme], isSelected) then
-                -- Store normalized scheme name
                 crossbarSettings.controllerScheme = scheme;
-                DeferredUpdateVisuals();
+                controller.SetControllerScheme(scheme);
+                SaveSettingsOnly();
             end
             if isSelected then
                 imgui.SetItemDefaultFocus();
@@ -1024,7 +1021,7 @@ local function DrawCrossbarSettings()
         end
         imgui.EndCombo();
     end
-    imgui.ShowHelp('Select your controller type:\n- XInput: Xbox controllers, most Windows-compatible controllers\n- DirectInput: PlayStation (DualShock/DualSense), Switch Pro, older controllers');
+    imgui.ShowHelp('Select your controller type:\n\n- Xbox / XInput: Xbox controllers, most Windows PC controllers\n- PlayStation: DualSense, DualShock 4 (via DirectInput)\n- Switch Pro: Nintendo Switch Pro Controller\n- Generic: Other DirectInput controllers\n\nIf your controller isn\'t working, try a different profile.');
 
     -- Detected device line
     local deviceInfo = controller.GetDetectedDeviceInfo();

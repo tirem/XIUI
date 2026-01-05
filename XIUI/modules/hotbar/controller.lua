@@ -672,7 +672,7 @@ function Controller.HandleDInputButton(e)
 
     -- Check if button detection wizard is active first
     if buttondetect.IsActive() then
-        if e.state == 1 then  -- Button pressed
+        if e.state == 128 then  -- Button pressed (DirectInput uses 128)
             buttondetect.HandleButtonPress(e.button);
         end
         return true;  -- Block button during detection
@@ -685,14 +685,78 @@ function Controller.HandleDInputButton(e)
 
     local device = state.device;
     local buttonId = e.button;
-    local isPressed = e.state == 1;
+    local buttonState = e.state;
 
     if not state.receivedFirstDInputEvent then
         DebugLog('Received first dinput_button event!');
         state.receivedFirstDInputEvent = true;
     end
 
-    DebugLogVerbose(string.format('DInput button: id=%d state=%d', buttonId, e.state));
+    DebugLogVerbose(string.format('DInput button: id=%d state=%d', buttonId, buttonState));
+
+    -- Handle D-Pad via button offset 32 (angle-based values in e.state)
+    -- D-Pad reports angles: 0=Up, 4500=UpRight, 9000=Right, etc., or -1/65535 when released
+    if device.IsDPadButton and device.IsDPadButton(buttonId) then
+        local previousAngle = state.previousDPadAngle;
+        local currentAngle = buttonState;
+
+        DebugLogVerbose(string.format('DInput D-Pad: angle=%d (prev: %d)', currentAngle, previousAngle));
+
+        -- Check for D-pad state change
+        if currentAngle ~= previousAngle then
+            -- Release previous D-pad slot if any
+            if state.dpadHeldSlot then
+                state.heldButtons[state.dpadHeldSlot] = nil;
+                state.dpadHeldSlot = nil;
+            end
+
+            -- Get new slot from current angle
+            local slotIndex = device.GetSlotFromDPad(currentAngle);
+
+            if slotIndex and state.activeCombo ~= COMBO_MODES.NONE then
+                state.heldButtons[slotIndex] = true;
+                state.dpadHeldSlot = slotIndex;
+                state.currentPressedSlot = slotIndex;
+                state.lastPressedSlot = slotIndex;
+                state.pressedSlotTime = GetTime();
+
+                DebugLog(string.format('DInput D-Pad PRESS: angle=%d -> slot=%d (combo: %s)',
+                    currentAngle, slotIndex, state.activeCombo));
+
+                if blockingEnabled then
+                    MacroBlockLog(string.format('[DInput] D-Pad angle=%d -> slot %d (combo: %s) - XIUI slot activated',
+                        currentAngle, slotIndex, state.activeCombo));
+                else
+                    MacroBlockLog(string.format('[DInput] D-Pad angle=%d -> slot %d but blocking DISABLED',
+                        currentAngle, slotIndex));
+                end
+
+                ActivateSlot(slotIndex);
+            end
+
+            -- Update if D-pad released (centered)
+            if currentAngle == -1 or currentAngle == 65535 then
+                local anyHeld = false;
+                for _, held in pairs(state.heldButtons) do
+                    if held then anyHeld = true; break; end
+                end
+                if not anyHeld then
+                    state.currentPressedSlot = nil;
+                end
+            end
+
+            state.previousDPadAngle = currentAngle;
+        end
+
+        -- Block D-pad from native macro when crossbar active
+        if blockingEnabled and state.activeCombo ~= COMBO_MODES.NONE then
+            return true;
+        end
+        return false;
+    end
+
+    -- DirectInput uses 128 for pressed state (not 1 like XInput)
+    local isPressed = buttonState == 128;
 
     -- Handle trigger buttons (L2/R2 on DirectInput are discrete buttons, not analog)
     if device.IsTriggerButton and device.IsTriggerButton(buttonId) then
@@ -715,6 +779,32 @@ function Controller.HandleDInputButton(e)
         elseif isPressed and not blockingEnabled then
             MacroBlockLog(string.format('[DInput] %s trigger pressed but blocking DISABLED (button %d)',
                 triggerName, buttonId));
+        end
+        return false;
+    end
+
+    -- Handle analog trigger intensity (DualSense-specific, offsets 12 and 16)
+    if device.IsTriggerIntensity and device.IsTriggerIntensity(buttonId) then
+        -- Treat intensity > 0 as trigger held (alternative to button press detection)
+        local intensity = buttonState;
+        local isL2 = device.IsL2Button(buttonId);
+        local isR2 = device.IsR2Button(buttonId);
+
+        -- Use hysteresis for analog triggers
+        local pressThreshold = 30;
+        local releaseThreshold = 15;
+        local wasHeld = isL2 and state.leftTriggerHeld or state.rightTriggerHeld;
+        local isHeld = IsTriggerHeld(intensity, wasHeld, pressThreshold, releaseThreshold);
+
+        if isL2 then
+            UpdateComboState(isHeld, state.rightTriggerHeld);
+        elseif isR2 then
+            UpdateComboState(state.leftTriggerHeld, isHeld);
+        end
+
+        -- Block when crossbar active
+        if blockingEnabled and state.activeCombo ~= COMBO_MODES.NONE then
+            return true;
         end
         return false;
     end
@@ -894,7 +984,7 @@ end
 -- ============================================
 
 -- Get detected controller info for display
--- Returns: { detected = bool, deviceType = string, name = string, inputReceived = bool }
+-- Returns: { detected = bool, deviceType = string, name = string, inputReceived = bool, activeProfile = string }
 function Controller.GetDetectedDeviceInfo()
     local info = {
         detected = false,
@@ -902,30 +992,34 @@ function Controller.GetDetectedDeviceInfo()
         name = 'No controller detected',
         inputReceived = false,
         gameMode = nil,  -- 'xinput' or 'dinput' from game settings
+        activeProfile = state.deviceName or 'xbox',  -- Current selected profile
     };
 
     -- Check game's controller mode setting
     info.gameMode = DetectGameControllerMode();
+
+    -- Get display name from device
+    local profileDisplayName = state.device and state.device.DisplayName or state.deviceName;
 
     -- Check if we've received any input events
     if state.receivedFirstEvent then
         info.detected = true;
         info.inputReceived = true;
         info.deviceType = 'xinput';
-        info.name = 'XInput Controller (active)';
+        info.name = (profileDisplayName or 'XInput Controller') .. ' (active)';
     elseif state.receivedFirstDInputEvent then
         info.detected = true;
         info.inputReceived = true;
         info.deviceType = 'dinput';
-        info.name = 'DirectInput Controller (active)';
+        info.name = (profileDisplayName or 'DirectInput Controller') .. ' (active)';
     elseif info.gameMode then
         -- Haven't received input yet, but game is configured for a mode
         info.detected = false;
         info.deviceType = info.gameMode;
         if info.gameMode == 'xinput' then
-            info.name = 'XInput mode (no input yet)';
+            info.name = 'XInput mode (waiting for input)';
         else
-            info.name = 'DirectInput mode (no input yet)';
+            info.name = 'DirectInput mode (waiting for input)';
         end
     end
 
