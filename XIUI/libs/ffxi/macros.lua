@@ -52,6 +52,15 @@ local function memory_find_compat(pattern, offset, scan)
     return ashita.memory.find(0, 0, pattern, offset, scan);
 end
 
+-- Debug logging (controlled via /xiui debug macroblock)
+local DEBUG_ENABLED = false;
+
+local function MacroBlockLog(msg)
+    if DEBUG_ENABLED then
+        print('[Macro Block] ' .. msg);
+    end
+end
+
 local macrolib = T{
     ptrs = T{
         -- Macro Objects
@@ -289,14 +298,11 @@ end
 * Stops the current running macro via direct memory write.
 * This is safer than the FFI call which had calling convention issues.
 * The stop function writes 0xFFFFFFFF to a specific offset to mark macro as not running.
-* @param {boolean} silent - If true, suppress debug logging
 --]]
-macrolib.stop = function (silent)
+macrolib.stop = function ()
     local obj = macrolib.get_fsmacro();
     if (obj == nil or obj == 0) then
-        if not silent then
-            print('[Macro Block] stop: fsmacro object not available');
-        end
+        MacroBlockLog('stop: fsmacro object not available');
         return;
     end
 
@@ -304,9 +310,7 @@ macrolib.stop = function (silent)
     -- The offset is at ptrs.stop + 2
     local offset = ashita.memory.read_uint32(macrolib.ptrs.stop + 2);
     if offset == nil or offset == 0 then
-        if not silent then
-            print('[Macro Block] stop: could not read offset');
-        end
+        MacroBlockLog('stop: could not read offset');
         return;
     end
 
@@ -317,8 +321,8 @@ macrolib.stop = function (silent)
     -- Write 0xFFFFFFFF to mark macro as not running (same as what the native function does)
     ashita.memory.write_uint32(obj + offset, 0xFFFFFFFF);
 
-    if not silent and wasRunning then
-        print(string.format('[Macro Block] stop: halted macro execution (was 0x%08X)', currentValue));
+    if wasRunning then
+        MacroBlockLog(string.format('stop: halted macro execution (was 0x%08X)', currentValue));
     end
 end
 
@@ -369,7 +373,7 @@ macrolib.hide_macro_bar = function ()
         -- Find the pattern
         local addr = memory_find_compat(patchInfo.pattern, patchInfo.offset, 0);
         if addr == nil or addr == 0 then
-            print(string.format('[Macro Block] hide_macro_bar: could not find %s pattern', name));
+            MacroBlockLog(string.format('hide_macro_bar: could not find %s pattern', name));
             success = false;
         else
             patchInfo.address = addr;
@@ -381,7 +385,7 @@ macrolib.hide_macro_bar = function ()
             -- Apply patch
             ashita.memory.write_uint8(addr, patchInfo.patch[1]);
             ashita.memory.write_uint8(addr + 1, patchInfo.patch[2]);
-            print(string.format('[Macro Block] hide_macro_bar: patched %s at 0x%08X', name, addr));
+            MacroBlockLog(string.format('hide_macro_bar: patched %s at 0x%08X', name, addr));
         end
     end
 
@@ -404,7 +408,7 @@ macrolib.show_macro_bar = function ()
             -- Restore original bytes
             ashita.memory.write_uint8(patchInfo.address, patchInfo.backup[1]);
             ashita.memory.write_uint8(patchInfo.address + 1, patchInfo.backup[2]);
-            print(string.format('[Macro Block] show_macro_bar: restored %s at 0x%08X', name, patchInfo.address));
+            MacroBlockLog(string.format('show_macro_bar: restored %s at 0x%08X', name, patchInfo.address));
             patchInfo.address = nil;
             patchInfo.backup = nil;
         end
@@ -419,6 +423,24 @@ end
 --]]
 macrolib.is_macro_bar_hidden = function ()
     return macroBarHidden;
+end
+
+--[[
+* Set debug logging enabled/disabled for macro block.
+* @param {boolean} enabled - True to enable debug logging
+--]]
+macrolib.set_debug_enabled = function (enabled)
+    DEBUG_ENABLED = enabled;
+    local state = enabled and 'ON' or 'OFF';
+    print('[XIUI] Macro block debug mode: ' .. state);
+end
+
+--[[
+* Returns whether debug logging is enabled for macro block.
+* @return {boolean} True if debug logging is enabled
+--]]
+macrolib.is_debug_enabled = function ()
+    return DEBUG_ENABLED;
 end
 
 return macrolib;

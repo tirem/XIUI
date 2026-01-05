@@ -593,8 +593,13 @@ ashita.events.register('command', 'command_cb', function (e)
                 -- Toggle hotbar debug mode
                 local currentState = hotbar.IsDebugEnabled();
                 hotbar.SetDebugEnabled(not currentState);
+            elseif moduleName == 'macroblock' then
+                -- Toggle macro block debug mode
+                local macrosLib = require('libs.ffxi.macros');
+                local currentState = macrosLib.is_debug_enabled();
+                macrosLib.set_debug_enabled(not currentState);
             else
-                print('[XIUI] Debug modules: hotbar');
+                print('[XIUI] Debug modules: hotbar, macroblock');
                 print('[XIUI] Usage: /xiui debug <module>');
             end
             return;

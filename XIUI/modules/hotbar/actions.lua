@@ -69,9 +69,11 @@ local function IsNativeMacroKey(keyCode, ctrl, alt)
     return false;
 end
 
--- Macro block logging - ALWAYS prints (critical for verifying blocking works)
+-- Macro block logging - controlled via /xiui debug macroblock
 local function MacroBlockLog(msg)
-    print('[Macro Block] ' .. msg);
+    if macrosLib.is_debug_enabled() then
+        print('[Macro Block] ' .. msg);
+    end
 end
 
 local M = {};
@@ -937,6 +939,15 @@ function M.HandleKey(event)
    -- Check if native macro blocking is enabled
    local blockNativeMacros = gConfig and gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars;
 
+   -- Log modifier key presses when macro blocking is enabled (for debugging)
+   if blockNativeMacros and not isRelease then
+       if keyCode == VK_CONTROL then
+           MacroBlockLog('Ctrl pressed - macro bar UI hidden via memory patch');
+       elseif keyCode == VK_MENU then
+           MacroBlockLog('Alt pressed - macro bar UI hidden via memory patch');
+       end
+   end
+
    -- Check if this is a native macro key combo (Ctrl/Alt + number or arrow)
    local isNativeMacroKeyPress = IsNativeMacroKey(keyCode, controlPressed, altPressed);
 
@@ -946,13 +957,13 @@ function M.HandleKey(event)
        MacroBlockLog(string.format('Native macro key %d (0x%02X) Ctrl=%s Alt=%s - stopping macro',
            keyCode, keyCode, tostring(controlPressed), tostring(altPressed)));
 
-       -- Stop macro execution via direct memory write (verbose for first call)
-       macrosLib.stop(false);
+       -- Stop macro execution via direct memory write
+       macrosLib.stop();
 
-       -- Also schedule stops for next few frames to catch delayed execution (silent)
-       ashita.tasks.once(0, function() macrosLib.stop(true); end);
-       ashita.tasks.once(0.01, function() macrosLib.stop(true); end);
-       ashita.tasks.once(0.02, function() macrosLib.stop(true); end);
+       -- Also schedule stops for next few frames to catch delayed execution
+       ashita.tasks.once(0, function() macrosLib.stop(); end);
+       ashita.tasks.once(0.01, function() macrosLib.stop(); end);
+       ashita.tasks.once(0.02, function() macrosLib.stop(); end);
    end
 
    -- Find matching keybind from custom key assignments

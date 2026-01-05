@@ -531,7 +531,7 @@ function Controller.HandleXInputState(e)
             tostring(blockingEnabled), tostring(e.state_modified ~= nil), leftTrigger, rightTrigger));
 
         -- Stop any native macro execution
-        macrosLib.stop(true);  -- silent mode
+        macrosLib.stop();
 
         if e.state_modified then
             -- Wrap FFI modification in pcall for safety
@@ -659,7 +659,7 @@ function Controller.HandleDInputButton(e)
 
         -- Block trigger buttons from game when crossbar is active
         if blockingEnabled and state.activeCombo ~= COMBO_MODES.NONE then
-            macrosLib.stop(true);  -- Stop any native macro execution (silent)
+            macrosLib.stop();  -- Stop any native macro execution
             return true;
         end
         return false;
