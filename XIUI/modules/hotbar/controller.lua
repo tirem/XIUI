@@ -52,6 +52,8 @@ local DEFAULT_DOUBLE_TAP_WINDOW = 0.3;  -- 300ms
 local DEBUG_ENABLED = false;
 -- Verbose logging for raw input events (very spammy, use for troubleshooting only)
 local DEBUG_VERBOSE = false;
+-- Macro block specific debug (controlled via /xiui debug macroblock)
+local DEBUG_MACROBLOCK = false;
 
 --- Set debug mode for controller module
 --- @param enabled boolean
@@ -63,6 +65,25 @@ local function SetDebugEnabled(enabled, verbose)
     end
 end
 
+--- Set macro block debug mode for controller
+--- @param enabled boolean
+local function SetMacroBlockDebugEnabled(enabled)
+    DEBUG_MACROBLOCK = enabled;
+    -- Only print state summary if controller is already initialized
+    if enabled and state and state.initialized then
+        print(string.format('[Controller MacroBlock] Current state: blockingEnabled=%s, activeCombo=%s, L2=%s, R2=%s',
+            tostring(blockingEnabled),
+            tostring(state.activeCombo),
+            tostring(state.leftTriggerHeld),
+            tostring(state.rightTriggerHeld)));
+        print(string.format('[Controller MacroBlock] Device: %s (XInput=%s, DirectInput=%s)',
+            state.deviceName or 'not set',
+            tostring(state.device and state.device.XInput),
+            tostring(state.device and state.device.DirectInput)));
+    end
+    -- No message if not initialized - it will show state when controller events occur
+end
+
 local function DebugLog(msg)
     if DEBUG_ENABLED then
         print('[Crossbar Controller] ' .. msg);
@@ -72,6 +93,13 @@ end
 local function DebugLogVerbose(msg)
     if DEBUG_VERBOSE then
         print('[Crossbar Controller] ' .. msg);
+    end
+end
+
+-- Log macro blocking events (uses macroblock debug flag)
+local function MacroBlockLog(msg)
+    if DEBUG_MACROBLOCK then
+        print('[Controller MacroBlock] ' .. msg);
     end
 end
 
@@ -527,11 +555,16 @@ function Controller.HandleXInputState(e)
     );
 
     if shouldBlock then
+        local triggerInfo = string.format('L2=%d R2=%d', leftTrigger, rightTrigger);
+        local comboInfo = state.activeCombo ~= COMBO_MODES.NONE and state.activeCombo or 'trigger_only';
+        MacroBlockLog(string.format('[XInput] BLOCKING native macro UI - combo=%s, %s', comboInfo, triggerInfo));
+
         DebugLog(string.format('Blocking triggers: blockingEnabled=%s, state_modified=%s, L2=%d, R2=%d',
             tostring(blockingEnabled), tostring(e.state_modified ~= nil), leftTrigger, rightTrigger));
 
         -- Stop any native macro execution
-        macrosLib.stop();
+        macrosLib.stop('xinput_state');
+        MacroBlockLog('[XInput] Called macrosLib.stop() to halt native macro');
 
         if e.state_modified then
             -- Wrap FFI modification in pcall for safety
@@ -546,13 +579,18 @@ function Controller.HandleXInputState(e)
                 end
             end);
             if modOk then
+                MacroBlockLog('[XInput] Zeroed trigger values in state_modified (blocked R2/L2 to game)');
                 DebugLog('Zeroed trigger values in state_modified');
             else
+                MacroBlockLog('[XInput] WARNING: Failed to modify state_modified');
                 DebugLog('WARNING: Failed to modify state_modified');
             end
         else
+            MacroBlockLog('[XInput] WARNING: e.state_modified is nil - cannot block triggers from game!');
             DebugLog('WARNING: e.state_modified is nil - cannot block triggers!');
         end
+    elseif (leftHeld or rightHeld) and not blockingEnabled then
+        MacroBlockLog(string.format('[XInput] Trigger pressed but blocking DISABLED (L2=%d R2=%d)', leftTrigger, rightTrigger));
     end
 end
 
@@ -563,6 +601,14 @@ function Controller.HandleXInputButton(e)
     end
 
     if not blockingEnabled then
+        -- Log when button pressed but blocking disabled
+        if e.state == 1 and state.activeCombo ~= COMBO_MODES.NONE then
+            local slotIndex = xboxDevice.GetSlotFromButton(e.button);
+            if slotIndex then
+                MacroBlockLog(string.format('[XInput] Button %d pressed (slot %d) but blocking DISABLED - native macro will fire!',
+                    e.button, slotIndex));
+            end
+        end
         return false;
     end
 
@@ -602,6 +648,8 @@ function Controller.HandleXInputButton(e)
         state.lastPressedSlot = slotIndex;
         state.pressedSlotTime = GetTime();
 
+        MacroBlockLog(string.format('[XInput] BLOCKING button %d -> slot %d (combo: %s) - native macro blocked, XIUI slot activated',
+            buttonId, slotIndex, state.activeCombo));
         DebugLog(string.format('XInput Button PRESS: button=%d -> slot=%d (combo: %s)',
             buttonId, slotIndex, state.activeCombo));
 
@@ -650,6 +698,7 @@ function Controller.HandleDInputButton(e)
     if device.IsTriggerButton and device.IsTriggerButton(buttonId) then
         local isL2 = device.IsL2Button(buttonId);
         local isR2 = device.IsR2Button(buttonId);
+        local triggerName = isL2 and 'L2' or (isR2 and 'R2' or 'unknown');
 
         if isL2 then
             UpdateComboState(isPressed, state.rightTriggerHeld);
@@ -659,8 +708,13 @@ function Controller.HandleDInputButton(e)
 
         -- Block trigger buttons from game when crossbar is active
         if blockingEnabled and state.activeCombo ~= COMBO_MODES.NONE then
-            macrosLib.stop();  -- Stop any native macro execution
+            MacroBlockLog(string.format('[DInput] BLOCKING %s trigger (button %d) - combo=%s, stopping native macro',
+                triggerName, buttonId, state.activeCombo));
+            macrosLib.stop('dinput_trigger');  -- Stop any native macro execution
             return true;
+        elseif isPressed and not blockingEnabled then
+            MacroBlockLog(string.format('[DInput] %s trigger pressed but blocking DISABLED (button %d)',
+                triggerName, buttonId));
         end
         return false;
     end
@@ -697,6 +751,14 @@ function Controller.HandleDInputButton(e)
 
             DebugLog(string.format('DInput Button PRESS: button=%d -> slot=%d (combo: %s)',
                 buttonId, slotIndex, state.activeCombo));
+
+            if blockingEnabled then
+                MacroBlockLog(string.format('[DInput] BLOCKING button %d -> slot %d (combo: %s) - native macro blocked, XIUI slot activated',
+                    buttonId, slotIndex, state.activeCombo));
+            else
+                MacroBlockLog(string.format('[DInput] Button %d -> slot %d but blocking DISABLED - native macro will fire!',
+                    buttonId, slotIndex));
+            end
 
             ActivateSlot(slotIndex);
 
@@ -750,6 +812,14 @@ function Controller.HandleDInputState(e)
 
                 DebugLog(string.format('DInput D-Pad PRESS: angle=%d -> slot=%d (combo: %s)',
                     povAngle, slotIndex, state.activeCombo));
+
+                if blockingEnabled then
+                    MacroBlockLog(string.format('[DInput] D-Pad angle=%d -> slot %d (combo: %s) - XIUI slot activated',
+                        povAngle, slotIndex, state.activeCombo));
+                else
+                    MacroBlockLog(string.format('[DInput] D-Pad angle=%d -> slot %d but blocking DISABLED',
+                        povAngle, slotIndex));
+                end
 
                 ActivateSlot(slotIndex);
             end
@@ -805,12 +875,61 @@ end
 -- ============================================
 
 function Controller.SetBlockingEnabled(enabled)
+    local wasEnabled = blockingEnabled;
     blockingEnabled = enabled;
     DebugLog('Game macro blocking ' .. (enabled and 'enabled' or 'disabled'));
+    if wasEnabled ~= enabled then
+        MacroBlockLog(string.format('[Controller] Macro blocking state changed: %s -> %s',
+            wasEnabled and 'ENABLED' or 'DISABLED',
+            enabled and 'ENABLED' or 'DISABLED'));
+    end
 end
 
 function Controller.IsBlockingEnabled()
     return blockingEnabled;
+end
+
+-- ============================================
+-- Controller Detection
+-- ============================================
+
+-- Get detected controller info for display
+-- Returns: { detected = bool, deviceType = string, name = string, inputReceived = bool }
+function Controller.GetDetectedDeviceInfo()
+    local info = {
+        detected = false,
+        deviceType = 'unknown',
+        name = 'No controller detected',
+        inputReceived = false,
+        gameMode = nil,  -- 'xinput' or 'dinput' from game settings
+    };
+
+    -- Check game's controller mode setting
+    info.gameMode = DetectGameControllerMode();
+
+    -- Check if we've received any input events
+    if state.receivedFirstEvent then
+        info.detected = true;
+        info.inputReceived = true;
+        info.deviceType = 'xinput';
+        info.name = 'XInput Controller (active)';
+    elseif state.receivedFirstDInputEvent then
+        info.detected = true;
+        info.inputReceived = true;
+        info.deviceType = 'dinput';
+        info.name = 'DirectInput Controller (active)';
+    elseif info.gameMode then
+        -- Haven't received input yet, but game is configured for a mode
+        info.detected = false;
+        info.deviceType = info.gameMode;
+        if info.gameMode == 'xinput' then
+            info.name = 'XInput mode (no input yet)';
+        else
+            info.name = 'DirectInput mode (no input yet)';
+        end
+    end
+
+    return info;
 end
 
 -- ============================================
@@ -828,6 +947,17 @@ end
 --- Get debug mode state
 function Controller.IsDebugEnabled()
     return DEBUG_ENABLED;
+end
+
+--- Set macro block debug mode (called via /xiui debug macroblock)
+function Controller.SetMacroBlockDebugEnabled(enabled)
+    SetMacroBlockDebugEnabled(enabled);
+    print('[XIUI] Controller macro block debug: ' .. (enabled and 'ON' or 'OFF'));
+end
+
+--- Get macro block debug state
+function Controller.IsMacroBlockDebugEnabled()
+    return DEBUG_MACROBLOCK;
 end
 
 return Controller;

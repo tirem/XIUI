@@ -298,8 +298,9 @@ end
 * Stops the current running macro via direct memory write.
 * This is safer than the FFI call which had calling convention issues.
 * The stop function writes 0xFFFFFFFF to a specific offset to mark macro as not running.
+* @param source Optional string indicating what triggered the stop (e.g., 'controller', 'keyboard')
 --]]
-macrolib.stop = function ()
+macrolib.stop = function (source)
     local obj = macrolib.get_fsmacro();
     if (obj == nil or obj == 0) then
         MacroBlockLog('stop: fsmacro object not available');
@@ -322,7 +323,8 @@ macrolib.stop = function ()
     ashita.memory.write_uint32(obj + offset, 0xFFFFFFFF);
 
     if wasRunning then
-        MacroBlockLog(string.format('stop: halted macro execution (was 0x%08X)', currentValue));
+        local sourceInfo = source and (' [' .. source .. ']') or '';
+        MacroBlockLog(string.format('stop: halted macro execution%s (was 0x%08X)', sourceInfo, currentValue));
     end
 end
 

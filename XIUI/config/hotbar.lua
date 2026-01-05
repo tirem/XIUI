@@ -994,6 +994,53 @@ local function DrawCrossbarSettings()
     imgui.Separator();
     imgui.Spacing();
 
+    -- Device Selection (moved above Slot Settings for visibility)
+    imgui.TextColored({0.8, 0.8, 0.6, 1.0}, 'Controller Device');
+
+    -- Device mapping dropdown (affects which input API is used)
+    local deviceSchemes = { 'xinput', 'dinput' };
+    local deviceDisplayNames = {
+        xinput = 'XInput (Xbox / Most Controllers)',
+        dinput = 'DirectInput (PlayStation / Switch)',
+    };
+    local currentScheme = crossbarSettings.controllerScheme or 'xbox';
+    -- Normalize old scheme names to new ones
+    if currentScheme == 'xbox' then currentScheme = 'xinput'; end
+    if currentScheme == 'dualsense' or currentScheme == 'switchpro' then currentScheme = 'dinput'; end
+    local currentDisplayName = deviceDisplayNames[currentScheme] or currentScheme;
+
+    imgui.SetNextItemWidth(250);
+    if imgui.BeginCombo('Device Type##crossbar', currentDisplayName, ImGuiComboFlags_None) then
+        for _, scheme in ipairs(deviceSchemes) do
+            local isSelected = (currentScheme == scheme);
+            if imgui.Selectable(deviceDisplayNames[scheme], isSelected) then
+                -- Store normalized scheme name
+                crossbarSettings.controllerScheme = scheme;
+                DeferredUpdateVisuals();
+            end
+            if isSelected then
+                imgui.SetItemDefaultFocus();
+            end
+        end
+        imgui.EndCombo();
+    end
+    imgui.ShowHelp('Select your controller type:\n- XInput: Xbox controllers, most Windows-compatible controllers\n- DirectInput: PlayStation (DualShock/DualSense), Switch Pro, older controllers');
+
+    -- Detected device line
+    local deviceInfo = controller.GetDetectedDeviceInfo();
+    imgui.Text('Detected:');
+    imgui.SameLine();
+    if deviceInfo.inputReceived then
+        imgui.TextColored({0.5, 1.0, 0.5, 1.0}, deviceInfo.name);
+    elseif deviceInfo.gameMode then
+        imgui.TextColored({1.0, 0.8, 0.3, 1.0}, deviceInfo.name);
+    else
+        imgui.TextColored({0.6, 0.6, 0.6, 1.0}, deviceInfo.name);
+    end
+    imgui.ShowHelp('Shows the detected controller based on input received.\nGreen = Active input detected\nYellow = Game configured but no input yet\nGray = No controller detected\n\nTry pressing buttons on your controller to detect it.');
+
+    imgui.Spacing();
+
     -- Slot Settings section
     if components.CollapsingSection('Slot Settings##crossbar', true) then
         components.DrawPartySliderInt(crossbarSettings, 'Slot Size (px)##crossbar', 'slotSize', 32, 64, '%d', nil, 48);
@@ -1068,32 +1115,6 @@ local function DrawCrossbarSettings()
 
     -- Controller Input section
     if components.CollapsingSection('Controller Input##crossbar', false) then
-        -- Device mapping dropdown (affects which input API is used)
-        local deviceSchemes = { 'xbox', 'dualsense', 'switchpro' };
-        local deviceDisplayNames = {
-            xbox = 'Xbox / XInput',
-            dualsense = 'DualSense / DualShock (PS5/PS4)',
-            switchpro = 'Switch Pro Controller',
-        };
-        local currentScheme = crossbarSettings.controllerScheme or 'xbox';
-        local currentDisplayName = deviceDisplayNames[currentScheme] or currentScheme;
-
-        if imgui.BeginCombo('Device Mapping##crossbar', currentDisplayName, ImGuiComboFlags_None) then
-            for _, scheme in ipairs(deviceSchemes) do
-                local isSelected = (currentScheme == scheme);
-                if imgui.Selectable(deviceDisplayNames[scheme], isSelected) then
-                    crossbarSettings.controllerScheme = scheme;
-                    DeferredUpdateVisuals();
-                end
-                if isSelected then
-                    imgui.SetItemDefaultFocus();
-                end
-            end
-            imgui.EndCombo();
-        end
-        imgui.ShowHelp('Select your controller type. XInput works for most controllers. DirectInput devices (PS, Switch) use different button mappings.');
-
-        imgui.Spacing();
         imgui.TextColored({0.8, 0.8, 0.6, 1.0}, 'Expanded Crossbar');
 
         components.DrawPartyCheckbox(crossbarSettings, 'Enable L2+R2 / R2+L2##crossbar', 'enableExpandedCrossbar');

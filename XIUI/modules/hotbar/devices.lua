@@ -209,13 +209,18 @@ local SCHEME_DISPLAY_NAMES = {
 };
 
 -- Get a device by scheme name
--- @param schemeName: 'xinput' or 'dinput'
+-- @param schemeName: 'xinput', 'dinput', 'xbox', 'dualsense', 'switchpro'
 -- @param userConfig: (optional) for dinput, table of button ID overrides
 -- @return device table with all required methods
 function M.GetDevice(schemeName, userConfig)
-    if schemeName == 'xinput' or schemeName == 'xbox' then
+    -- Normalize scheme name
+    local normalizedScheme = schemeName;
+    if schemeName == 'xbox' then normalizedScheme = 'xinput'; end
+    if schemeName == 'dualsense' or schemeName == 'switchpro' then normalizedScheme = 'dinput'; end
+
+    if normalizedScheme == 'xinput' then
         return xinput;
-    elseif schemeName == 'dinput' or schemeName == 'dualsense' or schemeName == 'switchpro' then
+    elseif normalizedScheme == 'dinput' then
         return CreateDInputDevice(userConfig);
     else
         -- Default to xinput
@@ -243,14 +248,24 @@ function M.GetDeviceDisplayNames()
     return M.GetSchemeDisplayNames();
 end
 
+-- Normalize scheme name to canonical form ('xinput' or 'dinput')
+function M.NormalizeScheme(schemeName)
+    if schemeName == 'xbox' or schemeName == 'xinput' then
+        return 'xinput';
+    elseif schemeName == 'dualsense' or schemeName == 'switchpro' or schemeName == 'dinput' then
+        return 'dinput';
+    end
+    return 'xinput';  -- Default
+end
+
 -- Check if a scheme uses XInput
 function M.UsesXInput(schemeName)
-    return schemeName == 'xinput' or schemeName == 'xbox';
+    return M.NormalizeScheme(schemeName) == 'xinput';
 end
 
 -- Check if a scheme uses DirectInput
 function M.UsesDirectInput(schemeName)
-    return schemeName == 'dinput' or schemeName == 'dualsense' or schemeName == 'switchpro';
+    return M.NormalizeScheme(schemeName) == 'dinput';
 end
 
 -- Get default DirectInput button IDs (for config UI)
