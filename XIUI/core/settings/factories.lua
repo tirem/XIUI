@@ -22,15 +22,18 @@ local VK_KEYS = {
     ['='] = 0xBB,  -- 187 (OEM_PLUS)
 };
 
--- Helper to create default number row keybindings (1-9, 0, -, =) with optional modifiers
+-- Helper to create default number row keybindings (1-9, 0) with optional modifiers
 -- @param ctrl boolean - require Ctrl modifier
 -- @param alt boolean - require Alt modifier
 -- @param shift boolean - require Shift modifier
--- @return table - keyBindings table for 12 slots
-function M.createNumberRowKeybindings(ctrl, alt, shift)
-    local keys = {'1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='};
+-- @param keyCount number - number of keys to bind (default 10: keys 1-9, 0)
+-- @return table - keyBindings table for up to 12 slots
+function M.createNumberRowKeybindings(ctrl, alt, shift, keyCount)
+    local allKeys = {'1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '='};
+    keyCount = keyCount or 10;  -- Default to 10 keys (1-9, 0), no - or =
     local bindings = {};
-    for i, keyName in ipairs(keys) do
+    for i = 1, math.min(keyCount, #allKeys) do
+        local keyName = allKeys[i];
         bindings[i] = {
             key = VK_KEYS[keyName],
             ctrl = ctrl or false,
@@ -271,8 +274,20 @@ function M.createHotbarGlobalDefaults()
         -- Game UI patches
         disableMacroBars = false,  -- Disable native XI macros (macro bar display + controller macro blocking)
 
-        -- Pet palette settings
-        clearOverrideOnPetChange = true,  -- Clear manual palette override when pet changes
+        -- Blocked game keys - array of key definitions that should be blocked from reaching the game
+        -- Each entry: { key = virtualKeyCode, ctrl = bool, alt = bool, shift = bool }
+        -- Example: { key = 189, ctrl = false, alt = false, shift = false } blocks '-' key
+        blockedGameKeys = {},
+
+        -- Palette cycling keybinds (keyboard)
+        -- Set key to 0 to disable
+        paletteCycleEnabled = true,       -- Enable keyboard palette cycling
+        paletteCyclePrevKey = 38,         -- VK_UP (Up Arrow)
+        paletteCycleNextKey = 40,         -- VK_DOWN (Down Arrow)
+        paletteCycleModifier = 'ctrl',    -- 'ctrl', 'alt', 'shift', or 'none'
+
+        -- Palette cycling controller (RB + Dpad)
+        paletteCycleControllerEnabled = true,  -- Enable controller palette cycling
 
         -- Visual settings
         slotSize = 48,          -- Slot size in pixels

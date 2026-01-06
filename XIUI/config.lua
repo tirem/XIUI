@@ -697,6 +697,12 @@ config.DrawWindow = function(us)
     end
 
     imgui.End();
+
+    -- Draw migration wizard if open (after main window so it overlays)
+    if hotbarModule.migrationWizard then
+        hotbarModule.migrationWizard.Draw();
+    end
+
     imgui.PopStyleVar(9);
     imgui.PopStyleColor(34);  -- 26 base + 5 tab colors + 3 resize grip colors
 end

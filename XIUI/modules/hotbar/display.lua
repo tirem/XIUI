@@ -5,6 +5,7 @@
 
 require('common');
 require('handlers.helpers');
+local ffi = require('ffi');
 local imgui = require('imgui');
 local windowBg = require('libs.windowbackground');
 local drawing = require('libs.drawing');
@@ -18,6 +19,7 @@ local recast = require('modules.hotbar.recast');
 local slotrenderer = require('modules.hotbar.slotrenderer');
 local hotbarConfig = require('config.hotbar');
 local petpalette = require('modules.hotbar.petpalette');
+local palette = require('modules.hotbar.palette');
 
 local M = {};
 
@@ -44,6 +46,64 @@ local forcePositionReset = false;
 -- Icon cache per slot: iconCache[barIndex][slotIndex] = { bind = lastBind, icon = cachedIcon }
 -- We compare the bind reference to detect changes
 local iconCache = {};
+
+-- ============================================
+-- Palette Change Animation
+-- ============================================
+
+-- Animation state per bar
+local paletteAnimation = {
+    -- [barIndex] = { active, startTime, duration, phase }
+};
+
+local PALETTE_ANIM_DURATION = 0.25;  -- Total animation duration in seconds
+local PALETTE_ANIM_FADE_OUT = 0.12;  -- Fade out phase duration
+
+-- Easing function (ease out cubic)
+local function EaseOutCubic(t)
+    return 1 - math.pow(1 - t, 3);
+end
+
+-- Start palette change animation for a bar
+local function StartPaletteAnimation(barIndex)
+    paletteAnimation[barIndex] = {
+        active = true,
+        startTime = os.clock(),
+        duration = PALETTE_ANIM_DURATION,
+    };
+end
+
+-- Get animation opacity for a bar (1.0 = fully visible)
+local function GetPaletteAnimationOpacity(barIndex)
+    local anim = paletteAnimation[barIndex];
+    if not anim or not anim.active then
+        return 1.0;
+    end
+
+    local elapsed = os.clock() - anim.startTime;
+    if elapsed >= anim.duration then
+        anim.active = false;
+        return 1.0;
+    end
+
+    -- Two-phase animation: fade out then fade in
+    if elapsed < PALETTE_ANIM_FADE_OUT then
+        -- Fade out phase
+        local progress = elapsed / PALETTE_ANIM_FADE_OUT;
+        return 1.0 - EaseOutCubic(progress) * 0.7;  -- Fade to 30% opacity
+    else
+        -- Fade in phase
+        local fadeInElapsed = elapsed - PALETTE_ANIM_FADE_OUT;
+        local fadeInDuration = anim.duration - PALETTE_ANIM_FADE_OUT;
+        local progress = fadeInElapsed / fadeInDuration;
+        return 0.3 + EaseOutCubic(progress) * 0.7;  -- Fade from 30% to 100%
+    end
+end
+
+-- Callback registered with palette system
+local function OnPaletteChanged(barIndex, oldPalette, newPalette)
+    StartPaletteAnimation(barIndex);
+end
 
 -- Build a cache key that includes all fields that affect the icon
 local function BuildBindKey(bind)
@@ -149,7 +209,7 @@ local function GetAssetsPath()
 end
 
 -- Draw a single hotbar slot using shared renderer
-local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings)
+local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings, animOpacity)
     -- Gather resources for this slot
     local resources = {
         slotPrim = data.slotPrims[barIndex] and data.slotPrims[barIndex][slotIndex],
@@ -243,6 +303,9 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
             macropalette.ClearSlot(barIndex, slotIndex);
         end,
         showTooltip = true,
+
+        -- Animation
+        animOpacity = animOpacity or 1.0,
     });
 
     return result.isHovered;
@@ -399,6 +462,9 @@ local function DrawBarWindow(barIndex, settings)
         local slotCount = layout.slots;
         local slotIndex = 1;
 
+        -- Get palette change animation opacity
+        local animOpacity = GetPaletteAnimationOpacity(barIndex);
+
         -- Check if we should hide empty slots
         local hideEmptySlots = barSettings.hideEmptySlots or false;
         local paletteOpen = macropalette.IsPaletteOpen();
@@ -444,7 +510,7 @@ local function DrawBarWindow(barIndex, settings)
                             data.quantityFonts[barIndex][slotIndex]:set_visible(false);
                         end
                     else
-                        DrawSlot(barIndex, slotIndex, slotX, slotY, buttonSize, bind, barSettings);
+                        DrawSlot(barIndex, slotIndex, slotX, slotY, buttonSize, bind, barSettings, animOpacity);
                     end
                 end
                 slotIndex = slotIndex + 1;
@@ -457,14 +523,31 @@ local function DrawBarWindow(barIndex, settings)
         imgui.End();
     end
 
-    -- Draw pet indicator dot OUTSIDE window bounds (above bar number)
+    -- Draw palette indicator dot OUTSIDE window bounds (above bar number)
     -- Must be after End() and use ForegroundDrawList to avoid clipping
-    if windowPosX and barSettings.petAware and barSettings.showPetIndicator ~= false then
+    -- Shows either pet palette (gold) or general palette (cyan) indicator
+    local currentGeneralPalette = palette.GetActivePalette(barIndex);
+    local hasPetIndicator = barSettings.petAware and barSettings.showPetIndicator ~= false;
+    local hasGeneralPalette = currentGeneralPalette ~= nil;
+
+    if windowPosX and (hasPetIndicator or hasGeneralPalette) then
         local dotX = windowPosX - 12;  -- Centered above bar number
         local dotY = windowPosY + (barHeight / 2) - 20;  -- Above the number
         local dotRadius = 5;
         local fgDrawList = imgui.GetForegroundDrawList();
-        fgDrawList:AddCircleFilled({dotX, dotY}, dotRadius, imgui.GetColorU32({1.0, 0.8, 0.2, 1.0}), 12);
+
+        -- Determine indicator color: gold for pet, cyan for general palette
+        local indicatorColor;
+        local indicatorType;
+        if hasPetIndicator then
+            indicatorColor = {1.0, 0.8, 0.2, 1.0};  -- Gold
+            indicatorType = 'pet';
+        else
+            indicatorColor = {0.4, 0.8, 1.0, 1.0};  -- Cyan
+            indicatorType = 'palette';
+        end
+
+        fgDrawList:AddCircleFilled({dotX, dotY}, dotRadius, imgui.GetColorU32(indicatorColor), 12);
         fgDrawList:AddCircle({dotX, dotY}, dotRadius, imgui.GetColorU32({0.0, 0.0, 0.0, 1.0}), 12, 1.0);
 
         -- Check hover for tooltip
@@ -474,27 +557,61 @@ local function DrawBarWindow(barIndex, settings)
         local hoverRadius = dotRadius + 3;
         if (dx * dx + dy * dy) <= (hoverRadius * hoverRadius) then
             imgui.BeginTooltip();
-            imgui.TextColored({1.0, 0.8, 0.2, 1.0}, 'Pet Palette Bar ' .. barIndex);
-            imgui.Separator();
 
-            -- Current pet info
-            local currentPet = petpalette.GetCurrentPetDisplayName();
-            if currentPet then
-                imgui.Text('Current Pet: ' .. currentPet);
-            else
-                imgui.TextColored({0.6, 0.6, 0.6, 1.0}, 'No pet summoned');
-            end
+            if indicatorType == 'pet' then
+                imgui.TextColored({1.0, 0.8, 0.2, 1.0}, 'Pet Palette Bar ' .. barIndex);
+                imgui.Separator();
 
-            -- Palette mode
-            local hasOverride = petpalette.HasManualOverride(barIndex);
-            if hasOverride then
-                local overrideName = petpalette.GetPaletteDisplayName(barIndex, data.jobId);
-                imgui.Text('Palette: ' .. overrideName .. ' (Manual)');
+                -- Current pet info
+                local currentPet = petpalette.GetCurrentPetDisplayName();
+                if currentPet then
+                    imgui.Text('Current Pet: ' .. currentPet);
+                else
+                    imgui.TextColored({0.6, 0.6, 0.6, 1.0}, 'No pet summoned');
+                end
+
+                -- Palette mode
+                local hasOverride = petpalette.HasManualOverride(barIndex);
+                if hasOverride then
+                    local overrideName = petpalette.GetPaletteDisplayName(barIndex, data.jobId);
+                    imgui.Text('Palette: ' .. overrideName .. ' (Manual)');
+                else
+                    imgui.Text('Palette: Auto');
+                end
             else
-                imgui.Text('Palette: Auto');
+                imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Named Palette Bar ' .. barIndex);
+                imgui.Separator();
+                imgui.Text('Palette: ' .. currentGeneralPalette);
+                imgui.TextColored({0.6, 0.6, 0.6, 1.0}, '/xiui palette <name> ' .. barIndex);
             end
 
             imgui.EndTooltip();
+        end
+    end
+
+    -- Draw palette modifier indicator (refresh icon when modifier key is held)
+    if windowPosX and actions.IsPaletteModifierHeld() then
+        local refreshTexture = textures:Get('ui_refresh');
+        if refreshTexture and refreshTexture.image then
+            local iconSize = 16;
+            local iconX = windowPosX - 20;  -- To the left of the bar
+            local iconY = windowPosY + (barHeight / 2) + 8;  -- Below the bar number
+            local fgDrawList = imgui.GetForegroundDrawList();
+
+            -- Draw with a pulsing effect for visibility
+            local pulseAlpha = 0.7 + 0.3 * math.sin(os.clock() * 6);
+            local iconColor = imgui.GetColorU32({1.0, 1.0, 1.0, pulseAlpha});
+            local iconPtr = tonumber(ffi.cast("uint32_t", refreshTexture.image));
+
+            if iconPtr then
+                fgDrawList:AddImage(
+                    iconPtr,
+                    {iconX, iconY},
+                    {iconX + iconSize, iconY + iconSize},
+                    {0, 0}, {1, 1},
+                    iconColor
+                );
+            end
         end
     end
 
@@ -629,6 +746,9 @@ function M.Initialize(settings)
     local bgTheme = gConfig.hotbarBackgroundTheme or 'Plain';
     loadedBgTheme = bgTheme;
     -- Background primitives are now created in init.lua
+
+    -- Register palette change callback for animation
+    palette.OnPaletteChanged(OnPaletteChanged);
 end
 
 function M.UpdateVisuals(settings)

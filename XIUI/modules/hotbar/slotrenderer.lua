@@ -1118,6 +1118,14 @@ function M.DrawTooltip(bind)
         pet = 'Pet Command',
     };
 
+    -- Helper to format target (strips existing brackets, adds fresh ones)
+    local function formatTarget(target)
+        if not target then return nil; end
+        local cleaned = target:gsub('[<>]', '');
+        if cleaned == '' then return nil; end
+        return '<' .. cleaned .. '>';
+    end
+
     -- Check if action is unavailable for current job/subjob (cached lookup)
     local isUnavailable = false;
     if bind.actionType == 'ma' or bind.actionType == 'ja' or bind.actionType == 'ws' then
@@ -1158,7 +1166,10 @@ function M.DrawTooltip(bind)
 
     -- Target (not shown for macro type since targets are embedded in macro text)
     if bind.actionType ~= 'macro' and bind.target and bind.target ~= '' then
-        imgui.TextColored(COLORS.textDim, 'Target: <' .. bind.target .. '>');
+        local formattedTarget = formatTarget(bind.target);
+        if formattedTarget then
+            imgui.TextColored(COLORS.textDim, 'Target: ' .. formattedTarget);
+        end
     end
 
     -- Macro text preview (if macro type)
@@ -1170,7 +1181,7 @@ function M.DrawTooltip(bind)
     -- Unavailable warning (red text)
     if isUnavailable then
         imgui.Spacing();
-        imgui.TextColored(COLORS.red, 'Unavailable for your current Job/Subjob');
+        imgui.TextColored(COLORS.red, 'Action not available');
     end
 
     imgui.EndTooltip();

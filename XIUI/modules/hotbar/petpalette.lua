@@ -83,10 +83,8 @@ function M.CheckPetState()
         -- Fire callbacks
         M.FirePetChangedCallbacks(oldPetKey, newPetKey);
 
-        -- Check config for clearing manual overrides on pet change
-        if gConfig and gConfig.hotbarGlobal and gConfig.hotbarGlobal.clearOverrideOnPetChange then
-            M.ClearAllManualOverrides();
-        end
+        -- Always clear manual overrides when pet changes (auto-switch behavior)
+        M.ClearAllManualOverrides();
     end
 
     return newPetKey;

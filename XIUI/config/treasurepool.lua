@@ -96,20 +96,8 @@ function M.DrawSettings()
     if components.CollapsingSection('Background', false) then
         -- Background theme dropdown
         local themes = getBackgroundThemes();
-        local currentTheme = gConfig.treasurePoolBackgroundTheme or 'Plain';
-        if imgui.BeginCombo('Theme##treasurePoolBg', currentTheme) then
-            for _, theme in ipairs(themes) do
-                local isSelected = (theme == currentTheme);
-                if imgui.Selectable(theme, isSelected) then
-                    gConfig.treasurePoolBackgroundTheme = theme;
-                    UpdateSettings();
-                end
-                if isSelected then
-                    imgui.SetItemDefaultFocus();
-                end
-            end
-            imgui.EndCombo();
-        end
+        components.Combo('Theme##treasurePoolBg', gConfig, 'treasurePoolBackgroundTheme',
+            themes, nil, 'Plain', function() UpdateSettings(); end);
         imgui.ShowHelp('Window background style (Plain = solid, Window1-8 = themed with borders)');
 
         -- Scale/opacity sliders
@@ -121,11 +109,6 @@ function M.DrawSettings()
         imgui.ShowHelp('Opacity of the background.');
         components.DrawSlider('Border Opacity##treasurePool', 'treasurePoolBorderOpacity', 0.0, 1.0, '%.2f');
         imgui.ShowHelp('Opacity of the window borders (Window themes only).');
-    end
-
-    if components.CollapsingSection('Chat Commands##treasurepool') then
-        imgui.BulletText('/xiui lotall - Lot on all items');
-        imgui.BulletText('/xiui passall - Pass on all items');
     end
 end
 

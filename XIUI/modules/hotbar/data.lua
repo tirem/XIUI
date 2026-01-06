@@ -7,13 +7,21 @@ require('common');
 
 local M = {};
 
--- Lazy-loaded to avoid circular dependency (petpalette requires data in future)
+-- Lazy-loaded to avoid circular dependencies
 local petpalette = nil;
 local function getPetPalette()
     if not petpalette then
         petpalette = require('modules.hotbar.petpalette');
     end
     return petpalette;
+end
+
+local palette = nil;
+local function getPalette()
+    if not palette then
+        palette = require('modules.hotbar.palette');
+    end
+    return palette;
 end
 
 -- ============================================
@@ -115,19 +123,46 @@ end
 
 
 -- Helper to get slotActions with storage key
--- Handles: 'global' and composite keys ('15:10', '15:10:avatar:ifrit')
+-- Handles: 'global' and composite keys ('15:10', '15:10:avatar:ifrit', '15:10:palette:name')
+-- Falls back to base job key (jobId:0) or base palette key (jobId:0:palette:name) if exact key doesn't exist
 local function getSlotActionsForJob(slotActions, storageKey)
     if not slotActions then return nil; end
     -- Handle 'global' key specially
     if storageKey == GLOBAL_SLOT_KEY then
         return slotActions[GLOBAL_SLOT_KEY];
     end
-    -- All job-specific keys are composite strings (job:subjob format)
-    return slotActions[storageKey];
+    -- Try exact storage key first (e.g., '3:5' for WHM/RDM, '3:5:palette:Esuna')
+    local result = slotActions[storageKey];
+    if result then
+        return result;
+    end
+    -- Fallback: try base job key (jobId:0) for imported data without subjob
+    -- This handles tHotBar imports which don't track subjobs
+    local jobId, subjobId, suffix = storageKey:match('^(%d+):(%d+)(.*)$');
+    if jobId and subjobId ~= '0' then
+        -- Build fallback key with subjob=0, preserving any suffix (palette, avatar, etc.)
+        local fallbackKey = jobId .. ':0' .. (suffix or '');
+        result = slotActions[fallbackKey];
+        if result then
+            return result;
+        end
+    end
+    return nil;
+end
+
+-- Helper to deep copy a table (for migrating slot data)
+local function deepCopyTable(tbl)
+    if type(tbl) ~= 'table' then return tbl; end
+    local copy = {};
+    for k, v in pairs(tbl) do
+        copy[k] = deepCopyTable(v);
+    end
+    return copy;
 end
 
 -- Helper to ensure slotActions structure exists for a storage key
 -- Handles: 'global' and composite keys ('15:10', '15:10:avatar:ifrit')
+-- IMPORTANT: When creating a new key, copies data from fallback keys to preserve slot data
 local function ensureSlotActionsStructure(barSettings, storageKey)
     if not barSettings.slotActions then
         barSettings.slotActions = {};
@@ -141,7 +176,22 @@ local function ensureSlotActionsStructure(barSettings, storageKey)
     end
     -- All job-specific keys are composite strings (job:subjob format)
     if not barSettings.slotActions[storageKey] then
-        barSettings.slotActions[storageKey] = {};
+        -- Before creating empty table, check for fallback data to migrate
+        -- This preserves slot data when subjob changes (e.g., '1:0' -> '1:5')
+        local jobId, subjobId, suffix = storageKey:match('^(%d+):(%d+)(.*)$');
+        if jobId and subjobId ~= '0' then
+            -- Build fallback key with subjob=0, preserving any suffix (palette, avatar, etc.)
+            local fallbackKey = jobId .. ':0' .. (suffix or '');
+            local fallbackData = barSettings.slotActions[fallbackKey];
+            if fallbackData then
+                -- Deep copy fallback data to the new key to preserve all slots
+                barSettings.slotActions[storageKey] = deepCopyTable(fallbackData);
+            else
+                barSettings.slotActions[storageKey] = {};
+            end
+        else
+            barSettings.slotActions[storageKey] = {};
+        end
     end
     return barSettings.slotActions[storageKey];
 end
@@ -163,8 +213,9 @@ local PER_BAR_ONLY_KEYS = {
 -- Job/Subjob Storage Key Resolution
 -- ============================================
 
--- Build full storage key for a bar, considering job, subjob, and pet awareness
--- Returns: 'global', '{jobId}:{subjobId}', or '{jobId}:{subjobId}:{petKey}' (e.g., '15:10:avatar:ifrit')
+-- Build full storage key for a bar, considering job, subjob, pet awareness, and general palettes
+-- Returns: 'global', '{jobId}:{subjobId}', '{jobId}:{subjobId}:{petKey}', or '{jobId}:{subjobId}:palette:{name}'
+-- Priority: global > pet-aware > general palette > base
 function M.GetStorageKeyForBar(barIndex)
     local configKey = 'hotbarBar' .. barIndex;
     local barSettings = gConfig and gConfig[configKey];
@@ -184,44 +235,108 @@ function M.GetStorageKeyForBar(barIndex)
     end
 
     -- Check if pet-aware mode is enabled for this bar
-    if not barSettings.petAware then
-        return baseKey;
+    if barSettings.petAware then
+        -- Get pet palette module (lazy load)
+        local pp = getPetPalette();
+        if pp then
+            -- Check for manual override or auto-detected pet
+            local effectivePetKey = pp.GetEffectivePetKey(barIndex);
+            if effectivePetKey then
+                return string.format('%s:%s', baseKey, effectivePetKey);
+            end
+        end
     end
 
-    -- Get pet palette module (lazy load)
-    local pp = getPetPalette();
-    if not pp then
-        return baseKey;
+    -- Check for general palette (user-defined named palettes)
+    local p = getPalette();
+    if p then
+        local paletteSuffix = p.GetEffectivePaletteKeySuffix(barIndex);
+        if paletteSuffix then
+            return string.format('%s:%s', baseKey, paletteSuffix);
+        end
     end
 
-    -- Check for manual override first
-    local effectivePetKey = pp.GetEffectivePetKey(barIndex);
-    if effectivePetKey then
-        return string.format('%s:%s', baseKey, effectivePetKey);
-    end
-
-    -- No pet - fall back to base job:subjob key
+    -- No pet or palette - fall back to base job:subjob key
     return baseKey;
 end
 
 -- Get available storage keys (palettes) for a bar
 -- Used for cycling and display
+-- Returns combined list of pet palettes (if petAware) and general palettes
 function M.GetAvailablePalettes(barIndex)
     local configKey = 'hotbarBar' .. barIndex;
     local barSettings = gConfig and gConfig[configKey];
     local jobId = M.jobId or 1;
     local subjobId = M.subjobId or 0;
 
-    if not barSettings or not barSettings.petAware then
-        return {};
+    local palettes = {};
+
+    -- Add pet palettes if pet-aware mode is enabled
+    if barSettings and barSettings.petAware then
+        local pp = getPetPalette();
+        if pp then
+            local petPalettes = pp.GetAvailablePalettes(barIndex, jobId, subjobId);
+            for _, p in ipairs(petPalettes) do
+                table.insert(palettes, p);
+            end
+        end
     end
 
-    local pp = getPetPalette();
-    if not pp then
-        return {};
+    -- Add general palettes (if any exist)
+    local p = getPalette();
+    if p then
+        local generalPalettes = p.GetAvailablePalettes(barIndex, jobId, subjobId);
+        -- Skip 'Base' if we already have pet palettes (pet 'Base' is the same concept)
+        for _, name in ipairs(generalPalettes) do
+            if name ~= p.BASE_PALETTE_NAME or #palettes == 0 then
+                -- Convert general palette name to the same format as pet palettes
+                table.insert(palettes, {
+                    key = name == p.BASE_PALETTE_NAME and nil or (p.PALETTE_KEY_PREFIX .. name),
+                    displayName = name,
+                    isPetPalette = false,
+                });
+            end
+        end
     end
 
-    return pp.GetAvailablePalettes(barIndex, jobId, subjobId);
+    return palettes;
+end
+
+-- Get the current palette display name for a bar
+-- Returns: 'Base', pet name (e.g., 'Ifrit'), or general palette name (e.g., 'Stuns')
+function M.GetCurrentPaletteDisplayName(barIndex)
+    local configKey = 'hotbarBar' .. barIndex;
+    local barSettings = gConfig and gConfig[configKey];
+    local jobId = M.jobId or 1;
+
+    -- Check pet palette first (if pet-aware)
+    if barSettings and barSettings.petAware then
+        local pp = getPetPalette();
+        if pp then
+            local petDisplayName = pp.GetPaletteDisplayName(barIndex, jobId);
+            if petDisplayName and petDisplayName ~= 'Base' then
+                return petDisplayName;
+            end
+        end
+    end
+
+    -- Check general palette
+    local p = getPalette();
+    if p then
+        return p.GetActivePaletteDisplayName(barIndex);
+    end
+
+    return 'Base';
+end
+
+-- Get the palette module for direct access
+function M.GetPaletteModule()
+    return getPalette();
+end
+
+-- Get the pet palette module for direct access
+function M.GetPetPaletteModule()
+    return getPetPalette();
 end
 
 -- Get per-bar settings from gConfig, merging with global if useGlobalSettings is true
@@ -476,14 +591,27 @@ end
 
 -- Helper to get crossbar slotActions with storage key
 -- Handles: 'global' and composite keys ('15:10')
+-- Falls back to base job key (jobId:0) if full job:subjob key doesn't exist
 local function getCrossbarSlotActionsForJob(slotActions, storageKey)
     if not slotActions then return nil; end
     -- Handle 'global' key specially
     if storageKey == GLOBAL_SLOT_KEY then
         return slotActions[GLOBAL_SLOT_KEY];
     end
-    -- All job-specific keys are composite strings (job:subjob format)
-    return slotActions[storageKey];
+    -- Try exact storage key first (e.g., '3:5' for WHM/RDM)
+    local result = slotActions[storageKey];
+    if result then
+        return result;
+    end
+    -- Fallback: try base job key (jobId:0) for imported data without subjob
+    local jobId = storageKey:match('^(%d+)');
+    if jobId then
+        local baseKey = jobId .. ':0';
+        if baseKey ~= storageKey then
+            return slotActions[baseKey];
+        end
+    end
+    return nil;
 end
 
 -- Helper to ensure crossbar slotActions structure exists for a storage key and combo mode

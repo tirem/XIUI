@@ -220,6 +220,19 @@ local function CreateDualSenseDevice()
         return buttonId == buttons.R2 or buttonId == buttons.R2_INTENSITY;
     end
 
+    -- Shoulder button detection for palette cycling (R1/L1)
+    function device.IsShoulderButton(buttonId)
+        return buttonId == buttons.L1 or buttonId == buttons.R1;
+    end
+
+    function device.IsR1Button(buttonId)
+        return buttonId == buttons.R1;
+    end
+
+    function device.IsL1Button(buttonId)
+        return buttonId == buttons.L1;
+    end
+
     return device;
 end
 
@@ -327,6 +340,19 @@ local function CreateSwitchProDevice()
         return buttonId == buttons.ZR;
     end
 
+    -- Shoulder button detection for palette cycling (R/L on Switch)
+    function device.IsShoulderButton(buttonId)
+        return buttonId == buttons.L or buttonId == buttons.R;
+    end
+
+    function device.IsR1Button(buttonId)
+        return buttonId == buttons.R;
+    end
+
+    function device.IsL1Button(buttonId)
+        return buttonId == buttons.L;
+    end
+
     return device;
 end
 
@@ -420,6 +446,19 @@ local function CreateGenericDInputDevice(userConfig)
 
     function device.IsR2Button(buttonId)
         return buttonId == buttons.R2;
+    end
+
+    -- Shoulder button detection for palette cycling (R1/L1)
+    function device.IsShoulderButton(buttonId)
+        return buttonId == buttons.L1 or buttonId == buttons.R1;
+    end
+
+    function device.IsR1Button(buttonId)
+        return buttonId == buttons.R1;
+    end
+
+    function device.IsL1Button(buttonId)
+        return buttonId == buttons.L1;
     end
 
     return device;

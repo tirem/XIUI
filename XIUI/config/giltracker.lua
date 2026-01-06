@@ -24,13 +24,9 @@ function M.DrawSettings()
         imgui.ShowHelp('Position icon to the right of text (when icon enabled).');
         components.DrawCheckbox('Right Align Text', 'gilTrackerRightAlign', UpdateGilTrackerVisuals);
         imgui.ShowHelp('Right-align text so numbers anchor at the right edge.');
-    end
-
-    if components.CollapsingSection('Gil Per Hour##gilTracker') then
         components.DrawCheckbox('Show Gil/Hour', 'gilTrackerShowGilPerHour');
         imgui.ShowHelp('Display gil earned per hour below current gil amount. Resets on login.');
-
-        -- Reset button
+        imgui.SameLine();
         if imgui.Button('Reset Tracking##gilPerHour') then
             giltracker.ResetTracking();
         end

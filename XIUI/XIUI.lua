@@ -522,6 +522,14 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
+        -- Open keybind editor: /xiui keybinds or /xiui binds [bar]
+        if (#command_args >= 2 and command_args[2]:any('keybinds', 'keybind', 'binds', 'bind')) then
+            local hotbarConfig = require('config.hotbar');
+            local barIndex = tonumber(command_args[3]) or 1;
+            hotbarConfig.OpenKeybindEditor(barIndex);
+            return;
+        end
+
         -- Lot all unlotted items: /xiui lotall or /xiui lot
         if (#command_args == 2 and command_args[2]:any('lotall', 'lot')) then
             treasurePool.LotAll();
@@ -583,6 +591,152 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
+        -- Palette commands: /xiui palette <name|next|prev> [bar|all]
+        -- Switch between named palettes for hotbars
+        -- Use "all" to affect all bars at once (like tHotBar behavior)
+        if (command_args[2] == 'palette' or command_args[2] == 'pal') then
+            local paletteModule = require('modules.hotbar.palette');
+            local hotbarData = require('modules.hotbar.data');
+            local jobId = hotbarData.jobId or 1;
+            local subjobId = hotbarData.subjobId or 0;
+
+            if #command_args < 3 then
+                -- No argument - show current palette info and help
+                print('[XIUI] Palette commands:');
+                print('  /xiui palette <name> [bar|all] - Switch to a named palette');
+                print('  /xiui palette next [bar|all] - Cycle to next palette');
+                print('  /xiui palette prev [bar|all] - Cycle to previous palette');
+                print('  /xiui palette list [bar] - List available palettes');
+                print('  /xiui palette base [bar|all] - Return to Base palette');
+                print('');
+                print('Keybinds: Ctrl+Up/Down (configure in Hotbar > Palette Cycling)');
+                print('Controller: RB + Dpad Up/Down cycles palettes');
+                return;
+            end
+
+            local action = command_args[3];
+            local barArg = command_args[4];
+            local affectAll = (barArg == 'all');
+            local barIndex = affectAll and 1 or (tonumber(barArg) or 1);
+
+            -- Helper to apply action to bar(s)
+            local function applyToBar(idx)
+                return paletteModule.CyclePalette(idx, action == 'next' and 1 or -1, jobId, subjobId);
+            end
+
+            if action == 'next' or action == 'prev' or action == 'previous' then
+                local direction = (action == 'next') and 1 or -1;
+                if affectAll then
+                    -- Cycle all bars together
+                    local anyChanged = false;
+                    local newPaletteName = nil;
+                    for i = 1, 6 do
+                        local result = paletteModule.CyclePalette(i, direction, jobId, subjobId);
+                        if result then
+                            anyChanged = true;
+                            newPaletteName = result;
+                        end
+                    end
+                    if anyChanged then
+                        print('[XIUI] All bars palette: ' .. (newPaletteName or 'Base'));
+                    else
+                        print('[XIUI] No palettes to cycle');
+                    end
+                else
+                    -- Cycle single bar
+                    local newPalette = paletteModule.CyclePalette(barIndex, direction, jobId, subjobId);
+                    if newPalette then
+                        print('[XIUI] Bar ' .. barIndex .. ' palette: ' .. newPalette);
+                    else
+                        print('[XIUI] No palettes to cycle for bar ' .. barIndex);
+                    end
+                end
+            elseif action == 'list' then
+                -- List available palettes
+                local palettes = paletteModule.GetAvailablePalettes(barIndex, jobId, subjobId);
+                local currentPalette = paletteModule.GetActivePaletteDisplayName(barIndex);
+                print('[XIUI] Bar ' .. barIndex .. ' palettes:');
+                for _, name in ipairs(palettes) do
+                    local marker = (name == currentPalette) and ' *' or '';
+                    print('  - ' .. name .. marker);
+                end
+            elseif action == 'base' or action == 'reset' then
+                -- Switch to base palette
+                if affectAll then
+                    for i = 1, 6 do
+                        paletteModule.ClearActivePalette(i);
+                    end
+                    print('[XIUI] All bars palette: Base');
+                else
+                    paletteModule.ClearActivePalette(barIndex);
+                    print('[XIUI] Bar ' .. barIndex .. ' palette: Base');
+                end
+            else
+                -- Switch to named palette
+                -- Reconstruct palette name in case it has spaces (use original case from command)
+                local originalArgs = e.command:args();
+                local paletteName = originalArgs[3];  -- Use original case
+                local targetIsAll = false;
+
+                if #originalArgs >= 4 then
+                    local lastArg = originalArgs[#originalArgs];
+                    if lastArg:lower() == 'all' then
+                        targetIsAll = true;
+                        -- Palette name is everything between arg 3 and "all"
+                        if #originalArgs > 4 then
+                            local nameParts = {};
+                            for i = 3, #originalArgs - 1 do
+                                table.insert(nameParts, originalArgs[i]);
+                            end
+                            paletteName = table.concat(nameParts, ' ');
+                        end
+                    elseif tonumber(lastArg) then
+                        barIndex = tonumber(lastArg);
+                        -- Palette name is everything between arg 3 and the bar number
+                        if #originalArgs > 4 then
+                            local nameParts = {};
+                            for i = 3, #originalArgs - 1 do
+                                table.insert(nameParts, originalArgs[i]);
+                            end
+                            paletteName = table.concat(nameParts, ' ');
+                        end
+                    else
+                        -- No bar number or "all", palette name is all remaining args
+                        local nameParts = {};
+                        for i = 3, #originalArgs do
+                            table.insert(nameParts, originalArgs[i]);
+                        end
+                        paletteName = table.concat(nameParts, ' ');
+                    end
+                end
+
+                if targetIsAll then
+                    -- Apply to all bars
+                    local anyFound = false;
+                    for i = 1, 6 do
+                        if paletteModule.PaletteExists(i, paletteName, jobId, subjobId) then
+                            paletteModule.SetActivePalette(i, paletteName);
+                            anyFound = true;
+                        end
+                    end
+                    if anyFound then
+                        print('[XIUI] All bars palette: ' .. paletteName);
+                    else
+                        print('[XIUI] Palette "' .. paletteName .. '" not found');
+                    end
+                else
+                    -- Apply to single bar
+                    if paletteModule.PaletteExists(barIndex, paletteName, jobId, subjobId) then
+                        paletteModule.SetActivePalette(barIndex, paletteName);
+                        print('[XIUI] Bar ' .. barIndex .. ' palette: ' .. paletteName);
+                    else
+                        print('[XIUI] Palette "' .. paletteName .. '" not found for bar ' .. barIndex);
+                    end
+                end
+            end
+            return;
+        end
+
         -- Diagnostics commands: /xiui diag [on|off|stats|reset]
         if (command_args[2] == 'diag') then
             local subCmd = command_args[3] or 'stats';
@@ -623,8 +777,12 @@ ashita.events.register('command', 'command_cb', function (e)
                 DEBUG_RAW_INPUT = not DEBUG_RAW_INPUT;
                 print('[XIUI] Raw input debug: ' .. (DEBUG_RAW_INPUT and 'ON' or 'OFF'));
                 print('[XIUI] This logs ALL xinput/dinput events from Ashita before any processing.');
+            elseif moduleName == 'palette' then
+                -- Toggle palette key debug mode (logs Ctrl+Up/Down key events)
+                local currentState = hotbar.IsPaletteDebugEnabled();
+                hotbar.SetPaletteDebugEnabled(not currentState);
             else
-                print('[XIUI] Debug modules: hotbar, macroblock, rawinput');
+                print('[XIUI] Debug modules: hotbar, macroblock, rawinput, palette');
                 print('[XIUI] Usage: /xiui debug <module>');
             end
             return;

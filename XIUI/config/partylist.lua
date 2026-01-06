@@ -238,6 +238,7 @@ local function DrawPartyTabContent(party, partyName)
             local castBarStyleItems = { [0] = 'Replace Name', [1] = 'Use MP Bar', [2] = 'Use TP Bar' };
             local currentStyleIndex = party.castBarStyle == 'mp' and 1 or (party.castBarStyle == 'tp' and 2 or 0);
             local styleLabel = castBarStyleItems[currentStyleIndex];
+            imgui.SetNextItemWidth(components.CONTENT_MAX_WIDTH);
             if imgui.BeginCombo('Style##castBarStyle' .. partyName, styleLabel) then
                 for i = 0, 2 do
                     local isSelected = (currentStyleIndex == i);

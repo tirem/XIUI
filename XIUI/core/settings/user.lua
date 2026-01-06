@@ -98,18 +98,18 @@ function M.createUserSettingsDefaults()
         -- Per-bar hotbar settings (Bar 1-6 each have independent configurations)
         -- Bars 1-3 enabled by default, bars 4-6 disabled by default
         -- By default, useGlobalSettings = true, so bars use hotbarGlobal for visuals
-        -- Default keybindings: Bar1=1-0/-/=, Bar2=Ctrl+1-0/-/=, Bar3=Shift+1-0/-/=
+        -- Default keybindings (bottom to top): Bar1=Alt+1-0, Bar2=Ctrl+1-0, Bar3=1-0
         hotbarBar1 = factories.createHotbarBarDefaults({
             rows = 1, columns = 12,
-            keyBindings = factories.createNumberRowKeybindings(false, false, false),
+            keyBindings = factories.createNumberRowKeybindings(false, true, false),  -- Alt modifier (bottom row)
         }),
         hotbarBar2 = factories.createHotbarBarDefaults({
             rows = 1, columns = 12,
-            keyBindings = factories.createNumberRowKeybindings(true, false, false),  -- Ctrl modifier
+            keyBindings = factories.createNumberRowKeybindings(true, false, false),  -- Ctrl modifier (middle row)
         }),
         hotbarBar3 = factories.createHotbarBarDefaults({
             rows = 1, columns = 12,
-            keyBindings = factories.createNumberRowKeybindings(false, false, true),  -- Shift modifier
+            keyBindings = factories.createNumberRowKeybindings(false, false, false),  -- No modifier (top row)
         }),
         hotbarBar4 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
         hotbarBar5 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),

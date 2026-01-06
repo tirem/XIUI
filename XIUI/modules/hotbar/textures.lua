@@ -290,6 +290,19 @@ textures.Initialize = function(self)
         end
     end
 
+    -- UI indicator icons from assets/icons
+    local iconsDirectory = string.format('%saddons\\XIUI\\assets\\icons\\', AshitaCore:GetInstallPath());
+    local uiIcons = {
+        { file = 'refresh', key = 'ui_refresh' },
+    };
+    for _, icon in ipairs(uiIcons) do
+        local fullPath = iconsDirectory .. icon.file .. '.png';
+        local texture = LoadTextureFromPath(fullPath);
+        if texture then
+            self.Cache[icon.key] = texture;
+        end
+    end
+
 end
 
 textures.Release = function(self)

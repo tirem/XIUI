@@ -15,8 +15,13 @@ local macropalette = require('modules.hotbar.macropalette');
 local playerdata = require('modules.hotbar.playerdata');
 local controller = require('modules.hotbar.controller');
 local macrosLib = require('libs.ffxi.macros');
+local palette = require('modules.hotbar.palette');
+local migrationWizard = require('config.migration');
 
 local M = {};
+
+-- Expose migration wizard for external access (used by config.lua to draw the popup)
+M.migrationWizard = migrationWizard;
 
 -- Icon textures for UI buttons (loaded lazily)
 local folderIcon = nil;
@@ -179,6 +184,127 @@ local function GetCachedWeaponskills()
     return playerdata.GetCachedWeaponskills();
 end
 
+-- General palette creation state
+local paletteCreateState = {
+    inputBuffer = {},  -- Per-bar input buffers
+    errorMessage = nil,
+    errorBarIndex = nil,
+};
+
+-- Initialize palette input buffers
+for i = 1, 6 do
+    paletteCreateState.inputBuffer[i] = { '' };
+end
+
+-- ============================================
+-- General Palettes UI Section
+-- ============================================
+
+-- Draw the general palettes management section for a hotbar
+local function DrawGeneralPalettesSection(configKey, barSettings, barIndex)
+    local jobId = data.jobId or 1;
+    local subjobId = data.subjobId or 0;
+
+    -- Get available palettes for this bar
+    local availablePalettes = palette.GetAvailablePalettes(barIndex, jobId, subjobId);
+    local currentPalette = palette.GetActivePaletteDisplayName(barIndex);
+    local hasPalettes = #availablePalettes > 1;
+
+    -- Header
+    imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Named Palettes:');
+    imgui.SameLine();
+    if hasPalettes then
+        imgui.TextColored({0.5, 1.0, 0.5, 1.0}, tostring(#availablePalettes - 1) .. ' custom palette(s)');
+    else
+        imgui.TextColored({0.6, 0.6, 0.6, 1.0}, 'None');
+    end
+    imgui.ShowHelp('Create named palettes to quickly switch between different hotbar configurations.\nUnlike pet palettes which auto-switch, named palettes are manually switched via commands or the UI.');
+
+    -- Current palette selector (if palettes exist)
+    if hasPalettes then
+        imgui.SetNextItemWidth(150);
+        if imgui.BeginCombo('Active##palette' .. barIndex, currentPalette) then
+            for _, paletteName in ipairs(availablePalettes) do
+                local isSelected = (paletteName == currentPalette);
+                if imgui.Selectable(paletteName .. '##pal' .. barIndex, isSelected) then
+                    if paletteName == palette.BASE_PALETTE_NAME then
+                        palette.ClearActivePalette(barIndex);
+                    else
+                        palette.SetActivePalette(barIndex, paletteName);
+                    end
+                end
+                if isSelected then
+                    imgui.SetItemDefaultFocus();
+                end
+            end
+            imgui.EndCombo();
+        end
+        imgui.ShowHelp('Select the active palette for this bar.');
+    end
+
+    -- Create new palette section
+    imgui.Spacing();
+    imgui.TextColored({0.7, 0.7, 0.7, 1.0}, 'Create New Palette:');
+
+    -- Input field
+    imgui.SetNextItemWidth(150);
+    local inputBuffer = paletteCreateState.inputBuffer[barIndex];
+    local inputChanged, inputValue = imgui.InputText('##newPaletteName' .. barIndex, inputBuffer, 32);
+    if inputChanged then
+        inputBuffer[1] = inputValue;
+    end
+    imgui.SameLine();
+
+    -- Create button
+    local canCreate = inputBuffer[1] and inputBuffer[1] ~= '' and inputBuffer[1]:len() > 0;
+    if not canCreate then
+        imgui.PushStyleColor(ImGuiCol_Button, {0.3, 0.3, 0.3, 1.0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.3, 0.3, 1.0});
+    end
+    if imgui.Button('Create##palette' .. barIndex, {60, 0}) and canCreate then
+        local success, err = palette.CreatePalette(barIndex, inputBuffer[1], jobId, subjobId);
+        if success then
+            -- Switch to the new palette
+            palette.SetActivePalette(barIndex, inputBuffer[1]);
+            inputBuffer[1] = '';  -- Clear input
+            paletteCreateState.errorMessage = nil;
+        else
+            paletteCreateState.errorMessage = err or 'Failed to create palette';
+            paletteCreateState.errorBarIndex = barIndex;
+        end
+    end
+    if not canCreate then
+        imgui.PopStyleColor(2);
+    end
+    imgui.ShowHelp('Create a new named palette with a copy of the current slot data.');
+
+    -- Show error message
+    if paletteCreateState.errorMessage and paletteCreateState.errorBarIndex == barIndex then
+        imgui.TextColored({1.0, 0.4, 0.4, 1.0}, paletteCreateState.errorMessage);
+    end
+
+    -- Palette management (delete, rename) for non-Base palettes
+    if hasPalettes and currentPalette ~= palette.BASE_PALETTE_NAME then
+        imgui.Spacing();
+        imgui.TextColored({0.7, 0.7, 0.7, 1.0}, 'Manage "' .. currentPalette .. '":');
+
+        -- Delete button
+        imgui.PushStyleColor(ImGuiCol_Button, {0.6, 0.2, 0.2, 1.0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.8, 0.3, 0.3, 1.0});
+        if imgui.Button('Delete##palette' .. barIndex, {60, 0}) then
+            local success, err = palette.DeletePalette(barIndex, currentPalette, jobId, subjobId);
+            if not success then
+                paletteCreateState.errorMessage = err or 'Failed to delete palette';
+                paletteCreateState.errorBarIndex = barIndex;
+            else
+                paletteCreateState.errorMessage = nil;
+            end
+        end
+        imgui.PopStyleColor(2);
+        imgui.ShowHelp('Delete this palette. This cannot be undone.');
+    end
+end
+
 -- Keybind editor modal state
 local keybindModal = {
     isOpen = false,
@@ -187,6 +313,45 @@ local keybindModal = {
     selectedSlot = nil,
     waitingForKey = false,       -- True when capturing key input
     lastCapturedKey = nil,       -- Last captured key info for display
+    -- Game key conflict confirmation state
+    showConflictConfirm = false, -- True when showing conflict confirmation
+    pendingKey = nil,            -- Pending keybind data { key, ctrl, alt, shift }
+    conflictInfo = nil,          -- Info about the conflict { name, description }
+};
+
+-- Known game key conflicts - keys that have built-in game functions
+-- Format: { key = vkCode, ctrl = bool, alt = bool, shift = bool, name = string, description = string }
+local KNOWN_GAME_CONFLICTS = {
+    { key = 189, ctrl = false, alt = false, shift = false,
+      name = 'Game Menu (-)',
+      description = "Opens the main game menu.\nYou can still use numpad '-' for this." },
+    { key = 87, ctrl = true, alt = false, shift = false,
+      name = 'Weaponskill Menu (Ctrl+W)',
+      description = 'Opens the weaponskill selection menu.' },
+    { key = 70, ctrl = false, alt = false, shift = false,
+      name = 'Expand Chat (F)',
+      description = 'Expands/collapses the chat log window.' },
+    { key = 13, ctrl = false, alt = false, shift = false,
+      name = 'Chat Input (Enter)',
+      description = 'Opens chat input. Blocking this is not recommended.' },
+    { key = 9, ctrl = false, alt = false, shift = false,
+      name = 'Toggle Windows (Tab)',
+      description = 'Toggles through game windows.' },
+    { key = 192, ctrl = false, alt = false, shift = false,
+      name = 'Toggle HUD (`)',
+      description = 'Toggles the game HUD visibility.' },
+    { key = 77, ctrl = true, alt = false, shift = false,
+      name = 'Map (Ctrl+M)',
+      description = 'Opens the map window.' },
+    { key = 73, ctrl = true, alt = false, shift = false,
+      name = 'Inventory (Ctrl+I)',
+      description = 'Opens the inventory window.' },
+    { key = 69, ctrl = true, alt = false, shift = false,
+      name = 'Equipment (Ctrl+E)',
+      description = 'Opens the equipment window.' },
+    { key = 83, ctrl = true, alt = false, shift = false,
+      name = 'Status (Ctrl+S)',
+      description = 'Opens the status window.' },
 };
 
 -- Virtual key code to display string mapping
@@ -212,6 +377,119 @@ local function VKToString(vk)
     if vk >= 48 and vk <= 57 then return tostring(vk - 48); end  -- 0-9
     if vk >= 65 and vk <= 90 then return string.char(vk); end    -- A-Z
     return string.format('Key%d', vk);
+end
+
+-- Helper: Check if a key is already in the blocked keys list
+local function IsKeyBlocked(keyCode, ctrl, alt, shift)
+    local blockedKeys = gConfig and gConfig.hotbarGlobal and gConfig.hotbarGlobal.blockedGameKeys;
+    if not blockedKeys then return false; end
+
+    local ctrlVal = ctrl or false;
+    local altVal = alt or false;
+    local shiftVal = shift or false;
+
+    for _, blocked in ipairs(blockedKeys) do
+        if blocked.key == keyCode and
+           (blocked.ctrl or false) == ctrlVal and
+           (blocked.alt or false) == altVal and
+           (blocked.shift or false) == shiftVal then
+            return true;
+        end
+    end
+    return false;
+end
+
+-- Helper: Add a key to the blocked keys list
+local function AddBlockedKey(keyCode, ctrl, alt, shift)
+    if not gConfig or not gConfig.hotbarGlobal then return; end
+
+    if not gConfig.hotbarGlobal.blockedGameKeys then
+        gConfig.hotbarGlobal.blockedGameKeys = {};
+    end
+
+    -- Check if already blocked
+    if IsKeyBlocked(keyCode, ctrl, alt, shift) then return; end
+
+    table.insert(gConfig.hotbarGlobal.blockedGameKeys, {
+        key = keyCode,
+        ctrl = ctrl or false,
+        alt = alt or false,
+        shift = shift or false,
+    });
+end
+
+-- Helper: Remove a key from the blocked keys list
+local function RemoveBlockedKey(keyCode, ctrl, alt, shift)
+    local blockedKeys = gConfig and gConfig.hotbarGlobal and gConfig.hotbarGlobal.blockedGameKeys;
+    if not blockedKeys then return; end
+
+    local ctrlVal = ctrl or false;
+    local altVal = alt or false;
+    local shiftVal = shift or false;
+
+    for i = #blockedKeys, 1, -1 do
+        local blocked = blockedKeys[i];
+        if blocked.key == keyCode and
+           (blocked.ctrl or false) == ctrlVal and
+           (blocked.alt or false) == altVal and
+           (blocked.shift or false) == shiftVal then
+            table.remove(blockedKeys, i);
+            return;
+        end
+    end
+end
+
+-- Apply a pending keybind (shared logic between normal and conflict confirmation)
+-- NOTE: This function is defined early so it can be called from DrawKeybindModal
+local function ApplyKeybind(keyCode, ctrl, alt, shift)
+    local configKey = keybindModal.configKey;
+    local selectedSlot = keybindModal.selectedSlot;
+
+    if not configKey or not selectedSlot or not gConfig[configKey] then
+        return;
+    end
+
+    local barSettings = gConfig[configKey];
+    if not barSettings.keyBindings then
+        barSettings.keyBindings = {};
+    end
+
+    -- Check for duplicate keybind across ALL bars and clear it
+    local ctrlVal = ctrl or false;
+    local altVal = alt or false;
+    local shiftVal = shift or false;
+
+    for barNum = 1, 6 do
+        local checkConfigKey = 'hotbarBar' .. barNum;
+        local checkBarSettings = gConfig[checkConfigKey];
+        if checkBarSettings and checkBarSettings.keyBindings then
+            for slotIndex, existingBinding in pairs(checkBarSettings.keyBindings) do
+                -- Skip the slot we're assigning to (handle both numeric and string keys)
+                local slotNum = tonumber(slotIndex) or slotIndex;
+                local isSameSlot = (checkConfigKey == configKey and slotNum == selectedSlot);
+                if not isSameSlot and existingBinding and existingBinding.key then
+                    -- Check if this binding matches the new one
+                    if existingBinding.key == keyCode and
+                       (existingBinding.ctrl or false) == ctrlVal and
+                       (existingBinding.alt or false) == altVal and
+                       (existingBinding.shift or false) == shiftVal then
+                        -- Clear the duplicate binding
+                        checkBarSettings.keyBindings[slotIndex] = nil;
+                    end
+                end
+            end
+        end
+    end
+
+    -- Store the keybind
+    barSettings.keyBindings[selectedSlot] = {
+        key = keyCode,
+        ctrl = ctrlVal,
+        alt = altVal,
+        shift = shiftVal,
+    };
+
+    SaveSettingsOnly();
 end
 
 -- Format a keybind for display (e.g., "Ctrl+Shift+A")
@@ -441,12 +719,22 @@ local function OpenKeybindModal(barIndex, configKey)
     keybindModal.waitingForKey = false;
 end
 
+-- Export function to open keybind modal from command line
+function M.OpenKeybindEditor(barIndex)
+    barIndex = barIndex or 1;
+    OpenKeybindModal(barIndex, 'hotbarBar' .. barIndex);
+end
+
 -- Close keybind modal
 local function CloseKeybindModal()
     keybindModal.isOpen = false;
     keybindModal.barIndex = nil;
     keybindModal.configKey = nil;
     keybindModal.selectedSlot = nil;
+    keybindModal.waitingForKey = false;
+    keybindModal.showConflictConfirm = false;
+    keybindModal.pendingKey = nil;
+    keybindModal.conflictInfo = nil;
 end
 
 -- Check if keybind modal is open (exported for use in display.lua)
@@ -542,7 +830,7 @@ function M.DrawKeybindModal()
     imgui.PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 4.0);
     imgui.PushStyleVar(ImGuiStyleVar_GrabRounding, 4.0);
 
-    imgui.SetNextWindowSize({560, 215}, ImGuiCond_Always);
+    imgui.SetNextWindowSize({560, 250}, ImGuiCond_Always);
 
     if imgui.Begin(modalTitle, isOpen, windowFlags) then
         -- Bar selector using styled tabs (like the bar tabs in hotbar settings)
@@ -651,12 +939,59 @@ function M.DrawKeybindModal()
 
             imgui.Spacing();
 
-            -- Key capture button and clear button on same line
-            if keybindModal.waitingForKey then
+            -- Key capture / conflict confirmation section
+            -- Three states: normal, waiting for key, conflict confirmation
+            if keybindModal.showConflictConfirm and keybindModal.pendingKey then
+                -- Conflict confirmation state (inline, no popup)
+                local conflictName = keybindModal.conflictInfo and keybindModal.conflictInfo.name or 'Unknown';
+
+                imgui.TextColored({1.0, 0.7, 0.3, 1.0}, 'Game Key Conflict:');
+                imgui.SameLine();
+                imgui.TextColored({0.9, 0.9, 0.9, 1.0}, conflictName);
+
+                imgui.Spacing();
+                imgui.TextColored({0.6, 0.6, 0.6, 1.0}, 'Note: Hotbar action will execute, but game');
+                imgui.TextColored({0.6, 0.6, 0.6, 1.0}, 'function may also trigger. Use at own risk.');
+                imgui.Spacing();
+
+                -- Buttons
+                if imgui.Button('Bind Anyway', {100, 0}) then
+                    -- Add to blocked keys list and apply keybind
+                    AddBlockedKey(
+                        keybindModal.pendingKey.key,
+                        keybindModal.pendingKey.ctrl,
+                        keybindModal.pendingKey.alt,
+                        keybindModal.pendingKey.shift
+                    );
+                    ApplyKeybind(
+                        keybindModal.pendingKey.key,
+                        keybindModal.pendingKey.ctrl,
+                        keybindModal.pendingKey.alt,
+                        keybindModal.pendingKey.shift
+                    );
+                    -- Clean up state
+                    keybindModal.showConflictConfirm = false;
+                    keybindModal.pendingKey = nil;
+                    keybindModal.conflictInfo = nil;
+                    SaveSettingsOnly();
+                end
+
+                imgui.SameLine();
+
+                if imgui.Button('Cancel', {60, 0}) then
+                    -- Cancel - don't apply keybind
+                    keybindModal.showConflictConfirm = false;
+                    keybindModal.pendingKey = nil;
+                    keybindModal.conflictInfo = nil;
+                end
+
+            elseif keybindModal.waitingForKey then
+                -- Waiting for key capture state
                 imgui.TextColored(components.TAB_STYLE.gold, 'Press any key...');
                 imgui.SameLine();
                 imgui.TextColored({0.5, 0.5, 0.5, 1.0}, '(Escape to cancel)');
             else
+                -- Normal state - show Set Keybind and Clear buttons
                 if imgui.Button('Set Keybind##set', {120, 0}) then
                     keybindModal.waitingForKey = true;
                 end
@@ -664,6 +999,13 @@ function M.DrawKeybindModal()
                 if currentBinding and currentBinding.key then
                     imgui.SameLine();
                     if imgui.Button('Clear##clear', {60, 0}) then
+                        -- Also remove from blocked keys if it was blocked
+                        RemoveBlockedKey(
+                            currentBinding.key,
+                            currentBinding.ctrl,
+                            currentBinding.alt,
+                            currentBinding.shift
+                        );
                         -- Clear both numeric and string key versions
                         barSettings.keyBindings[selectedSlot] = nil;
                         barSettings.keyBindings[tostring(selectedSlot)] = nil;
@@ -687,6 +1029,24 @@ function M.DrawKeybindModal()
     end
 end
 
+-- Helper: Check if a key matches a known game conflict
+-- Returns the conflict info table if found, nil otherwise
+local function FindKnownConflict(keyCode, ctrl, alt, shift)
+    local ctrlVal = ctrl or false;
+    local altVal = alt or false;
+    local shiftVal = shift or false;
+
+    for _, conflict in ipairs(KNOWN_GAME_CONFLICTS) do
+        if conflict.key == keyCode and
+           (conflict.ctrl or false) == ctrlVal and
+           (conflict.alt or false) == altVal and
+           (conflict.shift or false) == shiftVal then
+            return conflict;
+        end
+    end
+    return nil;
+end
+
 -- Handle key capture for keybind editor (called from hotbar key handler)
 function M.HandleKeybindCapture(keyCode, ctrl, alt, shift)
     if not keybindModal.isOpen or not keybindModal.waitingForKey then
@@ -706,53 +1066,32 @@ function M.HandleKeybindCapture(keyCode, ctrl, alt, shift)
         return true;
     end
 
-    local configKey = keybindModal.configKey;
-    local selectedSlot = keybindModal.selectedSlot;
-
-    if configKey and selectedSlot and gConfig[configKey] then
-        local barSettings = gConfig[configKey];
-        if not barSettings.keyBindings then
-            barSettings.keyBindings = {};
+    -- Check if this key has a known game conflict
+    local conflict = FindKnownConflict(keyCode, ctrl, alt, shift);
+    if conflict then
+        -- Check if this key is already blocked
+        if IsKeyBlocked(keyCode, ctrl, alt, shift) then
+            -- Already blocked, just apply the keybind normally
+            ApplyKeybind(keyCode, ctrl, alt, shift);
+            keybindModal.waitingForKey = false;
+        else
+            -- Need to show confirmation - store pending keybind and conflict info
+            keybindModal.pendingKey = {
+                key = keyCode,
+                ctrl = ctrl or false,
+                alt = alt or false,
+                shift = shift or false,
+            };
+            keybindModal.conflictInfo = conflict;
+            keybindModal.showConflictConfirm = true;
+            keybindModal.waitingForKey = false;
         end
-
-        -- Check for duplicate keybind across ALL bars and clear it
-        local ctrlVal = ctrl or false;
-        local altVal = alt or false;
-        local shiftVal = shift or false;
-
-        for barNum = 1, 6 do
-            local checkConfigKey = 'hotbarBar' .. barNum;
-            local checkBarSettings = gConfig[checkConfigKey];
-            if checkBarSettings and checkBarSettings.keyBindings then
-                for slotIndex, existingBinding in pairs(checkBarSettings.keyBindings) do
-                    -- Skip the slot we're assigning to (handle both numeric and string keys)
-                    local slotNum = tonumber(slotIndex) or slotIndex;
-                    local isSameSlot = (checkConfigKey == configKey and slotNum == selectedSlot);
-                    if not isSameSlot and existingBinding and existingBinding.key then
-                        -- Check if this binding matches the new one
-                        if existingBinding.key == keyCode and
-                           (existingBinding.ctrl or false) == ctrlVal and
-                           (existingBinding.alt or false) == altVal and
-                           (existingBinding.shift or false) == shiftVal then
-                            -- Clear the duplicate binding
-                            checkBarSettings.keyBindings[slotIndex] = nil;
-                        end
-                    end
-                end
-            end
-        end
-
-        -- Store the keybind
-        barSettings.keyBindings[selectedSlot] = {
-            key = keyCode,
-            ctrl = ctrlVal,
-            alt = altVal,
-            shift = shiftVal,
-        };
-
-        SaveSettingsOnly();
-        keybindModal.waitingForKey = false;
+        return true;
     end
+
+    -- Normal keybind - apply directly
+    ApplyKeybind(keyCode, ctrl, alt, shift);
+    keybindModal.waitingForKey = false;
 
     return true;
 end
@@ -942,6 +1281,9 @@ local function DrawBarVisualSettings(configKey, barLabel)
         return;
     end
 
+    -- Extract bar index from config key (used for palette functions)
+    local barIndex = tonumber(configKey:match('hotbarBar(%d+)'));
+
     -- Enabled checkbox at top
     components.DrawPartyCheckbox(barSettings, 'Enabled##' .. configKey, 'enabled');
     imgui.ShowHelp('Enable or disable this hotbar.');
@@ -954,37 +1296,52 @@ local function DrawBarVisualSettings(configKey, barLabel)
 
     -- Job-Specific Actions toggle
     local jobSpecific = barSettings.jobSpecific ~= false;  -- Default to true if nil
-    local jobSpecificLabel = jobSpecific and 'Job-Specific Actions' or 'Global Actions (Shared)';
+    imgui.AlignTextToFramePadding();
     imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Action Storage:');
     imgui.SameLine();
-    imgui.TextColored(jobSpecific and {0.5, 1.0, 0.5, 1.0} or {1.0, 0.8, 0.5, 1.0}, jobSpecificLabel);
-
-    if imgui.Button(jobSpecific and 'Switch to Global##' .. configKey or 'Switch to Job-Specific##' .. configKey, {160, 22}) then
+    -- Color button based on state: green for job-specific, orange for global
+    if jobSpecific then
+        imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.5, 0.2, 1.0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.6, 0.3, 1.0});
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.4, 0.7, 0.4, 1.0});
+    else
+        imgui.PushStyleColor(ImGuiCol_Button, {0.6, 0.4, 0.2, 1.0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.7, 0.5, 0.3, 1.0});
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.8, 0.6, 0.4, 1.0});
+    end
+    if imgui.Button(jobSpecific and 'Job-Specific##' .. configKey or 'Global##' .. configKey, {100, 0}) then
         -- Show confirmation popup
-        local barIndex = tonumber(configKey:match('hotbarBar(%d+)'));
         jobSpecificConfirmState.showPopup = true;
         jobSpecificConfirmState.targetConfigKey = configKey;
         jobSpecificConfirmState.targetBarIndex = barIndex;
         jobSpecificConfirmState.newValue = not jobSpecific;
         jobSpecificConfirmState.isCrossbar = false;
     end
-    imgui.ShowHelp('Job-Specific: Each job has its own hotbar actions.\nGlobal: All jobs share the same hotbar actions.\n\nWARNING: Switching modes will clear all slot actions for this bar!');
-
-    imgui.Spacing();
+    imgui.PopStyleColor(3);
+    imgui.ShowHelp('Job-Specific: Each job has its own hotbar actions.\nGlobal: All jobs share the same hotbar actions.\n\nClick to switch. WARNING: Switching modes will clear all slot actions for this bar!');
 
     -- Pet-Aware Palettes toggle (only available when job-specific is enabled)
     if jobSpecific then
         local petAware = barSettings.petAware == true;
-        local petAwareLabel = petAware and 'Pet Palettes Enabled' or 'Pet Palettes Disabled';
+        imgui.AlignTextToFramePadding();
         imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Pet Palettes:');
         imgui.SameLine();
-        imgui.TextColored(petAware and {0.5, 1.0, 0.8, 1.0} or {0.6, 0.6, 0.6, 1.0}, petAwareLabel);
-
-        if imgui.Button(petAware and 'Disable Pet Palettes##' .. configKey or 'Enable Pet Palettes##' .. configKey, {160, 22}) then
+        -- Color button based on state: cyan for enabled, grey for disabled
+        if petAware then
+            imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.5, 0.5, 1.0});
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.6, 0.6, 1.0});
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.4, 0.7, 0.7, 1.0});
+        else
+            imgui.PushStyleColor(ImGuiCol_Button, {0.35, 0.35, 0.35, 1.0});
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.45, 0.45, 0.45, 1.0});
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.55, 0.55, 0.55, 1.0});
+        end
+        if imgui.Button(petAware and 'Enabled##pet' .. configKey or 'Disabled##pet' .. configKey, {100, 0}) then
             barSettings.petAware = not petAware;
             SaveSettingsOnly();
         end
-        imgui.ShowHelp('Pet Palettes: Each summoned pet can have its own hotbar configuration.\nSMN: Per-avatar palettes (Ifrit, Shiva, etc.)\nDRG: Wyvern palette\nBST: Jug pet / Charm palettes\nPUP: Automaton palette\n\nWhen disabled, uses base job palette only.');
+        imgui.PopStyleColor(3);
+        imgui.ShowHelp('Pet Palettes: Each summoned pet can have its own hotbar configuration.\nSMN: Per-avatar palettes (Ifrit, Shiva, etc.)\nDRG: Wyvern palette\nBST: Jug pet / Charm palettes\nPUP: Automaton palette\n\nClick to toggle.');
 
         -- Show indicator checkbox (only visible when petAware is enabled)
         if petAware then
@@ -997,7 +1354,13 @@ local function DrawBarVisualSettings(configKey, barLabel)
             end
             imgui.ShowHelp('Show a small dot indicator next to the bar number when pet palettes are active.');
         end
+    end
 
+    imgui.Spacing();
+
+    -- General Palettes section (user-defined named palettes)
+    if jobSpecific then
+        DrawGeneralPalettesSection(configKey, barSettings, barIndex);
         imgui.Spacing();
     end
 
@@ -1076,12 +1439,20 @@ local function DrawCrossbarBarSettings(crossbarSettings, barType, barKey)
 
     -- Job-Specific Actions toggle
     local jobSpecific = barSettings.jobSpecific ~= false;
-    local jobSpecificLabel = jobSpecific and 'Job-Specific Actions' or 'Global Actions (Shared)';
+    imgui.AlignTextToFramePadding();
     imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Action Storage:');
     imgui.SameLine();
-    imgui.TextColored(jobSpecific and {0.5, 1.0, 0.5, 1.0} or {1.0, 0.8, 0.5, 1.0}, jobSpecificLabel);
-
-    if imgui.Button(jobSpecific and 'Switch to Global##' .. barKey or 'Switch to Job-Specific##' .. barKey, {160, 22}) then
+    -- Color button based on state: green for job-specific, orange for global
+    if jobSpecific then
+        imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.5, 0.2, 1.0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.6, 0.3, 1.0});
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.4, 0.7, 0.4, 1.0});
+    else
+        imgui.PushStyleColor(ImGuiCol_Button, {0.6, 0.4, 0.2, 1.0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.7, 0.5, 0.3, 1.0});
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.8, 0.6, 0.4, 1.0});
+    end
+    if imgui.Button(jobSpecific and 'Job-Specific##cb' .. barKey or 'Global##cb' .. barKey, {100, 0}) then
         -- Show confirmation popup
         jobSpecificConfirmState.showPopup = true;
         jobSpecificConfirmState.targetConfigKey = 'hotbarCrossbar';
@@ -1089,23 +1460,31 @@ local function DrawCrossbarBarSettings(crossbarSettings, barType, barKey)
         jobSpecificConfirmState.newValue = not jobSpecific;
         jobSpecificConfirmState.isCrossbar = true;
     end
-    imgui.ShowHelp('Job-Specific: Each job has its own actions for this crossbar.\nGlobal: All jobs share the same actions.\n\nWARNING: Switching modes will clear slot actions for this bar!');
-
-    imgui.Spacing();
+    imgui.PopStyleColor(3);
+    imgui.ShowHelp('Job-Specific: Each job has its own actions for this crossbar.\nGlobal: All jobs share the same actions.\n\nClick to switch. WARNING: Switching modes will clear slot actions for this bar!');
 
     -- Pet-Aware Palettes toggle (only when job-specific)
     if jobSpecific then
         local petAware = barSettings.petAware == true;
-        local petAwareLabel = petAware and 'Pet Palettes Enabled' or 'Pet Palettes Disabled';
+        imgui.AlignTextToFramePadding();
         imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Pet Palettes:');
         imgui.SameLine();
-        imgui.TextColored(petAware and {0.5, 1.0, 0.8, 1.0} or {0.6, 0.6, 0.6, 1.0}, petAwareLabel);
-
-        if imgui.Button(petAware and 'Disable Pet Palettes##' .. barKey or 'Enable Pet Palettes##' .. barKey, {160, 22}) then
+        -- Color button based on state: cyan for enabled, grey for disabled
+        if petAware then
+            imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.5, 0.5, 1.0});
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.6, 0.6, 1.0});
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.4, 0.7, 0.7, 1.0});
+        else
+            imgui.PushStyleColor(ImGuiCol_Button, {0.35, 0.35, 0.35, 1.0});
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.45, 0.45, 0.45, 1.0});
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.55, 0.55, 0.55, 1.0});
+        end
+        if imgui.Button(petAware and 'Enabled##petcb' .. barKey or 'Disabled##petcb' .. barKey, {100, 0}) then
             barSettings.petAware = not petAware;
             SaveSettingsOnly();
         end
-        imgui.ShowHelp('Pet Palettes: Each summoned pet can have its own crossbar configuration.\nSMN: Per-avatar palettes\nDRG: Wyvern palette\nBST: Jug pet / Charm palettes\nPUP: Automaton palette');
+        imgui.PopStyleColor(3);
+        imgui.ShowHelp('Pet Palettes: Each summoned pet can have its own crossbar configuration.\nSMN: Per-avatar palettes\nDRG: Wyvern palette\nBST: Jug pet / Charm palettes\nPUP: Automaton palette\n\nClick to toggle.');
     end
 end
 
@@ -1539,147 +1918,16 @@ function M.DrawSettings(state)
     local selectedModeTab = state and state.selectedModeTab or 'hotbar';  -- 'hotbar' or 'crossbar' when mode is 'both'
     local selectedCrossbarTab = state and state.selectedCrossbarTab or 1;  -- 1=L2, 2=R2, 3=L2R2, etc.
 
-    -- Global settings with action buttons on same row as Enabled
+    -- Basic toggles at top
     components.DrawCheckbox('Enabled', 'hotbarEnabled');
-    imgui.SameLine();
-
-    -- Gold-styled action buttons
-    local goldDark = {0.573, 0.512, 0.355, 1.0};
-    local gold = {0.765, 0.684, 0.474, 1.0};
-    local goldBright = {0.957, 0.855, 0.592, 1.0};
-    imgui.PushStyleColor(ImGuiCol_Button, goldDark);
-    imgui.PushStyleColor(ImGuiCol_ButtonHovered, gold);
-    imgui.PushStyleColor(ImGuiCol_ButtonActive, goldBright);
-
-    if imgui.Button('Macro Palette', {140, 0}) then
-        macropalette.OpenPalette();
-    end
-    imgui.SameLine();
-    -- selectedBarTab is index into BAR_TYPES where 1=Global, 2=Bar1, 3=Bar2, etc.
-    -- So actual bar index is selectedBarTab - 1 (default to 1 if Global is selected)
-    local editBarIndex = math.max(1, (selectedBarTab or 1) - 1);
-    local editConfigKey = 'hotbarBar' .. editBarIndex;
-    if imgui.Button('Keybinds', {100, 0}) then
-        OpenKeybindModal(editBarIndex, editConfigKey);
-    end
-
-    imgui.PopStyleColor(3);
-
     components.DrawCheckbox('Hide When Menu Open', 'hotbarHideOnMenuFocus');
     imgui.ShowHelp('Hide hotbars when a game menu is open (equipment, map, etc.).');
 
-    -- Disable XI macros checkbox (stored in hotbarGlobal)
-    local disableMacroBars = { gConfig.hotbarGlobal.disableMacroBars or false };
-    if imgui.Checkbox('Disable XI Macros', disableMacroBars) then
-        gConfig.hotbarGlobal.disableMacroBars = disableMacroBars[1];
-        SaveSettingsOnly();
-        DeferredUpdateVisuals();
-    end
-    imgui.SameLine();
-    -- Get diagnostic info for tooltip
-    local diag = macrosLib.get_diagnostics();
-
-    -- Show warning icon if macrofix addon conflict detected
-    if diag.macrofixConflict then
-        imgui.TextColored({1.0, 0.4, 0.0, 1.0}, '(!)');
-        if imgui.IsItemHovered() then
-            imgui.BeginTooltip();
-            imgui.TextColored({1.0, 0.6, 0.0, 1.0}, 'Macrofix Addon Conflict Detected');
-            imgui.Separator();
-            imgui.TextWrapped('The macrofix addon was loaded before XIUI and altered memory signatures.');
-            imgui.Spacing();
-            imgui.TextWrapped('To fix this:');
-            imgui.TextWrapped('1. Unload macrofix: /addon unload macrofix');
-            imgui.TextWrapped('2. Restart the game');
-            imgui.TextWrapped('3. Load XIUI first (before macrofix)');
-            imgui.Spacing();
-            imgui.TextColored({0.7, 0.7, 0.7, 1.0}, 'XIUI includes macrofix functionality - you do not need the separate addon.');
-            imgui.EndTooltip();
-        end
-        imgui.SameLine();
-    end
-    -- Show status indicator with color based on mode
-    if diag.mode == 'hide' then
-        imgui.TextColored({0.5, 1.0, 0.5, 1.0}, '(hidden)');  -- Green when hidden
-    elseif diag.mode == 'macrofix' then
-        imgui.TextColored({0.5, 0.8, 1.0, 1.0}, '(macrofix)');  -- Cyan for macrofix mode
-    else
-        imgui.TextColored({1.0, 0.7, 0.3, 1.0}, '(init...)');  -- Orange if still initializing
-    end
-    if imgui.IsItemHovered() then
-        imgui.BeginTooltip();
-        imgui.Text('Macro Patch Diagnostics');
-        imgui.Separator();
-        local modeStr = diag.mode or 'initializing';
-        if diag.mode == 'hide' then
-            modeStr = 'hide (macro bar hidden)';
-        elseif diag.mode == 'macrofix' then
-            modeStr = 'macrofix (fast built-in macros)';
-        end
-        imgui.Text('Mode: ' .. modeStr);
-
-        -- Check if macrofix addon is loaded (safely - GetAddonManager may not exist)
-        local macrofixLoaded = false;
-        local ok, addonManager = pcall(function() return AshitaCore:GetAddonManager(); end);
-        if ok and addonManager then
-            local ok2, state = pcall(function() return addonManager:GetAddonState('macrofix'); end);
-            if ok2 and state and state > 0 then
-                macrofixLoaded = true;
-            end
-        end
-        if macrofixLoaded then
-            imgui.Spacing();
-            imgui.TextColored({1.0, 0.6, 0.0, 1.0}, 'Warning: macrofix addon detected!');
-            imgui.TextWrapped('You can unload macrofix - XIUI includes this functionality. Use /addon unload macrofix');
-        end
-
-        imgui.Spacing();
-        imgui.Text('Hide patches (keyboard):');
-        for _, p in ipairs(diag.hidePatches) do
-            local color = p.status == 'active' and {0.5, 1.0, 0.5, 1.0} or
-                          p.status == 'ready' and {0.7, 0.7, 0.7, 1.0} or
-                          {1.0, 0.5, 0.3, 1.0};
-            imgui.TextColored(color, '  ' .. p.name .. ': ' .. p.status);
-        end
-        imgui.Spacing();
-        imgui.Text('Hide patches (controller):');
-        if diag.hidePatchesController and #diag.hidePatchesController > 0 then
-            for _, p in ipairs(diag.hidePatchesController) do
-                local color = p.status == 'active' and {0.5, 1.0, 0.5, 1.0} or
-                              p.status == 'ready' and {0.7, 0.7, 0.7, 1.0} or
-                              {1.0, 0.5, 0.3, 1.0};
-                imgui.TextColored(color, '  ' .. p.name .. ': ' .. p.status);
-            end
-        else
-            imgui.TextColored({0.7, 0.7, 0.7, 1.0}, '  (none configured)');
-        end
-        imgui.Spacing();
-        imgui.Text('Macrofix patches (speed fix):');
-        for _, p in ipairs(diag.macrofixPatches) do
-            local color = p.status == 'active' and {0.5, 1.0, 0.5, 1.0} or
-                          p.status == 'ready' and {0.7, 0.7, 0.7, 1.0} or
-                          {1.0, 0.5, 0.3, 1.0};
-            imgui.TextColored(color, '  ' .. p.name .. ': ' .. p.status);
-        end
-        imgui.Spacing();
-        imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'active = applied, ready = available');
-        imgui.EndTooltip();
-    end
-    imgui.ShowHelp('Toggle macro bar behavior:\n- OFF: Built-in macros work with speed fix (macrofix)\n- ON: Macro bar hidden, XIUI hotbar/crossbar only\n\nNote: When ON, also blocks native macro commands.');
-
-    -- Clear override on pet change checkbox
-    local clearOverride = { gConfig.hotbarGlobal.clearOverrideOnPetChange ~= false };  -- Default true
-    if imgui.Checkbox('Auto-reset Pet Palette on Summon', clearOverride) then
-        gConfig.hotbarGlobal.clearOverrideOnPetChange = clearOverride[1];
-        SaveSettingsOnly();
-    end
-    imgui.ShowHelp('When enabled, manually selected pet palettes will reset to auto-detect when you summon a new pet.\nWhen disabled, your manual palette selection persists until you explicitly change it.');
+    imgui.Spacing();
+    imgui.Separator();
+    imgui.Spacing();
 
     -- Layout Mode dropdown
-    imgui.Spacing();
-    imgui.TextColored(components.TAB_STYLE.gold, 'Layout Mode');
-    imgui.SameLine();
-
     local modeOptions = { 'Hotbar', 'Crossbar', 'Both' };
     local modeValues = { 'hotbar', 'crossbar', 'both' };
     local currentMode = gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
@@ -1693,6 +1941,9 @@ function M.DrawSettings(state)
         end
     end
 
+    imgui.AlignTextToFramePadding();
+    imgui.Text('Layout Mode:');
+    imgui.SameLine();
     imgui.SetNextItemWidth(120);
     if imgui.BeginCombo('##layoutMode', modeOptions[currentModeIndex]) then
         for i, label in ipairs(modeOptions) do
@@ -1711,6 +1962,274 @@ function M.DrawSettings(state)
         imgui.EndCombo();
     end
     imgui.ShowHelp('Hotbar: Standard keyboard hotbars (Bars 1-6)\nCrossbar: Controller layout with L2/R2 triggers\nBoth: Show both hotbar and crossbar');
+
+    -- Conditional: KB Palette Cycle (show if mode is hotbar or both)
+    if currentMode == 'hotbar' or currentMode == 'both' then
+        local kbOptions = { 'Disabled', 'Ctrl + Up/Down', 'Alt + Up/Down', 'Shift + Up/Down', 'Up/Down' };
+        local kbModifierValues = { nil, 'ctrl', 'alt', 'shift', 'none' };
+        local currentKbIndex = 1;  -- Default to Disabled
+        if gConfig.hotbarGlobal.paletteCycleEnabled ~= false then
+            local currentMod = gConfig.hotbarGlobal.paletteCycleModifier or 'ctrl';
+            for i, v in ipairs(kbModifierValues) do
+                if v == currentMod then
+                    currentKbIndex = i;
+                    break;
+                end
+            end
+        end
+
+        imgui.AlignTextToFramePadding();
+        imgui.Text('Keyboard Palette:');
+        imgui.SameLine();
+        imgui.SetNextItemWidth(140);
+        if imgui.BeginCombo('##kbPaletteCycle', kbOptions[currentKbIndex]) then
+            for i, label in ipairs(kbOptions) do
+                local isSelected = currentKbIndex == i;
+                if imgui.Selectable(label, isSelected) then
+                    if i == 1 then
+                        gConfig.hotbarGlobal.paletteCycleEnabled = false;
+                    else
+                        gConfig.hotbarGlobal.paletteCycleEnabled = true;
+                        gConfig.hotbarGlobal.paletteCycleModifier = kbModifierValues[i];
+                    end
+                    SaveSettingsOnly();
+                end
+                if isSelected then imgui.SetItemDefaultFocus(); end
+            end
+            imgui.EndCombo();
+        end
+        imgui.ShowHelp('Keyboard shortcut to cycle through palettes.');
+    end
+
+    -- Conditional: Controller Palette Cycle (show if mode is crossbar or both)
+    if currentMode == 'crossbar' or currentMode == 'both' then
+        local ctrlOptions = { 'Disabled', 'RB + Dpad Up/Down' };
+        local currentCtrlIndex = (gConfig.hotbarGlobal.paletteCycleControllerEnabled ~= false) and 2 or 1;
+
+        imgui.AlignTextToFramePadding();
+        imgui.Text('Controller Palette:');
+        imgui.SameLine();
+        imgui.SetNextItemWidth(140);
+        if imgui.BeginCombo('##ctrlPaletteCycle', ctrlOptions[currentCtrlIndex]) then
+            for i, label in ipairs(ctrlOptions) do
+                local isSelected = currentCtrlIndex == i;
+                if imgui.Selectable(label, isSelected) then
+                    gConfig.hotbarGlobal.paletteCycleControllerEnabled = (i == 2);
+                    SaveSettingsOnly();
+                end
+                if isSelected then imgui.SetItemDefaultFocus(); end
+            end
+            imgui.EndCombo();
+        end
+        imgui.ShowHelp('Controller shortcut to cycle through palettes.');
+    end
+
+    imgui.Spacing();
+    imgui.Separator();
+    imgui.Spacing();
+
+    -- Global Settings collapsible section
+    if components.CollapsingSection('Global Settings##hotbar') then
+        -- Action buttons using tab style colors (dark bg, readable text)
+        imgui.PushStyleColor(ImGuiCol_Button, components.TAB_STYLE.bgLight);
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, components.TAB_STYLE.bgLighter);
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.22, 0.20, 0.17, 1.0});
+
+        if imgui.Button('Macro Palette', {140, 0}) then
+            macropalette.OpenPalette();
+        end
+        imgui.SameLine();
+        -- selectedBarTab is index into BAR_TYPES where 1=Global, 2=Bar1, 3=Bar2, etc.
+        -- So actual bar index is selectedBarTab - 1 (default to 1 if Global is selected)
+        local editBarIndex = math.max(1, (selectedBarTab or 1) - 1);
+        local editConfigKey = 'hotbarBar' .. editBarIndex;
+        if imgui.Button('Keybinds', {100, 0}) then
+            OpenKeybindModal(editBarIndex, editConfigKey);
+        end
+        imgui.SameLine();
+        if imgui.Button('Import', {80, 0}) then
+            migrationWizard.Open();
+        end
+        imgui.ShowHelp('Import hotbar and crossbar bindings from tHotBar and tCrossBar addons.');
+
+        imgui.PopStyleColor(3);
+
+        imgui.Spacing();
+
+        -- Disable XI macros checkbox (stored in hotbarGlobal)
+        local disableMacroBars = { gConfig.hotbarGlobal.disableMacroBars or false };
+        if imgui.Checkbox('Disable XI Macros', disableMacroBars) then
+            gConfig.hotbarGlobal.disableMacroBars = disableMacroBars[1];
+            SaveSettingsOnly();
+            DeferredUpdateVisuals();
+        end
+        imgui.SameLine();
+        -- Get diagnostic info for tooltip
+        local diag = macrosLib.get_diagnostics();
+
+        -- Show warning icon if macrofix addon conflict detected
+        if diag.macrofixConflict then
+            imgui.TextColored({1.0, 0.4, 0.0, 1.0}, '(!)');
+            if imgui.IsItemHovered() then
+                imgui.BeginTooltip();
+                imgui.TextColored({1.0, 0.6, 0.0, 1.0}, 'Macrofix Addon Conflict Detected');
+                imgui.Separator();
+                imgui.TextWrapped('The macrofix addon was loaded before XIUI and altered memory signatures.');
+                imgui.Spacing();
+                imgui.TextWrapped('To fix this:');
+                imgui.TextWrapped('1. Unload macrofix: /addon unload macrofix');
+                imgui.TextWrapped('2. Restart the game');
+                imgui.TextWrapped('3. Load XIUI first (before macrofix)');
+                imgui.Spacing();
+                imgui.TextColored({0.7, 0.7, 0.7, 1.0}, 'XIUI includes macrofix functionality - you do not need the separate addon.');
+                imgui.EndTooltip();
+            end
+            imgui.SameLine();
+        end
+        -- Show status indicator with color based on mode
+        if diag.mode == 'hide' then
+            imgui.TextColored({0.5, 1.0, 0.5, 1.0}, '(hidden)');  -- Green when hidden
+        elseif diag.mode == 'macrofix' then
+            imgui.TextColored({0.5, 0.8, 1.0, 1.0}, '(macrofix)');  -- Cyan for macrofix mode
+        else
+            imgui.TextColored({1.0, 0.7, 0.3, 1.0}, '(init...)');  -- Orange if still initializing
+        end
+        if imgui.IsItemHovered() then
+            imgui.BeginTooltip();
+            imgui.Text('Macro Patch Diagnostics');
+            imgui.Separator();
+            local modeStr = diag.mode or 'initializing';
+            if diag.mode == 'hide' then
+                modeStr = 'hide (macro bar hidden)';
+            elseif diag.mode == 'macrofix' then
+                modeStr = 'macrofix (fast built-in macros)';
+            end
+            imgui.Text('Mode: ' .. modeStr);
+
+            -- Check if macrofix addon is loaded (safely - GetAddonManager may not exist)
+            local macrofixLoaded = false;
+            local ok, addonManager = pcall(function() return AshitaCore:GetAddonManager(); end);
+            if ok and addonManager then
+                local ok2, addonState = pcall(function() return addonManager:GetAddonState('macrofix'); end);
+                if ok2 and addonState and addonState > 0 then
+                    macrofixLoaded = true;
+                end
+            end
+            if macrofixLoaded then
+                imgui.Spacing();
+                imgui.TextColored({1.0, 0.6, 0.0, 1.0}, 'Warning: macrofix addon detected!');
+                imgui.TextWrapped('You can unload macrofix - XIUI includes this functionality. Use /addon unload macrofix');
+            end
+
+            imgui.Spacing();
+            imgui.Text('Hide patches (keyboard):');
+            for _, p in ipairs(diag.hidePatches) do
+                local color = p.status == 'active' and {0.5, 1.0, 0.5, 1.0} or
+                              p.status == 'ready' and {0.7, 0.7, 0.7, 1.0} or
+                              {1.0, 0.5, 0.3, 1.0};
+                imgui.TextColored(color, '  ' .. p.name .. ': ' .. p.status);
+            end
+            imgui.Spacing();
+            imgui.Text('Hide patches (controller):');
+            if diag.hidePatchesController and #diag.hidePatchesController > 0 then
+                for _, p in ipairs(diag.hidePatchesController) do
+                    local color = p.status == 'active' and {0.5, 1.0, 0.5, 1.0} or
+                                  p.status == 'ready' and {0.7, 0.7, 0.7, 1.0} or
+                                  {1.0, 0.5, 0.3, 1.0};
+                    imgui.TextColored(color, '  ' .. p.name .. ': ' .. p.status);
+                end
+            else
+                imgui.TextColored({0.7, 0.7, 0.7, 1.0}, '  (none configured)');
+            end
+            imgui.Spacing();
+            imgui.Text('Macrofix patches (speed fix):');
+            for _, p in ipairs(diag.macrofixPatches) do
+                local color = p.status == 'active' and {0.5, 1.0, 0.5, 1.0} or
+                              p.status == 'ready' and {0.7, 0.7, 0.7, 1.0} or
+                              {1.0, 0.5, 0.3, 1.0};
+                imgui.TextColored(color, '  ' .. p.name .. ': ' .. p.status);
+            end
+            imgui.Spacing();
+            imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'active = applied, ready = available');
+            imgui.EndTooltip();
+        end
+        imgui.ShowHelp('Toggle macro bar behavior:\n- OFF: Built-in macros work with speed fix (macrofix)\n- ON: Macro bar hidden, XIUI hotbar/crossbar only\n\nNote: When ON, also blocks native macro commands.');
+
+        -- Conflicting Game Keys section
+        local blockedKeys = gConfig.hotbarGlobal.blockedGameKeys or {};
+        local blockedCount = #blockedKeys;
+
+        if blockedCount > 0 then
+            imgui.TextColored({0.7, 0.7, 0.7, 1.0}, string.format('Conflicting Keys: %d', blockedCount));
+            imgui.SameLine();
+            if imgui.SmallButton('Manage##blockedKeys') then
+                imgui.OpenPopup('Conflicting Game Keys##manageBlocked');
+            end
+        else
+            imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'Conflicting Keys: None');
+            imgui.SameLine();
+            imgui.TextColored({0.4, 0.4, 0.4, 1.0}, '(set via keybind editor)');
+        end
+        imgui.ShowHelp('Keys with known game conflicts.\n\nNote: Your hotbar keybind WILL execute, but game\nfunctions may also trigger simultaneously.\nBlocking only works during chat input.');
+
+        -- Conflicting keys management popup
+        if imgui.BeginPopup('Conflicting Game Keys##manageBlocked') then
+            imgui.TextColored({1.0, 0.85, 0.4, 1.0}, 'Conflicting Game Keys');
+            imgui.Separator();
+            imgui.Spacing();
+
+            if blockedCount == 0 then
+                imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'No conflicting keys assigned');
+            else
+                -- List blocked keys with remove buttons
+                local toRemove = nil;
+                for i, blocked in ipairs(blockedKeys) do
+                    -- Format key name
+                    local parts = {};
+                    if blocked.ctrl then table.insert(parts, 'Ctrl'); end
+                    if blocked.alt then table.insert(parts, 'Alt'); end
+                    if blocked.shift then table.insert(parts, 'Shift'); end
+                    local keyName = VK_NAMES[blocked.key] or string.format('Key%d', blocked.key);
+                    table.insert(parts, keyName);
+                    local keyStr = table.concat(parts, '+');
+
+                    -- Find if this has a known conflict name
+                    local conflictName = nil;
+                    for _, conflict in ipairs(KNOWN_GAME_CONFLICTS) do
+                        if conflict.key == blocked.key and
+                           (conflict.ctrl or false) == (blocked.ctrl or false) and
+                           (conflict.alt or false) == (blocked.alt or false) and
+                           (conflict.shift or false) == (blocked.shift or false) then
+                            conflictName = conflict.name;
+                            break;
+                        end
+                    end
+
+                    imgui.Text(keyStr);
+                    if conflictName then
+                        imgui.SameLine();
+                        imgui.TextColored({0.5, 0.5, 0.5, 1.0}, '(' .. conflictName .. ')');
+                    end
+                    imgui.SameLine();
+                    if imgui.SmallButton('X##remove' .. i) then
+                        toRemove = i;
+                    end
+                end
+
+                -- Process removal after iteration
+                if toRemove then
+                    table.remove(blockedKeys, toRemove);
+                    SaveSettingsOnly();
+                end
+            end
+
+            imgui.Spacing();
+            imgui.Separator();
+            imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'Tip: Assign keys via Keybind editor');
+
+            imgui.EndPopup();
+        end
+    end
 
     imgui.Spacing();
     imgui.Separator();

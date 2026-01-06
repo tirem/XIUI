@@ -1,0 +1,435 @@
+--[[
+* XIUI Hotbar - General Palette Module
+* Manages user-defined named palettes for hotbars
+* Works alongside petpalette.lua (pet palettes take precedence when petAware is enabled)
+*
+* Storage key format: '{jobId}:{subjobId}:palette:{name}' (e.g., '15:10:palette:Stuns')
+* Base palette uses: '{jobId}:{subjobId}' (no palette suffix)
+]]--
+
+require('common');
+require('handlers.helpers');
+
+local M = {};
+
+-- ============================================
+-- Constants
+-- ============================================
+
+M.BASE_PALETTE_NAME = 'Base';
+M.PALETTE_KEY_PREFIX = 'palette:';
+
+-- ============================================
+-- State
+-- ============================================
+
+local state = {
+    -- Active palette name per bar: [barIndex] = paletteName or nil (nil = Base)
+    activePalettes = {},
+
+    -- Callbacks for palette change events
+    onPaletteChangedCallbacks = {},
+};
+
+-- ============================================
+-- Palette Name Validation
+-- ============================================
+
+-- Validate palette name (no colons, reasonable length)
+local function IsValidPaletteName(name)
+    if not name or type(name) ~= 'string' then return false; end
+    if name == '' or name:len() > 32 then return false; end
+    if name:find(':') then return false; end  -- Colons used in storage keys
+    return true;
+end
+
+-- ============================================
+-- Palette Key Generation
+-- ============================================
+
+-- Build storage key suffix for a palette name
+-- Returns nil for Base palette (uses base job:subjob key)
+function M.GetPaletteKeySuffix(paletteName)
+    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
+        return nil;
+    end
+    return M.PALETTE_KEY_PREFIX .. paletteName;
+end
+
+-- Build full storage key for a palette
+-- baseKey: '{jobId}:{subjobId}' format
+-- paletteName: palette name or nil/Base for base palette
+function M.BuildStorageKey(baseKey, paletteName)
+    local suffix = M.GetPaletteKeySuffix(paletteName);
+    if not suffix then
+        return baseKey;
+    end
+    return string.format('%s:%s', baseKey, suffix);
+end
+
+-- Parse a storage key to extract palette name
+-- Returns nil if no palette suffix (base palette)
+function M.ParsePaletteFromKey(storageKey)
+    if not storageKey or type(storageKey) ~= 'string' then return nil; end
+
+    -- Look for :palette: in the key
+    local paletteStart = storageKey:find(':' .. M.PALETTE_KEY_PREFIX);
+    if not paletteStart then return nil; end
+
+    -- Extract everything after :palette:
+    local paletteName = storageKey:sub(paletteStart + 1 + #M.PALETTE_KEY_PREFIX);
+    if paletteName == '' then return nil; end
+
+    return paletteName;
+end
+
+-- ============================================
+-- Active Palette Management
+-- ============================================
+
+-- Get active palette name for a bar (nil = Base)
+function M.GetActivePalette(barIndex)
+    return state.activePalettes[barIndex];
+end
+
+-- Get active palette display name for a bar
+function M.GetActivePaletteDisplayName(barIndex)
+    return state.activePalettes[barIndex] or M.BASE_PALETTE_NAME;
+end
+
+-- Set active palette for a bar
+-- paletteName: name to activate, or nil/Base to use base palette
+function M.SetActivePalette(barIndex, paletteName)
+    local oldPalette = state.activePalettes[barIndex];
+
+    -- Normalize "Base" to nil
+    if paletteName == M.BASE_PALETTE_NAME then
+        paletteName = nil;
+    end
+
+    -- Skip if no change
+    if oldPalette == paletteName then
+        return false;
+    end
+
+    state.activePalettes[barIndex] = paletteName;
+
+    -- Fire callbacks
+    M.FirePaletteChangedCallbacks(barIndex, oldPalette, paletteName);
+
+    return true;
+end
+
+-- Clear active palette for a bar (return to Base)
+function M.ClearActivePalette(barIndex)
+    return M.SetActivePalette(barIndex, nil);
+end
+
+-- Clear all active palettes
+function M.ClearAllActivePalettes()
+    local hadChanges = false;
+    for barIndex, _ in pairs(state.activePalettes) do
+        if M.ClearActivePalette(barIndex) then
+            hadChanges = true;
+        end
+    end
+    return hadChanges;
+end
+
+-- ============================================
+-- Available Palettes Discovery
+-- ============================================
+
+-- Get list of available palette names for a bar based on stored slotActions
+-- Returns: { 'Base', 'Stuns', 'Heals', ... }
+function M.GetAvailablePalettes(barIndex, jobId, subjobId)
+    local palettes = { M.BASE_PALETTE_NAME };  -- Always include Base
+
+    local configKey = 'hotbarBar' .. barIndex;
+    local barSettings = gConfig and gConfig[configKey];
+    if not barSettings or not barSettings.slotActions then
+        return palettes;
+    end
+
+    -- Build base key pattern to match
+    local normalizedJobId = jobId or 1;
+    local normalizedSubjobId = subjobId or 0;
+    local baseKey = string.format('%d:%d', normalizedJobId, normalizedSubjobId);
+    local palettePattern = baseKey .. ':' .. M.PALETTE_KEY_PREFIX;
+
+    -- Also check for fallback pattern with subjob=0 (for imported palettes)
+    local fallbackPattern = nil;
+    if normalizedSubjobId ~= 0 then
+        local fallbackKey = string.format('%d:0', normalizedJobId);
+        fallbackPattern = fallbackKey .. ':' .. M.PALETTE_KEY_PREFIX;
+    end
+
+    -- Scan slotActions keys for palette entries
+    local seen = {};
+    for storageKey, _ in pairs(barSettings.slotActions) do
+        if type(storageKey) == 'string' then
+            local paletteName = nil;
+
+            -- Check primary pattern first
+            if storageKey:find(palettePattern, 1, true) == 1 then
+                paletteName = storageKey:sub(#palettePattern + 1);
+            -- Check fallback pattern (subjob=0) for imported palettes
+            elseif fallbackPattern and storageKey:find(fallbackPattern, 1, true) == 1 then
+                paletteName = storageKey:sub(#fallbackPattern + 1);
+            end
+
+            if paletteName and paletteName ~= '' and not seen[paletteName] then
+                seen[paletteName] = true;
+                table.insert(palettes, paletteName);
+            end
+        end
+    end
+
+    return palettes;
+end
+
+-- Check if a specific palette exists for a bar
+function M.PaletteExists(barIndex, paletteName, jobId, subjobId)
+    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
+        return true;  -- Base always exists
+    end
+
+    local available = M.GetAvailablePalettes(barIndex, jobId, subjobId);
+    for _, name in ipairs(available) do
+        if name == paletteName then
+            return true;
+        end
+    end
+    return false;
+end
+
+-- ============================================
+-- Palette Cycling
+-- ============================================
+
+-- Cycle through palettes for a bar
+-- direction: 1 for next, -1 for previous
+function M.CyclePalette(barIndex, direction, jobId, subjobId)
+    direction = direction or 1;
+
+    local palettes = M.GetAvailablePalettes(barIndex, jobId, subjobId);
+    if #palettes <= 1 then
+        return nil;  -- Nothing to cycle (only Base)
+    end
+
+    local currentName = M.GetActivePaletteDisplayName(barIndex);
+    local currentIndex = 1;
+
+    -- Find current palette index
+    for i, name in ipairs(palettes) do
+        if name == currentName then
+            currentIndex = i;
+            break;
+        end
+    end
+
+    -- Calculate new index with wrap-around
+    local newIndex = currentIndex + direction;
+    if newIndex < 1 then newIndex = #palettes; end
+    if newIndex > #palettes then newIndex = 1; end
+
+    local newPalette = palettes[newIndex];
+    M.SetActivePalette(barIndex, newPalette);
+
+    return newPalette;
+end
+
+-- ============================================
+-- Palette CRUD Operations
+-- ============================================
+
+-- Create a new palette by copying current slot data
+-- Returns true on success, false with error message on failure
+function M.CreatePalette(barIndex, paletteName, jobId, subjobId)
+    if not IsValidPaletteName(paletteName) then
+        return false, 'Invalid palette name';
+    end
+
+    if paletteName == M.BASE_PALETTE_NAME then
+        return false, 'Cannot create palette named "Base"';
+    end
+
+    local configKey = 'hotbarBar' .. barIndex;
+    local barSettings = gConfig and gConfig[configKey];
+    if not barSettings then
+        return false, 'Bar settings not found';
+    end
+
+    -- Build storage keys
+    local baseKey = string.format('%d:%d', jobId or 1, subjobId or 0);
+    local newStorageKey = M.BuildStorageKey(baseKey, paletteName);
+
+    -- Check if palette already exists
+    if barSettings.slotActions and barSettings.slotActions[newStorageKey] then
+        return false, 'Palette already exists';
+    end
+
+    -- Ensure slotActions structure
+    if not barSettings.slotActions then
+        barSettings.slotActions = {};
+    end
+
+    -- Copy current palette's data to new palette
+    local currentStorageKey = M.BuildStorageKey(baseKey, state.activePalettes[barIndex]);
+    local currentData = barSettings.slotActions[currentStorageKey];
+
+    if currentData then
+        -- Deep copy
+        barSettings.slotActions[newStorageKey] = deep_copy_table(currentData);
+    else
+        -- Create empty palette
+        barSettings.slotActions[newStorageKey] = {};
+    end
+
+    SaveSettingsToDisk();
+    return true;
+end
+
+-- Delete a palette
+-- Returns true on success, false with error message on failure
+function M.DeletePalette(barIndex, paletteName, jobId, subjobId)
+    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
+        return false, 'Cannot delete Base palette';
+    end
+
+    local configKey = 'hotbarBar' .. barIndex;
+    local barSettings = gConfig and gConfig[configKey];
+    if not barSettings or not barSettings.slotActions then
+        return false, 'Palette not found';
+    end
+
+    local baseKey = string.format('%d:%d', jobId or 1, subjobId or 0);
+    local storageKey = M.BuildStorageKey(baseKey, paletteName);
+
+    if not barSettings.slotActions[storageKey] then
+        return false, 'Palette not found';
+    end
+
+    -- Delete the palette
+    barSettings.slotActions[storageKey] = nil;
+
+    -- If this was the active palette, switch to Base
+    if state.activePalettes[barIndex] == paletteName then
+        M.SetActivePalette(barIndex, nil);
+    end
+
+    SaveSettingsToDisk();
+    return true;
+end
+
+-- Rename a palette
+-- Returns true on success, false with error message on failure
+function M.RenamePalette(barIndex, oldName, newName, jobId, subjobId)
+    if not oldName or oldName == M.BASE_PALETTE_NAME then
+        return false, 'Cannot rename Base palette';
+    end
+
+    if not IsValidPaletteName(newName) then
+        return false, 'Invalid new palette name';
+    end
+
+    if newName == M.BASE_PALETTE_NAME then
+        return false, 'Cannot rename to "Base"';
+    end
+
+    local configKey = 'hotbarBar' .. barIndex;
+    local barSettings = gConfig and gConfig[configKey];
+    if not barSettings or not barSettings.slotActions then
+        return false, 'Palette not found';
+    end
+
+    local baseKey = string.format('%d:%d', jobId or 1, subjobId or 0);
+    local oldStorageKey = M.BuildStorageKey(baseKey, oldName);
+    local newStorageKey = M.BuildStorageKey(baseKey, newName);
+
+    if not barSettings.slotActions[oldStorageKey] then
+        return false, 'Palette not found';
+    end
+
+    if barSettings.slotActions[newStorageKey] then
+        return false, 'A palette with that name already exists';
+    end
+
+    -- Move data to new key
+    barSettings.slotActions[newStorageKey] = barSettings.slotActions[oldStorageKey];
+    barSettings.slotActions[oldStorageKey] = nil;
+
+    -- Update active palette if this was active
+    if state.activePalettes[barIndex] == oldName then
+        state.activePalettes[barIndex] = newName;
+    end
+
+    SaveSettingsToDisk();
+    return true;
+end
+
+-- ============================================
+-- Effective Storage Key for data.lua Integration
+-- ============================================
+
+-- Get the palette key suffix for a bar (to be appended to base job:subjob key)
+-- Returns nil if Base palette (no suffix needed)
+-- This is called by data.lua to build the full storage key
+function M.GetEffectivePaletteKeySuffix(barIndex)
+    local activePalette = state.activePalettes[barIndex];
+    return M.GetPaletteKeySuffix(activePalette);
+end
+
+-- Check if palette mode is enabled for a bar
+-- Palette mode is enabled if the bar has any palettes defined (beyond Base)
+function M.IsPaletteModeEnabled(barIndex, jobId, subjobId)
+    local palettes = M.GetAvailablePalettes(barIndex, jobId, subjobId);
+    return #palettes > 1;
+end
+
+-- ============================================
+-- Callback System
+-- ============================================
+
+-- Register a callback for palette changes
+-- callback(barIndex, oldPaletteName, newPaletteName)
+function M.OnPaletteChanged(callback)
+    if callback then
+        table.insert(state.onPaletteChangedCallbacks, callback);
+    end
+end
+
+-- Fire all palette changed callbacks
+function M.FirePaletteChangedCallbacks(barIndex, oldPalette, newPalette)
+    for _, callback in ipairs(state.onPaletteChangedCallbacks) do
+        local success, err = pcall(callback, barIndex, oldPalette, newPalette);
+        if not success then
+            print('[XIUI palette] Callback error: ' .. tostring(err));
+        end
+    end
+end
+
+-- ============================================
+-- State Management
+-- ============================================
+
+-- Reset all state
+function M.Reset()
+    state.activePalettes = {};
+end
+
+-- Get state for persistence (if needed)
+function M.GetState()
+    return {
+        activePalettes = state.activePalettes,
+    };
+end
+
+-- Restore state from persistence (if needed)
+function M.RestoreState(savedState)
+    if savedState and savedState.activePalettes then
+        state.activePalettes = savedState.activePalettes;
+    end
+end
+
+return M;

@@ -10,6 +10,8 @@ local devices = require('modules.hotbar.devices');
 local buttondetect = require('modules.hotbar.buttondetect');
 local actions = require('modules.hotbar.actions');
 local macrosLib = require('libs.ffxi.macros');
+local palette = require('modules.hotbar.palette');
+local data = require('modules.hotbar.data');
 
 -- Define XINPUT structures for FFI access (only used for XInput devices)
 ffi.cdef[[
@@ -182,6 +184,10 @@ local state = {
     -- DirectInput D-pad state tracking
     previousDPadAngle = -1,
     dpadHeldSlot = nil,
+
+    -- Shoulder button tracking for palette cycling (RB + Dpad)
+    rightShoulderHeld = false,
+    leftShoulderHeld = false,
 
     -- Callback for slot activation
     onSlotActivate = nil,
@@ -588,8 +594,41 @@ function Controller.HandleXInputState(e)
     -- Update combo state based on trigger changes
     UpdateComboState(leftHeld, rightHeld);
 
+    -- Track shoulder button state for palette cycling
+    local rbHeld = bit.band(currentButtons, xboxDevice.ButtonMasks.RIGHT_SHOULDER) ~= 0;
+    local lbHeld = bit.band(currentButtons, xboxDevice.ButtonMasks.LEFT_SHOULDER) ~= 0;
+    state.rightShoulderHeld = rbHeld;
+    state.leftShoulderHeld = lbHeld;
+
     -- Check for slot activation from state poll (button press detection)
     local newPresses = bit.band(currentButtons, bit.bnot(state.previousButtons));
+
+    -- Check for palette cycling: RB + Dpad Up/Down
+    local globalSettings = gConfig and gConfig.hotbarGlobal;
+    local paletteCycleEnabled = globalSettings and globalSettings.paletteCycleControllerEnabled ~= false;
+
+    if paletteCycleEnabled and rbHeld and state.activeCombo == COMBO_MODES.NONE then
+        local dpadUp = bit.band(newPresses, xboxDevice.ButtonMasks.DPAD_UP) ~= 0;
+        local dpadDown = bit.band(newPresses, xboxDevice.ButtonMasks.DPAD_DOWN) ~= 0;
+
+        if dpadUp or dpadDown then
+            -- DOWN = next (+1), UP = previous (-1) to match tHotBar/in-game macro convention
+            local direction = dpadDown and 1 or -1;
+            local jobId = data.jobId or 1;
+            local subjobId = data.subjobId or 0;
+
+            -- Cycle all bars that have palettes
+            for i = 1, 6 do
+                palette.CyclePalette(i, direction, jobId, subjobId);
+            end
+
+            DebugLog('Palette cycled via controller: ' .. (direction == 1 and 'next' or 'prev'));
+
+            -- Clear the dpad press so it doesn't trigger slot activation
+            newPresses = bit.band(newPresses, bit.bnot(bit.bor(xboxDevice.ButtonMasks.DPAD_UP, xboxDevice.ButtonMasks.DPAD_DOWN)));
+        end
+    end
+
     local slotIndex = xboxDevice.GetSlotFromButtonMask(newPresses);
     if slotIndex and state.activeCombo ~= COMBO_MODES.NONE then
         ActivateSlot(slotIndex);
@@ -745,6 +784,19 @@ function Controller.HandleDInputButton(e)
 
     DebugLogVerbose(string.format('DInput button: id=%d state=%d', buttonId, buttonState));
 
+    -- Track shoulder buttons (R1/L1) for palette cycling
+    if device.IsShoulderButton and device.IsShoulderButton(buttonId) then
+        local isPressed = buttonState == 128;
+        if device.IsR1Button(buttonId) then
+            state.rightShoulderHeld = isPressed;
+            DebugLogVerbose(string.format('DInput R1: %s', isPressed and 'PRESSED' or 'RELEASED'));
+        elseif device.IsL1Button(buttonId) then
+            state.leftShoulderHeld = isPressed;
+            DebugLogVerbose(string.format('DInput L1: %s', isPressed and 'PRESSED' or 'RELEASED'));
+        end
+        -- Don't return - let the button be processed further if needed
+    end
+
     -- Handle D-Pad via button offset 32 (angle-based values in e.state)
     -- D-Pad reports angles: 0=Up, 4500=UpRight, 9000=Right, etc., or -1/65535 when released
     if device.IsDPadButton and device.IsDPadButton(buttonId) then
@@ -752,6 +804,33 @@ function Controller.HandleDInputButton(e)
         local currentAngle = buttonState;
 
         DebugLogVerbose(string.format('DInput D-Pad: angle=%d (prev: %d)', currentAngle, previousAngle));
+
+        -- Check for palette cycling: R1 + Dpad Up/Down
+        local globalSettings = gConfig and gConfig.hotbarGlobal;
+        local paletteCycleEnabled = globalSettings and globalSettings.paletteCycleControllerEnabled ~= false;
+
+        if paletteCycleEnabled and state.rightShoulderHeld and state.activeCombo == COMBO_MODES.NONE then
+            local DPAD_UP = 0;
+            local DPAD_DOWN = 18000;
+
+            if currentAngle ~= previousAngle and (currentAngle == DPAD_UP or currentAngle == DPAD_DOWN) then
+                -- DOWN = next (+1), UP = previous (-1) to match tHotBar/in-game macro convention
+                local direction = (currentAngle == DPAD_DOWN) and 1 or -1;
+                local jobId = data.jobId or 1;
+                local subjobId = data.subjobId or 0;
+
+                -- Cycle all bars that have palettes
+                for i = 1, 6 do
+                    palette.CyclePalette(i, direction, jobId, subjobId);
+                end
+
+                DebugLog('Palette cycled via DInput controller: ' .. (direction == 1 and 'next' or 'prev'));
+
+                -- Update state and return - don't process as slot activation
+                state.previousDPadAngle = currentAngle;
+                return true;  -- Block this input
+            end
+        end
 
         -- Check for D-pad state change
         if currentAngle ~= previousAngle then
