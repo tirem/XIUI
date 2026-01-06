@@ -783,4 +783,15 @@ function M.IsDebugEnabled()
     return actions.IsDebugEnabled() or controller.IsDebugEnabled();
 end
 
+-- Toggle palette key debug mode
+-- Usage: /xiui debug palette
+function M.SetPaletteDebugEnabled(enabled)
+    actions.SetPaletteDebugEnabled(enabled);
+end
+
+-- Check if palette debug is enabled
+function M.IsPaletteDebugEnabled()
+    return actions.IsPaletteDebugEnabled();
+end
+
 return M;

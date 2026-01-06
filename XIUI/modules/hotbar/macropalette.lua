@@ -125,6 +125,16 @@ local ACTION_TYPE_LABELS = {
     pet = 'Pet Command',
 };
 
+-- Helper to format target for display (strips existing brackets, adds fresh ones)
+-- Handles: "me", "<me>", "<<me>>", "t", "<t>", etc.
+local function FormatTargetForDisplay(target)
+    if not target then return nil; end
+    -- Strip any existing < > brackets
+    local cleaned = target:gsub('[<>]', '');
+    if cleaned == '' then return nil; end
+    return '<' .. cleaned .. '>';
+end
+
 -- FFXI equipment slot bitmasks (for filtering items by equip slot)
 local EQUIP_SLOT_MASKS = {
     main = 0x0001,
@@ -155,8 +165,19 @@ local GLOBAL_SLOT_KEY = 'global';
 -- Special key for global macros (shared across all jobs)
 local GLOBAL_MACRO_KEY = 'global';
 
+-- Helper to deep copy a table (for migrating slot data)
+local function deepCopyTable(tbl)
+    if type(tbl) ~= 'table' then return tbl; end
+    local copy = {};
+    for k, v in pairs(tbl) do
+        copy[k] = deepCopyTable(v);
+    end
+    return copy;
+end
+
 -- Helper to ensure slotActions structure exists for a storage key
 -- Handles: 'global' and composite keys ('15:10', '15:10:avatar:ifrit')
+-- IMPORTANT: When creating a new key, copies data from fallback keys to preserve slot data
 local function ensureSlotActionsStructure(barSettings, storageKey)
     if not barSettings.slotActions then
         barSettings.slotActions = {};
@@ -170,7 +191,22 @@ local function ensureSlotActionsStructure(barSettings, storageKey)
     end
     -- All job-specific keys are composite strings (job:subjob format)
     if not barSettings.slotActions[storageKey] then
-        barSettings.slotActions[storageKey] = {};
+        -- Before creating empty table, check for fallback data to migrate
+        -- This preserves slot data when subjob changes (e.g., '1:0' -> '1:5')
+        local jobId, subjobId, suffix = storageKey:match('^(%d+):(%d+)(.*)$');
+        if jobId and subjobId ~= '0' then
+            -- Build fallback key with subjob=0, preserving any suffix (palette, avatar, etc.)
+            local fallbackKey = jobId .. ':0' .. (suffix or '');
+            local fallbackData = barSettings.slotActions[fallbackKey];
+            if fallbackData then
+                -- Deep copy fallback data to the new key to preserve all slots
+                barSettings.slotActions[storageKey] = deepCopyTable(fallbackData);
+            else
+                barSettings.slotActions[storageKey] = {};
+            end
+        else
+            barSettings.slotActions[storageKey] = {};
+        end
     end
     return barSettings.slotActions[storageKey];
 end
@@ -251,7 +287,7 @@ local function GetFilterIcon(spellType)
         -- Load job icon from FFXIV theme
         local jobAbbr = SPELL_TYPE_JOB_ICONS[spellType];
         if jobAbbr then
-            local path = string.format('%saddons\\XIUI\\assets\\jobs\\FFXIV\\%s.png', AshitaCore:GetInstallPath(), jobAbbr);
+            local path = string.format('%saddons\\XIUI\\assets\\jobs\\FFXIV-1\\%s.png', AshitaCore:GetInstallPath(), jobAbbr);
             icon = textures:LoadTextureFromPath(path);
         end
     end
@@ -1434,7 +1470,10 @@ local function DrawMacroTile(macro, index, x, y, size)
         imgui.Spacing();
         imgui.TextColored(COLORS.textDim, 'Type: ' .. (ACTION_TYPE_LABELS[macro.actionType] or macro.actionType or '?'));
         if macro.actionType ~= 'macro' and macro.target then
-            imgui.TextColored(COLORS.textDim, 'Target: <' .. macro.target .. '>');
+            local formattedTarget = FormatTargetForDisplay(macro.target);
+            if formattedTarget then
+                imgui.TextColored(COLORS.textDim, 'Target: ' .. formattedTarget);
+            end
         end
         imgui.Spacing();
         imgui.TextColored(COLORS.textMuted, 'Drag to hotbar slot');
@@ -2041,7 +2080,10 @@ function M.DrawPalette()
                                 imgui.Spacing();
                                 imgui.TextColored(COLORS.textDim, 'Type: ' .. (ACTION_TYPE_LABELS[macro.actionType] or macro.actionType or '?'));
                                 if macro.actionType ~= 'macro' and macro.target then
-                                    imgui.TextColored(COLORS.textDim, 'Target: <' .. macro.target .. '>');
+                                    local formattedTarget = FormatTargetForDisplay(macro.target);
+                                    if formattedTarget then
+                                        imgui.TextColored(COLORS.textDim, 'Target: ' .. formattedTarget);
+                                    end
                                 end
                                 imgui.Spacing();
                                 imgui.TextColored(COLORS.textMuted, 'Drag to hotbar slot');

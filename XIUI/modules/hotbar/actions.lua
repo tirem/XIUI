@@ -9,6 +9,7 @@ local data = require('modules.hotbar.data');
 local horizonSpells = require('modules.hotbar.database.horizonspells');
 local textures = require('modules.hotbar.textures');
 local macrosLib = require('libs.ffxi.macros');
+local palette = require('modules.hotbar.palette');
 
 -- Debug logging (controlled via /xiui debug hotbar)
 local DEBUG_ENABLED = false;
@@ -153,6 +154,28 @@ end
 --- No-op for backwards compatibility
 function M.ResetModifierStates()
     -- Not needed - we query actual state directly
+end
+
+--- Check if the palette cycling modifier key is currently held
+--- Returns: true if the configured palette modifier is active
+function M.IsPaletteModifierHeld()
+    local globalSettings = gConfig and gConfig.hotbarGlobal;
+    if not globalSettings or not globalSettings.paletteCycleEnabled then
+        return false;
+    end
+
+    local modifier = globalSettings.paletteCycleModifier or 'ctrl';
+    local ctrl, alt, shift = GetModifierStates();
+
+    if modifier == 'ctrl' and ctrl and not alt and not shift then
+        return true;
+    elseif modifier == 'alt' and alt and not ctrl and not shift then
+        return true;
+    elseif modifier == 'shift' and shift and not ctrl and not alt then
+        return true;
+    end
+
+    return false;
 end
 
 -- Cache for custom icons loaded from disk
@@ -739,6 +762,16 @@ end
 
 --- Build command and icon from keybind data
 --- Centralized function to avoid code duplication between display and key handling
+-- Helper to format target for commands (strips existing brackets, adds fresh ones)
+-- Handles: "me", "<me>", "<<me>>", "t", "<t>", etc.
+local function FormatTargetForCommand(target)
+    if not target or target == '' then return '<t>'; end
+    -- Strip any existing < > brackets to get clean target name
+    local cleaned = target:gsub('[<>]', '');
+    if cleaned == '' then return '<t>'; end
+    return '<' .. cleaned .. '>';
+end
+
 ---@param bind table The keybind data with actionType, action, and target fields
 ---@return string|nil command The command to execute
 ---@return any|nil icon The icon texture (if applicable)
@@ -752,26 +785,29 @@ function M.BuildCommand(bind)
     -- Get icon using the helper function
     local icon = M.GetBindIcon(bind);
 
+    -- Format target consistently (handles both "me" and "<me>" formats)
+    local target = FormatTargetForCommand(bind.target);
+
     -- Build command based on action type
     if bind.actionType == 'ma' then
         -- Magic spell
-        command = '/ma "' .. bind.action .. '" <' .. bind.target .. '>';
+        command = '/ma "' .. bind.action .. '" ' .. target;
     elseif bind.actionType == 'ja' then
         -- Job ability
-        command = '/ja "' .. bind.action .. '" <' .. bind.target .. '>';
+        command = '/ja "' .. bind.action .. '" ' .. target;
     elseif bind.actionType == 'ws' then
         -- Weapon skill
-        command = '/ws "' .. bind.action .. '" <' .. bind.target .. '>';
+        command = '/ws "' .. bind.action .. '" ' .. target;
     elseif bind.actionType == 'item' then
         -- Use item
-        command = '/item "' .. bind.action .. '" <' .. bind.target .. '>';
+        command = '/item "' .. bind.action .. '" ' .. target;
     elseif bind.actionType == 'equip' then
         -- Equip item to slot
         local slot = bind.equipSlot or 'main';
         command = '/equip ' .. slot .. ' "' .. bind.action .. '"';
     elseif bind.actionType == 'pet' then
         -- Pet command
-        command = '/pet "' .. bind.action .. '" <' .. bind.target .. '>';
+        command = '/pet "' .. bind.action .. '" ' .. target;
     elseif bind.actionType == 'macro' then
         -- Macro command (raw command or use macroText)
         command = bind.macroText or bind.action;
@@ -913,6 +949,10 @@ local function FindMatchingKeybind(keyCode, ctrl, alt, shift)
     return nil, nil;
 end
 
+-- Debug: Always log Ctrl+Arrow presses to diagnose palette cycling issues
+-- Set to true via /xiui debug palette
+local PALETTE_DEBUG_KEYS = false;
+
 function M.HandleKey(event)
    -- https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
    local isRelease = parseKeyEventFlags(event)
@@ -926,9 +966,18 @@ function M.HandleKey(event)
        isRelease and 'RELEASE' or 'PRESS',
        tostring(controlPressed), tostring(altPressed), tostring(shiftPressed)));
 
-   -- Skip main keyboard minus (VK 189) WITHOUT modifiers - conflicts with native FFXI menus
-   if keyCode == 189 and not controlPressed and not altPressed and not shiftPressed then
-       return;
+   -- Debug logging for palette cycling keys (VK_UP=38, VK_DOWN=40)
+   if PALETTE_DEBUG_KEYS and (keyCode == 38 or keyCode == 40) and not isRelease then
+       local gs = gConfig and gConfig.hotbarGlobal;
+       local enabled = gs and gs.paletteCycleEnabled ~= false;
+       local mod = gs and gs.paletteCycleModifier or 'ctrl';
+       local modMatch = (mod == 'ctrl' and controlPressed and not altPressed and not shiftPressed)
+                     or (mod == 'alt' and altPressed and not controlPressed and not shiftPressed)
+                     or (mod == 'shift' and shiftPressed and not controlPressed and not altPressed)
+                     or (mod == 'none' and not controlPressed and not altPressed and not shiftPressed);
+       print(string.format('[XIUI Palette Debug] Key=%d Ctrl=%s Alt=%s Shift=%s | enabled=%s mod=%s modMatch=%s',
+           keyCode, tostring(controlPressed), tostring(altPressed), tostring(shiftPressed),
+           tostring(enabled), mod, tostring(modMatch)));
    end
 
    -- Check if keybind editor is capturing input
@@ -940,6 +989,65 @@ function M.HandleKey(event)
            end
        end
        return;
+   end
+
+   -- Check for palette cycling keybind (Ctrl+Up/Down or Alt+Up/Down by default)
+   local globalSettings = gConfig and gConfig.hotbarGlobal;
+   if globalSettings and globalSettings.paletteCycleEnabled ~= false and not isRelease then
+       local prevKey = globalSettings.paletteCyclePrevKey or 38;  -- VK_UP
+       local nextKey = globalSettings.paletteCycleNextKey or 40;  -- VK_DOWN
+       local modifier = globalSettings.paletteCycleModifier or 'ctrl';
+
+       -- Debug: Log when up/down arrow is pressed with any modifier
+       if keyCode == prevKey or keyCode == nextKey then
+           DebugLog(string.format('Arrow key detected: keyCode=%d modifier=%s ctrl=%s alt=%s shift=%s',
+               keyCode, modifier, tostring(controlPressed), tostring(altPressed), tostring(shiftPressed)));
+       end
+
+       -- Check if modifier matches
+       local modifierMatch = false;
+       if modifier == 'ctrl' and controlPressed and not altPressed and not shiftPressed then
+           modifierMatch = true;
+       elseif modifier == 'alt' and altPressed and not controlPressed and not shiftPressed then
+           modifierMatch = true;
+       elseif modifier == 'shift' and shiftPressed and not controlPressed and not altPressed then
+           modifierMatch = true;
+       elseif modifier == 'none' and not controlPressed and not altPressed and not shiftPressed then
+           modifierMatch = true;
+       end
+
+       if modifierMatch and (keyCode == prevKey or keyCode == nextKey) then
+           if PALETTE_DEBUG_KEYS then
+               print('[XIUI Palette Debug] Cycling palettes...');
+           end
+           -- DOWN = next (+1), UP = previous (-1) to match tHotBar/in-game macro convention
+           local direction = (keyCode == nextKey) and 1 or -1;
+           local jobId = data.jobId or 1;
+           local subjobId = data.subjobId or 0;
+
+           -- Cycle all bars that have palettes
+           local anyChanged = false;
+           for i = 1, 6 do
+               local result = palette.CyclePalette(i, direction, jobId, subjobId);
+               if PALETTE_DEBUG_KEYS then
+                   print(string.format('[XIUI Palette Debug] Bar %d result=%s', i, tostring(result)));
+               end
+               if result then
+                   anyChanged = true;
+               end
+           end
+
+           if anyChanged then
+               print('[XIUI] Palette: ' .. (direction == 1 and 'Next' or 'Previous'));
+           else
+               if PALETTE_DEBUG_KEYS then
+                   print('[XIUI Palette Debug] No palettes to cycle');
+               end
+           end
+
+           event.blocked = true;
+           return;
+       end
    end
 
    -- Check if native macro blocking is enabled
@@ -970,6 +1078,26 @@ function M.HandleKey(event)
        ashita.tasks.once(0, function() macrosLib.stop(); end);
        ashita.tasks.once(0.01, function() macrosLib.stop(); end);
        ashita.tasks.once(0.02, function() macrosLib.stop(); end);
+   end
+
+   -- Check if this key is in the blocked game keys list
+   local blockedKeys = gConfig and gConfig.hotbarGlobal and gConfig.hotbarGlobal.blockedGameKeys;
+   if blockedKeys then
+       local ctrlVal = controlPressed or false;
+       local altVal = altPressed or false;
+       local shiftVal = shiftPressed or false;
+
+       for _, blocked in ipairs(blockedKeys) do
+           if blocked.key == keyCode and
+              (blocked.ctrl or false) == ctrlVal and
+              (blocked.alt or false) == altVal and
+              (blocked.shift or false) == shiftVal then
+               event.blocked = true;
+               DebugLog(string.format('Blocked game key: %d (0x%02X) Ctrl=%s Alt=%s Shift=%s',
+                   keyCode, keyCode, tostring(ctrlVal), tostring(altVal), tostring(shiftVal)));
+               break;
+           end
+       end
    end
 
    -- Find matching keybind from custom key assignments
@@ -1040,6 +1168,20 @@ end
 --- Get debug mode state
 function M.IsDebugEnabled()
     return DEBUG_ENABLED;
+end
+
+--- Set palette debug mode (called via /xiui debug palette)
+function M.SetPaletteDebugEnabled(enabled)
+    PALETTE_DEBUG_KEYS = enabled;
+    print('[XIUI] Palette key debug: ' .. (enabled and 'ON' or 'OFF'));
+    if enabled then
+        print('[XIUI] Press Ctrl+Up or Ctrl+Down to see key events');
+    end
+end
+
+--- Get palette debug mode state
+function M.IsPaletteDebugEnabled()
+    return PALETTE_DEBUG_KEYS;
 end
 
 return M

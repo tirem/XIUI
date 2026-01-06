@@ -43,14 +43,27 @@ end
 
 -- Helper to get slotActions with storage key
 -- Handles: 'global' and composite keys ('15:10')
+-- Falls back to base job key (jobId:0) if full job:subjob key doesn't exist
 local function getSlotActionsForJob(slotActions, storageKey)
     if not slotActions then return nil; end
     -- Handle 'global' key specially
     if storageKey == GLOBAL_SLOT_KEY then
         return slotActions[GLOBAL_SLOT_KEY];
     end
-    -- All job-specific keys are composite strings (job:subjob format)
-    return slotActions[storageKey];
+    -- Try exact storage key first (e.g., '3:5' for WHM/RDM)
+    local result = slotActions[storageKey];
+    if result then
+        return result;
+    end
+    -- Fallback: try base job key (jobId:0) for imported data without subjob
+    local jobId = storageKey:match('^(%d+)');
+    if jobId then
+        local baseKey = jobId .. ':0';
+        if baseKey ~= storageKey then
+            return slotActions[baseKey];
+        end
+    end
+    return nil;
 end
 
 -- ============================================
@@ -1261,6 +1274,33 @@ function M.DrawWindow(settings, moduleSettings)
     -- Draw L2/R2 trigger icons above the groups (controlled by showTriggerLabels)
     if drawList then
         DrawTriggerIcons(activeCombo, leftGroupX, rightGroupX, leftGroupY, groupWidth, settings, drawList);
+    end
+
+    -- Draw palette modifier indicator (refresh icon when modifier key is held)
+    if state.windowX and actions.IsPaletteModifierHeld() then
+        local refreshTexture = textures:Get('ui_refresh');
+        if refreshTexture and refreshTexture.image then
+            local iconSize = 18;
+            -- Position centered above the crossbar
+            local iconX = centerX - (iconSize / 2);
+            local iconY = state.windowY - 24;
+            local fgDrawList = imgui.GetForegroundDrawList();
+
+            -- Draw with a pulsing effect for visibility
+            local pulseAlpha = 0.7 + 0.3 * math.sin(os.clock() * 6);
+            local iconColor = imgui.GetColorU32({1.0, 1.0, 1.0, pulseAlpha});
+            local iconPtr = tonumber(ffi.cast("uint32_t", refreshTexture.image));
+
+            if iconPtr then
+                fgDrawList:AddImage(
+                    iconPtr,
+                    {iconX, iconY},
+                    {iconX + iconSize, iconY + iconSize},
+                    {0, 0}, {1, 1},
+                    iconColor
+                );
+            end
+        end
     end
 end
 

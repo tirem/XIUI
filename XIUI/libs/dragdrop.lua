@@ -375,6 +375,14 @@ function dragdrop.Render()
                     pet = 'Pet Command',
                 };
 
+                -- Helper to format target (strips existing brackets, adds fresh ones)
+                local function formatTarget(target)
+                    if not target then return nil; end
+                    local cleaned = target:gsub('[<>]', '');
+                    if cleaned == '' then return nil; end
+                    return '<' .. cleaned .. '>';
+                end
+
                 imgui.PushStyleColor(ImGuiCol_PopupBg, COLORS.bgDark);
                 imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
                 imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {8, 6});
@@ -393,7 +401,10 @@ function dragdrop.Render()
 
                 -- Target
                 if data.target and data.target ~= '' then
-                    imgui.TextColored(COLORS.textDim, 'Target: <' .. data.target .. '>');
+                    local formattedTarget = formatTarget(data.target);
+                    if formattedTarget then
+                        imgui.TextColored(COLORS.textDim, 'Target: ' .. formattedTarget);
+                    end
                 end
 
                 imgui.EndTooltip();
