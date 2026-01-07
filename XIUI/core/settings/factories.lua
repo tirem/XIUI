@@ -418,6 +418,11 @@ function M.createHotbarBarDefaults(overrides)
         -- Keyboard shortcut bindings per slot (not job-specific)
         -- Structure: keyBindings[slotIndex] = { key = virtualKeyCode, ctrl = bool, alt = bool, shift = bool }
         keyBindings = {},
+
+        -- Palette ordering for user-defined palettes (per job:subjob combination)
+        -- Structure: paletteOrder['{jobId}:{subjobId}'] = { 'paletteName1', 'paletteName2', ... }
+        -- Palettes are displayed in this order; missing palettes are appended alphabetically
+        paletteOrder = {},
     };
     if overrides then
         for k, v in pairs(overrides) do

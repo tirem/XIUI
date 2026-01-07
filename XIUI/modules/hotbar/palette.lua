@@ -141,6 +141,7 @@ end
 -- ============================================
 
 -- Get list of available palette names for a bar based on stored slotActions
+-- Returns palettes in the user-defined order from paletteOrder, with any missing palettes appended alphabetically
 -- Returns: { 'Base', 'Stuns', 'Heals', ... }
 function M.GetAvailablePalettes(barIndex, jobId, subjobId)
     local palettes = { M.BASE_PALETTE_NAME };  -- Always include Base
@@ -164,8 +165,8 @@ function M.GetAvailablePalettes(barIndex, jobId, subjobId)
         fallbackPattern = fallbackKey .. ':' .. M.PALETTE_KEY_PREFIX;
     end
 
-    -- Scan slotActions keys for palette entries
-    local seen = {};
+    -- First, collect all palette names that exist in slotActions
+    local existingPalettes = {};
     for storageKey, _ in pairs(barSettings.slotActions) do
         if type(storageKey) == 'string' then
             local paletteName = nil;
@@ -178,11 +179,39 @@ function M.GetAvailablePalettes(barIndex, jobId, subjobId)
                 paletteName = storageKey:sub(#fallbackPattern + 1);
             end
 
-            if paletteName and paletteName ~= '' and not seen[paletteName] then
+            if paletteName and paletteName ~= '' then
+                existingPalettes[paletteName] = true;
+            end
+        end
+    end
+
+    -- Get the stored palette order for this job:subjob combination
+    local orderKey = baseKey;
+    local storedOrder = barSettings.paletteOrder and barSettings.paletteOrder[orderKey];
+
+    -- Build ordered result: first add palettes from storedOrder that exist
+    local seen = {};
+    if storedOrder then
+        for _, paletteName in ipairs(storedOrder) do
+            if existingPalettes[paletteName] and not seen[paletteName] then
                 seen[paletteName] = true;
                 table.insert(palettes, paletteName);
             end
         end
+    end
+
+    -- Collect any remaining palettes not in the stored order
+    local remaining = {};
+    for paletteName, _ in pairs(existingPalettes) do
+        if not seen[paletteName] then
+            table.insert(remaining, paletteName);
+        end
+    end
+
+    -- Sort remaining palettes alphabetically and append
+    table.sort(remaining);
+    for _, paletteName in ipairs(remaining) do
+        table.insert(palettes, paletteName);
     end
 
     return palettes;
@@ -243,6 +272,38 @@ end
 -- Palette CRUD Operations
 -- ============================================
 
+-- Helper: Find the actual storage key for a palette
+-- Checks both current subjob key and fallback subjob=0 key
+-- Returns storageKey, baseKey or nil, nil if not found
+local function FindPaletteStorageKey(barIndex, paletteName, jobId, subjobId)
+    local configKey = 'hotbarBar' .. barIndex;
+    local barSettings = gConfig and gConfig[configKey];
+    if not barSettings or not barSettings.slotActions then
+        return nil, nil;
+    end
+
+    local normalizedJobId = jobId or 1;
+    local normalizedSubjobId = subjobId or 0;
+
+    -- Try primary key first (current job:subjob)
+    local baseKey = string.format('%d:%d', normalizedJobId, normalizedSubjobId);
+    local storageKey = M.BuildStorageKey(baseKey, paletteName);
+    if barSettings.slotActions[storageKey] then
+        return storageKey, baseKey;
+    end
+
+    -- Try fallback key (job:0) if subjob is not already 0
+    if normalizedSubjobId ~= 0 then
+        local fallbackBaseKey = string.format('%d:0', normalizedJobId);
+        local fallbackStorageKey = M.BuildStorageKey(fallbackBaseKey, paletteName);
+        if barSettings.slotActions[fallbackStorageKey] then
+            return fallbackStorageKey, fallbackBaseKey;
+        end
+    end
+
+    return nil, nil;
+end
+
 -- Create a new palette by copying current slot data
 -- Returns true on success, false with error message on failure
 function M.CreatePalette(barIndex, paletteName, jobId, subjobId)
@@ -286,6 +347,15 @@ function M.CreatePalette(barIndex, paletteName, jobId, subjobId)
         barSettings.slotActions[newStorageKey] = {};
     end
 
+    -- Add to paletteOrder for this job:subjob
+    if not barSettings.paletteOrder then
+        barSettings.paletteOrder = {};
+    end
+    if not barSettings.paletteOrder[baseKey] then
+        barSettings.paletteOrder[baseKey] = {};
+    end
+    table.insert(barSettings.paletteOrder[baseKey], paletteName);
+
     SaveSettingsToDisk();
     return true;
 end
@@ -303,15 +373,25 @@ function M.DeletePalette(barIndex, paletteName, jobId, subjobId)
         return false, 'Palette not found';
     end
 
-    local baseKey = string.format('%d:%d', jobId or 1, subjobId or 0);
-    local storageKey = M.BuildStorageKey(baseKey, paletteName);
-
-    if not barSettings.slotActions[storageKey] then
+    -- Find the actual storage key (handles fallback to subjob=0)
+    local storageKey = FindPaletteStorageKey(barIndex, paletteName, jobId, subjobId);
+    if not storageKey then
         return false, 'Palette not found';
     end
 
     -- Delete the palette
     barSettings.slotActions[storageKey] = nil;
+
+    -- Remove from paletteOrder for this job:subjob
+    local baseKey = string.format('%d:%d', jobId or 1, subjobId or 0);
+    if barSettings.paletteOrder and barSettings.paletteOrder[baseKey] then
+        for i, name in ipairs(barSettings.paletteOrder[baseKey]) do
+            if name == paletteName then
+                table.remove(barSettings.paletteOrder[baseKey], i);
+                break;
+            end
+        end
+    end
 
     -- If this was the active palette, switch to Base
     if state.activePalettes[barIndex] == paletteName then
@@ -337,27 +417,44 @@ function M.RenamePalette(barIndex, oldName, newName, jobId, subjobId)
         return false, 'Cannot rename to "Base"';
     end
 
+    if oldName == newName then
+        return false, 'New name is the same as the old name';
+    end
+
     local configKey = 'hotbarBar' .. barIndex;
     local barSettings = gConfig and gConfig[configKey];
     if not barSettings or not barSettings.slotActions then
         return false, 'Palette not found';
     end
 
-    local baseKey = string.format('%d:%d', jobId or 1, subjobId or 0);
-    local oldStorageKey = M.BuildStorageKey(baseKey, oldName);
-    local newStorageKey = M.BuildStorageKey(baseKey, newName);
-
-    if not barSettings.slotActions[oldStorageKey] then
+    -- Find the actual storage key for the old palette (handles fallback to subjob=0)
+    local oldStorageKey, foundBaseKey = FindPaletteStorageKey(barIndex, oldName, jobId, subjobId);
+    if not oldStorageKey then
         return false, 'Palette not found';
     end
 
-    if barSettings.slotActions[newStorageKey] then
+    -- Build new storage key using the same base key as the found palette
+    local newStorageKey = M.BuildStorageKey(foundBaseKey, newName);
+
+    -- Check if new name already exists (check both current subjob and fallback)
+    local existingKey = FindPaletteStorageKey(barIndex, newName, jobId, subjobId);
+    if existingKey then
         return false, 'A palette with that name already exists';
     end
 
     -- Move data to new key
     barSettings.slotActions[newStorageKey] = barSettings.slotActions[oldStorageKey];
     barSettings.slotActions[oldStorageKey] = nil;
+
+    -- Update paletteOrder for this job:subjob (rename the entry in place)
+    if barSettings.paletteOrder and barSettings.paletteOrder[foundBaseKey] then
+        for i, name in ipairs(barSettings.paletteOrder[foundBaseKey]) do
+            if name == oldName then
+                barSettings.paletteOrder[foundBaseKey][i] = newName;
+                break;
+            end
+        end
+    end
 
     -- Update active palette if this was active
     if state.activePalettes[barIndex] == oldName then
@@ -366,6 +463,125 @@ function M.RenamePalette(barIndex, oldName, newName, jobId, subjobId)
 
     SaveSettingsToDisk();
     return true;
+end
+
+-- Move a palette up or down in the order
+-- direction: -1 for up (earlier in list), 1 for down (later in list)
+-- Returns true on success, false with error message on failure
+function M.MovePalette(barIndex, paletteName, direction, jobId, subjobId)
+    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
+        return false, 'Cannot reorder Base palette';
+    end
+
+    if direction ~= -1 and direction ~= 1 then
+        return false, 'Invalid direction';
+    end
+
+    local configKey = 'hotbarBar' .. barIndex;
+    local barSettings = gConfig and gConfig[configKey];
+    if not barSettings then
+        return false, 'Bar settings not found';
+    end
+
+    local baseKey = string.format('%d:%d', jobId or 1, subjobId or 0);
+
+    -- Ensure paletteOrder exists and is populated
+    if not barSettings.paletteOrder then
+        barSettings.paletteOrder = {};
+    end
+    if not barSettings.paletteOrder[baseKey] then
+        -- Initialize paletteOrder from current available palettes (excluding Base)
+        barSettings.paletteOrder[baseKey] = {};
+        local available = M.GetAvailablePalettes(barIndex, jobId, subjobId);
+        for _, name in ipairs(available) do
+            if name ~= M.BASE_PALETTE_NAME then
+                table.insert(barSettings.paletteOrder[baseKey], name);
+            end
+        end
+    end
+
+    local order = barSettings.paletteOrder[baseKey];
+
+    -- Find palette index in order
+    local currentIndex = nil;
+    for i, name in ipairs(order) do
+        if name == paletteName then
+            currentIndex = i;
+            break;
+        end
+    end
+
+    if not currentIndex then
+        return false, 'Palette not found in order';
+    end
+
+    local newIndex = currentIndex + direction;
+
+    -- Check bounds
+    if newIndex < 1 or newIndex > #order then
+        return false, 'Cannot move palette further';
+    end
+
+    -- Swap positions
+    order[currentIndex], order[newIndex] = order[newIndex], order[currentIndex];
+
+    SaveSettingsToDisk();
+    return true;
+end
+
+-- Set the complete palette order from an array
+-- palettes: array of palette names in desired order (excluding Base)
+-- Returns true on success, false with error message on failure
+function M.SetPaletteOrder(barIndex, palettes, jobId, subjobId)
+    if not palettes or type(palettes) ~= 'table' then
+        return false, 'Invalid palette list';
+    end
+
+    local configKey = 'hotbarBar' .. barIndex;
+    local barSettings = gConfig and gConfig[configKey];
+    if not barSettings then
+        return false, 'Bar settings not found';
+    end
+
+    local baseKey = string.format('%d:%d', jobId or 1, subjobId or 0);
+
+    -- Ensure paletteOrder exists
+    if not barSettings.paletteOrder then
+        barSettings.paletteOrder = {};
+    end
+
+    -- Set the new order directly
+    barSettings.paletteOrder[baseKey] = {};
+    for _, name in ipairs(palettes) do
+        if name ~= M.BASE_PALETTE_NAME then
+            table.insert(barSettings.paletteOrder[baseKey], name);
+        end
+    end
+
+    SaveSettingsToDisk();
+    return true;
+end
+
+-- Get the index of a palette in the order (1-based, Base is always 0)
+-- Returns the index, or nil if not found
+function M.GetPaletteIndex(barIndex, paletteName, jobId, subjobId)
+    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
+        return 0;  -- Base is always first
+    end
+
+    local available = M.GetAvailablePalettes(barIndex, jobId, subjobId);
+    for i, name in ipairs(available) do
+        if name == paletteName then
+            return i - 1;  -- Subtract 1 because Base is at index 1
+        end
+    end
+    return nil;
+end
+
+-- Get the total number of non-Base palettes for a bar
+function M.GetPaletteCount(barIndex, jobId, subjobId)
+    local available = M.GetAvailablePalettes(barIndex, jobId, subjobId);
+    return #available - 1;  -- Subtract 1 for Base
 end
 
 -- ============================================

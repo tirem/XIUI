@@ -717,6 +717,31 @@ function M.HasExistingCrossbarSlot(comboMode, slotIndex, storageKey)
     return slot ~= nil;
 end
 
+-- Clear all slots for a specific bar and storage key
+-- Called before importing to wipe existing data (replace semantics)
+function M.ClearHotbarSlots(barIndex, storageKey)
+    if not gConfig then return; end
+
+    local configKey = 'hotbarBar' .. barIndex;
+    if not gConfig[configKey] then return; end
+    if not gConfig[configKey].slotActions then return; end
+
+    -- Clear the entire storage key (wipe all slots for this palette)
+    gConfig[configKey].slotActions[storageKey] = {};
+end
+
+-- Clear all slots for a specific crossbar storage key and combo mode
+-- Called before importing to wipe existing data (replace semantics)
+function M.ClearCrossbarSlots(comboMode, storageKey)
+    if not gConfig then return; end
+    if not gConfig.hotbarCrossbar then return; end
+    if not gConfig.hotbarCrossbar.slotActions then return; end
+    if not gConfig.hotbarCrossbar.slotActions[storageKey] then return; end
+
+    -- Clear the combo mode slots for this storage key
+    gConfig.hotbarCrossbar.slotActions[storageKey][comboMode] = {};
+end
+
 -- Import a single binding to a hotbar slot
 -- Creates a macro in the macro database and references it from the slot
 -- Returns: true if imported, false if skipped

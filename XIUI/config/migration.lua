@@ -247,6 +247,101 @@ local function ExecuteImport()
         end
     end
 
+    -- Track which bar/storageKey combinations to clear before importing
+    -- We clear the ENTIRE palette for a bar/storageKey when ANY slot will be replaced
+    -- This ensures a clean import without leftover old data
+    local hotbarToClear = {};  -- { [barIndex] = { [storageKey] = true } }
+    local crossbarToClear = {}; -- { [storageKey] = { [comboMode] = true } }
+
+    -- First pass: determine which bars/palettes need to be cleared
+    -- We clear if ANY slot has 'replace' resolution (or no conflict at all)
+    if wizardState.importHotbar and charData.thotbarPath then
+        for _, jobKey in ipairs(jobList) do
+            local fileName = (jobKey == 'global') and 'globals.lua' or (jobKey .. '.lua');
+            local filePath = charData.thotbarPath .. '\\' .. fileName;
+            local parsedData = tbarMigration.ParseHotBarBindings(filePath);
+
+            if parsedData and parsedData.palettes then
+                local jobSelectedPalettes = wizardState.selectedPalettes[jobKey] or {};
+                for paletteName, isSelected in pairs(jobSelectedPalettes) do
+                    if isSelected then
+                        local storageKey;
+                        if jobKey == 'global' then
+                            storageKey = 'global';
+                        else
+                            storageKey = tbarMigration.GetStorageKeyForPalette(jobKey, paletteName);
+                        end
+
+                        local paletteBindings = tbarMigration.GetPaletteBindings(parsedData, paletteName);
+                        if paletteBindings then
+                            for barIndex, barSlots in pairs(paletteBindings) do
+                                if barIndex >= 1 and barIndex <= 6 then
+                                    for slotIndex, binding in pairs(barSlots) do
+                                        local convertedAction = tbarMigration.ConvertBinding(binding);
+                                        if convertedAction then
+                                            local conflictKey = string.format('hotbar:%d:%d:%s', barIndex, slotIndex, storageKey);
+                                            local resolution = wizardState.conflictResolutions[conflictKey];
+                                            -- If any slot will be replaced (not 'keep'), mark for clearing
+                                            if resolution ~= 'keep' then
+                                                if not hotbarToClear[barIndex] then
+                                                    hotbarToClear[barIndex] = {};
+                                                end
+                                                hotbarToClear[barIndex][storageKey] = true;
+                                            end
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if wizardState.importCrossbar and charData.tcrossbarPath then
+        for _, jobKey in ipairs(jobList) do
+            local fileName = (jobKey == 'global') and 'globals.lua' or (jobKey .. '.lua');
+            local filePath = charData.tcrossbarPath .. '\\' .. fileName;
+            local comboBindings = tbarMigration.ParseCrossBarBindings(filePath);
+
+            if comboBindings then
+                local storageKey = (jobKey == 'global') and 'global' or tbarMigration.GetStorageKey(jobKey);
+
+                for comboMode, slots in pairs(comboBindings) do
+                    for slotIndex, binding in pairs(slots) do
+                        local convertedAction = tbarMigration.ConvertBinding(binding);
+                        if convertedAction then
+                            local conflictKey = string.format('crossbar:%s:%d:%s', comboMode, slotIndex, storageKey);
+                            local resolution = wizardState.conflictResolutions[conflictKey];
+                            -- If any slot will be replaced (not 'keep'), mark for clearing
+                            if resolution ~= 'keep' then
+                                if not crossbarToClear[storageKey] then
+                                    crossbarToClear[storageKey] = {};
+                                end
+                                crossbarToClear[storageKey][comboMode] = true;
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Clear marked hotbar palettes before importing
+    for barIndex, storageKeys in pairs(hotbarToClear) do
+        for storageKey, _ in pairs(storageKeys) do
+            tbarMigration.ClearHotbarSlots(barIndex, storageKey);
+        end
+    end
+
+    -- Clear marked crossbar combo modes before importing
+    for storageKey, comboModes in pairs(crossbarToClear) do
+        for comboMode, _ in pairs(comboModes) do
+            tbarMigration.ClearCrossbarSlots(comboMode, storageKey);
+        end
+    end
+
     -- Import hotbar bindings (tHotBar uses palette-based structure)
     -- Now iterates through ALL selected palettes per job
     if wizardState.importHotbar and charData.thotbarPath then
@@ -286,6 +381,7 @@ local function ExecuteImport()
                                                 results.skipped = results.skipped + 1;
                                             else
                                                 -- Either no conflict or resolution is 'replace'
+                                                -- (Slots already cleared above, just import)
                                                 local success = tbarMigration.ImportHotbarBinding(barIndex, slotIndex, convertedAction, storageKey);
                                                 if success then
                                                     results.hotbarImported = results.hotbarImported + 1;
@@ -340,6 +436,7 @@ local function ExecuteImport()
                             if resolution == 'keep' then
                                 results.skipped = results.skipped + 1;
                             else
+                                -- (Slots already cleared above, just import)
                                 local success = tbarMigration.ImportCrossbarBinding(comboMode, slotIndex, convertedAction, storageKey);
                                 if success then
                                     results.crossbarImported = results.crossbarImported + 1;

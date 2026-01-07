@@ -36,6 +36,23 @@ local jobSpecificConfirmState = {
     isCrossbar = false,
 };
 
+-- Rename modal state (declared early so DrawRenamePaletteModal can access it)
+local renameModalState = {
+    isOpen = false,
+    barIndex = nil,
+    paletteName = nil,
+    inputBuffer = { '' },
+    errorMessage = nil,
+};
+
+-- Create palette modal state
+local createModalState = {
+    isOpen = false,
+    barIndex = nil,
+    inputBuffer = { '' },
+    errorMessage = nil,
+};
+
 -- Helper function to draw the job-specific confirmation popup
 local function DrawJobSpecificConfirmPopup()
     if jobSpecificConfirmState.showPopup then
@@ -102,6 +119,137 @@ local function DrawJobSpecificConfirmPopup()
 
         if imgui.Button('Cancel', {buttonWidth, 28}) then
             jobSpecificConfirmState.showPopup = false;
+            imgui.CloseCurrentPopup();
+        end
+
+        imgui.EndPopup();
+    end
+end
+
+-- Helper function to draw the rename palette modal
+local function DrawRenamePaletteModal()
+    if renameModalState.isOpen then
+        imgui.OpenPopup('Rename Palette##renamePaletteModal');
+    end
+
+    if imgui.BeginPopupModal('Rename Palette##renamePaletteModal', nil, ImGuiWindowFlags_AlwaysAutoResize) then
+        imgui.Text('Enter new name for palette:');
+        imgui.Spacing();
+
+        imgui.SetNextItemWidth(200);
+        imgui.InputText('##renamePaletteInput', renameModalState.inputBuffer, 32);
+
+        -- Show error message if any
+        if renameModalState.errorMessage then
+            imgui.Spacing();
+            imgui.TextColored({1.0, 0.4, 0.4, 1.0}, renameModalState.errorMessage);
+        end
+
+        imgui.Spacing();
+        imgui.Separator();
+        imgui.Spacing();
+
+        -- Center the buttons
+        local buttonWidth = 80;
+        local spacing = 20;
+        local totalWidth = buttonWidth * 2 + spacing;
+        local windowWidth = imgui.GetWindowWidth();
+        imgui.SetCursorPosX((windowWidth - totalWidth) / 2);
+
+        if imgui.Button('Rename', {buttonWidth, 28}) then
+            local newName = renameModalState.inputBuffer[1];
+            if newName and newName ~= '' then
+                local barIndex = renameModalState.barIndex;
+                local oldName = renameModalState.paletteName;
+                local jobId = data.jobId or 1;
+                local subjobId = data.subjobId or 0;
+
+                local success, err = palette.RenamePalette(barIndex, oldName, newName, jobId, subjobId);
+                if success then
+                    renameModalState.isOpen = false;
+                    renameModalState.errorMessage = nil;
+                    imgui.CloseCurrentPopup();
+                else
+                    renameModalState.errorMessage = err or 'Failed to rename palette';
+                end
+            else
+                renameModalState.errorMessage = 'Name cannot be empty';
+            end
+        end
+
+        imgui.SameLine(0, spacing);
+
+        if imgui.Button('Cancel', {buttonWidth, 28}) then
+            renameModalState.isOpen = false;
+            renameModalState.errorMessage = nil;
+            imgui.CloseCurrentPopup();
+        end
+
+        imgui.EndPopup();
+    end
+end
+
+-- Helper function to draw the create palette modal
+local function DrawCreatePaletteModal()
+    if createModalState.isOpen then
+        imgui.OpenPopup('Create New Palette##createPaletteModal');
+    end
+
+    if imgui.BeginPopupModal('Create New Palette##createPaletteModal', nil, ImGuiWindowFlags_AlwaysAutoResize) then
+        imgui.Text('Enter name for new palette:');
+        imgui.Spacing();
+
+        imgui.SetNextItemWidth(200);
+        imgui.InputText('##createPaletteInput', createModalState.inputBuffer, 32);
+
+        -- Show error message if any
+        if createModalState.errorMessage then
+            imgui.Spacing();
+            imgui.TextColored({1.0, 0.4, 0.4, 1.0}, createModalState.errorMessage);
+        end
+
+        imgui.Spacing();
+        imgui.Separator();
+        imgui.Spacing();
+
+        -- Center the buttons
+        local buttonWidth = 80;
+        local spacing = 20;
+        local totalWidth = buttonWidth * 2 + spacing;
+        local windowWidth = imgui.GetWindowWidth();
+        imgui.SetCursorPosX((windowWidth - totalWidth) / 2);
+
+        imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.5, 0.2, 1.0});
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.6, 0.3, 1.0});
+        if imgui.Button('Create', {buttonWidth, 28}) then
+            local newName = createModalState.inputBuffer[1];
+            if newName and newName ~= '' then
+                local barIndex = createModalState.barIndex;
+                local jobId = data.jobId or 1;
+                local subjobId = data.subjobId or 0;
+
+                local success, err = palette.CreatePalette(barIndex, newName, jobId, subjobId);
+                if success then
+                    palette.SetActivePalette(barIndex, newName);
+                    createModalState.isOpen = false;
+                    createModalState.inputBuffer[1] = '';
+                    createModalState.errorMessage = nil;
+                    imgui.CloseCurrentPopup();
+                else
+                    createModalState.errorMessage = err or 'Failed to create palette';
+                end
+            else
+                createModalState.errorMessage = 'Name cannot be empty';
+            end
+        end
+        imgui.PopStyleColor(2);
+
+        imgui.SameLine(0, spacing);
+
+        if imgui.Button('Cancel', {buttonWidth, 28}) then
+            createModalState.isOpen = false;
+            createModalState.inputBuffer[1] = '';
+            createModalState.errorMessage = nil;
             imgui.CloseCurrentPopup();
         end
 
@@ -186,7 +334,7 @@ end
 
 -- General palette creation state
 local paletteCreateState = {
-    inputBuffer = {},  -- Per-bar input buffers
+    inputBuffer = {},  -- Per-bar input buffers for creating palettes
     errorMessage = nil,
     errorBarIndex = nil,
 };
@@ -220,13 +368,29 @@ local function DrawGeneralPalettesSection(configKey, barSettings, barIndex)
     end
     imgui.ShowHelp('Create named palettes to quickly switch between different hotbar configurations.\nUnlike pet palettes which auto-switch, named palettes are manually switched via commands or the UI.');
 
-    -- Current palette selector (if palettes exist)
+    -- Current palette selector with inline buttons
     if hasPalettes then
-        imgui.SetNextItemWidth(150);
-        if imgui.BeginCombo('Active##palette' .. barIndex, currentPalette) then
+        -- Get display name with number prefix for the closed dropdown
+        local currentDisplayName = currentPalette;
+        if currentPalette ~= palette.BASE_PALETTE_NAME then
+            local idx = palette.GetPaletteIndex(barIndex, currentPalette, jobId, subjobId);
+            if idx then
+                currentDisplayName = idx .. '. ' .. currentPalette;
+            end
+        end
+
+        imgui.SetNextItemWidth(120);
+        if imgui.BeginCombo('##palette' .. barIndex, currentDisplayName) then
+            local customIndex = 0;
             for _, paletteName in ipairs(availablePalettes) do
                 local isSelected = (paletteName == currentPalette);
-                if imgui.Selectable(paletteName .. '##pal' .. barIndex, isSelected) then
+                -- Show number prefix for custom palettes only (not Base)
+                local displayName = paletteName;
+                if paletteName ~= palette.BASE_PALETTE_NAME then
+                    customIndex = customIndex + 1;
+                    displayName = customIndex .. '. ' .. paletteName;
+                end
+                if imgui.Selectable(displayName .. '##pal' .. barIndex, isSelected) then
                     if paletteName == palette.BASE_PALETTE_NAME then
                         palette.ClearActivePalette(barIndex);
                     else
@@ -239,69 +403,96 @@ local function DrawGeneralPalettesSection(configKey, barSettings, barIndex)
             end
             imgui.EndCombo();
         end
-        imgui.ShowHelp('Select the active palette for this bar.');
-    end
 
-    -- Create new palette section
-    imgui.Spacing();
-    imgui.TextColored({0.7, 0.7, 0.7, 1.0}, 'Create New Palette:');
-
-    -- Input field
-    imgui.SetNextItemWidth(150);
-    local inputBuffer = paletteCreateState.inputBuffer[barIndex];
-    local inputChanged, inputValue = imgui.InputText('##newPaletteName' .. barIndex, inputBuffer, 32);
-    if inputChanged then
-        inputBuffer[1] = inputValue;
-    end
-    imgui.SameLine();
-
-    -- Create button
-    local canCreate = inputBuffer[1] and inputBuffer[1] ~= '' and inputBuffer[1]:len() > 0;
-    if not canCreate then
-        imgui.PushStyleColor(ImGuiCol_Button, {0.3, 0.3, 0.3, 1.0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.3, 0.3, 1.0});
-    end
-    if imgui.Button('Create##palette' .. barIndex, {60, 0}) and canCreate then
-        local success, err = palette.CreatePalette(barIndex, inputBuffer[1], jobId, subjobId);
-        if success then
-            -- Switch to the new palette
-            palette.SetActivePalette(barIndex, inputBuffer[1]);
-            inputBuffer[1] = '';  -- Clear input
-            paletteCreateState.errorMessage = nil;
-        else
-            paletteCreateState.errorMessage = err or 'Failed to create palette';
-            paletteCreateState.errorBarIndex = barIndex;
-        end
-    end
-    if not canCreate then
-        imgui.PopStyleColor(2);
-    end
-    imgui.ShowHelp('Create a new named palette with a copy of the current slot data.');
-
-    -- Show error message
-    if paletteCreateState.errorMessage and paletteCreateState.errorBarIndex == barIndex then
-        imgui.TextColored({1.0, 0.4, 0.4, 1.0}, paletteCreateState.errorMessage);
-    end
-
-    -- Palette management (delete, rename) for non-Base palettes
-    if hasPalettes and currentPalette ~= palette.BASE_PALETTE_NAME then
-        imgui.Spacing();
-        imgui.TextColored({0.7, 0.7, 0.7, 1.0}, 'Manage "' .. currentPalette .. '":');
-
-        -- Delete button
-        imgui.PushStyleColor(ImGuiCol_Button, {0.6, 0.2, 0.2, 1.0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.8, 0.3, 0.3, 1.0});
-        if imgui.Button('Delete##palette' .. barIndex, {60, 0}) then
-            local success, err = palette.DeletePalette(barIndex, currentPalette, jobId, subjobId);
-            if not success then
-                paletteCreateState.errorMessage = err or 'Failed to delete palette';
-                paletteCreateState.errorBarIndex = barIndex;
-            else
-                paletteCreateState.errorMessage = nil;
+        -- Rename button (only for non-Base palettes)
+        if currentPalette ~= palette.BASE_PALETTE_NAME then
+            imgui.SameLine();
+            if imgui.Button('Rename##palette' .. barIndex, {55, 0}) then
+                renameModalState.isOpen = true;
+                renameModalState.barIndex = barIndex;
+                renameModalState.paletteName = currentPalette;
+                renameModalState.inputBuffer[1] = currentPalette;
+                renameModalState.errorMessage = nil;
             end
         end
-        imgui.PopStyleColor(2);
-        imgui.ShowHelp('Delete this palette. This cannot be undone.');
+    end
+
+    -- New button (always visible, green)
+    if hasPalettes then
+        imgui.SameLine();
+    end
+    imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.5, 0.2, 1.0});
+    imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.6, 0.3, 1.0});
+    if imgui.Button('New##palette' .. barIndex, {40, 0}) then
+        createModalState.isOpen = true;
+        createModalState.barIndex = barIndex;
+        createModalState.inputBuffer[1] = '';
+        createModalState.errorMessage = nil;
+    end
+    imgui.PopStyleColor(2);
+
+    if hasPalettes then
+        -- Delete button (only for non-Base palettes)
+        if currentPalette ~= palette.BASE_PALETTE_NAME then
+            imgui.SameLine();
+            imgui.PushStyleColor(ImGuiCol_Button, {0.6, 0.2, 0.2, 1.0});
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.8, 0.3, 0.3, 1.0});
+            if imgui.Button('Delete##palette' .. barIndex, {50, 0}) then
+                local success, err = palette.DeletePalette(barIndex, currentPalette, jobId, subjobId);
+                if not success then
+                    paletteCreateState.errorMessage = err or 'Failed to delete palette';
+                    paletteCreateState.errorBarIndex = barIndex;
+                else
+                    paletteCreateState.errorMessage = nil;
+                end
+            end
+            imgui.PopStyleColor(2);
+        end
+
+        -- Arrow key reordering (only for custom palettes with multiple items)
+        local paletteCount = palette.GetPaletteCount(barIndex, jobId, subjobId);
+        if currentPalette ~= palette.BASE_PALETTE_NAME and paletteCount > 1 then
+            imgui.SameLine();
+            imgui.TextColored({0.5, 0.5, 0.5, 1.0}, '|');
+            imgui.SameLine();
+
+            -- Up arrow button
+            local paletteIndex = palette.GetPaletteIndex(barIndex, currentPalette, jobId, subjobId);
+            local canMoveUp = paletteIndex and paletteIndex > 1;
+            local canMoveDown = paletteIndex and paletteIndex < paletteCount;
+
+            if not canMoveUp then
+                imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.2, 0.2, 0.5});
+                imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.2, 0.2, 0.2, 0.5});
+                imgui.PushStyleColor(ImGuiCol_Text, {0.4, 0.4, 0.4, 1.0});
+            end
+            if imgui.Button('^##paletteUp' .. barIndex, {20, 0}) and canMoveUp then
+                palette.MovePalette(barIndex, currentPalette, -1, jobId, subjobId);
+            end
+            if not canMoveUp then
+                imgui.PopStyleColor(3);
+            end
+
+            imgui.SameLine();
+
+            -- Down arrow button
+            if not canMoveDown then
+                imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.2, 0.2, 0.5});
+                imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.2, 0.2, 0.2, 0.5});
+                imgui.PushStyleColor(ImGuiCol_Text, {0.4, 0.4, 0.4, 1.0});
+            end
+            if imgui.Button('v##paletteDown' .. barIndex, {20, 0}) and canMoveDown then
+                palette.MovePalette(barIndex, currentPalette, 1, jobId, subjobId);
+            end
+            if not canMoveDown then
+                imgui.PopStyleColor(3);
+            end
+        end
+    end
+
+    -- Show error message (for delete failures)
+    if paletteCreateState.errorMessage and paletteCreateState.errorBarIndex == barIndex then
+        imgui.TextColored({1.0, 0.4, 0.4, 1.0}, paletteCreateState.errorMessage);
     end
 end
 
@@ -2104,7 +2295,8 @@ function M.DrawSettings(state)
         local currentKbIndex = 1;  -- Default to Disabled
         if gConfig.hotbarGlobal.paletteCycleEnabled ~= false then
             local currentMod = gConfig.hotbarGlobal.paletteCycleModifier or 'ctrl';
-            for i, v in ipairs(kbModifierValues) do
+            for i = 1, #kbModifierValues do
+                local v = kbModifierValues[i];
                 if v == currentMod then
                     currentKbIndex = i;
                     break;
@@ -2324,6 +2516,10 @@ function M.DrawSettings(state)
 
     -- Draw confirmation popup for job-specific toggle
     DrawJobSpecificConfirmPopup();
+
+    -- Draw palette modals
+    DrawRenamePaletteModal();
+    DrawCreatePaletteModal();
 
     return { selectedHotbarTab = selectedBarTab, selectedModeTab = selectedModeTab, selectedCrossbarTab = selectedCrossbarTab };
 end
