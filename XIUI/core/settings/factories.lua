@@ -288,6 +288,7 @@ function M.createHotbarGlobalDefaults()
 
         -- Palette cycling controller (RB + Dpad)
         paletteCycleControllerEnabled = true,  -- Enable controller palette cycling
+        hotbarPaletteCycleButton = 'R1',       -- 'R1' or 'L1' for hotbar cycling
 
         -- Visual settings
         slotSize = 48,          -- Slot size in pixels
@@ -446,6 +447,19 @@ function M.createCrossbarDefaults()
         -- Job-specific toggle (when true, actions are stored per-job; when false, actions are shared across all jobs)
         jobSpecific = true,
 
+        -- Per-combo-mode palette settings (each combo mode has independent pet/palette settings)
+        comboModeSettings = {
+            L2 = { petAware = false, activePalette = nil },
+            R2 = { petAware = false, activePalette = nil },
+            L2R2 = { petAware = false, activePalette = nil },
+            R2L2 = { petAware = false, activePalette = nil },
+            L2x2 = { petAware = false, activePalette = nil },
+            R2x2 = { petAware = false, activePalette = nil },
+        },
+
+        -- Palette cycling button for crossbar (R1 + DPad while trigger held)
+        crossbarPaletteCycleButton = 'R1',  -- 'R1' or 'L1'
+
         -- Layout
         slotSize = 40,              -- Slot size in pixels
         slotGapV = 2,               -- Vertical gap between top and bottom slots
@@ -475,8 +489,8 @@ function M.createCrossbarDefaults()
         buttonIconGapH = 8,                 -- Horizontal spacing between center icons
         buttonIconGapV = 2,                 -- Vertical spacing between center icons
         buttonIconPosition = 'corner',      -- 'corner' or 'replace_keybind'
-        controllerTheme = 'PlayStation',    -- 'PlayStation', 'Xbox', or 'Nintendo' button icons
-        controllerSchemeOverride = nil,     -- Device override: nil (auto-detect), 'xbox', 'dualsense', 'switchpro', 'dinput'
+        controllerTheme = 'Xbox',           -- 'PlayStation', 'Xbox', or 'Nintendo' button icons
+        controllerScheme = 'xbox',          -- Controller profile: 'xbox', 'dualsense', 'switchpro', 'dinput'
         triggerIconScale = 0.8,             -- Scale for L2/R2 trigger icons (base 49x28)
 
         -- Font settings
@@ -523,6 +537,11 @@ function M.createCrossbarDefaults()
         -- comboMode: 'L2', 'R2', 'L2R2', 'R2L2'
         -- slotIndex: 1-8 (1-4 = d-pad, 5-8 = face buttons)
         slotActions = {},
+
+        -- Crossbar palette order (separate from hotbar palettes)
+        -- Structure: crossbarPaletteOrder['{jobId}:{subjobId}'] = { 'paletteName1', 'paletteName2', ... }
+        -- Note: Crossbar palettes are independent from hotbar palettes
+        crossbarPaletteOrder = {},
     };
 end
 

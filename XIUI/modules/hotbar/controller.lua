@@ -11,6 +11,7 @@ local buttondetect = require('modules.hotbar.buttondetect');
 local actions = require('modules.hotbar.actions');
 local macrosLib = require('libs.ffxi.macros');
 local palette = require('modules.hotbar.palette');
+local petpalette = require('modules.hotbar.petpalette');
 local data = require('modules.hotbar.data');
 
 -- Define XINPUT structures for FFI access (only used for XInput devices)
@@ -119,29 +120,8 @@ local function IsTriggerHeld(triggerValue, wasHeld, pressThreshold, releaseThres
     end
 end
 
--- Auto-detect game's expected controller type from padmode000 registry setting
-local function DetectGameControllerMode()
-    local ok, result = pcall(function()
-        local configMgr = AshitaCore:GetConfigurationManager();
-        if not configMgr then return nil; end
-
-        local padmodeStr = configMgr:GetString('boot', 'ffxi.registry', 'padmode000');
-        if padmodeStr and padmodeStr ~= '' then
-            local parts = {};
-            for part in padmodeStr:gmatch('[^,]+') do
-                table.insert(parts, part);
-            end
-            -- 6th value = XInput enabled (1) or DirectInput (0)
-            if parts[6] == '1' then
-                return 'xinput';
-            else
-                return 'dinput';
-            end
-        end
-        return nil;
-    end);
-    return ok and result or nil;
-end
+-- Default controller profile
+local DEFAULT_CONTROLLER_PROFILE = 'xbox';
 
 -- Module state
 local state = {
@@ -200,43 +180,13 @@ local state = {
 -- Track whether game macro blocking is enabled
 local blockingEnabled = true;
 
--- Auto-detect the best controller profile based on game settings
--- Returns: profile name ('xbox', 'dualsense', 'switchpro', 'dinput')
-local function AutoDetectControllerProfile()
-    local gameMode = DetectGameControllerMode();
-
-    if gameMode == 'xinput' then
-        -- XInput mode = Xbox/XInput controllers
-        return 'xbox';
-    elseif gameMode == 'dinput' then
-        -- DirectInput mode = PlayStation is most common, default to DualSense
-        return 'dualsense';
-    else
-        -- Unknown or not configured, default to Xbox (most compatible)
-        return 'xbox';
-    end
-end
-
 -- Initialize the controller module
 function Controller.Initialize(settings)
     state.initialized = true;
     state.enabled = true;
 
-    -- Auto-detect controller profile based on game settings
-    local autoDetectedProfile = AutoDetectControllerProfile();
-
-    -- Use auto-detected profile unless user has explicitly set an override
-    if settings and settings.controllerSchemeOverride then
-        -- User has explicitly overridden the auto-detection
-        state.deviceName = settings.controllerSchemeOverride;
-        state.autoDetected = false;
-    else
-        -- Use auto-detected profile
-        state.deviceName = autoDetectedProfile;
-        state.autoDetected = true;
-    end
-
-    state.autoDetectedProfile = autoDetectedProfile;
+    -- Use user-selected controller profile, or default
+    state.deviceName = (settings and settings.controllerScheme) or DEFAULT_CONTROLLER_PROFILE;
     state.device = devices.GetDevice(state.deviceName);
 
     if settings then
@@ -251,38 +201,20 @@ function Controller.Initialize(settings)
         end
     end
 
-    DebugLog(string.format('Controller initialized (device: %s, auto: %s, XInput: %s, DirectInput: %s, threshold: %d, doubleTap: %s)',
+    DebugLog(string.format('Controller initialized (device: %s, XInput: %s, DirectInput: %s, threshold: %d, doubleTap: %s)',
         state.deviceName,
-        tostring(state.autoDetected),
         tostring(state.device.XInput),
         tostring(state.device.DirectInput),
         state.triggerThreshold,
         tostring(state.doubleTapEnabled)));
 end
 
--- Get auto-detected profile info
-function Controller.GetAutoDetectedProfile()
-    return state.autoDetectedProfile;
-end
-
--- Check if currently using auto-detected profile
-function Controller.IsAutoDetected()
-    return state.autoDetected == true;
-end
-
--- Set controller scheme override (nil to use auto-detection)
-function Controller.SetControllerSchemeOverride(schemeName)
-    if schemeName then
-        state.deviceName = schemeName;
-        state.autoDetected = false;
-    else
-        -- Clear override, use auto-detected
-        state.deviceName = state.autoDetectedProfile or AutoDetectControllerProfile();
-        state.autoDetected = true;
-    end
+-- Set controller scheme
+function Controller.SetControllerScheme(schemeName)
+    state.deviceName = schemeName or DEFAULT_CONTROLLER_PROFILE;
     state.device = devices.GetDevice(state.deviceName);
-    DebugLog(string.format('Controller scheme set to: %s (auto: %s, XInput: %s, DirectInput: %s)',
-        state.deviceName, tostring(state.autoDetected), tostring(state.device.XInput), tostring(state.device.DirectInput)));
+    DebugLog(string.format('Controller scheme set to: %s (XInput: %s, DirectInput: %s)',
+        state.deviceName, tostring(state.device.XInput), tostring(state.device.DirectInput)));
 end
 
 -- Set the callback for slot activation
@@ -310,11 +242,6 @@ end
 function Controller.SetExpandedCrossbarEnabled(enabled)
     state.expandedCrossbarEnabled = enabled;
     DebugLog('Expanded crossbar ' .. (enabled and 'enabled' or 'disabled'));
-end
-
--- Set controller scheme (device mapping) - legacy function, use SetControllerSchemeOverride instead
-function Controller.SetControllerScheme(schemeName)
-    Controller.SetControllerSchemeOverride(schemeName);
 end
 
 -- Get current controller scheme name
@@ -603,29 +530,68 @@ function Controller.HandleXInputState(e)
     -- Check for slot activation from state poll (button press detection)
     local newPresses = bit.band(currentButtons, bit.bnot(state.previousButtons));
 
-    -- Check for palette cycling: RB + Dpad Up/Down
+    -- Check for palette cycling: configurable shoulder button + Dpad Up/Down
     local globalSettings = gConfig and gConfig.hotbarGlobal;
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
     local paletteCycleEnabled = globalSettings and globalSettings.paletteCycleControllerEnabled ~= false;
 
-    if paletteCycleEnabled and rbHeld and state.activeCombo == COMBO_MODES.NONE then
+    if paletteCycleEnabled then
         local dpadUp = bit.band(newPresses, xboxDevice.ButtonMasks.DPAD_UP) ~= 0;
         local dpadDown = bit.band(newPresses, xboxDevice.ButtonMasks.DPAD_DOWN) ~= 0;
 
         if dpadUp or dpadDown then
-            -- DOWN = next (+1), UP = previous (-1) to match tHotBar/in-game macro convention
-            local direction = dpadDown and 1 or -1;
+            local direction = dpadDown and 1 or -1;  -- DOWN = next (+1), UP = previous (-1)
             local jobId = data.jobId or 1;
             local subjobId = data.subjobId or 0;
+            local consumed = false;
 
-            -- Cycle all bars that have palettes
-            for i = 1, 6 do
-                palette.CyclePalette(i, direction, jobId, subjobId);
+            -- Crossbar cycling: when trigger IS held
+            if state.activeCombo ~= COMBO_MODES.NONE then
+                -- Check which shoulder button is configured for crossbar cycling
+                local crossbarCycleButton = crossbarSettings and crossbarSettings.crossbarPaletteCycleButton or 'R1';
+                local crossbarButtonHeld = (crossbarCycleButton == 'L1' and lbHeld) or (crossbarCycleButton ~= 'L1' and rbHeld);
+
+                if crossbarButtonHeld then
+                    -- Determine active combo mode
+                    local activeCombo = state.activeCombo;
+
+                    -- Check if this combo mode is pet-aware
+                    local modeSettings = crossbarSettings and crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[activeCombo];
+                    local isPetAware = modeSettings and modeSettings.petAware;
+
+                    if isPetAware then
+                        -- Cycle pet palettes for this combo mode
+                        petpalette.CycleCrossbarPalette(activeCombo, direction, jobId);
+                        DebugLog('Crossbar pet palette cycled for ' .. activeCombo .. ': ' .. (direction == 1 and 'next' or 'prev'));
+                    else
+                        -- Cycle general palettes for this combo mode
+                        palette.CyclePaletteForCombo(activeCombo, direction, jobId, subjobId);
+                        DebugLog('Crossbar palette cycled for ' .. activeCombo .. ': ' .. (direction == 1 and 'next' or 'prev'));
+                    end
+
+                    consumed = true;
+                end
+            -- Hotbar cycling: when trigger is NOT held
+            elseif state.activeCombo == COMBO_MODES.NONE then
+                -- Check which shoulder button is configured for hotbar cycling
+                local hotbarCycleButton = globalSettings and globalSettings.hotbarPaletteCycleButton or 'R1';
+                local hotbarButtonHeld = (hotbarCycleButton == 'L1' and lbHeld) or (hotbarCycleButton ~= 'L1' and rbHeld);
+
+                if hotbarButtonHeld then
+                    -- Cycle all bars that have palettes
+                    for i = 1, 6 do
+                        palette.CyclePalette(i, direction, jobId, subjobId);
+                    end
+
+                    DebugLog('Hotbar palette cycled via controller: ' .. (direction == 1 and 'next' or 'prev'));
+                    consumed = true;
+                end
             end
 
-            DebugLog('Palette cycled via controller: ' .. (direction == 1 and 'next' or 'prev'));
-
             -- Clear the dpad press so it doesn't trigger slot activation
-            newPresses = bit.band(newPresses, bit.bnot(bit.bor(xboxDevice.ButtonMasks.DPAD_UP, xboxDevice.ButtonMasks.DPAD_DOWN)));
+            if consumed then
+                newPresses = bit.band(newPresses, bit.bnot(bit.bor(xboxDevice.ButtonMasks.DPAD_UP, xboxDevice.ButtonMasks.DPAD_DOWN)));
+            end
         end
     end
 
@@ -805,30 +771,67 @@ function Controller.HandleDInputButton(e)
 
         DebugLogVerbose(string.format('DInput D-Pad: angle=%d (prev: %d)', currentAngle, previousAngle));
 
-        -- Check for palette cycling: R1 + Dpad Up/Down
+        -- Check for palette cycling: configurable shoulder button + Dpad Up/Down
         local globalSettings = gConfig and gConfig.hotbarGlobal;
+        local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
         local paletteCycleEnabled = globalSettings and globalSettings.paletteCycleControllerEnabled ~= false;
 
-        if paletteCycleEnabled and state.rightShoulderHeld and state.activeCombo == COMBO_MODES.NONE then
+        if paletteCycleEnabled then
             local DPAD_UP = 0;
             local DPAD_DOWN = 18000;
 
             if currentAngle ~= previousAngle and (currentAngle == DPAD_UP or currentAngle == DPAD_DOWN) then
-                -- DOWN = next (+1), UP = previous (-1) to match tHotBar/in-game macro convention
-                local direction = (currentAngle == DPAD_DOWN) and 1 or -1;
+                local direction = (currentAngle == DPAD_DOWN) and 1 or -1;  -- DOWN = next (+1), UP = previous (-1)
                 local jobId = data.jobId or 1;
                 local subjobId = data.subjobId or 0;
+                local consumed = false;
 
-                -- Cycle all bars that have palettes
-                for i = 1, 6 do
-                    palette.CyclePalette(i, direction, jobId, subjobId);
+                -- Crossbar cycling: when trigger IS held
+                if state.activeCombo ~= COMBO_MODES.NONE then
+                    -- Check which shoulder button is configured for crossbar cycling
+                    local crossbarCycleButton = crossbarSettings and crossbarSettings.crossbarPaletteCycleButton or 'R1';
+                    local crossbarButtonHeld = (crossbarCycleButton == 'L1' and state.leftShoulderHeld) or (crossbarCycleButton ~= 'L1' and state.rightShoulderHeld);
+
+                    if crossbarButtonHeld then
+                        local activeCombo = state.activeCombo;
+
+                        -- Check if this combo mode is pet-aware
+                        local modeSettings = crossbarSettings and crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[activeCombo];
+                        local isPetAware = modeSettings and modeSettings.petAware;
+
+                        if isPetAware then
+                            -- Cycle pet palettes for this combo mode
+                            petpalette.CycleCrossbarPalette(activeCombo, direction, jobId);
+                            DebugLog('Crossbar pet palette cycled (DInput) for ' .. activeCombo .. ': ' .. (direction == 1 and 'next' or 'prev'));
+                        else
+                            -- Cycle general palettes for this combo mode
+                            palette.CyclePaletteForCombo(activeCombo, direction, jobId, subjobId);
+                            DebugLog('Crossbar palette cycled (DInput) for ' .. activeCombo .. ': ' .. (direction == 1 and 'next' or 'prev'));
+                        end
+
+                        consumed = true;
+                    end
+                -- Hotbar cycling: when trigger is NOT held
+                elseif state.activeCombo == COMBO_MODES.NONE then
+                    -- Check which shoulder button is configured for hotbar cycling
+                    local hotbarCycleButton = globalSettings and globalSettings.hotbarPaletteCycleButton or 'R1';
+                    local hotbarButtonHeld = (hotbarCycleButton == 'L1' and state.leftShoulderHeld) or (hotbarCycleButton ~= 'L1' and state.rightShoulderHeld);
+
+                    if hotbarButtonHeld then
+                        -- Cycle all bars that have palettes
+                        for i = 1, 6 do
+                            palette.CyclePalette(i, direction, jobId, subjobId);
+                        end
+
+                        DebugLog('Hotbar palette cycled via DInput controller: ' .. (direction == 1 and 'next' or 'prev'));
+                        consumed = true;
+                    end
                 end
 
-                DebugLog('Palette cycled via DInput controller: ' .. (direction == 1 and 'next' or 'prev'));
-
-                -- Update state and return - don't process as slot activation
-                state.previousDPadAngle = currentAngle;
-                return true;  -- Block this input
+                if consumed then
+                    state.previousDPadAngle = currentAngle;
+                    return true;  -- Block this input
+                end
             end
         end
 
@@ -1110,13 +1113,12 @@ function Controller.IsBlockingEnabled()
 end
 
 -- ============================================
--- Controller Detection
+-- Controller Info
 -- ============================================
 
--- Get detected controller info for display
--- Returns: { detected = bool, inputType = string, name = string, inputReceived = bool, activeProfile = string, status = string }
-function Controller.GetDetectedDeviceInfo()
-    -- Get input type from current device profile
+-- Get current controller profile info for display
+-- Returns: { inputType = string, name = string, profile = string }
+function Controller.GetDeviceInfo()
     local inputType = 'unknown';
     if state.device then
         if state.device.XInput then
@@ -1126,33 +1128,11 @@ function Controller.GetDetectedDeviceInfo()
         end
     end
 
-    local info = {
-        detected = false,
+    return {
         inputType = inputType,
-        name = 'No controller',
-        inputReceived = false,
-        gameMode = DetectGameControllerMode(),
-        activeProfile = state.deviceName or 'xbox',
-        status = 'none',  -- 'none', 'waiting', 'active'
+        name = state.device and state.device.DisplayName or state.deviceName,
+        profile = state.deviceName or DEFAULT_CONTROLLER_PROFILE,
     };
-
-    -- Get display name from device
-    local profileDisplayName = state.device and state.device.DisplayName or state.deviceName;
-
-    -- Check if we've received any input events
-    if state.receivedFirstEvent or state.receivedFirstDInputEvent then
-        info.detected = true;
-        info.inputReceived = true;
-        info.name = profileDisplayName or 'Controller';
-        info.status = 'active';
-    elseif info.gameMode then
-        -- Haven't received input yet, but game is configured
-        info.detected = false;
-        info.status = 'waiting';
-        info.name = profileDisplayName or 'Controller';
-    end
-
-    return info;
 end
 
 -- ============================================
@@ -1160,7 +1140,6 @@ end
 -- ============================================
 
 Controller.COMBO_MODES = COMBO_MODES;
-Controller.DetectGameControllerMode = DetectGameControllerMode;
 
 --- Set debug mode (called via /xiui debug hotbar)
 function Controller.SetDebugEnabled(enabled, verbose)

@@ -50,6 +50,7 @@ local textures = require('modules.hotbar.textures');
 local hotbarConfig = require('config.hotbar');
 local slotrenderer = require('modules.hotbar.slotrenderer');
 local petpalette = require('modules.hotbar.petpalette');
+local palette = require('modules.hotbar.palette');
 local macrosLib = require('libs.ffxi.macros');
 
 local M = {};
@@ -275,6 +276,16 @@ function M.Initialize(settings)
         macropalette.ClearPetCommandsCache();
     end);
 
+    -- Register palette change callback to clear crossbar icon cache
+    palette.OnPaletteChanged(function(barIdentifier, oldPaletteName, newPaletteName)
+        -- Clear crossbar icon cache when any palette changes (hotbar or crossbar)
+        if crossbarInitialized then
+            crossbar.ClearIconCache();
+        end
+        -- Clear slot renderer cache for hotbar
+        slotrenderer.ClearAllCache();
+    end);
+
     -- Initialize macro patching system (backups original bytes, applies macrofix by default)
     macrosLib.initialize_patches();
 
@@ -296,7 +307,7 @@ function M.Initialize(settings)
             expandedCrossbarEnabled = crossbarConfig.enableExpandedCrossbar ~= false,
             doubleTapEnabled = crossbarConfig.enableDoubleTap or false,
             doubleTapWindow = crossbarConfig.doubleTapWindow or 0.3,
-            controllerSchemeOverride = crossbarConfig.controllerSchemeOverride,  -- nil = auto-detect
+            controllerScheme = crossbarConfig.controllerScheme,
         });
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
             crossbar.ActivateSlot(comboMode, slotIndex);
@@ -399,7 +410,7 @@ function M.UpdateVisuals(settings)
             expandedCrossbarEnabled = gConfig.hotbarCrossbar.enableExpandedCrossbar ~= false,
             doubleTapEnabled = gConfig.hotbarCrossbar.enableDoubleTap or false,
             doubleTapWindow = gConfig.hotbarCrossbar.doubleTapWindow or 0.3,
-            controllerSchemeOverride = gConfig.hotbarCrossbar.controllerSchemeOverride,  -- nil = auto-detect
+            controllerScheme = gConfig.hotbarCrossbar.controllerScheme,
         });
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
             crossbar.ActivateSlot(comboMode, slotIndex);
@@ -419,13 +430,7 @@ function M.UpdateVisuals(settings)
         controller.SetExpandedCrossbarEnabled(gConfig.hotbarCrossbar.enableExpandedCrossbar ~= false);
         controller.SetDoubleTapEnabled(gConfig.hotbarCrossbar.enableDoubleTap or false);
         controller.SetDoubleTapWindow(gConfig.hotbarCrossbar.doubleTapWindow or 0.3);
-        -- Only update controller scheme if override changed (preserves auto-detection)
-        if gConfig.hotbarCrossbar.controllerSchemeOverride then
-            controller.SetControllerSchemeOverride(gConfig.hotbarCrossbar.controllerSchemeOverride);
-        elseif not controller.IsAutoDetected() then
-            -- Reset to auto-detect if override was cleared
-            controller.SetControllerSchemeOverride(nil);
-        end
+        controller.SetControllerScheme(gConfig.hotbarCrossbar.controllerScheme);
         -- Update controller blocking state (crossbar-specific)
         controller.SetBlockingEnabled(disableMacroBars);
     end

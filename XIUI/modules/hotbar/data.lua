@@ -339,6 +339,82 @@ function M.GetPetPaletteModule()
     return getPetPalette();
 end
 
+-- ============================================
+-- Crossbar Storage Key Resolution (Per-Combo-Mode)
+-- ============================================
+
+-- Build full storage key for a crossbar combo mode, considering job, subjob, pet awareness, and palettes
+-- Each combo mode (L2, R2, L2R2, etc.) has its own petAware and activePalette settings
+-- Returns: 'global', '{jobId}:{subjobId}', '{jobId}:{subjobId}:{petKey}', or '{jobId}:{subjobId}:palette:{name}'
+function M.GetCrossbarStorageKeyForCombo(comboMode)
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    if not crossbarSettings then
+        return string.format('%d:%d', M.jobId or 1, M.subjobId or 0);
+    end
+
+    local jobId = M.jobId or 1;
+    local subjobId = M.subjobId or 0;
+
+    -- Global mode (non-job-specific)
+    if crossbarSettings.jobSpecific == false then
+        return GLOBAL_SLOT_KEY;
+    end
+
+    -- Build base job:subjob key
+    local baseKey = string.format('%d:%d', normalizeJobId(jobId), normalizeJobId(subjobId));
+
+    -- Get per-combo-mode settings
+    local modeSettings = crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[comboMode];
+
+    -- Check pet-aware mode for this combo mode
+    if modeSettings and modeSettings.petAware then
+        local pp = getPetPalette();
+        if pp then
+            local effectivePetKey = pp.GetEffectivePetKeyForCombo(comboMode);
+            if effectivePetKey then
+                return string.format('%s:%s', baseKey, effectivePetKey);
+            end
+        end
+    end
+
+    -- Check for general palette for this combo mode
+    if modeSettings and modeSettings.activePalette then
+        local p = getPalette();
+        if p then
+            return p.BuildStorageKey(baseKey, modeSettings.activePalette);
+        end
+    end
+
+    -- No pet or palette - fall back to base job:subjob key
+    return baseKey;
+end
+
+-- Get the current palette display name for a crossbar combo mode
+-- Returns: 'Base', pet name (e.g., 'Ifrit'), or general palette name (e.g., 'Stuns')
+function M.GetCrossbarPaletteDisplayName(comboMode)
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    local modeSettings = crossbarSettings and crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[comboMode];
+    local jobId = M.jobId or 1;
+
+    -- Check pet palette first (if pet-aware)
+    if modeSettings and modeSettings.petAware then
+        local pp = getPetPalette();
+        if pp then
+            local petDisplayName = pp.GetCrossbarPaletteDisplayName(comboMode, jobId);
+            if petDisplayName and petDisplayName ~= 'Base' then
+                return petDisplayName;
+            end
+        end
+    end
+
+    -- Check general palette
+    if modeSettings and modeSettings.activePalette then
+        return modeSettings.activePalette;
+    end
+
+    return 'Base';
+end
+
 -- Get per-bar settings from gConfig, merging with global if useGlobalSettings is true
 function M.GetBarSettings(barIndex)
     local configKey = 'hotbarBar' .. barIndex;
@@ -590,25 +666,26 @@ local function getCrossbarStorageKey(crossbarSettings, jobId, subjobId)
 end
 
 -- Helper to get crossbar slotActions with storage key
--- Handles: 'global' and composite keys ('15:10')
--- Falls back to base job key (jobId:0) if full job:subjob key doesn't exist
+-- Handles: 'global' and composite keys ('15:10', '15:10:palette:Stuns', '15:10:avatar:ifrit')
+-- Falls back to base job key (jobId:0) preserving any suffix if full job:subjob key doesn't exist
 local function getCrossbarSlotActionsForJob(slotActions, storageKey)
     if not slotActions then return nil; end
     -- Handle 'global' key specially
     if storageKey == GLOBAL_SLOT_KEY then
         return slotActions[GLOBAL_SLOT_KEY];
     end
-    -- Try exact storage key first (e.g., '3:5' for WHM/RDM)
+    -- Try exact storage key first (e.g., '3:5' for WHM/RDM, '3:5:palette:Stuns')
     local result = slotActions[storageKey];
     if result then
         return result;
     end
     -- Fallback: try base job key (jobId:0) for imported data without subjob
-    local jobId = storageKey:match('^(%d+)');
-    if jobId then
-        local baseKey = jobId .. ':0';
-        if baseKey ~= storageKey then
-            return slotActions[baseKey];
+    -- IMPORTANT: Preserve any suffix (palette:X, avatar:Y) in the fallback key
+    local jobId, subjobId, suffix = storageKey:match('^(%d+):(%d+)(.*)$');
+    if jobId and subjobId ~= '0' then
+        local fallbackKey = jobId .. ':0' .. (suffix or '');
+        if fallbackKey ~= storageKey then
+            return slotActions[fallbackKey];
         end
     end
     return nil;
@@ -646,11 +723,11 @@ end
 -- Returns nil if no data exists
 function M.GetCrossbarSlotData(comboMode, slotIndex)
     local jobId = M.jobId or 1;
-    local subjobId = M.subjobId or 0;
 
     if not gConfig.hotbarCrossbar then return nil; end
-    -- Use storage key based on jobSpecific setting (includes job:subjob)
-    local storageKey = getCrossbarStorageKey(gConfig.hotbarCrossbar, jobId, subjobId);
+
+    -- Use per-combo-mode storage key (considers pet-aware and palette settings per combo)
+    local storageKey = M.GetCrossbarStorageKeyForCombo(comboMode);
     local jobSlotActions = getCrossbarSlotActionsForJob(gConfig.hotbarCrossbar.slotActions, storageKey);
     if not jobSlotActions then return nil; end
     if not jobSlotActions[comboMode] then return nil; end
@@ -693,9 +770,6 @@ end
 -- slotData: { actionType, action, target, displayName, equipSlot, macroText, itemId, customIconType, customIconId, customIconPath }
 --           or nil to clear the slot
 function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
-    local jobId = M.jobId or 1;
-    local subjobId = M.subjobId or 0;
-
     -- If slotData is nil, clear the slot instead
     if not slotData then
         M.ClearCrossbarSlotData(comboMode, slotIndex);
@@ -706,8 +780,9 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
     if not gConfig.hotbarCrossbar then
         gConfig.hotbarCrossbar = {};
     end
-    -- Use storage key based on jobSpecific setting (includes job:subjob)
-    local storageKey = getCrossbarStorageKey(gConfig.hotbarCrossbar, jobId, subjobId);
+
+    -- Use per-combo-mode storage key (considers pet-aware and palette settings per combo)
+    local storageKey = M.GetCrossbarStorageKeyForCombo(comboMode);
     local comboSlots = ensureCrossbarSlotActionsStructure(gConfig.hotbarCrossbar, storageKey, comboMode);
 
     -- Store the slot data
@@ -734,13 +809,11 @@ end
 -- comboMode: 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', or 'R2x2'
 -- slotIndex: 1-8
 function M.ClearCrossbarSlotData(comboMode, slotIndex)
-    local jobId = M.jobId or 1;
-    local subjobId = M.subjobId or 0;
-
     -- Early return if structure doesn't exist
     if not gConfig.hotbarCrossbar then return; end
-    -- Use storage key based on jobSpecific setting (includes job:subjob)
-    local storageKey = getCrossbarStorageKey(gConfig.hotbarCrossbar, jobId, subjobId);
+
+    -- Use per-combo-mode storage key (considers pet-aware and palette settings per combo)
+    local storageKey = M.GetCrossbarStorageKeyForCombo(comboMode);
     local jobSlotActions = getCrossbarSlotActionsForJob(gConfig.hotbarCrossbar.slotActions, storageKey);
     if not jobSlotActions then return; end
     if not jobSlotActions[comboMode] then return; end

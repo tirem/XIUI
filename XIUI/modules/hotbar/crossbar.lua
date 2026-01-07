@@ -42,25 +42,26 @@ local function getStorageKey(crossbarSettings, jobId, subjobId)
 end
 
 -- Helper to get slotActions with storage key
--- Handles: 'global' and composite keys ('15:10')
--- Falls back to base job key (jobId:0) if full job:subjob key doesn't exist
+-- Handles: 'global' and composite keys ('15:10', '15:10:palette:Stuns')
+-- Falls back to base job key (jobId:0) preserving any suffix if full job:subjob key doesn't exist
 local function getSlotActionsForJob(slotActions, storageKey)
     if not slotActions then return nil; end
     -- Handle 'global' key specially
     if storageKey == GLOBAL_SLOT_KEY then
         return slotActions[GLOBAL_SLOT_KEY];
     end
-    -- Try exact storage key first (e.g., '3:5' for WHM/RDM)
+    -- Try exact storage key first (e.g., '3:5' for WHM/RDM, '3:5:palette:Stuns')
     local result = slotActions[storageKey];
     if result then
         return result;
     end
     -- Fallback: try base job key (jobId:0) for imported data without subjob
-    local jobId = storageKey:match('^(%d+)');
-    if jobId then
-        local baseKey = jobId .. ':0';
-        if baseKey ~= storageKey then
-            return slotActions[baseKey];
+    -- IMPORTANT: Preserve any suffix (palette:X, avatar:Y) in the fallback key
+    local jobId, subjobId, suffix = storageKey:match('^(%d+):(%d+)(.*)$');
+    if jobId and subjobId ~= '0' then
+        local fallbackKey = jobId .. ':0' .. (suffix or '');
+        if fallbackKey ~= storageKey then
+            return slotActions[fallbackKey];
         end
     end
     return nil;
@@ -785,7 +786,7 @@ local function DrawDiamondCenterIconsImGui(diamondType, groupX, groupY, settings
     local iconSize = settings.buttonIconSize or 24;
     local iconGapH = settings.buttonIconGapH or 2;
     local iconGapV = settings.buttonIconGapV or 2;
-    local controllerTheme = settings.controllerTheme or 'PlayStation';
+    local controllerTheme = settings.controllerTheme or 'Xbox';
 
     -- Get diamond center position using layout calculation
     local diamondCenterX, diamondCenterY = GetDiamondCenter(diamondType, slotSize, slotGapV, slotGapH, diamondSpacing);
@@ -798,7 +799,7 @@ local function DrawDiamondCenterIconsImGui(diamondType, groupX, groupY, settings
     if diamondType == 'dpad' then
         iconConfig = CENTER_ICON_CONFIG.dpad;
     else
-        iconConfig = CENTER_ICON_CONFIG.face[controllerTheme] or CENTER_ICON_CONFIG.face.PlayStation;
+        iconConfig = CENTER_ICON_CONFIG.face[controllerTheme] or CENTER_ICON_CONFIG.face.Xbox;
     end
     if not iconConfig then return; end
 
@@ -1519,27 +1520,8 @@ function M.ActivateSlot(comboMode, slotIndex)
     -- Note: Native macro blocking for controller is handled by zeroing trigger values
     -- in state_modified in controller.lua, so no StopNativeMacros call needed here
 
-    -- Get player job/subjob for slot lookup
-    local player = GetPlayerSafe();
-    if not player then return; end
-
-    local jobId = player:GetMainJob();
-    if not jobId or jobId == 0 then return; end
-    local subjobId = player:GetSubJob() or 0;
-
-    -- Get slot action from settings (with storage key based on jobSpecific setting)
-    if not gConfig or not gConfig.hotbarCrossbar then return; end
-    local slotActions = gConfig.hotbarCrossbar.slotActions;
-    if not slotActions then return; end
-
-    local storageKey = getStorageKey(gConfig.hotbarCrossbar, jobId, subjobId);
-    local jobActions = getSlotActionsForJob(slotActions, storageKey);
-    if not jobActions then return; end
-
-    local modeActions = jobActions[comboMode];
-    if not modeActions then return; end
-
-    local slotAction = modeActions[slotIndex];
+    -- Get slot action using data module (handles per-combo storage keys, palettes, pet-aware)
+    local slotAction = data.GetCrossbarSlotData(comboMode, slotIndex);
     if not slotAction then return; end
 
     -- Execute the action via the actions module

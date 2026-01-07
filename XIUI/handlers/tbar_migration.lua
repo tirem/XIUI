@@ -51,7 +51,16 @@ local ACTION_NAME_OVERRIDES = {
 };
 
 -- Crossbar combo mode mapping: tCrossBar -> XIUI
+-- tCrossBar uses short key format: LT, RT, LT2, RT2, LTRT, RTLT
 local COMBO_MODE_MAP = {
+    -- Short format (used in binding keys like "LT:1")
+    LT = 'L2',
+    RT = 'R2',
+    LT2 = 'L2x2',
+    RT2 = 'R2x2',
+    LTRT = 'L2R2',
+    RTLT = 'R2L2',
+    -- Legacy long format (older tCrossBar versions)
     LeftTrigger = 'L2',
     RightTrigger = 'R2',
     BothTriggersLeft = 'L2R2',
@@ -350,43 +359,112 @@ function M.ParseHotBarBindings(filePath)
     return result;
 end
 
+-- Parse a crossbar binding key (e.g., "LT:1", "RT2:7", "RTLT:3")
+-- Returns: { comboMode = "L2", slotIndex = 1 } or nil
+local function ParseCrossbarBindingKey(keyStr)
+    if not keyStr or type(keyStr) ~= 'string' then return nil; end
+
+    -- Match format: {comboMode}:{slotIndex}
+    local comboMode, slotStr = keyStr:match('^([^:]+):(%d+)$');
+    if not comboMode or not slotStr then return nil; end
+
+    local xiuiComboMode = COMBO_MODE_MAP[comboMode];
+    if not xiuiComboMode then return nil; end
+
+    local slotIndex = tonumber(slotStr);
+    if not slotIndex or slotIndex < 1 or slotIndex > 8 then return nil; end
+
+    return {
+        comboMode = xiuiComboMode,
+        slotIndex = slotIndex,
+    };
+end
+
 -- Parse bindings from a tCrossBar file
--- Returns table with combo modes as keys
+-- Returns table with palettes: { palettes = { { name = "...", bindings = { [comboMode] = { [slotIndex] = binding } } }, ... } }
 function M.ParseCrossBarBindings(filePath)
     local data, err = M.LoadBindingFile(filePath);
     if not data then
         return nil, err;
     end
 
-    local comboBindings = {};
+    local result = {
+        palettes = {},
+    };
 
-    -- tCrossBar organizes by combo mode
-    for comboMode, slots in pairs(data) do
-        if type(slots) == 'table' then
-            local xiuiComboMode = COMBO_MODE_MAP[comboMode];
-            if xiuiComboMode then
-                comboBindings[xiuiComboMode] = {};
+    -- tCrossBar structure: { Default = {}, Palettes = { { Name = "...", Bindings = { ["LT:1"] = {...} } }, ... } }
+    if not data.Palettes then
+        -- Fallback: Try legacy format where combo modes are top-level keys
+        local hasLegacyFormat = false;
+        local legacyBindings = {};
 
-                for key, binding in pairs(slots) do
-                    if type(binding) == 'table' and binding.ActionType then
-                        local slotIndex;
-                        if type(key) == 'number' then
-                            slotIndex = key;
-                        elseif type(key) == 'string' then
-                            local num = key:match('Macro(%d+)') or key:match('^(%d+)$');
-                            slotIndex = tonumber(num);
-                        end
+        for comboMode, slots in pairs(data) do
+            if type(slots) == 'table' then
+                local xiuiComboMode = COMBO_MODE_MAP[comboMode];
+                if xiuiComboMode then
+                    hasLegacyFormat = true;
+                    if not legacyBindings[xiuiComboMode] then
+                        legacyBindings[xiuiComboMode] = {};
+                    end
 
-                        if slotIndex and slotIndex >= 1 and slotIndex <= 8 then
-                            comboBindings[xiuiComboMode][slotIndex] = binding;
+                    for key, binding in pairs(slots) do
+                        if type(binding) == 'table' and binding.ActionType then
+                            local slotIndex;
+                            if type(key) == 'number' then
+                                slotIndex = key;
+                            elseif type(key) == 'string' then
+                                local num = key:match('Macro(%d+)') or key:match('^(%d+)$');
+                                slotIndex = tonumber(num);
+                            end
+
+                            if slotIndex and slotIndex >= 1 and slotIndex <= 8 then
+                                legacyBindings[xiuiComboMode][slotIndex] = binding;
+                            end
                         end
                     end
                 end
             end
         end
+
+        if hasLegacyFormat then
+            -- Wrap legacy bindings in a "Base" palette
+            table.insert(result.palettes, {
+                name = 'Base',
+                bindings = legacyBindings,
+            });
+            return result;
+        end
+
+        return nil, 'No Palettes found in file';
     end
 
-    return comboBindings;
+    -- Parse new format with Palettes array
+    for _, palette in ipairs(data.Palettes) do
+        local paletteName = palette.Name or 'Unknown';
+        local paletteBindings = {
+            name = paletteName,
+            bindings = {},  -- [comboMode][slotIndex] = binding
+        };
+
+        if palette.Bindings then
+            for keyStr, binding in pairs(palette.Bindings) do
+                if type(binding) == 'table' and binding.ActionType then
+                    local parsed = ParseCrossbarBindingKey(keyStr);
+                    if parsed then
+                        -- Initialize combo mode table if needed
+                        if not paletteBindings.bindings[parsed.comboMode] then
+                            paletteBindings.bindings[parsed.comboMode] = {};
+                        end
+                        paletteBindings.bindings[parsed.comboMode][parsed.slotIndex] = binding;
+                    end
+                end
+            end
+        end
+
+        table.insert(result.palettes, paletteBindings);
+    end
+
+    return result;
 end
 
 -- ============================================
@@ -868,15 +946,20 @@ function M.CountHotbarBindings(parsedData)
 end
 
 -- Get count of non-empty bindings from tCrossBar parsed data
+-- Input: { palettes = { { name = "...", bindings = { [comboMode] = { [slotIndex] = binding } } }, ... } }
 function M.CountCrossbarBindings(parsedData)
-    if not parsedData then return 0; end
+    if not parsedData or not parsedData.palettes then return 0; end
 
     local count = 0;
-    for comboMode, slots in pairs(parsedData) do
-        if type(slots) == 'table' then
-            for slotIndex, binding in pairs(slots) do
-                if binding and binding.ActionType and binding.ActionType ~= 'Empty' then
-                    count = count + 1;
+    for _, palette in ipairs(parsedData.palettes) do
+        if palette.bindings then
+            for comboMode, slots in pairs(palette.bindings) do
+                if type(slots) == 'table' then
+                    for slotIndex, binding in pairs(slots) do
+                        if binding and binding.ActionType and binding.ActionType ~= 'Empty' then
+                            count = count + 1;
+                        end
+                    end
                 end
             end
         end
@@ -896,8 +979,32 @@ function M.GetPaletteNames(parsedData)
     return names;
 end
 
--- Get bindings for a specific palette by name
+-- Get bindings for a specific palette by name (hotbar)
 function M.GetPaletteBindings(parsedData, paletteName)
+    if not parsedData or not parsedData.palettes then return nil; end
+
+    for _, palette in ipairs(parsedData.palettes) do
+        if palette.name == paletteName then
+            return palette.bindings;
+        end
+    end
+    return nil;
+end
+
+-- Get list of palette names from parsed tCrossBar data
+function M.GetCrossbarPaletteNames(parsedData)
+    if not parsedData or not parsedData.palettes then return {}; end
+
+    local names = {};
+    for _, palette in ipairs(parsedData.palettes) do
+        table.insert(names, palette.name or 'Unknown');
+    end
+    return names;
+end
+
+-- Get crossbar bindings for a specific palette by name
+-- Returns: { [comboMode] = { [slotIndex] = binding } }
+function M.GetCrossbarPaletteBindings(parsedData, paletteName)
     if not parsedData or not parsedData.palettes then return nil; end
 
     for _, palette in ipairs(parsedData.palettes) do
