@@ -26,6 +26,12 @@ local state = {
     -- Cycle indices per bar: [barIndex] = index into available palettes
     cycleIndices = {},
 
+    -- Crossbar overrides per combo mode: [comboMode] = petKey or nil
+    crossbarOverrides = {},
+
+    -- Crossbar cycle indices per combo mode: [comboMode] = index into available palettes
+    crossbarCycleIndices = {},
+
     -- Callbacks for pet change events
     onPetChangedCallbacks = {},
 };
@@ -150,10 +156,12 @@ function M.ClearManualOverride(barIndex)
     state.cycleIndices[barIndex] = nil;
 end
 
--- Clear all manual overrides
+-- Clear all manual overrides (including crossbar)
 function M.ClearAllManualOverrides()
     state.manualOverrides = {};
     state.cycleIndices = {};
+    state.crossbarOverrides = {};
+    state.crossbarCycleIndices = {};
 end
 
 -- ============================================
@@ -243,6 +251,126 @@ function M.CyclePalette(barIndex, direction, jobId)
 end
 
 -- ============================================
+-- Crossbar Override Management
+-- ============================================
+
+-- Get crossbar manual override for a combo mode (returns petKey or nil)
+function M.GetCrossbarOverride(comboMode)
+    return state.crossbarOverrides[comboMode];
+end
+
+-- Check if a combo mode has a manual override
+function M.HasCrossbarOverride(comboMode)
+    return state.crossbarOverrides[comboMode] ~= nil;
+end
+
+-- Set manual override for a crossbar combo mode
+function M.SetCrossbarOverride(comboMode, petKey)
+    state.crossbarOverrides[comboMode] = petKey;
+end
+
+-- Clear manual override for a crossbar combo mode (return to auto mode)
+function M.ClearCrossbarOverride(comboMode)
+    state.crossbarOverrides[comboMode] = nil;
+    state.crossbarCycleIndices[comboMode] = nil;
+end
+
+-- Clear all crossbar overrides only
+function M.ClearAllCrossbarOverrides()
+    state.crossbarOverrides = {};
+    state.crossbarCycleIndices = {};
+end
+
+-- Set a specific palette for a crossbar combo mode (by pet key)
+-- petKey: The pet key to set (e.g., 'avatar:ifrit'), or nil for Auto
+function M.SetCrossbarPalette(comboMode, petKey)
+    if petKey == nil then
+        -- Clear override (Auto mode)
+        state.crossbarOverrides[comboMode] = nil;
+        state.crossbarCycleIndices[comboMode] = nil;
+    else
+        state.crossbarOverrides[comboMode] = petKey;
+    end
+    return true;
+end
+
+-- Cycle through palettes for a crossbar combo mode
+-- direction: 1 for next, -1 for previous
+function M.CycleCrossbarPalette(comboMode, direction, jobId)
+    direction = direction or 1;
+    jobId = jobId or GetPetJob();
+
+    if not jobId then return; end
+
+    -- Reuse same palette list as hotbar (palettes are job-based, not bar-based)
+    local palettes = M.GetAvailablePalettes(1, jobId);
+    if #palettes == 0 then return; end
+
+    -- Get current cycle index
+    local currentIndex = state.crossbarCycleIndices[comboMode] or 1;
+
+    -- If we have a manual override, find its index
+    local currentOverride = state.crossbarOverrides[comboMode];
+    if currentOverride then
+        for i, p in ipairs(palettes) do
+            if p.key == currentOverride then
+                currentIndex = i;
+                break;
+            end
+        end
+    elseif state.currentPetKey then
+        -- If no override but we have a pet, find auto-selected index
+        for i, p in ipairs(palettes) do
+            if p.key == state.currentPetKey then
+                currentIndex = i;
+                break;
+            end
+        end
+    end
+
+    -- Calculate new index
+    local newIndex = currentIndex + direction;
+    if newIndex < 1 then newIndex = #palettes; end
+    if newIndex > #palettes then newIndex = 1; end
+
+    -- Store cycle index and set override
+    state.crossbarCycleIndices[comboMode] = newIndex;
+    state.crossbarOverrides[comboMode] = palettes[newIndex].key;
+
+    return palettes[newIndex];
+end
+
+-- Get the effective pet key for a crossbar combo mode (considering overrides)
+-- This is what data.lua will use to build the storage key
+function M.GetEffectivePetKeyForCombo(comboMode)
+    -- Check manual override first
+    local override = state.crossbarOverrides[comboMode];
+    if override then
+        return override;
+    end
+
+    -- No override - use auto-detected pet
+    return state.currentPetKey;
+end
+
+-- Get the current pet palette display name for a crossbar combo mode
+-- Returns the name to show in the palette indicator overlay
+function M.GetCrossbarPaletteDisplayName(comboMode, jobId)
+    -- Check manual override first
+    local override = state.crossbarOverrides[comboMode];
+    if override then
+        return petregistry.GetDisplayNameForKey(override);
+    end
+
+    -- No override - use auto-detected pet
+    if state.currentPetKey then
+        return petregistry.GetDisplayNameForKey(state.currentPetKey);
+    end
+
+    return 'Base';
+end
+
+-- ============================================
 -- Palette Display Name for Indicator
 -- ============================================
 
@@ -311,6 +439,8 @@ function M.Reset()
     state.lastKnownPetName = nil;
     state.manualOverrides = {};
     state.cycleIndices = {};
+    state.crossbarOverrides = {};
+    state.crossbarCycleIndices = {};
 end
 
 return M;

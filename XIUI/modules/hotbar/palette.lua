@@ -626,6 +626,473 @@ function M.FirePaletteChangedCallbacks(barIndex, oldPalette, newPalette)
 end
 
 -- ============================================
+-- Crossbar Palette Management
+-- ============================================
+
+-- Crossbar combo modes for iteration
+local CROSSBAR_COMBO_MODES = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2' };
+
+-- Get all available palette names for crossbar only
+-- Returns: { 'Base', 'Stuns', 'Heals', ... } - palettes available ONLY for crossbar
+-- Crossbar palettes are SEPARATE from hotbar palettes
+function M.GetCrossbarAvailablePalettes(jobId, subjobId)
+    local palettes = { M.BASE_PALETTE_NAME };  -- Always include Base first
+
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    if not crossbarSettings or not crossbarSettings.slotActions then
+        return palettes;
+    end
+
+    local normalizedJobId = jobId or 1;
+    local normalizedSubjobId = subjobId or 0;
+    local baseKey = string.format('%d:%d', normalizedJobId, normalizedSubjobId);
+    local palettePattern = baseKey .. ':' .. M.PALETTE_KEY_PREFIX;
+
+    -- Also check for fallback pattern with subjob=0 (for imported palettes)
+    local fallbackPattern = nil;
+    if normalizedSubjobId ~= 0 then
+        local fallbackKey = string.format('%d:0', normalizedJobId);
+        fallbackPattern = fallbackKey .. ':' .. M.PALETTE_KEY_PREFIX;
+    end
+
+    -- Collect all palette names from crossbar slotActions
+    local existingPalettes = {};
+    for storageKey, _ in pairs(crossbarSettings.slotActions) do
+        if type(storageKey) == 'string' then
+            local paletteName = nil;
+
+            -- Check primary pattern first
+            if storageKey:find(palettePattern, 1, true) == 1 then
+                paletteName = storageKey:sub(#palettePattern + 1);
+            -- Check fallback pattern (subjob=0) for imported palettes
+            elseif fallbackPattern and storageKey:find(fallbackPattern, 1, true) == 1 then
+                paletteName = storageKey:sub(#fallbackPattern + 1);
+            end
+
+            if paletteName and paletteName ~= '' then
+                existingPalettes[paletteName] = true;
+            end
+        end
+    end
+
+    -- Get the stored palette order for crossbar
+    local orderKey = baseKey;
+    local storedOrder = crossbarSettings.crossbarPaletteOrder and crossbarSettings.crossbarPaletteOrder[orderKey];
+
+    -- Build ordered result: first add palettes from storedOrder that exist
+    local seen = {};
+    if storedOrder then
+        for _, paletteName in ipairs(storedOrder) do
+            if existingPalettes[paletteName] and not seen[paletteName] then
+                seen[paletteName] = true;
+                table.insert(palettes, paletteName);
+            end
+        end
+    end
+
+    -- Collect any remaining palettes not in the stored order
+    local remaining = {};
+    for paletteName, _ in pairs(existingPalettes) do
+        if not seen[paletteName] then
+            table.insert(remaining, paletteName);
+        end
+    end
+
+    -- Sort remaining palettes alphabetically and append
+    table.sort(remaining);
+    for _, paletteName in ipairs(remaining) do
+        table.insert(palettes, paletteName);
+    end
+
+    return palettes;
+end
+
+-- DEPRECATED: GetAllAvailablePalettes - kept for backwards compatibility
+-- Now just returns hotbar palettes since crossbar has its own separate palettes
+function M.GetAllAvailablePalettes(jobId, subjobId)
+    local palettes = { M.BASE_PALETTE_NAME };  -- Always include Base first
+    local seen = { [M.BASE_PALETTE_NAME] = true };
+
+    -- Scan all 6 hotbar bars only (NOT crossbar - they are separate now)
+    for barIndex = 1, 6 do
+        local barPalettes = M.GetAvailablePalettes(barIndex, jobId, subjobId);
+        for _, paletteName in ipairs(barPalettes) do
+            if not seen[paletteName] then
+                seen[paletteName] = true;
+                table.insert(palettes, paletteName);
+            end
+        end
+    end
+
+    return palettes;
+end
+
+-- Get active palette name for a crossbar combo mode (from settings)
+-- Returns nil for Base palette
+function M.GetActivePaletteForCombo(comboMode)
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    local modeSettings = crossbarSettings and crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[comboMode];
+    return modeSettings and modeSettings.activePalette;
+end
+
+-- Get active palette display name for a crossbar combo mode
+function M.GetActivePaletteDisplayNameForCombo(comboMode)
+    return M.GetActivePaletteForCombo(comboMode) or M.BASE_PALETTE_NAME;
+end
+
+-- Set active palette for a crossbar combo mode
+-- paletteName: name to activate, or nil/Base to use base palette
+function M.SetActivePaletteForCombo(comboMode, paletteName)
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    if not crossbarSettings then return false; end
+
+    -- Ensure comboModeSettings exists
+    if not crossbarSettings.comboModeSettings then
+        crossbarSettings.comboModeSettings = {};
+    end
+    if not crossbarSettings.comboModeSettings[comboMode] then
+        crossbarSettings.comboModeSettings[comboMode] = { petAware = false, activePalette = nil };
+    end
+
+    local oldPalette = crossbarSettings.comboModeSettings[comboMode].activePalette;
+
+    -- Normalize "Base" to nil
+    if paletteName == M.BASE_PALETTE_NAME then
+        paletteName = nil;
+    end
+
+    -- Skip if no change
+    if oldPalette == paletteName then
+        return false;
+    end
+
+    crossbarSettings.comboModeSettings[comboMode].activePalette = paletteName;
+
+    -- Fire callbacks (using negative "bar index" to indicate crossbar)
+    -- We use comboMode as identifier instead
+    M.FirePaletteChangedCallbacks('crossbar:' .. comboMode, oldPalette, paletteName);
+
+    return true;
+end
+
+-- Clear active palette for a crossbar combo mode (return to Base)
+function M.ClearActivePaletteForCombo(comboMode)
+    return M.SetActivePaletteForCombo(comboMode, nil);
+end
+
+-- Cycle through palettes for a crossbar combo mode
+-- direction: 1 for next, -1 for previous
+function M.CyclePaletteForCombo(comboMode, direction, jobId, subjobId)
+    direction = direction or 1;
+
+    -- Use crossbar-only palette list (separate from hotbar)
+    local palettes = M.GetCrossbarAvailablePalettes(jobId, subjobId);
+    if #palettes <= 1 then
+        return nil;  -- Nothing to cycle (only Base)
+    end
+
+    local currentName = M.GetActivePaletteDisplayNameForCombo(comboMode);
+    local currentIndex = 1;
+
+    -- Find current palette index
+    for i, name in ipairs(palettes) do
+        if name == currentName then
+            currentIndex = i;
+            break;
+        end
+    end
+
+    -- Calculate new index with wrap-around
+    local newIndex = currentIndex + direction;
+    if newIndex < 1 then newIndex = #palettes; end
+    if newIndex > #palettes then newIndex = 1; end
+
+    local newPalette = palettes[newIndex];
+    M.SetActivePaletteForCombo(comboMode, newPalette);
+
+    return newPalette;
+end
+
+-- Get the palette key suffix for a crossbar combo mode
+-- Returns nil if Base palette (no suffix needed)
+function M.GetEffectivePaletteKeySuffixForCombo(comboMode)
+    local activePalette = M.GetActivePaletteForCombo(comboMode);
+    return M.GetPaletteKeySuffix(activePalette);
+end
+
+-- Create a new palette for crossbar (stores in crossbar slotActions)
+-- Returns true on success, false with error message on failure
+function M.CreateCrossbarPalette(paletteName, jobId, subjobId)
+    if not IsValidPaletteName(paletteName) then
+        return false, 'Invalid palette name';
+    end
+
+    if paletteName == M.BASE_PALETTE_NAME then
+        return false, 'Cannot create palette named "Base"';
+    end
+
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    if not crossbarSettings then
+        return false, 'Crossbar settings not found';
+    end
+
+    -- Ensure slotActions structure
+    if not crossbarSettings.slotActions then
+        crossbarSettings.slotActions = {};
+    end
+
+    -- Build storage key
+    local baseKey = string.format('%d:%d', jobId or 1, subjobId or 0);
+    local newStorageKey = M.BuildStorageKey(baseKey, paletteName);
+
+    -- Check if palette already exists
+    if crossbarSettings.slotActions[newStorageKey] then
+        return false, 'Palette already exists';
+    end
+
+    -- Create empty palette structure for all combo modes
+    crossbarSettings.slotActions[newStorageKey] = {};
+
+    -- Add to crossbarPaletteOrder for this job:subjob
+    if not crossbarSettings.crossbarPaletteOrder then
+        crossbarSettings.crossbarPaletteOrder = {};
+    end
+    if not crossbarSettings.crossbarPaletteOrder[baseKey] then
+        crossbarSettings.crossbarPaletteOrder[baseKey] = {};
+    end
+    table.insert(crossbarSettings.crossbarPaletteOrder[baseKey], paletteName);
+
+    SaveSettingsToDisk();
+    return true;
+end
+
+-- Helper: Find the actual crossbar storage key for a palette
+-- Checks both current subjob key and fallback subjob=0 key
+-- Returns storageKey, baseKey or nil, nil if not found
+local function FindCrossbarPaletteStorageKey(paletteName, jobId, subjobId)
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    if not crossbarSettings or not crossbarSettings.slotActions then
+        return nil, nil;
+    end
+
+    local normalizedJobId = jobId or 1;
+    local normalizedSubjobId = subjobId or 0;
+
+    -- Try primary key first (current job:subjob)
+    local baseKey = string.format('%d:%d', normalizedJobId, normalizedSubjobId);
+    local storageKey = M.BuildStorageKey(baseKey, paletteName);
+    if crossbarSettings.slotActions[storageKey] then
+        return storageKey, baseKey;
+    end
+
+    -- Try fallback key (job:0) if subjob is not already 0
+    if normalizedSubjobId ~= 0 then
+        local fallbackBaseKey = string.format('%d:0', normalizedJobId);
+        local fallbackStorageKey = M.BuildStorageKey(fallbackBaseKey, paletteName);
+        if crossbarSettings.slotActions[fallbackStorageKey] then
+            return fallbackStorageKey, fallbackBaseKey;
+        end
+    end
+
+    return nil, nil;
+end
+
+-- Delete a crossbar palette
+-- Returns true on success, false with error message on failure
+function M.DeleteCrossbarPalette(paletteName, jobId, subjobId)
+    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
+        return false, 'Cannot delete Base palette';
+    end
+
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    if not crossbarSettings or not crossbarSettings.slotActions then
+        return false, 'Palette not found';
+    end
+
+    -- Find the actual storage key (handles fallback to subjob=0)
+    local storageKey, foundBaseKey = FindCrossbarPaletteStorageKey(paletteName, jobId, subjobId);
+    if not storageKey then
+        return false, 'Palette not found';
+    end
+
+    -- Delete the palette
+    crossbarSettings.slotActions[storageKey] = nil;
+
+    -- Remove from crossbarPaletteOrder for this job:subjob
+    local baseKey = string.format('%d:%d', jobId or 1, subjobId or 0);
+    if crossbarSettings.crossbarPaletteOrder and crossbarSettings.crossbarPaletteOrder[foundBaseKey] then
+        for i, name in ipairs(crossbarSettings.crossbarPaletteOrder[foundBaseKey]) do
+            if name == paletteName then
+                table.remove(crossbarSettings.crossbarPaletteOrder[foundBaseKey], i);
+                break;
+            end
+        end
+    end
+
+    -- If any combo mode was using this palette, switch them to Base
+    if crossbarSettings.comboModeSettings then
+        for comboMode, modeSettings in pairs(crossbarSettings.comboModeSettings) do
+            if modeSettings.activePalette == paletteName then
+                modeSettings.activePalette = nil;
+            end
+        end
+    end
+
+    SaveSettingsToDisk();
+    return true;
+end
+
+-- Rename a crossbar palette
+-- Returns true on success, false with error message on failure
+function M.RenameCrossbarPalette(oldName, newName, jobId, subjobId)
+    if not oldName or oldName == M.BASE_PALETTE_NAME then
+        return false, 'Cannot rename Base palette';
+    end
+
+    if not IsValidPaletteName(newName) then
+        return false, 'Invalid new palette name';
+    end
+
+    if newName == M.BASE_PALETTE_NAME then
+        return false, 'Cannot rename to "Base"';
+    end
+
+    if oldName == newName then
+        return false, 'New name is the same as the old name';
+    end
+
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    if not crossbarSettings or not crossbarSettings.slotActions then
+        return false, 'Palette not found';
+    end
+
+    -- Find the actual storage key for the old palette (handles fallback to subjob=0)
+    local oldStorageKey, foundBaseKey = FindCrossbarPaletteStorageKey(oldName, jobId, subjobId);
+    if not oldStorageKey then
+        return false, 'Palette not found';
+    end
+
+    -- Build new storage key using the same base key as the found palette
+    local newStorageKey = M.BuildStorageKey(foundBaseKey, newName);
+
+    -- Check if new name already exists (check both current subjob and fallback)
+    local existingKey = FindCrossbarPaletteStorageKey(newName, jobId, subjobId);
+    if existingKey then
+        return false, 'A palette with that name already exists';
+    end
+
+    -- Move data to new key
+    crossbarSettings.slotActions[newStorageKey] = crossbarSettings.slotActions[oldStorageKey];
+    crossbarSettings.slotActions[oldStorageKey] = nil;
+
+    -- Update crossbarPaletteOrder for this job:subjob (rename the entry in place)
+    if crossbarSettings.crossbarPaletteOrder and crossbarSettings.crossbarPaletteOrder[foundBaseKey] then
+        for i, name in ipairs(crossbarSettings.crossbarPaletteOrder[foundBaseKey]) do
+            if name == oldName then
+                crossbarSettings.crossbarPaletteOrder[foundBaseKey][i] = newName;
+                break;
+            end
+        end
+    end
+
+    -- Update active palette if any combo mode was using this palette
+    if crossbarSettings.comboModeSettings then
+        for comboMode, modeSettings in pairs(crossbarSettings.comboModeSettings) do
+            if modeSettings.activePalette == oldName then
+                modeSettings.activePalette = newName;
+            end
+        end
+    end
+
+    SaveSettingsToDisk();
+    return true;
+end
+
+-- Move a crossbar palette up or down in the order
+-- direction: -1 for up (earlier in list), 1 for down (later in list)
+-- Returns true on success, false with error message on failure
+function M.MoveCrossbarPalette(paletteName, direction, jobId, subjobId)
+    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
+        return false, 'Cannot reorder Base palette';
+    end
+
+    if direction ~= -1 and direction ~= 1 then
+        return false, 'Invalid direction';
+    end
+
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    if not crossbarSettings then
+        return false, 'Crossbar settings not found';
+    end
+
+    local baseKey = string.format('%d:%d', jobId or 1, subjobId or 0);
+
+    -- Ensure crossbarPaletteOrder exists and is populated
+    if not crossbarSettings.crossbarPaletteOrder then
+        crossbarSettings.crossbarPaletteOrder = {};
+    end
+    if not crossbarSettings.crossbarPaletteOrder[baseKey] then
+        -- Initialize crossbarPaletteOrder from current available palettes (excluding Base)
+        crossbarSettings.crossbarPaletteOrder[baseKey] = {};
+        local available = M.GetCrossbarAvailablePalettes(jobId, subjobId);
+        for _, name in ipairs(available) do
+            if name ~= M.BASE_PALETTE_NAME then
+                table.insert(crossbarSettings.crossbarPaletteOrder[baseKey], name);
+            end
+        end
+    end
+
+    local order = crossbarSettings.crossbarPaletteOrder[baseKey];
+
+    -- Find palette index in order
+    local currentIndex = nil;
+    for i, name in ipairs(order) do
+        if name == paletteName then
+            currentIndex = i;
+            break;
+        end
+    end
+
+    if not currentIndex then
+        return false, 'Palette not found in order';
+    end
+
+    local newIndex = currentIndex + direction;
+
+    -- Check bounds
+    if newIndex < 1 or newIndex > #order then
+        return false, 'Cannot move palette further';
+    end
+
+    -- Swap positions
+    order[currentIndex], order[newIndex] = order[newIndex], order[currentIndex];
+
+    SaveSettingsToDisk();
+    return true;
+end
+
+-- Check if a specific crossbar palette exists
+function M.CrossbarPaletteExists(paletteName, jobId, subjobId)
+    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
+        return true;  -- Base always exists
+    end
+
+    local available = M.GetCrossbarAvailablePalettes(jobId, subjobId);
+    for _, name in ipairs(available) do
+        if name == paletteName then
+            return true;
+        end
+    end
+    return false;
+end
+
+-- Get the total number of non-Base crossbar palettes
+function M.GetCrossbarPaletteCount(jobId, subjobId)
+    local available = M.GetCrossbarAvailablePalettes(jobId, subjobId);
+    return #available - 1;  -- Subtract 1 for Base
+end
+
+-- ============================================
 -- State Management
 -- ============================================
 

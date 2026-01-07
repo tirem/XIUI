@@ -30,6 +30,9 @@ local wizardState = {
     -- Changed to multi-select: { ['WHM'] = { ['Base'] = true, ['Ifrit'] = true }, ... }
     selectedPalettes = {},
     availablePalettes = {},  -- { ['WHM'] = {'Base', 'Esuna', ...}, ... }
+    -- Step 2c: Crossbar palette selection (tCrossBar also has palettes)
+    selectedCrossbarPalettes = {},
+    availableCrossbarPalettes = {},  -- { ['WHM'] = {'Base', ...}, ... }
     -- Step 3: Conflict data
     conflicts = {},
     conflictResolutions = {},  -- { [conflictKey] = 'keep' | 'replace' }
@@ -68,6 +71,8 @@ function M.Open()
     wizardState.importGlobal = true;
     wizardState.selectedPalettes = {};
     wizardState.availablePalettes = {};
+    wizardState.selectedCrossbarPalettes = {};
+    wizardState.availableCrossbarPalettes = {};
     wizardState.conflicts = {};
     wizardState.conflictResolutions = {};
     wizardState.importResults = nil;
@@ -185,32 +190,47 @@ local function BuildConflictList()
         end
     end
 
-    -- Check crossbar conflicts
+    -- Check crossbar conflicts (now palette-based like hotbar)
     if wizardState.importCrossbar and charData.tcrossbarPath then
         for _, jobKey in ipairs(jobList) do
             local fileName = (jobKey == 'global') and 'globals.lua' or (jobKey .. '.lua');
             local filePath = charData.tcrossbarPath .. '\\' .. fileName;
-            local comboBindings = tbarMigration.ParseCrossBarBindings(filePath);
+            local parsedData = tbarMigration.ParseCrossBarBindings(filePath);
 
-            if comboBindings then
-                local storageKey = (jobKey == 'global') and 'global' or tbarMigration.GetStorageKey(jobKey);
+            if parsedData and parsedData.palettes then
+                -- Iterate through selected palettes for this job
+                local jobSelectedPalettes = wizardState.selectedCrossbarPalettes and wizardState.selectedCrossbarPalettes[jobKey] or {};
+                for paletteName, isSelected in pairs(jobSelectedPalettes) do
+                    if isSelected then
+                        local storageKey;
+                        if jobKey == 'global' then
+                            storageKey = 'global';
+                        else
+                            storageKey = tbarMigration.GetStorageKeyForPalette(jobKey, paletteName);
+                        end
 
-                for comboMode, slots in pairs(comboBindings) do
-                    for slotIndex, binding in pairs(slots) do
-                        if tbarMigration.HasExistingCrossbarSlot(comboMode, slotIndex, storageKey) then
-                            local convertedAction = tbarMigration.ConvertBinding(binding);
-                            if convertedAction then
-                                local conflictKey = string.format('crossbar:%s:%d:%s', comboMode, slotIndex, storageKey);
-                                table.insert(conflicts, {
-                                    key = conflictKey,
-                                    type = 'crossbar',
-                                    comboMode = comboMode,
-                                    slotIndex = slotIndex,
-                                    storageKey = storageKey,
-                                    jobKey = jobKey,
-                                    newAction = convertedAction,
-                                    newLabel = convertedAction.displayName or convertedAction.action or '?',
-                                });
+                        local paletteBindings = tbarMigration.GetCrossbarPaletteBindings(parsedData, paletteName);
+                        if paletteBindings then
+                            for comboMode, slots in pairs(paletteBindings) do
+                                for slotIndex, binding in pairs(slots) do
+                                    if tbarMigration.HasExistingCrossbarSlot(comboMode, slotIndex, storageKey) then
+                                        local convertedAction = tbarMigration.ConvertBinding(binding);
+                                        if convertedAction then
+                                            local conflictKey = string.format('crossbar:%s:%d:%s', comboMode, slotIndex, storageKey);
+                                            table.insert(conflicts, {
+                                                key = conflictKey,
+                                                type = 'crossbar',
+                                                comboMode = comboMode,
+                                                slotIndex = slotIndex,
+                                                storageKey = storageKey,
+                                                jobKey = jobKey,
+                                                paletteName = paletteName,
+                                                newAction = convertedAction,
+                                                newLabel = convertedAction.displayName or convertedAction.action or '?',
+                                            });
+                                        end
+                                    end
+                                end
                             end
                         end
                     end
@@ -303,23 +323,37 @@ local function ExecuteImport()
         for _, jobKey in ipairs(jobList) do
             local fileName = (jobKey == 'global') and 'globals.lua' or (jobKey .. '.lua');
             local filePath = charData.tcrossbarPath .. '\\' .. fileName;
-            local comboBindings = tbarMigration.ParseCrossBarBindings(filePath);
+            local parsedData = tbarMigration.ParseCrossBarBindings(filePath);
 
-            if comboBindings then
-                local storageKey = (jobKey == 'global') and 'global' or tbarMigration.GetStorageKey(jobKey);
+            if parsedData and parsedData.palettes then
+                -- Iterate through selected palettes for this job
+                local jobSelectedPalettes = wizardState.selectedCrossbarPalettes and wizardState.selectedCrossbarPalettes[jobKey] or {};
+                for paletteName, isSelected in pairs(jobSelectedPalettes) do
+                    if isSelected then
+                        local storageKey;
+                        if jobKey == 'global' then
+                            storageKey = 'global';
+                        else
+                            storageKey = tbarMigration.GetStorageKeyForPalette(jobKey, paletteName);
+                        end
 
-                for comboMode, slots in pairs(comboBindings) do
-                    for slotIndex, binding in pairs(slots) do
-                        local convertedAction = tbarMigration.ConvertBinding(binding);
-                        if convertedAction then
-                            local conflictKey = string.format('crossbar:%s:%d:%s', comboMode, slotIndex, storageKey);
-                            local resolution = wizardState.conflictResolutions[conflictKey];
-                            -- If any slot will be replaced (not 'keep'), mark for clearing
-                            if resolution ~= 'keep' then
-                                if not crossbarToClear[storageKey] then
-                                    crossbarToClear[storageKey] = {};
+                        local paletteBindings = tbarMigration.GetCrossbarPaletteBindings(parsedData, paletteName);
+                        if paletteBindings then
+                            for comboMode, slots in pairs(paletteBindings) do
+                                for slotIndex, binding in pairs(slots) do
+                                    local convertedAction = tbarMigration.ConvertBinding(binding);
+                                    if convertedAction then
+                                        local conflictKey = string.format('crossbar:%s:%d:%s', comboMode, slotIndex, storageKey);
+                                        local resolution = wizardState.conflictResolutions[conflictKey];
+                                        -- If any slot will be replaced (not 'keep'), mark for clearing
+                                        if resolution ~= 'keep' then
+                                            if not crossbarToClear[storageKey] then
+                                                crossbarToClear[storageKey] = {};
+                                            end
+                                            crossbarToClear[storageKey][comboMode] = true;
+                                        end
+                                    end
                                 end
-                                crossbarToClear[storageKey][comboMode] = true;
                             end
                         end
                     end
@@ -416,32 +450,66 @@ local function ExecuteImport()
         end
     end
 
-    -- Import crossbar bindings
+    -- Import crossbar bindings (now palette-based like hotbar)
     if wizardState.importCrossbar and charData.tcrossbarPath then
         for _, jobKey in ipairs(jobList) do
             local fileName = (jobKey == 'global') and 'globals.lua' or (jobKey .. '.lua');
             local filePath = charData.tcrossbarPath .. '\\' .. fileName;
-            local comboBindings = tbarMigration.ParseCrossBarBindings(filePath);
+            local parsedData = tbarMigration.ParseCrossBarBindings(filePath);
 
-            if comboBindings then
-                local storageKey = (jobKey == 'global') and 'global' or tbarMigration.GetStorageKey(jobKey);
+            if parsedData and parsedData.palettes then
+                -- Iterate through selected palettes for this job
+                local jobSelectedPalettes = wizardState.selectedCrossbarPalettes and wizardState.selectedCrossbarPalettes[jobKey] or {};
+                for paletteName, isSelected in pairs(jobSelectedPalettes) do
+                    if isSelected then
+                        local storageKey;
+                        if jobKey == 'global' then
+                            storageKey = 'global';
+                        else
+                            storageKey = tbarMigration.GetStorageKeyForPalette(jobKey, paletteName);
+                        end
 
-                for comboMode, slots in pairs(comboBindings) do
-                    for slotIndex, binding in pairs(slots) do
-                        local convertedAction = tbarMigration.ConvertBinding(binding);
-                        if convertedAction then
-                            local conflictKey = string.format('crossbar:%s:%d:%s', comboMode, slotIndex, storageKey);
-                            local resolution = wizardState.conflictResolutions[conflictKey];
+                        local paletteBindings = tbarMigration.GetCrossbarPaletteBindings(parsedData, paletteName);
+                        if paletteBindings then
+                            local paletteCount = 0;
+                            for comboMode, slots in pairs(paletteBindings) do
+                                for slotIndex, binding in pairs(slots) do
+                                    local convertedAction = tbarMigration.ConvertBinding(binding);
+                                    if convertedAction then
+                                        local conflictKey = string.format('crossbar:%s:%d:%s', comboMode, slotIndex, storageKey);
+                                        local resolution = wizardState.conflictResolutions[conflictKey];
 
-                            if resolution == 'keep' then
-                                results.skipped = results.skipped + 1;
-                            else
-                                -- (Slots already cleared above, just import)
-                                local success = tbarMigration.ImportCrossbarBinding(comboMode, slotIndex, convertedAction, storageKey);
-                                if success then
-                                    results.crossbarImported = results.crossbarImported + 1;
+                                        if resolution == 'keep' then
+                                            results.skipped = results.skipped + 1;
+                                        else
+                                            -- (Slots already cleared above, just import)
+                                            local success = tbarMigration.ImportCrossbarBinding(comboMode, slotIndex, convertedAction, storageKey);
+                                            if success then
+                                                results.crossbarImported = results.crossbarImported + 1;
+                                                paletteCount = paletteCount + 1;
+                                            end
+                                        end
+                                    end
                                 end
                             end
+
+                            -- Track what was imported for crossbar
+                            if paletteCount > 0 then
+                                local isPetPalette = tbarMigration.IsPetPalette(paletteName);
+                                local targetDesc = isPetPalette
+                                    and string.format('%s pet palette', paletteName)
+                                    or (paletteName == 'Base' and 'crossbar base' or string.format('crossbar "%s"', paletteName));
+                                table.insert(results.paletteDetails, {
+                                    job = jobKey,
+                                    palette = paletteName,
+                                    count = paletteCount,
+                                    storageKey = storageKey,
+                                    isCrossbar = true,
+                                    description = string.format('%s %s: %d bindings', jobKey, targetDesc, paletteCount),
+                                });
+                            end
+                        else
+                            table.insert(results.errors, 'Crossbar palette "' .. paletteName .. '" not found for ' .. jobKey);
                         end
                     end
                 end
@@ -559,6 +627,41 @@ local function CountSelectedPalettes(job)
     return count;
 end
 
+-- Scan available crossbar palettes for a job when it's selected
+-- Returns array of palette names and initializes selectedCrossbarPalettes with all selected
+local function ScanCrossbarPalettesForJob(charData, job)
+    if not charData or not charData.tcrossbarPath then return {}; end
+
+    local fileName = (job == 'global') and 'globals.lua' or (job .. '.lua');
+    local filePath = charData.tcrossbarPath .. '\\' .. fileName;
+    local parsedData = tbarMigration.ParseCrossBarBindings(filePath);
+
+    if parsedData then
+        local names = tbarMigration.GetCrossbarPaletteNames(parsedData);
+        -- Initialize selectedCrossbarPalettes with all palettes selected by default
+        if not wizardState.selectedCrossbarPalettes[job] then
+            wizardState.selectedCrossbarPalettes[job] = {};
+        end
+        for _, name in ipairs(names) do
+            if wizardState.selectedCrossbarPalettes[job][name] == nil then
+                wizardState.selectedCrossbarPalettes[job][name] = true;  -- Default to selected
+            end
+        end
+        return names;
+    end
+    return {};
+end
+
+-- Helper to count selected crossbar palettes for a job
+local function CountSelectedCrossbarPalettes(job)
+    local count = 0;
+    local palettes = wizardState.selectedCrossbarPalettes[job] or {};
+    for _, selected in pairs(palettes) do
+        if selected then count = count + 1; end
+    end
+    return count;
+end
+
 -- Helper to get palette display label (shows pet icon if applicable)
 local function GetPaletteDisplayLabel(paletteName)
     if tbarMigration.IsPetPalette(paletteName) then
@@ -624,15 +727,23 @@ local function DrawStep2Selection()
                 wizardState.selectedJobs = {};
                 wizardState.selectedPalettes = {};
                 wizardState.availablePalettes = {};
+                wizardState.selectedCrossbarPalettes = {};
+                wizardState.availableCrossbarPalettes = {};
                 wizardState.importGlobal = charData.thotbarHasGlobal or charData.tcrossbarHasGlobal;
 
-                -- Scan palettes for global if available
+                -- Scan palettes for global if available (hotbar)
                 if charData.thotbarHasGlobal then
                     local palettes = ScanPalettesForJob(charData, 'global');
                     wizardState.availablePalettes['global'] = palettes;
                     if #palettes > 0 then
                         wizardState.selectedPalettes['global'] = palettes[1];
                     end
+                end
+
+                -- Scan crossbar palettes for global if available
+                if charData.tcrossbarHasGlobal then
+                    local palettes = ScanCrossbarPalettesForJob(charData, 'global');
+                    wizardState.availableCrossbarPalettes['global'] = palettes;
                 end
             end
         end
@@ -698,6 +809,10 @@ local function DrawStep2Selection()
             -- Scan palettes for this job (this also initializes selectedPalettes)
             local palettes = ScanPalettesForJob(charData, job);
             wizardState.availablePalettes[job] = palettes;
+
+            -- Also scan crossbar palettes for this job
+            local crossbarPalettes = ScanCrossbarPalettesForJob(charData, job);
+            wizardState.availableCrossbarPalettes[job] = crossbarPalettes;
         end
 
         local jobVal = { wizardState.selectedJobs[job] };
@@ -705,12 +820,17 @@ local function DrawStep2Selection()
             wizardState.selectedJobs[job] = jobVal[1];
         end
 
-        -- Show palette count for this job
-        if wizardState.selectedJobs[job] and wizardState.availablePalettes[job] and #wizardState.availablePalettes[job] > 1 then
-            imgui.SameLine();
-            local selectedCount = CountSelectedPalettes(job);
-            local totalCount = #wizardState.availablePalettes[job];
-            imgui.TextColored(COLORS.textDim, string.format('(%d/%d palettes)', selectedCount, totalCount));
+        -- Show palette count for this job (hotbar + crossbar combined)
+        if wizardState.selectedJobs[job] then
+            local hbPalettes = wizardState.availablePalettes[job] or {};
+            local cbPalettes = wizardState.availableCrossbarPalettes[job] or {};
+            local hasMultiple = #hbPalettes > 1 or #cbPalettes > 1;
+            if hasMultiple then
+                imgui.SameLine();
+                local hbCount = CountSelectedPalettes(job);
+                local cbCount = CountSelectedCrossbarPalettes(job);
+                imgui.TextColored(COLORS.textDim, string.format('(hb:%d/%d, cb:%d/%d)', hbCount, #hbPalettes, cbCount, #cbPalettes));
+            end
         end
     end
 

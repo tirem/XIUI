@@ -166,11 +166,12 @@ local function CreateDualSenseDevice()
     };
 
     -- Face button to slot mapping (PlayStation layout: Triangle/Circle/Cross/Square)
+    -- Slot 5 = Top button, Slot 6 = Right button, Slot 7 = Bottom button, Slot 8 = Left button
     device.ButtonToSlot = {
-        [buttons.TRIANGLE] = 5,
-        [buttons.CIRCLE] = 6,
-        [buttons.CROSS] = 7,
-        [buttons.SQUARE] = 8,
+        [buttons.TRIANGLE] = 5,  -- Top (ID 51)
+        [buttons.CIRCLE] = 6,    -- Right (ID 50)
+        [buttons.CROSS] = 7,     -- Bottom (ID 49)
+        [buttons.SQUARE] = 8,    -- Left (ID 48)
     };
 
     -- Crossbar buttons (face buttons - D-pad handled separately)
