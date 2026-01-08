@@ -891,7 +891,8 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
 
                 -- Show icon if enabled and item has an id
                 if showIcons and item.id then
-                    local icon = actions.GetBindIcon({ actionType = 'item', action = item.name, itemId = item.id });
+                    -- Use memory-only loading (no PNG creation) for browsing
+                    local icon = actions.GetItemIconForBrowsing(item.id);
                     if icon and icon.image then
                         local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
                         if iconPtr then
@@ -2955,7 +2956,8 @@ local function DrawIconPicker()
                         local item = filteredItems[itemIdx];
 
                         if item then
-                            local icon = actions.GetBindIcon({ actionType = 'item', itemId = item.id });
+                            -- Use memory-only loading (no PNG creation) for browsing
+                            local icon = actions.GetItemIconForBrowsing(item.id);
                             iconLoadState.pageIconCache[cacheIdx] = icon;
                         end
 

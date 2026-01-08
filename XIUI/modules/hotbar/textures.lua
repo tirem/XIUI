@@ -474,6 +474,51 @@ textures.LoadItemIcon = function(self, itemId)
     return LoadTextureFromPath(iconPath);
 end
 
+-- Load item icon from memory only (no PNG file creation)
+-- For use in icon picker browsing - returns texture with NO path field
+-- @param itemId: The item ID to load icon for
+-- @return: Texture table { image, width, height } or nil (no path field)
+textures.LoadItemIconFromMemory = function(self, itemId)
+    if not itemId or itemId == 0 or itemId == 65535 then
+        return nil;
+    end
+
+    local device = GetD3D8Device();
+    if not device then return nil; end
+
+    local resMgr = AshitaCore:GetResourceManager();
+    if not resMgr then return nil; end
+
+    local item = resMgr:GetItemById(itemId);
+    if not item or not item.Bitmap or not item.ImageSize or item.ImageSize <= 0 then
+        return nil;
+    end
+
+    -- Load texture from memory with color key (black = transparent)
+    local dx_texture_ptr = ffi.new('IDirect3DTexture8*[1]');
+    local loadRes = ffi.C.D3DXCreateTextureFromFileInMemoryEx(
+        device, item.Bitmap, item.ImageSize,
+        0xFFFFFFFF, 0xFFFFFFFF, 1, 0,
+        ffi.C.D3DFMT_A8R8G8B8,
+        ffi.C.D3DPOOL_MANAGED,
+        ffi.C.D3DX_DEFAULT, ffi.C.D3DX_DEFAULT,
+        0xFF000000,  -- Color key: black = transparent
+        nil, nil, dx_texture_ptr
+    );
+
+    if loadRes ~= ffi.C.S_OK or dx_texture_ptr[0] == nil then
+        return nil;
+    end
+
+    -- Return texture WITHOUT path field (will use ImGui fallback in slotrenderer)
+    return {
+        image = d3d8.gc_safe_release(ffi.cast('IDirect3DTexture8*', dx_texture_ptr[0])),
+        width = 32,  -- FFXI item icons are 32x32
+        height = 32,
+        -- Note: No 'path' field - this tells renderers to use ImGui fallback
+    };
+end
+
 -- Expose LoadTextureFromPath for external use
 textures.LoadTextureFromPath = function(self, filePath)
     return LoadTextureFromPath(filePath);

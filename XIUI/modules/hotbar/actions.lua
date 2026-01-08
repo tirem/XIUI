@@ -1184,4 +1184,24 @@ function M.IsPaletteDebugEnabled()
     return PALETTE_DEBUG_KEYS;
 end
 
+--- Get item icon for browsing (memory only, no PNG file creation)
+--- Use this in the icon picker to avoid creating PNG files for every browsed item
+---@param itemId number The item ID to get icon for
+---@return table|nil icon The icon texture (with .image but no .path)
+function M.GetItemIconForBrowsing(itemId)
+    if not itemId or itemId == 0 or itemId == 65535 then
+        return nil;
+    end
+
+    -- Check cache first (may have been loaded for slot rendering)
+    if itemIconCache[itemId] then
+        return itemIconCache[itemId];
+    end
+
+    -- Load from memory only (no PNG creation)
+    -- Note: We don't cache this to avoid memory bloat from browsing
+    -- The page-level cache in macropalette.lua handles per-page caching
+    return textures:LoadItemIconFromMemory(itemId);
+end
+
 return M
