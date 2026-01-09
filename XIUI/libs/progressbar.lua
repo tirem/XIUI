@@ -26,6 +26,18 @@ local progressbar = {
 
 	-- Cached U32 colors to avoid per-frame conversions
 	colorU32Cache = {},
+
+	-- Cache management settings
+	MAX_GRADIENT_CACHE_SIZE = 50,  -- Maximum number of gradient textures before eviction
+	EVICTION_COUNT = 10,           -- Number of oldest entries to remove when cache is full
+
+	-- Cache statistics for debugging
+	stats = {
+		hits = 0,
+		misses = 0,
+		evictions = 0,
+		totalCreated = 0,
+	},
 };
 
 -- Use shared hex2rgba from color library
@@ -55,6 +67,36 @@ local function setPos(tbl, x, y)
 	tbl[1] = x;
 	tbl[2] = y;
 	return tbl;
+end
+
+-- Evict oldest entries when cache exceeds size limit
+-- Uses lastUsed timestamp for LRU-style eviction
+local function EvictOldestEntries()
+	local count = #progressbar.gradientTextures;
+	if count <= progressbar.MAX_GRADIENT_CACHE_SIZE then
+		return;  -- No eviction needed
+	end
+
+	-- Sort by lastUsed timestamp (oldest first)
+	table.sort(progressbar.gradientTextures, function(a, b)
+		return (a.lastUsed or 0) < (b.lastUsed or 0);
+	end);
+
+	-- Remove oldest entries
+	local toRemove = math.min(progressbar.EVICTION_COUNT, count - progressbar.MAX_GRADIENT_CACHE_SIZE + progressbar.EVICTION_COUNT);
+	for i = 1, toRemove do
+		local entry = progressbar.gradientTextures[1];
+		if entry then
+			-- Remove from hash table
+			local key = entry.cacheKey;
+			if key then
+				progressbar.gradientTexturesByKey[key] = nil;
+			end
+			-- Remove from array (shift remaining entries)
+			table.remove(progressbar.gradientTextures, 1);
+			progressbar.stats.evictions = progressbar.stats.evictions + 1;
+		end
+	end
 end
 
 function MakeGradientBitmap(startColor, endColor)
@@ -117,7 +159,14 @@ function GetGradient(startColor, endColor)
 	local cacheKey = startColor .. '|' .. endColor;
 	local texture = progressbar.gradientTexturesByKey[cacheKey];
 
-	if not texture then
+	if texture then
+		-- Cache hit - update last used timestamp
+		texture.lastUsed = os.clock();
+		progressbar.stats.hits = progressbar.stats.hits + 1;
+	else
+		-- Cache miss - create new texture
+		progressbar.stats.misses = progressbar.stats.misses + 1;
+
 		local device = memory.GetD3D8Device();
 		if (device == nil) then return nil; end
 
@@ -135,7 +184,9 @@ function GetGradient(startColor, endColor)
 			startColor = startColor,
 			endColor = endColor,
 			midColor = nil,
-			texture = ffi.new('IDirect3DTexture8*', texture_ptr[0])
+			texture = ffi.new('IDirect3DTexture8*', texture_ptr[0]),
+			cacheKey = cacheKey,
+			lastUsed = os.clock(),
 		}
 
 		d3d.gc_safe_release(texture.texture);
@@ -143,6 +194,10 @@ function GetGradient(startColor, endColor)
 		-- Store in both hash table (for lookup) and array (for cleanup)
 		progressbar.gradientTexturesByKey[cacheKey] = texture;
 		table.insert(progressbar.gradientTextures, texture);
+		progressbar.stats.totalCreated = progressbar.stats.totalCreated + 1;
+
+		-- Check if we need to evict old entries
+		EvictOldestEntries();
 	end
 
 	if texture == nil or texture.texture == nil then
@@ -157,7 +212,14 @@ function GetThreeStepGradient(startColor, midColor, endColor)
 	local cacheKey = startColor .. '|' .. midColor .. '|' .. endColor;
 	local texture = progressbar.gradientTexturesByKey[cacheKey];
 
-	if not texture then
+	if texture then
+		-- Cache hit - update last used timestamp
+		texture.lastUsed = os.clock();
+		progressbar.stats.hits = progressbar.stats.hits + 1;
+	else
+		-- Cache miss - create new texture
+		progressbar.stats.misses = progressbar.stats.misses + 1;
+
 		local device = memory.GetD3D8Device();
 		if (device == nil) then return nil; end
 
@@ -175,7 +237,9 @@ function GetThreeStepGradient(startColor, midColor, endColor)
 			startColor = startColor,
 			midColor = midColor,
 			endColor = endColor,
-			texture = ffi.new('IDirect3DTexture8*', texture_ptr[0])
+			texture = ffi.new('IDirect3DTexture8*', texture_ptr[0]),
+			cacheKey = cacheKey,
+			lastUsed = os.clock(),
 		}
 
 		d3d.gc_safe_release(texture.texture);
@@ -183,6 +247,10 @@ function GetThreeStepGradient(startColor, midColor, endColor)
 		-- Store in both hash table (for lookup) and array (for cleanup)
 		progressbar.gradientTexturesByKey[cacheKey] = texture;
 		table.insert(progressbar.gradientTextures, texture);
+		progressbar.stats.totalCreated = progressbar.stats.totalCreated + 1;
+
+		-- Check if we need to evict old entries
+		EvictOldestEntries();
 	end
 
 	if texture == nil or texture.texture == nil then
@@ -540,6 +608,114 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 		-- Add border extent to width/height to prevent right/bottom clipping
 		imgui.Dummy({width + borderExtent, height + borderExtent});
 	end
+end
+
+-- ============================================
+-- Cache Management Functions
+-- ============================================
+
+-- Cleanup all cached textures (call on addon unload)
+function progressbar.Cleanup()
+	-- Clear gradient caches
+	progressbar.gradientTexturesByKey = {};
+	progressbar.gradientTextures = {};
+
+	-- Clear color cache
+	progressbar.colorU32Cache = {};
+
+	-- Clear bookend texture
+	progressbar.bookendTexture = nil;
+
+	-- Reset stats
+	progressbar.stats = {
+		hits = 0,
+		misses = 0,
+		evictions = 0,
+		totalCreated = 0,
+	};
+
+	-- Force garbage collection to release D3D textures
+	collectgarbage('collect');
+end
+
+-- Get cache statistics for debugging
+function progressbar.GetCacheStats()
+	local cacheSize = #progressbar.gradientTextures;
+	local hitRate = 0;
+	local totalRequests = progressbar.stats.hits + progressbar.stats.misses;
+	if totalRequests > 0 then
+		hitRate = (progressbar.stats.hits / totalRequests) * 100;
+	end
+
+	return {
+		cacheSize = cacheSize,
+		maxSize = progressbar.MAX_GRADIENT_CACHE_SIZE,
+		hits = progressbar.stats.hits,
+		misses = progressbar.stats.misses,
+		evictions = progressbar.stats.evictions,
+		totalCreated = progressbar.stats.totalCreated,
+		hitRate = hitRate,
+		colorCacheSize = 0,  -- Count color cache entries
+	};
+end
+
+-- Print cache statistics to chat
+function progressbar.PrintCacheStats()
+	local stats = progressbar.GetCacheStats();
+
+	-- Count color cache entries
+	local colorCount = 0;
+	for _ in pairs(progressbar.colorU32Cache) do
+		colorCount = colorCount + 1;
+	end
+
+	print('[XIUI] Progressbar Cache Stats:');
+	print(string.format('  Gradient Textures: %d / %d (max)', stats.cacheSize, stats.maxSize));
+	print(string.format('  Color Cache: %d entries', colorCount));
+	print(string.format('  Total Created: %d', stats.totalCreated));
+	print(string.format('  Evictions: %d', stats.evictions));
+	print(string.format('  Hits: %d, Misses: %d (%.1f%% hit rate)', stats.hits, stats.misses, stats.hitRate));
+end
+
+-- Stress test: create N random gradient textures to test cache limits
+-- Usage: /xiui stresscache 100
+function progressbar.StressTestCache(count)
+	count = count or 100;
+	print(string.format('[XIUI] Stress testing gradient cache with %d random gradients...', count));
+
+	local startStats = progressbar.GetCacheStats();
+	local startTime = os.clock();
+
+	-- Generate random hex colors
+	local function randomHex()
+		return string.format('#%02x%02x%02x',
+			math.random(0, 255),
+			math.random(0, 255),
+			math.random(0, 255)
+		);
+	end
+
+	-- Create random gradients
+	for i = 1, count do
+		local color1 = randomHex();
+		local color2 = randomHex();
+		GetGradient(color1, color2);
+	end
+
+	local endTime = os.clock();
+	local endStats = progressbar.GetCacheStats();
+
+	print(string.format('[XIUI] Stress test complete in %.3f seconds', endTime - startTime));
+	print(string.format('  Created: %d new textures', endStats.totalCreated - startStats.totalCreated));
+	print(string.format('  Evicted: %d textures', endStats.evictions - startStats.evictions));
+	print(string.format('  Final cache size: %d / %d', endStats.cacheSize, endStats.maxSize));
+end
+
+-- Force clear cache (for testing)
+function progressbar.ForceClearCache()
+	local beforeSize = #progressbar.gradientTextures;
+	progressbar.Cleanup();
+	print(string.format('[XIUI] Cleared %d gradient textures from cache', beforeSize));
 end
 
 return progressbar;

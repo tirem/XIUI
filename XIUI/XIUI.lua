@@ -67,6 +67,7 @@ local debuffHandler = require('handlers.debuffhandler');
 local actionTracker = require('handlers.actiontracker');
 local mobInfo = require('modules.mobinfo.init');
 local statusHandler = require('handlers.statushandler');
+local progressbar = require('libs.progressbar');
 
 -- Global switch to hard-disable functionality that is limited on HX servers
 HzLimitedMode = false;
@@ -440,6 +441,7 @@ ashita.events.register('unload', 'unload_cb', function ()
     ashita.events.unregister('command', 'command_cb');
 
     statusHandler.clear_cache();
+    progressbar.Cleanup();
     if ClearDebuffFontCache then ClearDebuffFontCache(); end
 
     uiModules.CleanupAll();
@@ -519,6 +521,41 @@ ashita.events.register('command', 'command_cb', function (e)
         -- Reset gil per hour tracking: /xiui resetgil
         if (command_args[2] == 'resetgil') then
             gilTracker.ResetTracking();
+            return;
+        end
+
+        -- ============================================
+        -- Cache Debug Commands
+        -- ============================================
+
+        -- Show cache statistics: /xiui cachestats
+        if (command_args[2] == 'cachestats') then
+            progressbar.PrintCacheStats();
+            return;
+        end
+
+        -- Clear all caches: /xiui clearcache
+        if (command_args[2] == 'clearcache') then
+            progressbar.ForceClearCache();
+            statusHandler.clear_cache();
+            print('[XIUI] All texture caches cleared');
+            return;
+        end
+
+        -- Stress test gradient cache: /xiui stresscache [count]
+        if (command_args[2] == 'stresscache') then
+            local count = tonumber(command_args[3]) or 100;
+            progressbar.StressTestCache(count);
+            return;
+        end
+
+        -- Force garbage collection: /xiui gc
+        if (command_args[2] == 'gc') then
+            local before = collectgarbage('count');
+            collectgarbage('collect');
+            local after = collectgarbage('count');
+            print(string.format('[XIUI] Garbage collection: %.1f KB -> %.1f KB (freed %.1f KB)',
+                before, after, before - after));
             return;
         end
     end
