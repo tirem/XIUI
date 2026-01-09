@@ -57,6 +57,7 @@ partyList.Initialize = function(settings)
         mp_font_settings.font_height = math.max(fontSizes.mp, 6);
         tp_font_settings.font_height = math.max(fontSizes.tp, 6);
         distance_font_settings.font_height = math.max(fontSizes.distance, 6);
+        distance_font_settings.font_alignment = 2; -- Right-align so text doesn't shift as distance changes
         zone_font_settings.font_height = math.max(fontSizes.zone, 6);
         job_font_settings.font_height = math.max(fontSizes.job, 6);
 
@@ -179,6 +180,7 @@ partyList.UpdateVisuals = function(settings)
                     mp_font_settings.font_height = math.max(fontSizes.mp, 6);
                     tp_font_settings.font_height = math.max(fontSizes.tp, 6);
                     distance_font_settings.font_height = math.max(fontSizes.distance, 6);
+                    distance_font_settings.font_alignment = 2; -- Right-align so text doesn't shift as distance changes
                     zone_font_settings.font_height = math.max(fontSizes.zone, 6);
                     job_font_settings.font_height = math.max(fontSizes.job, 6);
 
