@@ -95,13 +95,13 @@ local function DrawTargetBarSettingsContent()
 
     if components.CollapsingSection('Text Offsets##targetBar', false) then
         imgui.Text('Distance Text');
-        components.DrawSlider('X Offset##distanceText', 'targetBarDistanceOffsetX', -300, 300);
-        components.DrawSlider('Y Offset##distanceText', 'targetBarDistanceOffsetY', -150, 150);
+        components.DrawSlider('X Offset##distanceText', 'targetBarDistanceOffsetX', -600, 600);
+        components.DrawSlider('Y Offset##distanceText', 'targetBarDistanceOffsetY', -300, 300);
 
         imgui.Spacing();
         imgui.Text('HP% Text');
-        components.DrawSlider('X Offset##hpPercentText', 'targetBarPercentOffsetX', -300, 300);
-        components.DrawSlider('Y Offset##hpPercentText', 'targetBarPercentOffsetY', -150, 150);
+        components.DrawSlider('X Offset##hpPercentText', 'targetBarPercentOffsetX', -600, 600);
+        components.DrawSlider('Y Offset##hpPercentText', 'targetBarPercentOffsetY', -300, 300);
     end
 
     -- Cast bar settings (only show if cast bar is enabled)
