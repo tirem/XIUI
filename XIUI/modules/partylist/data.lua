@@ -473,16 +473,19 @@ function data.GetMemberInformation(memIdx)
 
     if (memberInfo.inzone == true) then
         memberInfo.hp = party:GetMemberHP(memIdx);
-        memberInfo.hpp = party:GetMemberHPPercent(memIdx) / 100;
         memberInfo.mp = party:GetMemberMP(memIdx);
-        memberInfo.mpp = party:GetMemberMPPercent(memIdx) / 100;
 
-        -- For the player (memIdx == 0), use actual max values from player object
-        -- For other party members, calculate from percentage (may be slightly inaccurate)
+        -- For the player (memIdx == 0), use actual max values and calculate percentage
+        -- to avoid stale party API data after weakness/gear swaps (issue #92)
+        -- For other party members, use party API percentage and calculate max
         if memIdx == 0 then
             memberInfo.maxhp = player:GetHPMax();
             memberInfo.maxmp = player:GetMPMax();
+            memberInfo.hpp = (memberInfo.maxhp > 0) and (memberInfo.hp / memberInfo.maxhp) or 0;
+            memberInfo.mpp = (memberInfo.maxmp > 0) and (memberInfo.mp / memberInfo.maxmp) or 0;
         else
+            memberInfo.hpp = party:GetMemberHPPercent(memIdx) / 100;
+            memberInfo.mpp = party:GetMemberMPPercent(memIdx) / 100;
             -- Calculate max from current and percentage, with safeguards
             if memberInfo.hpp > 0 then
                 memberInfo.maxhp = math.floor(memberInfo.hp / memberInfo.hpp + 0.5);
