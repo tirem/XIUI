@@ -1,5 +1,7 @@
 *.code-workspace
 .vscode/settings.json
 .vscode/launch.json
-CLAUDE.md
 ai-docs/
+.claude
+.claude/settings.local.json
+CLAUDE.md
