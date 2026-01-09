@@ -633,6 +633,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         debuffHandler.HandleZonePacket(e);
         actionTracker.HandleZonePacket();
         mobInfo.data.HandleZonePacket(e);
+        gilTracker.HandleZoneInPacket();  -- Only reset on fresh login, not zone changes (issue #111)
         TextureManager.clearOnZone();
         MarkPartyCacheDirty();
         ClearEntityCache();
@@ -666,6 +667,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
     elseif (e.id == 0x00B) then
         notifications.HandleZonePacket();
         treasurePool.HandleZonePacket();
+        gilTracker.HandleZoneOutPacket();  -- Track zone-out time for login detection (issue #111)
         TextureManager.clearOnZone();
         bLoggedIn = false;
     elseif (e.id == 0x076) then
