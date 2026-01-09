@@ -176,8 +176,8 @@ local function DrawPartyTabContent(party, partyName)
         if party.showDistance then
             imgui.Spacing();
             imgui.Text('Distance Text');
-            components.DrawPartySlider(party, 'X Offset##distText', 'distanceTextOffsetX', -200, 200);
-            components.DrawPartySlider(party, 'Y Offset##distText', 'distanceTextOffsetY', -200, 200);
+            components.DrawPartySlider(party, 'X Offset##distText', 'distanceTextOffsetX', -600, 600);
+            components.DrawPartySlider(party, 'Y Offset##distText', 'distanceTextOffsetY', -300, 300);
         end
 
         if party.showJob and party.layout == 0 then
