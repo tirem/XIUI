@@ -20,12 +20,22 @@ local actions = require('modules.treasurepool.actions');
 
 local M = {};
 
+-- Debug logging (set to true to enable)
+local DEBUG_ENABLED = true;
+local function debugLog(msg, ...)
+    if DEBUG_ENABLED then
+        local formatted = string.format('[TP Debug] ' .. msg, ...);
+        print(formatted);
+    end
+end
+
 -- ============================================
 -- Module State
 -- ============================================
 
 M.initialized = false;
 M.visible = true;
+M.forceShow = false;  -- When true, show window even if no content
 
 -- ============================================
 -- Module Lifecycle
@@ -319,12 +329,26 @@ function M.DrawWindow(settings)
         data.ReadFromMemory();
     end
 
-    -- Check for real items (from memory, not preview)
+    -- Check for real items (from memory, not preview) or history items
     local hasRealItems = data.HasRealItems();
+    local hasHistory = data.HasWonHistory();
+    local historyCount = data.GetWonHistoryCount();
+    local poolCount = data.GetPoolCount();
 
-    -- Draw treasure pool if enabled and (has real items OR preview is on)
+    -- Draw treasure pool if enabled and (has real items OR has history OR preview is on OR force show)
     local enabled = gConfig.treasurePoolEnabled;
-    local showWindow = (hasRealItems or data.previewEnabled) and enabled;
+    local showWindow = (hasRealItems or hasHistory or data.previewEnabled or M.forceShow) and enabled;
+
+    -- Debug: Log state changes (throttled to avoid spam)
+    local stateKey = string.format('%s_%s_%s_%s_%d_%d',
+        tostring(hasRealItems), tostring(hasHistory), tostring(showWindow), tostring(M.forceShow), poolCount, historyCount);
+    if M._lastStateKey ~= stateKey then
+        debugLog('State: pool=%d history=%d hasReal=%s hasHist=%s show=%s preview=%s force=%s',
+            poolCount, historyCount, tostring(hasRealItems), tostring(hasHistory),
+            tostring(showWindow), tostring(data.previewEnabled), tostring(M.forceShow));
+        M._lastStateKey = stateKey;
+    end
+
     if showWindow then
         display.DrawWindow(settings);
     else
@@ -486,8 +510,23 @@ function M.SetPreview(enabled)
     data.SetPreview(enabled);
 end
 
+function M.IsPreviewActive()
+    return data.IsPreviewActive();
+end
+
 function M.ClearPreview()
     data.ClearPreview();
+end
+
+-- Force show the window (even if empty)
+function M.ToggleForceShow()
+    M.forceShow = not M.forceShow;
+    local state = M.forceShow and 'shown' or 'hidden';
+    print('[XIUI] Treasure pool window ' .. state);
+end
+
+function M.IsForceShowActive()
+    return M.forceShow;
 end
 
 return M;

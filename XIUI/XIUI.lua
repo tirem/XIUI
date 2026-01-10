@@ -483,6 +483,12 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
+        -- Toggle treasure pool window: /xiui tp
+        if (#command_args == 2 and command_args[2]:any('tp', 'treasurepool', 'pool')) then
+            treasurePool.ToggleForceShow();
+            return;
+        end
+
         -- Test notification command: /xiui testnotif [type]
         if (command_args[2] == 'testnotif') then
             local testType = tonumber(command_args[3]) or 5;  -- default to ITEM_OBTAINED
