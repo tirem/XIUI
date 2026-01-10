@@ -24,7 +24,7 @@
 
 addon.name      = 'XIUI';
 addon.author    = 'Team XIUI';
-addon.version   = '1.6.11';
+addon.version   = '1.6.2';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/XIUI'
 
