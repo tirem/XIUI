@@ -158,6 +158,36 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
         right_justified = ds.targetBarSettings.totName_font_settings.right_justified,
     };
 
+    -- Subtarget Bar (shows original target while subtargeting)
+    gAdjustedSettings.targetBarSettings.subtargetBarWidth = ds.targetBarSettings.barWidth * us.subtargetBarScaleX;
+    gAdjustedSettings.targetBarSettings.subtargetBarHeight = ds.targetBarSettings.barHeight * us.subtargetBarScaleY;
+    gAdjustedSettings.targetBarSettings.subtargetName_font_settings = {
+        visible = ds.targetBarSettings.name_font_settings.visible,
+        locked = ds.targetBarSettings.name_font_settings.locked,
+        font_family = us.fontFamily,
+        font_height = math.max(us.subtargetBarFontSize, 8),
+        font_flags = fontWeightFlags,
+        color = us.colorCustomization.targetBar.nameTextColor,
+        color_outline = ds.targetBarSettings.name_font_settings.color_outline,
+        outline_width = us.fontOutlineWidth,
+        draw_flags = ds.targetBarSettings.name_font_settings.draw_flags,
+        background = ds.targetBarSettings.name_font_settings.background,
+        right_justified = ds.targetBarSettings.name_font_settings.right_justified,
+    };
+    gAdjustedSettings.targetBarSettings.subtargetPercent_font_settings = {
+        visible = ds.targetBarSettings.percent_font_settings.visible,
+        locked = ds.targetBarSettings.percent_font_settings.locked,
+        font_family = us.fontFamily,
+        font_height = math.max(us.subtargetBarPercentFontSize or us.subtargetBarFontSize, 8),
+        font_flags = fontWeightFlags,
+        color = ds.targetBarSettings.percent_font_settings.color,
+        color_outline = ds.targetBarSettings.percent_font_settings.color_outline,
+        outline_width = us.fontOutlineWidth,
+        draw_flags = ds.targetBarSettings.percent_font_settings.draw_flags,
+        background = ds.targetBarSettings.percent_font_settings.background,
+        right_justified = true,
+    };
+
     -- Party List settings
     gAdjustedSettings.partyListSettings.partySettings = {
         [1] = us.partyA,

@@ -214,6 +214,17 @@ function M.createUserSettingsDefaults()
         totBarScaleY = 1,
         totBarFontSize = 12,
 
+        -- Subtarget Bar settings (shows subtarget while subtargeting)
+        showSubtargetBar = true,
+        subtargetBarScaleX = 0.6,
+        subtargetBarScaleY = 0.6,
+        subtargetBarFontSize = 10,
+        subtargetBarPercentFontSize = 10,
+        subtargetBarShowDistance = true,
+        subtargetBarShowHpPercent = true,
+        subtargetBarShowMobLevel = true,
+        subtargetBarShowBookends = false,
+
         enemyListScaleX = 1,
         enemyListScaleY = 1,
         enemyListNameFontSize = 10,

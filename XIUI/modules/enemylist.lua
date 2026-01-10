@@ -173,6 +173,12 @@ enemylist.DrawWindow = function(settings)
 		if (playerTarget ~= nil) then
 			subTargetActive = GetSubTargetActive();
 			targetIndex, subTargetIndex = GetTargets();
+			-- Swap to highlight the subtarget cursor (what you'll act on) instead of original target
+			if (subTargetActive) then
+				local tempTarget = targetIndex;
+				targetIndex = subTargetIndex;
+				subTargetIndex = tempTarget;
+			end
 		end
 
 		-- Cache entity manager once per frame (avoid repeated GetEntitySafe() calls)

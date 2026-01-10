@@ -44,6 +44,12 @@ function M.createColorCustomizationDefaults()
             hpGradient = T{ enabled = true, start = '#e16c6c', stop = '#fb9494' },
         },
 
+        -- Subtarget Bar
+        subtargetBar = T{
+            hpGradient = T{ enabled = true, start = '#e26c6c', stop = '#fb9494' },
+            distanceTextColor = 0xFFFFFFFF,
+        },
+
         -- Enemy List
         enemyList = T{
             hpGradient = T{ enabled = true, start = '#e16c6c', stop = '#fb9494' },

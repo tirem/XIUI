@@ -11,6 +11,7 @@ local gdi = require('submodules.gdifonts.include');
 local encoding = require('submodules.gdifonts.encoding');
 local ffi = require("ffi");
 local TextureManager = require('libs.texturemanager');
+local mobdata = require('modules.mobinfo.data');
 
 -- TODO: Calculate these instead of manually setting them
 
@@ -24,6 +25,9 @@ local nameText;
 local totNameText;
 local distText;
 local castText;
+local subtargetNameText;
+local subtargetPercentText;
+local subtargetDistText;
 local allFonts; -- Table for batch visibility operations
 local targetbar = {
 	interpolation = {},
@@ -42,6 +46,9 @@ local lastPercentTextColor;
 local lastTotNameTextColor;
 local lastCastTextColor;
 local lastDistTextColor;
+local lastSubtargetNameTextColor;
+local lastSubtargetPercentTextColor;
+local lastSubtargetDistTextColor;
 
 -- Position constants
 local POS_ABOVE = 0;
@@ -727,6 +734,129 @@ targetbar.DrawWindow = function(settings)
 	local winPosX, winPosY = imgui.GetWindowPos();
     imgui.End();
 
+	-- Draw Subtarget Bar (shows subtarget cursor selection while subtargeting)
+	if (gConfig.showSubtargetBar) then
+		local subTargetActive = GetSubTargetActive();
+		local _, secondaryTargetIndex = GetTargets();
+		-- After GetTargets() swap: secondaryTargetIndex = subtarget cursor (what you're selecting)
+
+		if (subTargetActive and secondaryTargetIndex ~= nil and secondaryTargetIndex ~= 0) then
+			local subtargetEntity = GetEntity(secondaryTargetIndex);
+
+			if (subtargetEntity ~= nil and subtargetEntity.Name ~= nil) then
+				local subtargetWindowFlags = GetBaseWindowFlags(gConfig.lockPositions);
+
+				if (imgui.Begin('SubtargetBar', true, subtargetWindowFlags)) then
+					-- Reserve space above bar for text
+					local topReserveHeight = settings.topTextYOffset + settings.subtargetName_font_settings.font_height;
+					imgui.Dummy({0, topReserveHeight});
+					imgui.SetCursorPosY(imgui.GetCursorPosY() - topReserveHeight);
+
+					local stStartX, stStartY = imgui.GetCursorScreenPos();
+					local subtargetColor = GetColorOfTarget(subtargetEntity, secondaryTargetIndex);
+					local stIsMonster = GetIsMob(subtargetEntity);
+
+					-- Calculate bookend width and text padding
+					local stShowBookends = gConfig.subtargetBarShowBookends;
+					local stBookendWidth = stShowBookends and (settings.subtargetBarHeight / 2) or 0;
+					local stTextPadding = 8;
+
+					-- Get HP gradient for subtarget bar
+					local stHpGradient = GetCustomGradient(gConfig.colorCustomization.subtargetBar, 'hpGradient') or {'#e26c6c', '#fb9494'};
+					local stHpPercentData = {{subtargetEntity.HPPercent / 100, stHpGradient}};
+
+					-- Draw progress bar
+					progressbar.ProgressBar(stHpPercentData, {settings.subtargetBarWidth, settings.subtargetBarHeight}, {decorate = stShowBookends});
+
+					-- Build name text with mob level if applicable
+					local stNameDisplay = subtargetEntity.Name;
+					if stIsMonster and gConfig.subtargetBarShowMobLevel then
+						local mobInfo = mobdata.GetMobInfo(subtargetEntity.Name, secondaryTargetIndex);
+						if mobInfo then
+							local levelStr = mobdata.GetLevelString(mobInfo);
+							if levelStr and levelStr ~= '' then
+								stNameDisplay = stNameDisplay .. ' ' .. levelStr;
+							end
+						end
+					end
+
+					-- Draw name text above bar (8px from left edge of bar, after bookend)
+					subtargetNameText:set_font_height(settings.subtargetName_font_settings.font_height);
+					subtargetNameText:set_text(stNameDisplay);
+					subtargetNameText:set_position_x(stStartX + stBookendWidth + stTextPadding);
+					subtargetNameText:set_position_y(stStartY - settings.subtargetName_font_settings.font_height - 4);
+					if (lastSubtargetNameTextColor ~= subtargetColor) then
+						subtargetNameText:set_font_color(subtargetColor);
+						lastSubtargetNameTextColor = subtargetColor;
+					end
+					subtargetNameText:set_visible(true);
+
+					-- Calculate right-side text positions (distance and HP%)
+					local stRightEdge = stStartX + settings.subtargetBarWidth - stBookendWidth - stTextPadding;
+					local stTextY = stStartY - settings.subtargetPercent_font_settings.font_height - 4;
+
+					-- Draw HP% text if enabled (rightmost)
+					local stShowHpPercent = gConfig.subtargetBarShowHpPercent;
+					local stPercentWidth = 0;
+					if (stShowHpPercent) then
+						local stHpText = subtargetEntity.HPPercent .. '%';
+						subtargetPercentText:set_font_height(settings.subtargetPercent_font_settings.font_height);
+						subtargetPercentText:set_text(stHpText);
+						stPercentWidth, _ = subtargetPercentText:get_text_size();
+						-- Right-align: position is right edge minus text width
+						subtargetPercentText:set_position_x(stRightEdge - stPercentWidth);
+						subtargetPercentText:set_position_y(stTextY);
+						local stPercentColor, _ = GetHpColors(subtargetEntity.HPPercent / 100);
+						if (lastSubtargetPercentTextColor ~= stPercentColor) then
+							subtargetPercentText:set_font_color(stPercentColor);
+							lastSubtargetPercentTextColor = stPercentColor;
+						end
+						subtargetPercentText:set_visible(true);
+					else
+						subtargetPercentText:set_visible(false);
+					end
+
+					-- Draw distance text if enabled (to the left of HP%)
+					if (gConfig.subtargetBarShowDistance) then
+						local stDist = ('%.1f'):fmt(math.sqrt(subtargetEntity.Distance));
+						subtargetDistText:set_font_height(settings.subtargetPercent_font_settings.font_height);
+						subtargetDistText:set_text(stDist);
+						local stDistWidth, _ = subtargetDistText:get_text_size();
+						-- Position to the left of HP% with 8px gap
+						local stDistX = stRightEdge - stPercentWidth - 8 - stDistWidth;
+						if not stShowHpPercent then
+							stDistX = stRightEdge - stDistWidth;
+						end
+						subtargetDistText:set_position_x(stDistX);
+						subtargetDistText:set_position_y(stTextY);
+						local stDistColor = gConfig.colorCustomization.subtargetBar.distanceTextColor;
+						if (lastSubtargetDistTextColor ~= stDistColor) then
+							subtargetDistText:set_font_color(stDistColor);
+							lastSubtargetDistTextColor = stDistColor;
+						end
+						subtargetDistText:set_visible(true);
+					else
+						subtargetDistText:set_visible(false);
+					end
+				end
+				imgui.End();
+			else
+				subtargetNameText:set_visible(false);
+				subtargetPercentText:set_visible(false);
+				subtargetDistText:set_visible(false);
+			end
+		else
+			subtargetNameText:set_visible(false);
+			subtargetPercentText:set_visible(false);
+			subtargetDistText:set_visible(false);
+		end
+	else
+		-- Subtarget bar disabled - hide all fonts
+		subtargetNameText:set_visible(false);
+		subtargetPercentText:set_visible(false);
+		subtargetDistText:set_visible(false);
+	end
+
 	-- Draw separate Target of Target window if split is enabled
 	if (gConfig.splitTargetOfTarget) then
 		-- Obtain the player entity
@@ -814,7 +944,10 @@ targetbar.Initialize = function(settings)
 	totNameText = FontManager.create(settings.totName_font_settings);
 	distText = FontManager.create(settings.distance_font_settings);
 	castText = FontManager.create(settings.cast_font_settings);
-	allFonts = {percentText, nameText, totNameText, distText, castText};
+	subtargetNameText = FontManager.create(settings.subtargetName_font_settings);
+	subtargetPercentText = FontManager.create(settings.subtargetPercent_font_settings);
+	subtargetDistText = FontManager.create(settings.subtargetPercent_font_settings);
+	allFonts = {percentText, nameText, totNameText, distText, castText, subtargetNameText, subtargetPercentText, subtargetDistText};
 	arrowTexture = TextureManager.getFileTexture("arrow");
 	lockTexture = TextureManager.getFileTexture("lock");
 
@@ -839,7 +972,10 @@ targetbar.UpdateVisuals = function(settings)
 	totNameText = FontManager.recreate(totNameText, settings.totName_font_settings);
 	distText = FontManager.recreate(distText, settings.distance_font_settings);
 	castText = FontManager.recreate(castText, settings.cast_font_settings);
-	allFonts = {percentText, nameText, totNameText, distText, castText};
+	subtargetNameText = FontManager.recreate(subtargetNameText, settings.subtargetName_font_settings);
+	subtargetPercentText = FontManager.recreate(subtargetPercentText, settings.subtargetPercent_font_settings);
+	subtargetDistText = FontManager.recreate(subtargetDistText, settings.subtargetPercent_font_settings);
+	allFonts = {percentText, nameText, totNameText, distText, castText, subtargetNameText, subtargetPercentText, subtargetDistText};
 
 	-- Reset cached colors when fonts are recreated
 	lastNameTextColor = nil;
@@ -847,6 +983,9 @@ targetbar.UpdateVisuals = function(settings)
 	lastTotNameTextColor = nil;
 	lastCastTextColor = nil;
 	lastDistTextColor = nil;
+	lastSubtargetNameTextColor = nil;
+	lastSubtargetPercentTextColor = nil;
+	lastSubtargetDistTextColor = nil;
 end
 
 targetbar.SetHidden = function(hidden)
@@ -862,6 +1001,9 @@ targetbar.Cleanup = function()
 	totNameText = FontManager.destroy(totNameText);
 	distText = FontManager.destroy(distText);
 	castText = FontManager.destroy(castText);
+	subtargetNameText = FontManager.destroy(subtargetNameText);
+	subtargetPercentText = FontManager.destroy(subtargetPercentText);
+	subtargetDistText = FontManager.destroy(subtargetDistText);
 	allFonts = nil;
 end
 

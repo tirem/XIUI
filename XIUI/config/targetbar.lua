@@ -80,6 +80,7 @@ local function DrawTargetBarSettingsContent()
 
         components.DrawCheckbox('Split Target Bars', 'splitTargetOfTarget');
         imgui.ShowHelp('Separate the Target of Target bar into its own window that can be moved independently.');
+
     end
 
     if components.CollapsingSection('Scale & Position##targetBar') then
@@ -132,6 +133,37 @@ local function DrawTargetBarSettingsContent()
             components.DrawSlider('ToT Scale Y', 'totBarScaleY', 0.1, 3.0, '%.1f');
             components.DrawSlider('ToT Text Size', 'totBarFontSize', 8, 36);
         end
+    end
+
+end
+
+-- Helper: Draw Subtarget Bar specific settings (used in tab)
+local function DrawSubtargetBarSettingsContent()
+    components.DrawCheckbox('Enabled', 'showSubtargetBar', CheckVisibility);
+    imgui.ShowHelp('Shows the subtarget in a separate bar while subtargeting (e.g., /ta <stpc>).');
+
+    if components.CollapsingSection('Display Options##subtargetBar') then
+        components.DrawCheckbox('Show Distance', 'subtargetBarShowDistance');
+        imgui.ShowHelp('Show distance to subtarget.');
+
+        components.DrawCheckbox('Show HP%', 'subtargetBarShowHpPercent');
+        imgui.ShowHelp('Show HP percentage of subtarget.');
+
+        components.DrawCheckbox('Show Mob Level', 'subtargetBarShowMobLevel');
+        imgui.ShowHelp('Show mob level next to name (requires Mob Info data).');
+
+        components.DrawCheckbox('Show Bookends', 'subtargetBarShowBookends');
+        imgui.ShowHelp('Use the same bookend style as the main target bar.');
+    end
+
+    if components.CollapsingSection('Scale & Position##subtargetBar') then
+        components.DrawSlider('Scale X', 'subtargetBarScaleX', 0.1, 3.0, '%.1f');
+        components.DrawSlider('Scale Y', 'subtargetBarScaleY', 0.1, 3.0, '%.1f');
+    end
+
+    if components.CollapsingSection('Text Settings##subtargetBar') then
+        components.DrawSlider('Name Text Size', 'subtargetBarFontSize', 8, 36);
+        components.DrawSlider('HP% Text Size', 'subtargetBarPercentFontSize', 8, 36);
     end
 end
 
@@ -303,7 +335,7 @@ local function DrawMobInfoSettingsContent(githubTexture)
     end
 end
 
--- Section: Target Bar Settings (with tabs for Target Bar / Mob Info)
+-- Section: Target Bar Settings (with tabs for Target Bar / Subtarget Bar / Mob Info)
 -- state.selectedTargetBarTab: tab selection state
 -- state.githubTexture: texture for GitHub icon
 function M.DrawSettings(state)
@@ -315,10 +347,16 @@ function M.DrawSettings(state)
         selectedTargetBarTab = 1;
     end
 
+    -- Subtarget Bar tab button
+    imgui.SameLine();
+    if components.DrawStyledTab('Subtarget Bar', 'targetBarTab', selectedTargetBarTab == 2) then
+        selectedTargetBarTab = 2;
+    end
+
     -- Mob Info tab button
     imgui.SameLine();
-    if components.DrawStyledTab('Mob Info', 'targetBarTab', selectedTargetBarTab == 2) then
-        selectedTargetBarTab = 2;
+    if components.DrawStyledTab('Mob Info', 'targetBarTab', selectedTargetBarTab == 3) then
+        selectedTargetBarTab = 3;
     end
 
     imgui.Spacing();
@@ -328,6 +366,8 @@ function M.DrawSettings(state)
     -- Draw settings based on selected tab
     if selectedTargetBarTab == 1 then
         DrawTargetBarSettingsContent();
+    elseif selectedTargetBarTab == 2 then
+        DrawSubtargetBarSettingsContent();
     else
         DrawMobInfoSettingsContent(githubTexture);
     end
@@ -359,6 +399,18 @@ local function DrawTargetBarColorSettingsContent()
     end
 end
 
+-- Helper: Draw Subtarget Bar specific color settings (used in tab)
+local function DrawSubtargetBarColorSettingsContent()
+    if components.CollapsingSection('Bar Colors##subtargetBarColor') then
+        components.DrawGradientPicker("HP Bar", gConfig.colorCustomization.subtargetBar.hpGradient, "Subtarget HP bar color");
+    end
+
+    if components.CollapsingSection('Text Colors##subtargetBarColor') then
+        components.DrawTextColorPicker("Distance Text", gConfig.colorCustomization.subtargetBar, 'distanceTextColor', "Color of distance text");
+        imgui.ShowHelp("Name text color is set dynamically based on target type\nHP% text color is set dynamically based on HP amount");
+    end
+end
+
 -- Helper: Draw Mob Info specific color settings (used in tab)
 local function DrawMobInfoColorSettingsContent()
     if components.CollapsingSection('Text Colors##mobInfoColor') then
@@ -366,7 +418,7 @@ local function DrawMobInfoColorSettingsContent()
     end
 end
 
--- Section: Target Bar Color Settings (with tabs for Target Bar / Mob Info)
+-- Section: Target Bar Color Settings (with tabs for Target Bar / Subtarget Bar / Mob Info)
 -- state.selectedTargetBarColorTab: tab selection state
 function M.DrawColorSettings(state)
     local selectedTargetBarColorTab = state.selectedTargetBarColorTab or 1;
@@ -376,10 +428,16 @@ function M.DrawColorSettings(state)
         selectedTargetBarColorTab = 1;
     end
 
+    -- Subtarget Bar tab button
+    imgui.SameLine();
+    if components.DrawStyledTab('Subtarget Bar', 'targetBarColorTab', selectedTargetBarColorTab == 2) then
+        selectedTargetBarColorTab = 2;
+    end
+
     -- Mob Info tab button
     imgui.SameLine();
-    if components.DrawStyledTab('Mob Info', 'targetBarColorTab', selectedTargetBarColorTab == 2) then
-        selectedTargetBarColorTab = 2;
+    if components.DrawStyledTab('Mob Info', 'targetBarColorTab', selectedTargetBarColorTab == 3) then
+        selectedTargetBarColorTab = 3;
     end
 
     imgui.Spacing();
@@ -389,6 +447,8 @@ function M.DrawColorSettings(state)
     -- Draw color settings based on selected tab
     if selectedTargetBarColorTab == 1 then
         DrawTargetBarColorSettingsContent();
+    elseif selectedTargetBarColorTab == 2 then
+        DrawSubtargetBarColorSettingsContent();
     else
         DrawMobInfoColorSettingsContent();
     end
