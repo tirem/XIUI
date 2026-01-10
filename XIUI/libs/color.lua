@@ -15,6 +15,18 @@ function M.InvalidateColorCaches()
     hexToImGuiCache = {};
 end
 
+-- Helper to validate and convert input to hex string
+-- Returns a valid hex string or nil if invalid
+local function ensureHexString(value)
+    if type(value) == 'string' then
+        return value;
+    elseif type(value) == 'number' then
+        -- If it's a number, assume it's an ARGB value and convert to hex
+        return string.format('#%08X', value);
+    end
+    return nil;
+end
+
 -- ========================================
 -- RGB/HSV Conversion
 -- ========================================

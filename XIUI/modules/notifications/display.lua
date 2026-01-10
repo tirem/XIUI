@@ -902,6 +902,519 @@ local function drawSplitWindow(splitKey, settings)
 end
 
 -- ============================================
+-- Notification Group Window Drawing
+-- ============================================
+
+-- Human-readable names for groups
+local GROUP_TITLES = {
+    'Group 1 Notifications',
+    'Group 2 Notifications',
+    'Group 3 Notifications',
+    'Group 4 Notifications',
+    'Group 5 Notifications',
+    'Group 6 Notifications',
+};
+
+-- Placeholder text for groups
+local GROUP_PLACEHOLDERS = {
+    'Group 1 notifications appear here',
+    'Group 2 notifications appear here',
+    'Group 3 notifications appear here',
+    'Group 4 notifications appear here',
+    'Group 5 notifications appear here',
+    'Group 6 notifications appear here',
+};
+
+-- Draw a notification for a specific group (using per-group resources)
+local function drawNotificationForGroup(groupNum, slot, notification, x, y, width, height, settings, groupSettings, drawList)
+    -- Apply animation state
+    local alpha = notification.alpha or 1;
+
+    -- Skip rendering entirely if notification is fully transparent
+    if alpha < 0.01 then
+        return;
+    end
+
+    -- Get primitive and fonts for this group/slot
+    local bgPrim = notificationData.groupBgPrims[groupNum] and notificationData.groupBgPrims[groupNum][slot];
+    local titleFont = notificationData.groupTitleFonts[groupNum] and notificationData.groupTitleFonts[groupNum][slot];
+    local subtitleFont = notificationData.groupSubtitleFonts[groupNum] and notificationData.groupSubtitleFonts[groupNum][slot];
+
+    if not bgPrim or not titleFont or not subtitleFont then
+        return;
+    end
+
+    local containerOffsetX = notification.containerOffsetX or 0;
+    local iconOffsetX = notification.iconOffsetX or 0;
+    local textOffsetY = notification.textOffsetY or 0;
+
+    -- Apply container offset
+    x = x + containerOffsetX;
+
+    local scaledWidth = width;
+    local scaledHeight = height;
+
+    -- Get background settings from group settings
+    local bgTheme = groupSettings.backgroundTheme or 'Plain';
+    local bgScale = groupSettings.bgScale or 1.0;
+    local borderScale = groupSettings.borderScale or 1.0;
+    local configBgOpacity = groupSettings.bgOpacity or 0.87;
+    local configBorderOpacity = groupSettings.borderOpacity or 1.0;
+
+    -- Apply notification alpha to opacity
+    local bgOpacity = alpha * configBgOpacity;
+    local borderOpacity = alpha * configBorderOpacity;
+
+    windowBg.update(bgPrim, x, y, scaledWidth, scaledHeight, {
+        theme = bgTheme,
+        padding = 0,
+        bgScale = bgScale,
+        borderScale = borderScale,
+        bgOpacity = bgOpacity,
+        borderOpacity = borderOpacity,
+        bgColor = 0xFF1A1A1A,
+        borderColor = 0xFFFFFFFF,
+    });
+
+    -- Draw pulsing dot for party/trade invites
+    local nType = notification.type;
+    if drawList and (nType == notificationData.NOTIFICATION_TYPE.PARTY_INVITE or
+                     nType == notificationData.NOTIFICATION_TYPE.TRADE_INVITE) then
+        local pulseSpeed = 0.8;
+        local pulseAlpha = 0.3 + 0.7 * math.abs(math.sin(os.clock() * pulseSpeed * math.pi));
+        local finalPulseAlpha = pulseAlpha * alpha;
+
+        local dotColorTable;
+        if nType == notificationData.NOTIFICATION_TYPE.PARTY_INVITE then
+            dotColorTable = {0.31, 0.78, 0.47, finalPulseAlpha};
+        else
+            dotColorTable = {1.0, 0.65, 0.0, finalPulseAlpha};
+        end
+
+        local dotRadius = 4;
+        local dotX = x + scaledWidth - 10;
+        local dotY = y + (scaledHeight / 2);
+        local dotU32 = imgui.GetColorU32(dotColorTable);
+        drawList:AddCircleFilled({dotX, dotY}, dotRadius, dotU32, 12);
+    end
+
+    local isMinified = notificationData.IsMinified(notification);
+    local isMinifying = notificationData.IsMinifying(notification);
+    local minifyProgress = notificationData.GetMinifyProgress(notification);
+
+    local contentPadding = groupSettings.padding or 8;
+
+    -- Icon size interpolation
+    local normalIconSize = 32;
+    local minifiedIconSize = 16;
+    local iconSize;
+    if isMinifying then
+        iconSize = math.floor(normalIconSize - (minifyProgress * (normalIconSize - minifiedIconSize)));
+    else
+        iconSize = isMinified and minifiedIconSize or normalIconSize;
+    end
+
+    local iconX = x + contentPadding + iconOffsetX;
+    local contentHeight = isMinified and scaledHeight or (scaledHeight - 4);
+    local iconY = y + math.floor((contentHeight - iconSize) / 2);
+
+    local icon = getNotificationIcon(notification);
+
+    local titleFontHeight = groupSettings.titleFontSize or 14;
+    local subtitleFontHeight = groupSettings.subtitleFontSize or 12;
+
+    -- Calculate text position
+    local iconTextGap = 6;
+    local textX = x + contentPadding;
+    if icon then
+        textX = x + contentPadding + iconSize + iconTextGap;
+    end
+
+    local baseTextY;
+    if isMinified then
+        baseTextY = y + math.floor((contentHeight - subtitleFontHeight) / 2) - 1;
+    else
+        local textBlockHeight = titleFontHeight + 2 + subtitleFontHeight;
+        baseTextY = y + math.floor((contentHeight - textBlockHeight) / 2);
+    end
+    local textY = baseTextY + textOffsetY;
+
+    -- Draw icon
+    if icon and icon.image and drawList then
+        local iconAlphaByte = math.floor(alpha * 255);
+        local iconColor = bit.bor(bit.lshift(iconAlphaByte, 24), 0x00FFFFFF);
+
+        pcall(function()
+            drawList:AddImage(
+                tonumber(ffi.cast("uint32_t", icon.image)),
+                {iconX, iconY},
+                {iconX + iconSize, iconY + iconSize},
+                {0, 0},
+                {1, 1},
+                iconColor
+            );
+        end);
+    end
+
+    local maxTextWidth = (x + scaledWidth - contentPadding) - textX;
+    local alphaByte = math.floor(alpha * 255);
+
+    local baseTitleColor = settings.title_font_settings and settings.title_font_settings.font_color or 0xFFFFFFFF;
+    local baseSubtitleColor = settings.font_settings and settings.font_settings.font_color or 0xFFFFFFFF;
+    local baseTitleOutline = settings.title_font_settings and settings.title_font_settings.outline_color or 0xFF000000;
+    local baseSubtitleOutline = settings.font_settings and settings.font_settings.outline_color or 0xFF000000;
+
+    local fadedTitleColor = bit.bor(bit.lshift(alphaByte, 24), bit.band(baseTitleColor, 0x00FFFFFF));
+    local fadedSubtitleColor = bit.bor(bit.lshift(alphaByte, 24), bit.band(baseSubtitleColor, 0x00FFFFFF));
+    local fadedTitleOutline = bit.bor(bit.lshift(alphaByte, 24), bit.band(baseTitleOutline, 0x00FFFFFF));
+    local fadedSubtitleOutline = bit.bor(bit.lshift(alphaByte, 24), bit.band(baseSubtitleOutline, 0x00FFFFFF));
+
+    -- Initialize per-group color caches if needed
+    if not notificationData.groupTitleColors[groupNum] then
+        notificationData.groupTitleColors[groupNum] = {};
+    end
+    if not notificationData.groupSubtitleColors[groupNum] then
+        notificationData.groupSubtitleColors[groupNum] = {};
+    end
+
+    if isMinified then
+        titleFont:set_visible(false);
+        local playerName = notification.data.playerName or 'Unknown';
+
+        subtitleFont:set_font_height(subtitleFontHeight);
+        subtitleFont:set_position_x(textX);
+        subtitleFont:set_position_y(textY);
+        if notificationData.groupSubtitleColors[groupNum][slot] ~= fadedSubtitleColor then
+            subtitleFont:set_font_color(fadedSubtitleColor);
+            subtitleFont:set_outline_color(fadedSubtitleOutline);
+            notificationData.groupSubtitleColors[groupNum][slot] = fadedSubtitleColor;
+        end
+        local subtitleCacheKey = 'g' .. groupNum .. '_' .. notification.id .. "_minified";
+        local displayName = GetTruncatedText(subtitleFont, playerName, maxTextWidth, subtitleFontHeight, subtitleCacheKey);
+        subtitleFont:set_text(displayName);
+        subtitleFont:set_visible(alpha > 0.01);
+    elseif isMinifying then
+        local title = getNotificationTitle(notification);
+        local playerName = notification.data.playerName or 'Unknown';
+
+        local titleAlpha = 1.0 - minifyProgress;
+        local titleAlphaByte = math.floor(titleAlpha * 255);
+        local minifyTitleColor = bit.bor(bit.lshift(titleAlphaByte, 24), bit.band(baseTitleColor, 0x00FFFFFF));
+        local minifyTitleOutline = bit.bor(bit.lshift(titleAlphaByte, 24), bit.band(baseTitleOutline, 0x00FFFFFF));
+
+        titleFont:set_font_height(titleFontHeight);
+        titleFont:set_position_x(textX);
+        titleFont:set_position_y(textY);
+        if notificationData.groupTitleColors[groupNum][slot] ~= minifyTitleColor then
+            titleFont:set_font_color(minifyTitleColor);
+            titleFont:set_outline_color(minifyTitleOutline);
+            notificationData.groupTitleColors[groupNum][slot] = minifyTitleColor;
+        end
+        local titleCacheKey = 'g' .. groupNum .. '_' .. notification.id .. "_title";
+        local displayTitle = GetTruncatedText(titleFont, title, maxTextWidth, titleFontHeight, titleCacheKey);
+        titleFont:set_text(displayTitle);
+        titleFont:set_visible(titleAlpha > 0.01);
+
+        local subtitleY = textY + titleFontHeight + 2;
+        local targetSubtitleY = y + math.floor((contentHeight - subtitleFontHeight) / 2) - 1;
+        local currentSubtitleY = subtitleY + ((targetSubtitleY - subtitleY) * minifyProgress);
+
+        subtitleFont:set_font_height(subtitleFontHeight);
+        subtitleFont:set_position_x(textX);
+        subtitleFont:set_position_y(currentSubtitleY);
+        if notificationData.groupSubtitleColors[groupNum][slot] ~= fadedSubtitleColor then
+            subtitleFont:set_font_color(fadedSubtitleColor);
+            subtitleFont:set_outline_color(fadedSubtitleOutline);
+            notificationData.groupSubtitleColors[groupNum][slot] = fadedSubtitleColor;
+        end
+        local subtitleCacheKey = 'g' .. groupNum .. '_' .. notification.id .. "_subtitle";
+        local displayName = GetTruncatedText(subtitleFont, playerName, maxTextWidth, subtitleFontHeight, subtitleCacheKey);
+        subtitleFont:set_text(displayName);
+        subtitleFont:set_visible(alpha > 0.01);
+    else
+        -- Normal mode
+        local title = getNotificationTitle(notification);
+        local subtitle = getNotificationSubtitle(notification);
+
+        titleFont:set_font_height(titleFontHeight);
+        titleFont:set_position_x(textX);
+        titleFont:set_position_y(textY);
+        if notificationData.groupTitleColors[groupNum][slot] ~= fadedTitleColor then
+            titleFont:set_font_color(fadedTitleColor);
+            titleFont:set_outline_color(fadedTitleOutline);
+            notificationData.groupTitleColors[groupNum][slot] = fadedTitleColor;
+        end
+        local titleCacheKey = 'g' .. groupNum .. '_' .. notification.id .. "_title";
+        local displayTitle = GetTruncatedText(titleFont, title, maxTextWidth, titleFontHeight, titleCacheKey);
+        titleFont:set_text(displayTitle);
+        titleFont:set_visible(alpha > 0.01);
+
+        subtitleFont:set_font_height(subtitleFontHeight);
+        subtitleFont:set_position_x(textX);
+        subtitleFont:set_position_y(textY + titleFontHeight + 2);
+        if notificationData.groupSubtitleColors[groupNum][slot] ~= fadedSubtitleColor then
+            subtitleFont:set_font_color(fadedSubtitleColor);
+            subtitleFont:set_outline_color(fadedSubtitleOutline);
+            notificationData.groupSubtitleColors[groupNum][slot] = fadedSubtitleColor;
+        end
+        local subtitleCacheKey = 'g' .. groupNum .. '_' .. notification.id .. "_subtitle";
+        local displaySubtitle = GetTruncatedText(subtitleFont, subtitle, maxTextWidth, subtitleFontHeight, subtitleCacheKey);
+        subtitleFont:set_text(displaySubtitle);
+        subtitleFont:set_visible(alpha > 0.01);
+    end
+
+    -- Draw progress bar (only in normal mode, not minified, not exiting)
+    local isExiting = notification.state == notificationData.STATE.EXITING;
+    local isEntering = notification.state == notificationData.STATE.ENTERING;
+    if not isMinified and not isMinifying and not isExiting and drawList then
+        local progressBarHeight = math.floor(4 * (groupSettings.progressBarScaleY or 1.0));
+        local progressBarY = y + scaledHeight - progressBarHeight;
+        local progressBarWidth = scaledWidth;
+
+        local timeRemaining;
+        if isEntering then
+            -- During entry animation, show full bar
+            timeRemaining = 1.0;
+        elseif notificationData.IsPersistentType(nType) then
+            local minifyTimeout = groupSettings.inviteMinifyTimeout or 10.0;
+            local visibleStart = notification.visibleStartTime or notification.stateStartTime;
+            local elapsed = os.clock() - visibleStart;
+            timeRemaining = math.max(0, 1 - (elapsed / minifyTimeout));
+        else
+            local displayDuration = groupSettings.displayDuration or 3.0;
+            local visibleStart = notification.visibleStartTime or notification.stateStartTime;
+            local elapsed = os.clock() - visibleStart;
+            timeRemaining = math.max(0, 1 - (elapsed / displayDuration));
+        end
+
+        local barDirection = groupSettings.progressBarDirection or 'left';
+
+        -- Get gradient colors based on notification type
+        local gradientStart, gradientEnd;
+        if nType == notificationData.NOTIFICATION_TYPE.ITEM_OBTAINED then
+            gradientStart = '#9abb5a';
+            gradientEnd = '#bfe07d';
+        elseif nType == notificationData.NOTIFICATION_TYPE.KEY_ITEM_OBTAINED then
+            gradientStart = '#d4af37';
+            gradientEnd = '#f0d060';
+        elseif nType == notificationData.NOTIFICATION_TYPE.GIL_OBTAINED then
+            gradientStart = '#d4af37';
+            gradientEnd = '#f0d060';
+        elseif nType == notificationData.NOTIFICATION_TYPE.TREASURE_POOL or
+               nType == notificationData.NOTIFICATION_TYPE.TREASURE_LOT then
+            gradientStart = '#9966cc';
+            gradientEnd = '#bb99dd';
+        elseif nType == notificationData.NOTIFICATION_TYPE.PARTY_INVITE then
+            gradientStart = '#4CAF50';
+            gradientEnd = '#81C784';
+        elseif nType == notificationData.NOTIFICATION_TYPE.TRADE_INVITE then
+            gradientStart = '#FF9800';
+            gradientEnd = '#FFB74D';
+        else
+            gradientStart = '#666666';
+            gradientEnd = '#888888';
+        end
+
+        local percent = timeRemaining;
+        if barDirection == 'right' then
+            percent = 1 - timeRemaining;
+        end
+
+        progressbar.ProgressBar(
+            {{percent, {gradientStart, gradientEnd}}},
+            {progressBarWidth, progressBarHeight},
+            {
+                drawList = drawList,
+                decorate = false,
+                absolutePosition = {x, progressBarY}
+            }
+        );
+    end
+end
+
+-- Draw a group notification window
+local function drawGroupWindow(groupNum, settings)
+    local configOpen = showConfig and showConfig[1];
+    local groupSettings = notificationData.GetGroupSettings(groupNum);
+    if not groupSettings then return false; end
+
+    local notifications = notificationData.GetNotificationsByGroup(groupNum);
+    local hasNotifications = notifications and #notifications > 0;
+
+    -- Only render if has notifications or config is open
+    if not hasNotifications and not configOpen then
+        return false;
+    end
+
+    -- Check if group is active (has types assigned)
+    if not hasNotifications and not notificationData.IsGroupActive(groupNum) then
+        return false;
+    end
+
+    local windowName = 'Notifications_Group' .. groupNum;
+
+    -- Build window flags
+    local windowFlags = notificationData.getBaseWindowFlags();
+    if gConfig.lockPositions and not configOpen then
+        windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
+    end
+
+    -- Get group-specific settings
+    local scaleX = groupSettings.scaleX or 1.0;
+    local scaleY = groupSettings.scaleY or 1.0;
+    local contentPadding = groupSettings.padding or 8;
+    local notificationWidth = math.floor((settings.width or 280) * scaleX);
+    local normalHeight = math.floor((contentPadding * 2 + 32 + 4) * scaleY);
+    local minifiedHeight = math.floor((contentPadding * 2 + 16) * scaleY);
+    local spacing = groupSettings.spacing or 8;
+    local maxVisible = groupSettings.maxVisible or 5;
+    local stackUp = groupSettings.direction == 'up';
+
+    -- Helper to calculate notification height
+    local function getNotificationHeight(notification)
+        local isMinified = notificationData.IsMinified(notification);
+        local isMinifying = notificationData.IsMinifying(notification);
+        local minifyProgress = notificationData.GetMinifyProgress(notification);
+
+        if isMinifying then
+            return normalHeight - (minifyProgress * (normalHeight - minifiedHeight));
+        else
+            return isMinified and minifiedHeight or normalHeight;
+        end
+    end
+
+    -- Calculate total content height
+    local totalHeight = 0;
+    if hasNotifications then
+        local count = 0;
+        for i, notification in ipairs(notifications) do
+            count = count + 1;
+            if count > maxVisible then break; end
+            if count > 1 then totalHeight = totalHeight + spacing; end
+            totalHeight = totalHeight + getNotificationHeight(notification);
+        end
+    else
+        totalHeight = normalHeight;  -- Placeholder height
+    end
+
+    -- Handle bottom-anchoring for "stack up" mode
+    if stackUp then
+        local anchor = notificationData.groupWindowAnchors[groupNum];
+        local isDragging = anchor and anchor.dragging;
+
+        if anchor and anchor.y and not isDragging then
+            local newY = anchor.y - totalHeight;
+            imgui.SetNextWindowPos({anchor.x or 0, newY});
+        end
+    end
+
+    -- Create ImGui window
+    if imgui.Begin(windowName, true, windowFlags) then
+        local renderSuccess, renderErr = pcall(function()
+            local windowPosX, windowPosY = imgui.GetWindowPos();
+            local drawList = imgui.GetWindowDrawList();
+
+            imgui.Dummy({notificationWidth, totalHeight});
+
+            -- Update bottom anchor for "stack up" mode
+            if stackUp then
+                local currentBottomY = windowPosY + totalHeight;
+                local isWindowHovered = imgui.IsWindowHovered();
+                local isMouseDown = imgui.IsMouseDown(0);
+
+                if not notificationData.groupWindowAnchors[groupNum] then
+                    notificationData.groupWindowAnchors[groupNum] = {y = currentBottomY, x = windowPosX, dragging = false};
+                end
+
+                local anchor = notificationData.groupWindowAnchors[groupNum];
+                local wasDragging = anchor.dragging;
+
+                if isWindowHovered and isMouseDown then
+                    anchor.dragging = true;
+                elseif wasDragging and not isMouseDown then
+                    anchor.y = currentBottomY;
+                    anchor.x = windowPosX;
+                    anchor.dragging = false;
+                end
+            end
+
+            if hasNotifications then
+                local currentY;
+                local slot = 0;
+
+                if stackUp then
+                    currentY = windowPosY + totalHeight;
+                    local count = 0;
+                    for i = #notifications, 1, -1 do
+                        count = count + 1;
+                        if count > maxVisible then break; end
+                        local notification = notifications[i];
+                        local notifHeight = getNotificationHeight(notification);
+                        currentY = currentY - notifHeight;
+                        slot = slot + 1;
+                        drawNotificationForGroup(groupNum, slot, notification, windowPosX, currentY, notificationWidth, notifHeight, settings, groupSettings, drawList);
+                        currentY = currentY - spacing;
+                    end
+                else
+                    currentY = windowPosY;
+                    local count = 0;
+                    for _, notification in ipairs(notifications) do
+                        count = count + 1;
+                        if count > maxVisible then break; end
+                        local notifHeight = getNotificationHeight(notification);
+                        slot = slot + 1;
+                        drawNotificationForGroup(groupNum, slot, notification, windowPosX, currentY, notificationWidth, notifHeight, settings, groupSettings, drawList);
+                        currentY = currentY + notifHeight + spacing;
+                    end
+                end
+            elseif configOpen then
+                -- Draw placeholder
+                local bgPrim = notificationData.groupBgPrims[groupNum] and notificationData.groupBgPrims[groupNum][1];
+                local titleFont = notificationData.groupTitleFonts[groupNum] and notificationData.groupTitleFonts[groupNum][1];
+                local subtitleFont = notificationData.groupSubtitleFonts[groupNum] and notificationData.groupSubtitleFonts[groupNum][1];
+
+                if bgPrim and titleFont and subtitleFont then
+                    windowBg.update(bgPrim, windowPosX, windowPosY, notificationWidth, normalHeight, {
+                        theme = groupSettings.backgroundTheme or 'Plain',
+                        padding = 0,
+                        bgScale = groupSettings.bgScale or 1.0,
+                        borderScale = groupSettings.borderScale or 1.0,
+                        bgOpacity = 0.5,
+                        borderOpacity = 0.5,
+                        bgColor = 0xFF1A1A1A,
+                        borderColor = 0xFFFFFFFF,
+                    });
+
+                    local textX = windowPosX + contentPadding;
+                    local titleY = windowPosY + contentPadding;
+
+                    titleFont:set_font_height(groupSettings.titleFontSize or 14);
+                    titleFont:set_position_x(textX);
+                    titleFont:set_position_y(titleY);
+                    titleFont:set_font_color(0x80FFFFFF);
+                    titleFont:set_text(GROUP_TITLES[groupNum] or ('Group ' .. groupNum));
+                    titleFont:set_visible(true);
+
+                    subtitleFont:set_font_height(groupSettings.subtitleFontSize or 12);
+                    subtitleFont:set_position_x(textX);
+                    subtitleFont:set_position_y(titleY + (groupSettings.titleFontSize or 14) + 2);
+                    subtitleFont:set_font_color(0x80AAAAAA);
+                    subtitleFont:set_text(GROUP_PLACEHOLDERS[groupNum] or 'Drag to reposition');
+                    subtitleFont:set_visible(true);
+                end
+            end
+        end);
+
+        if not renderSuccess and renderErr then
+            print('[XIUI Notifications] Group ' .. groupNum .. ' render error: ' .. tostring(renderErr));
+        end
+    end
+    imgui.End();
+
+    return true;
+end
+
+-- ============================================
 -- Module Functions
 -- ============================================
 
@@ -917,21 +1430,19 @@ end
 
 -- Main draw function
 function M.DrawWindow(settings, activeNotifications, pinnedNotifications)
-    -- Safety check - ensure fonts are initialized
-    if not notificationData.titleFonts or not notificationData.subtitleFonts then
+    -- Safety check - ensure group fonts are initialized
+    if not notificationData.groupTitleFonts or not next(notificationData.groupTitleFonts) then
         return;
     end
 
-    -- Hide all fonts and primitives initially
-    notificationData.SetAllFontsVisible(false);
-    notificationData.HideAllBackgrounds();
-    notificationData.HideSplitFonts();
+    -- Hide all group resources initially
+    notificationData.HideAllGroupResources();
 
-    -- Check if background theme changed and reload textures if needed
-    notificationData.CheckAndUpdateTheme();
-
-    -- Reset global slot counter for this frame
-    currentSlot = 0;
+    -- Check per-group themes for changes
+    local maxGroups = gConfig.notificationGroupCount or 2;
+    for groupNum = 1, maxGroups do
+        notificationData.CheckAndUpdateGroupTheme(groupNum);
+    end
 
     -- Check if player exists and is not zoning
     local player = GetPlayerSafe();
@@ -942,52 +1453,16 @@ function M.DrawWindow(settings, activeNotifications, pinnedNotifications)
     -- Update treasure pool state (handles expiration, animations)
     notificationData.UpdateTreasurePool(os.clock());
 
-    local configOpen = showConfig and showConfig[1];
-
-    -- Draw split windows for each enabled split type
-    local enabledSplitKeys = notificationData.GetEnabledSplitKeys();
-    for _, splitKey in ipairs(enabledSplitKeys) do
-        drawSplitWindow(splitKey, settings);
-    end
-
-    -- Get notifications for main window (non-split types only)
-    local mainWindowNotifications = notificationData.GetNonSplitNotifications();
-    local hasMainNotifications = #mainWindowNotifications > 0;
-
-    -- Early return if no notifications for main window (unless config is open)
-    if not hasMainNotifications and not configOpen then
-        return;
-    end
-
-    -- Draw main notification window (nil splitKey = main window)
-    drawNotificationWindow('Notifications', mainWindowNotifications, settings, nil, 'Notification Area', 'Drag to reposition');
-
-    -- Hide unused slots (after all windows drawn)
-    -- currentSlot now holds the total count of notifications rendered across all windows
-    local usedSlots = currentSlot;
-    -- If config is open and no notifications, slot 1 may be used for main window placeholder
-    if usedSlots == 0 and configOpen then
-        usedSlots = 1;
-    end
-    for i = usedSlots + 1, notificationData.MAX_ACTIVE_NOTIFICATIONS do
-        if notificationData.bgPrims[i] then
-            windowBg.hide(notificationData.bgPrims[i]);
-        end
-        if notificationData.titleFonts[i] then
-            notificationData.titleFonts[i]:set_visible(false);
-        end
-        if notificationData.subtitleFonts[i] then
-            notificationData.subtitleFonts[i]:set_visible(false);
-        end
+    -- Draw notification groups
+    for groupNum = 1, maxGroups do
+        drawGroupWindow(groupNum, settings);
     end
 end
 
 -- Set visibility
 function M.SetHidden(hidden)
     if hidden then
-        notificationData.SetAllFontsVisible(false);
-        notificationData.HideAllBackgrounds();
-        notificationData.HideSplitFonts();
+        notificationData.HideAllGroupResources();
     end
 end
 

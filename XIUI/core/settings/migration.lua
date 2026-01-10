@@ -689,6 +689,75 @@ function M.MigrateGilTrackerSettings(gConfig, defaults)
     end
 end
 
+-- Migrate from split windows to notification groups
+-- Converts old notificationsSplit* flags to notificationTypeGroup assignments
+function M.MigrateNotificationGroups(gConfig, defaults)
+    -- Skip if already migrated (notificationGroupCount exists and groups are initialized)
+    if gConfig.notificationGroupCount ~= nil and gConfig.notificationGroup1 ~= nil and type(gConfig.notificationGroup1) == 'table' and gConfig.notificationGroup1.scaleX ~= nil then
+        return;
+    end
+
+    -- Map split window keys to type keys
+    local splitMapping = {
+        { splitKey = 'notificationsSplitPartyInvite', typeKey = 'partyInvite' },
+        { splitKey = 'notificationsSplitTradeInvite', typeKey = 'tradeInvite' },
+        { splitKey = 'notificationsSplitTreasurePool', typeKey = 'treasurePool' },
+        { splitKey = 'notificationsSplitItemObtained', typeKey = 'itemObtained' },
+        { splitKey = 'notificationsSplitKeyItemObtained', typeKey = 'keyItemObtained' },
+        { splitKey = 'notificationsSplitGilObtained', typeKey = 'gilObtained' },
+    };
+
+    -- Initialize group assignments (default all to group 1)
+    local groupAssignments = T{
+        partyInvite = 1,
+        tradeInvite = 1,
+        treasurePool = 1,
+        itemObtained = 1,
+        keyItemObtained = 1,
+        gilObtained = 1,
+    };
+
+    -- Count enabled split windows and assign to groups 2+
+    local nextGroup = 2;
+    for _, mapping in ipairs(splitMapping) do
+        if gConfig[mapping.splitKey] == true then
+            groupAssignments[mapping.typeKey] = nextGroup;
+            nextGroup = nextGroup + 1;
+            if nextGroup > 6 then break; end
+        end
+    end
+
+    -- Set group count based on how many split windows were enabled
+    gConfig.notificationGroupCount = math.max(2, nextGroup - 1);
+    gConfig.notificationTypeGroup = groupAssignments;
+
+    -- Create base group settings from existing flat notification settings
+    local baseGroupSettings = T{
+        scaleX = gConfig.notificationsScaleX or 1.0,
+        scaleY = gConfig.notificationsScaleY or 1.0,
+        progressBarScaleY = gConfig.notificationsProgressBarScaleY or 1.0,
+        progressBarDirection = gConfig.notificationsProgressBarDirection or 'left',
+        padding = gConfig.notificationsPadding or 8,
+        spacing = gConfig.notificationsSpacing or 8,
+        maxVisible = gConfig.notificationsMaxVisible or 5,
+        direction = gConfig.notificationsDirection or 'down',
+        titleFontSize = gConfig.notificationsTitleFontSize or 14,
+        subtitleFontSize = gConfig.notificationsSubtitleFontSize or 12,
+        backgroundTheme = gConfig.notificationsBackgroundTheme or 'Plain',
+        bgScale = gConfig.notificationsBgScale or 1.0,
+        borderScale = gConfig.notificationsBorderScale or 1.0,
+        bgOpacity = gConfig.notificationsBgOpacity or 0.87,
+        borderOpacity = gConfig.notificationsBorderOpacity or 1.0,
+        displayDuration = gConfig.notificationsDisplayDuration or 3.0,
+        inviteMinifyTimeout = gConfig.notificationsInviteMinifyTimeout or 10.0,
+    };
+
+    -- Initialize all 6 groups with base settings
+    for i = 1, 6 do
+        gConfig['notificationGroup' .. i] = deep_copy_table(baseGroupSettings);
+    end
+end
+
 -- Run structure migrations (called AFTER settings.load())
 -- These handle migrating old settings structures to new ones
 function M.RunStructureMigrations(gConfig, defaults)
@@ -700,6 +769,7 @@ function M.RunStructureMigrations(gConfig, defaults)
     M.MigrateIndividualSettings(gConfig, defaults);
     M.MigrateGilTrackerSettings(gConfig, defaults);
     M.MigrateCastCostSettings(gConfig, defaults);
+    M.MigrateNotificationGroups(gConfig, defaults);
 end
 
 -- Legacy function for backward compatibility (if any external code calls it)
