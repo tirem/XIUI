@@ -85,6 +85,7 @@ function M.Initialize(settings)
         if gConfig.treasurePoolExpanded == nil then gConfig.treasurePoolExpanded = false; end
         if gConfig.treasurePoolMinimized == nil then gConfig.treasurePoolMinimized = false; end
         if gConfig.treasurePoolShowButtonsInCollapsed == nil then gConfig.treasurePoolShowButtonsInCollapsed = true; end
+        if gConfig.treasurePoolAutoHideWhenEmpty == nil then gConfig.treasurePoolAutoHideWhenEmpty = true; end
     end
 
     -- Initialize data layer first
@@ -335,9 +336,17 @@ function M.DrawWindow(settings)
     local historyCount = data.GetWonHistoryCount();
     local poolCount = data.GetPoolCount();
 
-    -- Draw treasure pool if enabled and (has real items OR has history OR preview is on OR force show)
+    -- Draw treasure pool if enabled and has content to show
     local enabled = gConfig.treasurePoolEnabled;
-    local showWindow = (hasRealItems or hasHistory or data.previewEnabled or M.forceShow) and enabled;
+    local autoHide = gConfig.treasurePoolAutoHideWhenEmpty ~= false; -- Default to true if not set
+    local showWindow;
+    if autoHide then
+        -- Auto-hide enabled: only show if pool has items (or preview/force show)
+        showWindow = (hasRealItems or data.previewEnabled or M.forceShow) and enabled;
+    else
+        -- Auto-hide disabled: show if pool has items OR has history
+        showWindow = (hasRealItems or hasHistory or data.previewEnabled or M.forceShow) and enabled;
+    end
 
     -- Debug: Log state changes (throttled to avoid spam)
     local stateKey = string.format('%s_%s_%s_%s_%d_%d',

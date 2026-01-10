@@ -45,6 +45,7 @@ local function ensureDefaults()
     if gConfig.treasurePoolBackgroundTheme == nil then gConfig.treasurePoolBackgroundTheme = 'Plain'; end
     if gConfig.treasurePoolExpanded == nil then gConfig.treasurePoolExpanded = false; end
     if gConfig.treasurePoolShowButtonsInCollapsed == nil then gConfig.treasurePoolShowButtonsInCollapsed = true; end
+    if gConfig.treasurePoolAutoHideWhenEmpty == nil then gConfig.treasurePoolAutoHideWhenEmpty = true; end
 end
 
 -- Get available background themes
@@ -80,6 +81,9 @@ function M.DrawSettings()
 
             components.DrawCheckbox('Start Expanded', 'treasurePoolExpanded');
             imgui.ShowHelp('Start with expanded view showing all lot details');
+
+            components.DrawCheckbox('Auto-Hide When Empty', 'treasurePoolAutoHideWhenEmpty');
+            imgui.ShowHelp('Hide the treasure pool window when there are no items in the pool');
 
             -- Size settings
             components.DrawSlider('Text Size', 'treasurePoolFontSize', 8, 16);
