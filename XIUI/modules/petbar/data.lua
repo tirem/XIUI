@@ -754,7 +754,7 @@ local mockAbilities = {
     },
     [data.JOB_BST] = {
         {name = 'Ready', timer = 2400, maxTimer = 5400, isReady = false,
-            isChargeAbility = true, maxCharges = 3, charges = 2, nextChargeTimer = 600},
+            isChargeAbility = true, maxCharges = 3, charges = 2, nextChargeTimer = 600, chargeValue = 1800},
         {name = 'Reward', timer = 15, maxTimer = 90, isReady = false},
         {name = 'Call Beast', timer = 0, maxTimer = 60, isReady = true},
         {name = 'Bestial Loyalty', timer = 20, maxTimer = 60, isReady = false},
