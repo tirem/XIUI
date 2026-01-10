@@ -11,6 +11,7 @@ local primitives = require('primitives');
 local ffi = require('ffi');
 local windowBg = require('libs.windowbackground');
 local abilityRecast = require('libs.abilityrecast');
+local TextureManager = require('libs.texturemanager');
 
 local data = require('modules.petbar.data');
 local display = require('modules.petbar.display');
@@ -54,8 +55,8 @@ petbar.Initialize = function(settings)
         table.insert(data.allFonts, data.recastTimerFonts[i]);
     end
 
-    -- Load jug icon texture
-    data.jugIconTexture = LoadTextureWithExt('pets/jug', 'png');
+    -- Load jug icon texture (via TextureManager)
+    data.jugIconTexture = TextureManager.getFileTexture('pets/jug');
 
     -- Initialize primitives - creation order determines render order
     -- Order: background -> pet images -> borders
@@ -91,9 +92,9 @@ petbar.Initialize = function(settings)
             -- Store base dimensions for clipping calculations
             prim.baseWidth = 256;
             prim.baseHeight = 256;
-            -- Try to get actual texture dimensions and store texture for ImGui
+            -- Try to get actual texture dimensions and store texture for ImGui (via TextureManager)
             if prim.exists then
-                local texture = LoadTextureWithExt(string.format('pets/%s', data.petImageMap[petName]:gsub('%.png$', '')), 'png');
+                local texture = TextureManager.getFileTexture(string.format('pets/%s', data.petImageMap[petName]:gsub('%.png$', '')));
                 if texture and texture.image then
                     prim.baseWidth, prim.baseHeight = GetTextureDimensions(texture, 256, 256);
                     -- Store full texture object for ImGui rendering (keeps reference alive)

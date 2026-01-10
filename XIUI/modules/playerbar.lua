@@ -75,10 +75,11 @@ playerbar.DrawWindow = function(settings)
 
 	local SelfHP = party:GetMemberHP(0);
 	local SelfHPMax = player:GetHPMax();
-	local SelfHPPercent = math.clamp(party:GetMemberHPPercent(0), 0, 100);
+	-- Calculate percentage from actual values to avoid stale party API data (issue #92)
+	local SelfHPPercent = (SelfHPMax > 0) and math.clamp((SelfHP / SelfHPMax) * 100, 0, 100) or 0;
 	local SelfMP = party:GetMemberMP(0);
 	local SelfMPMax = player:GetMPMax();
-	local SelfMPPercent = math.clamp(party:GetMemberMPPercent(0), 0, 100);
+	local SelfMPPercent = (SelfMPMax > 0) and math.clamp((SelfMP / SelfMPMax) * 100, 0, 100) or 0;
 	local SelfTP = party:GetMemberTP(0);
 
 	local currentTime = os.clock();

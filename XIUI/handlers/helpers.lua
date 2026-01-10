@@ -21,7 +21,7 @@ local targetLib = require('libs.target');
 local fontsLib = require('libs.fonts');
 local drawingLib = require('libs.drawing');
 local packetsLib = require('libs.packets');
-local texturesLib = require('libs.textures');
+local TextureManager = require('libs.texturemanager');
 local hpLib = require('libs.hp');
 local fastcastLib = require('libs.fastcast');
 local formatLib = require('libs.format');
@@ -121,10 +121,9 @@ ParseMessagePacket = packetsLib.ParseMessagePacket;
 ParseMessageStandardPacket = packetsLib.ParseMessageStandardPacket;
 valid_server_id = packetsLib.valid_server_id;
 
--- Texture Utilities (from textures.lua)
-LoadTexture = texturesLib.LoadTexture;
-LoadTextureWithExt = texturesLib.LoadTextureWithExt;
-GetTextureDimensions = texturesLib.GetTextureDimensions;
+-- Texture Utilities (from texturemanager.lua)
+LoadTexture = TextureManager.getFileTexture;
+GetTextureDimensions = TextureManager.getTextureDimensions;
 
 -- HP Utilities (from hp.lua)
 HpInterpolation = hpLib.HpInterpolation;

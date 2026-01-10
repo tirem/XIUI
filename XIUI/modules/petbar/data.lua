@@ -24,7 +24,7 @@ data.MAX_RECAST_SLOTS = 6;
 data.RECAST_ICON_SIZE = 24;
 
 -- Ready charge system constants
-data.READY_BASE_RECAST = 1800;  -- 30 seconds in 60ths (one charge cooldown)
+data.READY_DEFAULT_BASE_SECONDS = 30;  -- Default base recast per charge (configurable via petBarReadyBaseRecast)
 data.READY_MAX_CHARGES = 3;
 
 data.bgImageKeys = { 'bg', 'tl', 'tr', 'br', 'bl' };
@@ -887,17 +887,31 @@ function data.GetPetRecasts()
                 if name == 'Ready' then
                     timerEntry.isChargeAbility = true;
                     timerEntry.maxCharges = data.READY_MAX_CHARGES;
+
+                    -- Get timer data with modifier for accurate charge calculation
+                    local timerData = abilityRecast.GetAbilityTimerDataByTimerId(abilityInfo.id);
+                    local modifier = timerData.Modifier or 0;
+
+                    -- Calculate base recast using config value and modifier (like PetMe)
+                    -- Formula: baseRecast = 60 * (totalBaseSeconds + modifier) where totalBaseSeconds = perChargeSeconds * 3
+                    local configBasePerCharge = gConfig.petBarReadyBaseRecast or data.READY_DEFAULT_BASE_SECONDS;
+                    local totalBaseSeconds = configBasePerCharge * data.READY_MAX_CHARGES;
+                    local baseRecast = 60 * (totalBaseSeconds + modifier);  -- In 1/60ths, modifier-adjusted
+                    local chargeValue = baseRecast / data.READY_MAX_CHARGES;  -- Per-charge time in 1/60ths
+
+                    -- Store chargeValue for progress bar calculations in display.lua
+                    timerEntry.chargeValue = chargeValue;
+
                     -- Calculate current charges from timer
-                    -- timer = 0: 3 charges, timer <= 1800: 2 charges, timer <= 3600: 1 charge, else: 0 charges
                     if timer <= 0 then
-                        timerEntry.charges = 3;
+                        timerEntry.charges = data.READY_MAX_CHARGES;
                         timerEntry.nextChargeTimer = 0;
                     else
-                        -- Charges available = max - ceil(timer / baseRecast)
-                        local chargesRecharging = math.ceil(timer / data.READY_BASE_RECAST);
+                        -- Charges available = max - ceil(timer / chargeValue)
+                        local chargesRecharging = math.ceil(timer / chargeValue);
                         timerEntry.charges = math.max(0, data.READY_MAX_CHARGES - chargesRecharging);
-                        -- Time until next charge = timer mod baseRecast (or timer if less than base)
-                        timerEntry.nextChargeTimer = ((timer - 1) % data.READY_BASE_RECAST) + 1;
+                        -- Time until next charge = timer mod chargeValue (or timer if less than chargeValue)
+                        timerEntry.nextChargeTimer = ((timer - 1) % chargeValue) + 1;
                     end
                 end
 

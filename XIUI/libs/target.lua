@@ -39,7 +39,26 @@ function M.GetSubTargetActive()
     if (playerTarget == nil) then
         return false;
     end
-    return playerTarget:GetIsSubTargetActive() == 1 or (M.GetStPartyIndex() ~= nil and playerTarget:GetTargetIndex(0) ~= 0);
+
+    -- Primary check: Ashita API reports sub-target is active
+    if playerTarget:GetIsSubTargetActive() == 1 then
+        return true;
+    end
+
+    -- Check if party sub-target selection is active (<stal>/<stpt>)
+    if M.GetStPartyIndex() ~= nil then
+        return true;
+    end
+
+    -- Fallback: Check if there's a valid entity in sub-target slot (index 1)
+    -- that differs from main target - indicates sub-targeting even if API doesn't report it
+    local mainTarget = playerTarget:GetTargetIndex(0);
+    local subTarget = playerTarget:GetTargetIndex(1);
+    if mainTarget ~= 0 and subTarget ~= 0 and subTarget ~= mainTarget then
+        return true;
+    end
+
+    return false;
 end
 
 -- ========================================
@@ -47,6 +66,7 @@ end
 -- ========================================
 
 -- Returns mainTarget, secondaryTarget indices
+-- When sub-targeting, mainTarget is the sub-target (party member) and secondaryTarget is the original target
 function M.GetTargets()
     local playerTarget = AshitaCore:GetMemoryManager():GetTarget();
     local party = AshitaCore:GetMemoryManager():GetParty();
@@ -59,9 +79,16 @@ function M.GetTargets()
     local secondaryTarget = playerTarget:GetTargetIndex(1);
     local partyTarget = M.GetStPartyIndex();
 
+    -- If party sub-target selection is active (<stal>/<stpt>), swap to put party member first
     if (partyTarget ~= nil) then
         secondaryTarget = mainTarget;
         mainTarget = party:GetMemberTargetIndex(partyTarget);
+    -- Otherwise, if sub-targeting is active via Ashita API and we have both targets,
+    -- swap them so the sub-target (slot 1) becomes the "main" for highlighting purposes
+    elseif playerTarget:GetIsSubTargetActive() == 1 and secondaryTarget ~= 0 then
+        local temp = mainTarget;
+        mainTarget = secondaryTarget;
+        secondaryTarget = temp;
     end
 
     return mainTarget, secondaryTarget;

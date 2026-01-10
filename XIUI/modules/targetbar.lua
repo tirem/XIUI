@@ -10,6 +10,7 @@ local buffTable = require('libs.bufftable');
 local gdi = require('submodules.gdifonts.include');
 local encoding = require('submodules.gdifonts.encoding');
 local ffi = require("ffi");
+local TextureManager = require('libs.texturemanager');
 
 -- TODO: Calculate these instead of manually setting them
 
@@ -814,8 +815,8 @@ targetbar.Initialize = function(settings)
 	distText = FontManager.create(settings.distance_font_settings);
 	castText = FontManager.create(settings.cast_font_settings);
 	allFonts = {percentText, nameText, totNameText, distText, castText};
-	arrowTexture = LoadTexture("arrow");
-	lockTexture = LoadTexture("lock");
+	arrowTexture = TextureManager.getFileTexture("arrow");
+	lockTexture = TextureManager.getFileTexture("lock");
 
 	-- Query lock texture dimensions
 	if (lockTexture ~= nil) then

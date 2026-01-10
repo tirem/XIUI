@@ -8,6 +8,15 @@ require('common');
 
 local M = {};
 
+-- Debug logging (set to true to enable)
+local DEBUG_ENABLED = true;
+local function debugLog(msg, ...)
+    if DEBUG_ENABLED then
+        local formatted = string.format('[TP Data] ' .. msg, ...);
+        print(formatted);
+    end
+end
+
 -- ============================================
 -- Constants
 -- ============================================
@@ -477,28 +486,56 @@ end
 -- Called when 0x00D3 packet is received
 function M.HandleLotPacket(slot, entryServerId, entryName, entryFlg, entryLot,
                            winnerServerId, winnerName, winnerLot, judgeFlg)
+    debugLog('HandleLotPacket: slot=%s judge=%s winner=%s lot=%s entry=%s',
+        tostring(slot), tostring(judgeFlg), tostring(winnerName), tostring(winnerLot), tostring(entryName));
+
     -- Validate slot
-    if slot == nil or slot < 0 or slot >= M.MAX_POOL_SLOTS then return; end
+    if slot == nil or slot < 0 or slot >= M.MAX_POOL_SLOTS then
+        debugLog('HandleLotPacket: Invalid slot %s', tostring(slot));
+        return;
+    end
 
     -- Handle item won/cleared (JudgeFlg >= 1)
     if judgeFlg and judgeFlg >= 1 then
         -- Get item info before clearing (from current pool)
         local item = M.poolItems[slot];
-        if item and winnerName and winnerName ~= '' and winnerLot and winnerLot > 0 then
+        debugLog('HandleLotPacket: judgeFlg=%d, item=%s, poolItems[%d]=%s',
+            judgeFlg, item and item.itemName or 'nil', slot, item and 'exists' or 'nil');
+
+        -- The judge=1 packet often has winnerLot=0, so use stored winner info from lotHistory
+        -- which was populated from earlier judge=0 packets that had the actual lot value
+        local storedWinner = M.lotHistory[slot] and M.lotHistory[slot].winner;
+        local finalWinnerName = winnerName;
+        local finalWinnerLot = winnerLot;
+
+        -- If packet has winnerLot=0 but we have stored winner data, use that
+        if (not finalWinnerLot or finalWinnerLot <= 0) and storedWinner then
+            finalWinnerName = storedWinner.name or finalWinnerName;
+            finalWinnerLot = storedWinner.lot or 0;
+            debugLog('HandleLotPacket: Using stored winner data: %s lot=%d',
+                finalWinnerName, finalWinnerLot);
+        end
+
+        if item and finalWinnerName and finalWinnerName ~= '' and finalWinnerLot and finalWinnerLot > 0 then
             -- Add to won history (insert at front)
             local historyEntry = {
                 itemId = item.itemId,
                 itemName = item.itemName or getItemName(item.itemId),
-                winnerName = winnerName,
-                winnerLot = winnerLot,
+                winnerName = finalWinnerName,
+                winnerLot = finalWinnerLot,
                 wonAt = os.time(),
             };
             table.insert(M.wonHistory, 1, historyEntry);
+            debugLog('HandleLotPacket: Added to history: %s won by %s (%d), total history=%d',
+                historyEntry.itemName, historyEntry.winnerName, historyEntry.winnerLot, #M.wonHistory);
 
             -- Trim history to max size
             while #M.wonHistory > M.MAX_HISTORY_ITEMS do
                 table.remove(M.wonHistory);
             end
+        else
+            debugLog('HandleLotPacket: NOT added to history - item=%s winnerName=%s winnerLot=%s',
+                item and 'exists' or 'nil', tostring(finalWinnerName), tostring(finalWinnerLot));
         end
 
         -- Item awarded or cleared - remove from tracking

@@ -24,15 +24,30 @@ function M.DrawSettings()
         imgui.ShowHelp('Right-align text so numbers anchor at the right edge.');
     end
 
-    if components.CollapsingSection('Gil Per Hour##gilTracker') then
-        components.DrawCheckbox('Show Gil/Hour', 'gilTrackerShowGilPerHour');
-        imgui.ShowHelp('Display gil earned per hour below current gil amount. Resets on login.');
+    if components.CollapsingSection('Session Tracking##gilTracker') then
+        components.DrawCheckbox('Show Tracking', 'gilTrackerShowGilPerHour');
+        imgui.ShowHelp('Display session tracking below current gil amount. Resets on login.');
+
+        -- Display mode dropdown
+        local displayModes = { 'Session Net', 'Gil Per Hour' };
+        local currentMode = gConfig.gilTrackerDisplayMode or 1;
+        if imgui.BeginCombo('Display Mode##gilTracker', displayModes[currentMode]) then
+            for i, mode in ipairs(displayModes) do
+                if imgui.Selectable(mode, currentMode == i) then
+                    gConfig.gilTrackerDisplayMode = i;
+                    giltracker.InvalidateCache();  -- Force immediate update
+                    SaveSettingsOnly();
+                end
+            end
+            imgui.EndCombo();
+        end
+        imgui.ShowHelp('Session Net: Shows total gil gained/lost this session.\nGil Per Hour: Shows rate of gil gain/loss per hour.');
 
         -- Reset button
-        if imgui.Button('Reset Tracking##gilPerHour') then
+        if imgui.Button('Reset Tracking##gilTracker') then
             giltracker.ResetTracking();
         end
-        imgui.ShowHelp('Reset gil/hour tracking to start fresh from current gil amount.');
+        imgui.ShowHelp('Reset tracking to start fresh from current gil amount.');
     end
 
     if components.CollapsingSection('Scale & Position##gilTracker') then
@@ -58,8 +73,8 @@ end
 function M.DrawColorSettings()
     if components.CollapsingSection('Text Colors##gilTrackerColor') then
         components.DrawTextColorPicker("Gil Text", gConfig.colorCustomization.gilTracker, 'textColor', "Color of gil amount text");
-        components.DrawTextColorPicker("Positive Gil/Hr", gConfig.colorCustomization.gilTracker, 'positiveColor', "Color when earning gil per hour");
-        components.DrawTextColorPicker("Negative Gil/Hr", gConfig.colorCustomization.gilTracker, 'negativeColor', "Color when losing gil per hour");
+        components.DrawTextColorPicker("Positive Change", gConfig.colorCustomization.gilTracker, 'positiveColor', "Color when gaining gil");
+        components.DrawTextColorPicker("Negative Change", gConfig.colorCustomization.gilTracker, 'negativeColor', "Color when losing gil");
     end
 end
 

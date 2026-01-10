@@ -270,11 +270,13 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Draw job icon
     local namePosX = hpStartX;
+    local distanceBaseX = hpStartX; -- Base X for distance text (independent of name offsets)
     if cache.showJobIcon then
         local offsetStartY = hpStartY - jobIconSize - settings.nameTextOffsetY;
         local jobIcon = statusHandler.GetJobIcon(memInfo.job);
         if (jobIcon ~= nil) then
             namePosX = namePosX + jobIconSize + settings.nameTextOffsetX;
+            distanceBaseX = distanceBaseX + jobIconSize; -- Only add job icon width, not name offset
             -- Use background draw list to render outside window clipping
             local jobIconPtr = tonumber(ffi.cast("uint32_t", jobIcon));
             local draw_list = imgui.GetBackgroundDrawList();
@@ -510,7 +512,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Draw leader icon
     if (memInfo.leader) then
-        draw_circle({hpStartX + settings.dotRadius/2, hpStartY + settings.dotRadius/2}, settings.dotRadius, {1, 1, .5, 1}, settings.dotRadius * 3, true);
+        draw_circle({hpStartX + settings.dotRadius/2, hpStartY + settings.dotRadius/2}, settings.dotRadius, {1, 1, .5, 1}, settings.dotRadius * 3, true, nil, GetUIDrawList());
     end
 
     -- Position name text
@@ -620,9 +622,11 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         if (distance ~= nil and distance > 0 and distance <= 50) then
             local distanceText = ('%.1f'):fmt(distance);
             setCachedText(memIdx, 'distance', data.memberText[memIdx].distance, distanceText);
-            local distancePosX = namePosX + nameWidth + 4;
+            -- Position distance relative to HP bar (independent of name offsets)
+            -- Distance uses right alignment - position is the fixed right edge anchor
+            local distancePosX = distanceBaseX + nameWidth + 4;
             data.memberText[memIdx].distance:set_position_x(distancePosX + textOffsets.distanceX);
-            data.memberText[memIdx].distance:set_position_y(hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset + textOffsets.distanceY);
+            data.memberText[memIdx].distance:set_position_y(hpStartY - nameRefHeight + nameBaselineOffset + textOffsets.distanceY);
             showDistance = true;
             if (cache.distanceHighlight > 0 and distance <= cache.distanceHighlight) then
                 highlightDistance = true;
@@ -1110,7 +1114,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Sync indicator
     if (memInfo.sync) then
-        draw_circle({hpStartX + settings.dotRadius/2, hpStartY + barHeight}, settings.dotRadius, {.5, .5, 1, 1}, settings.dotRadius * 3, true);
+        draw_circle({hpStartX + settings.dotRadius/2, hpStartY + barHeight}, settings.dotRadius, {.5, .5, 1, 1}, settings.dotRadius * 3, true, nil, GetUIDrawList());
     end
 
     -- Set text visibility

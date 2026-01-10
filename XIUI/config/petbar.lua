@@ -353,6 +353,12 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
                 imgui.Spacing();
                 components.DrawCheckbox('Ready/Sic', 'petBarBstShowReady');
                 imgui.ShowHelp('Show Ready/Sic ability timer (offensive pet command).');
+                if gConfig.petBarBstShowReady then
+                    imgui.Indent(10);
+                    components.DrawSlider('Base Charge Time (s)##readyCharm', 'petBarReadyBaseRecast', 15, 60);
+                    imgui.ShowHelp('Base recast time per Ready charge in seconds.\nDefault: 30s (retail/LSB)\nHorizon: 45s\nMerits will automatically reduce the timer.');
+                    imgui.Unindent(10);
+                end
                 components.DrawCheckbox('Reward', 'petBarBstShowReward');
                 imgui.ShowHelp('Show Reward ability timer (pet healing).');
             elseif configKey == 'petBarJug' then
@@ -361,6 +367,12 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
                 imgui.Spacing();
                 components.DrawCheckbox('Ready/Sic', 'petBarBstShowReady');
                 imgui.ShowHelp('Show Ready/Sic ability timer (offensive pet command).');
+                if gConfig.petBarBstShowReady then
+                    imgui.Indent(10);
+                    components.DrawSlider('Base Charge Time (s)##ready', 'petBarReadyBaseRecast', 15, 60);
+                    imgui.ShowHelp('Base recast time per Ready charge in seconds.\nDefault: 30s (retail/LSB)\nHorizon: 45s\nMerits will automatically reduce the timer.');
+                    imgui.Unindent(10);
+                end
                 components.DrawCheckbox('Reward', 'petBarBstShowReward');
                 imgui.ShowHelp('Show Reward ability timer (pet healing).');
                 components.DrawCheckbox('Call Beast', 'petBarBstShowCallBeast');

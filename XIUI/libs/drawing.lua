@@ -83,16 +83,18 @@ end
 -- Public API: Circle Drawing
 -- ========================================
 
-function M.draw_circle(center, radius, color, segments, fill, shadowConfig)
+function M.draw_circle(center, radius, color, segments, fill, shadowConfig, drawList)
+    drawList = drawList or imgui.GetWindowDrawList();
+
     -- Draw shadow first if configured
     local shadowOffsetX, shadowOffsetY, shadowColorU32 = processShadowConfig(shadowConfig);
     if shadowOffsetX then
         local shadow_center = {center[1] + shadowOffsetX, center[2] + shadowOffsetY};
 
         if (fill == true) then
-            imgui.GetWindowDrawList():AddCircleFilled(shadow_center, radius, shadowColorU32, segments);
+            drawList:AddCircleFilled(shadow_center, radius, shadowColorU32, segments);
         else
-            imgui.GetWindowDrawList():AddCircle(shadow_center, radius, shadowColorU32, segments, 1);
+            drawList:AddCircle(shadow_center, radius, shadowColorU32, segments, 1);
         end
     end
 
@@ -100,9 +102,9 @@ function M.draw_circle(center, radius, color, segments, fill, shadowConfig)
     local colorU32 = imgui.GetColorU32(color);
 
     if (fill == true) then
-        imgui.GetWindowDrawList():AddCircleFilled(center, radius, colorU32, segments);
+        drawList:AddCircleFilled(center, radius, colorU32, segments);
     else
-        imgui.GetWindowDrawList():AddCircle(center, radius, colorU32, segments, 1);
+        drawList:AddCircle(center, radius, colorU32, segments, 1);
     end
 end
 

@@ -22,14 +22,23 @@ require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
 local ffi = require('ffi');
-local d3d8 = require('d3d8');
 local windowBg = require('libs.windowbackground');
 local progressbar = require('libs.progressbar');
 local button = require('libs.button');
+local TextureManager = require('libs.texturemanager');
 local data = require('modules.treasurepool.data');
 local actions = require('modules.treasurepool.actions');
 
 local M = {};
+
+-- Debug logging (set to true to enable)
+local DEBUG_ENABLED = true;
+local function debugLog(msg, ...)
+    if DEBUG_ENABLED then
+        local formatted = string.format('[TP Display] ' .. msg, ...);
+        print(formatted);
+    end
+end
 
 -- ============================================
 -- Constants
@@ -52,65 +61,8 @@ local bgPrimHandle = nil;
 -- Theme tracking (for detecting changes like petbar)
 local loadedBgTheme = nil;
 
--- Item icon cache (itemId -> texture table with .image)
-local iconCache = {};
-
 -- Tab state: 1 = Pool view, 2 = History view
 local selectedTab = 1;
-
--- ============================================
--- Item Icon Loading
--- ============================================
-
--- Load item icon from game resources
-local function loadItemIcon(itemId)
-    if itemId == nil or itemId == 0 or itemId == -1 or itemId == 65535 then
-        return nil;
-    end
-
-    if iconCache[itemId] then
-        return iconCache[itemId];
-    end
-
-    local success, result = pcall(function()
-        local device = GetD3D8Device();
-        if device == nil then return nil; end
-
-        local item = AshitaCore:GetResourceManager():GetItemById(itemId);
-        if item == nil then return nil; end
-
-        if item.Bitmap == nil or item.ImageSize == nil or item.ImageSize <= 0 then
-            return nil;
-        end
-
-        local dx_texture_ptr = ffi.new('IDirect3DTexture8*[1]');
-        if ffi.C.D3DXCreateTextureFromFileInMemoryEx(
-            device, item.Bitmap, item.ImageSize,
-            0xFFFFFFFF, 0xFFFFFFFF, 1, 0,
-            ffi.C.D3DFMT_A8R8G8B8, ffi.C.D3DPOOL_MANAGED,
-            ffi.C.D3DX_DEFAULT, ffi.C.D3DX_DEFAULT,
-            0xFF000000, nil, nil, dx_texture_ptr
-        ) == ffi.C.S_OK then
-            return {
-                image = d3d8.gc_safe_release(ffi.cast('IDirect3DTexture8*', dx_texture_ptr[0]))
-            };
-        end
-        return nil;
-    end);
-
-    if success and result then
-        iconCache[itemId] = result;
-    end
-
-    return iconCache[itemId];
-end
-
-local function getIconPtr(texture)
-    if texture and texture.image then
-        return tonumber(ffi.cast("uint32_t", texture.image));
-    end
-    return nil;
-end
 
 -- ============================================
 -- Helper Functions
@@ -207,20 +159,25 @@ function M.DrawWindow(settings)
     local hasPoolItems = #poolItems > 0;
     local hasHistoryItems = #historyItems > 0;
 
-    -- If no content for either tab, hide window
-    if not hasPoolItems and not hasHistoryItems then
-        M.HideWindow();
-        return;
+    -- Debug: Log state (throttled)
+    local stateKey = string.format('%d_%s_%s_%d_%d', selectedTab, tostring(hasPoolItems), tostring(hasHistoryItems), #poolItems, #historyItems);
+    if M._lastDisplayState ~= stateKey then
+        debugLog('DrawWindow: tab=%d hasPool=%s hasHistory=%s poolCount=%d historyCount=%d',
+            selectedTab, tostring(hasPoolItems), tostring(hasHistoryItems), #poolItems, #historyItems);
+        M._lastDisplayState = stateKey;
     end
 
-    -- If on Pool tab with no items, switch to History tab (if history exists)
-    if selectedTab == 1 and not hasPoolItems and hasHistoryItems then
-        selectedTab = 2;
+    -- Note: Visibility is controlled by init.lua (checks forceShow, preview, content)
+    -- If we're here, init.lua decided to show the window, so render empty states if needed
+
+    -- Reset hidden flag since we're showing content
+    if M._wasHidden then
+        debugLog('DrawWindow: Window becoming visible');
+        M._wasHidden = false;
     end
-    -- If on History tab with no items, switch to Pool tab (if pool exists)
-    if selectedTab == 2 and not hasHistoryItems and hasPoolItems then
-        selectedTab = 1;
-    end
+
+    -- Don't auto-switch tabs - let users control which tab they're viewing
+    -- Each tab will show an appropriate empty state message if it has no content
 
     -- Get settings with validation
     local scaleX = gConfig.treasurePoolScaleX;
@@ -302,30 +259,38 @@ function M.DrawWindow(settings)
 
     if selectedTab == 1 then
         -- Pool tab: calculate content height based on pool items
-        for i = 1, #poolItems do
-            totalContentHeight = totalContentHeight + itemRowHeights[i];
-            if i < #poolItems then
-                totalContentHeight = totalContentHeight + rowSpacing;
-            end
-        end
-
-        -- Calculate visible content height (limited in expanded view)
-        visibleContentHeight = totalContentHeight;
-
-        if isExpanded and #poolItems > EXPANDED_MAX_VISIBLE_ITEMS then
-            -- Calculate height for first N items only
-            visibleContentHeight = 0;
-            for i = 1, EXPANDED_MAX_VISIBLE_ITEMS do
-                visibleContentHeight = visibleContentHeight + itemRowHeights[i];
-                if i < EXPANDED_MAX_VISIBLE_ITEMS then
-                    visibleContentHeight = visibleContentHeight + rowSpacing;
-                end
-            end
-            needsScroll = true;
-            maxScrollOffset = totalContentHeight - visibleContentHeight;
-        else
+        if #poolItems == 0 then
+            -- "No items in pool" message height
+            totalContentHeight = fontSize + 4;
+            visibleContentHeight = fontSize + 4;
             scrollOffset = 0;
             maxScrollOffset = 0;
+        else
+            for i = 1, #poolItems do
+                totalContentHeight = totalContentHeight + itemRowHeights[i];
+                if i < #poolItems then
+                    totalContentHeight = totalContentHeight + rowSpacing;
+                end
+            end
+
+            -- Calculate visible content height (limited in expanded view)
+            visibleContentHeight = totalContentHeight;
+
+            if isExpanded and #poolItems > EXPANDED_MAX_VISIBLE_ITEMS then
+                -- Calculate height for first N items only
+                visibleContentHeight = 0;
+                for i = 1, EXPANDED_MAX_VISIBLE_ITEMS do
+                    visibleContentHeight = visibleContentHeight + itemRowHeights[i];
+                    if i < EXPANDED_MAX_VISIBLE_ITEMS then
+                        visibleContentHeight = visibleContentHeight + rowSpacing;
+                    end
+                end
+                needsScroll = true;
+                maxScrollOffset = totalContentHeight - visibleContentHeight;
+            else
+                scrollOffset = 0;
+                maxScrollOffset = 0;
+            end
         end
     else
         -- History tab: calculate based on history items
@@ -477,6 +442,7 @@ function M.DrawWindow(settings)
                 tooltip = 'Treasure Pool',
             });
             if poolTabClicked then
+                debugLog('Pool tab clicked, setting selectedTab = 1');
                 selectedTab = 1;
             end
 
@@ -505,6 +471,7 @@ function M.DrawWindow(settings)
                 tooltip = 'Recent Winners',
             });
             if historyTabClicked then
+                debugLog('History tab clicked, setting selectedTab = 2');
                 selectedTab = 2;
             end
 
@@ -567,61 +534,70 @@ function M.DrawWindow(settings)
                     SaveSettingsToDisk();
                 end
 
-                -- Draw Pass All button (Always enabled)
-                local passAllClicked = button.DrawPrim('tpPassAll', passAllX, btnY, textBtnWidth, btnHeight, {
-                    colors = button.COLORS_NEGATIVE,
-                    tooltip = 'Pass on all items',
-                });
-                if passAllClicked then
-                    actions.PassAll();
-                end
-
-                -- Draw Pass All label (GDI font renders on top of primitive)
-                if data.passAllFont then
-                    data.passAllFont:set_font_height(fontSize);
-                    data.passAllFont:set_text('Pass All');
-                    local passTextW, passTextH = data.passAllFont:get_text_size();
-                    passTextW = passTextW or (fontSize * 2.5);
-                    passTextH = passTextH or fontSize;
-                    data.passAllFont:set_position_x(passAllX + (textBtnWidth - passTextW) / 2);
-                    data.passAllFont:set_position_y(btnY + (btnHeight - passTextH) / 2);
-                    data.passAllFont:set_visible(true);
-                    if data.lastColors.passAll ~= 0xFFFFFFFF then
-                        data.passAllFont:set_font_color(0xFFFFFFFF);
-                        data.lastColors.passAll = 0xFFFFFFFF;
-                    end
-                end
-
-                -- Draw Lot All button (disabled in HzLimitedMode)
-                if (not HzLimitedMode) then
-                    -- Draw Lot All button (positive/green) using primitive
-                    local lotAllClicked = button.DrawPrim('tpLotAll', lotAllX, btnY, textBtnWidth, btnHeight, {
-                        colors = button.COLORS_POSITIVE,
-                        tooltip = 'Lot on all items',
+                -- Only show Lot All / Pass All buttons if there are pool items
+                if hasPoolItems then
+                    -- Draw Pass All button
+                    local passAllClicked = button.DrawPrim('tpPassAll', passAllX, btnY, textBtnWidth, btnHeight, {
+                        colors = button.COLORS_NEGATIVE,
+                        tooltip = 'Pass on all items',
                     });
-                    if lotAllClicked then
-                        actions.LotAll();
+                    if passAllClicked then
+                        actions.PassAll();
                     end
 
-                    -- Draw Lot All label (GDI font renders on top of primitive)
-                    if data.lotAllFont then
-                        data.lotAllFont:set_font_height(fontSize);
-                        data.lotAllFont:set_text('Lot All');
-                        local lotTextW, lotTextH = data.lotAllFont:get_text_size();
-                        lotTextW = lotTextW or (fontSize * 2);
-                        lotTextH = lotTextH or fontSize;
-                        data.lotAllFont:set_position_x(lotAllX + (textBtnWidth - lotTextW) / 2);
-                        data.lotAllFont:set_position_y(btnY + (btnHeight - lotTextH) / 2);
-                        data.lotAllFont:set_visible(true);
-                        if data.lastColors.lotAll ~= 0xFFFFFFFF then
-                            data.lotAllFont:set_font_color(0xFFFFFFFF);
-                            data.lastColors.lotAll = 0xFFFFFFFF;
+                    -- Draw Pass All label (GDI font renders on top of primitive)
+                    if data.passAllFont then
+                        data.passAllFont:set_font_height(fontSize);
+                        data.passAllFont:set_text('Pass All');
+                        local passTextW, passTextH = data.passAllFont:get_text_size();
+                        passTextW = passTextW or (fontSize * 2.5);
+                        passTextH = passTextH or fontSize;
+                        data.passAllFont:set_position_x(passAllX + (textBtnWidth - passTextW) / 2);
+                        data.passAllFont:set_position_y(btnY + (btnHeight - passTextH) / 2);
+                        data.passAllFont:set_visible(true);
+                        if data.lastColors.passAll ~= 0xFFFFFFFF then
+                            data.passAllFont:set_font_color(0xFFFFFFFF);
+                            data.lastColors.passAll = 0xFFFFFFFF;
                         end
                     end
+
+                    -- Draw Lot All button (disabled in HzLimitedMode)
+                    if (not HzLimitedMode) then
+                        -- Draw Lot All button (positive/green) using primitive
+                        local lotAllClicked = button.DrawPrim('tpLotAll', lotAllX, btnY, textBtnWidth, btnHeight, {
+                            colors = button.COLORS_POSITIVE,
+                            tooltip = 'Lot on all items',
+                        });
+                        if lotAllClicked then
+                            actions.LotAll();
+                        end
+
+                        -- Draw Lot All label (GDI font renders on top of primitive)
+                        if data.lotAllFont then
+                            data.lotAllFont:set_font_height(fontSize);
+                            data.lotAllFont:set_text('Lot All');
+                            local lotTextW, lotTextH = data.lotAllFont:get_text_size();
+                            lotTextW = lotTextW or (fontSize * 2);
+                            lotTextH = lotTextH or fontSize;
+                            data.lotAllFont:set_position_x(lotAllX + (textBtnWidth - lotTextW) / 2);
+                            data.lotAllFont:set_position_y(btnY + (btnHeight - lotTextH) / 2);
+                            data.lotAllFont:set_visible(true);
+                            if data.lastColors.lotAll ~= 0xFFFFFFFF then
+                                data.lotAllFont:set_font_color(0xFFFFFFFF);
+                                data.lastColors.lotAll = 0xFFFFFFFF;
+                            end
+                        end
+                    else
+                        -- Hide Lot All in HzLimitedMode
+                        button.HidePrim('tpLotAll');
+                        if data.lotAllFont then data.lotAllFont:set_visible(false); end
+                    end
                 else
-                    -- Hide Lot All in HzLimitedMode
+                    -- No pool items - hide Lot All / Pass All buttons
                     button.HidePrim('tpLotAll');
+                    button.HidePrim('tpPassAll');
                     if data.lotAllFont then data.lotAllFont:set_visible(false); end
+                    if data.passAllFont then data.passAllFont:set_visible(false); end
                 end
 
                 -- Hide toggle font (not needed, using arrow button)
@@ -714,6 +690,48 @@ function M.DrawWindow(settings)
             -- POOL TAB: Show treasure pool items
             -- ============================================
 
+            -- Show empty state if no pool items
+            if not hasPoolItems then
+                -- Show "No items" message using header font
+                if data.headerFont then
+                    data.headerFont:set_font_height(fontSize);
+                    data.headerFont:set_text('No items in pool');
+                    data.headerFont:set_position_x(startX + padding);
+                    data.headerFont:set_position_y(y);
+                    data.headerFont:set_visible(true);
+                    if data.lastColors.header ~= 0xFF888888 then
+                        data.headerFont:set_font_color(0xFF888888);
+                        data.lastColors.header = 0xFF888888;
+                    end
+                end
+
+                -- Hide all pool slot fonts
+                for slot = 0, data.MAX_POOL_SLOTS - 1 do
+                    if data.itemNameFonts[slot] then data.itemNameFonts[slot]:set_visible(false); end
+                    if data.timerFonts[slot] then data.timerFonts[slot]:set_visible(false); end
+                    if data.lotFonts[slot] then data.lotFonts[slot]:set_visible(false); end
+                    if data.lotItemFonts[slot] then data.lotItemFonts[slot]:set_visible(false); end
+                    if data.passItemFonts[slot] then data.passItemFonts[slot]:set_visible(false); end
+                    if data.memberFonts[slot] then
+                        for memberIdx = 0, data.MAX_MEMBERS_PER_ITEM - 1 do
+                            if data.memberFonts[slot][memberIdx] then
+                                data.memberFonts[slot][memberIdx]:set_visible(false);
+                            end
+                        end
+                    end
+                    button.HidePrim(string.format('tpLotItem%d', slot));
+                    button.HidePrim(string.format('tpPassItem%d', slot));
+                end
+
+                -- Hide history fonts when on Pool tab
+                for i = 0, data.MAX_HISTORY_ITEMS - 1 do
+                    if data.historyItemFonts[i] then data.historyItemFonts[i]:set_visible(false); end
+                    if data.historyWinnerFonts[i] then data.historyWinnerFonts[i]:set_visible(false); end
+                end
+            else
+                -- Hide the empty state message font when we have items
+                if data.headerFont then data.headerFont:set_visible(false); end
+
             local usedSlots = {};
             local currentY = y;  -- Track cumulative Y position (before scroll)
 
@@ -791,8 +809,8 @@ function M.DrawWindow(settings)
             end
 
             -- 1. Draw item icon
-            local iconTexture = loadItemIcon(item.itemId);
-            local iconPtr = getIconPtr(iconTexture);
+            local iconTexture = TextureManager.getItemIcon(item.itemId);
+            local iconPtr = TextureManager.getTexturePtr(iconTexture);
             local iconX = startX + padding + itemPadding;
             local iconY = rowY + 2 + itemPadding;  -- Align to top of row with padding
 
@@ -1250,6 +1268,8 @@ function M.DrawWindow(settings)
                 if data.historyWinnerFonts[i] then data.historyWinnerFonts[i]:set_visible(false); end
             end
 
+            end  -- end hasPoolItems else block
+
         else
             -- ============================================
             -- HISTORY TAB: Show recent winners
@@ -1363,8 +1383,8 @@ function M.DrawWindow(settings)
                         if data.historyWinnerFonts[idx] then data.historyWinnerFonts[idx]:set_visible(false); end
                     else
                         -- Draw item icon
-                        local iconTexture = loadItemIcon(histItem.itemId);
-                        local iconPtr = getIconPtr(iconTexture);
+                        local iconTexture = TextureManager.getItemIcon(histItem.itemId);
+                        local iconPtr = TextureManager.getTexturePtr(iconTexture);
                         local iconX = startX + padding;
                         local iconY = rowY + (historyRowHeight - historyIconSize) / 2;
 
@@ -1448,6 +1468,12 @@ function M.DrawWindow(settings)
 end
 
 function M.HideWindow()
+    -- Throttle log to avoid spam (only log once when transitioning to hidden)
+    if not M._wasHidden then
+        debugLog('HideWindow called (transitioning to hidden)');
+        M._wasHidden = true;
+    end
+
     -- Hide header fonts
     if data.headerFont then data.headerFont:set_visible(false); end
     if data.toggleFont then data.toggleFont:set_visible(false); end
@@ -1564,7 +1590,7 @@ function M.Cleanup()
     end
 
     loadedBgTheme = nil;
-    iconCache = {};
+    -- Icon cache handled by TextureManager
 end
 
 return M;

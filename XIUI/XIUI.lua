@@ -67,6 +67,8 @@ local debuffHandler = require('handlers.debuffhandler');
 local actionTracker = require('handlers.actiontracker');
 local mobInfo = require('modules.mobinfo.init');
 local statusHandler = require('handlers.statushandler');
+local progressbar = require('libs.progressbar');
+local TextureManager = require('libs.texturemanager');
 
 -- Global switch to hard-disable functionality that is limited on HX servers
 HzLimitedMode = false;
@@ -440,6 +442,8 @@ ashita.events.register('unload', 'unload_cb', function ()
     ashita.events.unregister('command', 'command_cb');
 
     statusHandler.clear_cache();
+    progressbar.Cleanup();
+    TextureManager.clear();
     if ClearDebuffFontCache then ClearDebuffFontCache(); end
 
     uiModules.CleanupAll();
@@ -476,6 +480,12 @@ ashita.events.register('command', 'command_cb', function (e)
         -- Pass all unlotted items: /xiui passall or /xiui pass
         if (#command_args == 2 and command_args[2]:any('passall', 'pass')) then
             treasurePool.PassAll();
+            return;
+        end
+
+        -- Toggle treasure pool window: /xiui tp
+        if (#command_args == 2 and command_args[2]:any('tp', 'treasurepool', 'pool')) then
+            treasurePool.ToggleForceShow();
             return;
         end
 
@@ -516,9 +526,80 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
-        -- Reset gil per hour tracking: /xiui resetgil
-        if (command_args[2] == 'resetgil') then
+        -- Reset gil tracking: /xiui gil reset (or legacy: /xiui resetgil)
+        if (command_args[2] == 'gil' and command_args[3] == 'reset') or (command_args[2] == 'resetgil') then
             gilTracker.ResetTracking();
+            return;
+        end
+
+        -- ============================================
+        -- Cache Debug Commands
+        -- ============================================
+
+        -- Show progressbar cache statistics: /xiui cachestats
+        if (command_args[2] == 'cachestats') then
+            progressbar.PrintCacheStats();
+            return;
+        end
+
+        -- Show texture cache statistics: /xiui texturestats
+        if (command_args[2] == 'texturestats') then
+            TextureManager.printStats();
+            return;
+        end
+
+        -- Clear texture cache: /xiui textureclear
+        if (command_args[2] == 'textureclear') then
+            TextureManager.clear();
+            print('[XIUI] TextureManager cache cleared');
+            return;
+        end
+
+        -- Clear all caches: /xiui clearcache
+        if (command_args[2] == 'clearcache') then
+            progressbar.ForceClearCache();
+            TextureManager.clear();
+            statusHandler.clear_cache();
+            print('[XIUI] All texture caches cleared');
+            return;
+        end
+
+        -- Stress test gradient cache: /xiui stresscache [count]
+        if (command_args[2] == 'stresscache') then
+            local count = tonumber(command_args[3]) or 100;
+            progressbar.StressTestCache(count);
+            return;
+        end
+
+        -- Stress test texture manager: /xiui stresstextures [count]
+        if (command_args[2] == 'stresstextures') then
+            local count = tonumber(command_args[3]) or 150;
+            print(string.format('[XIUI] Stress testing TextureManager with %d status icons...', count));
+            local statsBefore = TextureManager.getStats();
+            local beforeEvictions = statsBefore.categories.status_icons.evictions;
+
+            -- Request many status icons (valid IDs are 0-640)
+            for i = 0, count - 1 do
+                TextureManager.getStatusIcon(i, nil);
+            end
+
+            local statsAfter = TextureManager.getStats();
+            local afterEvictions = statsAfter.categories.status_icons.evictions;
+            local newEvictions = afterEvictions - beforeEvictions;
+
+            print(string.format('[XIUI] Created %d status icons, %d evictions triggered',
+                statsAfter.categories.status_icons.size, newEvictions));
+            TextureManager.printStats();
+            return;
+        end
+
+        -- Force garbage collection: /xiui gc
+        if (command_args[2] == 'gc') then
+            local before = collectgarbage('count');
+            collectgarbage('collect');
+            local after = collectgarbage('count');
+            print(string.format('[XIUI] Garbage collection: %.1f KB -> %.1f KB (freed %.1f KB)',
+                before, after, before - after));
             return;
         end
     end
@@ -558,6 +639,8 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         debuffHandler.HandleZonePacket(e);
         actionTracker.HandleZonePacket();
         mobInfo.data.HandleZonePacket(e);
+        gilTracker.HandleZoneInPacket();  -- Only reset on fresh login, not zone changes (issue #111)
+        TextureManager.clearOnZone();
         MarkPartyCacheDirty();
         ClearEntityCache();
         bLoggedIn = true;
@@ -590,6 +673,8 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
     elseif (e.id == 0x00B) then
         notifications.HandleZonePacket();
         treasurePool.HandleZonePacket();
+        gilTracker.HandleZoneOutPacket();  -- Track zone-out time for login detection (issue #111)
+        TextureManager.clearOnZone();
         bLoggedIn = false;
     elseif (e.id == 0x076) then
         statusHandler.ReadPartyBuffsFromPacket(e);

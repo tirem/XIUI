@@ -53,6 +53,28 @@ function M.GetAbilityTimerByTimerId(timerId)
     return 0;  -- Not found or ready
 end
 
+-- Get ability timer data by timer ID (includes modifier for charge-based abilities)
+-- Returns: { Modifier = int16, Recast = uint32 } or { Modifier = 0, Recast = 0 } if not found
+-- The modifier adjusts the base recast time (used for merit calculations)
+-- @param timerId: The ability's timer ID (e.g., 102 for Ready)
+function M.GetAbilityTimerDataByTimerId(timerId)
+    if timerId == nil then return { Modifier = 0, Recast = 0 }; end
+    if not InitAbilityRecastPointer() then
+        return { Modifier = 0, Recast = 0 };
+    end
+
+    for i = 1, 31 do
+        local compId = ashita.memory.read_uint8(AbilityRecastPointer + (i * 8) + 3);
+        if compId == timerId then
+            local modifier = ashita.memory.read_int16(AbilityRecastPointer + (i * 8) + 4);
+            local recast = ashita.memory.read_uint32(AbilityRecastPointer + (i * 4) + 0xF8);
+            return { Modifier = modifier, Recast = recast };
+        end
+    end
+
+    return { Modifier = 0, Recast = 0 };  -- Not found or ready
+end
+
 -- Get ability recast in seconds by timer ID
 -- Returns: remaining recast time in seconds, or 0 if ready
 -- @param timerId: The ability's timer ID

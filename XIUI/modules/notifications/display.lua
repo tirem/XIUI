@@ -8,10 +8,9 @@ require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
 local ffi = require('ffi');
-local d3d8 = require('d3d8');
 local notificationData = require('modules.notifications.data');
 local progressbar = require('libs.progressbar');
-local textures = require('libs.textures');
+local TextureManager = require('libs.texturemanager');
 local windowBg = require('libs.windowbackground');
 
 local M = {};
@@ -19,13 +18,6 @@ local M = {};
 -- Global slot counter for notification rendering
 -- Reset at start of DrawWindow, incremented for each notification drawn
 local currentSlot = 0;
-
--- ============================================
--- Icon Cache
--- ============================================
-
-local iconCache = {};  -- itemId -> texture
-local typeIcons = {};  -- notification type -> texture
 
 -- ============================================
 -- Text Truncation Cache
@@ -97,74 +89,18 @@ local function GetTruncatedText(fontObj, text, maxWidth, fontHeight, cacheKey)
     return truncated;
 end
 
--- Load item icon from game resources
-local function loadItemIcon(itemId)
-    -- Validate item ID (following atom0s pattern)
-    if itemId == nil or itemId == 0 or itemId == -1 or itemId == 65535 then
-        return nil;
+-- Get type-specific icon texture using TextureManager
+local function getTypeIcon(notificationType)
+    if notificationType == notificationData.NOTIFICATION_TYPE.PARTY_INVITE then
+        return TextureManager.getFileTexture("notifications/invite_icon");
+    elseif notificationType == notificationData.NOTIFICATION_TYPE.TRADE_INVITE then
+        return TextureManager.getFileTexture("notifications/trade_icon");
+    elseif notificationType == notificationData.NOTIFICATION_TYPE.KEY_ITEM_OBTAINED then
+        return TextureManager.getFileTexture("notifications/bazaar_icon");
+    elseif notificationType == notificationData.NOTIFICATION_TYPE.GIL_OBTAINED then
+        return TextureManager.getFileTexture("gil");
     end
-
-    -- Check cache first
-    if iconCache[itemId] then
-        return iconCache[itemId];
-    end
-
-    -- Wrap texture loading in pcall to prevent crashes
-    local success, result = pcall(function()
-        local device = GetD3D8Device();
-        if device == nil then
-            return nil;
-        end
-
-        local item = AshitaCore:GetResourceManager():GetItemById(itemId);
-        if item == nil then
-            return nil;
-        end
-
-        -- Check bitmap is valid
-        if item.Bitmap == nil or item.ImageSize == nil or item.ImageSize <= 0 then
-            return nil;
-        end
-
-        local dx_texture_ptr = ffi.new('IDirect3DTexture8*[1]');
-        if ffi.C.D3DXCreateTextureFromFileInMemoryEx(
-            device, item.Bitmap, item.ImageSize,
-            0xFFFFFFFF, 0xFFFFFFFF, 1, 0,
-            ffi.C.D3DFMT_A8R8G8B8, ffi.C.D3DPOOL_MANAGED,
-            ffi.C.D3DX_DEFAULT, ffi.C.D3DX_DEFAULT,
-            0xFF000000, nil, nil, dx_texture_ptr
-        ) == ffi.C.S_OK then
-            -- Wrap in table with .image to match LoadTexture() format
-            return {
-                image = d3d8.gc_safe_release(ffi.cast('IDirect3DTexture8*', dx_texture_ptr[0]))
-            };
-        end
-        return nil;
-    end);
-
-    if success and result then
-        iconCache[itemId] = result;
-    end
-
-    return iconCache[itemId];
-end
-
--- Load type-specific icon textures
-local function loadTypeIcons()
-    -- Load icons from assets/notifications folder
-    typeIcons.invite = textures.LoadTexture("notifications/invite_icon");
-    typeIcons.trade = textures.LoadTexture("notifications/trade_icon");
-    typeIcons.keyitem = textures.LoadTexture("notifications/bazaar_icon");
-    typeIcons.gil = textures.LoadTexture("gil");
-
-    -- Map notification types to their icons
-    typeIcons[notificationData.NOTIFICATION_TYPE.PARTY_INVITE] = typeIcons.invite;
-    typeIcons[notificationData.NOTIFICATION_TYPE.TRADE_INVITE] = typeIcons.trade;
-    typeIcons[notificationData.NOTIFICATION_TYPE.TREASURE_POOL] = nil;  -- Uses item icon
-    typeIcons[notificationData.NOTIFICATION_TYPE.TREASURE_LOT] = nil;   -- Uses item icon
-    typeIcons[notificationData.NOTIFICATION_TYPE.ITEM_OBTAINED] = nil;  -- Uses item icon
-    typeIcons[notificationData.NOTIFICATION_TYPE.KEY_ITEM_OBTAINED] = typeIcons.keyitem;
-    typeIcons[notificationData.NOTIFICATION_TYPE.GIL_OBTAINED] = typeIcons.gil;
+    return nil;
 end
 
 -- ============================================
@@ -175,19 +111,19 @@ end
 local function getNotificationIcon(notification)
     local nType = notification.type;
 
-    -- Item notifications use item icons
+    -- Item notifications use item icons (via TextureManager)
     if nType == notificationData.NOTIFICATION_TYPE.ITEM_OBTAINED
         or nType == notificationData.NOTIFICATION_TYPE.TREASURE_POOL
         or nType == notificationData.NOTIFICATION_TYPE.TREASURE_LOT then
 
         local itemId = notification.data.itemId;
         if itemId then
-            return loadItemIcon(itemId);
+            return TextureManager.getItemIcon(itemId);
         end
     end
 
-    -- Use type icons for other notifications
-    return typeIcons[nType];
+    -- Use type icons for other notifications (via TextureManager)
+    return getTypeIcon(nType);
 end
 
 -- Get notification title text
@@ -971,8 +907,7 @@ end
 
 -- Initialize display module (called after fonts/prims created in init.lua)
 function M.Initialize(settings)
-    -- Load type icons
-    loadTypeIcons();
+    -- Type icons are loaded on-demand via TextureManager
 end
 
 -- Update visuals (called after fonts recreated in init.lua)
@@ -1058,14 +993,8 @@ end
 
 -- Cleanup
 function M.Cleanup()
-    -- Clear icon cache (textures are managed by gc_safe_release)
-    iconCache = {};
-
-    -- Clear text truncation cache
+    -- Clear text truncation cache (texture cleanup is handled by TextureManager)
     truncatedTextCache = {};
-
-    -- Clear type icons
-    typeIcons = {};
 end
 
 return M;

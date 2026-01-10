@@ -306,7 +306,7 @@ local function DrawRecastIconCharged(drawList, x, y, size, timerInfo, colorConfi
                 drawList:AddCircleFilled({centerX, centerY}, innerRadius, readyColor, 24);
             elseif i == charges + 1 and nextChargeTimer > 0 then
                 -- Recharging charge - show progress
-                local progress = 1.0 - (nextChargeTimer / data.READY_BASE_RECAST);
+                local progress = 1.0 - (nextChargeTimer / timerInfo.chargeValue);
                 progress = math.max(0, math.min(1, progress));
 
                 if fillStyle == 'clock' and drawList.PathClear then
@@ -342,7 +342,7 @@ local function DrawRecastIconCharged(drawList, x, y, size, timerInfo, colorConfi
                 drawList:AddRectFilled({innerX, innerY}, {innerX + innerSize, innerY + innerSize}, readyColor, rounding - 1);
             elseif i == charges + 1 and nextChargeTimer > 0 then
                 -- Recharging charge - show progress (vertical fill)
-                local progress = 1.0 - (nextChargeTimer / data.READY_BASE_RECAST);
+                local progress = 1.0 - (nextChargeTimer / timerInfo.chargeValue);
                 progress = math.max(0, math.min(1, progress));
 
                 if progress > 0 then
@@ -580,7 +580,7 @@ local function DrawRecastFullCharged(drawList, x, y, timerInfo, colorConfig, ful
             segmentGradient = readyGradient;
         elseif i == charges + 1 and nextChargeTimer > 0 then
             -- Recharging charge - show progress
-            segmentProgress = 1.0 - (nextChargeTimer / data.READY_BASE_RECAST);
+            segmentProgress = 1.0 - (nextChargeTimer / timerInfo.chargeValue);
             segmentProgress = math.max(0, math.min(1, segmentProgress));
             segmentGradient = recastGradient;
         else

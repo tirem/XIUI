@@ -3,7 +3,9 @@ require('handlers.helpers');
 local imgui = require('imgui');
 local gdi = require('submodules.gdifonts.include');
 local ffi = require("ffi");
+local TextureManager = require('libs.texturemanager');
 
+-- Gil texture (loaded via TextureManager)
 local gilTexture;
 local gilText;
 local gilPerHourText;
@@ -17,6 +19,21 @@ local lastGilPerHourColor;
 local trackingStartGil = nil;      -- Gil amount when tracking started
 local trackingStartTime = nil;     -- os.clock() when tracking started
 local lastKnownGil = nil;          -- Last known gil (to detect login/character change)
+
+-- Stabilization state (prevents false spikes on login)
+local stabilizationStartTime = nil;  -- When we first saw valid inventory data
+local stabilizationGil = nil;        -- Gil value when stabilization started
+local STABILIZATION_DELAY = 3;       -- Seconds to wait before initializing tracking
+
+-- Zone tracking (distinguishes fresh login from normal zone changes)
+local lastZoneOutTime = nil;         -- os.clock() when we last received zone-out (0x00B)
+local ZONE_TIMEOUT = 60;             -- If 0x00A arrives more than 60s after 0x00B, treat as login
+
+-- Gil/hr display throttling (avoid jittery updates every frame)
+local cachedGilPerHour = 0;          -- Cached calculated value
+local cachedGilPerHourStr = '+0/hr'; -- Cached formatted string
+local lastGilPerHourCalcTime = 0;    -- When we last recalculated
+local GIL_PER_HOUR_UPDATE_INTERVAL = 3;  -- Recalculate every 3 seconds
 
 local giltracker = {};
 
@@ -32,6 +49,16 @@ local function FormatGilPerHour(gilPerHour)
 	-- Format with thousand separators
 	local formatted = FormatInt(math.floor(absGil));
 	return prefix .. formatted .. '/hr';
+end
+
+-- Helper function to format session net change
+local function FormatSessionNet(gilChange)
+	local absGil = math.abs(gilChange);
+	local prefix = gilChange >= 0 and '+' or '-';
+
+	-- Format with thousand separators
+	local formatted = FormatInt(math.floor(absGil));
+	return prefix .. formatted;
 end
 
 giltracker.DrawWindow = function(settings)
@@ -82,32 +109,71 @@ giltracker.DrawWindow = function(settings)
 		end
 	end
 
-	-- Initialize tracking on first valid read (login reset)
+	-- Initialize tracking with stabilization delay (prevents false spikes on login)
+	-- Issue #111: During login, inventory may return garbage values initially
 	if trackingStartGil == nil then
-		trackingStartGil = currentGil;
-		trackingStartTime = os.clock();
+		local now = os.clock();
+		if stabilizationStartTime == nil then
+			-- First valid read - start stabilization period
+			stabilizationStartTime = now;
+			stabilizationGil = currentGil;
+		elseif now - stabilizationStartTime >= STABILIZATION_DELAY then
+			-- Stabilization period elapsed - now safe to initialize tracking
+			trackingStartGil = currentGil;
+			trackingStartTime = now;
+			stabilizationStartTime = nil;
+			stabilizationGil = nil;
+		end
+		-- During stabilization, don't show gil/hr (show 0)
 	end
 
 	-- Update last known gil with valid reads only
 	lastKnownGil = currentGil;
 
-	-- Calculate gil per hour
+	-- Calculate tracking display (throttled to avoid jittery display)
+	-- Display modes: 1 = Session Net, 2 = Gil Per Hour
 	local showGilPerHour = gConfig.gilTrackerShowGilPerHour ~= false;
-	local gilPerHour = 0;
-	local gilPerHourText_str = '';
+	local displayMode = gConfig.gilTrackerDisplayMode or 1;
+	local gilChange = cachedGilPerHour;  -- Reusing cache for both modes
+	local trackingText_str = cachedGilPerHourStr;
+	local now = os.clock();
 
-	if showGilPerHour then
-		local elapsedSeconds = os.clock() - trackingStartTime;
-		local gilChange = currentGil - trackingStartGil;
+	if showGilPerHour and trackingStartGil ~= nil and trackingStartTime ~= nil then
+		-- Only recalculate every GIL_PER_HOUR_UPDATE_INTERVAL seconds
+		if now - lastGilPerHourCalcTime >= GIL_PER_HOUR_UPDATE_INTERVAL then
+			local elapsedSeconds = now - trackingStartTime;
+			local netChange = currentGil - trackingStartGil;
 
-		if elapsedSeconds > 0 then
-			local elapsedHours = elapsedSeconds / 3600;
-			gilPerHour = gilChange / elapsedHours;
-			gilPerHourText_str = FormatGilPerHour(gilPerHour);
-		else
-			gilPerHourText_str = '+0/hr';
+			if displayMode == 2 then
+				-- Gil Per Hour mode
+				if elapsedSeconds > 0 then
+					local elapsedHours = elapsedSeconds / 3600;
+					gilChange = netChange / elapsedHours;
+					trackingText_str = FormatGilPerHour(gilChange);
+				else
+					gilChange = 0;
+					trackingText_str = '+0/hr';
+				end
+			else
+				-- Session Net mode (default)
+				gilChange = netChange;
+				trackingText_str = FormatSessionNet(gilChange);
+			end
+
+			-- Cache the calculated values
+			cachedGilPerHour = gilChange;
+			cachedGilPerHourStr = trackingText_str;
+			lastGilPerHourCalcTime = now;
 		end
+	elseif showGilPerHour then
+		-- During stabilization period, show placeholder
+		gilChange = 0;
+		trackingText_str = displayMode == 2 and '+0/hr' or '+0';
 	end
+
+	-- For color determination, use the cached/calculated change value
+	local gilPerHour = gilChange;
+	local gilPerHourText_str = trackingText_str;
 
     imgui.SetNextWindowSize({ -1, -1, }, ImGuiCond_Always);
 	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
@@ -334,12 +400,18 @@ giltracker.Initialize = function(settings)
 	gilPerHourText = FontManager.create(gphFontSettings);
 
 	allFonts = {gilText, gilPerHourText};
-	gilTexture = LoadTexture("gil");
+	gilTexture = TextureManager.getFileTexture("gil");
 
 	-- Reset tracking state on initialize (fresh login)
 	trackingStartGil = nil;
 	trackingStartTime = nil;
 	lastKnownGil = nil;
+	stabilizationStartTime = nil;
+	stabilizationGil = nil;
+	lastZoneOutTime = nil;
+	cachedGilPerHour = 0;
+	cachedGilPerHourStr = '+0/hr';
+	lastGilPerHourCalcTime = 0;
 end
 
 giltracker.UpdateVisuals = function(settings)
@@ -374,18 +446,31 @@ giltracker.Cleanup = function()
 	trackingStartGil = nil;
 	trackingStartTime = nil;
 	lastKnownGil = nil;
+	stabilizationStartTime = nil;
+	stabilizationGil = nil;
+	lastZoneOutTime = nil;
+	cachedGilPerHour = 0;
+	cachedGilPerHourStr = '+0/hr';
+	lastGilPerHourCalcTime = 0;
 end
 
 -- Reset gil per hour tracking to start fresh
 giltracker.ResetTracking = function()
+	-- Reset cached display values
+	cachedGilPerHour = 0;
+	cachedGilPerHourStr = '+0/hr';
+	lastGilPerHourCalcTime = 0;
+
 	-- Get current gil amount
 	local inventory = GetInventorySafe();
 	if inventory then
 		local gilAmount = inventory:GetContainerItem(0, 0);
-		if gilAmount then
+		if gilAmount and gilAmount.Count > 0 then
 			trackingStartGil = gilAmount.Count;
 			trackingStartTime = os.clock();
 			lastKnownGil = gilAmount.Count;
+			stabilizationStartTime = nil;
+			stabilizationGil = nil;
 			print('[XIUI] Gil per hour tracking reset.');
 			return;
 		end
@@ -395,7 +480,48 @@ giltracker.ResetTracking = function()
 	trackingStartGil = nil;
 	trackingStartTime = nil;
 	lastKnownGil = nil;
+	stabilizationStartTime = nil;
+	stabilizationGil = nil;
 	print('[XIUI] Gil per hour tracking reset (will reinitialize).');
+end
+
+-- Handle zone-out packet (0x00B) - record timestamp
+giltracker.HandleZoneOutPacket = function()
+	lastZoneOutTime = os.clock();
+end
+
+-- Handle zone-in packet (0x00A)
+-- Only resets tracking on fresh login, not normal zone changes (issue #111)
+-- Fresh login = no recent zone-out (0x00B) within ZONE_TIMEOUT seconds
+giltracker.HandleZoneInPacket = function()
+	local now = os.clock();
+	local isFreshLogin = true;
+
+	-- If we received a zone-out recently, this is a normal zone change
+	if lastZoneOutTime ~= nil then
+		local timeSinceZoneOut = now - lastZoneOutTime;
+		if timeSinceZoneOut < ZONE_TIMEOUT then
+			isFreshLogin = false;
+		end
+	end
+
+	if isFreshLogin then
+		-- Reset tracking for fresh login - stabilization will handle initialization
+		trackingStartGil = nil;
+		trackingStartTime = nil;
+		lastKnownGil = nil;
+		stabilizationStartTime = nil;
+		stabilizationGil = nil;
+		cachedGilPerHour = 0;
+		cachedGilPerHourStr = '+0/hr';
+		lastGilPerHourCalcTime = 0;
+	end
+	-- Normal zone change: keep tracking state intact
+end
+
+-- Force immediate recalculation on next frame (e.g., when display mode changes)
+giltracker.InvalidateCache = function()
+	lastGilPerHourCalcTime = 0;
 end
 
 return giltracker;
