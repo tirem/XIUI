@@ -72,14 +72,16 @@ function M.CalculateFastCast(mainJob, subJob, spellType, spellName, mainJobLevel
         fastCast = fastCast + (gConfig.castBarFastCast[mainJob] or 0);
     end
 
-    -- WHM main job + Healing Magic (skill 33) = Cure Speed bonus
+    -- WHM main job + Healing Magic (skill 33) = Cure Speed bonus (multiplicative with fast cast)
     if (mainJob == 3 and spellType == 33) then
         if (spellName and M.CURE_SPELLS:contains(spellName)) then
-            fastCast = fastCast + (gConfig.castBarFastCastWHMCureSpeed or 0);
+            local cureSpeed = gConfig.castBarFastCastWHMCureSpeed or 0;
+            fastCast = 1 - ((1 - fastCast) * (1 - cureSpeed));
         end
-    -- BRD main job + Singing (skill 40) = Singing Speed bonus
+    -- BRD main job + Singing (skill 40) = Singing Speed bonus (multiplicative with fast cast)
     elseif (mainJob == 10 and spellType == 40) then
-        fastCast = fastCast + (gConfig.castBarFastCastBRDSingSpeed or 0);
+        local singSpeed = gConfig.castBarFastCastBRDSingSpeed or 0;
+        fastCast = 1 - ((1 - fastCast) * (1 - singSpeed));
     end
 
     -- RDM sub-job fast cast bonus (level-based)
