@@ -48,7 +48,7 @@ M.MAX_PINNED_NOTIFICATIONS = 3;        -- Max minimized invites
 M.TREASURE_POOL_TIMEOUT = 300;         -- 5 minutes in seconds
 M.TREASURE_POOL_MAX_SLOTS = 10;        -- Max items in treasure pool
 
--- Split Window Type Mapping
+-- Split Window Type Mapping (DEPRECATED - use TYPE_TO_GROUP_KEY instead)
 M.TYPE_TO_SPLIT_KEY = {
     [1] = 'PartyInvite',      -- PARTY_INVITE
     [2] = 'TradeInvite',      -- TRADE_INVITE
@@ -59,7 +59,7 @@ M.TYPE_TO_SPLIT_KEY = {
     [7] = 'GilObtained',      -- GIL_OBTAINED
 };
 
--- All unique split window keys (for font creation)
+-- All unique split window keys (DEPRECATED - kept for migration)
 M.SPLIT_WINDOW_KEYS = {
     'PartyInvite',
     'TradeInvite',
@@ -67,6 +67,22 @@ M.SPLIT_WINDOW_KEYS = {
     'ItemObtained',
     'KeyItemObtained',
     'GilObtained',
+};
+
+-- Notification Group Constants
+M.MAX_GROUPS = 6;                          -- Maximum number of groups
+M.MIN_GROUPS = 2;                          -- Minimum number of groups
+M.MAX_NOTIFICATIONS_PER_GROUP = 10;        -- Max notifications per group
+
+-- Notification Type to Group Key Mapping (for config lookup)
+M.TYPE_TO_GROUP_KEY = {
+    [1] = 'partyInvite',      -- PARTY_INVITE
+    [2] = 'tradeInvite',      -- TRADE_INVITE
+    [3] = 'treasurePool',     -- TREASURE_POOL
+    [4] = 'treasurePool',     -- TREASURE_LOT (same as pool)
+    [5] = 'itemObtained',     -- ITEM_OBTAINED
+    [6] = 'keyItemObtained',  -- KEY_ITEM_OBTAINED
+    [7] = 'gilObtained',      -- GIL_OBTAINED
 };
 
 -- ============================================
@@ -102,9 +118,33 @@ M.titleFonts = {};
 M.subtitleFonts = {};
 M.allFonts = {};
 
--- Split window placeholder fonts (indexed by split key)
+-- Split window placeholder fonts (DEPRECATED - indexed by split key)
 M.splitTitleFonts = {};     -- splitKey -> font
 M.splitSubtitleFonts = {};  -- splitKey -> font
+
+-- ============================================
+-- Per-Group Resource Storage
+-- ============================================
+
+-- Per-group font pools (indexed by group number, then slot)
+M.groupTitleFonts = {};      -- groupTitleFonts[groupNum][slot]
+M.groupSubtitleFonts = {};   -- groupSubtitleFonts[groupNum][slot]
+
+-- Per-group background primitives
+M.groupBgPrims = {};         -- groupBgPrims[groupNum][slot]
+
+-- Per-group window anchors (for bottom-anchoring in "stack up" mode)
+M.groupWindowAnchors = {};   -- groupWindowAnchors[groupNum] = {y, x, dragging}
+
+-- Per-group color caches
+M.groupTitleColors = {};     -- groupTitleColors[groupNum][slot]
+M.groupSubtitleColors = {};  -- groupSubtitleColors[groupNum][slot]
+
+-- Per-group bar color caches
+M.groupBarColors = {};       -- groupBarColors[groupNum][colorKey]
+
+-- Per-group loaded background themes (to detect when theme changes)
+M.groupLoadedBgThemes = {};  -- groupLoadedBgThemes[groupNum] = themeName
 
 -- Cached colors to avoid expensive set_font_color calls
 M.lastTitleColors = {};
@@ -395,6 +435,7 @@ local function UpdateNotificationState(notification, currentTime)
             if notification.animationProgress >= 1.0 then
                 notification.state = M.STATE.VISIBLE;
                 notification.stateStartTime = currentTime;
+                notification.visibleStartTime = currentTime;  -- Track when visible state started (for progress bar)
                 notification.animationProgress = 0;
                 notification.alpha = 1;
                 notification.containerOffsetX = 0;
@@ -506,6 +547,16 @@ function M.Initialize(settings)
     M.awardedHistory = {};
     M.windowAnchors = {};
     M.nextId = 1;
+
+    -- Initialize per-group storage
+    M.groupTitleFonts = {};
+    M.groupSubtitleFonts = {};
+    M.groupBgPrims = {};
+    M.groupWindowAnchors = {};
+    M.groupTitleColors = {};
+    M.groupSubtitleColors = {};
+    M.groupBarColors = {};
+    M.groupLoadedBgThemes = {};
 end
 
 -- Add a new notification
@@ -722,6 +773,16 @@ function M.Cleanup()
     M.splitTitleFonts = {};
     M.splitSubtitleFonts = {};
     M.splitBgPrims = {};
+
+    -- Clear per-group storage
+    M.groupTitleFonts = {};
+    M.groupSubtitleFonts = {};
+    M.groupBgPrims = {};
+    M.groupWindowAnchors = {};
+    M.groupTitleColors = {};
+    M.groupSubtitleColors = {};
+    M.groupBarColors = {};
+    M.groupLoadedBgThemes = {};
 end
 
 -- ============================================
@@ -1217,6 +1278,200 @@ function M.GetTypesForSplitKey(splitKey)
     for typeId, key in pairs(M.TYPE_TO_SPLIT_KEY) do
         if key == splitKey then
             table.insert(types, typeId);
+        end
+    end
+    return types;
+end
+
+-- ============================================
+-- Notification Group Helpers
+-- ============================================
+
+-- Get group number for a notification type (from config)
+function M.GetGroupForType(notificationType)
+    local typeKey = M.TYPE_TO_GROUP_KEY[notificationType];
+    if not typeKey then return 1; end
+
+    local groupNum = gConfig and gConfig.notificationTypeGroup and gConfig.notificationTypeGroup[typeKey] or 1;
+    local maxGroups = gConfig and gConfig.notificationGroupCount or 2;
+
+    -- Clamp to valid range
+    return math.min(math.max(1, groupNum), maxGroups);
+end
+
+-- Get notifications filtered by group number
+function M.GetNotificationsByGroup(groupNum)
+    local result = {};
+    for _, notification in ipairs(M.activeNotifications) do
+        if M.GetGroupForType(notification.type) == groupNum then
+            table.insert(result, notification);
+        end
+    end
+    return result;
+end
+
+-- Check if a group has any assigned notification types
+function M.IsGroupActive(groupNum)
+    if not gConfig or not gConfig.notificationTypeGroup then
+        return groupNum == 1;
+    end
+
+    local maxGroups = gConfig.notificationGroupCount or 2;
+    if groupNum > maxGroups then
+        return false;
+    end
+
+    for typeKey, assignedGroup in pairs(gConfig.notificationTypeGroup) do
+        if assignedGroup == groupNum then
+            return true;
+        end
+    end
+    return false;
+end
+
+-- Get group settings from config
+function M.GetGroupSettings(groupNum)
+    local key = 'notificationGroup' .. groupNum;
+    return gConfig and gConfig[key] or gConfig and gConfig.notificationGroup1;
+end
+
+-- Clear window anchor for a specific group (call when direction changes)
+function M.ClearGroupAnchor(groupNum)
+    M.groupWindowAnchors[groupNum] = nil;
+end
+
+-- Clear all group window anchors
+function M.ClearAllGroupAnchors()
+    M.groupWindowAnchors = {};
+end
+
+-- Get display duration for notification type from group settings
+function M.GetDurationForTypeFromGroup(notificationType)
+    local groupNum = M.GetGroupForType(notificationType);
+    local groupSettings = M.GetGroupSettings(groupNum);
+
+    -- Persistent types (invites) never expire automatically
+    if notificationType == M.NOTIFICATION_TYPE.PARTY_INVITE then
+        return 999999;
+    elseif notificationType == M.NOTIFICATION_TYPE.TRADE_INVITE then
+        return 999999;
+    end
+
+    -- Use group-specific display duration if available
+    return groupSettings and groupSettings.displayDuration or gConfig and gConfig.notificationsDisplayDuration or 3.0;
+end
+
+-- Get invite minify timeout from group settings
+function M.GetInviteMinifyTimeoutForGroup(groupNum)
+    local groupSettings = M.GetGroupSettings(groupNum);
+    return groupSettings and groupSettings.inviteMinifyTimeout or gConfig and gConfig.notificationsInviteMinifyTimeout or 10.0;
+end
+
+-- Check and update background theme for a specific group
+-- Returns true if theme was changed, false if unchanged
+function M.CheckAndUpdateGroupTheme(groupNum)
+    local groupSettings = M.GetGroupSettings(groupNum);
+    if not groupSettings then return false; end
+
+    local bgTheme = groupSettings.backgroundTheme or 'Plain';
+    local bgScale = groupSettings.bgScale or 1.0;
+    local borderScale = groupSettings.borderScale or 1.0;
+
+    -- Check if theme changed for this group
+    if M.groupLoadedBgThemes[groupNum] == bgTheme then
+        return false;
+    end
+
+    -- Theme changed - update primitives for this group
+    M.groupLoadedBgThemes[groupNum] = bgTheme;
+
+    -- Update background primitives for all slots in this group
+    if M.groupBgPrims[groupNum] then
+        for slot = 1, M.MAX_NOTIFICATIONS_PER_GROUP do
+            if M.groupBgPrims[groupNum][slot] then
+                windowBg.setTheme(M.groupBgPrims[groupNum][slot], bgTheme, bgScale, borderScale);
+            end
+        end
+    end
+
+    return true;
+end
+
+-- Hide all resources for a specific group
+function M.HideGroupResources(groupNum)
+    -- Hide fonts
+    if M.groupTitleFonts[groupNum] then
+        for slot = 1, M.MAX_NOTIFICATIONS_PER_GROUP do
+            if M.groupTitleFonts[groupNum][slot] then
+                M.groupTitleFonts[groupNum][slot]:set_visible(false);
+            end
+        end
+    end
+    if M.groupSubtitleFonts[groupNum] then
+        for slot = 1, M.MAX_NOTIFICATIONS_PER_GROUP do
+            if M.groupSubtitleFonts[groupNum][slot] then
+                M.groupSubtitleFonts[groupNum][slot]:set_visible(false);
+            end
+        end
+    end
+
+    -- Hide backgrounds
+    if M.groupBgPrims[groupNum] then
+        for slot = 1, M.MAX_NOTIFICATIONS_PER_GROUP do
+            if M.groupBgPrims[groupNum][slot] then
+                windowBg.hide(M.groupBgPrims[groupNum][slot]);
+            end
+        end
+    end
+end
+
+-- Hide all resources for all groups
+function M.HideAllGroupResources()
+    -- Always hide ALL groups up to MAX_GROUPS, not just configured count
+    -- This ensures groups are hidden when user reduces group count
+    for groupNum = 1, M.MAX_GROUPS do
+        M.HideGroupResources(groupNum);
+    end
+end
+
+-- Clear per-group color caches
+function M.ClearGroupColorCaches()
+    M.groupTitleColors = {};
+    M.groupSubtitleColors = {};
+    M.groupBarColors = {};
+end
+
+-- Get notification types assigned to a specific group
+function M.GetTypesForGroup(groupNum)
+    local types = {};
+    if not gConfig or not gConfig.notificationTypeGroup then
+        -- Default: all types in group 1
+        if groupNum == 1 then
+            for typeId, _ in pairs(M.TYPE_TO_GROUP_KEY) do
+                table.insert(types, typeId);
+            end
+        end
+        return types;
+    end
+
+    for typeKey, assignedGroup in pairs(gConfig.notificationTypeGroup) do
+        if assignedGroup == groupNum then
+            -- Find the type ID for this key
+            for typeId, key in pairs(M.TYPE_TO_GROUP_KEY) do
+                if key == typeKey then
+                    -- Avoid duplicates (treasurePool maps to 2 type IDs)
+                    local found = false;
+                    for _, existingId in ipairs(types) do
+                        if existingId == typeId then
+                            found = true;
+                            break;
+                        end
+                    end
+                    if not found then
+                        table.insert(types, typeId);
+                    end
+                end
+            end
         end
     end
     return types;

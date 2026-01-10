@@ -261,4 +261,40 @@ function M.createPartyColorDefaults(includeTP)
     return colors;
 end
 
+-- Factory function to create notification group settings with overrides
+-- Each notification group (1-6) can have independent visual settings
+function M.createNotificationGroupDefaults(overrides)
+    local defaults = T{
+        -- Scale
+        scaleX = 1.0,
+        scaleY = 1.0,
+        -- Progress bar
+        progressBarScaleY = 1.0,
+        progressBarDirection = 'left', -- 'left' or 'right'
+        -- Layout
+        padding = 8,
+        spacing = 8,
+        maxVisible = 5,
+        direction = 'down', -- 'down' or 'up'
+        -- Font sizes
+        titleFontSize = 14,
+        subtitleFontSize = 12,
+        -- Background/Border
+        backgroundTheme = 'Plain',
+        bgScale = 1.0,
+        borderScale = 1.0,
+        bgOpacity = 0.87,
+        borderOpacity = 1.0,
+        -- Timing
+        displayDuration = 3.0,
+        inviteMinifyTimeout = 10.0,
+    };
+    if overrides then
+        for k, v in pairs(overrides) do
+            defaults[k] = v;
+        end
+    end
+    return defaults;
+end
+
 return M;

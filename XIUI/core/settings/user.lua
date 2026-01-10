@@ -74,13 +74,35 @@ function M.createUserSettingsDefaults()
         notificationsBgOpacity = 0.87,
         notificationsBorderOpacity = 1.0,
 
-        -- Split Window Settings (allow each notification type to have its own window)
+        -- Split Window Settings (DEPRECATED - use notificationTypeGroup instead)
+        -- These are kept for migration purposes only
         notificationsSplitPartyInvite = false,
         notificationsSplitTradeInvite = false,
         notificationsSplitTreasurePool = false,
         notificationsSplitItemObtained = false,
         notificationsSplitKeyItemObtained = false,
         notificationsSplitGilObtained = false,
+
+        -- Notification Groups (2-6 configurable groups with independent settings)
+        notificationGroupCount = 2, -- Number of active groups (2-6)
+
+        -- Per-notification-type group assignment (which group each type belongs to)
+        notificationTypeGroup = T{
+            partyInvite = 1,
+            tradeInvite = 1,
+            treasurePool = 1,
+            itemObtained = 1,
+            keyItemObtained = 1,
+            gilObtained = 1,
+        },
+
+        -- Per-group settings (each group has independent visual settings)
+        notificationGroup1 = factories.createNotificationGroupDefaults(),
+        notificationGroup2 = factories.createNotificationGroupDefaults(),
+        notificationGroup3 = factories.createNotificationGroupDefaults(),
+        notificationGroup4 = factories.createNotificationGroupDefaults(),
+        notificationGroup5 = factories.createNotificationGroupDefaults(),
+        notificationGroup6 = factories.createNotificationGroupDefaults(),
 
         -- Cast Cost settings (nested structure to match other modules)
         castCost = T{

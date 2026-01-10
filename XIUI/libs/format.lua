@@ -22,7 +22,17 @@ end
 
 -- Format integer with commas
 function M.FormatInt(number)
+    -- Handle nil or non-number inputs
+    if number == nil then
+        return '0';
+    end
+
     local i, j, minus, int, fraction = tostring(number):find('([-]?)(%d+)([.]?%d*)')
+
+    -- If pattern didn't match (e.g., "nil" or invalid string), return "0"
+    if not int then
+        return '0';
+    end
 
     -- Reverse the int-string and append a comma to all blocks of 3 digits
     int = int:reverse():gsub("(%d%d%d)", "%1,")

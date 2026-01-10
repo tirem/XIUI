@@ -21,7 +21,7 @@ local actions = require('modules.treasurepool.actions');
 local M = {};
 
 -- Debug logging (set to true to enable)
-local DEBUG_ENABLED = true;
+local DEBUG_ENABLED = false;
 local function debugLog(msg, ...)
     if DEBUG_ENABLED then
         local formatted = string.format('[TP Debug] ' .. msg, ...);
