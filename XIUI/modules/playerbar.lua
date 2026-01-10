@@ -447,11 +447,11 @@ playerbar.DrawWindow = function(settings)
 		local hpDisplayMode = gConfig.playerBarHpDisplayMode or 'number';
 		local hpDisplayText;
 		if hpDisplayMode == 'percent' then
-			hpDisplayText = tostring(SelfHPPercent) .. '%';
+			hpDisplayText = string.format("%.0f", SelfHPPercent) .. '%';
 		elseif hpDisplayMode == 'both' then
-			hpDisplayText = tostring(SelfHP) .. ' (' .. tostring(SelfHPPercent) .. '%)';
+			hpDisplayText = tostring(SelfHP) .. ' (' .. string.format("%.0f", SelfHPPercent) .. '%)';
 		elseif hpDisplayMode == 'both_percent_first' then
-			hpDisplayText = tostring(SelfHPPercent) .. '% (' .. tostring(SelfHP) .. ')';
+			hpDisplayText = string.format("%.0f", SelfHPPercent) .. '% (' .. tostring(SelfHP) .. ')';
 		elseif hpDisplayMode == 'current_max' then
 			hpDisplayText = tostring(SelfHP) .. '/' .. tostring(SelfHPMax);
 		else
@@ -493,11 +493,11 @@ playerbar.DrawWindow = function(settings)
 			local mpDisplayMode = gConfig.playerBarMpDisplayMode or 'number';
 			local mpDisplayText;
 			if mpDisplayMode == 'percent' then
-				mpDisplayText = tostring(SelfMPPercent) .. '%';
+				mpDisplayText = string.format("%.0f", SelfMPPercent) .. '%';
 			elseif mpDisplayMode == 'both' then
-				mpDisplayText = tostring(SelfMP) .. ' (' .. tostring(SelfMPPercent) .. '%)';
+				mpDisplayText = tostring(SelfMP) .. ' (' .. string.format("%.0f", SelfMPPercent) .. '%)';
 			elseif mpDisplayMode == 'both_percent_first' then
-				mpDisplayText = tostring(SelfMPPercent) .. '% (' .. tostring(SelfMP) .. ')';
+				mpDisplayText = string.format("%.0f", SelfMPPercent) .. '% (' .. tostring(SelfMP) .. ')';
 			elseif mpDisplayMode == 'current_max' then
 				mpDisplayText = tostring(SelfMP) .. '/' .. tostring(SelfMPMax);
 			else
