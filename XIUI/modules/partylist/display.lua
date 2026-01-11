@@ -632,9 +632,9 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         if (distance ~= nil and distance > 0 and distance <= 50) then
             local distanceText = ('%.1f'):fmt(distance);
             setCachedText(memIdx, 'distance', data.memberText[memIdx].distance, distanceText);
-            -- Position distance relative to HP bar (independent of name offsets)
+            -- Position distance relative to HP bar right edge (stable anchor)
             -- Distance uses right alignment - position is the fixed right edge anchor
-            local distancePosX = distanceBaseX + nameWidth + 4;
+            local distancePosX = hpStartX + hpBarWidth;
             data.memberText[memIdx].distance:set_position_x(distancePosX + textOffsets.distanceX);
             data.memberText[memIdx].distance:set_position_y(hpStartY - nameRefHeight + nameBaselineOffset + textOffsets.distanceY);
             showDistance = true;
