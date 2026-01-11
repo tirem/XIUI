@@ -12,8 +12,14 @@ local notificationData = require('modules.notifications.data');
 local progressbar = require('libs.progressbar');
 local TextureManager = require('libs.texturemanager');
 local windowBg = require('libs.windowbackground');
+local defaultPositions = require('libs.defaultpositions');
 
 local M = {};
+
+-- Position save/restore state
+local hasAppliedSavedPosition = false;
+local forcePositionReset = false;
+local lastSavedPosX, lastSavedPosY = nil, nil;
 
 -- Global slot counter for notification rendering
 -- Reset at start of DrawWindow, incremented for each notification drawn
@@ -684,12 +690,40 @@ local function drawNotificationWindow(windowName, notifications, settings, split
         end
     end
 
+    -- Handle position reset or restore (main notifications window only)
+    if splitKey == nil then
+        if forcePositionReset then
+            local defX, defY = defaultPositions.GetNotificationsPosition();
+            imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
+            forcePositionReset = false;
+            hasAppliedSavedPosition = true;
+            lastSavedPosX, lastSavedPosY = defX, defY;
+        elseif not hasAppliedSavedPosition and gConfig.notificationsWindowPosX ~= nil then
+            imgui.SetNextWindowPos({gConfig.notificationsWindowPosX, gConfig.notificationsWindowPosY}, ImGuiCond_Once);
+            hasAppliedSavedPosition = true;
+            lastSavedPosX = gConfig.notificationsWindowPosX;
+            lastSavedPosY = gConfig.notificationsWindowPosY;
+        end
+    end
+
     -- Create ImGui window
     if imgui.Begin(windowName, true, windowFlags) then
         -- Wrap rendering in pcall to ensure End() is always called even if an error occurs
         local renderSuccess, renderErr = pcall(function()
             local windowPosX, windowPosY = imgui.GetWindowPos();
             local drawList = imgui.GetWindowDrawList();
+
+            -- Save position if moved (main notifications window only, with change detection to avoid spam)
+            if splitKey == nil and not gConfig.lockPositions then
+                if lastSavedPosX == nil or
+                   math.abs(windowPosX - lastSavedPosX) > 1 or
+                   math.abs(windowPosY - lastSavedPosY) > 1 then
+                    gConfig.notificationsWindowPosX = windowPosX;
+                    gConfig.notificationsWindowPosY = windowPosY;
+                    lastSavedPosX = windowPosX;
+                    lastSavedPosY = windowPosY;
+                end
+            end
 
             -- Set window size
             imgui.Dummy({notificationWidth, totalHeight});
@@ -1470,6 +1504,12 @@ end
 function M.Cleanup()
     -- Clear text truncation cache (texture cleanup is handled by TextureManager)
     truncatedTextCache = {};
+end
+
+-- Reset positions to default
+M.ResetPositions = function()
+    forcePositionReset = true;
+    hasAppliedSavedPosition = false;
 end
 
 return M;

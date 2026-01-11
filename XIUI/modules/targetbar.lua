@@ -10,8 +10,14 @@ local buffTable = require('libs.bufftable');
 local gdi = require('submodules.gdifonts.include');
 local encoding = require('submodules.gdifonts.encoding');
 local ffi = require("ffi");
+local defaultPositions = require('libs.defaultpositions');
 local TextureManager = require('libs.texturemanager');
 local mobdata = require('modules.mobinfo.data');
+
+-- Position save/restore state
+local hasAppliedSavedPosition = false;
+local forcePositionReset = false;
+local lastSavedPosX, lastSavedPosY = nil, nil;
 
 -- TODO: Calculate these instead of manually setting them
 
@@ -276,6 +282,20 @@ targetbar.DrawWindow = function(settings)
 	local isMonster = GetIsMob(targetEntity);
 
 	-- Draw the main target window
+	-- Handle position reset or restore
+	if forcePositionReset then
+		local defX, defY = defaultPositions.GetTargetBarPosition();
+		imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
+		forcePositionReset = false;
+		hasAppliedSavedPosition = true;
+		lastSavedPosX, lastSavedPosY = defX, defY;
+	elseif not hasAppliedSavedPosition and gConfig.targetBarWindowPosX ~= nil then
+		imgui.SetNextWindowPos({gConfig.targetBarWindowPosX, gConfig.targetBarWindowPosY}, ImGuiCond_Once);
+		hasAppliedSavedPosition = true;
+		lastSavedPosX = gConfig.targetBarWindowPosX;
+		lastSavedPosY = gConfig.targetBarWindowPosY;
+	end
+
 	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
     if (imgui.Begin('TargetBar', true, windowFlags)) then
         
@@ -730,8 +750,19 @@ targetbar.DrawWindow = function(settings)
 			local totalCastBarSpace = settings.castBarOffsetY + settings.castBarHeight + 2 + castTextHeight;
 			imgui.Dummy({0, totalCastBarSpace});
 		end
+		-- Save position if moved (with change detection to avoid spam)
+		local winPosX, winPosY = imgui.GetWindowPos();
+		if not gConfig.lockPositions then
+			if lastSavedPosX == nil or
+			   math.abs(winPosX - lastSavedPosX) > 1 or
+			   math.abs(winPosY - lastSavedPosY) > 1 then
+				gConfig.targetBarWindowPosX = winPosX;
+				gConfig.targetBarWindowPosY = winPosY;
+				lastSavedPosX = winPosX;
+				lastSavedPosY = winPosY;
+			end
+		end
     end
-	local winPosX, winPosY = imgui.GetWindowPos();
     imgui.End();
 
 	-- Draw Subtarget Bar (shows subtarget cursor selection while subtargeting)
@@ -1005,6 +1036,11 @@ targetbar.Cleanup = function()
 	subtargetPercentText = FontManager.destroy(subtargetPercentText);
 	subtargetDistText = FontManager.destroy(subtargetDistText);
 	allFonts = nil;
+end
+
+targetbar.ResetPositions = function()
+	forcePositionReset = true;
+	hasAppliedSavedPosition = false;
 end
 
 targetbar.HandleActionPacket = function(actionPacket)

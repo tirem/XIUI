@@ -157,7 +157,7 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
             };
             local currentDisplayStyle = typeSettings.recastDisplayStyle or 'compact';
 
-            imgui.SetNextItemWidth(200);
+            imgui.SetNextItemWidth(components.CONTENT_MAX_WIDTH);
             if imgui.BeginCombo('Display Style##icons' .. configKey, displayStyleLabels[currentDisplayStyle]) then
                 for _, style in ipairs(displayStyles) do
                     if imgui.Selectable(displayStyleLabels[style], style == currentDisplayStyle) then
@@ -191,60 +191,30 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
 
                 -- Name text size (only show if name is enabled)
                 if showName[1] then
-                    local nameFontSize = {typeSettings.recastFullNameFontSize or 10};
-                    imgui.SetNextItemWidth(100);
-                    if imgui.SliderInt('Name Text Size##recastFull' .. configKey, nameFontSize, 8, 20) then
-                        typeSettings.recastFullNameFontSize = nameFontSize[1];
-                        SaveSettingsOnly();
-                    end
+                    components.SliderInt('Name Text Size##recastFull' .. configKey, typeSettings, 'recastFullNameFontSize', 8, 20, 10);
                     imgui.ShowHelp('Text size for ability name.');
                 end
 
                 -- Timer text size (only show if timer is enabled)
                 if showRecast[1] then
-                    local recastFontSize = {typeSettings.recastFullTimerFontSize or 10};
-                    imgui.SetNextItemWidth(100);
-                    if imgui.SliderInt('Timer Text Size##recastFull' .. configKey, recastFontSize, 8, 20) then
-                        typeSettings.recastFullTimerFontSize = recastFontSize[1];
-                        SaveSettingsOnly();
-                    end
+                    components.SliderInt('Timer Text Size##recastFull' .. configKey, typeSettings, 'recastFullTimerFontSize', 8, 20, 10);
                     imgui.ShowHelp('Text size for recast timer.');
                 end
 
                 -- Bar scale settings
-                local barScaleX = {typeSettings.recastScaleX or 1.0};
-                imgui.SetNextItemWidth(100);
-                if imgui.SliderFloat('Bar Width##recast' .. configKey, barScaleX, 0.5, 2.0, '%.1f') then
-                    typeSettings.recastScaleX = barScaleX[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderFloat('Bar Width##recast' .. configKey, typeSettings, 'recastScaleX', 0.5, 2.0, '%.1f', 1.0);
                 imgui.ShowHelp('Horizontal scale for recast progress bars (based on HP bar width).');
 
-                local barScaleY = {typeSettings.recastScaleY or 0.5};
-                imgui.SetNextItemWidth(100);
-                if imgui.SliderFloat('Bar Height##recast' .. configKey, barScaleY, 0.5, 2.0, '%.1f') then
-                    typeSettings.recastScaleY = barScaleY[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderFloat('Bar Height##recast' .. configKey, typeSettings, 'recastScaleY', 0.5, 2.0, '%.1f', 0.5);
                 imgui.ShowHelp('Vertical scale for recast progress bars (based on bar height).');
 
                 -- Row spacing
-                local rowSpacing = {typeSettings.recastFullSpacing or 4};
-                imgui.SetNextItemWidth(100);
-                if imgui.SliderInt('Row Spacing##recastFull' .. configKey, rowSpacing, -50, 50) then
-                    typeSettings.recastFullSpacing = rowSpacing[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderInt('Row Spacing##recastFull' .. configKey, typeSettings, 'recastFullSpacing', -50, 50, 4);
                 imgui.ShowHelp('Vertical spacing between recast rows.');
 
                 -- Top spacing (anchored mode only) - space between vitals and recasts
                 if not typeSettings.iconsAbsolute then
-                    local topSpacing = {typeSettings.recastTopSpacing or 2};
-                    imgui.SetNextItemWidth(100);
-                    if imgui.SliderInt('Top Spacing##recastFull' .. configKey, topSpacing, -50, 50) then
-                        typeSettings.recastTopSpacing = topSpacing[1];
-                        SaveSettingsOnly();
-                    end
+                    components.SliderInt('Top Spacing##recastFull' .. configKey, typeSettings, 'recastTopSpacing', -50, 50, 2);
                     imgui.ShowHelp('Vertical spacing between vitals (HP/MP/TP) and ability recasts.');
                 end
 
@@ -265,7 +235,7 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
                 -- Check if clock fill is available (requires Ashita 4.3+)
                 local clockAvailable = imgui.GetForegroundDrawList().PathClear ~= nil;
 
-                imgui.SetNextItemWidth(180);
+                imgui.SetNextItemWidth(components.CONTENT_MAX_WIDTH);
                 if imgui.BeginCombo('Icon Shape##icons' .. configKey, fillStyleLabels[currentFillStyle]) then
                     for _, style in ipairs(fillStyles) do
                         local isDisabled = (style == 'clock' and not clockAvailable);
@@ -296,7 +266,7 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
             -- Position mode
             local positionModes = {'Anchored', 'Absolute'};
             local currentMode = typeSettings.iconsAbsolute and 'Absolute' or 'Anchored';
-            imgui.SetNextItemWidth(150);
+            imgui.SetNextItemWidth(components.CONTENT_MAX_WIDTH);
             if imgui.BeginCombo('Position Mode##icons' .. configKey, currentMode) then
                 for _, mode in ipairs(positionModes) do
                     if imgui.Selectable(mode, mode == currentMode) then
@@ -442,6 +412,7 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
                 end
                 local currentAvatar = avatarList[selectedAvatarIndex] or 'Carbuncle';
 
+                imgui.SetNextItemWidth(components.CONTENT_MAX_WIDTH);
                 if imgui.BeginCombo('Avatar##petBarAvatarSelect', currentAvatar) then
                     for i, avatarName in ipairs(avatarList) do
                         local isSelected = (i == selectedAvatarIndex);
@@ -480,35 +451,19 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
                 local avatarSettings = gConfig.petBarAvatarSettings[settingsKey];
 
                 -- Scale slider
-                local scaleValue = { avatarSettings.scale or 0.4 };
-                if imgui.SliderFloat('Scale##petBarAvatarScale', scaleValue, 0.1, 2.0, '%.2f') then
-                    avatarSettings.scale = scaleValue[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderFloat('Scale##petBarAvatarScale', avatarSettings, 'scale', 0.1, 2.0, '%.2f', 0.4);
                 imgui.ShowHelp('Scale of the avatar image overlay.');
 
                 -- Opacity slider
-                local opacityValue = { avatarSettings.opacity or 0.3 };
-                if imgui.SliderFloat('Opacity##petBarAvatarOpacity', opacityValue, 0.0, 1.0, '%.2f') then
-                    avatarSettings.opacity = opacityValue[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderFloat('Opacity##petBarAvatarOpacity', avatarSettings, 'opacity', 0.0, 1.0, '%.2f', 0.3);
                 imgui.ShowHelp('Opacity of the avatar image overlay.');
 
                 -- Offset X slider
-                local offsetXValue = { avatarSettings.offsetX or 0 };
-                if imgui.SliderInt('Offset X##petBarAvatarOffsetX', offsetXValue, -600, 600) then
-                    avatarSettings.offsetX = offsetXValue[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderInt('Offset X##petBarAvatarOffsetX', avatarSettings, 'offsetX', -600, 600, 0);
                 imgui.ShowHelp('Horizontal offset for the avatar image.');
 
                 -- Offset Y slider
-                local offsetYValue = { avatarSettings.offsetY or 0 };
-                if imgui.SliderInt('Offset Y##petBarAvatarOffsetY', offsetYValue, -600, 600) then
-                    avatarSettings.offsetY = offsetYValue[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderInt('Offset Y##petBarAvatarOffsetY', avatarSettings, 'offsetY', -600, 600, 0);
                 imgui.ShowHelp('Vertical offset for the avatar image.');
 
                 -- Clip to Background checkbox
@@ -957,6 +912,8 @@ end
 -- Helper: Draw Pet Bar specific settings (used in tab)
 local function DrawPetBarSettingsContent()
     components.DrawCheckbox('Enabled', 'showPetBar', CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'petBarHideOnMenuFocus');
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
     components.DrawCheckbox('Hide During Events', 'petBarHideDuringEvents');
     components.DrawCheckbox('Preview Mode', 'petBarPreview');
     imgui.ShowHelp('Show the pet bar with mock data. Preview shows the pet type from the selected tab below.');

@@ -5,6 +5,7 @@ local fonts = require('fonts');
 local progressbar = require('libs.progressbar');
 local gdi = require('submodules.gdifonts.include');
 local encoding = require('submodules.gdifonts.encoding');
+local defaultPositions = require('libs.defaultpositions');
 
 local spellText;
 local percentText;
@@ -13,6 +14,11 @@ local allFonts; -- Table for batch visibility operations
 -- Cache last set colors to avoid expensive SetColor() calls every frame
 local lastSpellTextColor;
 local lastPercentTextColor;
+
+-- Position save/restore state
+local hasAppliedSavedPosition = false;
+local forcePositionReset = false;
+local lastSavedPosX, lastSavedPosY = nil, nil;
 
 local castbar = {
 	previousPercent = 0,
@@ -78,6 +84,20 @@ castbar.DrawWindow = function(settings)
 	if ((percent < 1 and percent ~= castbar.previousPercent) or showConfig[1]) then
 		imgui.SetNextWindowSize({settings.barWidth, -1});
 
+		-- Handle position reset or restore
+		if forcePositionReset then
+			local defX, defY = defaultPositions.GetCastBarPosition();
+			imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
+			forcePositionReset = false;
+			hasAppliedSavedPosition = true;
+			lastSavedPosX, lastSavedPosY = defX, defY;
+		elseif not hasAppliedSavedPosition and gConfig.castBarWindowPosX ~= nil then
+			imgui.SetNextWindowPos({gConfig.castBarWindowPosX, gConfig.castBarWindowPosY}, ImGuiCond_Once);
+			hasAppliedSavedPosition = true;
+			lastSavedPosX = gConfig.castBarWindowPosX;
+			lastSavedPosY = gConfig.castBarWindowPosY;
+		end
+
 		local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
 		if (imgui.Begin('CastBar', true, windowFlags)) then
 			local startX, startY = imgui.GetCursorScreenPos();
@@ -129,6 +149,19 @@ castbar.DrawWindow = function(settings)
 			end
 
 			SetFontsVisible(allFonts,true);
+
+			-- Save position if moved (with change detection to avoid spam)
+			local winPosX, winPosY = imgui.GetWindowPos();
+			if not gConfig.lockPositions then
+				if lastSavedPosX == nil or
+				   math.abs(winPosX - lastSavedPosX) > 1 or
+				   math.abs(winPosY - lastSavedPosY) > 1 then
+					gConfig.castBarWindowPosX = winPosX;
+					gConfig.castBarWindowPosY = winPosY;
+					lastSavedPosX = winPosX;
+					lastSavedPosY = winPosY;
+				end
+			end
 		end
 
 		imgui.End();
@@ -196,6 +229,11 @@ castbar.Cleanup = function()
 	spellText = FontManager.destroy(spellText);
 	percentText = FontManager.destroy(percentText);
 	allFonts = nil;
+end
+
+castbar.ResetPositions = function()
+	forcePositionReset = true;
+	hasAppliedSavedPosition = false;
 end
 
 return castbar;

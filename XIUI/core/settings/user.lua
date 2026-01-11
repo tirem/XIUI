@@ -17,6 +17,32 @@ function M.createUserSettingsDefaults()
         tooltipScale = 1.0,
         hideDuringEvents = true,
 
+        -- Window positions (saved when user moves windows, nil = use defaults)
+        playerBarWindowPosX = nil,
+        playerBarWindowPosY = nil,
+        targetBarWindowPosX = nil,
+        targetBarWindowPosY = nil,
+        castBarWindowPosX = nil,
+        castBarWindowPosY = nil,
+        enemyListWindowPosX = nil,
+        enemyListWindowPosY = nil,
+        partyListWindowPosX = nil,
+        partyListWindowPosY = nil,
+        partyList2WindowPosX = nil,
+        partyList2WindowPosY = nil,
+        partyList3WindowPosX = nil,
+        partyList3WindowPosY = nil,
+        expBarWindowPosX = nil,
+        expBarWindowPosY = nil,
+        gilTrackerWindowPosX = nil,
+        gilTrackerWindowPosY = nil,
+        inventoryWindowPosX = nil,  -- Shared by all inventory container types
+        inventoryWindowPosY = nil,
+        treasurePoolWindowPosX = nil,
+        treasurePoolWindowPosY = nil,
+        notificationsWindowPosX = nil,
+        notificationsWindowPosY = nil,
+
         showPlayerBar = true,
         showTargetBar = true,
         showEnemyList = true,
@@ -28,6 +54,22 @@ function M.createUserSettingsDefaults()
         showPetBar = true,
         showCastCost = true,
         showNotifications = true,
+
+        -- Hide when game menu is open (default off)
+        playerBarHideOnMenuFocus = false,
+        targetBarHideOnMenuFocus = false,
+        enemyListHideOnMenuFocus = false,
+        expBarHideOnMenuFocus = false,
+        gilTrackerHideOnMenuFocus = false,
+        inventoryTrackerHideOnMenuFocus = false,
+        partyListHideOnMenuFocus = false,
+        castBarHideOnMenuFocus = false,
+        petBarHideOnMenuFocus = false,
+        castCostHideOnMenuFocus = false,
+        notificationsHideOnMenuFocus = false,
+        treasurePoolHideOnMenuFocus = false,
+        hotbarHideOnMenuFocus = false,
+        mobInfoHideOnMenuFocus = false,
 
         -- Treasure Pool settings
         treasurePoolEnabled = true,           -- Show treasure pool when items in pool
@@ -44,6 +86,38 @@ function M.createUserSettingsDefaults()
         treasurePoolBackgroundTheme = 'Plain', -- Background theme
         treasurePoolPreview = false,          -- Show preview with test data
         treasurePoolExpanded = false,         -- Expanded view (false = collapsed)
+
+        -- Hotbar settings (global)
+        hotbarEnabled = true,                 -- Show hotbar module
+        hotbarPreview = false,                -- Show preview with test data
+        hotbarBarPositions = nil,             -- Per-bar positions (nil = defaults)
+
+        -- Global hotbar visual settings (used when bar's useGlobalSettings = true)
+        hotbarGlobal = factories.createHotbarGlobalDefaults(),
+
+        -- Per-bar hotbar settings (Bar 1-6 each have independent configurations)
+        -- Bars 1-3 enabled by default, bars 4-6 disabled by default
+        -- By default, useGlobalSettings = true, so bars use hotbarGlobal for visuals
+        -- Default keybindings (bottom to top): Bar1=Alt+1-0, Bar2=Ctrl+1-0, Bar3=1-0
+        hotbarBar1 = factories.createHotbarBarDefaults({
+            rows = 1, columns = 12,
+            keyBindings = factories.createNumberRowKeybindings(false, true, false),  -- Alt modifier (bottom row)
+        }),
+        hotbarBar2 = factories.createHotbarBarDefaults({
+            rows = 1, columns = 12,
+            keyBindings = factories.createNumberRowKeybindings(true, false, false),  -- Ctrl modifier (middle row)
+        }),
+        hotbarBar3 = factories.createHotbarBarDefaults({
+            rows = 1, columns = 12,
+            keyBindings = factories.createNumberRowKeybindings(false, false, false),  -- No modifier (top row)
+        }),
+        hotbarBar4 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
+        hotbarBar5 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
+        hotbarBar6 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
+
+        -- Crossbar settings (controller-based hotbar mode)
+        -- When enabled, replaces the standard hotbar with a controller-friendly layout
+        hotbarCrossbar = factories.createCrossbarDefaults(),
 
         -- Notifications settings
         notificationsShowPartyInvite = true,
@@ -164,6 +238,7 @@ function M.createUserSettingsDefaults()
         alwaysShowMpBar = true,
         playerBarTpFlashEnabled = true,
         playerBarHideDuringEvents = true,
+        playerBarHideWhenInParty = false,  -- Hide player bar when in party/alliance (info shown in party list)
         playerBarHpDisplayMode = 'number', -- 'number', 'percent', 'both', 'both_percent_first', 'current_max'
         playerBarMpDisplayMode = 'number', -- 'number', 'percent', 'both', 'both_percent_first', 'current_max'
         showMpCostPreview = true, -- Show spell MP cost preview on MP bars when hovering spells

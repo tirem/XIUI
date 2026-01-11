@@ -4,6 +4,7 @@ local imgui = require('imgui');
 local gdi = require('submodules.gdifonts.include');
 local progressbar = require('libs.progressbar');
 local drawing = require('libs.drawing');
+local defaultPositions = require('libs.defaultpositions');
 
 local jobText;
 local expText;
@@ -15,6 +16,11 @@ local allFonts; -- Table for batch visibility operations
 local lastJobTextColor;
 local lastExpTextColor;
 local lastPercentTextColor;
+
+-- Position save/restore state
+local hasAppliedSavedPosition = false;
+local forcePositionReset = false;
+local lastSavedPosX, lastSavedPosY = nil, nil;
 
 local expbar = {
     limitPoints = {},
@@ -173,6 +179,21 @@ expbar.DrawWindow = function(settings)
     -- Let ImGui auto-size the window based on content (Dummy call in progressbar)
     -- Use {0, 0} to allow unlimited auto-sizing (not {-1, -1} which can cause clipping)
     imgui.SetNextWindowSize({ 0, 0 }, ImGuiCond_Always);
+
+    -- Handle position reset or restore
+    if forcePositionReset then
+        local defX, defY = defaultPositions.GetExpBarPosition();
+        imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
+        forcePositionReset = false;
+        hasAppliedSavedPosition = true;
+        lastSavedPosX, lastSavedPosY = defX, defY;
+    elseif not hasAppliedSavedPosition and gConfig.expBarWindowPosX ~= nil then
+        imgui.SetNextWindowPos({gConfig.expBarWindowPosX, gConfig.expBarWindowPosY}, ImGuiCond_Once);
+        hasAppliedSavedPosition = true;
+        lastSavedPosX = gConfig.expBarWindowPosX;
+        lastSavedPosY = gConfig.expBarWindowPosY;
+    end
+
 	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
     if (imgui.Begin('ExpBar', true, windowFlags)) then
 
@@ -344,6 +365,18 @@ expbar.DrawWindow = function(settings)
             percentText:set_visible(false);
         end
 
+        -- Save position if moved (with change detection to avoid spam)
+        local winPosX, winPosY = imgui.GetWindowPos();
+        if not gConfig.lockPositions then
+            if lastSavedPosX == nil or
+               math.abs(winPosX - lastSavedPosX) > 1 or
+               math.abs(winPosY - lastSavedPosY) > 1 then
+                gConfig.expBarWindowPosX = winPosX;
+                gConfig.expBarWindowPosY = winPosY;
+                lastSavedPosX = winPosX;
+                lastSavedPosY = winPosY;
+            end
+        end
     end
 	imgui.End();
 end
@@ -442,6 +475,11 @@ expbar.Cleanup = function()
 	expText = FontManager.destroy(expText);
 	percentText = FontManager.destroy(percentText);
 	allFonts = nil;
+end
+
+expbar.ResetPositions = function()
+	forcePositionReset = true;
+	hasAppliedSavedPosition = false;
 end
 
 return expbar;

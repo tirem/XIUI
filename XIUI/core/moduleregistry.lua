@@ -10,7 +10,8 @@ local M = {};
 --   module: the required module
 --   settingsKey: key in gAdjustedSettings for this module's settings
 --   configKey: key in gConfig for visibility (optional)
---   hideOnEvent: whether to hide during events (optional config key)
+--   hideOnEventKey: config key for hiding during events (optional)
+--   hideOnMenuFocusKey: config key for hiding when game menu is open (optional)
 --   hasSetHidden: whether module has SetHidden function
 local registry = {};
 
@@ -75,7 +76,12 @@ end
 
 -- Render a single module
 -- Returns true if rendered, false if hidden
-function M.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive)
+-- @param name: module name
+-- @param gConfig: user config
+-- @param gAdjustedSettings: adjusted module settings
+-- @param eventSystemActive: whether event system is active
+-- @param menuOpen: whether a game menu is open (optional)
+function M.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive, menuOpen)
     local entry = registry[name];
     if not entry then return false; end
 
@@ -88,6 +94,11 @@ function M.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive)
     -- Check event hiding
     if shouldShow and entry.hideOnEventKey and eventSystemActive then
         shouldShow = not gConfig[entry.hideOnEventKey];
+    end
+
+    -- Check menu focus hiding
+    if shouldShow and entry.hideOnMenuFocusKey and menuOpen then
+        shouldShow = not gConfig[entry.hideOnMenuFocusKey];
     end
 
     if shouldShow then

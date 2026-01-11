@@ -296,8 +296,14 @@ petbar.Cleanup = function()
         data.petImagePrimsTop = nil;
     end
 
-    -- Clear pet image textures (D3D handles cleanup via gc_safe_release)
-    data.petImageTextures = {};
+    -- Clear pet image textures - gc_safe_release handles D3D Release() via FFI finalizers
+    -- Clear each reference individually to help GC run finalizers promptly
+    if data.petImageTextures then
+        for key, _ in pairs(data.petImageTextures) do
+            data.petImageTextures[key] = nil;
+        end
+        data.petImageTextures = {};
+    end
 
     -- Cleanup pet target module
     pettarget.Cleanup();
@@ -378,6 +384,10 @@ petbar.HandlePacket = function(e)
         end
         return;
     end
+end
+
+petbar.ResetPositions = function()
+    display.ResetPositions();
 end
 
 return petbar;

@@ -3,7 +3,13 @@ require('handlers.helpers');
 local imgui = require('imgui');
 local gdi = require('submodules.gdifonts.include');
 local ffi = require("ffi");
+local defaultPositions = require('libs.defaultpositions');
 local TextureManager = require('libs.texturemanager');
+
+-- Position save/restore state
+local hasAppliedSavedPosition = false;
+local forcePositionReset = false;
+local lastSavedPosX, lastSavedPosY = nil, nil;
 
 -- Gil texture (loaded via TextureManager)
 local gilTexture;
@@ -177,6 +183,20 @@ giltracker.DrawWindow = function(settings)
 
     imgui.SetNextWindowSize({ -1, -1, }, ImGuiCond_Always);
 	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
+
+	-- Handle position reset or restore
+	if forcePositionReset then
+		local defX, defY = defaultPositions.GetGilTrackerPosition();
+		imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
+		forcePositionReset = false;
+		hasAppliedSavedPosition = true;
+		lastSavedPosX, lastSavedPosY = defX, defY;
+	elseif not hasAppliedSavedPosition and gConfig.gilTrackerWindowPosX ~= nil then
+		imgui.SetNextWindowPos({gConfig.gilTrackerWindowPosX, gConfig.gilTrackerWindowPosY}, ImGuiCond_Once);
+		hasAppliedSavedPosition = true;
+		lastSavedPosX = gConfig.gilTrackerWindowPosX;
+		lastSavedPosY = gConfig.gilTrackerWindowPosY;
+	end
 
 	local showIcon = settings.showIcon;
 
@@ -381,6 +401,19 @@ giltracker.DrawWindow = function(settings)
 		end
 
 		gilText:set_visible(true);
+
+		-- Save position if moved (with change detection to avoid spam)
+		local winPosX, winPosY = imgui.GetWindowPos();
+		if not gConfig.lockPositions then
+			if lastSavedPosX == nil or
+			   math.abs(winPosX - lastSavedPosX) > 1 or
+			   math.abs(winPosY - lastSavedPosY) > 1 then
+				gConfig.gilTrackerWindowPosX = winPosX;
+				gConfig.gilTrackerWindowPosY = winPosY;
+				lastSavedPosX = winPosX;
+				lastSavedPosY = winPosY;
+			end
+		end
     end
 	imgui.End();
 
@@ -483,6 +516,11 @@ giltracker.ResetTracking = function()
 	stabilizationStartTime = nil;
 	stabilizationGil = nil;
 	print('[XIUI] Gil per hour tracking reset (will reinitialize).');
+end
+
+giltracker.ResetPositions = function()
+	forcePositionReset = true;
+	hasAppliedSavedPosition = false;
 end
 
 -- Handle zone-out packet (0x00B) - record timestamp

@@ -527,6 +527,14 @@ function M.ClearPreview()
     data.ClearPreview();
 end
 
+-- ============================================
+-- ResetPositions
+-- ============================================
+
+function M.ResetPositions()
+    display.ResetPositions();
+end
+
 -- Force show the window (even if empty)
 function M.ToggleForceShow()
     M.forceShow = not M.forceShow;

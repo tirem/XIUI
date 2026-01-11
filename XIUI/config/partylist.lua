@@ -97,6 +97,8 @@ local function DrawPartyTabContent(party, partyName)
         components.DrawPartyCheckbox(party, 'Show Title', 'showTitle');
         components.DrawPartyCheckbox(party, 'Align Bottom', 'alignBottom');
         components.DrawPartyCheckbox(party, 'Expand Height', 'expandHeight');
+        components.DrawPartyCheckbox(party, 'Expand Height In Alliance', 'expandHeightInAlliance');
+        imgui.ShowHelp('When enabled, Party A will use expanded height only while in an alliance.');
 
         -- HP Display Mode dropdown
         components.DrawDisplayModeDropdown('HP Display##party' .. partyName, party, 'hpDisplayMode',
@@ -240,6 +242,7 @@ local function DrawPartyTabContent(party, partyName)
             local castBarStyleItems = { [0] = 'Replace Name', [1] = 'Use MP Bar', [2] = 'Use TP Bar' };
             local currentStyleIndex = party.castBarStyle == 'mp' and 1 or (party.castBarStyle == 'tp' and 2 or 0);
             local styleLabel = castBarStyleItems[currentStyleIndex];
+            imgui.SetNextItemWidth(components.CONTENT_MAX_WIDTH);
             if imgui.BeginCombo('Style##castBarStyle' .. partyName, styleLabel) then
                 for i = 0, 2 do
                     local isSelected = (currentStyleIndex == i);
@@ -287,6 +290,8 @@ function M.DrawSettings(state)
     local selectedPartyTab = state.selectedPartyTab or 1;
 
     components.DrawCheckbox('Enabled', 'showPartyList', CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'partyListHideOnMenuFocus');
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
     components.DrawCheckbox('Preview Full Party (when config open)', 'partyListPreview');
 
     -- Global settings (shared across all parties)

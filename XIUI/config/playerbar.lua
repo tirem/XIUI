@@ -13,10 +13,14 @@ local M = {};
 -- Section: Player Bar Settings
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showPlayerBar', CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'playerBarHideOnMenuFocus');
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
 
     if components.CollapsingSection('Display Options##playerBar') then
         components.DrawCheckbox('Show Bookends', 'showPlayerBarBookends');
         components.DrawCheckbox('Hide During Events', 'playerBarHideDuringEvents');
+        components.DrawCheckbox('Hide When In Party', 'playerBarHideWhenInParty');
+        imgui.ShowHelp('Hide the player bar when in a party or alliance.');
         components.DrawCheckbox('Always Show MP Bar', 'alwaysShowMpBar');
         imgui.ShowHelp('Always display the MP Bar even if your current jobs cannot cast spells.');
         components.DrawCheckbox('TP Bar Flash Effects', 'playerBarTpFlashEnabled');

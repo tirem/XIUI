@@ -1,7 +1,10 @@
 *.code-workspace
 .vscode/settings.json
 .vscode/launch.json
-ai-docs/
 .claude
 .claude/settings.local.json
+.plan.md
 CLAUDE.md
+ai-docs/
+ai-docs/*
+XIUI/docs/*

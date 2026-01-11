@@ -14,6 +14,8 @@ local M = {};
 -- Section: Cast Cost Settings
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showCastCost', CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'castCostHideOnMenuFocus');
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
 
     if components.CollapsingSection('Display Options##castCost') then
         components.DrawPartyCheckbox(gConfig.castCost, 'Spell/Ability Name', 'showName');
@@ -44,28 +46,7 @@ function M.DrawSettings()
     if components.CollapsingSection('Background##castCost') then
         -- Background theme dropdown
         local themes = statusHandler.get_background_paths();
-        local currentTheme = gConfig.castCost.backgroundTheme or 'Window1';
-        local themeIndex = 1;
-        for i, theme in ipairs(themes) do
-            if theme == currentTheme then
-                themeIndex = i;
-                break;
-            end
-        end
-
-        if imgui.BeginCombo('Theme##castCostTheme', currentTheme) then
-            for i, theme in ipairs(themes) do
-                local isSelected = (theme == currentTheme);
-                if imgui.Selectable(theme, isSelected) then
-                    gConfig.castCost.backgroundTheme = theme;
-                    UpdateCastCostVisuals();
-                end
-                if isSelected then
-                    imgui.SetItemDefaultFocus();
-                end
-            end
-            imgui.EndCombo();
-        end
+        components.Combo('Theme##castCostTheme', gConfig.castCost, 'backgroundTheme', themes, nil, 'Window1', UpdateCastCostVisuals);
 
         -- Scale/opacity sliders don't need callbacks - changes are picked up from gConfig on next frame
         components.DrawPartySlider(gConfig.castCost, 'Background Scale', 'bgScale', 0.1, 3.0, '%.2f', nil, 1.0);

@@ -690,6 +690,42 @@ function M.MigrateGilTrackerSettings(gConfig, defaults)
     end
 end
 
+-- Migrate old disableMinusMenu setting to new blockedGameKeys array
+function M.MigrateBlockedGameKeys(gConfig, defaults)
+    if not gConfig.hotbarGlobal then return; end
+
+    -- Check for old disableMinusMenu setting
+    if gConfig.hotbarGlobal.disableMinusMenu then
+        -- Ensure blockedGameKeys exists
+        if not gConfig.hotbarGlobal.blockedGameKeys then
+            gConfig.hotbarGlobal.blockedGameKeys = {};
+        end
+
+        -- Add minus key (VK 189) to blocked keys if not already present
+        local VK_OEM_MINUS = 189;
+        local alreadyBlocked = false;
+        for _, blocked in ipairs(gConfig.hotbarGlobal.blockedGameKeys) do
+            if blocked.key == VK_OEM_MINUS and
+               not blocked.ctrl and not blocked.alt and not blocked.shift then
+                alreadyBlocked = true;
+                break;
+            end
+        end
+
+        if not alreadyBlocked then
+            table.insert(gConfig.hotbarGlobal.blockedGameKeys, {
+                key = VK_OEM_MINUS,
+                ctrl = false,
+                alt = false,
+                shift = false,
+            });
+        end
+
+        -- Remove the old setting
+        gConfig.hotbarGlobal.disableMinusMenu = nil;
+    end
+end
+
 -- Migrate from split windows to notification groups
 -- Converts old notificationsSplit* flags to notificationTypeGroup assignments
 function M.MigrateNotificationGroups(gConfig, defaults)
@@ -770,6 +806,7 @@ function M.RunStructureMigrations(gConfig, defaults)
     M.MigrateIndividualSettings(gConfig, defaults);
     M.MigrateGilTrackerSettings(gConfig, defaults);
     M.MigrateCastCostSettings(gConfig, defaults);
+    M.MigrateBlockedGameKeys(gConfig, defaults);
     M.MigrateNotificationGroups(gConfig, defaults);
 end
 

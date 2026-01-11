@@ -32,6 +32,10 @@ function castcost.Cleanup()
     display.Cleanup();
 end
 
+function castcost.ResetPositions()
+    display.ResetPositions();
+end
+
 -- ============================================
 -- Main Render
 -- ============================================
