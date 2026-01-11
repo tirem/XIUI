@@ -286,16 +286,13 @@ function M.GetAvailablePalettes(barIndex)
     local p = getPalette();
     if p then
         local generalPalettes = p.GetAvailablePalettes(barIndex, jobId, subjobId);
-        -- Skip 'Base' if we already have pet palettes (pet 'Base' is the same concept)
         for _, name in ipairs(generalPalettes) do
-            if name ~= p.BASE_PALETTE_NAME or #palettes == 0 then
-                -- Convert general palette name to the same format as pet palettes
-                table.insert(palettes, {
-                    key = name == p.BASE_PALETTE_NAME and nil or (p.PALETTE_KEY_PREFIX .. name),
-                    displayName = name,
-                    isPetPalette = false,
-                });
-            end
+            -- Convert general palette name to the same format as pet palettes
+            table.insert(palettes, {
+                key = p.PALETTE_KEY_PREFIX .. name,
+                displayName = name,
+                isPetPalette = false,
+            });
         end
     end
 
@@ -303,7 +300,7 @@ function M.GetAvailablePalettes(barIndex)
 end
 
 -- Get the current palette display name for a bar
--- Returns: 'Base', pet name (e.g., 'Ifrit'), or general palette name (e.g., 'Stuns')
+-- Returns: nil (no palette), pet name (e.g., 'Ifrit'), or general palette name (e.g., 'Stuns')
 function M.GetCurrentPaletteDisplayName(barIndex)
     local configKey = 'hotbarBar' .. barIndex;
     local barSettings = gConfig and gConfig[configKey];
@@ -326,7 +323,7 @@ function M.GetCurrentPaletteDisplayName(barIndex)
         return p.GetActivePaletteDisplayName(barIndex);
     end
 
-    return 'Base';
+    return nil;
 end
 
 -- Get the palette module for direct access

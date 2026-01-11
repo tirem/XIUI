@@ -48,9 +48,9 @@ end
 -- ============================================
 
 -- Build storage key suffix for a palette name
--- Returns nil for Base palette (uses base job:subjob key)
+-- Returns nil if no palette name (uses base job:subjob key)
 function M.GetPaletteKeySuffix(paletteName)
-    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
+    if not paletteName then
         return nil;
     end
     return M.PALETTE_KEY_PREFIX .. paletteName;
@@ -58,7 +58,7 @@ end
 
 -- Build full storage key for a palette
 -- baseKey: '{jobId}:{subjobId}' format
--- paletteName: palette name or nil/Base for base palette
+-- paletteName: palette name or nil for default slot data
 function M.BuildStorageKey(baseKey, paletteName)
     local suffix = M.GetPaletteKeySuffix(paletteName);
     if not suffix then
@@ -93,19 +93,15 @@ function M.GetActivePalette(barIndex)
 end
 
 -- Get active palette display name for a bar
+-- Returns nil if no palette is active
 function M.GetActivePaletteDisplayName(barIndex)
-    return state.activePalettes[barIndex] or M.BASE_PALETTE_NAME;
+    return state.activePalettes[barIndex];
 end
 
 -- Set active palette for a bar
--- paletteName: name to activate, or nil/Base to use base palette
+-- paletteName: name to activate, or nil to clear
 function M.SetActivePalette(barIndex, paletteName)
     local oldPalette = state.activePalettes[barIndex];
-
-    -- Normalize "Base" to nil
-    if paletteName == M.BASE_PALETTE_NAME then
-        paletteName = nil;
-    end
 
     -- Skip if no change
     if oldPalette == paletteName then
@@ -120,7 +116,7 @@ function M.SetActivePalette(barIndex, paletteName)
     return true;
 end
 
--- Clear active palette for a bar (return to Base)
+-- Clear active palette for a bar (uses default slot data)
 function M.ClearActivePalette(barIndex)
     return M.SetActivePalette(barIndex, nil);
 end
@@ -142,9 +138,9 @@ end
 
 -- Get list of available palette names for a bar based on stored slotActions
 -- Returns palettes in the user-defined order from paletteOrder, with any missing palettes appended alphabetically
--- Returns: { 'Base', 'Stuns', 'Heals', ... }
+-- Returns: { 'Stuns', 'Heals', ... } (empty if no palettes defined)
 function M.GetAvailablePalettes(barIndex, jobId, subjobId)
-    local palettes = { M.BASE_PALETTE_NAME };  -- Always include Base
+    local palettes = {};
 
     local configKey = 'hotbarBar' .. barIndex;
     local barSettings = gConfig and gConfig[configKey];
@@ -219,8 +215,8 @@ end
 
 -- Check if a specific palette exists for a bar
 function M.PaletteExists(barIndex, paletteName, jobId, subjobId)
-    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
-        return true;  -- Base always exists
+    if not paletteName then
+        return false;
     end
 
     local available = M.GetAvailablePalettes(barIndex, jobId, subjobId);
@@ -363,8 +359,8 @@ end
 -- Delete a palette
 -- Returns true on success, false with error message on failure
 function M.DeletePalette(barIndex, paletteName, jobId, subjobId)
-    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
-        return false, 'Cannot delete Base palette';
+    if not paletteName then
+        return false, 'No palette specified';
     end
 
     local configKey = 'hotbarBar' .. barIndex;
@@ -405,16 +401,12 @@ end
 -- Rename a palette
 -- Returns true on success, false with error message on failure
 function M.RenamePalette(barIndex, oldName, newName, jobId, subjobId)
-    if not oldName or oldName == M.BASE_PALETTE_NAME then
-        return false, 'Cannot rename Base palette';
+    if not oldName then
+        return false, 'No palette specified';
     end
 
     if not IsValidPaletteName(newName) then
         return false, 'Invalid new palette name';
-    end
-
-    if newName == M.BASE_PALETTE_NAME then
-        return false, 'Cannot rename to "Base"';
     end
 
     if oldName == newName then
@@ -469,8 +461,8 @@ end
 -- direction: -1 for up (earlier in list), 1 for down (later in list)
 -- Returns true on success, false with error message on failure
 function M.MovePalette(barIndex, paletteName, direction, jobId, subjobId)
-    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
-        return false, 'Cannot reorder Base palette';
+    if not paletteName then
+        return false, 'No palette specified';
     end
 
     if direction ~= -1 and direction ~= 1 then
@@ -490,13 +482,11 @@ function M.MovePalette(barIndex, paletteName, direction, jobId, subjobId)
         barSettings.paletteOrder = {};
     end
     if not barSettings.paletteOrder[baseKey] then
-        -- Initialize paletteOrder from current available palettes (excluding Base)
+        -- Initialize paletteOrder from current available palettes
         barSettings.paletteOrder[baseKey] = {};
         local available = M.GetAvailablePalettes(barIndex, jobId, subjobId);
         for _, name in ipairs(available) do
-            if name ~= M.BASE_PALETTE_NAME then
-                table.insert(barSettings.paletteOrder[baseKey], name);
-            end
+            table.insert(barSettings.paletteOrder[baseKey], name);
         end
     end
 
@@ -553,35 +543,33 @@ function M.SetPaletteOrder(barIndex, palettes, jobId, subjobId)
     -- Set the new order directly
     barSettings.paletteOrder[baseKey] = {};
     for _, name in ipairs(palettes) do
-        if name ~= M.BASE_PALETTE_NAME then
-            table.insert(barSettings.paletteOrder[baseKey], name);
-        end
+        table.insert(barSettings.paletteOrder[baseKey], name);
     end
 
     SaveSettingsToDisk();
     return true;
 end
 
--- Get the index of a palette in the order (1-based, Base is always 0)
+-- Get the index of a palette in the order (1-based)
 -- Returns the index, or nil if not found
 function M.GetPaletteIndex(barIndex, paletteName, jobId, subjobId)
-    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
-        return 0;  -- Base is always first
+    if not paletteName then
+        return nil;
     end
 
     local available = M.GetAvailablePalettes(barIndex, jobId, subjobId);
     for i, name in ipairs(available) do
         if name == paletteName then
-            return i - 1;  -- Subtract 1 because Base is at index 1
+            return i;
         end
     end
     return nil;
 end
 
--- Get the total number of non-Base palettes for a bar
+-- Get the total number of palettes for a bar
 function M.GetPaletteCount(barIndex, jobId, subjobId)
     local available = M.GetAvailablePalettes(barIndex, jobId, subjobId);
-    return #available - 1;  -- Subtract 1 for Base
+    return #available;
 end
 
 -- ============================================
@@ -633,10 +621,10 @@ end
 local CROSSBAR_COMBO_MODES = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2' };
 
 -- Get all available palette names for crossbar only
--- Returns: { 'Base', 'Stuns', 'Heals', ... } - palettes available ONLY for crossbar
+-- Returns: { 'Stuns', 'Heals', ... } - palettes available ONLY for crossbar (empty if none defined)
 -- Crossbar palettes are SEPARATE from hotbar palettes
 function M.GetCrossbarAvailablePalettes(jobId, subjobId)
-    local palettes = { M.BASE_PALETTE_NAME };  -- Always include Base first
+    local palettes = {};
 
     local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
     if not crossbarSettings or not crossbarSettings.slotActions then
@@ -710,8 +698,8 @@ end
 -- DEPRECATED: GetAllAvailablePalettes - kept for backwards compatibility
 -- Now just returns hotbar palettes since crossbar has its own separate palettes
 function M.GetAllAvailablePalettes(jobId, subjobId)
-    local palettes = { M.BASE_PALETTE_NAME };  -- Always include Base first
-    local seen = { [M.BASE_PALETTE_NAME] = true };
+    local palettes = {};
+    local seen = {};
 
     -- Scan all 6 hotbar bars only (NOT crossbar - they are separate now)
     for barIndex = 1, 6 do
@@ -736,12 +724,13 @@ function M.GetActivePaletteForCombo(comboMode)
 end
 
 -- Get active palette display name for a crossbar combo mode
+-- Returns nil if no palette is active
 function M.GetActivePaletteDisplayNameForCombo(comboMode)
-    return M.GetActivePaletteForCombo(comboMode) or M.BASE_PALETTE_NAME;
+    return M.GetActivePaletteForCombo(comboMode);
 end
 
 -- Set active palette for a crossbar combo mode
--- paletteName: name to activate, or nil/Base to use base palette
+-- paletteName: name to activate, or nil to clear
 function M.SetActivePaletteForCombo(comboMode, paletteName)
     local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
     if not crossbarSettings then return false; end
@@ -755,11 +744,6 @@ function M.SetActivePaletteForCombo(comboMode, paletteName)
     end
 
     local oldPalette = crossbarSettings.comboModeSettings[comboMode].activePalette;
-
-    -- Normalize "Base" to nil
-    if paletteName == M.BASE_PALETTE_NAME then
-        paletteName = nil;
-    end
 
     -- Skip if no change
     if oldPalette == paletteName then
@@ -775,7 +759,7 @@ function M.SetActivePaletteForCombo(comboMode, paletteName)
     return true;
 end
 
--- Clear active palette for a crossbar combo mode (return to Base)
+-- Clear active palette for a crossbar combo mode (uses default slot data)
 function M.ClearActivePaletteForCombo(comboMode)
     return M.SetActivePaletteForCombo(comboMode, nil);
 end
@@ -900,8 +884,8 @@ end
 -- Delete a crossbar palette
 -- Returns true on success, false with error message on failure
 function M.DeleteCrossbarPalette(paletteName, jobId, subjobId)
-    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
-        return false, 'Cannot delete Base palette';
+    if not paletteName then
+        return false, 'No palette specified';
     end
 
     local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
@@ -945,16 +929,12 @@ end
 -- Rename a crossbar palette
 -- Returns true on success, false with error message on failure
 function M.RenameCrossbarPalette(oldName, newName, jobId, subjobId)
-    if not oldName or oldName == M.BASE_PALETTE_NAME then
-        return false, 'Cannot rename Base palette';
+    if not oldName then
+        return false, 'No palette specified';
     end
 
     if not IsValidPaletteName(newName) then
         return false, 'Invalid new palette name';
-    end
-
-    if newName == M.BASE_PALETTE_NAME then
-        return false, 'Cannot rename to "Base"';
     end
 
     if oldName == newName then
@@ -1012,8 +992,8 @@ end
 -- direction: -1 for up (earlier in list), 1 for down (later in list)
 -- Returns true on success, false with error message on failure
 function M.MoveCrossbarPalette(paletteName, direction, jobId, subjobId)
-    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
-        return false, 'Cannot reorder Base palette';
+    if not paletteName then
+        return false, 'No palette specified';
     end
 
     if direction ~= -1 and direction ~= 1 then
@@ -1032,13 +1012,11 @@ function M.MoveCrossbarPalette(paletteName, direction, jobId, subjobId)
         crossbarSettings.crossbarPaletteOrder = {};
     end
     if not crossbarSettings.crossbarPaletteOrder[baseKey] then
-        -- Initialize crossbarPaletteOrder from current available palettes (excluding Base)
+        -- Initialize crossbarPaletteOrder from current available palettes
         crossbarSettings.crossbarPaletteOrder[baseKey] = {};
         local available = M.GetCrossbarAvailablePalettes(jobId, subjobId);
         for _, name in ipairs(available) do
-            if name ~= M.BASE_PALETTE_NAME then
-                table.insert(crossbarSettings.crossbarPaletteOrder[baseKey], name);
-            end
+            table.insert(crossbarSettings.crossbarPaletteOrder[baseKey], name);
         end
     end
 
@@ -1073,8 +1051,8 @@ end
 
 -- Check if a specific crossbar palette exists
 function M.CrossbarPaletteExists(paletteName, jobId, subjobId)
-    if not paletteName or paletteName == M.BASE_PALETTE_NAME then
-        return true;  -- Base always exists
+    if not paletteName then
+        return false;
     end
 
     local available = M.GetCrossbarAvailablePalettes(jobId, subjobId);
@@ -1086,10 +1064,10 @@ function M.CrossbarPaletteExists(paletteName, jobId, subjobId)
     return false;
 end
 
--- Get the total number of non-Base crossbar palettes
+-- Get the total number of crossbar palettes
 function M.GetCrossbarPaletteCount(jobId, subjobId)
     local available = M.GetCrossbarAvailablePalettes(jobId, subjobId);
-    return #available - 1;  -- Subtract 1 for Base
+    return #available;
 end
 
 -- ============================================

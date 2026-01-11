@@ -499,13 +499,13 @@ local function DrawGeneralPalettesSection(configKey, barSettings, barIndex)
     -- Get available palettes for this bar
     local availablePalettes = palette.GetAvailablePalettes(barIndex, jobId, subjobId);
     local currentPalette = palette.GetActivePaletteDisplayName(barIndex);
-    local hasPalettes = #availablePalettes > 1;
+    local hasPalettes = #availablePalettes > 0;
 
     -- Header
     imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Named Palettes:');
     imgui.SameLine();
     if hasPalettes then
-        imgui.TextColored({0.5, 1.0, 0.5, 1.0}, tostring(#availablePalettes - 1) .. ' custom palette(s)');
+        imgui.TextColored({0.5, 1.0, 0.5, 1.0}, tostring(#availablePalettes) .. ' palette(s)');
     else
         imgui.TextColored({0.6, 0.6, 0.6, 1.0}, 'None');
     end
@@ -514,8 +514,8 @@ local function DrawGeneralPalettesSection(configKey, barSettings, barIndex)
     -- Current palette selector with inline buttons
     if hasPalettes then
         -- Get display name with number prefix for the closed dropdown
-        local currentDisplayName = currentPalette;
-        if currentPalette ~= palette.BASE_PALETTE_NAME then
+        local currentDisplayName = currentPalette or '(none)';
+        if currentPalette then
             local idx = palette.GetPaletteIndex(barIndex, currentPalette, jobId, subjobId);
             if idx then
                 currentDisplayName = idx .. '. ' .. currentPalette;
@@ -524,21 +524,12 @@ local function DrawGeneralPalettesSection(configKey, barSettings, barIndex)
 
         imgui.SetNextItemWidth(120);
         if imgui.BeginCombo('##palette' .. barIndex, currentDisplayName) then
-            local customIndex = 0;
-            for _, paletteName in ipairs(availablePalettes) do
+            for i, paletteName in ipairs(availablePalettes) do
                 local isSelected = (paletteName == currentPalette);
-                -- Show number prefix for custom palettes only (not Base)
-                local displayName = paletteName;
-                if paletteName ~= palette.BASE_PALETTE_NAME then
-                    customIndex = customIndex + 1;
-                    displayName = customIndex .. '. ' .. paletteName;
-                end
+                -- Show number prefix for all palettes
+                local displayName = i .. '. ' .. paletteName;
                 if imgui.Selectable(displayName .. '##pal' .. barIndex, isSelected) then
-                    if paletteName == palette.BASE_PALETTE_NAME then
-                        palette.ClearActivePalette(barIndex);
-                    else
-                        palette.SetActivePalette(barIndex, paletteName);
-                    end
+                    palette.SetActivePalette(barIndex, paletteName);
                 end
                 if isSelected then
                     imgui.SetItemDefaultFocus();
@@ -547,8 +538,8 @@ local function DrawGeneralPalettesSection(configKey, barSettings, barIndex)
             imgui.EndCombo();
         end
 
-        -- Rename button (only for non-Base palettes)
-        if currentPalette ~= palette.BASE_PALETTE_NAME then
+        -- Rename button (for any palette)
+        if currentPalette then
             imgui.SameLine();
             if imgui.Button('Rename##palette' .. barIndex, {55, 0}) then
                 renameModalState.isOpen = true;
@@ -575,8 +566,8 @@ local function DrawGeneralPalettesSection(configKey, barSettings, barIndex)
     imgui.PopStyleColor(2);
 
     if hasPalettes then
-        -- Delete button (only for non-Base palettes)
-        if currentPalette ~= palette.BASE_PALETTE_NAME then
+        -- Delete button (for any palette)
+        if currentPalette then
             imgui.SameLine();
             imgui.PushStyleColor(ImGuiCol_Button, {0.6, 0.2, 0.2, 1.0});
             imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.8, 0.3, 0.3, 1.0});
@@ -592,9 +583,9 @@ local function DrawGeneralPalettesSection(configKey, barSettings, barIndex)
             imgui.PopStyleColor(2);
         end
 
-        -- Arrow key reordering (only for custom palettes with multiple items)
+        -- Arrow key reordering (for palettes with multiple items)
         local paletteCount = palette.GetPaletteCount(barIndex, jobId, subjobId);
-        if currentPalette ~= palette.BASE_PALETTE_NAME and paletteCount > 1 then
+        if currentPalette and paletteCount > 1 then
             imgui.SameLine();
             imgui.TextColored({0.5, 0.5, 0.5, 1.0}, '|');
             imgui.SameLine();
@@ -1793,41 +1784,44 @@ local function DrawCrossbarBarSettings(crossbarSettings, barType, comboMode)
 
     -- General Palette selection (only when pet-aware is off)
     if not petAware then
-        imgui.Spacing();
-        imgui.AlignTextToFramePadding();
-        imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Palette:');
-        imgui.SameLine();
-
         -- Get crossbar-only available palettes (separate from hotbar)
         local availablePalettes = palette.GetCrossbarAvailablePalettes(jobId, subjobId);
-        local currentPalette = modeSettings.activePalette or palette.BASE_PALETTE_NAME;
+        local currentPalette = modeSettings.activePalette;
 
-        -- Find current index
-        local currentIndex = 1;
-        for i, paletteName in ipairs(availablePalettes) do
-            if paletteName == currentPalette then
-                currentIndex = i;
-                break;
-            end
-        end
+        -- Only show palette selector if there are palettes
+        if #availablePalettes > 0 then
+            imgui.Spacing();
+            imgui.AlignTextToFramePadding();
+            imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Palette:');
+            imgui.SameLine();
 
-        -- Dropdown for palette selection
-        imgui.SetNextItemWidth(150);
-        if imgui.BeginCombo('##crossbarPalette' .. comboMode, currentPalette) then
+            -- Find current index
+            local currentIndex = nil;
             for i, paletteName in ipairs(availablePalettes) do
-                local isSelected = (i == currentIndex);
-                if imgui.Selectable(paletteName .. '##cb' .. comboMode .. i, isSelected) then
-                    -- Set the palette (nil for Base)
-                    palette.SetActivePaletteForCombo(comboMode, paletteName);
-                    SaveSettingsOnly();
-                end
-                if isSelected then
-                    imgui.SetItemDefaultFocus();
+                if paletteName == currentPalette then
+                    currentIndex = i;
+                    break;
                 end
             end
-            imgui.EndCombo();
+
+            -- Dropdown for palette selection
+            imgui.SetNextItemWidth(150);
+            local displayName = currentPalette or '(none)';
+            if imgui.BeginCombo('##crossbarPalette' .. comboMode, displayName) then
+                for i, paletteName in ipairs(availablePalettes) do
+                    local isSelected = (i == currentIndex);
+                    if imgui.Selectable(paletteName .. '##cb' .. comboMode .. i, isSelected) then
+                        palette.SetActivePaletteForCombo(comboMode, paletteName);
+                        SaveSettingsOnly();
+                    end
+                    if isSelected then
+                        imgui.SetItemDefaultFocus();
+                    end
+                end
+                imgui.EndCombo();
+            end
+            imgui.ShowHelp('Select a palette for this crossbar combo mode.\nCrossbar palettes are separate from hotbar palettes.\n\nUse controller cycling (R1/L1 + DPad while trigger held) to switch palettes in-game.');
         end
-        imgui.ShowHelp('Select a palette for this crossbar combo mode.\nCrossbar palettes are separate from hotbar palettes.\n\nUse controller cycling (R1/L1 + DPad while trigger held) to switch palettes in-game.');
     end
 
     imgui.Spacing();
@@ -1849,83 +1843,81 @@ local function DrawCrossbarBarSettings(crossbarSettings, barType, comboMode)
     imgui.PopStyleColor(2);
     imgui.ShowHelp('Create a new crossbar palette for the current job.');
 
-    -- Get crossbar palettes (excluding Base) for management
+    -- Get crossbar palettes for management
     local availablePalettes = palette.GetCrossbarAvailablePalettes(jobId, subjobId);
 
-    -- Only show management options if there are non-Base palettes
-    if #availablePalettes > 1 then
+    -- Only show management options if there are palettes
+    if #availablePalettes > 0 then
         imgui.Spacing();
         imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Existing Palettes:');
 
         -- Show palettes with management buttons
         for i, paletteName in ipairs(availablePalettes) do
-            if paletteName ~= palette.BASE_PALETTE_NAME then
-                imgui.PushID('cbPalMgmt' .. paletteName .. comboMode);
+            imgui.PushID('cbPalMgmt' .. paletteName .. comboMode);
 
-                -- Palette name with indicator if active
-                local isActive = (modeSettings.activePalette == paletteName);
-                if isActive then
-                    imgui.TextColored({0.4, 0.8, 0.4, 1.0}, '> ' .. paletteName);
-                else
-                    imgui.TextColored({0.7, 0.7, 0.7, 1.0}, '  ' .. paletteName);
-                end
-
-                imgui.SameLine(200);
-
-                -- Move Up button
-                if i > 2 then  -- Can't move first non-Base palette up
-                    if imgui.SmallButton('^##up') then
-                        palette.MoveCrossbarPalette(paletteName, -1, jobId, subjobId);
-                    end
-                    if imgui.IsItemHovered() then
-                        imgui.SetTooltip('Move up');
-                    end
-                else
-                    imgui.Dummy({16, 0});
-                end
-                imgui.SameLine();
-
-                -- Move Down button
-                if i < #availablePalettes then  -- Can't move last palette down
-                    if imgui.SmallButton('v##down') then
-                        palette.MoveCrossbarPalette(paletteName, 1, jobId, subjobId);
-                    end
-                    if imgui.IsItemHovered() then
-                        imgui.SetTooltip('Move down');
-                    end
-                else
-                    imgui.Dummy({16, 0});
-                end
-                imgui.SameLine();
-
-                -- Rename button
-                if imgui.SmallButton('R##rename') then
-                    crossbarRenameModalState.isOpen = true;
-                    crossbarRenameModalState.paletteName = paletteName;
-                    crossbarRenameModalState.inputBuffer[1] = paletteName;
-                    crossbarRenameModalState.errorMessage = nil;
-                end
-                if imgui.IsItemHovered() then
-                    imgui.SetTooltip('Rename palette');
-                end
-                imgui.SameLine();
-
-                -- Delete button
-                imgui.PushStyleColor(ImGuiCol_Button, {0.5, 0.2, 0.2, 1.0});
-                imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.7, 0.3, 0.3, 1.0});
-                if imgui.SmallButton('X##delete') then
-                    local success, err = palette.DeleteCrossbarPalette(paletteName, jobId, subjobId);
-                    if not success then
-                        print('[XIUI] Failed to delete palette: ' .. (err or 'unknown error'));
-                    end
-                end
-                imgui.PopStyleColor(2);
-                if imgui.IsItemHovered() then
-                    imgui.SetTooltip('Delete palette');
-                end
-
-                imgui.PopID();
+            -- Palette name with indicator if active
+            local isActive = (modeSettings.activePalette == paletteName);
+            if isActive then
+                imgui.TextColored({0.4, 0.8, 0.4, 1.0}, '> ' .. paletteName);
+            else
+                imgui.TextColored({0.7, 0.7, 0.7, 1.0}, '  ' .. paletteName);
             end
+
+            imgui.SameLine(200);
+
+            -- Move Up button
+            if i > 1 then  -- Can't move first palette up
+                if imgui.SmallButton('^##up') then
+                    palette.MoveCrossbarPalette(paletteName, -1, jobId, subjobId);
+                end
+                if imgui.IsItemHovered() then
+                    imgui.SetTooltip('Move up');
+                end
+            else
+                imgui.Dummy({16, 0});
+            end
+            imgui.SameLine();
+
+            -- Move Down button
+            if i < #availablePalettes then  -- Can't move last palette down
+                if imgui.SmallButton('v##down') then
+                    palette.MoveCrossbarPalette(paletteName, 1, jobId, subjobId);
+                end
+                if imgui.IsItemHovered() then
+                    imgui.SetTooltip('Move down');
+                end
+            else
+                imgui.Dummy({16, 0});
+            end
+            imgui.SameLine();
+
+            -- Rename button
+            if imgui.SmallButton('R##rename') then
+                crossbarRenameModalState.isOpen = true;
+                crossbarRenameModalState.paletteName = paletteName;
+                crossbarRenameModalState.inputBuffer[1] = paletteName;
+                crossbarRenameModalState.errorMessage = nil;
+            end
+            if imgui.IsItemHovered() then
+                imgui.SetTooltip('Rename palette');
+            end
+            imgui.SameLine();
+
+            -- Delete button
+            imgui.PushStyleColor(ImGuiCol_Button, {0.5, 0.2, 0.2, 1.0});
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.7, 0.3, 0.3, 1.0});
+            if imgui.SmallButton('X##delete') then
+                local success, err = palette.DeleteCrossbarPalette(paletteName, jobId, subjobId);
+                if not success then
+                    print('[XIUI] Failed to delete palette: ' .. (err or 'unknown error'));
+                end
+            end
+            imgui.PopStyleColor(2);
+            if imgui.IsItemHovered() then
+                imgui.SetTooltip('Delete palette');
+            end
+
+            imgui.PopID();
         end
     end
 
