@@ -24,6 +24,15 @@ local PET_TYPES = {
     { key = 'Wyvern', configKey = 'petBarWyvern', label = 'Wyvern', previewType = 1 },
 };
 
+-- Ability config keys for each pet type (used for validation)
+local PET_ABILITY_GROUPS = {
+    petBarAvatar = { 'petBarSmnShowBPRage', 'petBarSmnShowBPWard', 'petBarSmnShowApogee', 'petBarSmnShowManaCede' },
+    petBarCharm = { 'petBarBstShowSic', 'petBarBstShowRewardCharm' },
+    petBarJug = { 'petBarBstShowReady', 'petBarBstShowReward', 'petBarBstShowCallBeast', 'petBarBstShowBestialLoyalty' },
+    petBarAutomaton = { 'petBarPupShowActivate', 'petBarPupShowRepair', 'petBarPupShowDeusExAutomata', 'petBarPupShowDeploy', 'petBarPupShowDeactivate', 'petBarPupShowRetrieve' },
+    petBarWyvern = { 'petBarDrgShowCallWyvern', 'petBarDrgShowSpiritLink', 'petBarDrgShowDeepBreathing', 'petBarDrgShowSteadyWing' },
+};
+
 -- Copy settings between pet types
 local function CopyPetTypeSettings(sourceKey, targetKey)
     local source = gConfig[sourceKey];
@@ -93,7 +102,47 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
     end
 
     if components.CollapsingSection('Display Options##' .. configKey, false) then
+        -- Validation: Check if at least one ability is enabled
+        local anyAbilityEnabled = false;
+        local abilityGroup = PET_ABILITY_GROUPS[configKey];
+        if abilityGroup then
+            for _, key in ipairs(abilityGroup) do
+                if gConfig[key] ~= false then
+                    anyAbilityEnabled = true;
+                    break;
+                end
+            end
+        else
+            -- Should not happen, but default to true if group not found
+            anyAbilityEnabled = true;
+        end
+
+        -- If no abilities enabled, lock Always Visible and force it off
+        if not anyAbilityEnabled then
+            if typeSettings.alwaysVisible then
+                typeSettings.alwaysVisible = false;
+                SaveSettingsOnly();
+            end
+            imgui.PushStyleColor(ImGuiCol_Text, {0.5, 0.5, 0.5, 1.0});
+        end
+
         components.DrawPartyCheckbox(typeSettings, 'Always Visible##' .. configKey, 'alwaysVisible');
+        
+        if not anyAbilityEnabled then
+            imgui.PopStyleColor();
+            -- Revert if user tried to enable it
+            if typeSettings.alwaysVisible then
+                typeSettings.alwaysVisible = false;
+                SaveSettingsOnly();
+            end
+            
+            if imgui.IsItemHovered() then
+                imgui.SetTooltip('Enable at least one ability recast to use Always Visible.');
+            end
+            imgui.SameLine();
+            imgui.TextColored({1.0, 0.5, 0.5, 1.0}, '(Requires ability recast selection)');
+        end
+
         imgui.ShowHelp('Always show the pet bar (recast timers) even when no pet is present.');
         imgui.Spacing();
 
@@ -415,20 +464,23 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
                 imgui.Spacing();
                 imgui.Separator();
                 imgui.Spacing();
-                components.DrawCheckbox('Blood Pact: Rage', 'petBarSmnShowBPRage');
+                
+                local avatarGroup = PET_ABILITY_GROUPS[configKey];
+                
+                DrawRecastCheckbox('Blood Pact: Rage', 'petBarSmnShowBPRage', avatarGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Blood Pact: Rage ability timer (offensive blood pacts).');
-                components.DrawCheckbox('Blood Pact: Ward', 'petBarSmnShowBPWard');
+                DrawRecastCheckbox('Blood Pact: Ward', 'petBarSmnShowBPWard', avatarGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Blood Pact: Ward ability timer (defensive/support blood pacts).');
-                components.DrawCheckbox('Apogee', 'petBarSmnShowApogee');
+                DrawRecastCheckbox('Apogee', 'petBarSmnShowApogee', avatarGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Apogee ability timer (enhances next blood pact).');
-                components.DrawCheckbox('Mana Cede', 'petBarSmnShowManaCede');
+                DrawRecastCheckbox('Mana Cede', 'petBarSmnShowManaCede', avatarGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Mana Cede ability timer (transfer MP to avatar).');
             elseif configKey == 'petBarCharm' then
                 imgui.Spacing();
                 imgui.Separator();
                 imgui.Spacing();
                 
-                local charmGroup = {'petBarBstShowSic', 'petBarBstShowRewardCharm'};
+                local charmGroup = PET_ABILITY_GROUPS[configKey];
                 
                 DrawRecastCheckbox('Sic', 'petBarBstShowSic', charmGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Sic ability timer (offensive pet command).');
@@ -441,7 +493,7 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
                 imgui.Separator();
                 imgui.Spacing();
                 
-                local jugGroup = {'petBarBstShowReady', 'petBarBstShowReward', 'petBarBstShowCallBeast', 'petBarBstShowBestialLoyalty'};
+                local jugGroup = PET_ABILITY_GROUPS[configKey];
                 
                 DrawRecastCheckbox('Ready', 'petBarBstShowReady', jugGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Ready ability timer (offensive pet command).');
@@ -461,29 +513,35 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
                 imgui.Spacing();
                 imgui.Separator();
                 imgui.Spacing();
-                components.DrawCheckbox('Activate', 'petBarPupShowActivate');
+                
+                local pupGroup = PET_ABILITY_GROUPS[configKey];
+                
+                DrawRecastCheckbox('Activate', 'petBarPupShowActivate', pupGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Activate ability timer (summon automaton).');
-                components.DrawCheckbox('Repair', 'petBarPupShowRepair');
+                DrawRecastCheckbox('Repair', 'petBarPupShowRepair', pupGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Repair ability timer (heal automaton).');
-                components.DrawCheckbox('Deus Ex Automata', 'petBarPupShowDeusExAutomata');
+                DrawRecastCheckbox('Deus Ex Automata', 'petBarPupShowDeusExAutomata', pupGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Deus Ex Automata ability timer (revive automaton).');
-                components.DrawCheckbox('Deploy', 'petBarPupShowDeploy');
+                DrawRecastCheckbox('Deploy', 'petBarPupShowDeploy', pupGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Deploy ability timer (send automaton to engage).');
-                components.DrawCheckbox('Deactivate', 'petBarPupShowDeactivate');
+                DrawRecastCheckbox('Deactivate', 'petBarPupShowDeactivate', pupGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Deactivate ability timer (dismiss automaton).');
-                components.DrawCheckbox('Retrieve', 'petBarPupShowRetrieve');
+                DrawRecastCheckbox('Retrieve', 'petBarPupShowRetrieve', pupGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Retrieve ability timer (call automaton back).');
             elseif configKey == 'petBarWyvern' then
                 imgui.Spacing();
                 imgui.Separator();
                 imgui.Spacing();
-                components.DrawCheckbox('Call Wyvern', 'petBarDrgShowCallWyvern');
+                
+                local drgGroup = PET_ABILITY_GROUPS[configKey];
+                
+                DrawRecastCheckbox('Call Wyvern', 'petBarDrgShowCallWyvern', drgGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Call Wyvern ability timer (summon wyvern).');
-                components.DrawCheckbox('Spirit Link', 'petBarDrgShowSpiritLink');
+                DrawRecastCheckbox('Spirit Link', 'petBarDrgShowSpiritLink', drgGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Spirit Link ability timer (heal wyvern).');
-                components.DrawCheckbox('Deep Breathing', 'petBarDrgShowDeepBreathing');
+                DrawRecastCheckbox('Deep Breathing', 'petBarDrgShowDeepBreathing', drgGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Deep Breathing ability timer (enhance wyvern breath).');
-                components.DrawCheckbox('Steady Wing', 'petBarDrgShowSteadyWing');
+                DrawRecastCheckbox('Steady Wing', 'petBarDrgShowSteadyWing', drgGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Steady Wing ability timer (wyvern stoneskin).');
             end
         end

@@ -740,7 +740,14 @@ local function ShouldShowAbility(name, petJob)
         -- Ready and Sic share the same timer (ID 102), but have separate configs now
         if name == 'Ready' then return gConfig.petBarBstShowReady ~= false;
         elseif name == 'Sic' then return gConfig.petBarBstShowSic ~= false;
-        elseif name == 'Reward' then return gConfig.petBarBstShowReward ~= false; -- Default to Jug setting if context unknown
+        elseif name == 'Reward' then 
+            -- Check pet type context for Reward (Charm vs Jug)
+            local petType = data.GetPetTypeKey();
+            if petType == 'charm' then
+                return gConfig.petBarBstShowRewardCharm ~= false;
+            else
+                return gConfig.petBarBstShowReward ~= false;
+            end
         elseif name == 'Call Beast' then return gConfig.petBarBstShowCallBeast ~= false;
         elseif name == 'Bestial Loyalty' then return gConfig.petBarBstShowBestialLoyalty ~= false;
         elseif name == 'Familiar' then return gConfig.petBarShow2HourAbility;
@@ -849,6 +856,9 @@ function data.GetPetRecasts()
                         abilityCopy = sicAbility;
                     elseif abilityCopy.name == 'Call Beast' or abilityCopy.name == 'Bestial Loyalty' then
                         -- Skip Jug abilities for Charmed preview
+                        abilityCopy = nil;
+                    elseif abilityCopy.name == 'Reward' and gConfig.petBarBstShowRewardCharm == false then
+                        -- Explicitly hide Reward if disabled in Charm settings
                         abilityCopy = nil;
                     end
                 end
