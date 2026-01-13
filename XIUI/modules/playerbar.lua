@@ -224,7 +224,9 @@ playerbar.DrawWindow = function(settings)
 		
 	-- Get base window flags with NoMove dynamically added if positions are locked
 	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
+    ApplyWindowPosition('PlayerBar');
     if (imgui.Begin('PlayerBar', true, windowFlags)) then
+        SaveWindowPosition('PlayerBar');
 
 		local hpNameColor, hpGradient = GetCustomHpColors(SelfHPPercent/100, gConfig.colorCustomization.playerBar);
 

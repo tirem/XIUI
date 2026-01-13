@@ -102,6 +102,8 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
     end
 
     imgui.SetNextWindowSize({-1, -1}, ImGuiCond_Always);
+    
+    ApplyWindowPosition(windowName);
 
     local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
     if (gConfig.lockPositions) then
@@ -116,6 +118,7 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
     local fontVisible = false;
 
     if (imgui.Begin(windowName, true, windowFlags)) then
+        SaveWindowPosition(windowName);
         local locX, locY = imgui.GetWindowPos();
         local style = imgui.GetStyle();
         local framePaddingX = style.FramePadding.x;

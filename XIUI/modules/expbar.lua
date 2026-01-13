@@ -174,7 +174,9 @@ expbar.DrawWindow = function(settings)
     -- Use {0, 0} to allow unlimited auto-sizing (not {-1, -1} which can cause clipping)
     imgui.SetNextWindowSize({ 0, 0 }, ImGuiCond_Always);
 	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
+    ApplyWindowPosition('ExpBar');
     if (imgui.Begin('ExpBar', true, windowFlags)) then
+        SaveWindowPosition('ExpBar');
 
 		-- Draw the progress bar
         local progressBarWidth = settings.barWidth;

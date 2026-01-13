@@ -149,7 +149,9 @@ function pettarget.DrawWindow(settings)
         windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
     end
 
+    ApplyWindowPosition('PetBarTarget');
     if imgui.Begin('PetBarTarget', true, windowFlags) then
+        SaveWindowPosition('PetBarTarget');
         local targetWinPosX, targetWinPosY = imgui.GetWindowPos();
         local targetStartX, targetStartY = imgui.GetCursorScreenPos();
 

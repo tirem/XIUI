@@ -82,15 +82,216 @@ end
 
 -- State for confirmation dialogs
 local showRestoreDefaultsConfirm = false;
-local showRestoreColorsConfirm = false;
 
 -- Social icon textures
 local discordTexture = nil;
 local githubTexture = nil;
 local heartTexture = nil;
+local refreshTexture = nil;
 
 -- Credits popup state
 local showCreditsPopup = false;
+
+-- Profile management state
+local showProfilesWindow = { false };
+local newProfileName = { "" };
+local renameProfileName = { "" };
+local profileToDelete = nil;
+local showDeleteProfileConfirm = false;
+local showRenameProfilePopup = false;
+local showNewProfilePopup = false;
+
+-- Triggers for external commands
+local triggerNewProfilePopup = false;
+local triggerDeleteProfilePopup = false;
+local triggerRenameProfilePopup = false;
+
+-- XIUI Theme Colors (dark + gold accent)
+local gold = {0.957, 0.855, 0.592, 1.0};           -- #F4DA97 - Primary gold accent
+local goldDark = {0.765, 0.684, 0.474, 1.0};       -- #C3AE79 - Darker gold for hover
+local goldDarker = {0.573, 0.512, 0.355, 1.0};     -- #92835B - Even darker gold
+local bgDark = {0.051, 0.051, 0.051, 0.95};        -- #0D0D0D - Deep black background
+local bgMedium = {0.098, 0.090, 0.075, 1.0};       -- #191713 - Slightly warm dark
+local bgLight = {0.137, 0.125, 0.106, 1.0};        -- #23201B - Lighter warm dark
+local bgLighter = {0.176, 0.161, 0.137, 1.0};      -- #2D2923 - Highlight dark
+local textLight = {0.878, 0.855, 0.812, 1.0};      -- #E0DACF - Warm off-white text
+local textMuted = {0.6, 0.58, 0.54, 1.0};          -- #999388 - Muted text
+local borderDark = {0.3, 0.275, 0.235, 1.0};       -- #4D463C - Warm dark border
+
+-- Mapped colors for UI elements
+local bgColor = bgDark;
+local buttonColor = bgMedium;
+local buttonHoverColor = bgLight;
+local buttonActiveColor = bgLighter;
+local selectedButtonColor = {gold[1], gold[2], gold[3], 0.25};  -- Gold tinted selection
+local tabColor = bgMedium;
+local tabHoverColor = bgLight;
+local tabActiveColor = {gold[1], gold[2], gold[3], 0.3};  -- Gold tinted for selected tab
+local tabSelectedColor = {gold[1], gold[2], gold[3], 0.25};  -- Gold tinted for selected settings/color tab buttons
+local borderColor = borderDark;
+local textColor = textLight;
+
+local function PushThemeStyles()
+    imgui.PushStyleColor(ImGuiCol_WindowBg, bgColor);
+    imgui.PushStyleColor(ImGuiCol_ChildBg, {0, 0, 0, 0});
+    imgui.PushStyleColor(ImGuiCol_TitleBg, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_TitleBgActive, bgLight);
+    imgui.PushStyleColor(ImGuiCol_TitleBgCollapsed, bgDark);
+    imgui.PushStyleColor(ImGuiCol_FrameBg, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_FrameBgHovered, bgLight);
+    imgui.PushStyleColor(ImGuiCol_FrameBgActive, bgLighter);
+    imgui.PushStyleColor(ImGuiCol_Header, bgLight);
+    imgui.PushStyleColor(ImGuiCol_HeaderHovered, bgLighter);
+    imgui.PushStyleColor(ImGuiCol_HeaderActive, {gold[1], gold[2], gold[3], 0.3});
+    imgui.PushStyleColor(ImGuiCol_Border, borderColor);
+    imgui.PushStyleColor(ImGuiCol_Text, textColor);
+    imgui.PushStyleColor(ImGuiCol_TextDisabled, goldDark);  -- Dropdown arrows
+    imgui.PushStyleColor(ImGuiCol_Button, buttonColor);
+    imgui.PushStyleColor(ImGuiCol_ButtonHovered, buttonHoverColor);
+    imgui.PushStyleColor(ImGuiCol_ButtonActive, buttonActiveColor);
+    imgui.PushStyleColor(ImGuiCol_CheckMark, gold);
+    imgui.PushStyleColor(ImGuiCol_SliderGrab, goldDark);
+    imgui.PushStyleColor(ImGuiCol_SliderGrabActive, gold);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarBg, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrab, bgLighter);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabHovered, borderDark);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabActive, goldDark);
+    imgui.PushStyleColor(ImGuiCol_Separator, borderDark);
+    imgui.PushStyleColor(ImGuiCol_PopupBg, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_Tab, tabColor);
+    imgui.PushStyleColor(ImGuiCol_TabHovered, tabHoverColor);
+    imgui.PushStyleColor(ImGuiCol_TabActive, tabActiveColor);
+    imgui.PushStyleColor(ImGuiCol_TabUnfocused, bgDark);
+    imgui.PushStyleColor(ImGuiCol_TabUnfocusedActive, bgMedium);
+    imgui.PushStyleColor(ImGuiCol_ResizeGrip, goldDarker);
+    imgui.PushStyleColor(ImGuiCol_ResizeGripHovered, goldDark);
+    imgui.PushStyleColor(ImGuiCol_ResizeGripActive, gold);
+
+    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {12, 12});
+    imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {6, 4});
+    imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {8, 6});
+    imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0);
+    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0);
+    imgui.PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0);
+    imgui.PushStyleVar(ImGuiStyleVar_PopupRounding, 4.0);
+    imgui.PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 4.0);
+    imgui.PushStyleVar(ImGuiStyleVar_GrabRounding, 4.0);
+end
+
+local function PopThemeStyles()
+    imgui.PopStyleVar(9);
+    imgui.PopStyleColor(34);
+end
+
+local function DrawProfilesWindow()
+    if (not showProfilesWindow[1]) then return; end
+
+    PushThemeStyles();
+
+    imgui.SetNextWindowSize({ 330, 135 }, ImGuiCond_Always);
+    -- Using + for flags as they are typically integers
+    if (imgui.Begin("Profiles", showProfilesWindow, ImGuiWindowFlags_NoCollapse + ImGuiWindowFlags_NoResize)) then
+
+
+        local currentProfile = GetCurrentProfileName();
+        local profiles = GetProfileNames();
+
+        -- Profile List Dropdown
+        imgui.Text("Active Profile:");
+        imgui.SetNextItemWidth(-1);
+        if (imgui.BeginCombo("##ProfileSelect", currentProfile)) then
+            for _, name in ipairs(profiles) do
+                local isSelected = (name == currentProfile);
+                if (imgui.Selectable(name, isSelected)) then
+                    ChangeProfile(name);
+                end
+                if (isSelected) then
+                    imgui.SetItemDefaultFocus();
+                end
+            end
+            imgui.EndCombo();
+        end
+
+        imgui.Spacing();
+        imgui.Spacing();
+
+        -- Calculate button widths and positions for centering
+        -- Using fixed estimates or CalcTextSize if possible.
+        -- To be safe and consistent, we'll try to calculate.
+        
+        local style = imgui.GetStyle();
+        local spacing = style.ItemSpacing.x;
+        local padding = style.FramePadding.x * 2;
+        
+        -- Helper to get width
+        local function getBtnWidth(text)
+            return imgui.CalcTextSize(text) + padding;
+        end
+        
+        local wNew = math.max(getBtnWidth("New"), 50);
+        local wDup = math.max(getBtnWidth("Duplicate"), 50);
+        local wRen = math.max(getBtnWidth("Rename"), 50);
+        local wDel = math.max(getBtnWidth("Delete"), 50);
+        
+        local totalWidth = wNew + wDup + wRen + wDel + (spacing * 3);
+        local avail = imgui.GetContentRegionAvail();
+        local startX = (avail - totalWidth) * 0.5;
+        if (startX < 0) then startX = 0; end
+        
+        imgui.SetCursorPosX(startX);
+
+        -- Compact Profile Actions
+        if (imgui.Button("New", { wNew, 0 })) then
+            newProfileName[1] = "";
+            showNewProfilePopup = true;
+            triggerNewProfilePopup = true;
+        end
+
+        imgui.SameLine();
+        
+        -- Duplicate Button (Disabled if Default? Maybe allowed for Default to copy it)
+        -- We'll allow duplicating Default.
+        if (imgui.Button("Duplicate", { wDup, 0 })) then
+            DuplicateProfile(currentProfile);
+        end
+
+        imgui.SameLine();
+
+        -- Rename Button (Disabled if Default)
+        if (currentProfile == "Default") then
+            imgui.PushStyleVar(ImGuiStyleVar_Alpha, 0.5);
+            imgui.Button("Rename", { wRen, 0 });
+            imgui.PopStyleVar();
+        else
+            if (imgui.Button("Rename", { wRen, 0 })) then
+                renameProfileName[1] = currentProfile;
+                showRenameProfilePopup = true;
+                triggerRenameProfilePopup = true;
+            end
+        end
+
+        imgui.SameLine();
+
+        -- Delete Button (Disabled if Default)
+        if (currentProfile == "Default") then
+            imgui.PushStyleVar(ImGuiStyleVar_Alpha, 0.5);
+            imgui.Button("Delete", { wDel, 0 });
+            imgui.PopStyleVar();
+        else
+            if (imgui.Button("Delete", { wDel, 0 })) then
+                profileToDelete = currentProfile;
+                showDeleteProfileConfirm = true;
+                triggerDeleteProfilePopup = true;
+            end
+        end
+
+
+
+        imgui.End();
+    end
+
+    PopThemeStyles();
+end
 
 -- Navigation state
 local selectedCategory = 1;  -- 1-indexed category selection
@@ -308,7 +509,94 @@ local colorSettingsDrawFunctions = {
     DrawTreasurePoolColorSettings,
 };
 
+local function DrawProfilePopups()
+    local isModalOpen = false;
+
+    -- Triggers
+    if (triggerNewProfilePopup) then
+        imgui.OpenPopup("New Profile");
+        triggerNewProfilePopup = false;
+    end
+    if (triggerRenameProfilePopup) then
+        imgui.OpenPopup("Rename Profile");
+        triggerRenameProfilePopup = false;
+    end
+    if (triggerDeleteProfilePopup) then
+        imgui.OpenPopup("Delete Profile");
+        triggerDeleteProfilePopup = false;
+    end
+
+    -- New Profile Popup
+    if (imgui.BeginPopupModal("New Profile", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+        isModalOpen = true;
+        imgui.Text("Create New Profile:");
+        imgui.InputText("##NewProfileName", newProfileName, 32);
+        
+        imgui.NewLine();
+        if (imgui.Button("Create", { 120, 0 })) then
+            local name = newProfileName[1];
+            if (name ~= "" and name ~= "Default") then
+                if (CreateProfile(name)) then
+                    newProfileName[1] = ""; -- Clear input
+                    imgui.CloseCurrentPopup();
+                end
+            end
+        end
+        imgui.SameLine();
+        if (imgui.Button("Cancel", { 120, 0 })) then
+            imgui.CloseCurrentPopup();
+        end
+        imgui.EndPopup();
+    end
+
+    -- Rename Popup
+    if (imgui.BeginPopupModal("Rename Profile", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+        isModalOpen = true;
+        imgui.Text("Rename '" .. GetCurrentProfileName() .. "' to:");
+        imgui.InputText("##RenameInput", renameProfileName, 32);
+        
+        imgui.NewLine();
+        if (imgui.Button("Rename", { 120, 0 })) then
+            local newName = renameProfileName[1];
+            if (newName ~= "" and newName ~= "Default") then
+                if (RenameProfile(GetCurrentProfileName(), newName)) then
+                    imgui.CloseCurrentPopup();
+                end
+            end
+        end
+        imgui.SameLine();
+        if (imgui.Button("Cancel", { 120, 0 })) then
+            imgui.CloseCurrentPopup();
+        end
+        imgui.EndPopup();
+    end
+
+    -- Delete Confirmation Popup
+    if (imgui.BeginPopupModal("Delete Profile", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+        isModalOpen = true;
+        imgui.Text("Are you sure you want to delete profile:");
+        imgui.TextColored({1.0, 0.3, 0.3, 1.0}, profileToDelete);
+        imgui.Text("This action cannot be undone!");
+        
+        imgui.NewLine();
+        if (imgui.Button("Yes, Delete", { 120, 0 })) then
+            if (DeleteProfile(profileToDelete)) then
+                imgui.CloseCurrentPopup();
+            end
+        end
+        imgui.SameLine();
+        if (imgui.Button("Cancel", { 120, 0 })) then
+            imgui.CloseCurrentPopup();
+        end
+        imgui.EndPopup();
+    end
+    
+    return isModalOpen;
+end
+
 config.DrawWindow = function(us)
+    DrawProfilesWindow();
+
     -- Detect when config closes and clear treasure pool preview
     local isConfigOpen = showConfig[1];
     if wasConfigOpen and not isConfigOpen then
@@ -324,75 +612,7 @@ config.DrawWindow = function(us)
     if (not showConfig[1]) then return; end
 
     -- XIUI Theme Colors (dark + gold accent)
-    -- Base colors from XIUI branding
-    local gold = {0.957, 0.855, 0.592, 1.0};           -- #F4DA97 - Primary gold accent
-    local goldDark = {0.765, 0.684, 0.474, 1.0};       -- #C3AE79 - Darker gold for hover
-    local goldDarker = {0.573, 0.512, 0.355, 1.0};     -- #92835B - Even darker gold
-    local bgDark = {0.051, 0.051, 0.051, 0.95};        -- #0D0D0D - Deep black background
-    local bgMedium = {0.098, 0.090, 0.075, 1.0};       -- #191713 - Slightly warm dark
-    local bgLight = {0.137, 0.125, 0.106, 1.0};        -- #23201B - Lighter warm dark
-    local bgLighter = {0.176, 0.161, 0.137, 1.0};      -- #2D2923 - Highlight dark
-    local textLight = {0.878, 0.855, 0.812, 1.0};      -- #E0DACF - Warm off-white text
-    local textMuted = {0.6, 0.58, 0.54, 1.0};          -- #999388 - Muted text
-    local borderDark = {0.3, 0.275, 0.235, 1.0};       -- #4D463C - Warm dark border
-
-    -- Mapped colors for UI elements
-    local bgColor = bgDark;
-    local buttonColor = bgMedium;
-    local buttonHoverColor = bgLight;
-    local buttonActiveColor = bgLighter;
-    local selectedButtonColor = {gold[1], gold[2], gold[3], 0.25};  -- Gold tinted selection
-    local tabColor = bgMedium;
-    local tabHoverColor = bgLight;
-    local tabActiveColor = {gold[1], gold[2], gold[3], 0.3};  -- Gold tinted for selected tab
-    local tabSelectedColor = {gold[1], gold[2], gold[3], 0.25};  -- Gold tinted for selected settings/color tab buttons
-    local borderColor = borderDark;
-    local textColor = textLight;
-
-    imgui.PushStyleColor(ImGuiCol_WindowBg, bgColor);
-    imgui.PushStyleColor(ImGuiCol_ChildBg, {0, 0, 0, 0});
-    imgui.PushStyleColor(ImGuiCol_TitleBg, bgMedium);
-    imgui.PushStyleColor(ImGuiCol_TitleBgActive, bgLight);
-    imgui.PushStyleColor(ImGuiCol_TitleBgCollapsed, bgDark);
-    imgui.PushStyleColor(ImGuiCol_FrameBg, bgMedium);
-    imgui.PushStyleColor(ImGuiCol_FrameBgHovered, bgLight);
-    imgui.PushStyleColor(ImGuiCol_FrameBgActive, bgLighter);
-    imgui.PushStyleColor(ImGuiCol_Header, bgLight);
-    imgui.PushStyleColor(ImGuiCol_HeaderHovered, bgLighter);
-    imgui.PushStyleColor(ImGuiCol_HeaderActive, {gold[1], gold[2], gold[3], 0.3});
-    imgui.PushStyleColor(ImGuiCol_Border, borderColor);
-    imgui.PushStyleColor(ImGuiCol_Text, textColor);
-    imgui.PushStyleColor(ImGuiCol_TextDisabled, goldDark);  -- Dropdown arrows
-    imgui.PushStyleColor(ImGuiCol_Button, buttonColor);
-    imgui.PushStyleColor(ImGuiCol_ButtonHovered, buttonHoverColor);
-    imgui.PushStyleColor(ImGuiCol_ButtonActive, buttonActiveColor);
-    imgui.PushStyleColor(ImGuiCol_CheckMark, gold);
-    imgui.PushStyleColor(ImGuiCol_SliderGrab, goldDark);
-    imgui.PushStyleColor(ImGuiCol_SliderGrabActive, gold);
-    imgui.PushStyleColor(ImGuiCol_ScrollbarBg, bgMedium);
-    imgui.PushStyleColor(ImGuiCol_ScrollbarGrab, bgLighter);
-    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabHovered, borderDark);
-    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabActive, goldDark);
-    imgui.PushStyleColor(ImGuiCol_Separator, borderDark);
-    imgui.PushStyleColor(ImGuiCol_PopupBg, bgMedium);
-    imgui.PushStyleColor(ImGuiCol_Tab, tabColor);
-    imgui.PushStyleColor(ImGuiCol_TabHovered, tabHoverColor);
-    imgui.PushStyleColor(ImGuiCol_TabActive, tabActiveColor);
-    imgui.PushStyleColor(ImGuiCol_TabUnfocused, bgDark);
-    imgui.PushStyleColor(ImGuiCol_TabUnfocusedActive, bgMedium);
-    imgui.PushStyleColor(ImGuiCol_ResizeGrip, goldDarker);
-    imgui.PushStyleColor(ImGuiCol_ResizeGripHovered, goldDark);
-    imgui.PushStyleColor(ImGuiCol_ResizeGripActive, gold);
-
-    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {12, 12});
-    imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {6, 4});
-    imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {8, 6});
-    imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0);
-    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0);
-    imgui.PushStyleVar(ImGuiStyleVar_ChildRounding, 4.0);
-    imgui.PushStyleVar(ImGuiStyleVar_PopupRounding, 4.0);
-    imgui.PushStyleVar(ImGuiStyleVar_ScrollbarRounding, 4.0);
-    imgui.PushStyleVar(ImGuiStyleVar_GrabRounding, 4.0);
+    PushThemeStyles();
 
     imgui.SetNextWindowSize({ 900, 650 }, ImGuiCond_FirstUseEver);
     if(imgui.Begin("XIUI Config - v" .. addon.version, showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
@@ -401,13 +621,6 @@ config.DrawWindow = function(us)
         local contentWidth = windowWidth - sidebarWidth - 20;
 
         -- Top bar with reset buttons and social links
-        if(imgui.Button("Reset Settings")) then
-            showRestoreDefaultsConfirm = true;
-        end
-        imgui.SameLine();
-        if(imgui.Button("Reset Colors")) then
-            showRestoreColorsConfirm = true;
-        end
         -- Load social icon textures if not loaded
         if discordTexture == nil then
             discordTexture = LoadTexture("socials/discord");
@@ -418,11 +631,58 @@ config.DrawWindow = function(us)
         if heartTexture == nil then
             heartTexture = LoadTexture("socials/heart");
         end
+        if refreshTexture == nil then
+            refreshTexture = LoadTexture('icons/refresh.png');
+        end
 
         -- Social icon buttons with square background boxes
         local boxSize = 26;
         local boxSpacing = 4;
         local iconSize = 18;
+
+        -- Adjust padding to match social button height (26px)
+        -- Standard font is typically 13-14px. 26 - 13 = 13. 13/2 = 6.5.
+        imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {8, 6});
+
+        -- Profiles Button
+        imgui.PushStyleColor(ImGuiCol_Button, bgLight);
+        if (imgui.Button("Profiles", { 0, 26 })) then
+            showProfilesWindow[1] = true;
+        end
+        imgui.PopStyleColor();
+        
+        imgui.SameLine();
+        imgui.PushItemWidth(300); -- Increased width for profile select
+        local currentProfile = GetCurrentProfileName();
+        local profiles = GetProfileNames();
+        
+        if (imgui.BeginCombo("##QuickProfileSelect", currentProfile)) then
+            for _, name in ipairs(profiles) do
+                local isSelected = (name == currentProfile);
+                if (imgui.Selectable(name, isSelected)) then
+                    if (name ~= currentProfile) then
+                        ChangeProfile(name);
+                    end
+                end
+                if (isSelected) then
+                    imgui.SetItemDefaultFocus();
+                end
+            end
+            imgui.EndCombo();
+        end
+
+        imgui.PopItemWidth();
+        imgui.PopStyleVar(); -- Restore padding
+
+        imgui.SameLine();
+
+        -- Refresh/Reset Button (Using RenderSocialButton for consistent look)
+        RenderSocialButton(refreshTexture, "refresh_btn", function()
+            showRestoreDefaultsConfirm = true;
+        end, bgLight, bgLighter, borderDark, boxSize, iconSize);
+
+        imgui.SameLine();
+        imgui.ShowHelp('Reset current profile settings.');
 
         imgui.SameLine();
         imgui.SetCursorPosX(windowWidth - (boxSize * 3) - (boxSpacing * 2));
@@ -484,6 +744,7 @@ config.DrawWindow = function(us)
             imgui.Text("Are you sure you want to reset all settings to defaults?");
             imgui.Text("This will reset all your customizations including:");
             imgui.BulletText("UI positions, scales, and visibility");
+            imgui.BulletText("Color settings and themes");
             imgui.BulletText("Font settings");
             imgui.NewLine();
 
@@ -500,32 +761,13 @@ config.DrawWindow = function(us)
             imgui.EndPopup();
         end
 
-        -- Reset Colors confirmation popup
-        if (showRestoreColorsConfirm) then
-            imgui.OpenPopup("Confirm Reset Colors");
-            showRestoreColorsConfirm = false;
-        end
 
-        if (imgui.BeginPopupModal("Confirm Reset Colors", true, ImGuiWindowFlags_AlwaysAutoResize)) then
-            anyModalOpen = true;
-            imgui.Text("Are you sure you want to restore all colors to defaults?");
-            imgui.Text("This will reset all your custom colors.");
-            imgui.NewLine();
-
-            if (imgui.Button("Confirm", { 120, 0 })) then
-                gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
-                UpdateSettings();
-                imgui.CloseCurrentPopup();
-            end
-            imgui.SameLine();
-            if (imgui.Button("Cancel", { 120, 0 })) then
-                imgui.CloseCurrentPopup();
-            end
-
-            imgui.EndPopup();
-        end
 
         -- Update global modal state for other modules
+        if (DrawProfilePopups()) then
+            anyModalOpen = true;
+        end
+
         _XIUI_MODAL_OPEN = anyModalOpen;
 
         imgui.Spacing();
@@ -666,8 +908,30 @@ config.DrawWindow = function(us)
     end
 
     imgui.End();
-    imgui.PopStyleVar(9);
-    imgui.PopStyleColor(34);  -- 26 base + 5 tab colors + 3 resize grip colors
+    PopThemeStyles();
+end
+
+function config.OpenNewProfilePopup()
+    showConfig[1] = true;
+    triggerNewProfilePopup = true;
+    if newProfileName[1] then newProfileName[1] = ""; end
+end
+
+function config.OpenDeleteProfilePopup(name)
+    showConfig[1] = true;
+    triggerDeleteProfilePopup = true;
+    profileToDelete = name;
+end
+
+function config.OpenRenameProfilePopup(name)
+    showConfig[1] = true;
+    triggerRenameProfilePopup = true;
+    renameProfileName[1] = name;
+end
+
+function config.OpenResetSettingsPopup()
+    showConfig[1] = true;
+    showRestoreDefaultsConfirm = true;
 end
 
 return config;

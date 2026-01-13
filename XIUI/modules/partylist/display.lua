@@ -1223,7 +1223,11 @@ function display.DrawPartyWindow(settings, party, partyIndex)
 
     imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {0,0});
     imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, { settings.barSpacing * scale.x, 0 });
+    
+    ApplyWindowPosition(windowName);
+    
     if (imgui.Begin(windowName, true, windowFlags)) then
+        SaveWindowPosition(windowName);
         imguiPosX, imguiPosY = imgui.GetWindowPos();
 
         local nameRefHeight = data.partyRefHeights[partyIndex].nameRefHeight;

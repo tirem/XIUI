@@ -703,7 +703,9 @@ function display.DrawWindow(settings)
 
     local windowPosX, windowPosY = 0, 0;
 
+    ApplyWindowPosition('PetBar');
     if imgui.Begin('PetBar', true, windowFlags) then
+        SaveWindowPosition('PetBar');
         windowPosX, windowPosY = imgui.GetWindowPos();
         local startX, startY = imgui.GetCursorScreenPos();
 

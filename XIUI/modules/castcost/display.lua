@@ -273,14 +273,8 @@ function M.Render(itemInfo, itemType, settings, colors)
     -- Set up ImGui window
     imgui.SetNextWindowSize({ -1, -1 }, ImGuiCond_Always);
 
-    -- Apply saved position on first render
-    local cc = gConfig.castCost or {};
-    if not hasAppliedSavedPosition and cc.windowPosX ~= nil and cc.windowPosY ~= nil then
-        imgui.SetNextWindowPos({cc.windowPosX, cc.windowPosY}, ImGuiCond_Once);
-        hasAppliedSavedPosition = true;
-        lastSavedPosX = cc.windowPosX;
-        lastSavedPosY = cc.windowPosY;
-    end
+    -- Apply saved position from profile
+    ApplyWindowPosition('CastCost');
 
     local windowFlags = bit.bor(
         ImGuiWindowFlags_NoDecoration,
@@ -296,6 +290,7 @@ function M.Render(itemInfo, itemType, settings, colors)
     end
 
     if imgui.Begin('CastCost', true, windowFlags) then
+        SaveWindowPosition('CastCost');
         local cursorX, cursorY = imgui.GetCursorScreenPos();
 
         -- Calculate content dimensions

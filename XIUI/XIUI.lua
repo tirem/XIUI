@@ -33,6 +33,7 @@ _G._XIUI_USE_ASHITA_4_3 = false;
 require('handlers.imgui_compat');
 
 require('common');
+local chat = require('chat');
 local settings = require('settings');
 local gdi = require('submodules.gdifonts.include');
 
@@ -42,6 +43,7 @@ local settingsMigration = require('core.settings.migration');
 local settingsUpdater = require('core.settings.updater');
 local gameState = require('core.gamestate');
 local uiModules = require('core.moduleregistry');
+local profileManager = require('core.profile_manager');
 
 -- UI modules
 local uiMods = require('modules.init');
@@ -71,7 +73,10 @@ local progressbar = require('libs.progressbar');
 local TextureManager = require('libs.texturemanager');
 
 -- Global switch to hard-disable functionality that is limited on HX servers
-HzLimitedMode = false;
+HzLimitedMode = true;
+
+-- Developer override to allow editing the Default profile
+g_AllowDefaultEdit = false;
 
 -- =================
 -- = XIUI DEV ONLY =
@@ -107,7 +112,7 @@ function _check_hot_reload()
             if _XIUI_DEV_HOT_RELOAD_FILES[filename] ~= nil then
                 if table.concat(_XIUI_DEV_HOT_RELOAD_FILES[filename]) ~= table.concat(fileTable) then
                     needsReload = true;
-                    print("[XIUI] Development file " .. filename .. " changed, reloading XIUI.")
+                    print(chat.header(addon.name):append(chat.message("Development file " .. filename .. " changed, reloading XIUI.")));
                 end
             end
             _XIUI_DEV_HOT_RELOAD_FILES[filename] = fileTable;
@@ -239,28 +244,196 @@ uiModules.Register('treasurePool', {
 });
 
 -- Initialize settings from defaults
-local user_settings_container = T{
-    userSettings = settingsDefaults.user_settings;
-};
-
 gAdjustedSettings = deep_copy_table(settingsDefaults.default_settings);
 defaultUserSettings = deep_copy_table(settingsDefaults.user_settings);
 
--- Run HXUI file migration BEFORE loading settings (so migrated files are picked up)
+-- Run HXUI file migration BEFORE loading settings
 local migrationResult = settingsMigration.MigrateFromHXUI();
 
--- Load settings and run structure migrations
-local config = settings.load(user_settings_container);
-gConfig = config.userSettings;
-gConfigVersion = 0; -- Incremented on settings changes for cache invalidation
+-- ==========================================================
+-- = MIGRATION LOGIC (Legacy -> Profile System) =
+-- ==========================================================
+
+-- Load raw settings to detect legacy data (without default filtering)
+local rawSettings = settings.load({});
+
+-- 1. Check for intermediate "profiles" table (from recent dev versions)
+if (rawSettings.profiles ~= nil) then
+    print(chat.header(addon.name):append(chat.message('Migrating internal profiles to file system...')));
+    local globalProfiles = profileManager.GetGlobalProfiles();
+    
+    for name, data in pairs(rawSettings.profiles) do
+        if not profileManager.ProfileExists(name) then
+            profileManager.SaveProfileSettings(name, data);
+        end
+        if not table.contains(globalProfiles.names, name) then
+            table.insert(globalProfiles.names, name);
+            table.insert(globalProfiles.order, name);
+        end
+    end
+    profileManager.SaveGlobalProfiles(globalProfiles);
+    
+    -- Clean up
+    rawSettings.profiles = nil;
+    rawSettings.profileOrder = nil;
+    settings.save();
+end
+
+-- 2. Check for legacy flat settings (Global Scan)
+local function MigrateAllLegacySettings()
+    local installPath = AshitaCore:GetInstallPath();
+    local xiuiPath = installPath .. 'config\\addons\\xiui\\';
+    local imguiPath = installPath .. 'config\\imgui.ini';
+    local imguiBakPath = installPath .. 'config\\imgui.bak';
+    local legacyFound = false;
+
+    -- Helper to list directories
+    local function GetCharacterFolders()
+        local folders = {};
+        -- Use dir command to list directories
+        local p = io.popen('dir "' .. xiuiPath .. '" /b /ad');
+        if p then
+            for dir in p:lines() do
+                local name, id = string.match(dir, "^([%a]+)_(%d+)$");
+                if name and id then
+                    table.insert(folders, { name = name, id = id, dir = dir });
+                end
+            end
+            p:close();
+        end
+        return folders;
+    end
+
+    local charFolders = GetCharacterFolders();
+
+    -- Iterate and check for legacy settings
+    for _, char in ipairs(charFolders) do
+        local settingsPath = xiuiPath .. char.dir .. '\\settings.lua';
+        
+        if (ashita.fs.exists(settingsPath)) then
+            -- Safely load settings table
+            local success, result = pcall(dofile, settingsPath);
+            
+            if (success and type(result) == 'table' and result.currentProfile == nil and next(result) ~= nil) then
+                -- FOUND LEGACY SETTINGS
+                
+                -- 1. Create global imgui.ini backup (Once)
+                if (not legacyFound) then
+                    legacyFound = true;
+                    if (ashita.fs.exists(imguiPath)) then
+                        local inp = io.open(imguiPath, "rb");
+                        local outp = io.open(imguiBakPath, "wb");
+                        if (inp and outp) then
+                            outp:write(inp:read("*all"));
+                            inp:close();
+                            outp:close();
+                            print(chat.header(addon.name):append(chat.message('Created imgui.ini backup at: ')):append(chat.success(imguiBakPath)));
+                        end
+                    end
+                end
+                
+                -- 2. Backup character settings
+                local backupPath = xiuiPath .. char.dir .. '\\settings.bak';
+                local inp = io.open(settingsPath, "rb");
+                local outp = io.open(backupPath, "wb");
+                if (inp and outp) then
+                    outp:write(inp:read("*all"));
+                    inp:close();
+                    outp:close();
+                    print(chat.header(addon.name):append(chat.message('Created legacy settings backup at: ')):append(chat.success(backupPath)));
+                end
+                
+                -- 3. Create Legacy Profile
+                local profileName = 'Legacy ' .. char.name;
+                local legacyData = deep_copy_table(defaultUserSettings);
+                
+                -- Merge settings
+                if (result.userSettings ~= nil and type(result.userSettings) == 'table') then
+                    for k, v in pairs(result.userSettings) do legacyData[k] = v; end
+                    for k, v in pairs(result) do
+                        if (k ~= 'profiles' and k ~= 'profileOrder' and k ~= 'userSettings' and result.userSettings[k] == nil) then
+                            legacyData[k] = v;
+                        end
+                    end
+                else
+                    for k, v in pairs(result) do
+                        if (k ~= 'profiles' and k ~= 'profileOrder') then
+                            legacyData[k] = v;
+                        end
+                    end
+                end
+                
+                -- Import window positions from imgui.ini (if available)
+                local legacyPositions = profileManager.GetImguiPositions();
+                if (legacyPositions) then
+                    legacyData.windowPositions = legacyPositions;
+                end
+                
+                -- Save Profile
+                profileManager.SaveProfileSettings(profileName, legacyData);
+                
+                -- Register Global Profile
+                local globalProfiles = profileManager.GetGlobalProfiles();
+                if not table.contains(globalProfiles.names, profileName) then
+                    table.insert(globalProfiles.names, profileName);
+                    table.insert(globalProfiles.order, profileName);
+                    profileManager.SaveGlobalProfiles(globalProfiles);
+                end
+                
+                -- 4. Update settings.lua
+                local f = io.open(settingsPath, "w+");
+                if f then
+                    f:write("return {\n");
+                    f:write(string.format("    currentProfile = %q,\n", profileName));
+                    f:write("};\n");
+                    f:close();
+                end
+                
+                print(chat.header(addon.name):append(chat.message('Migrated ' .. char.name .. ' to profile: ')):append(chat.success(profileName)));
+            end
+        end
+    end
+end
+
+MigrateAllLegacySettings();
+
+-- ==========================================================
+-- = LOAD PROFILE SETTINGS =
+-- ==========================================================
+
+-- Load character settings (tracks which profile is active)
+local charSettings = settings.load({ currentProfile = 'Default' });
+config = charSettings; -- Keep reference to character config
+
+-- Global profiles list
+local globalProfiles = profileManager.GetGlobalProfiles();
+
+-- Ensure Default profile exists
+if (not profileManager.ProfileExists('Default')) then
+    profileManager.SaveProfileSettings('Default', deep_copy_table(defaultUserSettings));
+end
+
+-- Load active profile
+local currentProfileName = charSettings.currentProfile;
+if (not profileManager.ProfileExists(currentProfileName)) then
+    currentProfileName = 'Default';
+    charSettings.currentProfile = 'Default';
+    settings.save();
+end
+
+gConfig = profileManager.GetProfileSettings(currentProfileName);
+    if (gConfig == nil) then
+        -- Fallback if load fails
+        gConfig = deep_copy_table(defaultUserSettings);
+    end
+    
+    gConfig.appliedPositions = {};
+
+    gConfigVersion = 0;
 settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
 
--- Show migration message after settings are loaded (deferred to ensure chat is ready)
-if migrationResult and migrationResult.count > 0 then
-    ashita.tasks.once(1, function()
-        print('[XIUI] Successfully migrated settings for ' .. migrationResult.count .. ' character(s) from HXUI.');
-    end);
-end
+-- Show migration message
+
 
 -- State variables
 showConfig = { false };
@@ -296,11 +469,112 @@ function GetLayoutTemplate(partyIndex)
     return party.layout == 1 and gConfig.layoutCompact or gConfig.layoutHorizontal;
 end
 
+function CreateProfile(name)
+    if (profileManager.ProfileExists(name)) then return false; end
+    
+    local newSettings = deep_copy_table(defaultUserSettings);
+    profileManager.SaveProfileSettings(name, newSettings);
+    
+    local globalProfiles = profileManager.GetGlobalProfiles();
+    table.insert(globalProfiles.names, name);
+    table.insert(globalProfiles.order, name);
+    profileManager.SaveGlobalProfiles(globalProfiles);
+    
+    ChangeProfile(name);
+    return true;
+end
+
+function DuplicateProfile(name)
+    local baseName = name;
+    -- If duplicating Default, we might want to name it "Profile (1)" or just "Default (1)"
+    
+    local counter = 1;
+    local newName = baseName .. " (" .. counter .. ")";
+    
+    while (profileManager.ProfileExists(newName)) do
+        counter = counter + 1;
+        newName = baseName .. " (" .. counter .. ")";
+    end
+    
+    local currentSettings = profileManager.GetProfileSettings(name);
+    if (currentSettings == nil) then return false; end
+    
+    local newSettings = deep_copy_table(currentSettings);
+    profileManager.SaveProfileSettings(newName, newSettings);
+    
+    local globalProfiles = profileManager.GetGlobalProfiles();
+    table.insert(globalProfiles.names, newName);
+    table.insert(globalProfiles.order, newName);
+    profileManager.SaveGlobalProfiles(globalProfiles);
+    
+    ChangeProfile(newName);
+    return true;
+end
+
+local function GetDefaultWindowPositions()
+    return {
+        PlayerBar = { x = 20, y = 20 },
+        TargetBar = { x = 20, y = 100 },
+        PartyList = { x = 20, y = 200 },
+        CastBar = { x = 300, y = 300 },
+        Notifications_Group1 = { x = 800, y = 20 },
+        Notifications_Group2 = { x = 800, y = 200 },
+        TreasurePool = { x = 800, y = 200 },
+        PetBar = { x = 300, y = 400 },
+        ExpBar = { x = 20, y = 0 }, -- Top edge
+        GilTracker = { x = 20, y = 500 },
+        InventoryTracker = { x = 150, y = 500 },
+    };
+end
+
+function ChangeProfile(name)
+    if (not profileManager.ProfileExists(name)) then return false; end
+    
+    -- Save current settings before switching
+    if (config.currentProfile ~= 'Default' or g_AllowDefaultEdit) then
+        profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    end
+    
+    config.currentProfile = name;
+    settings.save(); -- Save character preference
+    
+    -- Clear textures to prevent ghosting
+    TextureManager.clear();
+    
+    uiModules.HideAll();
+    
+    gConfig = profileManager.GetProfileSettings(name);
+    gConfig.appliedPositions = {}; -- Ensure we re-apply positions for the new profile
+    
+    -- If Default profile has no saved positions, inject defaults
+    if (name == 'Default' and (not gConfig.windowPositions or next(gConfig.windowPositions) == nil)) then
+        gConfig.windowPositions = GetDefaultWindowPositions();
+    end
+    
+    settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
+    UpdateSettings();
+    return true;
+end
+
+function GetProfileNames()
+    local globalProfiles = profileManager.GetGlobalProfiles();
+    local profiles = {};
+    for _, name in ipairs(globalProfiles.order) do
+        table.insert(profiles, name);
+    end
+    table.sort(profiles);
+    return profiles;
+end
+
+function GetCurrentProfileName()
+    return config.currentProfile;
+end
+
 function ResetSettings()
     gConfig = deep_copy_table(defaultUserSettings);
-    config.userSettings = gConfig;
+    gConfig.appliedPositions = {};
+    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
     UpdateSettings();
-    settings.save();
 end
 
 function SavePartyListLayoutSetting(key, value)
@@ -322,7 +596,10 @@ function SaveSettingsToDisk()
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
-    settings.save();
+    
+    if (config.currentProfile ~= 'Default' or g_AllowDefaultEdit) then
+        profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    end
 end
 
 function SaveSettingsOnly()
@@ -330,8 +607,118 @@ function SaveSettingsOnly()
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
-    settings.save();
+    
+    if (config.currentProfile ~= 'Default' or g_AllowDefaultEdit) then
+        profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    end
     UpdateUserSettings();
+end
+
+-- New functions for profile management
+
+function RenameProfile(oldName, newName)
+    if (oldName == 'Default') then return false; end
+    if (profileManager.ProfileExists(newName)) then return false; end
+    if (not profileManager.ProfileExists(oldName)) then return false; end
+    
+    local settingsData = profileManager.GetProfileSettings(oldName);
+    profileManager.SaveProfileSettings(newName, settingsData);
+    profileManager.DeleteProfile(oldName);
+    
+    local globalProfiles = profileManager.GetGlobalProfiles();
+    
+    -- Update names list
+    for i, name in ipairs(globalProfiles.names) do
+        if name == oldName then
+            globalProfiles.names[i] = newName;
+            break;
+        end
+    end
+    
+    -- Update order list
+    for i, name in ipairs(globalProfiles.order) do
+        if name == oldName then
+            globalProfiles.order[i] = newName;
+            break;
+        end
+    end
+    
+    profileManager.SaveGlobalProfiles(globalProfiles);
+    
+    if (config.currentProfile == oldName) then
+        config.currentProfile = newName;
+        settings.save();
+    end
+    
+    return true;
+end
+
+function DeleteProfile(name)
+    if (name == 'Default') then return false; end
+    
+    -- If deleting the active profile, switch to Default first
+    if (config.currentProfile == name) then
+        if (not ChangeProfile('Default')) then
+            return false;
+        end
+    end
+    
+    profileManager.DeleteProfile(name);
+    
+    local globalProfiles = profileManager.GetGlobalProfiles();
+    
+    -- Remove from names
+    for i, n in ipairs(globalProfiles.names) do
+        if n == name then
+            table.remove(globalProfiles.names, i);
+            break;
+        end
+    end
+    
+    -- Remove from order
+    for i, n in ipairs(globalProfiles.order) do
+        if n == name then
+            table.remove(globalProfiles.order, i);
+            break;
+        end
+    end
+    
+    profileManager.SaveGlobalProfiles(globalProfiles);
+    return true;
+end
+
+function MoveProfileUp(name)
+    local globalProfiles = profileManager.GetGlobalProfiles();
+    local order = globalProfiles.order;
+    
+    for i, n in ipairs(order) do
+        if n == name then
+            if i > 1 then
+                order[i], order[i-1] = order[i-1], order[i];
+                profileManager.SaveGlobalProfiles(globalProfiles);
+                return true;
+            end
+            break;
+        end
+    end
+    return false;
+end
+
+function MoveProfileDown(name)
+    local globalProfiles = profileManager.GetGlobalProfiles();
+    local order = globalProfiles.order;
+    
+    for i, n in ipairs(order) do
+        if n == name then
+            if i < #order then
+                order[i], order[i+1] = order[i+1], order[i];
+                profileManager.SaveGlobalProfiles(globalProfiles);
+                return true;
+            end
+            break;
+        end
+    end
+    return false;
 end
 
 -- Module-specific visual updaters (includes disk save - use for dropdowns, checkboxes)
@@ -365,8 +752,35 @@ end
 settings.register('settings', 'settings_update', function (s)
     if (s ~= nil) then
         config = s;
-        gConfig = config.userSettings;
+
+        -- Validate profile existence
+        local currentProfileName = config.currentProfile;
+        if (not profileManager.ProfileExists(currentProfileName)) then
+            print(chat.header(addon.name):append(chat.message('Profile not found: ')):append(chat.error(currentProfileName)));
+            currentProfileName = 'Default';
+            config.currentProfile = 'Default';
+            settings.save();
+        end
+
+        -- Reload profile settings
+        local newGConfig = profileManager.GetProfileSettings(currentProfileName);
+        if (newGConfig) then
+            gConfig = newGConfig;
+        else
+            -- Fallback
+             gConfig = deep_copy_table(defaultUserSettings);
+        end
+        
+        -- Initialize runtime state
+        gConfig.appliedPositions = {};
+        
+        -- Run migrations
+        settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
+        
+        -- Update visuals
         UpdateSettings();
+        
+        print(chat.header(addon.name):append(chat.message('Loaded profile: ')):append(chat.success(currentProfileName)));
     end
 end);
 
@@ -421,6 +835,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 end);
 
 ashita.events.register('load', 'load_cb', function ()
+    gConfig.appliedPositions = {};
     UpdateUserSettings();
     uiModules.InitializeAll(gAdjustedSettings);
 
@@ -533,6 +948,62 @@ ashita.events.register('command', 'command_cb', function (e)
         end
 
         -- ============================================
+        -- Profile Commands
+        -- ============================================
+
+        if (command_args[2] == 'profile') then
+            -- /xiui profile reset
+            if (command_args[3] == 'reset') then
+                 configMenu.OpenResetSettingsPopup();
+                 return;
+            end
+            
+            -- /xiui profile next
+            if (command_args[3] == 'next') then
+                local profiles = GetProfileNames();
+                local current = GetCurrentProfileName();
+                local index = 0;
+                for i, name in ipairs(profiles) do
+                    if name == current then index = i; break; end
+                end
+                if index > 0 then
+                    local nextIndex = (index % #profiles) + 1;
+                    ChangeProfile(profiles[nextIndex]);
+                    print(chat.header(addon.name):append(chat.message('Switched to profile: ')):append(chat.success(profiles[nextIndex])));
+                end
+                return;
+            end
+
+            -- /xiui profile previous
+            if (command_args[3] == 'previous') then
+                local profiles = GetProfileNames();
+                local current = GetCurrentProfileName();
+                local index = 0;
+                for i, name in ipairs(profiles) do
+                    if name == current then index = i; break; end
+                end
+                if index > 0 then
+                    local prevIndex = (index - 2 + #profiles) % #profiles + 1;
+                    ChangeProfile(profiles[prevIndex]);
+                    print(chat.header(addon.name):append(chat.message('Switched to profile: ')):append(chat.success(profiles[prevIndex])));
+                end
+                return;
+            end
+
+            -- /xiui profile "name" (switch to profile)
+            -- This catches anything else as a profile name
+            if (command_args[3] ~= nil) then
+                local profileName = command_args[3];
+                if (ChangeProfile(profileName)) then
+                     print(chat.header(addon.name):append(chat.message('Switched to profile: ')):append(chat.success(profileName)));
+                else
+                     print(chat.header(addon.name):append(chat.message('Profile not found: ')):append(chat.error(profileName)));
+                end
+                return;
+            end
+        end
+
+        -- ============================================
         -- Cache Debug Commands
         -- ============================================
 
@@ -551,7 +1022,7 @@ ashita.events.register('command', 'command_cb', function (e)
         -- Clear texture cache: /xiui textureclear
         if (command_args[2] == 'textureclear') then
             TextureManager.clear();
-            print('[XIUI] TextureManager cache cleared');
+            print(chat.header(addon.name):append(chat.message('TextureManager cache cleared')));
             return;
         end
 
@@ -560,7 +1031,7 @@ ashita.events.register('command', 'command_cb', function (e)
             progressbar.ForceClearCache();
             TextureManager.clear();
             statusHandler.clear_cache();
-            print('[XIUI] All texture caches cleared');
+            print(chat.header(addon.name):append(chat.message('All texture caches cleared')));
             return;
         end
 
@@ -574,7 +1045,7 @@ ashita.events.register('command', 'command_cb', function (e)
         -- Stress test texture manager: /xiui stresstextures [count]
         if (command_args[2] == 'stresstextures') then
             local count = tonumber(command_args[3]) or 150;
-            print(string.format('[XIUI] Stress testing TextureManager with %d status icons...', count));
+            print(chat.header(addon.name):append(chat.message(string.format('Stress testing TextureManager with %d status icons...', count))));
             local statsBefore = TextureManager.getStats();
             local beforeEvictions = statsBefore.categories.status_icons.evictions;
 
@@ -587,8 +1058,8 @@ ashita.events.register('command', 'command_cb', function (e)
             local afterEvictions = statsAfter.categories.status_icons.evictions;
             local newEvictions = afterEvictions - beforeEvictions;
 
-            print(string.format('[XIUI] Created %d status icons, %d evictions triggered',
-                statsAfter.categories.status_icons.size, newEvictions));
+            print(chat.header(addon.name):append(chat.message(string.format('Created %d status icons, %d evictions triggered',
+                statsAfter.categories.status_icons.size, newEvictions))));
             TextureManager.printStats();
             return;
         end
@@ -598,8 +1069,8 @@ ashita.events.register('command', 'command_cb', function (e)
             local before = collectgarbage('count');
             collectgarbage('collect');
             local after = collectgarbage('count');
-            print(string.format('[XIUI] Garbage collection: %.1f KB -> %.1f KB (freed %.1f KB)',
-                before, after, before - after));
+            print(chat.header(addon.name):append(chat.message('Garbage collection: ')):append(chat.success(string.format('%.1f KB -> %.1f KB (freed %.1f KB)',
+                before, after, before - after))));
             return;
         end
     end

@@ -185,7 +185,9 @@ giltracker.DrawWindow = function(settings)
 		imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
 	end
 
+    ApplyWindowPosition('GilTracker');
     if (imgui.Begin('GilTracker', true, windowFlags)) then
+		SaveWindowPosition('GilTracker');
 		local cursorX, cursorY = imgui.GetCursorScreenPos();
 
 		-- Get offset settings from adjusted settings (same pattern as targetbar)
