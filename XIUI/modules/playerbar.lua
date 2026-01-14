@@ -74,12 +74,33 @@ playerbar.DrawWindow = function(settings)
 	end
 
 	local SelfHP = party:GetMemberHP(0);
-	local SelfHPMax = player:GetHPMax();
-	-- Calculate percentage from actual values to avoid stale party API data (issue #92)
-	local SelfHPPercent = (SelfHPMax > 0) and math.clamp((SelfHP / SelfHPMax) * 100, 0, 100) or 0;
+	local SelfHPPercentParty = party:GetMemberHPPercent(0);
+	local SelfHPMaxPlayer = player:GetHPMax();
+	local SelfHPMaxFromParty = 0;
+	if SelfHPPercentParty and SelfHPPercentParty > 0 then
+		SelfHPMaxFromParty = math.floor((SelfHP * 100) / SelfHPPercentParty + 0.5);
+	end
+	local SelfHPMax = SelfHPMaxPlayer;
+	if SelfHPMaxFromParty > 0 then
+		if SelfHPMaxPlayer == 0 or math.abs(SelfHPMaxFromParty - SelfHPMaxPlayer) > 50 then
+			SelfHPMax = SelfHPMaxFromParty;
+		end
+	end
+	local SelfHPPercent = (SelfHPMax > 0) and math.clamp((SelfHP / SelfHPMax) * 100, 0, 100) or (SelfHPPercentParty or 0);
 	local SelfMP = party:GetMemberMP(0);
-	local SelfMPMax = player:GetMPMax();
-	local SelfMPPercent = (SelfMPMax > 0) and math.clamp((SelfMP / SelfMPMax) * 100, 0, 100) or 0;
+	local SelfMPPercentParty = party:GetMemberMPPercent(0);
+	local SelfMPMaxPlayer = player:GetMPMax();
+	local SelfMPMaxFromParty = 0;
+	if SelfMPPercentParty and SelfMPPercentParty > 0 then
+		SelfMPMaxFromParty = math.floor((SelfMP * 100) / SelfMPPercentParty + 0.5);
+	end
+	local SelfMPMax = SelfMPMaxPlayer;
+	if SelfMPMaxFromParty > 0 then
+		if SelfMPMaxPlayer == 0 or math.abs(SelfMPMaxFromParty - SelfMPMaxPlayer) > 20 then
+			SelfMPMax = SelfMPMaxFromParty;
+		end
+	end
+	local SelfMPPercent = (SelfMPMax > 0) and math.clamp((SelfMP / SelfMPMax) * 100, 0, 100) or (SelfMPPercentParty or 0);
 	local SelfTP = party:GetMemberTP(0);
 
 	local currentTime = os.clock();

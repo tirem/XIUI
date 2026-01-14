@@ -19,6 +19,7 @@ local lastGilPerHourColor;
 local trackingStartGil = nil;      -- Gil amount when tracking started
 local trackingStartTime = nil;     -- os.clock() when tracking started
 local lastKnownGil = nil;          -- Last known gil (to detect login/character change)
+local lastPlayerName = nil;        -- Last known player name (to detect character switches)
 
 -- Stabilization state (prevents false spikes on login)
 local stabilizationStartTime = nil;  -- When we first saw valid inventory data
@@ -36,6 +37,25 @@ local lastGilPerHourCalcTime = 0;    -- When we last recalculated
 local GIL_PER_HOUR_UPDATE_INTERVAL = 3;  -- Recalculate every 3 seconds
 
 local giltracker = {};
+
+local function GetLoggedInPlayerName()
+    local playerIndex = AshitaCore:GetMemoryManager():GetParty():GetMemberTargetIndex(0);
+    if playerIndex == 0 then
+        return nil;
+    end
+    local entity = AshitaCore:GetMemoryManager():GetEntity();
+    local flags = entity:GetRenderFlags0(playerIndex);
+    local isVisible = (bit.band(flags, RENDER_FLAG_VISIBLE) == RENDER_FLAG_VISIBLE)
+                   and (bit.band(flags, RENDER_FLAG_HIDDEN) == 0);
+    if not isVisible then
+        return nil;
+    end
+    local namePtr = entity:GetName(playerIndex);
+    if not namePtr or namePtr == '' then
+        return nil;
+    end
+    return namePtr;
+end
 
 --[[
 * event: d3d_present
@@ -62,7 +82,6 @@ local function FormatSessionNet(gilChange)
 end
 
 giltracker.DrawWindow = function(settings)
-    -- Obtain the player entity..
     local player = GetPlayerSafe();
     local playerEnt = GetPlayerEntity();
 
@@ -70,6 +89,25 @@ giltracker.DrawWindow = function(settings)
 		SetFontsVisible(allFonts,false);
 		return;
 	end
+
+    local loggedInName = GetLoggedInPlayerName();
+
+    if loggedInName == nil then
+		SetFontsVisible(allFonts,false);
+        return;
+    end
+
+    if lastPlayerName ~= loggedInName then
+        lastPlayerName = loggedInName;
+        trackingStartGil = nil;
+        trackingStartTime = nil;
+        lastKnownGil = nil;
+        stabilizationStartTime = nil;
+        stabilizationGil = nil;
+        cachedGilPerHour = 0;
+        cachedGilPerHourStr = '+0/hr';
+        lastGilPerHourCalcTime = 0;
+    end
 
     if (player.isZoning) then
 		SetFontsVisible(allFonts,false);
@@ -406,6 +444,7 @@ giltracker.Initialize = function(settings)
 	trackingStartGil = nil;
 	trackingStartTime = nil;
 	lastKnownGil = nil;
+    lastPlayerName = nil;
 	stabilizationStartTime = nil;
 	stabilizationGil = nil;
 	lastZoneOutTime = nil;
@@ -446,6 +485,7 @@ giltracker.Cleanup = function()
 	trackingStartGil = nil;
 	trackingStartTime = nil;
 	lastKnownGil = nil;
+    lastPlayerName = nil;
 	stabilizationStartTime = nil;
 	stabilizationGil = nil;
 	lastZoneOutTime = nil;
@@ -471,7 +511,6 @@ giltracker.ResetTracking = function()
 			lastKnownGil = gilAmount.Count;
 			stabilizationStartTime = nil;
 			stabilizationGil = nil;
-			print('[XIUI] Gil per hour tracking reset.');
 			return;
 		end
 	end
@@ -482,7 +521,6 @@ giltracker.ResetTracking = function()
 	lastKnownGil = nil;
 	stabilizationStartTime = nil;
 	stabilizationGil = nil;
-	print('[XIUI] Gil per hour tracking reset (will reinitialize).');
 end
 
 -- Handle zone-out packet (0x00B) - record timestamp
@@ -497,8 +535,14 @@ giltracker.HandleZoneInPacket = function()
 	local now = os.clock();
 	local isFreshLogin = true;
 
-	-- If we received a zone-out recently, this is a normal zone change
-	if lastZoneOutTime ~= nil then
+    -- Check if player name changed (fast relog detection)
+    local player = GetPlayerSafe();
+    if player and lastPlayerName ~= player.Name then
+        -- Force fresh login if name changed
+        isFreshLogin = true;
+        -- Update lastPlayerName here to prevent double reset (though double reset is harmless)
+        lastPlayerName = player.Name;
+    elseif lastZoneOutTime ~= nil then
 		local timeSinceZoneOut = now - lastZoneOutTime;
 		if timeSinceZoneOut < ZONE_TIMEOUT then
 			isFreshLogin = false;

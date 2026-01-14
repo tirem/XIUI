@@ -25,7 +25,7 @@ function M.DrawSettings()
 
     if components.CollapsingSection('Scale & Position##expBar') then
         components.DrawSlider('Scale X', 'expBarScaleX', 0.1, 8.0, '%.2f');
-        components.DrawSlider('Scale Y', 'expBarScaleY', 0.1, 3.0, '%.2f');
+        components.DrawSlider('Scale Y', 'expBarScaleY', 0.2, 3.0, '%.2f');
     end
 
     if components.CollapsingSection('Text Settings##expBar') then
