@@ -23,6 +23,7 @@ local castcostModule = require('config.castcost');
 local petbarModule = require('config.petbar');
 local notificationsModule = require('config.notifications');
 local treasurepoolModule = require('config.treasurepool');
+local weekliesModule = require('config.weeklies');
 
 local treasurePool = require('modules.treasurepool.init');
 
@@ -121,6 +122,7 @@ local categories = {
     { name = 'petBar', label = 'Pet Bar' },
     { name = 'notifications', label = 'Notifications' },
     { name = 'treasurePool', label = 'Treasure Pool' },
+    { name = 'weeklies', label = 'Weeklies' },
 };
 
 -- Build state object for modules that need tab state
@@ -218,6 +220,10 @@ local function DrawTreasurePoolSettings()
     treasurepoolModule.DrawSettings();
 end
 
+local function DrawWeekliesSettings()
+    weekliesModule.DrawSettings();
+end
+
 -- Color settings draw functions with state handling
 local function DrawGlobalColorSettings()
     globalModule.DrawColorSettings();
@@ -275,6 +281,10 @@ local function DrawTreasurePoolColorSettings()
     treasurepoolModule.DrawColorSettings();
 end
 
+local function DrawWeekliesColorSettings()
+    weekliesModule.DrawColorSettings();
+end
+
 -- Dispatch tables for settings and color settings
 local settingsDrawFunctions = {
     DrawGlobalSettings,
@@ -290,6 +300,7 @@ local settingsDrawFunctions = {
     DrawPetBarSettings,
     DrawNotificationsSettings,
     DrawTreasurePoolSettings,
+    DrawWeekliesSettings,
 };
 
 local colorSettingsDrawFunctions = {
@@ -306,6 +317,7 @@ local colorSettingsDrawFunctions = {
     DrawPetBarColorSettings,
     DrawNotificationsColorSettings,
     DrawTreasurePoolColorSettings,
+    DrawWeekliesColorSettings,
 };
 
 config.DrawWindow = function(us)

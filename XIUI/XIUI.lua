@@ -62,6 +62,7 @@ local petBar = uiMods.petbar;
 local castCost = uiMods.castcost;
 local notifications = uiMods.notifications;
 local treasurePool = uiMods.treasurepool;
+local weeklies = uiMods.weeklies;
 local configMenu = require('config');
 local debuffHandler = require('handlers.debuffhandler');
 local actionTracker = require('handlers.actiontracker');
@@ -235,6 +236,12 @@ uiModules.Register('treasurePool', {
     module = treasurePool,
     settingsKey = 'treasurePoolSettings',
     configKey = 'treasurePoolEnabled',
+    hasSetHidden = true,
+});
+uiModules.Register('weeklies', {
+    module = weeklies,
+    settingsKey = 'weekliesSettings',
+    configKey = 'weekliesEnabled',
     hasSetHidden = true,
 });
 
@@ -532,6 +539,14 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
+        -- Toggle weeklies window: /xiui weeklies or /xiui week
+        if (#command_args == 2 and command_args[2]:any('weeklies', 'week')) then
+            gConfig.weekliesEnabled = not gConfig.weekliesEnabled;
+            CheckVisibility();
+            print(string.format('[XIUI] Weeklies %s.', gConfig.weekliesEnabled and 'enabled' or 'disabled'));
+            return;
+        end
+
         -- ============================================
         -- Cache Debug Commands
         -- ============================================
@@ -607,6 +622,10 @@ end);
 
 ashita.events.register('packet_in', 'packet_in_cb', function (e)
     expBar.HandlePacket(e)
+
+    if gConfig.weekliesEnabled then
+        weeklies.HandlePacket(e);
+    end
 
     -- Pet bar packet handling (0x0028 Action, 0x0068 Pet Sync)
     if gConfig.showPetBar then

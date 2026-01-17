@@ -164,7 +164,6 @@ function M.createColorCustomizationDefaults()
             mpCostPreviewPulseSpeed = 1.0,        -- Pulse duration in seconds
         },
 
-        -- Notifications
         notifications = T{
             bgColor = 0xDD1a1a1a,
             borderColor = 0xFF444444,
@@ -176,6 +175,14 @@ function M.createColorCustomizationDefaults()
             gilColor = 0xFFFFD700,
             textColor = 0xFFFFFFFF,
             subtitleColor = 0xFFAAAAAA,
+        },
+
+        weeklies = T{
+            keyMissingColor = 0xFFCC3800,
+            keyObtainedColor = 0xFF99CC33,
+            timerReadyColor = 0xFF3AAAE8,
+            timerNotReadyColor = 0xFFFFFFFF,
+            timerUnknownColor = 0xFFF6F499,
         },
 
         -- Pet Bar
