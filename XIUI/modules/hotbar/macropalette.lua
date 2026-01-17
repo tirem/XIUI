@@ -125,6 +125,16 @@ local ACTION_TYPE_LABELS = {
     pet = 'Pet Command',
 };
 
+-- Recast source types for macros (allows displaying cooldown from a different action)
+local RECAST_SOURCE_TYPES = { 'none', 'ma', 'ja', 'item', 'pet' };
+local RECAST_SOURCE_LABELS = {
+    none = 'None',
+    ma = 'Spell',
+    ja = 'Ability',
+    item = 'Item',
+    pet = 'Pet Command',
+};
+
 -- Helper to format target for display (strips existing brackets, adds fresh ones)
 -- Handles: "me", "<me>", "<<me>>", "t", "<t>", etc.
 local function FormatTargetForDisplay(target)
@@ -2178,6 +2188,8 @@ local editorFields = {
     displayName = { '' },
     equipSlot = { 1 },
     macroText = { '' },
+    recastSourceType = { 1 },    -- Index into RECAST_SOURCE_TYPES (1 = 'none')
+    recastSourceAction = { '' }, -- Action name for recast lookup
 };
 
 local TARGET_OPTIONS = { 'me', 't', 'stpc', 'stnpc', 'st', 'bt', 'lastst', 'stal', 'stpt', 'p0', 'p1', 'p2', 'p3', 'p4', 'p5' };
@@ -3116,6 +3128,8 @@ function M.DrawMacroEditor()
     editorFields.displayName[1] = editingMacro.displayName or '';
     editorFields.equipSlot[1] = FindIndex(EQUIP_SLOTS, editingMacro.equipSlot or 'main');
     editorFields.macroText[1] = editingMacro.macroText or '';
+    editorFields.recastSourceType[1] = FindIndex(RECAST_SOURCE_TYPES, editingMacro.recastSourceType or 'none');
+    editorFields.recastSourceAction[1] = editingMacro.recastSourceAction or '';
 
     local title = isCreatingNew and 'Create Macro###MacroEditor' or 'Edit Macro###MacroEditor';
     local isOpen = { true };
@@ -3168,6 +3182,14 @@ function M.DrawMacroEditor()
                     editingMacro.action = '';
                     editorFields.action[1] = '';
                     searchFilter[1] = '';
+                    -- Clear recast source fields when changing away from macro type
+                    if actionType ~= 'macro' then
+                        editingMacro.recastSourceType = nil;
+                        editingMacro.recastSourceAction = nil;
+                        editingMacro.recastSourceItemId = nil;
+                        editorFields.recastSourceType[1] = 1;  -- Reset to 'none'
+                        editorFields.recastSourceAction[1] = '';
+                    end
                 end
                 if isSelected then
                     imgui.PopStyleColor();
@@ -3408,6 +3430,107 @@ function M.DrawMacroEditor()
 
             imgui.PopStyleColor(3);
             imgui.ShowHelp('Enter commands, one per line (e.g., /ma "Cure" <stpc>)');
+
+            -- Recast Source section (optional)
+            imgui.Spacing();
+            imgui.Spacing();
+            if imgui.TreeNode('Recast Source (Optional)##recastSource') then
+                imgui.TextColored(COLORS.textMuted, 'Show cooldown from a different action');
+                imgui.Spacing();
+
+                -- Recast source type dropdown
+                imgui.TextColored(COLORS.goldDim, 'Source Type');
+                PushComboStyle();
+                imgui.SetNextItemWidth(240);
+                local currentRecastType = RECAST_SOURCE_TYPES[editorFields.recastSourceType[1]] or 'none';
+                if imgui.BeginCombo('##recastSourceType', RECAST_SOURCE_LABELS[currentRecastType] or 'None') then
+                    for i, sourceType in ipairs(RECAST_SOURCE_TYPES) do
+                        local isSelected = editorFields.recastSourceType[1] == i;
+                        if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
+                        if imgui.Selectable(RECAST_SOURCE_LABELS[sourceType], isSelected) then
+                            editorFields.recastSourceType[1] = i;
+                            if sourceType == 'none' then
+                                editingMacro.recastSourceType = nil;
+                                editingMacro.recastSourceAction = nil;
+                                editingMacro.recastSourceItemId = nil;
+                            else
+                                editingMacro.recastSourceType = sourceType;
+                            end
+                            -- Clear action when type changes
+                            editingMacro.recastSourceAction = nil;
+                            editingMacro.recastSourceItemId = nil;
+                            editorFields.recastSourceAction[1] = '';
+                        end
+                        if isSelected then imgui.PopStyleColor(); end
+                    end
+                    imgui.EndCombo();
+                end
+                PopComboStyle();
+
+                -- Show action selector based on recast source type
+                currentRecastType = RECAST_SOURCE_TYPES[editorFields.recastSourceType[1]] or 'none';
+
+                if currentRecastType == 'ma' then
+                    imgui.Spacing();
+                    imgui.TextColored(COLORS.goldDim, 'Spell');
+                    local spells = GetCachedSpells();
+                    if spells and #spells > 0 then
+                        DrawSearchableCombo('##recastSpellCombo', spells, editingMacro.recastSourceAction or '', function(spell)
+                            editingMacro.recastSourceAction = spell.name;
+                            editorFields.recastSourceAction[1] = spell.name;
+                        end);
+                    else
+                        imgui.TextColored(COLORS.textMuted, 'No spells available');
+                    end
+
+                elseif currentRecastType == 'ja' then
+                    imgui.Spacing();
+                    imgui.TextColored(COLORS.goldDim, 'Ability');
+                    local abilities = GetCachedAbilities();
+                    if abilities and #abilities > 0 then
+                        DrawSearchableCombo('##recastAbilityCombo', abilities, editingMacro.recastSourceAction or '', function(ability)
+                            editingMacro.recastSourceAction = ability.name;
+                            editorFields.recastSourceAction[1] = ability.name;
+                        end);
+                    else
+                        imgui.TextColored(COLORS.textMuted, 'No abilities available');
+                    end
+
+                elseif currentRecastType == 'item' then
+                    imgui.Spacing();
+                    imgui.TextColored(COLORS.goldDim, 'Item');
+                    local items = GetCachedItems();
+                    if items and #items > 0 then
+                        DrawSearchableCombo('##recastItemCombo', items, editingMacro.recastSourceAction or '', function(item)
+                            editingMacro.recastSourceAction = item.name;
+                            editingMacro.recastSourceItemId = item.id;
+                            editorFields.recastSourceAction[1] = item.name;
+                        end, true);  -- Show icons
+                    else
+                        imgui.TextColored(COLORS.textMuted, 'No items available');
+                    end
+
+                elseif currentRecastType == 'pet' then
+                    imgui.Spacing();
+                    imgui.TextColored(COLORS.goldDim, 'Pet Command');
+                    -- Use current job for pet commands
+                    local viewedJobId = selectedPaletteType;
+                    if type(viewedJobId) ~= 'number' then
+                        viewedJobId = playerdata.GetCacheJobId() or 0;
+                    end
+                    local petCommands = GetPetCommandsForJob(viewedJobId, selectedAvatarPalette, nil);
+                    if petCommands and #petCommands > 0 then
+                        DrawSearchableCombo('##recastPetCombo', petCommands, editingMacro.recastSourceAction or '', function(cmd)
+                            editingMacro.recastSourceAction = cmd.name;
+                            editorFields.recastSourceAction[1] = cmd.name;
+                        end);
+                    else
+                        imgui.TextColored(COLORS.textMuted, 'No pet commands available');
+                    end
+                end
+
+                imgui.TreePop();
+            end
 
         elseif currentType == 'pet' then
             -- For SMN, show avatar filter dropdown

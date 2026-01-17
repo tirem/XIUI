@@ -183,6 +183,18 @@ function M.GetCooldownInfo(actionData)
         return cooldownResult;
     end
 
+    -- Check for macro recast source override
+    -- Allows macros to display cooldown from a different action type
+    if actionData.actionType == 'macro' and actionData.recastSourceType then
+        local recastData = {
+            actionType = actionData.recastSourceType,
+            action = actionData.recastSourceAction,
+            itemId = actionData.recastSourceItemId,
+        };
+        -- Safe: recastSourceType can't be 'macro', so no infinite recursion
+        return M.GetCooldownInfo(recastData);
+    end
+
     -- Look up action IDs based on action type
     local spellId = nil;
     local abilityId = nil;
