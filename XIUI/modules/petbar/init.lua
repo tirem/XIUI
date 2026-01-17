@@ -166,7 +166,6 @@ petbar.Initialize = function(settings)
             local category = struct.unpack('H', e.data, 0x0A + 0x01);
             local actionId = struct.unpack('H', e.data, 0x0C + 0x01);
 
-
             if (category == 0x09 and actionId == data.ActionID.CHARM) then
                 -- Validate: Player must not have a pet
                 if (data.petType ~= nil) then return; end

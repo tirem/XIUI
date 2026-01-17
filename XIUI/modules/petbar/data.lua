@@ -239,6 +239,7 @@ data.PacketID = {
 data.ActionID = {
     CHARM = 0x34,
 };
+
 data.CharmState = {
     NONE = 0,
     SENDING_PACKET = 1,
