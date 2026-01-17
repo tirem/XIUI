@@ -654,6 +654,10 @@ function M.GetKeybindForSlot(barIndex, slotIndex)
                     customIconType = macroData.customIconType,
                     customIconId = macroData.customIconId,
                     customIconPath = macroData.customIconPath,
+                    -- Recast source override (for macros showing cooldown from different action)
+                    recastSourceType = macroData.recastSourceType,
+                    recastSourceAction = macroData.recastSourceAction,
+                    recastSourceItemId = macroData.recastSourceItemId,
                 };
             end
         end
@@ -769,6 +773,10 @@ function M.GetCrossbarSlotData(comboMode, slotIndex)
                 customIconPath = liveMacro.customIconPath,
                 macroRef = slotAction.macroRef,
                 macroPaletteKey = slotAction.macroPaletteKey,
+                -- Recast source override (for macros showing cooldown from different action)
+                recastSourceType = liveMacro.recastSourceType,
+                recastSourceAction = liveMacro.recastSourceAction,
+                recastSourceItemId = liveMacro.recastSourceItemId,
             };
         end
         -- If macro was deleted, fall back to cached slotAction data
@@ -813,6 +821,10 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
         customIconPath = slotData.customIconPath,
         macroRef = slotData.macroRef or slotData.id,  -- Store reference to source macro for live updates
         macroPaletteKey = slotData.macroPaletteKey,  -- Store which palette the macro came from
+        -- Recast source override (for macros showing cooldown from different action)
+        recastSourceType = slotData.recastSourceType,
+        recastSourceAction = slotData.recastSourceAction,
+        recastSourceItemId = slotData.recastSourceItemId,
     };
 
     SaveSettingsToDisk();
@@ -882,6 +894,10 @@ function M.SetSlotData(barIndex, slotIndex, slotData)
             customIconPath = slotData.customIconPath,
             macroRef = slotData.macroRef or slotData.id,
             macroPaletteKey = slotData.macroPaletteKey,  -- Store which palette the macro came from
+            -- Recast source override (for macros showing cooldown from different action)
+            recastSourceType = slotData.recastSourceType,
+            recastSourceAction = slotData.recastSourceAction,
+            recastSourceItemId = slotData.recastSourceItemId,
         };
     else
         -- Mark as explicitly cleared
