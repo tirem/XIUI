@@ -662,13 +662,11 @@ end
 --]]
 macrolib.initialize_patches = function()
     if initialized then return; end
-    print('[XIUI] Macro patch system initializing...');
     initializePatches();
     -- Apply macrofix as default
     local count = applyMacrofix();
     if count > 0 then
         currentMode = 'macrofix';
-        print(string.format('[XIUI] Macrofix mode active (%d/%d patches applied)', count, #macrofixData));
     else
         print('[XIUI] Warning: No macrofix patches could be applied');
     end

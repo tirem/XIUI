@@ -16,6 +16,7 @@ local dragdrop = require('libs.dragdrop');
 local petpalette = require('modules.hotbar.petpalette');
 local petregistry = require('modules.hotbar.petregistry');
 local playerdata = require('modules.hotbar.playerdata');
+local actiondb = require('modules.hotbar.actiondb');
 -- display and crossbar are loaded lazily to avoid circular dependencies
 local display = nil;
 local crossbar = nil;
@@ -3678,6 +3679,12 @@ function M.DrawMacroEditor()
             end
 
             if canSave then
+                -- Look up itemId for item/equip macros if not already set
+                -- This handles cases where user typed item name manually instead of selecting from dropdown
+                if (currentType == 'item' or currentType == 'equip') and not editingMacro.itemId and editingMacro.action then
+                    editingMacro.itemId = actiondb.GetItemId(editingMacro.action);
+                end
+
                 if isCreatingNew then
                     M.AddMacro(editingMacro);
                     -- Navigate to last page to show the new macro

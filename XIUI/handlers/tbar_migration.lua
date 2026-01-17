@@ -7,6 +7,7 @@ require('common');
 local jobs = require('libs.jobs');
 local petregistry = require('modules.hotbar.petregistry');
 local factories = require('core.settings.factories');
+local actiondb = require('modules.hotbar.actiondb');
 
 local M = {};
 
@@ -575,6 +576,8 @@ function M.ConvertBinding(tbarBinding)
                         xiuiAction.actionType = 'ws';
                     elseif cmdType == 'item' then
                         xiuiAction.actionType = 'item';
+                        -- Look up item ID for recast tracking
+                        xiuiAction.itemId = actiondb.GetItemId(actionName);
                     elseif cmdType == 'pet' then
                         xiuiAction.actionType = 'pet';  -- Pet commands use pet type
                     end
@@ -622,6 +625,11 @@ function M.ConvertBinding(tbarBinding)
         elseif xiuiAction.actionType == 'item' then
             xiuiAction.target = 'me';
         end
+    end
+
+    -- Ensure itemId is looked up for item actions (fallback for items not parsed from macro text)
+    if xiuiAction.actionType == 'item' and not xiuiAction.itemId and xiuiAction.action then
+        xiuiAction.itemId = actiondb.GetItemId(xiuiAction.action);
     end
 
     return xiuiAction;

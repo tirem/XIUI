@@ -99,6 +99,25 @@ function M.Initialize(settings)
     -- Initialize data module (sets player job)
     data.Initialize();
 
+    -- Validate palettes on reload (not just on job change packets)
+    if data.jobId then
+        palette.ValidatePalettesForJob(data.jobId, data.subjobId);
+    else
+        -- Job not ready yet, retry after short delay
+        ashita.tasks.once(0.3, function()
+            data.SetPlayerJob();
+            if data.jobId then
+                palette.ValidatePalettesForJob(data.jobId, data.subjobId);
+                macropalette.SyncToCurrentJob();
+                display.ClearIconCache();
+                slotrenderer.ClearAllCache();
+                if crossbarInitialized then
+                    crossbar.ClearIconCache();
+                end
+            end
+        end);
+    end
+
     -- Validate font settings
     local fontSettings = settings and settings.font_settings;
     local keybindFontSettings = settings and settings.keybind_font_settings;

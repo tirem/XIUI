@@ -223,6 +223,10 @@ function M.GetCooldownInfo(actionData)
     elseif actionData.actionType == 'item' or actionData.actionType == 'equip' then
         -- itemId should already be stored in the action data
         itemId = actionData.itemId;
+        -- Fallback: look up itemId by name if not set (for macros saved via manual text input)
+        if not itemId and actionData.action then
+            itemId = actiondb.GetItemId(actionData.action);
+        end
         remaining, recastText = M.GetActionRecast(actionData.actionType, nil, nil, itemId);
     end
 
