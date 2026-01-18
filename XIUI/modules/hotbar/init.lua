@@ -100,21 +100,35 @@ function M.Initialize(settings)
     data.Initialize();
 
     -- Validate palettes on reload (not just on job change packets)
+    -- Helper function to validate palettes once job is ready
+    local function ValidatePalettesWhenReady(attempt)
+        attempt = attempt or 1;
+        local maxAttempts = 20;  -- ~10 seconds max wait (0.5s * 20)
+
+        data.SetPlayerJob();
+        if data.jobId then
+            palette.ValidatePalettesForJob(data.jobId, data.subjobId);
+            macropalette.SyncToCurrentJob();
+            display.ClearIconCache();
+            slotrenderer.ClearAllCache();
+            if crossbarInitialized then
+                crossbar.ClearIconCache();
+            end
+        elseif attempt < maxAttempts then
+            -- Job not ready yet, retry after delay (increases slightly each attempt)
+            local delay = math.min(0.5, 0.2 + (attempt * 0.05));
+            ashita.tasks.once(delay, function()
+                ValidatePalettesWhenReady(attempt + 1);
+            end);
+        end
+    end
+
     if data.jobId then
         palette.ValidatePalettesForJob(data.jobId, data.subjobId);
     else
-        -- Job not ready yet, retry after short delay
+        -- Job not ready yet, start retry loop
         ashita.tasks.once(0.3, function()
-            data.SetPlayerJob();
-            if data.jobId then
-                palette.ValidatePalettesForJob(data.jobId, data.subjobId);
-                macropalette.SyncToCurrentJob();
-                display.ClearIconCache();
-                slotrenderer.ClearAllCache();
-                if crossbarInitialized then
-                    crossbar.ClearIconCache();
-                end
-            end
+            ValidatePalettesWhenReady(1);
         end);
     end
 
