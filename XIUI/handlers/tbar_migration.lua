@@ -258,16 +258,18 @@ local function ParseKeybindString(keyStr)
 
     local modifier = nil;
     local keyNum = nil;
+    local firstChar = keyStr:sub(1, 1);
 
     -- Check for modifiers
-    -- Ashita keybind format: ^ = Ctrl, ! = Alt, + = Shift
-    if keyStr:sub(1, 1) == '^' then
+    -- thotbar format: C = Ctrl, A = Alt, S = Shift
+    -- Ashita keybind format (fallback): ^ = Ctrl, ! = Alt, + = Shift
+    if firstChar == 'C' or firstChar == '^' then
         modifier = 'ctrl';
         keyNum = keyStr:sub(2);
-    elseif keyStr:sub(1, 1) == '!' then
+    elseif firstChar == 'A' or firstChar == '!' then
         modifier = 'alt';
         keyNum = keyStr:sub(2);
-    elseif keyStr:sub(1, 1) == '+' then
+    elseif firstChar == 'S' or firstChar == '+' then
         modifier = 'shift';
         keyNum = keyStr:sub(2);
     else
@@ -335,33 +337,68 @@ function M.ParseHotBarBindings(filePath)
     };
 
     -- tHotBar structure: { Default = {}, Palettes = { { Name = "...", Bindings = { ["key"] = {...} } }, ... } }
-    if not data.Palettes then
-        return nil, 'No Palettes found in file';
-    end
 
-    for _, palette in ipairs(data.Palettes) do
-        local paletteName = palette.Name or 'Unknown';
-        local paletteBindings = {
-            name = paletteName,
+    -- Process Default bindings first (always-active bindings not tied to a palette)
+    if data.Default then
+        local defaultBindings = {
+            name = 'Default',
             bindings = {},  -- [barIndex][slotIndex] = binding
         };
 
-        if palette.Bindings then
-            for keyStr, binding in pairs(palette.Bindings) do
-                if type(binding) == 'table' and binding.ActionType then
-                    local parsed = ParseKeybindString(keyStr);
-                    if parsed then
-                        -- Initialize bar table if needed
-                        if not paletteBindings.bindings[parsed.barIndex] then
-                            paletteBindings.bindings[parsed.barIndex] = {};
-                        end
-                        paletteBindings.bindings[parsed.barIndex][parsed.slotIndex] = binding;
+        for keyStr, binding in pairs(data.Default) do
+            if type(binding) == 'table' and binding.ActionType then
+                local parsed = ParseKeybindString(keyStr);
+                if parsed then
+                    if not defaultBindings.bindings[parsed.barIndex] then
+                        defaultBindings.bindings[parsed.barIndex] = {};
                     end
+                    defaultBindings.bindings[parsed.barIndex][parsed.slotIndex] = binding;
                 end
             end
         end
 
-        table.insert(result.palettes, paletteBindings);
+        -- Only add if we found any bindings
+        local hasBindings = false;
+        for _ in pairs(defaultBindings.bindings) do
+            hasBindings = true;
+            break;
+        end
+        if hasBindings then
+            table.insert(result.palettes, defaultBindings);
+        end
+    end
+
+    -- Process named Palettes
+    if data.Palettes then
+        for _, palette in ipairs(data.Palettes) do
+            local paletteName = palette.Name or 'Unknown';
+            local paletteBindings = {
+                name = paletteName,
+                bindings = {},  -- [barIndex][slotIndex] = binding
+            };
+
+            if palette.Bindings then
+                for keyStr, binding in pairs(palette.Bindings) do
+                    if type(binding) == 'table' and binding.ActionType then
+                        local parsed = ParseKeybindString(keyStr);
+                        if parsed then
+                            -- Initialize bar table if needed
+                            if not paletteBindings.bindings[parsed.barIndex] then
+                                paletteBindings.bindings[parsed.barIndex] = {};
+                            end
+                            paletteBindings.bindings[parsed.barIndex][parsed.slotIndex] = binding;
+                        end
+                    end
+                end
+            end
+
+            table.insert(result.palettes, paletteBindings);
+        end
+    end
+
+    -- Return error only if no bindings found at all
+    if #result.palettes == 0 then
+        return nil, 'No bindings found in file';
     end
 
     return result;
@@ -525,6 +562,31 @@ local function ParseMacroLine(line)
     return nil;
 end
 
+-- Convert thotbar/tcrossbar commands to XIUI equivalents
+local function ConvertTbarCommands(macroText)
+    if not macroText then return macroText; end
+
+    -- Convert to lowercase for case-insensitive matching, then apply patterns
+    local result = macroText;
+
+    -- /tb palette change <name> -> /xiui palette <name> (case-insensitive)
+    result = result:gsub('/[Tt][Bb]%s+[Pp][Aa][Ll][Ee][Tt][Tt][Ee]%s+[Cc][Hh][Aa][Nn][Gg][Ee]%s+(%S+)', '/xiui palette %1');
+    -- /tcb palette change <name> -> /xiui palette <name>
+    result = result:gsub('/[Tt][Cc][Bb]%s+[Pp][Aa][Ll][Ee][Tt][Tt][Ee]%s+[Cc][Hh][Aa][Nn][Gg][Ee]%s+(%S+)', '/xiui palette %1');
+
+    -- /tb palette next/prev -> /xiui palette next/prev
+    result = result:gsub('/[Tt][Bb]%s+[Pp][Aa][Ll][Ee][Tt][Tt][Ee]%s+[Nn][Ee][Xx][Tt]', '/xiui palette next');
+    result = result:gsub('/[Tt][Bb]%s+[Pp][Aa][Ll][Ee][Tt][Tt][Ee]%s+[Pp][Rr][Ee][Vv]', '/xiui palette prev');
+    result = result:gsub('/[Tt][Bb]%s+[Pp][Aa][Ll][Ee][Tt][Tt][Ee]%s+[Pp][Rr][Ee][Vv][Ii][Oo][Uu][Ss]', '/xiui palette prev');
+
+    -- /tcb palette next/prev -> /xiui palette next/prev
+    result = result:gsub('/[Tt][Cc][Bb]%s+[Pp][Aa][Ll][Ee][Tt][Tt][Ee]%s+[Nn][Ee][Xx][Tt]', '/xiui palette next');
+    result = result:gsub('/[Tt][Cc][Bb]%s+[Pp][Aa][Ll][Ee][Tt][Tt][Ee]%s+[Pp][Rr][Ee][Vv]', '/xiui palette prev');
+    result = result:gsub('/[Tt][Cc][Bb]%s+[Pp][Aa][Ll][Ee][Tt][Tt][Ee]%s+[Pp][Rr][Ee][Vv][Ii][Oo][Uu][Ss]', '/xiui palette prev');
+
+    return result;
+end
+
 -- Convert a single tHotBar/tCrossBar binding to XIUI format
 -- Returns: XIUI slot action data or nil if cannot convert
 function M.ConvertBinding(tbarBinding)
@@ -555,7 +617,7 @@ function M.ConvertBinding(tbarBinding)
         end
 
         if #macroLines > 0 then
-            xiuiAction.macroText = table.concat(macroLines, '\n');
+            xiuiAction.macroText = ConvertTbarCommands(table.concat(macroLines, '\n'));
 
             -- Scan ALL lines to find the primary action command
             -- Priority: /ma, /ja, /ws, /item, /pet (first found wins)
@@ -658,7 +720,7 @@ M.DEFAULT_PALETTE_NAME = 'Default';
 
 -- Get storage key for a job+palette combination
 -- Maps tHotBar palette names to XIUI storage keys:
---   "Base" -> NEW FORMAT: '{jobId}:palette:Default' (converted to palette system)
+--   "Base" or "Default" -> NEW FORMAT: '{jobId}:palette:Default' (converted to palette system)
 --   Avatar name (Ifrit, Shiva, etc.) -> pet palette key (jobId:0:avatar:ifrit)
 --   Spirit name -> pet palette key (jobId:0:spirit:firespirit)
 --   Other names -> general palette key (jobId:palette:PaletteName)
@@ -668,9 +730,10 @@ function M.GetStorageKeyForPalette(jobAbbr, paletteName)
         return 'global';
     end
 
-    -- Handle Base palette - convert to Default palette using NEW format
+    -- Handle Base/Default palettes - convert to Default palette using NEW format
     -- The new palette system requires '{jobId}:palette:{name}' format
-    if not paletteName or paletteName == 'Base' then
+    -- 'Default' comes from thotbar's Default section, 'Base' from named palettes
+    if not paletteName or paletteName == 'Base' or paletteName == 'Default' then
         return string.format('%d:palette:%s', jobId, M.DEFAULT_PALETTE_NAME);
     end
 
@@ -825,6 +888,7 @@ end
 
 -- Check if a similar macro already exists in the palette (to avoid duplicates)
 -- Returns the existing macro ID if found, nil otherwise
+-- Also updates the existing macro's macroText if it differs (for command conversions)
 local function FindExistingMacro(macroData, paletteKey)
     if not gConfig or not gConfig.macroDB or not gConfig.macroDB[paletteKey] then
         return nil;
@@ -836,6 +900,10 @@ local function FindExistingMacro(macroData, paletteKey)
         if macro.actionType == macroData.actionType and
            macro.action == macroData.action and
            macro.target == macroData.target then
+            -- Update macroText if it differs (handles command conversions like /tb -> /xiui)
+            if macroData.macroText and macro.macroText ~= macroData.macroText then
+                macro.macroText = macroData.macroText;
+            end
             return macro.id;
         end
     end
