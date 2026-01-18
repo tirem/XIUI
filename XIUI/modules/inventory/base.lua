@@ -7,8 +7,14 @@ require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
 local gdi = require('submodules.gdifonts.include');
+local defaultPositions = require('libs.defaultpositions');
 
 local BaseTracker = {};
+
+-- Position save/restore state (shared across all inventory containers)
+local hasAppliedSavedPosition = false;
+local forcePositionReset = false;
+local lastSavedPosX, lastSavedPosY = nil, nil;
 
 -- Helper function to calculate dot grid offset
 local function GetDotOffset(row, column, settings)
@@ -115,8 +121,35 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
 
     local fontVisible = false;
 
+    -- Handle position reset or restore
+    if forcePositionReset then
+        local defX, defY = defaultPositions.GetInventoryPosition();
+        imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
+        forcePositionReset = false;
+        hasAppliedSavedPosition = true;
+        lastSavedPosX, lastSavedPosY = defX, defY;
+    elseif not hasAppliedSavedPosition and gConfig.inventoryWindowPosX ~= nil then
+        imgui.SetNextWindowPos({gConfig.inventoryWindowPosX, gConfig.inventoryWindowPosY}, ImGuiCond_Once);
+        hasAppliedSavedPosition = true;
+        lastSavedPosX = gConfig.inventoryWindowPosX;
+        lastSavedPosY = gConfig.inventoryWindowPosY;
+    end
+
     if (imgui.Begin(windowName, true, windowFlags)) then
         local locX, locY = imgui.GetWindowPos();
+
+        -- Save position if moved (with change detection to avoid spam)
+        if not gConfig.lockPositions then
+            if lastSavedPosX == nil or
+               math.abs(locX - lastSavedPosX) > 1 or
+               math.abs(locY - lastSavedPosY) > 1 then
+                gConfig.inventoryWindowPosX = locX;
+                gConfig.inventoryWindowPosY = locY;
+                lastSavedPosX = locX;
+                lastSavedPosY = locY;
+            end
+        end
+
         local style = imgui.GetStyle();
         local framePaddingX = style.FramePadding.x;
 
@@ -378,6 +411,12 @@ function BaseTracker.Create(config)
     end
 
     return tracker;
+end
+
+-- Reset position for all inventory windows (shared state)
+BaseTracker.ResetPositions = function()
+    forcePositionReset = true;
+    hasAppliedSavedPosition = false;
 end
 
 return BaseTracker;

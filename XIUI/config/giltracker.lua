@@ -14,6 +14,8 @@ local M = {};
 -- Section: Gil Tracker Settings
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showGilTracker', CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'gilTrackerHideOnMenuFocus');
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
 
     if components.CollapsingSection('Display Options##gilTracker') then
         components.DrawCheckbox('Show Icon', 'gilTrackerShowIcon');

@@ -32,6 +32,18 @@ addon.link      = 'https://github.com/tirem/XIUI'
 _G._XIUI_USE_ASHITA_4_3 = false;
 require('handlers.imgui_compat');
 
+-- =================
+-- = XIUI DEV ONLY =
+-- =================
+local _XIUI_DEV_HOT_RELOADING_ENABLED = false;
+local _XIUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS = 1;
+local _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME;
+local _XIUI_DEV_HOT_RELOAD_FILES = {};
+
+-- Debug flag for raw controller input (enable with /xiui debug rawinput)
+-- This logs ALL xinput/dinput events from Ashita before any XIUI processing
+DEBUG_RAW_INPUT = false;
+
 require('common');
 local settings = require('settings');
 local gdi = require('submodules.gdifonts.include');
@@ -62,24 +74,22 @@ local petBar = uiMods.petbar;
 local castCost = uiMods.castcost;
 local notifications = uiMods.notifications;
 local treasurePool = uiMods.treasurepool;
+local hotbar = uiMods.hotbar;
+local macropalette = require('modules.hotbar.macropalette');
+local skillchainModule = require('modules.hotbar.skillchain');
 local configMenu = require('config');
 local debuffHandler = require('handlers.debuffhandler');
 local actionTracker = require('handlers.actiontracker');
 local mobInfo = require('modules.mobinfo.init');
 local statusHandler = require('handlers.statushandler');
 local progressbar = require('libs.progressbar');
+local diagnostics = require('libs.diagnostics');
 local TextureManager = require('libs.texturemanager');
 
 -- Global switch to hard-disable functionality that is limited on HX servers
 HzLimitedMode = false;
 
--- =================
--- = XIUI DEV ONLY =
--- =================
-local _XIUI_DEV_HOT_RELOADING_ENABLED = false;
-local _XIUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS = 1;
-local _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME;
-local _XIUI_DEV_HOT_RELOAD_FILES = {};
+
 
 -- Local split function for hot reload (avoids monkeypatching string metatable)
 local function _split_string(str, sep)
@@ -129,6 +139,7 @@ uiModules.Register('playerBar', {
     settingsKey = 'playerBarSettings',
     configKey = 'showPlayerBar',
     hideOnEventKey = 'playerBarHideDuringEvents',
+    hideOnMenuFocusKey = 'playerBarHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('targetBar', {
@@ -136,60 +147,70 @@ uiModules.Register('targetBar', {
     settingsKey = 'targetBarSettings',
     configKey = 'showTargetBar',
     hideOnEventKey = 'targetBarHideDuringEvents',
+    hideOnMenuFocusKey = 'targetBarHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('enemyList', {
     module = enemyList,
     settingsKey = 'enemyListSettings',
     configKey = 'showEnemyList',
+    hideOnMenuFocusKey = 'enemyListHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('expBar', {
     module = expBar,
     settingsKey = 'expBarSettings',
     configKey = 'showExpBar',
+    hideOnMenuFocusKey = 'expBarHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('gilTracker', {
     module = gilTracker,
     settingsKey = 'gilTrackerSettings',
     configKey = 'showGilTracker',
+    hideOnMenuFocusKey = 'gilTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('inventoryTracker', {
     module = inventoryTracker,
     settingsKey = 'inventoryTrackerSettings',
     configKey = 'showInventoryTracker',
+    hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('satchelTracker', {
     module = satchelTracker,
     settingsKey = 'satchelTrackerSettings',
     configKey = 'showSatchelTracker',
+    hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('lockerTracker', {
     module = lockerTracker,
     settingsKey = 'lockerTrackerSettings',
     configKey = 'showLockerTracker',
+    hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('safeTracker', {
     module = safeTracker,
     settingsKey = 'safeTrackerSettings',
     configKey = 'showSafeTracker',
+    hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('storageTracker', {
     module = storageTracker,
     settingsKey = 'storageTrackerSettings',
     configKey = 'showStorageTracker',
+    hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('wardrobeTracker', {
     module = wardrobeTracker,
     settingsKey = 'wardrobeTrackerSettings',
     configKey = 'showWardrobeTracker',
+    hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('partyList', {
@@ -197,24 +218,28 @@ uiModules.Register('partyList', {
     settingsKey = 'partyListSettings',
     configKey = 'showPartyList',
     hideOnEventKey = 'partyListHideDuringEvents',
+    hideOnMenuFocusKey = 'partyListHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('castBar', {
     module = castBar,
     settingsKey = 'castBarSettings',
     configKey = 'showCastBar',
+    hideOnMenuFocusKey = 'castBarHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('castCost', {
     module = castCost,
     settingsKey = 'castCostSettings',
     configKey = 'showCastCost',
+    hideOnMenuFocusKey = 'castCostHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('mobInfo', {
     module = mobInfo.display,
     settingsKey = 'mobInfoSettings',
     configKey = 'showMobInfo',
+    hideOnMenuFocusKey = 'mobInfoHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('petBar', {
@@ -222,6 +247,7 @@ uiModules.Register('petBar', {
     settingsKey = 'petBarSettings',
     configKey = 'showPetBar',
     hideOnEventKey = 'petBarHideDuringEvents',
+    hideOnMenuFocusKey = 'petBarHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('notifications', {
@@ -229,12 +255,22 @@ uiModules.Register('notifications', {
     settingsKey = 'notificationsSettings',
     configKey = 'showNotifications',
     hideOnEventKey = 'notificationsHideDuringEvents',
+    hideOnMenuFocusKey = 'notificationsHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('treasurePool', {
     module = treasurePool,
     settingsKey = 'treasurePoolSettings',
     configKey = 'treasurePoolEnabled',
+    hideOnMenuFocusKey = 'treasurePoolHideOnMenuFocus',
+    hasSetHidden = true,
+});
+uiModules.Register('hotbar', {
+    module = hotbar,
+    settingsKey = 'hotbarSettings',
+    configKey = 'showhotbar',
+    hideOnEventKey = 'hotbarHideDuringEvents',
+    hideOnMenuFocusKey = 'hotbarHideOnMenuFocus',
     hasSetHidden = true,
 });
 
@@ -301,6 +337,21 @@ function ResetSettings()
     config.userSettings = gConfig;
     UpdateSettings();
     settings.save();
+
+    -- Reset all module positions to defaults
+    uiMods.playerbar.ResetPositions();
+    uiMods.targetbar.ResetPositions();
+    uiMods.castbar.ResetPositions();
+    uiMods.enemylist.ResetPositions();
+    uiMods.expbar.ResetPositions();
+    uiMods.giltracker.ResetPositions();
+    uiMods.partylist.ResetPositions();
+    uiMods.inventory.ResetPositions();
+    uiMods.castcost.ResetPositions();
+    uiMods.petbar.ResetPositions();
+    uiMods.notifications.ResetPositions();
+    uiMods.treasurepool.ResetPositions();
+    hotbar.ResetPositions();
 end
 
 function SavePartyListLayoutSetting(key, value)
@@ -386,6 +437,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
     end
 
     local eventSystemActive = gameState.GetEventSystemActive();
+    local menuOpen = gameState.GetMenuName() ~= '';
 
     if not gameState.ShouldHideUI(gConfig.hideDuringEvents, bLoggedIn) then
         -- Sync treasure pool from memory (authoritative source of truth)
@@ -399,7 +451,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 
         -- Render all registered modules
         for name, _ in pairs(uiModules.GetAll()) do
-            uiModules.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive);
+            uiModules.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive, menuOpen);
         end
 
         configMenu.DrawWindow();
@@ -437,10 +489,6 @@ ashita.events.register('load', 'load_cb', function ()
 end);
 
 ashita.events.register('unload', 'unload_cb', function ()
-    ashita.events.unregister('d3d_present', 'present_cb');
-    ashita.events.unregister('packet_in', 'packet_in_cb');
-    ashita.events.unregister('command', 'command_cb');
-
     statusHandler.clear_cache();
     progressbar.Cleanup();
     TextureManager.clear();
@@ -468,6 +516,20 @@ ashita.events.register('command', 'command_cb', function (e)
         if (#command_args == 2 and command_args[2]:any('partylist')) then
             gConfig.showPartyList = not gConfig.showPartyList;
             CheckVisibility();
+            return;
+        end
+
+        -- Open macro palette: /xiui macro or /xiui macros
+        if (#command_args == 2 and command_args[2]:any('macro', 'macros')) then
+            macropalette.TogglePalette();
+            return;
+        end
+
+        -- Open keybind editor: /xiui keybinds or /xiui binds [bar]
+        if (#command_args >= 2 and command_args[2]:any('keybinds', 'keybind', 'binds', 'bind')) then
+            local hotbarConfig = require('config.hotbar');
+            local barIndex = tonumber(command_args[3]) or 1;
+            hotbarConfig.OpenKeybindEditor(barIndex);
             return;
         end
 
@@ -526,6 +588,195 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
+        -- Hotbar keybind execution: /xiui hotbar <bar> <slot>
+        -- Called by Ashita /bind system to execute hotbar actions
+        if (command_args[2] == 'hotbar' and #command_args >= 4) then
+            local barIndex = tonumber(command_args[3]);
+            local slotIndex = tonumber(command_args[4]);
+            if barIndex and slotIndex then
+                local hotbarActions = require('modules.hotbar.actions');
+                hotbarActions.HandleKeybind(barIndex, slotIndex);
+            end
+            return;
+        end
+
+        -- Palette commands: /xiui palette <name|next|prev> [bar|all]
+        -- Switch between named palettes for hotbars
+        -- Use "all" to affect all bars at once (like tHotBar behavior)
+        if (command_args[2] == 'palette' or command_args[2] == 'pal') then
+            local paletteModule = require('modules.hotbar.palette');
+            local hotbarData = require('modules.hotbar.data');
+            local jobId = hotbarData.jobId or 1;
+            local subjobId = hotbarData.subjobId or 0;
+
+            if #command_args < 3 then
+                -- No argument - show current palette info and help
+                print('[XIUI] Palette commands:');
+                print('  /xiui palette <name> - Switch to a named palette');
+                print('  /xiui palette next - Cycle to next palette');
+                print('  /xiui palette prev - Cycle to previous palette');
+                print('  /xiui palette list - List available palettes');
+                print('  /xiui palette first - Switch to first palette');
+                print('');
+                print('Keybinds: Ctrl+Up/Down (configure in Hotbar > Palette Cycling)');
+                print('Controller: RB + Dpad Up/Down cycles palettes');
+                return;
+            end
+
+            local action = command_args[3];
+            local barArg = command_args[4];
+            local affectAll = (barArg == 'all');
+            local barIndex = affectAll and 1 or (tonumber(barArg) or 1);
+
+            -- Helper to apply action to bar(s)
+            local function applyToBar(idx)
+                return paletteModule.CyclePalette(idx, action == 'next' and 1 or -1, jobId, subjobId);
+            end
+
+            if action == 'next' or action == 'prev' or action == 'previous' then
+                local direction = (action == 'next') and 1 or -1;
+                -- Global palette cycling - affects all bars at once
+                local result = paletteModule.CyclePalette(1, direction, jobId, subjobId);
+                if result then
+                    print('[XIUI] Palette: ' .. result);
+                else
+                    print('[XIUI] No palettes to cycle');
+                end
+            elseif action == 'list' then
+                -- List available palettes
+                local palettes = paletteModule.GetAvailablePalettes(barIndex, jobId, subjobId);
+                local currentPalette = paletteModule.GetActivePaletteDisplayName(barIndex);
+                print('[XIUI] Bar ' .. barIndex .. ' palettes:');
+                for _, name in ipairs(palettes) do
+                    local marker = (name == currentPalette) and ' *' or '';
+                    print('  - ' .. name .. marker);
+                end
+            elseif action == 'base' or action == 'reset' or action == 'first' then
+                -- Switch to first palette
+                local palettes = paletteModule.GetAvailablePalettes(1, jobId, subjobId);
+                if #palettes > 0 then
+                    paletteModule.SetActivePalette(1, palettes[1]);
+                    print('[XIUI] Palette: ' .. palettes[1]);
+                else
+                    print('[XIUI] No palettes available');
+                end
+            else
+                -- Switch to named palette
+                -- Reconstruct palette name in case it has spaces (use original case from command)
+                local originalArgs = e.command:args();
+                local paletteName = originalArgs[3];  -- Use original case
+                local targetIsAll = false;
+
+                if #originalArgs >= 4 then
+                    local lastArg = originalArgs[#originalArgs];
+                    if lastArg:lower() == 'all' then
+                        targetIsAll = true;
+                        -- Palette name is everything between arg 3 and "all"
+                        if #originalArgs > 4 then
+                            local nameParts = {};
+                            for i = 3, #originalArgs - 1 do
+                                table.insert(nameParts, originalArgs[i]);
+                            end
+                            paletteName = table.concat(nameParts, ' ');
+                        end
+                    elseif tonumber(lastArg) then
+                        barIndex = tonumber(lastArg);
+                        -- Palette name is everything between arg 3 and the bar number
+                        if #originalArgs > 4 then
+                            local nameParts = {};
+                            for i = 3, #originalArgs - 1 do
+                                table.insert(nameParts, originalArgs[i]);
+                            end
+                            paletteName = table.concat(nameParts, ' ');
+                        end
+                    else
+                        -- No bar number or "all", palette name is all remaining args
+                        local nameParts = {};
+                        for i = 3, #originalArgs do
+                            table.insert(nameParts, originalArgs[i]);
+                        end
+                        paletteName = table.concat(nameParts, ' ');
+                    end
+                end
+
+                if targetIsAll then
+                    -- Apply to all bars
+                    local anyFound = false;
+                    for i = 1, 6 do
+                        if paletteModule.PaletteExists(i, paletteName, jobId, subjobId) then
+                            paletteModule.SetActivePalette(i, paletteName);
+                            anyFound = true;
+                        end
+                    end
+                    if anyFound then
+                        print('[XIUI] All bars palette: ' .. paletteName);
+                    else
+                        print('[XIUI] Palette "' .. paletteName .. '" not found');
+                    end
+                else
+                    -- Apply to single bar
+                    if paletteModule.PaletteExists(barIndex, paletteName, jobId, subjobId) then
+                        paletteModule.SetActivePalette(barIndex, paletteName);
+                        print('[XIUI] Bar ' .. barIndex .. ' palette: ' .. paletteName);
+                    else
+                        print('[XIUI] Palette "' .. paletteName .. '" not found for bar ' .. barIndex);
+                    end
+                end
+            end
+            return;
+        end
+
+        -- Diagnostics commands: /xiui diag [on|off|stats|reset]
+        if (command_args[2] == 'diag') then
+            local subCmd = command_args[3] or 'stats';
+            if subCmd == 'on' or subCmd == 'enable' then
+                diagnostics.Enable();
+                print('[XIUI] Diagnostics enabled - resource tracking active');
+            elseif subCmd == 'off' or subCmd == 'disable' then
+                diagnostics.Disable();
+                print('[XIUI] Diagnostics disabled');
+            elseif subCmd == 'reset' then
+                diagnostics.ResetStats();
+                print('[XIUI] Diagnostics counters reset');
+            else
+                -- Default: print stats
+                diagnostics.PrintStats();
+            end
+            return;
+        end
+
+        -- Debug commands: /xiui debug <module>
+        -- Toggles debug logging for specific modules
+        if (command_args[2] == 'debug') then
+            local moduleName = command_args[3];
+            if moduleName == 'hotbar' then
+                -- Toggle hotbar debug mode
+                local currentState = hotbar.IsDebugEnabled();
+                hotbar.SetDebugEnabled(not currentState);
+            elseif moduleName == 'macroblock' then
+                -- Toggle macro block debug mode (both memory patches AND controller)
+                local macrosLib = require('libs.ffxi.macros');
+                local controller = require('modules.hotbar.controller');
+                local currentState = macrosLib.is_debug_enabled();
+                local newState = not currentState;
+                macrosLib.set_debug_enabled(newState);
+                controller.SetMacroBlockDebugEnabled(newState);
+            elseif moduleName == 'rawinput' then
+                -- Toggle raw input debug (logs ALL controller events from Ashita)
+                DEBUG_RAW_INPUT = not DEBUG_RAW_INPUT;
+                print('[XIUI] Raw input debug: ' .. (DEBUG_RAW_INPUT and 'ON' or 'OFF'));
+                print('[XIUI] This logs ALL xinput/dinput events from Ashita before any processing.');
+            elseif moduleName == 'palette' then
+                -- Toggle palette key debug mode (logs Ctrl+Up/Down key events)
+                local currentState = hotbar.IsPaletteDebugEnabled();
+                hotbar.SetPaletteDebugEnabled(not currentState);
+            else
+                print('[XIUI] Debug modules: hotbar, macroblock, rawinput, palette');
+                print('[XIUI] Usage: /xiui debug <module>');
+            end
+            return;
+        end
+
         -- Reset gil tracking: /xiui gil reset (or legacy: /xiui resetgil)
         if (command_args[2] == 'gil' and command_args[3] == 'reset') or (command_args[2] == 'resetgil') then
             gilTracker.ResetTracking();
@@ -561,6 +812,12 @@ ashita.events.register('command', 'command_cb', function (e)
             TextureManager.clear();
             statusHandler.clear_cache();
             print('[XIUI] All texture caches cleared');
+            return;
+        end
+
+        -- Skillchain debug: /xiui scdebug
+        if (command_args[2] == 'scdebug') then
+            skillchainModule.DebugDumpState();
             return;
         end
 
@@ -613,6 +870,11 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         petBar.HandlePacket(e);
     end
 
+    -- Hotbar pet palette sync (0x0068 Pet Sync)
+    if e.id == 0x0068 and gConfig.hotbarEnabled then
+        hotbar.HandlePetSyncPacket();
+    end
+
     if (e.id == 0x0028) then
         local actionPacket = ParseActionPacket(e);
         if actionPacket then
@@ -625,6 +887,10 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
             debuffHandler.HandleActionPacket(actionPacket);
             actionTracker.HandleActionPacket(actionPacket);
             if gConfig.showNotifications then notifications.HandleActionPacket(actionPacket); end
+            -- Skillchain tracking for hotbar/crossbar WS highlighting
+            if gConfig.hotbarEnabled then
+                skillchainModule.HandleActionPacket(actionPacket);
+            end
         end
     elseif (e.id == 0x00E) then
         local mobUpdatePacket = ParseMobUpdatePacket(e);
@@ -639,11 +905,16 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         debuffHandler.HandleZonePacket(e);
         actionTracker.HandleZonePacket();
         mobInfo.data.HandleZonePacket(e);
+        statusHandler.clear_zone_cache();  -- Clear status icon cache to prevent accumulation
         gilTracker.HandleZoneInPacket();  -- Only reset on fresh login, not zone changes (issue #111)
         TextureManager.clearOnZone();
         MarkPartyCacheDirty();
         ClearEntityCache();
         bLoggedIn = true;
+        -- Initialize hotbar job on zone-in (handles initial login and job change during zone)
+        if gConfig.hotbarEnabled then
+            hotbar.HandleJobChangePacket(e);
+        end
     elseif (e.id == 0x0029) then
         local messagePacket = ParseMessagePacket(e.data);
         if messagePacket then
@@ -676,6 +947,16 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         gilTracker.HandleZoneOutPacket();  -- Track zone-out time for login detection (issue #111)
         TextureManager.clearOnZone();
         bLoggedIn = false;
+        -- Also notify hotbar of zone (clears state)
+        if gConfig.hotbarEnabled then
+            hotbar.HandleZonePacket();
+            skillchainModule.ClearState();  -- Clear skillchain tracking on zone
+        end
+    elseif (e.id == 0x001B) then
+        -- Job change packet - update hotbar to show new job's actions
+        if gConfig.hotbarEnabled then
+            hotbar.HandleJobChangePacket(e);
+        end
     elseif (e.id == 0x076) then
         statusHandler.ReadPartyBuffsFromPacket(e);
     elseif (e.id == 0x0DD) then
@@ -754,3 +1035,80 @@ ashita.events.register('packet_out', 'packet_out_cb', function (e)
         end
     end
 end);
+
+-- ============================================
+--Key Handler
+-- ============================================
+
+--[[ Valid Arguments
+
+    e.wparam     - (ReadOnly) The wparam of the event.
+    e.lparam     - (ReadOnly) The lparam of the event.
+    e.blocked    - (Writable) Flag that states if the key has been, or should be, blocked.
+
+    See the following article for how to process and use wparam/lparam values:
+    https://docs.microsoft.com/en-us/previous-versions/windows/desktop/legacy/ms644984(v=vs.85)
+
+    Note: Key codes used here are considered 'virtual key codes'.
+--]]
+
+--[[ Note
+
+        The game uses WNDPROC keyboard information to process keyboard input for chat and other
+        user-inputted text prompts. (Bazaar comment, search comment, etc.)
+
+        Blocking a press here will only block it during inputs of those types. It will not block
+        in-game button handling for things such as movement, menu interactions, etc.
+--]]
+ashita.events.register('key', 'key_cb', function (event)
+    hotbar.HandleKey(event);
+end);
+
+-- ============================================
+-- Controller Input Event Handlers
+-- ============================================
+
+-- XInput controller state event (for crossbar mode - analog triggers)
+-- Note: This fires every frame, so we don't log it (too spammy)
+ashita.events.register('xinput_state', 'xinput_state_cb', function (e)
+    hotbar.HandleXInputState(e);
+end);
+
+-- XInput button event (for blocking game macros when crossbar is active)
+--[[ Valid Arguments
+    e.button    - (Writable) The controller button id.
+    e.state     - (Writable) The controller button state value.
+    e.blocked   - (Writable) Flag that states if the button has been, or should be, blocked.
+    e.injected  - (ReadOnly) Flag that states if the button was injected by Ashita or an addon/plugin.
+--]]
+ashita.events.register('xinput_button', 'xinput_button_cb', function (e)
+    if DEBUG_RAW_INPUT then
+        print(string.format('[XIUI RawInput] xinput_button: button=%d state=%d', e.button or -1, e.state or -1));
+    end
+    local shouldBlock = hotbar.HandleXInputButton(e);
+    if shouldBlock then
+        e.blocked = true;
+    end
+end);
+
+-- DirectInput controller button event (for crossbar mode with DirectInput controllers)
+-- Used by: DualSense, Switch Pro, Stadia controllers
+ashita.events.register('dinput_button', 'dinput_button_cb', function (e)
+    if DEBUG_RAW_INPUT then
+        print(string.format('[XIUI RawInput] dinput_button: button=%d state=%d', e.button or -1, e.state or -1));
+    end
+    local shouldBlock = hotbar.HandleDInputButton(e);
+    if shouldBlock then
+        e.blocked = true;
+    end
+end);
+
+-- DirectInput controller state event (for D-pad POV on DirectInput controllers)
+-- Note: This fires every frame, so we don't log it (too spammy)
+ashita.events.register('dinput_state', 'dinput_state_cb', function (e)
+    hotbar.HandleDInputState(e);
+end);
+
+-- ============================================
+-- NOTE: Render order is fixed by Ashita core: Primitives > GDI Fonts > ImGui
+-- We cannot change this from addon level - ImGui always renders last.

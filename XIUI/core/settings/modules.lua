@@ -406,6 +406,7 @@ function M.createModuleDefaults()
             statusOffsetY = 0,
             entrySpacing = 8,
             expandHeight = false,
+            expandHeightInAlliance = false,
             alignBottom = false,
             minRows = 1,
 
@@ -657,6 +658,96 @@ function M.createModuleDefaults()
                 font_flags = gdi.FontFlags.Bold,
                 outline_color = 0xFF000000,
                 outline_width = 2,
+            },
+        },
+
+        -- settings for hotbar (dev-only)
+        hotbarSettings = T{
+            font_settings = T{
+                font_alignment = gdi.Alignment.Left,
+                font_family = 'Consolas',
+                font_height = 10,
+                font_color = 0xFFFFFFFF,
+                font_flags = gdi.FontFlags.None,
+                outline_color = 0xFF000000,
+                outline_width = 2,
+            },
+            keybind_font_settings = T{
+                font_alignment = gdi.Alignment.Left,
+                font_family = 'Consolas',
+                font_height = 8,
+                font_color = 0xCCCCCCCC,
+                font_flags = gdi.FontFlags.None,
+                outline_color = 0xFF000000,
+                outline_width = 1,
+            },
+            label_font_settings = T{
+                font_alignment = gdi.Alignment.Left,
+                font_family = 'Consolas',
+                font_height = 10,
+                font_color = 0xFFFFFFFF,
+                font_flags = gdi.FontFlags.None,
+                outline_color = 0xFF000000,
+                outline_width = 2,
+            },
+            scaleX = 1.0,
+            scaleY = 1.0,
+            bgScale = 1.0,
+            borderScale = 1.0,
+            background_opacity = 0.87,
+            border_opacity = 1.0,
+        },
+
+        -- settings for crossbar (controller-based hotbar)
+        crossbarSettings = T{
+            -- Keybind font (slot numbers 1-8)
+            keybind_font_settings = T{
+                font_alignment = gdi.Alignment.Left,
+                font_family = 'Consolas',
+                font_height = 8,
+                font_color = 0xFFFFFFFF,
+                font_flags = gdi.FontFlags.None,
+                outline_color = 0xFF000000,
+                outline_width = 1,
+            },
+            -- Action label font (spell/ability names below slots)
+            label_font_settings = T{
+                font_alignment = gdi.Alignment.Center,
+                font_family = 'Consolas',
+                font_height = 10,
+                font_color = 0xFFFFFFFF,
+                font_flags = gdi.FontFlags.None,
+                outline_color = 0xFF000000,
+                outline_width = 2,
+            },
+            -- Trigger label font (L2, R2, L2+R2, R2+L2)
+            trigger_font_settings = T{
+                font_alignment = gdi.Alignment.Center,
+                font_family = 'Consolas',
+                font_height = 14,
+                font_color = 0xFFFFCC00,
+                font_flags = gdi.FontFlags.Bold,
+                outline_color = 0xFF000000,
+                outline_width = 2,
+            },
+            -- Recast timer font (overlaid on slot)
+            recast_font_settings = T{
+                font_alignment = gdi.Alignment.Center,
+                font_family = 'Consolas',
+                font_height = 12,
+                font_color = 0xFFFFFFFF,
+                font_flags = gdi.FontFlags.Bold,
+                outline_color = 0xFF000000,
+                outline_width = 2,
+            },
+            -- Primitive template for slot backgrounds
+            prim_data = T{
+                visible = false,
+                can_focus = false,
+                locked = true,
+                width = 48,
+                height = 48,
+                color = 0x55000000,
             },
         },
 

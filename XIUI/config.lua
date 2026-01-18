@@ -23,6 +23,7 @@ local castcostModule = require('config.castcost');
 local petbarModule = require('config.petbar');
 local notificationsModule = require('config.notifications');
 local treasurepoolModule = require('config.treasurepool');
+local hotbarModule = require('config.hotbar');
 
 local treasurePool = require('modules.treasurepool.init');
 
@@ -90,7 +91,7 @@ local githubTexture = nil;
 local heartTexture = nil;
 
 -- Credits popup state
-local showCreditsPopup = false;
+local creditsWindowOpen = { false };
 
 -- Navigation state
 local selectedCategory = 1;  -- 1-indexed category selection
@@ -105,6 +106,9 @@ local selectedPetBarTab = 1;  -- 1 = Pet Bar, 2 = Pet Target
 local selectedPetTypeTab = 1;  -- 1 = Avatar, 2 = Charm, 3 = Jug, 4 = Automaton, 5 = Wyvern
 local selectedPetTypeColorTab = 1;  -- Pet type color sub-tab
 local selectedPetBarColorTab = 1;  -- 1 = Pet Bar, 2 = Pet Target (for color settings)
+local selectedHotbarTab = 1;  -- 1 = Bar 1, 2 = Bar 2, etc. (for hotbar settings)
+local selectedModeTab = 'hotbar';  -- 'hotbar' or 'crossbar' (for hotbar/crossbar toggle in 'both' mode)
+local selectedCrossbarTab = 1;  -- 1=L2, 2=R2, 3=L2R2, 4=R2L2, 5=L2x2, 6=R2x2
 
 -- Category definitions
 local categories = {
@@ -121,7 +125,9 @@ local categories = {
     { name = 'petBar', label = 'Pet Bar' },
     { name = 'notifications', label = 'Notifications' },
     { name = 'treasurePool', label = 'Treasure Pool' },
+    { name = 'hotbar', label = 'Hotbar' },
 };
+
 
 -- Build state object for modules that need tab state
 local function buildState()
@@ -136,6 +142,9 @@ local function buildState()
         selectedPetBarColorTab = selectedPetBarColorTab,
         selectedPetTypeTab = selectedPetTypeTab,
         selectedPetTypeColorTab = selectedPetTypeColorTab,
+        selectedHotbarTab = selectedHotbarTab,
+        selectedModeTab = selectedModeTab,
+        selectedCrossbarTab = selectedCrossbarTab,
         githubTexture = githubTexture,
     };
 end
@@ -148,6 +157,9 @@ local function applySettingsState(newState)
         if newState.selectedTargetBarTab then selectedTargetBarTab = newState.selectedTargetBarTab; end
         if newState.selectedPetBarTab then selectedPetBarTab = newState.selectedPetBarTab; end
         if newState.selectedPetTypeTab then selectedPetTypeTab = newState.selectedPetTypeTab; end
+        if newState.selectedHotbarTab then selectedHotbarTab = newState.selectedHotbarTab; end
+        if newState.selectedModeTab then selectedModeTab = newState.selectedModeTab; end
+        if newState.selectedCrossbarTab then selectedCrossbarTab = newState.selectedCrossbarTab; end
     end
 end
 
@@ -158,6 +170,9 @@ local function applyColorState(newState)
         if newState.selectedTargetBarColorTab then selectedTargetBarColorTab = newState.selectedTargetBarColorTab; end
         if newState.selectedPetBarColorTab then selectedPetBarColorTab = newState.selectedPetBarColorTab; end
         if newState.selectedPetTypeColorTab then selectedPetTypeColorTab = newState.selectedPetTypeColorTab; end
+        if newState.selectedHotbarTab then selectedHotbarTab = newState.selectedHotbarTab; end
+        if newState.selectedModeTab then selectedModeTab = newState.selectedModeTab; end
+        if newState.selectedCrossbarTab then selectedCrossbarTab = newState.selectedCrossbarTab; end
     end
 end
 
@@ -218,6 +233,11 @@ local function DrawTreasurePoolSettings()
     treasurepoolModule.DrawSettings();
 end
 
+local function DrawHotbarSettings()
+    local newState = hotbarModule.DrawSettings(buildState());
+    applySettingsState(newState);
+end
+
 -- Color settings draw functions with state handling
 local function DrawGlobalColorSettings()
     globalModule.DrawColorSettings();
@@ -275,6 +295,11 @@ local function DrawTreasurePoolColorSettings()
     treasurepoolModule.DrawColorSettings();
 end
 
+local function DrawHotbarColorSettings()
+    local newState = hotbarModule.DrawColorSettings(buildState());
+    applyColorState(newState);
+end
+
 -- Dispatch tables for settings and color settings
 local settingsDrawFunctions = {
     DrawGlobalSettings,
@@ -290,6 +315,7 @@ local settingsDrawFunctions = {
     DrawPetBarSettings,
     DrawNotificationsSettings,
     DrawTreasurePoolSettings,
+    DrawHotbarSettings,
 };
 
 local colorSettingsDrawFunctions = {
@@ -306,6 +332,7 @@ local colorSettingsDrawFunctions = {
     DrawPetBarColorSettings,
     DrawNotificationsColorSettings,
     DrawTreasurePoolColorSettings,
+    DrawHotbarColorSettings,
 };
 
 config.DrawWindow = function(us)
@@ -443,34 +470,38 @@ config.DrawWindow = function(us)
 
         -- Credits button (heart)
         RenderSocialButton(heartTexture, "credits_btn", function()
-            showCreditsPopup = true;
+            creditsWindowOpen[1] = not creditsWindowOpen[1];
         end, bgLight, bgLighter, borderDark, boxSize, iconSize);
 
         -- Track modal state for foreground elements dimming
         local anyModalOpen = false;
 
-        -- Credits popup
-        if showCreditsPopup then
-            imgui.OpenPopup("Attributions");
-            showCreditsPopup = false;
-        end
+        -- Credits window (simple floating popup)
+        if creditsWindowOpen[1] then
+            local creditsFlags = bit.bor(
+                ImGuiWindowFlags_AlwaysAutoResize,
+                ImGuiWindowFlags_NoCollapse,
+                ImGuiWindowFlags_NoSavedSettings
+            );
+            imgui.PushStyleColor(ImGuiCol_WindowBg, bgDark);
+            imgui.PushStyleColor(ImGuiCol_TitleBg, bgMedium);
+            imgui.PushStyleColor(ImGuiCol_TitleBgActive, bgLight);
+            imgui.PushStyleColor(ImGuiCol_Border, borderDark);
+            imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0);
+            imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {12, 12});
 
-        if imgui.BeginPopupModal("Attributions", true, ImGuiWindowFlags_AlwaysAutoResize) then
-            anyModalOpen = true;
-            imgui.Text("XIUI - A UI Addon for Final Fantasy XI");
-            imgui.Separator();
+            if imgui.Begin("Attributions###CreditsWindow", creditsWindowOpen, creditsFlags) then
+                imgui.Text("XIUI - A UI Addon for Final Fantasy XI");
+                imgui.Separator();
 
-            imgui.TextColored({1.0, 0.84, 0.0, 1.0}, "Special Thanks");
-            imgui.BulletText("atom0s - Ashita framework, and additional support");
-            imgui.BulletText("Thorny - GdiFonts library & MobDB, and additional support");
-            imgui.NewLine();
-
-            imgui.Separator();
-            if imgui.Button("Close", { 120, 0 }) then
-                imgui.CloseCurrentPopup();
+                imgui.TextColored({1.0, 0.84, 0.0, 1.0}, "Special Thanks");
+                imgui.BulletText("atom0s - Ashita framework, and additional support");
+                imgui.BulletText("Thorny - GdiFonts library & MobDB, and additional support");
             end
+            imgui.End();
 
-            imgui.EndPopup();
+            imgui.PopStyleVar(2);
+            imgui.PopStyleColor(4);
         end
 
         -- Reset Settings confirmation popup
@@ -666,6 +697,12 @@ config.DrawWindow = function(us)
     end
 
     imgui.End();
+
+    -- Draw migration wizard if open (after main window so it overlays)
+    if hotbarModule.migrationWizard then
+        hotbarModule.migrationWizard.Draw();
+    end
+
     imgui.PopStyleVar(9);
     imgui.PopStyleColor(34);  -- 26 base + 5 tab colors + 3 resize grip colors
 end

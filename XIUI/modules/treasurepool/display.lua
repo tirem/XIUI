@@ -28,8 +28,14 @@ local button = require('libs.button');
 local TextureManager = require('libs.texturemanager');
 local data = require('modules.treasurepool.data');
 local actions = require('modules.treasurepool.actions');
+local defaultPositions = require('libs.defaultpositions');
 
 local M = {};
+
+-- Position save/restore state
+local hasAppliedSavedPosition = false;
+local forcePositionReset = false;
+local lastSavedPosX, lastSavedPosY = nil, nil;
 
 -- Debug logging (set to true to enable)
 local DEBUG_ENABLED = false;
@@ -345,6 +351,20 @@ function M.DrawWindow(settings)
 
     imgui.SetNextWindowSize({-1, -1}, ImGuiCond_Always);
 
+    -- Handle position reset or restore
+    if forcePositionReset then
+        local defX, defY = defaultPositions.GetTreasurePoolPosition();
+        imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
+        forcePositionReset = false;
+        hasAppliedSavedPosition = true;
+        lastSavedPosX, lastSavedPosY = defX, defY;
+    elseif not hasAppliedSavedPosition and gConfig.treasurePoolWindowPosX ~= nil then
+        imgui.SetNextWindowPos({gConfig.treasurePoolWindowPosX, gConfig.treasurePoolWindowPosY}, ImGuiCond_Once);
+        hasAppliedSavedPosition = true;
+        lastSavedPosX = gConfig.treasurePoolWindowPosX;
+        lastSavedPosY = gConfig.treasurePoolWindowPosY;
+    end
+
     if imgui.Begin('TreasurePool', true, windowFlags) then
         local startX, startY = imgui.GetCursorScreenPos();
         local drawList = imgui.GetBackgroundDrawList();
@@ -356,6 +376,19 @@ function M.DrawWindow(settings)
         end
 
         imgui.Dummy({windowWidth, totalHeight});
+
+        -- Save position if moved (with change detection to avoid spam)
+        local winPosX, winPosY = imgui.GetWindowPos();
+        if not gConfig.lockPositions then
+            if lastSavedPosX == nil or
+               math.abs(winPosX - lastSavedPosX) > 1 or
+               math.abs(winPosY - lastSavedPosY) > 1 then
+                gConfig.treasurePoolWindowPosX = winPosX;
+                gConfig.treasurePoolWindowPosY = winPosY;
+                lastSavedPosX = winPosX;
+                lastSavedPosY = winPosY;
+            end
+        end
 
         -- Handle scroll input when hovering over window
         if needsScroll and imgui.IsWindowHovered() then
@@ -1591,6 +1624,11 @@ function M.Cleanup()
 
     loadedBgTheme = nil;
     -- Icon cache handled by TextureManager
+end
+
+M.ResetPositions = function()
+    forcePositionReset = true;
+    hasAppliedSavedPosition = false;
 end
 
 return M;

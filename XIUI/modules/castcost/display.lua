@@ -10,6 +10,7 @@ local gdi = require('submodules.gdifonts.include');
 local windowBg = require('libs.windowbackground');
 local progressbar = require('libs.progressbar');
 local shared = require('modules.castcost.shared');
+local defaultPositions = require('libs.defaultpositions');
 
 local M = {};
 
@@ -55,6 +56,7 @@ local windowState = {
 local hasAppliedSavedPosition = false;
 local lastSavedPosX = nil;
 local lastSavedPosY = nil;
+local forcePositionReset = false;
 
 -- ============================================
 -- Initialization
@@ -273,9 +275,16 @@ function M.Render(itemInfo, itemType, settings, colors)
     -- Set up ImGui window
     imgui.SetNextWindowSize({ -1, -1 }, ImGuiCond_Always);
 
-    -- Apply saved position on first render
+    -- Apply saved position on first render or force reset to default
     local cc = gConfig.castCost or {};
-    if not hasAppliedSavedPosition and cc.windowPosX ~= nil and cc.windowPosY ~= nil then
+    if forcePositionReset then
+        local defX, defY = defaultPositions.GetCastCostPosition();
+        imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
+        forcePositionReset = false;
+        hasAppliedSavedPosition = true;
+        lastSavedPosX = defX;
+        lastSavedPosY = defY;
+    elseif not hasAppliedSavedPosition and cc.windowPosX ~= nil and cc.windowPosY ~= nil then
         imgui.SetNextWindowPos({cc.windowPosX, cc.windowPosY}, ImGuiCond_Once);
         hasAppliedSavedPosition = true;
         lastSavedPosX = cc.windowPosX;
@@ -596,13 +605,15 @@ function M.Render(itemInfo, itemType, settings, colors)
                 gConfig.castCost = cc;
                 lastSavedPosX = winPosX;
                 lastSavedPosY = winPosY;
-                if SaveSettingsToDisk then
-                    SaveSettingsToDisk();
-                end
             end
         end
     end
     imgui.End();
+end
+
+M.ResetPositions = function()
+    forcePositionReset = true;
+    hasAppliedSavedPosition = false;
 end
 
 return M;

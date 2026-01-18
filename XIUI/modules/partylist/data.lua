@@ -151,6 +151,11 @@ function data.getLayoutTemplate(partyIndex)
     end
 end
 
+-- Helper to check if player is in an alliance (Party B or C has members)
+function data.isInAlliance()
+    return (data.frameCache.activeMemberCount[2] or 0) > 0 or (data.frameCache.activeMemberCount[3] or 0) > 0;
+end
+
 -- Update party config cache
 function data.updatePartyConfigCache()
     if data.partyConfigCacheValid then return; end
@@ -204,6 +209,7 @@ function data.updatePartyConfigCache()
         cache.statusOffsetX = party.statusOffsetX or 0;
         cache.statusOffsetY = party.statusOffsetY or 0;
         cache.expandHeight = party.expandHeight;
+        cache.expandHeightInAlliance = party.expandHeightInAlliance;
         cache.alignBottom = party.alignBottom;
         cache.minRows = party.minRows or 1;
         cache.entrySpacing = party.entrySpacing or 0;

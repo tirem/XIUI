@@ -66,6 +66,8 @@ end
 -- Helper function to draw settings for a tracker
 local function DrawTrackerSettings(tab)
     components.DrawCheckbox('Enabled', tab.configKey, CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'inventoryTrackerHideOnMenuFocus');
+    imgui.ShowHelp('Hide all inventory trackers when a game menu is open (equipment, map, etc.).');
 
     if components.CollapsingSection('Display Options##' .. tab.colorKey) then
         components.DrawCheckbox('Show Dots', tab.showDotsKey);
@@ -97,24 +99,8 @@ local function DrawTrackerSettings(tab)
     local showDots = gConfig[tab.showDotsKey];
     if showDots then
         if components.CollapsingSection('Scale & Position##' .. tab.colorKey) then
-            local columnCount = { gConfig[tab.columnCountKey] };
-            if (imgui.SliderInt('Columns', columnCount, 1, 80)) then
-                gConfig[tab.columnCountKey] = columnCount[1];
-                UpdateUserSettings();
-            end
-            if (imgui.IsItemDeactivatedAfterEdit()) then
-                SaveSettingsOnly();
-            end
-
-            local rowCount = { gConfig[tab.rowCountKey] };
-            if (imgui.SliderInt('Rows', rowCount, 1, 80)) then
-                gConfig[tab.rowCountKey] = rowCount[1];
-                UpdateUserSettings();
-            end
-            if (imgui.IsItemDeactivatedAfterEdit()) then
-                SaveSettingsOnly();
-            end
-
+            components.SliderInt('Columns', gConfig, tab.columnCountKey, 1, 80);
+            components.SliderInt('Rows', gConfig, tab.rowCountKey, 1, 80);
             components.DrawSlider('Scale', tab.scaleKey, 0.5, 3.0, '%.1f');
         end
     end
@@ -122,14 +108,7 @@ local function DrawTrackerSettings(tab)
     -- Text settings only if count text is enabled
     if gConfig[tab.showCountKey] then
         if components.CollapsingSection('Text Settings##' .. tab.colorKey) then
-            local fontSize = { gConfig[tab.fontSizeKey] };
-            if (imgui.SliderInt('Text Size', fontSize, 8, 36)) then
-                gConfig[tab.fontSizeKey] = fontSize[1];
-                UpdateUserSettings();
-            end
-            if (imgui.IsItemDeactivatedAfterEdit()) then
-                SaveSettingsOnly();
-            end
+            components.SliderInt('Text Size', gConfig, tab.fontSizeKey, 8, 36);
         end
     end
 end
@@ -205,18 +184,10 @@ local function DrawTrackerColorSettings(tab)
     end
 
     if components.CollapsingSection('Color Thresholds##' .. tab.colorKey .. 'Color') then
-        local threshold1 = { gConfig[tab.threshold1Key] };
-        if (imgui.SliderInt('Warning Threshold', threshold1, 0, 600)) then
-            gConfig[tab.threshold1Key] = threshold1[1];
-        end
-        if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+        components.SliderInt('Warning Threshold', gConfig, tab.threshold1Key, 0, 600);
         imgui.ShowHelp(tab.name .. ' count at which dots turn to warning color');
 
-        local threshold2 = { gConfig[tab.threshold2Key] };
-        if (imgui.SliderInt('Critical Threshold', threshold2, 0, 600)) then
-            gConfig[tab.threshold2Key] = threshold2[1];
-        end
-        if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+        components.SliderInt('Critical Threshold', gConfig, tab.threshold2Key, 0, 600);
         imgui.ShowHelp(tab.name .. ' count at which dots turn to critical color');
     end
 end

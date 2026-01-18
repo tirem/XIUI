@@ -283,6 +283,13 @@ partyList.HandleZonePacket = function(e)
     partyList.partyCasts = data.partyCasts;
 end
 
+-- ============================================
+-- ResetPositions
+-- ============================================
+partyList.ResetPositions = function()
+    display.ResetPositions();
+end
+
 partyList.HandleActionPacket = function(actionPacket)
     if (actionPacket == nil or actionPacket.UserId == nil) then
         return;

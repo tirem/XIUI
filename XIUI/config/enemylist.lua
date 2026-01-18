@@ -13,6 +13,8 @@ local M = {};
 -- Section: Enemy List Settings
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showEnemyList', CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'enemyListHideOnMenuFocus');
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
     components.DrawCheckbox('Preview Enemies (when config open)', 'enemyListPreview');
 
     if components.CollapsingSection('Display Options##enemyList') then
@@ -64,7 +66,7 @@ function M.DrawSettings()
     if components.CollapsingSection('Debuffs##enemyList') then
         components.DrawCheckbox('Show Debuffs', 'showEnemyListDebuffs');
         if (gConfig.showEnemyListDebuffs) then
-            components.DrawAnchorDropdown('Debuff Anchor', gConfig, 'enemyListDebuffsAnchor',
+            components.DrawLeftRightAnchorDropdown('Debuff Anchor', gConfig, 'enemyListDebuffsAnchor',
                 'Which side of the enemy entry to anchor debuff icons.');
             components.DrawSlider('Debuff Offset X', 'enemyListDebuffOffsetX', -100, 200);
             imgui.ShowHelp('Horizontal offset for debuff icons from the anchor edge.');

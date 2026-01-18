@@ -8,9 +8,11 @@ require('handlers.helpers');
 local imgui = require('imgui');
 local ffi = require('ffi');
 local progressbar = require('libs.progressbar');
+local drawing = require('libs.drawing');
 
 local data = require('modules.petbar.data');
 local color = require('libs.color');
+local defaultPositions = require('libs.defaultpositions');
 
 local display = {};
 
@@ -25,6 +27,9 @@ local windowState = {
 local hasAppliedSavedPosition = false;
 local lastSavedPosX = nil;
 local lastSavedPosY = nil;
+
+-- Force reset flag for default position restore
+local forcePositionReset = false;
 
 -- ============================================
 -- Per-Pet-Type Settings Helpers
@@ -651,8 +656,15 @@ function display.DrawWindow(settings)
         windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
     end
 
-    -- Apply saved position on first render
-    if not hasAppliedSavedPosition and gConfig.petBarWindowPosX ~= nil and gConfig.petBarWindowPosY ~= nil then
+    -- Apply saved position on first render, or force reset to default
+    if forcePositionReset then
+        local defX, defY = defaultPositions.GetPetBarPosition();
+        imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
+        forcePositionReset = false;
+        hasAppliedSavedPosition = true;
+        lastSavedPosX = defX;
+        lastSavedPosY = defY;
+    elseif not hasAppliedSavedPosition and gConfig.petBarWindowPosX ~= nil and gConfig.petBarWindowPosY ~= nil then
         imgui.SetNextWindowPos({gConfig.petBarWindowPosX, gConfig.petBarWindowPosY}, ImGuiCond_Once);
         hasAppliedSavedPosition = true;
         lastSavedPosX = gConfig.petBarWindowPosX;
@@ -956,16 +968,16 @@ function display.DrawWindow(settings)
                     -- Absolute positioning: relative to window top-left
                     iconX = windowPosX + iconOffsetX;
                     iconY = windowPosY + iconOffsetY;
-                    -- Use background draw list: renders behind config menu but not clipped to window bounds
-                    drawList = imgui.GetBackgroundDrawList();
+                    -- Use UI draw list for consistent rendering
+                    drawList = drawing.GetUIDrawList();
                 else
                     -- Anchored: flow within the pet bar container
                     -- Use recastTopSpacing for vertical offset, no X offset in anchored mode
                     local topSpacing = typeSettings.recastTopSpacing or 2;
                     iconX, iconY = imgui.GetCursorScreenPos();
                     iconY = iconY + topSpacing;
-                    -- Use background draw list for consistency (anchored may also use offsets outside content area)
-                    drawList = imgui.GetBackgroundDrawList();
+                    -- Use UI draw list for consistent rendering
+                    drawList = drawing.GetUIDrawList();
                 end
 
                 if displayStyle == 'full' then
@@ -1078,7 +1090,7 @@ function display.DrawWindow(settings)
         local showCharmTimer = isCharmed and gConfig.petBarShowCharmIndicator ~= false;
 
         if showJugTimer or showCharmTimer then
-            local drawList = imgui.GetBackgroundDrawList();
+            local drawList = drawing.GetUIDrawList();
 
             -- Get timer text for positioning
             local timerStr = nil;
@@ -1215,15 +1227,20 @@ function display.DrawWindow(settings)
                 gConfig.petBarWindowPosY = windowPosY;
                 lastSavedPosX = windowPosX;
                 lastSavedPosY = windowPosY;
-                if SaveSettingsToDisk then
-                    SaveSettingsToDisk();
-                end
             end
         end
     end
     imgui.End();
 
     return true;  -- Pet exists (or preview mode), target window can render
+end
+
+-- ============================================
+-- ResetPositions - Reset window to default position
+-- ============================================
+display.ResetPositions = function()
+    forcePositionReset = true;
+    hasAppliedSavedPosition = false;
 end
 
 return display;
