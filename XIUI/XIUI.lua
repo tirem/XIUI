@@ -89,6 +89,9 @@ local TextureManager = require('libs.texturemanager');
 -- Global switch to hard-disable functionality that is limited on HX servers
 HzLimitedMode = false;
 
+-- Flag to skip settings_update callback during internal saves
+local bInternalSave = false;
+
 
 
 -- Local split function for hot reload (avoids monkeypatching string metatable)
@@ -336,7 +339,9 @@ function ResetSettings()
     gConfig = deep_copy_table(defaultUserSettings);
     config.userSettings = gConfig;
     UpdateSettings();
+    bInternalSave = true;
     settings.save();
+    bInternalSave = false;
 
     -- Reset all module positions to defaults
     uiMods.playerbar.ResetPositions();
@@ -373,7 +378,9 @@ function SaveSettingsToDisk()
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
+    bInternalSave = true;
     settings.save();
+    bInternalSave = false;
 end
 
 function SaveSettingsOnly()
@@ -381,7 +388,9 @@ function SaveSettingsOnly()
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
+    bInternalSave = true;
     settings.save();
+    bInternalSave = false;
     UpdateUserSettings();
 end
 
@@ -414,6 +423,9 @@ function DeferredUpdateVisuals()
 end
 
 settings.register('settings', 'settings_update', function (s)
+    -- Skip if this is an internal save (we already handle updates appropriately)
+    -- This callback is for external changes only (e.g., manual config file edits)
+    if bInternalSave then return; end
     if (s ~= nil) then
         config = s;
         gConfig = config.userSettings;
