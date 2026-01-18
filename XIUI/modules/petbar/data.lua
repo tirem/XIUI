@@ -696,9 +696,16 @@ function data.FormatTimeMMSS(seconds)
     if (seconds == nil) then
         return '0:00';
     end
+
+    local sign = '';
+    if (seconds < 0) then
+        sign = '-';
+        seconds = math.abs(seconds);
+    end
+
     local mins = math.floor(seconds / 60);
-    local secs = seconds % 60;
-    return string.format('%d:%02d', mins, secs);
+    local secs = math.floor(seconds % 60);
+    return string.format('%s%d:%02d', sign, mins, secs);
 end
 
 -- Check if an ability should be shown based on config settings
@@ -1266,11 +1273,7 @@ function data.GetCharmTimeRemaining()
     if (data.charmExpireTime == nil) then
         return nil;
     end
-    local remaining = data.charmExpireTime - os.time();
-    if (remaining < 0) then
-        return 0;
-    end
-    return remaining;
+    return data.charmExpireTime - os.time();
 end
 
 function data.GetCharmElapsedTime()
@@ -1330,6 +1333,16 @@ function data.calculateCharmTime(mobLevel)
     local charmDuration = preGearDuration * (1 + (0.05 * data.getCharmEquipValue()));
 
     return os.time() + charmDuration;
+end
+
+function data.ExtendCharmDuration(seconds)
+    if (data.charmExpireTime ~= nil) then
+        data.charmExpireTime = data.charmExpireTime + seconds;
+        -- Persist to config
+        if gConfig then
+            gConfig.petBarCharmExpireTime = data.charmExpireTime;
+        end
+    end
 end
 
 return data;
