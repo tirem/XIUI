@@ -679,7 +679,7 @@ local function DrawCrossbarGlobalPalettesSection()
         end
         imgui.EndCombo();
     end
-    imgui.ShowHelp('Which shoulder button + DPad cycles crossbar palettes.\nPress this button + DPad Up/Down while holding a trigger to cycle palettes.');
+    imgui.ShowHelp('Which shoulder button + DPad cycles crossbar palettes.\nHold R1 + R2 together, then press DPad Up/Down to cycle palettes.');
 
     imgui.Spacing();
 end
