@@ -1279,6 +1279,20 @@ function M.DrawWindow(settings, moduleSettings)
         end
     end
 
+    -- Hide all GDI fonts for all modes (we'll show the ones we need during DrawSlot)
+    for _, mode in ipairs(allModes) do
+        for slotIndex = 1, SLOTS_PER_SIDE do
+            local labelFont = state.labelFonts[mode] and state.labelFonts[mode][slotIndex];
+            if labelFont then labelFont:set_visible(false); end
+            local timerFont = state.timerFonts[mode] and state.timerFonts[mode][slotIndex];
+            if timerFont then timerFont:set_visible(false); end
+            local mpCostFont = state.mpCostFonts[mode] and state.mpCostFonts[mode][slotIndex];
+            if mpCostFont then mpCostFont:set_visible(false); end
+            local quantityFont = state.quantityFonts[mode] and state.quantityFonts[mode][slotIndex];
+            if quantityFont then quantityFont:set_visible(false); end
+        end
+    end
+
     -- Begin ImGui window - ALL slot rendering happens inside to enable interactions
     if imgui.Begin('Crossbar', true, windowFlags) then
         windowPosX, windowPosY = imgui.GetWindowPos();
