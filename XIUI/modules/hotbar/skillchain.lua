@@ -464,7 +464,7 @@ local function GetIndexFromId(id)
 end
 
 -- Get skillchain result for a WS against current target state
--- targetServerId: server ID of the target (can be nil to check all targets)
+-- targetServerId: server ID of the target
 -- wsIdOrName: weapon skill ID (number) or name (string)
 -- Returns skillchain name or nil
 function M.GetSkillchainForSlot(targetServerId, wsIdOrName)
@@ -489,35 +489,35 @@ function M.GetSkillchainForSlot(targetServerId, wsIdOrName)
         targetIndex = targetServerId;  -- Already an entity index
     end
 
-    -- If we have a specific target, check just that one
-    -- Otherwise, check ALL tracked targets (fallback when target lookup fails)
-    local targetsToCheck = {};
-    if targetIndex and targetIndex > 0 then
-        targetsToCheck[targetIndex] = resonationMap[targetIndex];
-    else
-        -- No specific target - check all tracked resonations
-        targetsToCheck = resonationMap;
+    -- Only check the player's current target
+    if not targetIndex or targetIndex == 0 then
+        return nil;
+    end
+
+    local resonation = resonationMap[targetIndex];
+    if not resonation then
+        return nil;
     end
 
     local now = os.clock();
 
-    -- Check each target for skillchain potential
-    for idx, resonation in pairs(targetsToCheck) do
-        if resonation then
-            -- Check if window is still valid
-            if now <= resonation.WindowClose and now >= resonation.WindowOpen then
-                -- Check for skillchain match
-                for _, sc in ipairs(possibleSkillchains) do
-                    local result, opening, closing = sc[1], sc[2], sc[3];
-                    if tableContains(resonation.Attributes, opening) then
-                        if tableContains(wsAttributes, closing) then
-                            return resonationNames[result];
-                        end
-                    end
-                end
-            elseif now > resonation.WindowClose then
-                -- Window expired, clean up
-                resonationMap[idx] = nil;
+    -- Check if window expired
+    if now > resonation.WindowClose then
+        resonationMap[targetIndex] = nil;
+        return nil;
+    end
+
+    -- Check if window is open
+    if now < resonation.WindowOpen then
+        return nil;
+    end
+
+    -- Check for skillchain match
+    for _, sc in ipairs(possibleSkillchains) do
+        local result, opening, closing = sc[1], sc[2], sc[3];
+        if tableContains(resonation.Attributes, opening) then
+            if tableContains(wsAttributes, closing) then
+                return resonationNames[result];
             end
         end
     end

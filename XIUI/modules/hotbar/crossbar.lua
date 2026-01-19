@@ -1167,7 +1167,7 @@ function M.DrawWindow(settings, moduleSettings)
     if skillchainEnabled then
         local mainTargetIdx = targetLib.GetTargets();
         if mainTargetIdx and mainTargetIdx ~= 0 then
-            local targetEntity = GetEntitySafe(mainTargetIdx);
+            local targetEntity = GetEntity(mainTargetIdx);
             if targetEntity then
                 targetServerId = targetEntity.ServerId;
             end
