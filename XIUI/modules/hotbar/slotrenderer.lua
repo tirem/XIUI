@@ -580,6 +580,13 @@ function M.DrawSlot(resources, params)
             finalColor = bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
         end
 
+        -- Apply slot opacity setting (before animation opacity)
+        local slotOpacity = params.slotOpacity or 1.0;
+        if slotOpacity < 1.0 then
+            local a = math.floor(bit.rshift(bit.band(finalColor, 0xFF000000), 24) * slotOpacity);
+            finalColor = bit.bor(bit.lshift(a, 24), bit.band(finalColor, 0x00FFFFFF));
+        end
+
         -- Apply animation opacity to alpha channel
         if animOpacity < 1.0 then
             local a = math.floor(bit.rshift(bit.band(finalColor, 0xFF000000), 24) * animOpacity);

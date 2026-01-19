@@ -779,6 +779,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
 
         -- Visual Settings
         slotBgColor = settings.slotBackgroundColor or 0x55000000,
+        slotOpacity = settings.slotOpacity or 1.0,
         dimFactor = dimFactor,
         animOpacity = animOpacity,
         isPressed = isPressed and isActive,

@@ -2250,6 +2250,9 @@ local function DrawCrossbarColorSettings()
         end
         imgui.ShowHelp('Color and transparency of slot backgrounds.');
 
+        components.DrawPartySlider(crossbarSettings, 'Slot Opacity##crossbar', 'slotOpacity', 0.0, 1.0, '%.2f', nil, 1.0);
+        imgui.ShowHelp('Opacity of the slot background texture.');
+
         local highlightColor = crossbarSettings.activeSlotHighlight or 0x44FFFFFF;
         local highlightColorTable = ARGBToImGui(highlightColor);
         if imgui.ColorEdit4('Active Highlight##crossbar', highlightColorTable, colorFlags) then
@@ -2806,6 +2809,9 @@ local function DrawColorSettingsContent(settings, configKey)
             SaveSettingsOnly();
         end
         imgui.ShowHelp('Color and transparency of slot backgrounds.');
+
+        components.DrawPartySlider(settings, 'Slot Opacity##' .. configKey, 'slotOpacity', 0.0, 1.0, '%.2f', nil, 1.0);
+        imgui.ShowHelp('Opacity of the slot background texture.');
     end
 
     if components.CollapsingSection('Text Colors##' .. configKey .. 'color', true) then

@@ -391,6 +391,7 @@ function M.createHotbarBarDefaults(overrides)
 
         -- Slot appearance
         slotBackgroundColor = 0x55000000,  -- ARGB color for slot backgrounds (black at 33% opacity)
+        slotOpacity = 1.0,                 -- Opacity multiplier for slot.png (0.0-1.0)
 
         -- Window colors (per-bar)
         bgColor = 0xFFFFFFFF,              -- Background color tint (ARGB)
@@ -485,6 +486,7 @@ function M.createCrossbarDefaults()
         backgroundOpacity = 0.10,
         borderOpacity = 1.0,
         slotBackgroundColor = 0x55000000,
+        slotOpacity = 1.0,                  -- Opacity multiplier for slot.png (0.0-1.0)
         activeSlotHighlight = 0x44FFFFFF,   -- Highlight color when trigger held
         inactiveSlotDim = 0.5,              -- Dim multiplier for inactive side
 
