@@ -774,17 +774,27 @@ function Controller.HandleXInputButton(e)
                     local modeSettings = crossbarSettings and crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[activeCombo];
                     local isPetAware = modeSettings and modeSettings.petAware;
 
+                    -- Check log setting (same as hotbar in actions.lua)
+                    local logPaletteName = gConfig.hotbarGlobal and gConfig.hotbarGlobal.logPaletteName;
+                    if logPaletteName == nil then logPaletteName = true; end
+
                     if isPetAware then
                         local newPalette = petpalette.CycleCrossbarPalette(activeCombo, direction, jobId);
-                        print('[XIUI] Crossbar palette: ' .. (newPalette or '(default)'));
+                        if logPaletteName then
+                            print('[XIUI] Crossbar palette: ' .. (newPalette or '(default)'));
+                        end
                         DebugLog('Crossbar pet palette cycled for ' .. activeCombo .. ': ' .. (direction == 1 and 'next' or 'prev') .. ' -> ' .. tostring(newPalette));
                     else
                         local newPalette, palettesExist = palette.CyclePaletteForCombo(activeCombo, direction, jobId, subjobId);
                         if newPalette then
-                            print('[XIUI] Crossbar palette: ' .. newPalette);
+                            if logPaletteName then
+                                print('[XIUI] Crossbar palette: ' .. newPalette);
+                            end
                             DebugLog('Crossbar palette cycled for ' .. activeCombo .. ': ' .. (direction == 1 and 'next' or 'prev') .. ' -> ' .. newPalette);
                         elseif not palettesExist then
-                            print('[XIUI] No crossbar palettes defined for this job');
+                            if logPaletteName then
+                                print('[XIUI] No crossbar palettes defined for this job');
+                            end
                             DebugLog('No crossbar palettes defined for job ' .. tostring(jobId));
                         end
                     end
