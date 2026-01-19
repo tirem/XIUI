@@ -334,6 +334,15 @@ local state = {
     currentBarSet = 'base',
     currentLeftMode = 'L2',
     currentRightMode = 'R2',
+
+    -- Visibility animation state for activeOnly display mode
+    visibilityAnimation = {
+        active = false,
+        startTime = 0,
+        fadeIn = true,
+        progress = 1.0,
+        wasHidden = false,
+    },
 };
 
 -- ============================================
@@ -422,6 +431,33 @@ local function GetDisplayModes(activeCombo)
         -- Base mode (NONE, L2, R2): show L2 left, R2 right
         return 'L2', 'R2', false, nil;
     end
+end
+
+-- Determine which sides are visible based on display mode
+-- Returns: leftVisible, rightVisible, crossbarVisible
+local function GetVisibilityState(activeCombo, settings, isEditMode)
+    -- Always show full crossbar in edit mode or normal display mode
+    if isEditMode or settings.displayMode ~= 'activeOnly' then
+        return true, true, true;
+    end
+
+    -- activeOnly mode: hide when no trigger, show only active side
+    if activeCombo == COMBO_MODES.NONE then
+        return false, false, false;
+    elseif activeCombo == COMBO_MODES.L2 or activeCombo == COMBO_MODES.L2_DOUBLE then
+        return true, false, true;
+    elseif activeCombo == COMBO_MODES.R2 or activeCombo == COMBO_MODES.R2_DOUBLE then
+        return false, true, true;
+    elseif activeCombo == COMBO_MODES.L2_THEN_R2 then
+        -- L2+R2: show expanded L2R2 on left side only
+        return true, false, true;
+    elseif activeCombo == COMBO_MODES.R2_THEN_L2 then
+        -- R2+L2: show expanded R2L2 on right side only
+        return false, true, true;
+    end
+
+    -- Fallback: show both
+    return true, true, true;
 end
 
 -- ============================================
@@ -521,6 +557,39 @@ local function GetIncomingAnimationValues()
     local yOffset = slideDistance * (1.0 - EaseOutCubic(progress));  -- Start below, move to 0
 
     return opacity, yOffset;
+end
+
+-- Start a visibility transition (fade in/out for activeOnly mode)
+local function StartVisibilityTransition(fadeIn)
+    state.visibilityAnimation.active = true;
+    state.visibilityAnimation.startTime = GetTime();
+    state.visibilityAnimation.fadeIn = fadeIn;
+    state.visibilityAnimation.progress = fadeIn and 0.0 or 1.0;
+end
+
+-- Update visibility animation and return opacity multiplier (0-1)
+local function UpdateVisibilityAnimation(settings)
+    if not state.visibilityAnimation.active then
+        return state.visibilityAnimation.fadeIn and 1.0 or 0.0;
+    end
+
+    local duration = settings.fadeAnimationDuration or 0.15;
+    local elapsed = GetTime() - state.visibilityAnimation.startTime;
+    local rawProgress = math.min(elapsed / duration, 1.0);
+
+    if rawProgress >= 1.0 then
+        state.visibilityAnimation.active = false;
+        state.visibilityAnimation.progress = state.visibilityAnimation.fadeIn and 1.0 or 0.0;
+    else
+        -- Fade in: 0 -> 1, Fade out: 1 -> 0
+        if state.visibilityAnimation.fadeIn then
+            state.visibilityAnimation.progress = EaseOutCubic(rawProgress);
+        else
+            state.visibilityAnimation.progress = 1.0 - EaseOutCubic(rawProgress);
+        end
+    end
+
+    return state.visibilityAnimation.progress;
 end
 
 -- Get slot position within the crossbar window
@@ -1084,10 +1153,35 @@ function M.DrawWindow(settings, moduleSettings)
     local pressedSlot = controller.GetPressedSlot();
 
     -- Edit Mode: Override activeCombo to show selected bar for setup
-    if settings.editMode then
+    local isEditMode = settings.editMode;
+    if isEditMode then
         local editBar = settings.editModeBar or 'L2';
         activeCombo = editBar;
         pressedSlot = nil;  -- Don't show pressed state in edit mode
+    end
+
+    -- Determine visibility for activeOnly display mode
+    local leftVisible, rightVisible, crossbarVisible = GetVisibilityState(activeCombo, settings, isEditMode);
+
+    -- Handle visibility animation for activeOnly mode
+    local visibilityOpacity = 1.0;
+    if settings.displayMode == 'activeOnly' and not isEditMode then
+        local wasHidden = state.visibilityAnimation.wasHidden;
+        local isNowHidden = not crossbarVisible;
+
+        -- Start fade animation on visibility change
+        if isNowHidden ~= wasHidden then
+            StartVisibilityTransition(not isNowHidden);  -- fadeIn = true when becoming visible
+            state.visibilityAnimation.wasHidden = isNowHidden;
+        end
+
+        visibilityOpacity = UpdateVisibilityAnimation(settings);
+
+        -- Early return if fully hidden and animation complete
+        if visibilityOpacity <= 0.01 and not state.visibilityAnimation.active then
+            M.SetHidden(true);
+            return;
+        end
     end
 
     -- Determine which bar set to display based on active combo
@@ -1199,61 +1293,84 @@ function M.DrawWindow(settings, moduleSettings)
         rightGroupX = state.windowX + groupWidth + groupSpacing;
         rightGroupY = state.windowY;
 
-        -- Draw bar sets based on animation state
+        -- Draw bar sets based on animation state and display mode
         -- NOTE: DrawSlot calls must be inside imgui.Begin/End for interactions to work
+        local isActiveOnlyMode = settings.displayMode == 'activeOnly' and not isEditMode;
+
         if state.animation.active then
             -- Get animation values for outgoing and incoming elements
             local outOpacity, outYOffset = GetOutgoingAnimationValues();
             local inOpacity, inYOffset = GetIncomingAnimationValues();
+
+            -- Apply visibility fade for activeOnly mode
+            outOpacity = outOpacity * visibilityOpacity;
+            inOpacity = inOpacity * visibilityOpacity;
 
             -- Determine active states for "from" bar set
             local fromExpanded = state.animation.fromBarSet == 'expanded';
             local fromLeftActive = fromExpanded or state.animation.fromLeftMode == 'L2';
             local fromRightActive = fromExpanded or state.animation.fromRightMode == 'R2';
 
-            -- Draw LEFT side
-            if state.animation.leftChanged then
-                -- Left side changed - animate it
-                if outOpacity > 0.01 then
-                    DrawLeftSide(state.animation.fromLeftMode, leftGroupX, leftGroupY, slotSize, settings,
-                        fromLeftActive, pressedSlot, false, outOpacity, drawList, outYOffset, targetServerId, skillchainEnabled);
-                end
-                if inOpacity > 0.01 then
+            -- Draw LEFT side (skip in activeOnly mode if not visible)
+            if not isActiveOnlyMode or leftVisible then
+                if state.animation.leftChanged then
+                    -- Left side changed - animate it
+                    if outOpacity > 0.01 then
+                        DrawLeftSide(state.animation.fromLeftMode, leftGroupX, leftGroupY, slotSize, settings,
+                            fromLeftActive, pressedSlot, false, outOpacity, drawList, outYOffset, targetServerId, skillchainEnabled);
+                    end
+                    if inOpacity > 0.01 then
+                        DrawLeftSide(state.animation.toLeftMode, leftGroupX, leftGroupY, slotSize, settings,
+                            leftActive, pressedSlot, leftShowPressed, inOpacity, drawList, inYOffset, targetServerId, skillchainEnabled);
+                    end
+                else
+                    -- Left side didn't change - draw at full opacity (with visibility fade)
                     DrawLeftSide(state.animation.toLeftMode, leftGroupX, leftGroupY, slotSize, settings,
-                        leftActive, pressedSlot, leftShowPressed, inOpacity, drawList, inYOffset, targetServerId, skillchainEnabled);
+                        leftActive, pressedSlot, leftShowPressed, visibilityOpacity, drawList, 0, targetServerId, skillchainEnabled);
                 end
-            else
-                -- Left side didn't change - draw at full opacity
-                DrawLeftSide(state.animation.toLeftMode, leftGroupX, leftGroupY, slotSize, settings,
-                    leftActive, pressedSlot, leftShowPressed, 1.0, drawList, 0, targetServerId, skillchainEnabled);
             end
 
-            -- Draw RIGHT side
-            if state.animation.rightChanged then
-                -- Right side changed - animate it
-                if outOpacity > 0.01 then
-                    DrawRightSide(state.animation.fromRightMode, rightGroupX, rightGroupY, slotSize, settings,
-                        fromRightActive, pressedSlot, false, outOpacity, drawList, outYOffset, targetServerId, skillchainEnabled);
-                end
-                if inOpacity > 0.01 then
+            -- Draw RIGHT side (skip in activeOnly mode if not visible)
+            if not isActiveOnlyMode or rightVisible then
+                if state.animation.rightChanged then
+                    -- Right side changed - animate it
+                    if outOpacity > 0.01 then
+                        DrawRightSide(state.animation.fromRightMode, rightGroupX, rightGroupY, slotSize, settings,
+                            fromRightActive, pressedSlot, false, outOpacity, drawList, outYOffset, targetServerId, skillchainEnabled);
+                    end
+                    if inOpacity > 0.01 then
+                        DrawRightSide(state.animation.toRightMode, rightGroupX, rightGroupY, slotSize, settings,
+                            rightActive, pressedSlot, rightShowPressed, inOpacity, drawList, inYOffset, targetServerId, skillchainEnabled);
+                    end
+                else
+                    -- Right side didn't change - draw at full opacity (with visibility fade)
                     DrawRightSide(state.animation.toRightMode, rightGroupX, rightGroupY, slotSize, settings,
-                        rightActive, pressedSlot, rightShowPressed, inOpacity, drawList, inYOffset, targetServerId, skillchainEnabled);
+                        rightActive, pressedSlot, rightShowPressed, visibilityOpacity, drawList, 0, targetServerId, skillchainEnabled);
                 end
-            else
-                -- Right side didn't change - draw at full opacity
-                DrawRightSide(state.animation.toRightMode, rightGroupX, rightGroupY, slotSize, settings,
-                    rightActive, pressedSlot, rightShowPressed, 1.0, drawList, 0, targetServerId, skillchainEnabled);
             end
         else
-            -- No animation, draw current bar set at full opacity with no offset
-            DrawBarSet(
-                state.currentLeftMode, state.currentRightMode,
-                leftGroupX, leftGroupY, rightGroupX, rightGroupY,
-                slotSize, settings,
-                leftActive, rightActive,
-                pressedSlot, leftShowPressed, rightShowPressed,
-                1.0, drawList, 0, targetServerId, skillchainEnabled
-            );
+            -- No bar transition animation
+            if isActiveOnlyMode then
+                -- ActiveOnly mode: draw only visible sides with visibility fade
+                if leftVisible then
+                    DrawLeftSide(state.currentLeftMode, leftGroupX, leftGroupY, slotSize, settings,
+                        leftActive, pressedSlot, leftShowPressed, visibilityOpacity, drawList, 0, targetServerId, skillchainEnabled);
+                end
+                if rightVisible then
+                    DrawRightSide(state.currentRightMode, rightGroupX, rightGroupY, slotSize, settings,
+                        rightActive, pressedSlot, rightShowPressed, visibilityOpacity, drawList, 0, targetServerId, skillchainEnabled);
+                end
+            else
+                -- Normal mode: draw both sides at full opacity
+                DrawBarSet(
+                    state.currentLeftMode, state.currentRightMode,
+                    leftGroupX, leftGroupY, rightGroupX, rightGroupY,
+                    slotSize, settings,
+                    leftActive, rightActive,
+                    pressedSlot, leftShowPressed, rightShowPressed,
+                    1.0, drawList, 0, targetServerId, skillchainEnabled
+                );
+            end
         end
 
         imgui.End();
@@ -1276,21 +1393,32 @@ function M.DrawWindow(settings, moduleSettings)
         gConfig.hotbarCrossbarPosition.y = state.windowY;
     end
 
+    -- Determine if we should show center elements (hidden in activeOnly mode)
+    local isActiveOnlyMode = settings.displayMode == 'activeOnly' and not isEditMode;
+    local showCenterElements = not isActiveOnlyMode;
+
     -- Update window background (can happen after window closes)
+    -- In activeOnly mode, apply visibility opacity to background
     if state.bgHandle then
+        local bgOpacity = settings.backgroundOpacity;
+        local borderOpacity = settings.borderOpacity;
+        if isActiveOnlyMode then
+            bgOpacity = bgOpacity * visibilityOpacity;
+            borderOpacity = borderOpacity * visibilityOpacity;
+        end
         windowBg.update(state.bgHandle, state.windowX, state.windowY, width, height, {
             theme = settings.backgroundTheme,
             bgScale = settings.bgScale,
             borderScale = settings.borderScale,
-            bgOpacity = settings.backgroundOpacity,
-            borderOpacity = settings.borderOpacity,
+            bgOpacity = bgOpacity,
+            borderOpacity = borderOpacity,
             bgColor = settings.bgColor,
             borderColor = settings.borderColor,
         });
     end
 
-    -- Draw center divider (optional) - uses foreground draw list, works outside window
-    if settings.showDivider and drawList then
+    -- Draw center divider (optional, hidden in activeOnly mode)
+    if settings.showDivider and drawList and showCenterElements then
         local dividerX = state.windowX + groupWidth + (groupSpacing / 2);
         local dividerY1 = state.windowY + 10;
         local dividerY2 = state.windowY + height - 10;
@@ -1303,13 +1431,15 @@ function M.DrawWindow(settings, moduleSettings)
         );
     end
 
-    -- Draw combo text in center for complex combos (positioned at top)
+    -- Draw combo text in center for complex combos (hidden in activeOnly mode)
     local centerX = state.windowX + groupWidth + (groupSpacing / 2);
     local topY = state.windowY - 4;  -- Above the window
-    DrawComboText(activeCombo, centerX, topY, settings);
+    if showCenterElements then
+        DrawComboText(activeCombo, centerX, topY, settings);
+    end
 
-    -- Draw L2/R2 trigger icons above the groups (controlled by showTriggerLabels)
-    if drawList then
+    -- Draw L2/R2 trigger icons above the groups (hidden in activeOnly mode)
+    if drawList and showCenterElements then
         DrawTriggerIcons(activeCombo, leftGroupX, rightGroupX, leftGroupY, groupWidth, settings, drawList);
     end
 

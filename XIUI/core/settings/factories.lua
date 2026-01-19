@@ -488,6 +488,10 @@ function M.createCrossbarDefaults()
         activeSlotHighlight = 0x44FFFFFF,   -- Highlight color when trigger held
         inactiveSlotDim = 0.5,              -- Dim multiplier for inactive side
 
+        -- Display mode
+        displayMode = 'normal',             -- 'normal' or 'activeOnly'
+        fadeAnimationDuration = 0.15,       -- Fade in/out duration for activeOnly mode
+
         -- Window colors
         bgColor = 0xFFFFFFFF,
         borderColor = 0xFFFFFFFF,

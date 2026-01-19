@@ -1886,6 +1886,7 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
         dinput = 'PlayStation',
     };
 
+    imgui.AlignTextToFramePadding();
     imgui.Text('Controller Profile:');
     imgui.SameLine();
     imgui.SetNextItemWidth(150);
@@ -1925,6 +1926,39 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
         end, 0.3);
         imgui.ShowHelp('Time window to register a double-tap (in seconds).');
     end
+
+    imgui.Spacing();
+
+    -- Display Mode dropdown
+    local displayModes = { 'normal', 'activeOnly' };
+    local displayModeLabels = { 'Normal', 'Active Only' };
+    local currentDisplayMode = crossbarSettings.displayMode or 'normal';
+    local currentDisplayIndex = 1;
+    for i, mode in ipairs(displayModes) do
+        if mode == currentDisplayMode then
+            currentDisplayIndex = i;
+            break;
+        end
+    end
+
+    imgui.AlignTextToFramePadding();
+    imgui.Text('Display Mode:');
+    imgui.SameLine();
+    imgui.SetNextItemWidth(150);
+    if imgui.BeginCombo('##displayModeCrossbar', displayModeLabels[currentDisplayIndex]) then
+        for i, label in ipairs(displayModeLabels) do
+            local isSelected = (i == currentDisplayIndex);
+            if imgui.Selectable(label, isSelected) then
+                crossbarSettings.displayMode = displayModes[i];
+                SaveSettingsOnly();
+            end
+            if isSelected then
+                imgui.SetItemDefaultFocus();
+            end
+        end
+        imgui.EndCombo();
+    end
+    imgui.ShowHelp('Normal: Always show both sides (inactive side dimmed).\nActive Only: Show only when trigger is held, displaying only the active side.');
 
     imgui.Spacing();
 
