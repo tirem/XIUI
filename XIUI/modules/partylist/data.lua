@@ -478,6 +478,9 @@ function data.GetMemberInformation(memIdx)
         memberInfo.leader = false;
     end
 
+    -- partyIndex 1 = Party A (alliance leader's party)
+    memberInfo.allianceLeader = memberInfo.leader and partyIndex == 1;
+
     if (memberInfo.inzone == true) then
         memberInfo.hp = party:GetMemberHP(memIdx);
         memberInfo.mp = party:GetMemberMP(memIdx);

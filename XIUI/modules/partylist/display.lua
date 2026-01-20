@@ -522,7 +522,14 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Draw leader icon
     if (memInfo.leader) then
-        draw_circle({hpStartX + settings.dotRadius/2, hpStartY + settings.dotRadius/2}, settings.dotRadius, {1, 1, .5, 1}, settings.dotRadius * 3, true, nil, GetUIDrawList());
+        local dotColorARGB;
+        if memInfo.allianceLeader then
+            dotColorARGB = cache.colors.allianceLeaderDotColor or 0xFF00FFFF;
+        else
+            dotColorARGB = cache.colors.partyLeaderDotColor or 0xFFFFFF80;
+        end
+        local dotColor = ARGBToImGui(dotColorARGB);
+        draw_circle({hpStartX + settings.dotRadius/2, hpStartY + settings.dotRadius/2}, settings.dotRadius, dotColor, settings.dotRadius * 3, true, nil, GetUIDrawList());
     end
 
     -- Position name text

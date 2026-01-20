@@ -596,6 +596,8 @@ function M.createPartyColorDefaults(includeTP)
         selectionBorderColor = 0xFF78C0ED,
         subtargetGradient = T{ enabled = true, start = '#d9a54d', stop = '#edcf78' },
         subtargetBorderColor = 0xFFfdd017,
+        allianceLeaderDotColor = 0xFF00FFFF,    -- Cyan for alliance leader (Party A leader)
+        partyLeaderDotColor = 0xFFFFFF80,       -- Yellow for party leaders (B/C)
         castBarGradient = T{ enabled = true, start = '#ffaa00', stop = '#ffcc44' },
         castTextColor = 0xFFFFCC44,
     };
