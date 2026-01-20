@@ -24,6 +24,15 @@ local PET_TYPES = {
     { key = 'Wyvern', configKey = 'petBarWyvern', label = 'Wyvern', previewType = 1 },
 };
 
+-- Ability config keys for each pet type (used for validation)
+local PET_ABILITY_GROUPS = {
+    petBarAvatar = { 'petBarSmnShowBPRage', 'petBarSmnShowBPWard', 'petBarSmnShowApogee', 'petBarSmnShowManaCede' },
+    petBarCharm = { 'petBarBstShowSic', 'petBarBstShowRewardCharm' },
+    petBarJug = { 'petBarBstShowReady', 'petBarBstShowReward', 'petBarBstShowCallBeast', 'petBarBstShowBestialLoyalty' },
+    petBarAutomaton = { 'petBarPupShowActivate', 'petBarPupShowRepair', 'petBarPupShowDeusExAutomata', 'petBarPupShowDeploy', 'petBarPupShowDeactivate', 'petBarPupShowRetrieve' },
+    petBarWyvern = { 'petBarDrgShowCallWyvern', 'petBarDrgShowSpiritLink', 'petBarDrgShowDeepBreathing', 'petBarDrgShowSteadyWing' },
+};
+
 -- Copy settings between pet types
 local function CopyPetTypeSettings(sourceKey, targetKey)
     local source = gConfig[sourceKey];
@@ -51,6 +60,37 @@ local function CopyPetTypeColors(sourceKey, targetKey)
     end
 end
 
+-- Helper: Draw checkbox with "at least one enabled" validation
+local function DrawRecastCheckbox(label, configKey, groupKeys, alwaysVisible)
+    -- Checkbox state (nil means true)
+    local val = { gConfig[configKey] ~= false };
+    
+    if imgui.Checkbox(label, val) then
+        local newValue = val[1];
+        
+        -- If trying to disable (unchecked) AND Always Visible is ON
+        if not newValue and alwaysVisible then
+            -- Check if at least one OTHER key in the group is enabled
+            local anyOtherEnabled = false;
+            for _, otherKey in ipairs(groupKeys) do
+                if otherKey ~= configKey and gConfig[otherKey] ~= false then
+                    anyOtherEnabled = true;
+                    break;
+                end
+            end
+            
+            -- If no others are enabled, we CANNOT disable this one
+            if not anyOtherEnabled then
+                newValue = true; -- Force back to true
+                -- Optional: Could add a tooltip or visual cue here if needed
+            end
+        end
+        
+        gConfig[configKey] = newValue;
+        SaveSettingsOnly();
+    end
+end
+
 -- Helper: Draw per-pet-type visual settings
 local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
     local typeSettings = gConfig[configKey];
@@ -62,6 +102,50 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
     end
 
     if components.CollapsingSection('Display Options##' .. configKey, false) then
+        -- Validation: Check if at least one ability is enabled
+        local anyAbilityEnabled = false;
+        local abilityGroup = PET_ABILITY_GROUPS[configKey];
+        if abilityGroup then
+            for _, key in ipairs(abilityGroup) do
+                if gConfig[key] ~= false then
+                    anyAbilityEnabled = true;
+                    break;
+                end
+            end
+        else
+            -- Should not happen, but default to true if group not found
+            anyAbilityEnabled = true;
+        end
+
+        -- If no abilities enabled, lock Always Visible and force it off
+        if not anyAbilityEnabled then
+            if typeSettings.alwaysVisible then
+                typeSettings.alwaysVisible = false;
+                SaveSettingsOnly();
+            end
+            imgui.PushStyleColor(ImGuiCol_Text, {0.5, 0.5, 0.5, 1.0});
+        end
+
+        components.DrawPartyCheckbox(typeSettings, 'Always Visible##' .. configKey, 'alwaysVisible');
+        
+        if not anyAbilityEnabled then
+            imgui.PopStyleColor();
+            -- Revert if user tried to enable it
+            if typeSettings.alwaysVisible then
+                typeSettings.alwaysVisible = false;
+                SaveSettingsOnly();
+            end
+            
+            if imgui.IsItemHovered() then
+                imgui.SetTooltip('Enable at least one ability recast to use Always Visible.');
+            end
+            imgui.SameLine();
+            imgui.TextColored({1.0, 0.5, 0.5, 1.0}, '(Requires ability recast selection)');
+        end
+
+        imgui.ShowHelp('Always show the pet bar (recast timers) even when no pet is present.');
+        imgui.Spacing();
+
         -- Charmed pets don't have levels, so hide this option for Charm
         if configKey ~= 'petBarCharm' then
             components.DrawPartyCheckbox(typeSettings, 'Show Pet Level##' .. configKey, 'showLevel');
@@ -80,6 +164,17 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
             components.DrawPartySlider(typeSettings, 'Offset X##dist' .. configKey, 'distanceOffsetX', -200, 200);
             components.DrawPartySlider(typeSettings, 'Offset Y##dist' .. configKey, 'distanceOffsetY', -200, 200);
         end
+    end
+
+    if components.CollapsingSection('Text Settings##' .. configKey, false) then
+        components.DrawPartySlider(typeSettings, 'Pet Name Text Size##' .. configKey, 'nameFontSize', 8, 24);
+        components.DrawPartySlider(typeSettings, 'Distance Text Size##' .. configKey, 'distanceFontSize', 6, 18);
+        components.DrawPartySlider(typeSettings, 'HP Text Size##' .. configKey, 'hpFontSize', 6, 18);
+        -- Only Automaton uses MP in era
+        if configKey == 'petBarAutomaton' then
+            components.DrawPartySlider(typeSettings, 'MP Text Size##' .. configKey, 'mpFontSize', 6, 18);
+        end
+        components.DrawPartySlider(typeSettings, 'TP Text Size##' .. configKey, 'tpFontSize', 6, 18);
     end
 
     if components.CollapsingSection('Bar Settings##' .. configKey, false) then
@@ -115,17 +210,6 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
 
     end
 
-    if components.CollapsingSection('Text Settings##' .. configKey, false) then
-        components.DrawPartySlider(typeSettings, 'Pet Name Text Size##' .. configKey, 'nameFontSize', 8, 24);
-        components.DrawPartySlider(typeSettings, 'Distance Text Size##' .. configKey, 'distanceFontSize', 6, 18);
-        components.DrawPartySlider(typeSettings, 'HP Text Size##' .. configKey, 'hpFontSize', 6, 18);
-        -- Only Automaton uses MP in era
-        if configKey == 'petBarAutomaton' then
-            components.DrawPartySlider(typeSettings, 'MP Text Size##' .. configKey, 'mpFontSize', 6, 18);
-        end
-        components.DrawPartySlider(typeSettings, 'TP Text Size##' .. configKey, 'tpFontSize', 6, 18);
-    end
-
     if components.CollapsingSection('Background##' .. configKey, false) then
         local bgThemes = {'-None-', 'Plain', 'Window1', 'Window2', 'Window3', 'Window4', 'Window5', 'Window6', 'Window7', 'Window8'};
         local currentTheme = typeSettings.backgroundTheme or 'Window1';
@@ -143,8 +227,32 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
     end
 
     if components.CollapsingSection('Ability Recasts##' .. configKey, false) then
+        -- Disable the checkbox if Always Visible is enabled (forced on)
+        -- Note: BeginDisabled not supported in this ImGui version, using manual enforcement
+        if typeSettings.alwaysVisible then
+            imgui.PushStyleColor(ImGuiCol_Text, {0.5, 0.5, 0.5, 1.0});
+        end
         components.DrawPartyCheckbox(typeSettings, 'Show Ability Timers##' .. configKey, 'showTimers');
-        imgui.ShowHelp('Show pet-related ability recast timers (Blood Pact, Ready, Sic, etc.).');
+        if typeSettings.alwaysVisible then
+            imgui.PopStyleColor();
+        end
+        
+        if typeSettings.alwaysVisible then
+            -- Force it to stay ON
+            if not typeSettings.showTimers then
+                typeSettings.showTimers = true;
+                SaveSettingsOnly();
+            end
+            
+            -- Show tooltip and text to explain
+            if imgui.IsItemHovered() then
+                imgui.SetTooltip('Forced ON because "Always Visible" is enabled.');
+            end
+            
+            imgui.SameLine();
+            imgui.TextColored({1.0, 1.0, 0.5, 1.0}, '(Locked)');
+        end
+        imgui.ShowHelp('Show ability recast timers (Blood Pact, Ready, Sic, etc.).');
 
         if typeSettings.showTimers then
             imgui.Spacing();
@@ -157,7 +265,7 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
             };
             local currentDisplayStyle = typeSettings.recastDisplayStyle or 'compact';
 
-            imgui.SetNextItemWidth(200);
+            imgui.SetNextItemWidth(components.CONTENT_MAX_WIDTH);
             if imgui.BeginCombo('Display Style##icons' .. configKey, displayStyleLabels[currentDisplayStyle]) then
                 for _, style in ipairs(displayStyles) do
                     if imgui.Selectable(displayStyleLabels[style], style == currentDisplayStyle) then
@@ -175,6 +283,23 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
             if currentDisplayStyle == 'full' then
                 imgui.Indent(10);
 
+                -- Progress Style selection
+                local progressStyles = {'Fill', 'Deplete'};
+                local currentProgressStyle = typeSettings.recastProgressStyle or 'Fill';
+
+                imgui.SetNextItemWidth(150);
+                if imgui.BeginCombo('Progress Style##recast' .. configKey, currentProgressStyle) then
+                    for _, style in ipairs(progressStyles) do
+                        if imgui.Selectable(style, style == currentProgressStyle) then
+                            typeSettings.recastProgressStyle = style;
+                            SaveSettingsOnly();
+                        end
+                    end
+                    imgui.EndCombo();
+                end
+                imgui.ShowHelp('Fill: Bar fills from empty to full.\nDeplete: Bar starts full and depletes to empty.');
+                imgui.Spacing();
+
                 -- Show/hide individual elements
                 local showName = {typeSettings.recastFullShowName ~= false};
                 if imgui.Checkbox('Show Name##recastFull' .. configKey, showName) then
@@ -191,60 +316,30 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
 
                 -- Name text size (only show if name is enabled)
                 if showName[1] then
-                    local nameFontSize = {typeSettings.recastFullNameFontSize or 10};
-                    imgui.SetNextItemWidth(100);
-                    if imgui.SliderInt('Name Text Size##recastFull' .. configKey, nameFontSize, 8, 20) then
-                        typeSettings.recastFullNameFontSize = nameFontSize[1];
-                        SaveSettingsOnly();
-                    end
+                    components.SliderInt('Name Text Size##recastFull' .. configKey, typeSettings, 'recastFullNameFontSize', 8, 20, 10);
                     imgui.ShowHelp('Text size for ability name.');
                 end
 
                 -- Timer text size (only show if timer is enabled)
                 if showRecast[1] then
-                    local recastFontSize = {typeSettings.recastFullTimerFontSize or 10};
-                    imgui.SetNextItemWidth(100);
-                    if imgui.SliderInt('Timer Text Size##recastFull' .. configKey, recastFontSize, 8, 20) then
-                        typeSettings.recastFullTimerFontSize = recastFontSize[1];
-                        SaveSettingsOnly();
-                    end
+                    components.SliderInt('Timer Text Size##recastFull' .. configKey, typeSettings, 'recastFullTimerFontSize', 8, 20, 10);
                     imgui.ShowHelp('Text size for recast timer.');
                 end
 
                 -- Bar scale settings
-                local barScaleX = {typeSettings.recastScaleX or 1.0};
-                imgui.SetNextItemWidth(100);
-                if imgui.SliderFloat('Bar Width##recast' .. configKey, barScaleX, 0.5, 2.0, '%.1f') then
-                    typeSettings.recastScaleX = barScaleX[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderFloat('Bar Width##recast' .. configKey, typeSettings, 'recastScaleX', 0.5, 2.0, '%.1f', 1.0);
                 imgui.ShowHelp('Horizontal scale for recast progress bars (based on HP bar width).');
 
-                local barScaleY = {typeSettings.recastScaleY or 0.5};
-                imgui.SetNextItemWidth(100);
-                if imgui.SliderFloat('Bar Height##recast' .. configKey, barScaleY, 0.5, 2.0, '%.1f') then
-                    typeSettings.recastScaleY = barScaleY[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderFloat('Bar Height##recast' .. configKey, typeSettings, 'recastScaleY', 0.5, 2.0, '%.1f', 0.5);
                 imgui.ShowHelp('Vertical scale for recast progress bars (based on bar height).');
 
                 -- Row spacing
-                local rowSpacing = {typeSettings.recastFullSpacing or 4};
-                imgui.SetNextItemWidth(100);
-                if imgui.SliderInt('Row Spacing##recastFull' .. configKey, rowSpacing, -50, 50) then
-                    typeSettings.recastFullSpacing = rowSpacing[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderInt('Row Spacing##recastFull' .. configKey, typeSettings, 'recastFullSpacing', -50, 50, 4);
                 imgui.ShowHelp('Vertical spacing between recast rows.');
 
                 -- Top spacing (anchored mode only) - space between vitals and recasts
                 if not typeSettings.iconsAbsolute then
-                    local topSpacing = {typeSettings.recastTopSpacing or 2};
-                    imgui.SetNextItemWidth(100);
-                    if imgui.SliderInt('Top Spacing##recastFull' .. configKey, topSpacing, -50, 50) then
-                        typeSettings.recastTopSpacing = topSpacing[1];
-                        SaveSettingsOnly();
-                    end
+                    components.SliderInt('Top Spacing##recastFull' .. configKey, typeSettings, 'recastTopSpacing', -50, 50, 2);
                     imgui.ShowHelp('Vertical spacing between vitals (HP/MP/TP) and ability recasts.');
                 end
 
@@ -265,7 +360,7 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
                 -- Check if clock fill is available (requires Ashita 4.3+)
                 local clockAvailable = imgui.GetForegroundDrawList().PathClear ~= nil;
 
-                imgui.SetNextItemWidth(180);
+                imgui.SetNextItemWidth(components.CONTENT_MAX_WIDTH);
                 if imgui.BeginCombo('Icon Shape##icons' .. configKey, fillStyleLabels[currentFillStyle]) then
                     for _, style in ipairs(fillStyles) do
                         local isDisabled = (style == 'clock' and not clockAvailable);
@@ -296,7 +391,7 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
             -- Position mode
             local positionModes = {'Anchored', 'Absolute'};
             local currentMode = typeSettings.iconsAbsolute and 'Absolute' or 'Anchored';
-            imgui.SetNextItemWidth(150);
+            imgui.SetNextItemWidth(components.CONTENT_MAX_WIDTH);
             if imgui.BeginCombo('Position Mode##icons' .. configKey, currentMode) then
                 for _, mode in ipairs(positionModes) do
                     if imgui.Selectable(mode, mode == currentMode) then
@@ -339,73 +434,84 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
                 imgui.Spacing();
                 imgui.Separator();
                 imgui.Spacing();
-                components.DrawCheckbox('Blood Pact: Rage', 'petBarSmnShowBPRage');
+                
+                local avatarGroup = PET_ABILITY_GROUPS[configKey];
+                
+                DrawRecastCheckbox('Blood Pact: Rage', 'petBarSmnShowBPRage', avatarGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Blood Pact: Rage ability timer (offensive blood pacts).');
-                components.DrawCheckbox('Blood Pact: Ward', 'petBarSmnShowBPWard');
+                DrawRecastCheckbox('Blood Pact: Ward', 'petBarSmnShowBPWard', avatarGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Blood Pact: Ward ability timer (defensive/support blood pacts).');
-                components.DrawCheckbox('Apogee', 'petBarSmnShowApogee');
+                DrawRecastCheckbox('Apogee', 'petBarSmnShowApogee', avatarGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Apogee ability timer (enhances next blood pact).');
-                components.DrawCheckbox('Mana Cede', 'petBarSmnShowManaCede');
+                DrawRecastCheckbox('Mana Cede', 'petBarSmnShowManaCede', avatarGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Mana Cede ability timer (transfer MP to avatar).');
             elseif configKey == 'petBarCharm' then
                 imgui.Spacing();
                 imgui.Separator();
                 imgui.Spacing();
-                components.DrawCheckbox('Ready/Sic', 'petBarBstShowReady');
-                imgui.ShowHelp('Show Ready/Sic ability timer (offensive pet command).');
-                if gConfig.petBarBstShowReady then
-                    imgui.Indent(10);
-                    components.DrawSlider('Base Charge Time (s)##readyCharm', 'petBarReadyBaseRecast', 15, 60);
-                    imgui.ShowHelp('Base recast time per Ready charge in seconds.\nDefault: 30s (retail/LSB)\nHorizon: 45s\nMerits will automatically reduce the timer.');
-                    imgui.Unindent(10);
-                end
-                components.DrawCheckbox('Reward', 'petBarBstShowReward');
+                
+                local charmGroup = PET_ABILITY_GROUPS[configKey];
+                
+                DrawRecastCheckbox('Sic', 'petBarBstShowSic', charmGroup, typeSettings.alwaysVisible);
+                imgui.ShowHelp('Show Sic ability timer (offensive pet command).');
+                -- Sic does not have charges, so no slider needed here
+
+                DrawRecastCheckbox('Reward', 'petBarBstShowRewardCharm', charmGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Reward ability timer (pet healing).');
             elseif configKey == 'petBarJug' then
                 imgui.Spacing();
                 imgui.Separator();
                 imgui.Spacing();
-                components.DrawCheckbox('Ready/Sic', 'petBarBstShowReady');
-                imgui.ShowHelp('Show Ready/Sic ability timer (offensive pet command).');
+                
+                local jugGroup = PET_ABILITY_GROUPS[configKey];
+                
+                DrawRecastCheckbox('Ready', 'petBarBstShowReady', jugGroup, typeSettings.alwaysVisible);
+                imgui.ShowHelp('Show Ready ability timer (offensive pet command).');
                 if gConfig.petBarBstShowReady then
                     imgui.Indent(10);
                     components.DrawSlider('Base Charge Time (s)##ready', 'petBarReadyBaseRecast', 15, 60);
                     imgui.ShowHelp('Base recast time per Ready charge in seconds.\nDefault: 30s (retail/LSB)\nHorizon: 45s\nMerits will automatically reduce the timer.');
                     imgui.Unindent(10);
                 end
-                components.DrawCheckbox('Reward', 'petBarBstShowReward');
+                DrawRecastCheckbox('Reward', 'petBarBstShowReward', jugGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Reward ability timer (pet healing).');
-                components.DrawCheckbox('Call Beast', 'petBarBstShowCallBeast');
+                DrawRecastCheckbox('Call Beast', 'petBarBstShowCallBeast', jugGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Call Beast ability timer (summon jug pet).');
-                components.DrawCheckbox('Bestial Loyalty', 'petBarBstShowBestialLoyalty');
+                DrawRecastCheckbox('Bestial Loyalty', 'petBarBstShowBestialLoyalty', jugGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Bestial Loyalty ability timer (summon jug pet without charm).');
             elseif configKey == 'petBarAutomaton' then
                 imgui.Spacing();
                 imgui.Separator();
                 imgui.Spacing();
-                components.DrawCheckbox('Activate', 'petBarPupShowActivate');
+                
+                local pupGroup = PET_ABILITY_GROUPS[configKey];
+                
+                DrawRecastCheckbox('Activate', 'petBarPupShowActivate', pupGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Activate ability timer (summon automaton).');
-                components.DrawCheckbox('Repair', 'petBarPupShowRepair');
+                DrawRecastCheckbox('Repair', 'petBarPupShowRepair', pupGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Repair ability timer (heal automaton).');
-                components.DrawCheckbox('Deus Ex Automata', 'petBarPupShowDeusExAutomata');
+                DrawRecastCheckbox('Deus Ex Automata', 'petBarPupShowDeusExAutomata', pupGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Deus Ex Automata ability timer (revive automaton).');
-                components.DrawCheckbox('Deploy', 'petBarPupShowDeploy');
+                DrawRecastCheckbox('Deploy', 'petBarPupShowDeploy', pupGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Deploy ability timer (send automaton to engage).');
-                components.DrawCheckbox('Deactivate', 'petBarPupShowDeactivate');
+                DrawRecastCheckbox('Deactivate', 'petBarPupShowDeactivate', pupGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Deactivate ability timer (dismiss automaton).');
-                components.DrawCheckbox('Retrieve', 'petBarPupShowRetrieve');
+                DrawRecastCheckbox('Retrieve', 'petBarPupShowRetrieve', pupGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Retrieve ability timer (call automaton back).');
             elseif configKey == 'petBarWyvern' then
                 imgui.Spacing();
                 imgui.Separator();
                 imgui.Spacing();
-                components.DrawCheckbox('Call Wyvern', 'petBarDrgShowCallWyvern');
+                
+                local drgGroup = PET_ABILITY_GROUPS[configKey];
+                
+                DrawRecastCheckbox('Call Wyvern', 'petBarDrgShowCallWyvern', drgGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Call Wyvern ability timer (summon wyvern).');
-                components.DrawCheckbox('Spirit Link', 'petBarDrgShowSpiritLink');
+                DrawRecastCheckbox('Spirit Link', 'petBarDrgShowSpiritLink', drgGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Spirit Link ability timer (heal wyvern).');
-                components.DrawCheckbox('Deep Breathing', 'petBarDrgShowDeepBreathing');
+                DrawRecastCheckbox('Deep Breathing', 'petBarDrgShowDeepBreathing', drgGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Deep Breathing ability timer (enhance wyvern breath).');
-                components.DrawCheckbox('Steady Wing', 'petBarDrgShowSteadyWing');
+                DrawRecastCheckbox('Steady Wing', 'petBarDrgShowSteadyWing', drgGroup, typeSettings.alwaysVisible);
                 imgui.ShowHelp('Show Steady Wing ability timer (wyvern stoneskin).');
             end
         end
@@ -442,6 +548,7 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
                 end
                 local currentAvatar = avatarList[selectedAvatarIndex] or 'Carbuncle';
 
+                imgui.SetNextItemWidth(components.CONTENT_MAX_WIDTH);
                 if imgui.BeginCombo('Avatar##petBarAvatarSelect', currentAvatar) then
                     for i, avatarName in ipairs(avatarList) do
                         local isSelected = (i == selectedAvatarIndex);
@@ -480,35 +587,19 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
                 local avatarSettings = gConfig.petBarAvatarSettings[settingsKey];
 
                 -- Scale slider
-                local scaleValue = { avatarSettings.scale or 0.4 };
-                if imgui.SliderFloat('Scale##petBarAvatarScale', scaleValue, 0.1, 2.0, '%.2f') then
-                    avatarSettings.scale = scaleValue[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderFloat('Scale##petBarAvatarScale', avatarSettings, 'scale', 0.1, 2.0, '%.2f', 0.4);
                 imgui.ShowHelp('Scale of the avatar image overlay.');
 
                 -- Opacity slider
-                local opacityValue = { avatarSettings.opacity or 0.3 };
-                if imgui.SliderFloat('Opacity##petBarAvatarOpacity', opacityValue, 0.0, 1.0, '%.2f') then
-                    avatarSettings.opacity = opacityValue[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderFloat('Opacity##petBarAvatarOpacity', avatarSettings, 'opacity', 0.0, 1.0, '%.2f', 0.3);
                 imgui.ShowHelp('Opacity of the avatar image overlay.');
 
                 -- Offset X slider
-                local offsetXValue = { avatarSettings.offsetX or 0 };
-                if imgui.SliderInt('Offset X##petBarAvatarOffsetX', offsetXValue, -600, 600) then
-                    avatarSettings.offsetX = offsetXValue[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderInt('Offset X##petBarAvatarOffsetX', avatarSettings, 'offsetX', -600, 600, 0);
                 imgui.ShowHelp('Horizontal offset for the avatar image.');
 
                 -- Offset Y slider
-                local offsetYValue = { avatarSettings.offsetY or 0 };
-                if imgui.SliderInt('Offset Y##petBarAvatarOffsetY', offsetYValue, -600, 600) then
-                    avatarSettings.offsetY = offsetYValue[1];
-                    SaveSettingsOnly();
-                end
+                components.SliderInt('Offset Y##petBarAvatarOffsetY', avatarSettings, 'offsetY', -600, 600, 0);
                 imgui.ShowHelp('Vertical offset for the avatar image.');
 
                 -- Clip to Background checkbox
@@ -957,6 +1048,8 @@ end
 -- Helper: Draw Pet Bar specific settings (used in tab)
 local function DrawPetBarSettingsContent()
     components.DrawCheckbox('Enabled', 'showPetBar', CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'petBarHideOnMenuFocus');
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
     components.DrawCheckbox('Hide During Events', 'petBarHideDuringEvents');
     components.DrawCheckbox('Preview Mode', 'petBarPreview');
     imgui.ShowHelp('Show the pet bar with mock data. Preview shows the pet type from the selected tab below.');
@@ -964,6 +1057,11 @@ end
 
 -- Helper: Draw Pet Target specific settings (used in tab)
 local function DrawPetTargetSettingsContent()
+    -- Initialize defaults for new text size settings if missing
+    if gConfig.petBarTargetNameFontSize == nil then gConfig.petBarTargetNameFontSize = gConfig.petBarTargetFontSize or 12; end
+    if gConfig.petBarTargetHpFontSize == nil then gConfig.petBarTargetHpFontSize = gConfig.petBarVitalsFontSize or 10; end
+    if gConfig.petBarTargetDistanceFontSize == nil then gConfig.petBarTargetDistanceFontSize = gConfig.petBarDistanceFontSize or 10; end
+
     components.DrawCheckbox('Show Pet Target', 'petBarShowTarget');
     imgui.ShowHelp('Show information about what the pet is targeting in a separate window.');
 
@@ -976,9 +1074,6 @@ local function DrawPetTargetSettingsContent()
     end
 
     if components.CollapsingSection('Display Options##petTarget', false) then
-        components.DrawSlider('Text Size', 'petBarTargetFontSize', 6, 24);
-        imgui.ShowHelp('Font size for pet target text.');
-
         imgui.Spacing();
 
         -- Target Name positioning
@@ -1059,6 +1154,17 @@ local function DrawPetTargetSettingsContent()
             components.DrawSlider('Offset Y##petTargetDistance', 'petTargetDistanceOffsetY', -200, 200);
             imgui.ShowHelp('Vertical offset from window top.');
         end
+    end
+
+    if components.CollapsingSection('Text Settings##petTarget', false) then
+        components.DrawSlider('Target Name Text Size', 'petBarTargetNameFontSize', 6, 24);
+        imgui.ShowHelp('Font size for pet target name.');
+
+        components.DrawSlider('Target HP Text Size', 'petBarTargetHpFontSize', 6, 24);
+        imgui.ShowHelp('Font size for pet target HP%.');
+
+        components.DrawSlider('Target Distance Text Size', 'petBarTargetDistanceFontSize', 6, 24);
+        imgui.ShowHelp('Font size for pet target distance.');
     end
 
     if components.CollapsingSection('Bar Scale##petTarget', false) then

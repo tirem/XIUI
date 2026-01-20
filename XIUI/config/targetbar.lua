@@ -36,6 +36,8 @@ end
 -- Helper: Draw Target Bar specific settings (used in tab)
 local function DrawTargetBarSettingsContent()
     components.DrawCheckbox('Enabled', 'showTargetBar', CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'targetBarHideOnMenuFocus');
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
 
     if components.CollapsingSection('Display Options##targetBar') then
         -- Show Name with position dropdown
@@ -170,6 +172,8 @@ end
 -- Helper: Draw Mob Info specific settings (used in tab)
 local function DrawMobInfoSettingsContent(githubTexture)
     components.DrawCheckbox('Enabled', 'showMobInfo', CheckVisibility);
+    components.DrawCheckbox('Hide When Menu Open', 'mobInfoHideOnMenuFocus');
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
 
     -- Attribution for Thorny's MobDB (on same line as Enabled)
     imgui.SameLine();

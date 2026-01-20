@@ -80,6 +80,15 @@ end
 -- DrawWindow
 -- ============================================
 function pettarget.DrawWindow(settings)
+    -- Only show if we have a valid pet (prevents showing when "Always Visible" is on but no pet)
+    if data.GetPetData() == nil then
+        if targetNameText then targetNameText:set_visible(false); end
+        if targetHpText then targetHpText:set_visible(false); end
+        if targetDistanceText then targetDistanceText:set_visible(false); end
+        HideBackground();
+        return;
+    end
+
     -- Only show if pet target tracking is enabled and we have a target
     if gConfig.petBarShowTarget == false or data.petTargetServerId == nil then
         if targetNameText then
@@ -160,9 +169,9 @@ function pettarget.DrawWindow(settings)
         local targetDistance = math.sqrt(targetEnt.Distance or 0);
         local targetIndex = targetEnt.TargetIndex or 0;
 
-        local targetFontSize = gConfig.petBarTargetFontSize or gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
-        local vitalsFontSize = gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
-        local distanceFontSize = gConfig.petBarDistanceFontSize or settings.distance_font_settings.font_height;
+        local targetNameFontSize = gConfig.petBarTargetNameFontSize or gConfig.petBarTargetFontSize or settings.vitals_font_settings.font_height;
+        local targetHpFontSize = gConfig.petBarTargetHpFontSize or gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
+        local targetDistanceFontSize = gConfig.petBarTargetDistanceFontSize or gConfig.petBarDistanceFontSize or settings.distance_font_settings.font_height;
 
         -- Bar dimensions with scale settings
         local barScaleX = gConfig.petTargetBarScaleX or 1.0;
@@ -182,7 +191,7 @@ function pettarget.DrawWindow(settings)
         local distanceOffsetY = gConfig.petTargetDistanceOffsetY or 0;
 
         -- Row 1: Target Name (left)
-        targetNameText:set_font_height(targetFontSize);
+        targetNameText:set_font_height(targetNameFontSize);
         targetNameText:set_text(targetName);
 
         if nameAbsolute then
@@ -203,7 +212,7 @@ function pettarget.DrawWindow(settings)
         targetNameText:set_visible(true);
 
         -- HP% text (right-aligned by default)
-        targetHpText:set_font_height(vitalsFontSize);
+        targetHpText:set_font_height(targetHpFontSize);
         targetHpText:set_text(tostring(targetHp) .. '%');
 
         if hpAbsolute then
@@ -213,7 +222,7 @@ function pettarget.DrawWindow(settings)
         else
             -- Inline positioning: right side of bar row with offsets
             targetHpText:set_position_x(targetStartX + barWidth + hpOffsetX);
-            targetHpText:set_position_y(targetStartY + (targetFontSize - vitalsFontSize) / 2 + hpOffsetY);
+            targetHpText:set_position_y(targetStartY + (targetNameFontSize - targetHpFontSize) / 2 + hpOffsetY);
         end
 
         local hpColor = colorConfig.hpTextColor or petBarColorConfig.hpTextColor or 0xFFFFA7A7;
@@ -225,7 +234,7 @@ function pettarget.DrawWindow(settings)
 
         -- Only add space for name row if name or HP are inline (not absolute)
         if not nameAbsolute or not hpAbsolute then
-            imgui.Dummy({barWidth, targetFontSize + 4});
+            imgui.Dummy({barWidth, targetNameFontSize + 4});
         end
 
         -- Row 2: HP Bar with interpolation
@@ -236,7 +245,7 @@ function pettarget.DrawWindow(settings)
         progressbar.ProgressBar(hpPercentData, {barWidth, barHeight}, {decorate = gConfig.petTargetShowBookends or gConfig.petBarShowBookends});
 
         -- Distance text positioning
-        targetDistanceText:set_font_height(distanceFontSize);
+        targetDistanceText:set_font_height(targetDistanceFontSize);
         targetDistanceText:set_text(string.format('%.1f', targetDistance));
 
         if distanceAbsolute then
@@ -245,11 +254,11 @@ function pettarget.DrawWindow(settings)
             targetDistanceText:set_position_y(targetWinPosY + distanceOffsetY);
         else
             -- Inline positioning: below HP bar in layout flow
-            local distanceY = targetStartY + targetFontSize + 4 + barHeight + 2;
+            local distanceY = targetStartY + targetNameFontSize + 4 + barHeight + 2;
             targetDistanceText:set_position_x(targetStartX + distanceOffsetX);
             targetDistanceText:set_position_y(distanceY + distanceOffsetY);
             -- Add dummy for inline layout
-            imgui.Dummy({totalRowWidth, distanceFontSize + 2});
+            imgui.Dummy({totalRowWidth, targetDistanceFontSize + 2});
         end
 
         local distanceColor = colorConfig.distanceTextColor or petBarColorConfig.distanceTextColor or 0xFFFFFFFF;

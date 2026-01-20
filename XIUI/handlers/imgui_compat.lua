@@ -11,6 +11,7 @@
 *   - PushStyleColor: idx param no longer optional, nil check needed
 *   - ImGuiCol_Tab* constants renamed (TabActive -> TabSelected, etc.)
 *   - ImDrawCornerFlags renamed to ImDrawFlags_RoundCorners*
+*   - BeginDisabled/EndDisabled: exists in 4.3 (ImGui 1.85+), polyfilled for main
 ]]--
 
 local imgui = require('imgui');
@@ -18,9 +19,14 @@ local imgui = require('imgui');
 -- Store original functions
 local orig_imgui_BeginChild = imgui.BeginChild;
 
--- Check if we're targeting Ashita 4.3 or main branch
--- This global should be set in XIUI.lua before requiring this module
-local use43 = rawget(_G, '_XIUI_USE_ASHITA_4_3') or false;
+-- Auto-detect Ashita 4.3 vs main branch based on ImGui constants
+-- 4.3 has ImGuiChildFlags_Borders constant, main branch does not
+-- Manual override via _XIUI_USE_ASHITA_4_3 global is still supported
+local use43 = rawget(_G, '_XIUI_USE_ASHITA_4_3');
+if use43 == nil then
+    -- Auto-detect: ImGuiChildFlags_Borders exists only in 4.3
+    use43 = (ImGuiChildFlags_Borders ~= nil);
+end
 
 -- ImDrawCornerFlags -> ImDrawFlags_RoundCorners* aliases
 -- 4.3 uses ImDrawFlags_RoundCorners* (new naming), main uses ImDrawCornerFlags_* (old naming)
@@ -92,6 +98,24 @@ else
     end
     if ImGuiCol_TabUnfocusedActive == nil then
         ImGuiCol_TabUnfocusedActive = ImGuiCol_HeaderActive or 0;
+    end
+
+    -- BeginDisabled/EndDisabled shim for main branch
+    -- These functions exist in ImGui 1.85+ (4.3) but not in older versions
+    -- Always push/pop to maintain stack balance (matches native ImGui behavior)
+    if imgui.BeginDisabled == nil then
+        imgui.BeginDisabled = function(disabled)
+            if disabled == false then
+                -- Push with no visual effect to maintain stack balance
+                imgui.PushStyleVar(ImGuiStyleVar_Alpha, imgui.GetStyle().Alpha);
+            else
+                -- Default: apply 50% alpha for disabled appearance
+                imgui.PushStyleVar(ImGuiStyleVar_Alpha, imgui.GetStyle().Alpha * 0.5);
+            end
+        end
+        imgui.EndDisabled = function()
+            imgui.PopStyleVar();
+        end
     end
 
     -- BeginChild: 4.3 changed default cflags behavior

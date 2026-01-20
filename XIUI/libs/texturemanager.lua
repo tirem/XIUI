@@ -42,6 +42,11 @@ local CATEGORY_CONFIG = {
         evictionCount = 0,
         clearOnZone = false,
     },
+    custom_icons = {
+        maxSize = 250,  -- ~2 pages of icons cached
+        evictionCount = 50,
+        clearOnZone = false,
+    },
     assets = {
         maxSize = 0,  -- No limit
         evictionCount = 0,
@@ -61,6 +66,7 @@ local categoryEntries = {
     item_icons = {},
     status_icons = {},
     job_icons = {},
+    custom_icons = {},
     assets = {},
 };
 
@@ -74,6 +80,7 @@ local stats = {
         item_icons = { hits = 0, misses = 0, evictions = 0 },
         status_icons = { hits = 0, misses = 0, evictions = 0 },
         job_icons = { hits = 0, misses = 0, evictions = 0 },
+        custom_icons = { hits = 0, misses = 0, evictions = 0 },
         assets = { hits = 0, misses = 0, evictions = 0 },
     },
 };
@@ -397,6 +404,21 @@ function M.getFileTexture(path)
     end, 'assets');
 end
 
+-- Get custom icon from hotbar custom icons directory
+-- @param relativePath string - Path relative to assets/hotbar/custom/
+-- @return table|nil - Texture table with .image field, or nil
+function M.getCustomIcon(relativePath)
+    if relativePath == nil or relativePath == '' then
+        return nil;
+    end
+
+    local key = 'custom_' .. relativePath;
+    return getOrCreate(key, function()
+        local fullPath = string.format('%s/assets/hotbar/custom/%s', addon.path, relativePath);
+        return loadTextureFromFile(fullPath);
+    end, 'custom_icons');
+end
+
 -- Generic get function with custom loader
 -- @param key string - Unique cache key
 -- @param loader function - Function that returns texture table
@@ -486,6 +508,7 @@ function M.clear()
             item_icons = { hits = 0, misses = 0, evictions = 0 },
             status_icons = { hits = 0, misses = 0, evictions = 0 },
             job_icons = { hits = 0, misses = 0, evictions = 0 },
+            custom_icons = { hits = 0, misses = 0, evictions = 0 },
             assets = { hits = 0, misses = 0, evictions = 0 },
         },
     };

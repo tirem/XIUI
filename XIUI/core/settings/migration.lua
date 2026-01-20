@@ -690,6 +690,42 @@ function M.MigrateGilTrackerSettings(gConfig, defaults)
     end
 end
 
+-- Migrate old disableMinusMenu setting to new blockedGameKeys array
+function M.MigrateBlockedGameKeys(gConfig, defaults)
+    if not gConfig.hotbarGlobal then return; end
+
+    -- Check for old disableMinusMenu setting
+    if gConfig.hotbarGlobal.disableMinusMenu then
+        -- Ensure blockedGameKeys exists
+        if not gConfig.hotbarGlobal.blockedGameKeys then
+            gConfig.hotbarGlobal.blockedGameKeys = {};
+        end
+
+        -- Add minus key (VK 189) to blocked keys if not already present
+        local VK_OEM_MINUS = 189;
+        local alreadyBlocked = false;
+        for _, blocked in ipairs(gConfig.hotbarGlobal.blockedGameKeys) do
+            if blocked.key == VK_OEM_MINUS and
+               not blocked.ctrl and not blocked.alt and not blocked.shift then
+                alreadyBlocked = true;
+                break;
+            end
+        end
+
+        if not alreadyBlocked then
+            table.insert(gConfig.hotbarGlobal.blockedGameKeys, {
+                key = VK_OEM_MINUS,
+                ctrl = false,
+                alt = false,
+                shift = false,
+            });
+        end
+
+        -- Remove the old setting
+        gConfig.hotbarGlobal.disableMinusMenu = nil;
+    end
+end
+
 -- Migrate from split windows to notification groups
 -- Converts old notificationsSplit* flags to notificationTypeGroup assignments
 function M.MigrateNotificationGroups(gConfig, defaults)
@@ -759,6 +795,23 @@ function M.MigrateNotificationGroups(gConfig, defaults)
     end
 end
 
+-- Migrate crossbar comboModeSettings to remove deprecated activePalette field
+-- Crossbar palettes are now GLOBAL (not per-combo-mode), stored in palette.lua state.crossbarActivePalette
+function M.MigrateCrossbarComboModeSettings(gConfig, defaults)
+    if not gConfig.hotbarCrossbar then return; end
+    if not gConfig.hotbarCrossbar.comboModeSettings then return; end
+
+    local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2' };
+    for _, mode in ipairs(comboModes) do
+        local modeSettings = gConfig.hotbarCrossbar.comboModeSettings[mode];
+        if modeSettings then
+            -- Remove deprecated activePalette field
+            -- Palettes are now global (see palette.lua state.crossbarActivePalette)
+            modeSettings.activePalette = nil;
+        end
+    end
+end
+
 -- Run structure migrations (called AFTER settings.load())
 -- These handle migrating old settings structures to new ones
 function M.RunStructureMigrations(gConfig, defaults)
@@ -770,7 +823,9 @@ function M.RunStructureMigrations(gConfig, defaults)
     M.MigrateIndividualSettings(gConfig, defaults);
     M.MigrateGilTrackerSettings(gConfig, defaults);
     M.MigrateCastCostSettings(gConfig, defaults);
+    M.MigrateBlockedGameKeys(gConfig, defaults);
     M.MigrateNotificationGroups(gConfig, defaults);
+    M.MigrateCrossbarComboModeSettings(gConfig, defaults);
 end
 
 -- Legacy function for backward compatibility (if any external code calls it)

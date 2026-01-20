@@ -8,9 +8,11 @@ require('handlers.helpers');
 local imgui = require('imgui');
 local ffi = require('ffi');
 local progressbar = require('libs.progressbar');
+local drawing = require('libs.drawing');
 
 local data = require('modules.petbar.data');
 local color = require('libs.color');
+local defaultPositions = require('libs.defaultpositions');
 
 local display = {};
 
@@ -25,6 +27,9 @@ local windowState = {
 local hasAppliedSavedPosition = false;
 local lastSavedPosX = nil;
 local lastSavedPosY = nil;
+
+-- Force reset flag for default position restore
+local forcePositionReset = false;
 
 -- ============================================
 -- Per-Pet-Type Settings Helpers
@@ -105,7 +110,7 @@ local function GetTimerGradients(abilityName, colorConfig)
     end
 
     -- BST abilities
-    if name == 'Ready' then
+    if name == 'Ready' or name == 'Sic' then
         return getGradient(cc.timerReadyReadyGradient, {'#ff6600e6', '#ff9933e6'}),
                getGradient(cc.timerReadyRecastGradient, {'#ff9933d9', '#ffbb66d9'});
     end
@@ -394,6 +399,12 @@ local function DrawRecastFull(drawList, x, y, timerInfo, colorConfig, fullSettin
     local showRecast = fullSettings.showRecast;
     local nameFontSize = fullSettings.nameFontSize or 10;
     local recastFontSize = fullSettings.recastFontSize or 10;
+    local progressStyle = fullSettings.progressStyle or 'Fill';
+
+    -- Jug Pet 'Ready' exception: Always Fill
+    if fullSettings.isJug and timerInfo.name == 'Ready' then
+        progressStyle = 'Fill';
+    end
 
     -- Get font objects from data module
     local nameFont = data.recastNameFonts and data.recastNameFonts[fontIndex];
@@ -423,11 +434,19 @@ local function DrawRecastFull(drawList, x, y, timerInfo, colorConfig, fullSettin
     if nameFont then nameFont:set_visible(false); end
     if recastFont then recastFont:set_visible(false); end
 
-    -- Calculate progress for bar (0 = just started cooldown, 1 = ready)
+    -- Calculate progress
     local progress = 1.0;
-    if not timerInfo.isReady and timerInfo.timer > 0 and timerInfo.maxTimer and timerInfo.maxTimer > 0 then
+    
+    if timerInfo.isReady then
+        progress = 1.0; -- Always full when ready
+    elseif timerInfo.timer > 0 and timerInfo.maxTimer and timerInfo.maxTimer > 0 then
         progress = 1.0 - (timerInfo.timer / timerInfo.maxTimer);
         progress = math.max(0, math.min(1, progress));
+        
+        -- Handle Deplete style (invert progress only during cooldown)
+        if progressStyle == 'Deplete' then
+            progress = 1.0 - progress;
+        end
     end
 
     -- Progress bar settings (configurable)
@@ -471,6 +490,7 @@ local function DrawRecastFull(drawList, x, y, timerInfo, colorConfig, fullSettin
             decorate = showBookends,
             absolutePosition = {barStartX, barY},
             drawList = drawList,
+            fillDirection = pbFill,
         }
     )
 
@@ -488,6 +508,12 @@ local function DrawRecastFullCharged(drawList, x, y, timerInfo, colorConfig, ful
     local showRecast = fullSettings.showRecast;
     local nameFontSize = fullSettings.nameFontSize or 10;
     local recastFontSize = fullSettings.recastFontSize or 10;
+    local progressStyle = fullSettings.progressStyle or 'Fill';
+
+    -- Jug Pet 'Ready' exception: Always Fill
+    if fullSettings.isJug and timerInfo.name == 'Ready' then
+        progressStyle = 'Fill';
+    end
 
     local charges = timerInfo.charges or 0;
     local maxCharges = timerInfo.maxCharges or 3;
@@ -576,19 +602,36 @@ local function DrawRecastFullCharged(drawList, x, y, timerInfo, colorConfig, ful
         local segmentProgress;
         local segmentGradient;
 
-        if i <= charges then
-            -- Full charge available
-            segmentProgress = 1.0;
-            segmentGradient = readyGradient;
-        elseif i == charges + 1 and nextChargeTimer > 0 then
-            -- Recharging charge - show progress
-            segmentProgress = 1.0 - (nextChargeTimer / chargeValue);
-            segmentProgress = math.max(0, math.min(1, segmentProgress));
-            segmentGradient = recastGradient;
-        else
-            -- Empty charge
-            segmentProgress = 0;
-            segmentGradient = recastGradient;
+        if progressStyle == 'Fill' then
+            if i <= charges then
+                -- Full charge available
+                segmentProgress = 1.0;
+                segmentGradient = readyGradient;
+            elseif i == charges + 1 and nextChargeTimer > 0 then
+                -- Recharging charge - show progress
+                segmentProgress = 1.0 - (nextChargeTimer / chargeValue);
+                segmentProgress = math.max(0, math.min(1, segmentProgress));
+                segmentGradient = recastGradient;
+            else
+                -- Empty charge
+                segmentProgress = 0;
+                segmentGradient = recastGradient;
+            end
+        else -- Deplete
+            if i <= charges then
+                -- Available (No cooldown) -> Full bar (consistent with Fill/Ready visibility)
+                segmentProgress = 1.0;
+                segmentGradient = readyGradient;
+            elseif i == charges + 1 and nextChargeTimer > 0 then
+                -- Recharging -> Show remaining cooldown (Full to Empty)
+                local fillProgress = 1.0 - (nextChargeTimer / chargeValue);
+                segmentProgress = 1.0 - math.max(0, math.min(1, fillProgress));
+                segmentGradient = recastGradient;
+            else
+                -- Unavailable (Full cooldown) -> Full bar
+                segmentProgress = 1.0;
+                segmentGradient = recastGradient;
+            end
         end
 
         progressbar.ProgressBar(
@@ -613,7 +656,19 @@ function display.DrawWindow(settings)
     -- Get pet data from data module (handles preview internally)
     local petData = data.GetPetData();
 
-    if petData == nil then
+    -- Get per-pet-type settings early to check Always Visible
+    local typeSettings = GetPetTypeSettings();
+    local alwaysVisible = typeSettings.alwaysVisible;
+
+    -- Special handling for BST: Check Charm settings if Jug (default) is not visible
+    if not alwaysVisible and data.GetPetJob() == data.JOB_BST then
+        local charmSettings = gConfig.petBarCharm or {};
+        if charmSettings.alwaysVisible then
+            alwaysVisible = true;
+        end
+    end
+
+    if petData == nil and not alwaysVisible then
         data.currentPetName = nil;
         data.SetAllFontsVisible(false);
         data.HideBackground();
@@ -622,6 +677,20 @@ function display.DrawWindow(settings)
         windowState.y = nil;
         windowState.height = nil;
         return false;
+    end
+
+    -- Setup safe defaults if petData is nil
+    local hasPet = (petData ~= nil);
+    if not hasPet then
+        petData = {
+            name = '',
+            hpPercent = 0,
+            mpPercent = 0,
+            tp = 0,
+            distance = 0,
+            job = data.GetPetJob(),
+            showMp = false,
+        };
     end
 
     -- Use petData directly - no preview checks needed
@@ -651,8 +720,15 @@ function display.DrawWindow(settings)
         windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
     end
 
-    -- Apply saved position on first render
-    if not hasAppliedSavedPosition and gConfig.petBarWindowPosX ~= nil and gConfig.petBarWindowPosY ~= nil then
+    -- Apply saved position on first render, or force reset to default
+    if forcePositionReset then
+        local defX, defY = defaultPositions.GetPetBarPosition();
+        imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
+        forcePositionReset = false;
+        hasAppliedSavedPosition = true;
+        lastSavedPosX = defX;
+        lastSavedPosY = defY;
+    elseif not hasAppliedSavedPosition and gConfig.petBarWindowPosX ~= nil and gConfig.petBarWindowPosY ~= nil then
         imgui.SetNextWindowPos({gConfig.petBarWindowPosX, gConfig.petBarWindowPosY}, ImGuiCond_Once);
         hasAppliedSavedPosition = true;
         lastSavedPosX = gConfig.petBarWindowPosX;
@@ -660,7 +736,7 @@ function display.DrawWindow(settings)
     end
 
     -- Get per-pet-type settings and colors
-    local typeSettings = GetPetTypeSettings();
+    -- typeSettings already retrieved at start of function
     local colorConfig = GetPetTypeColors();
 
     -- Calculate dimensions (base values)
@@ -709,215 +785,224 @@ function display.DrawWindow(settings)
         windowPosX, windowPosY = imgui.GetWindowPos();
         local startX, startY = imgui.GetCursorScreenPos();
 
-        -- Row 1: Pet Name (with optional level) (left) and HP% (right, same line)
-        local nameFontSize = typeSettings.nameFontSize or gConfig.petBarNameFontSize or settings.name_font_settings.font_height;
-        local hpFontSize = typeSettings.hpFontSize or typeSettings.vitalsFontSize or gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
-        local mpFontSize = typeSettings.mpFontSize or typeSettings.vitalsFontSize or gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
-        local tpFontSize = typeSettings.tpFontSize or typeSettings.vitalsFontSize or gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
+        if hasPet then
+            -- Row 1: Pet Name (with optional level) (left) and HP% (right, same line)
+            local nameFontSize = typeSettings.nameFontSize or gConfig.petBarNameFontSize or settings.name_font_settings.font_height;
+            local hpFontSize = typeSettings.hpFontSize or typeSettings.vitalsFontSize or gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
+            local mpFontSize = typeSettings.mpFontSize or typeSettings.vitalsFontSize or gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
+            local tpFontSize = typeSettings.tpFontSize or typeSettings.vitalsFontSize or gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
 
-        -- Format name with level if available and enabled
-        local showLevel = typeSettings.showLevel;
-        if showLevel == nil then showLevel = gConfig.petBarShowLevel ~= false; end
-        local displayName = petName;
-        if petLevel and showLevel then
-            displayName = string.format('Lv.%d %s', petLevel, petName);
-        end
-
-        data.nameText:set_font_height(nameFontSize);
-        data.nameText:set_text(displayName);
-        data.nameText:set_position_x(startX);
-        data.nameText:set_position_y(startY);
-        local nameColor = colorConfig.nameTextColor or 0xFFFFFFFF;
-        if data.lastNameColor ~= nameColor then
-            data.nameText:set_font_color(nameColor);
-            data.lastNameColor = nameColor;
-        end
-        data.nameText:set_visible(true);
-
-        -- Distance text (anchored to top right edge of background)
-        local showDistance = typeSettings.showDistance;
-        if showDistance == nil then showDistance = gConfig.petBarShowDistance; end
-        if showDistance then
-            local distanceFontSize = typeSettings.distanceFontSize or gConfig.petBarDistanceFontSize or settings.distance_font_settings.font_height;
-            local distanceOffsetX = typeSettings.distanceOffsetX or gConfig.petBarDistanceOffsetX or 0;
-            local distanceOffsetY = typeSettings.distanceOffsetY or gConfig.petBarDistanceOffsetY or 0;
-
-            data.distanceText:set_font_height(distanceFontSize);
-            data.distanceText:set_text(string.format('%.1f', petDistance));
-            data.distanceText:set_position_x(startX + totalRowWidth + distanceOffsetX);
-            data.distanceText:set_position_y(windowPosY - 13 + distanceOffsetY);
-            data.distanceText:set_font_alignment(2); -- Right alignment (text grows left)
-
-            local distColor = colorConfig.distanceTextColor or 0xFFFFFFFF;
-            if data.lastDistanceColor ~= distColor then
-                data.distanceText:set_font_color(distColor);
-                data.lastDistanceColor = distColor;
+            -- Format name with level if available and enabled
+            local showLevel = typeSettings.showLevel;
+            if showLevel == nil then showLevel = gConfig.petBarShowLevel ~= false; end
+            local displayName = petName;
+            if petLevel and showLevel then
+                displayName = string.format('Lv.%d %s', petLevel, petName);
             end
-            data.distanceText:set_visible(true);
-        else
-            data.distanceText:set_visible(false);
-        end
 
-        -- Per-type vitals toggles
-        local showHP = typeSettings.showHP;
-        if showHP == nil then showHP = gConfig.petBarShowVitals ~= false; end
-        local showMP = typeSettings.showMP;
-        if showMP == nil then showMP = gConfig.petBarShowVitals ~= false; end
-        local showTP = typeSettings.showTP;
-        if showTP == nil then showTP = gConfig.petBarShowVitals ~= false; end
-
-        -- HP% text (right-aligned to HP bar width)
-        if showHP then
-            data.hpText:set_font_height(hpFontSize);
-            data.hpText:set_text(tostring(petHpPercent) .. '%');
-            data.hpText:set_position_x(startX + hpBarWidth);
-            data.hpText:set_position_y(startY + (nameFontSize - hpFontSize) / 2);
-            local hpColor = colorConfig.hpTextColor or 0xFFFFFFFF;
-            if data.lastHpColor ~= hpColor then
-                data.hpText:set_font_color(hpColor);
-                data.lastHpColor = hpColor;
+            data.nameText:set_font_height(nameFontSize);
+            data.nameText:set_text(displayName);
+            data.nameText:set_position_x(startX);
+            data.nameText:set_position_y(startY);
+            local nameColor = colorConfig.nameTextColor or 0xFFFFFFFF;
+            if data.lastNameColor ~= nameColor then
+                data.nameText:set_font_color(nameColor);
+                data.lastNameColor = nameColor;
             end
-            data.hpText:set_visible(true);
-        else
-            data.hpText:set_visible(false);
-        end
+            data.nameText:set_visible(true);
 
-        imgui.Dummy({totalRowWidth, nameFontSize + 4});
+            -- Distance text (anchored to top right edge of background)
+            local showDistance = typeSettings.showDistance;
+            if showDistance == nil then showDistance = gConfig.petBarShowDistance; end
+            if showDistance then
+                local distanceFontSize = typeSettings.distanceFontSize or gConfig.petBarDistanceFontSize or settings.distance_font_settings.font_height;
+                local distanceOffsetX = typeSettings.distanceOffsetX or gConfig.petBarDistanceOffsetX or 0;
+                local distanceOffsetY = typeSettings.distanceOffsetY or gConfig.petBarDistanceOffsetY or 0;
 
-        -- Get bookends setting (shared across all bars)
-        local showBookends = typeSettings.showBookends;
-        if showBookends == nil then showBookends = gConfig.petBarShowBookends; end
+                data.distanceText:set_font_height(distanceFontSize);
+                data.distanceText:set_text(string.format('%.1f', petDistance));
+                data.distanceText:set_position_x(startX + totalRowWidth + distanceOffsetX);
+                data.distanceText:set_position_y(windowPosY - 13 + distanceOffsetY);
+                data.distanceText:set_font_alignment(2); -- Right alignment (text grows left)
 
-        -- Combine pet capability (showMp from data) with user setting (showMP from config)
-        local displayMpBar = showMp and showMP;
-        local displayTpBar = showTP;
-
-        -- Track bar positions for text placement
-        local barsStartX, barsStartY = imgui.GetCursorScreenPos();
-        local mpBarX, mpBarY = barsStartX, barsStartY;
-        local tpBarX = barsStartX;
-        local textRowY = barsStartY;
-
-        -- Row 2: HP Bar (full width) with interpolation
-        if showHP then
-            local hpGradient = GetCustomGradient(colorConfig, 'hpGradient') or {'#e26c6c', '#fa9c9c'};
-
-            -- Use HP interpolation for damage/healing animations (with nil check)
-            local hpPercentData;
-            if HpInterpolation and HpInterpolation.update then
-                local currentTime = os.clock();
-                local petEntity = data.GetPetEntity();
-                local petIndex = petEntity and petEntity.TargetIndex or 0;
-                hpPercentData = HpInterpolation.update('petbar', petHpPercent, petIndex, settings, currentTime, hpGradient);
+                local distColor = colorConfig.distanceTextColor or 0xFFFFFFFF;
+                if data.lastDistanceColor ~= distColor then
+                    data.distanceText:set_font_color(distColor);
+                    data.lastDistanceColor = distColor;
+                end
+                data.distanceText:set_visible(true);
             else
-                -- Fallback: no interpolation
-                hpPercentData = {{petHpPercent / 100, hpGradient}};
+                data.distanceText:set_visible(false);
             end
 
-            progressbar.ProgressBar(
-                hpPercentData,
-                {hpBarWidth, hpBarHeight},
-                {decorate = showBookends}
-            );
+            -- Per-type vitals toggles
+            local showHP = typeSettings.showHP;
+            if showHP == nil then showHP = gConfig.petBarShowVitals ~= false; end
+            local showMP = typeSettings.showMP;
+            if showMP == nil then showMP = gConfig.petBarShowVitals ~= false; end
+            local showTP = typeSettings.showTP;
+            if showTP == nil then showTP = gConfig.petBarShowVitals ~= false; end
 
-            -- Update position for next row
-            mpBarX, mpBarY = imgui.GetCursorScreenPos();
-            tpBarX = mpBarX;
-        end
+            -- HP% text (right-aligned to HP bar width)
+            if showHP then
+                data.hpText:set_font_height(hpFontSize);
+                data.hpText:set_text(tostring(petHpPercent) .. '%');
+                data.hpText:set_position_x(startX + hpBarWidth);
+                data.hpText:set_position_y(startY + (nameFontSize - hpFontSize) / 2);
+                local hpColor = colorConfig.hpTextColor or 0xFFFFFFFF;
+                if data.lastHpColor ~= hpColor then
+                    data.hpText:set_font_color(hpColor);
+                    data.lastHpColor = hpColor;
+                end
+                data.hpText:set_visible(true);
+            else
+                data.hpText:set_visible(false);
+            end
 
-        -- Row 3: MP and TP bars side by side (half width each)
-        -- Calculate actual widths based on what's displayed
-        local actualMpWidth = mpBarWidth;
-        local actualTpWidth = tpBarWidth;
-        if displayMpBar and not displayTpBar then
-            -- MP bar takes full width when no TP bar
-            actualMpWidth = hpBarWidth;
-        elseif not displayMpBar and displayTpBar then
-            -- TP bar takes full width when no MP bar
-            actualTpWidth = hpBarWidth;
-        end
+            imgui.Dummy({totalRowWidth, nameFontSize + 4});
 
-        if displayMpBar then
-            local mpGradient = GetCustomGradient(colorConfig, 'mpGradient') or {'#9abb5a', '#bfe07d'};
-            progressbar.ProgressBar(
-                {{petMpPercent / 100, mpGradient}},
-                {actualMpWidth, mpBarHeight},
-                {decorate = showBookends}
-            );
+            -- Get bookends setting (shared across all bars)
+            local showBookends = typeSettings.showBookends;
+            if showBookends == nil then showBookends = gConfig.petBarShowBookends; end
+
+            -- Combine pet capability (showMp from data) with user setting (showMP from config)
+            local displayMpBar = showMp and showMP;
+            local displayTpBar = showTP;
+
+            -- Track bar positions for text placement
+            local barsStartX, barsStartY = imgui.GetCursorScreenPos();
+            local mpBarX, mpBarY = barsStartX, barsStartY;
+            local tpBarX = barsStartX;
+            local textRowY = barsStartY;
+
+            -- Row 2: HP Bar (full width) with interpolation
+            if showHP then
+                local hpGradient = GetCustomGradient(colorConfig, 'hpGradient') or {'#e26c6c', '#fa9c9c'};
+
+                -- Use HP interpolation for damage/healing animations (with nil check)
+                local hpPercentData;
+                if HpInterpolation and HpInterpolation.update then
+                    local currentTime = os.clock();
+                    local petEntity = data.GetPetEntity();
+                    local petIndex = petEntity and petEntity.TargetIndex or 0;
+                    hpPercentData = HpInterpolation.update('petbar', petHpPercent, petIndex, settings, currentTime, hpGradient);
+                else
+                    -- Fallback: no interpolation
+                    hpPercentData = {{petHpPercent / 100, hpGradient}};
+                end
+
+                progressbar.ProgressBar(
+                    hpPercentData,
+                    {hpBarWidth, hpBarHeight},
+                    {decorate = showBookends}
+                );
+
+                -- Update position for next row
+                mpBarX, mpBarY = imgui.GetCursorScreenPos();
+                tpBarX = mpBarX;
+            end
+
+            -- Row 3: MP and TP bars side by side (half width each)
+            -- Calculate actual widths based on what's displayed
+            local actualMpWidth = mpBarWidth;
+            local actualTpWidth = tpBarWidth;
+            if displayMpBar and not displayTpBar then
+                -- MP bar takes full width when no TP bar
+                actualMpWidth = hpBarWidth;
+            elseif not displayMpBar and displayTpBar then
+                -- TP bar takes full width when no MP bar
+                actualTpWidth = hpBarWidth;
+            end
+
+            if displayMpBar then
+                local mpGradient = GetCustomGradient(colorConfig, 'mpGradient') or {'#9abb5a', '#bfe07d'};
+                progressbar.ProgressBar(
+                    {{petMpPercent / 100, mpGradient}},
+                    {actualMpWidth, mpBarHeight},
+                    {decorate = showBookends}
+                );
+
+                if displayTpBar then
+                    imgui.SameLine(0, barSpacing);
+                    tpBarX = imgui.GetCursorScreenPos();
+                end
+            end
 
             if displayTpBar then
-                imgui.SameLine(0, barSpacing);
-                tpBarX = imgui.GetCursorScreenPos();
+                local tpGradient = GetCustomGradient(colorConfig, 'tpGradient') or {'#3898ce', '#78c4ee'};
+                progressbar.ProgressBar(
+                    {{petTpPercent, tpGradient}},
+                    {actualTpWidth, tpBarHeight},
+                    {decorate = showBookends}
+                );
             end
-        end
 
-        if displayTpBar then
-            local tpGradient = GetCustomGradient(colorConfig, 'tpGradient') or {'#3898ce', '#78c4ee'};
-            progressbar.ProgressBar(
-                {{petTpPercent, tpGradient}},
-                {actualTpWidth, tpBarHeight},
-                {decorate = showBookends}
-            );
-        end
-
-        -- Calculate text Y positions based on respective bar heights
-        -- When both bars are shown, use max height for consistent text alignment
-        -- When only one bar is shown, use that bar's height
-        local mpTextRowY = mpBarY;
-        local tpTextRowY = mpBarY;
-        if displayMpBar and displayTpBar then
-            -- Both bars shown - align text at the same level using max height
-            local maxBarHeight = math.max(mpBarHeight, tpBarHeight);
-            mpTextRowY = mpBarY + maxBarHeight + 2;
-            tpTextRowY = mpBarY + maxBarHeight + 2;
-        elseif displayMpBar then
-            -- Only MP bar shown
-            mpTextRowY = mpBarY + mpBarHeight + 2;
-        elseif displayTpBar then
-            -- Only TP bar shown
-            tpTextRowY = mpBarY + tpBarHeight + 2;
-        end
-
-        -- MP text (independent of TP bar visibility)
-        if displayMpBar then
-            data.mpText:set_font_height(mpFontSize);
-            data.mpText:set_text(tostring(petMpPercent) .. '%');
-            -- Right-align MP text under MP bar
-            data.mpText:set_position_x(mpBarX + actualMpWidth);
-            data.mpText:set_position_y(mpTextRowY);
-            local mpColor = colorConfig.mpTextColor or 0xFFFFFFFF;
-            if data.lastMpColor ~= mpColor then
-                data.mpText:set_font_color(mpColor);
-                data.lastMpColor = mpColor;
+            -- Calculate text Y positions based on respective bar heights
+            -- When both bars are shown, use max height for consistent text alignment
+            -- When only one bar is shown, use that bar's height
+            local mpTextRowY = mpBarY;
+            local tpTextRowY = mpBarY;
+            if displayMpBar and displayTpBar then
+                -- Both bars shown - align text at the same level using max height
+                local maxBarHeight = math.max(mpBarHeight, tpBarHeight);
+                mpTextRowY = mpBarY + maxBarHeight + 2;
+                tpTextRowY = mpBarY + maxBarHeight + 2;
+            elseif displayMpBar then
+                -- Only MP bar shown
+                mpTextRowY = mpBarY + mpBarHeight + 2;
+            elseif displayTpBar then
+                -- Only TP bar shown
+                tpTextRowY = mpBarY + tpBarHeight + 2;
             end
-            data.mpText:set_visible(true);
+
+            -- MP text (independent of TP bar visibility)
+            if displayMpBar then
+                data.mpText:set_font_height(mpFontSize);
+                data.mpText:set_text(tostring(petMpPercent) .. '%');
+                -- Right-align MP text under MP bar
+                data.mpText:set_position_x(mpBarX + actualMpWidth);
+                data.mpText:set_position_y(mpTextRowY);
+                local mpColor = colorConfig.mpTextColor or 0xFFFFFFFF;
+                if data.lastMpColor ~= mpColor then
+                    data.mpText:set_font_color(mpColor);
+                    data.lastMpColor = mpColor;
+                end
+                data.mpText:set_visible(true);
+            else
+                data.mpText:set_visible(false);
+            end
+
+            -- TP text (independent of MP bar visibility)
+            if displayTpBar then
+                data.tpText:set_font_height(tpFontSize);
+                data.tpText:set_text(tostring(petTp));
+                -- Right-align TP text under TP bar
+                data.tpText:set_position_x(tpBarX + actualTpWidth);
+                data.tpText:set_position_y(tpTextRowY);
+                local tpColor = colorConfig.tpTextColor or 0xFFFFFFFF;
+                if data.lastTpColor ~= tpColor then
+                    data.tpText:set_font_color(tpColor);
+                    data.lastTpColor = tpColor;
+                end
+                data.tpText:set_visible(true);
+            else
+                data.tpText:set_visible(false);
+            end
+
+            -- Add spacing for text row if any vitals text is shown
+            -- recastTopSpacing controls the gap between vitals text and recast section (anchored mode)
+            local recastTopSpacing = typeSettings.recastTopSpacing or 2;
+            if displayMpBar or displayTpBar then
+                local maxVitalsFontSize = math.max(displayMpBar and mpFontSize or 0, displayTpBar and tpFontSize or 0);
+                imgui.Dummy({totalRowWidth, maxVitalsFontSize + recastTopSpacing});
+            end
         else
+            -- Hide vitals fonts when no pet
+            data.nameText:set_visible(false);
+            data.distanceText:set_visible(false);
+            data.hpText:set_visible(false);
             data.mpText:set_visible(false);
-        end
-
-        -- TP text (independent of MP bar visibility)
-        if displayTpBar then
-            data.tpText:set_font_height(tpFontSize);
-            data.tpText:set_text(tostring(petTp));
-            -- Right-align TP text under TP bar
-            data.tpText:set_position_x(tpBarX + actualTpWidth);
-            data.tpText:set_position_y(tpTextRowY);
-            local tpColor = colorConfig.tpTextColor or 0xFFFFFFFF;
-            if data.lastTpColor ~= tpColor then
-                data.tpText:set_font_color(tpColor);
-                data.lastTpColor = tpColor;
-            end
-            data.tpText:set_visible(true);
-        else
             data.tpText:set_visible(false);
-        end
-
-        -- Add spacing for text row if any vitals text is shown
-        -- recastTopSpacing controls the gap between vitals text and recast section (anchored mode)
-        local recastTopSpacing = typeSettings.recastTopSpacing or 2;
-        if displayMpBar or displayTpBar then
-            local maxVitalsFontSize = math.max(displayMpBar and mpFontSize or 0, displayTpBar and tpFontSize or 0);
-            imgui.Dummy({totalRowWidth, maxVitalsFontSize + recastTopSpacing});
         end
 
         -- Row 4: Ability Icons
@@ -958,16 +1043,16 @@ function display.DrawWindow(settings)
                     -- Absolute positioning: relative to window top-left
                     iconX = windowPosX + iconOffsetX;
                     iconY = windowPosY + iconOffsetY;
-                    -- Use background draw list: renders behind config menu but not clipped to window bounds
-                    drawList = imgui.GetBackgroundDrawList();
+                    -- Use UI draw list for consistent rendering
+                    drawList = drawing.GetUIDrawList();
                 else
                     -- Anchored: flow within the pet bar container
                     -- Use recastTopSpacing for vertical offset, no X offset in anchored mode
                     local topSpacing = typeSettings.recastTopSpacing or 2;
                     iconX, iconY = imgui.GetCursorScreenPos();
                     iconY = iconY + topSpacing;
-                    -- Use background draw list for consistency (anchored may also use offsets outside content area)
-                    drawList = imgui.GetBackgroundDrawList();
+                    -- Use UI draw list for consistent rendering
+                    drawList = drawing.GetUIDrawList();
                 end
 
                 if displayStyle == 'full' then
@@ -987,6 +1072,8 @@ function display.DrawWindow(settings)
                         barWidth = recastBarWidth,
                         barHeight = recastBarHeight,
                         showBookends = recastShowBookends,
+                        progressStyle = typeSettings.recastProgressStyle or 'Fill',
+                        isJug = isJug,
                     };
 
                     -- Calculate row height based on what's visible
@@ -1080,7 +1167,7 @@ function display.DrawWindow(settings)
         local showCharmTimer = isCharmed and gConfig.petBarShowCharmIndicator ~= false;
 
         if showJugTimer or showCharmTimer then
-            local drawList = imgui.GetBackgroundDrawList();
+            local drawList = drawing.GetUIDrawList();
 
             -- Get timer text for positioning
             local timerStr = nil;
@@ -1217,15 +1304,20 @@ function display.DrawWindow(settings)
                 gConfig.petBarWindowPosY = windowPosY;
                 lastSavedPosX = windowPosX;
                 lastSavedPosY = windowPosY;
-                if SaveSettingsToDisk then
-                    SaveSettingsToDisk();
-                end
             end
         end
     end
     imgui.End();
 
     return true;  -- Pet exists (or preview mode), target window can render
+end
+
+-- ============================================
+-- ResetPositions - Reset window to default position
+-- ============================================
+display.ResetPositions = function()
+    forcePositionReset = true;
+    hasAppliedSavedPosition = false;
 end
 
 return display;

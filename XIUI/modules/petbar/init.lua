@@ -296,8 +296,14 @@ petbar.Cleanup = function()
         data.petImagePrimsTop = nil;
     end
 
-    -- Clear pet image textures (D3D handles cleanup via gc_safe_release)
-    data.petImageTextures = {};
+    -- Clear pet image textures - gc_safe_release handles D3D Release() via FFI finalizers
+    -- Clear each reference individually to help GC run finalizers promptly
+    if data.petImageTextures then
+        for key, _ in pairs(data.petImageTextures) do
+            data.petImageTextures[key] = nil;
+        end
+        data.petImageTextures = {};
+    end
 
     -- Cleanup pet target module
     pettarget.Cleanup();
@@ -315,7 +321,18 @@ petbar.HandlePacket = function(e)
     -- Packet: Action (0x0028)
     if e.id == 0x0028 then
         local playerEntity = GetPlayerEntity();
-        if playerEntity == nil or playerEntity.PetTargetIndex == 0 then
+        local actorId = struct.unpack('I', e.data_modified, 0x05 + 0x01);
+        local rawActionInfo = struct.unpack('H', e.data_modified, 0x0A + 0x01);
+        if playerEntity == nil then return; end
+
+        -- Check for Familiar usage (0x618) on self
+        if (actorId == playerEntity.ServerId and rawActionInfo == 0x618) then
+             if (data.petType == 'charm') then
+                 data.ExtendCharmDuration(1500);
+             end
+        end
+
+        if playerEntity.PetTargetIndex == 0 then
             return;
         end
 
@@ -325,7 +342,6 @@ petbar.HandlePacket = function(e)
         end
 
         -- Check if the actor is our pet
-        local actorId = struct.unpack('I', e.data_modified, 0x05 + 0x01);
         if actorId ~= 0 and actorId == pet.ServerId then
             local targetId = ashita.bits.unpack_be(e.data_modified:totable(), 0x96, 0x20);
             if targetId and targetId ~= 0 then
@@ -378,6 +394,10 @@ petbar.HandlePacket = function(e)
         end
         return;
     end
+end
+
+petbar.ResetPositions = function()
+    display.ResetPositions();
 end
 
 return petbar;

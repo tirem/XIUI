@@ -453,8 +453,11 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 			
 			local progressWidth = progressTotalWidth * percent;
 			
+			local startX = progressPositionStartX + progressOffset;
+			local endX = startX + progressWidth;
+			
 			rounding = options.decorate and progressbar.foregroundRounding or gConfig.noBookendRounding;
-			progressbar.DrawBar({progressPositionStartX + progressOffset, progressPositionStartY}, {progressPositionStartX + progressOffset + progressWidth, progressPositionStartY + progressHeight}, startColor, endColor, rounding, cornerFlags, drawList);
+			progressbar.DrawBar({startX, progressPositionStartY}, {endX, progressPositionStartY + progressHeight}, startColor, endColor, rounding, cornerFlags, drawList);
 
 			if overlayConfiguration then
 				local overlayColor = overlayConfiguration[1];
@@ -476,7 +479,7 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 				local overlayBarColor = imgui.GetColorU32({red / 255, green / 255, blue / 255, overlayAlpha});
 
 				rounding = options.decorate and progressbar.foregroundRounding or gConfig.noBookendRounding;
-				progressbar.DrawColoredBar({progressPositionStartX + progressOffset, progressPositionStartY}, {progressPositionStartX + progressOffset + overlayWidth, progressPositionStartY + progressHeight}, overlayBarColor, rounding, cornerFlags, drawList);
+				progressbar.DrawColoredBar({startX, progressPositionStartY}, {endX, progressPositionStartY + progressHeight}, overlayBarColor, rounding, cornerFlags, drawList);
 			end
 
 			progressOffset = progressOffset + progressWidth;

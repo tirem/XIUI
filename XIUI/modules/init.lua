@@ -18,5 +18,6 @@ modules.petbar = require('modules.petbar.init');
 modules.castcost = require('modules.castcost.init');
 modules.notifications = require('modules.notifications.init');
 modules.treasurepool = require('modules.treasurepool.init');
+modules.hotbar = require('modules.hotbar.init');
 
 return modules;

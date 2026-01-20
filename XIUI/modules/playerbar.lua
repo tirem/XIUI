@@ -5,12 +5,18 @@ local gdi = require('submodules.gdifonts.include');
 local progressbar = require('libs.progressbar');
 local buffTable = require('libs.bufftable');
 local castcostShared = require('modules.castcost.shared');
+local defaultPositions = require('libs.defaultpositions');
 
 local hpText;
 local mpText;
 local tpText;
 local allFonts; -- Table for batch visibility operations
 local resetPosNextFrame = false;
+
+-- Position save/restore state
+local hasAppliedSavedPosition = false;
+local forcePositionReset = false;
+local lastSavedPosX, lastSavedPosY = nil, nil;
 
 -- Cache last set colors to avoid expensive SetColor() calls every frame
 local lastHpTextColor;
@@ -73,13 +79,50 @@ playerbar.DrawWindow = function(settings)
         return;
 	end
 
+	-- Hide player bar when in party/alliance if setting is enabled
+	if gConfig.playerBarHideWhenInParty then
+		-- Check if any other party/alliance members are active (slots 1-17)
+		local inParty = false;
+		for i = 1, 17 do
+			if party:GetMemberIsActive(i) == 1 then
+				inParty = true;
+				break;
+			end
+		end
+		if inParty then
+			SetFontsVisible(allFonts, false);
+			return;
+		end
+	end
+
 	local SelfHP = party:GetMemberHP(0);
-	local SelfHPMax = player:GetHPMax();
-	-- Calculate percentage from actual values to avoid stale party API data (issue #92)
-	local SelfHPPercent = (SelfHPMax > 0) and math.clamp((SelfHP / SelfHPMax) * 100, 0, 100) or 0;
+	local SelfHPPercentParty = party:GetMemberHPPercent(0);
+	local SelfHPMaxPlayer = player:GetHPMax();
+	local SelfHPMaxFromParty = 0;
+	if SelfHPPercentParty and SelfHPPercentParty > 0 then
+		SelfHPMaxFromParty = math.floor((SelfHP * 100) / SelfHPPercentParty + 0.5);
+	end
+	local SelfHPMax = SelfHPMaxPlayer;
+	if SelfHPMaxFromParty > 0 then
+		if SelfHPMaxPlayer == 0 or math.abs(SelfHPMaxFromParty - SelfHPMaxPlayer) > 50 then
+			SelfHPMax = SelfHPMaxFromParty;
+		end
+	end
+	local SelfHPPercent = (SelfHPMax > 0) and math.clamp((SelfHP / SelfHPMax) * 100, 0, 100) or (SelfHPPercentParty or 0);
 	local SelfMP = party:GetMemberMP(0);
-	local SelfMPMax = player:GetMPMax();
-	local SelfMPPercent = (SelfMPMax > 0) and math.clamp((SelfMP / SelfMPMax) * 100, 0, 100) or 0;
+	local SelfMPPercentParty = party:GetMemberMPPercent(0);
+	local SelfMPMaxPlayer = player:GetMPMax();
+	local SelfMPMaxFromParty = 0;
+	if SelfMPPercentParty and SelfMPPercentParty > 0 then
+		SelfMPMaxFromParty = math.floor((SelfMP * 100) / SelfMPPercentParty + 0.5);
+	end
+	local SelfMPMax = SelfMPMaxPlayer;
+	if SelfMPMaxFromParty > 0 then
+		if SelfMPMaxPlayer == 0 or math.abs(SelfMPMaxFromParty - SelfMPMaxPlayer) > 20 then
+			SelfMPMax = SelfMPMaxFromParty;
+		end
+	end
+	local SelfMPPercent = (SelfMPMax > 0) and math.clamp((SelfMP / SelfMPMax) * 100, 0, 100) or (SelfMPPercentParty or 0);
 	local SelfTP = party:GetMemberTP(0);
 
 	local currentTime = os.clock();
@@ -216,12 +259,20 @@ playerbar.DrawWindow = function(settings)
 	playerbar.interpolation.lastFrameTime = currentTime;
 
 	-- Draw the player window
-	if (resetPosNextFrame) then
-		imgui.SetNextWindowPos({0,0});
-		resetPosNextFrame = false;
+	-- Handle position reset or restore
+	if forcePositionReset then
+		local defX, defY = defaultPositions.GetPlayerBarPosition();
+		imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
+		forcePositionReset = false;
+		hasAppliedSavedPosition = true;
+		lastSavedPosX, lastSavedPosY = defX, defY;
+	elseif not hasAppliedSavedPosition and gConfig.playerBarWindowPosX ~= nil then
+		imgui.SetNextWindowPos({gConfig.playerBarWindowPosX, gConfig.playerBarWindowPosY}, ImGuiCond_Once);
+		hasAppliedSavedPosition = true;
+		lastSavedPosX = gConfig.playerBarWindowPosX;
+		lastSavedPosY = gConfig.playerBarWindowPosY;
 	end
-	
-		
+
 	-- Get base window flags with NoMove dynamically added if positions are locked
 	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
     ApplyWindowPosition('PlayerBar');
@@ -567,6 +618,19 @@ playerbar.DrawWindow = function(settings)
 		end
 
 		tpText:set_visible(true);
+
+		-- Save position if moved (with change detection to avoid spam)
+		local winX, winY = imgui.GetWindowPos();
+		if not gConfig.lockPositions then
+			if lastSavedPosX == nil or
+			   math.abs(winX - lastSavedPosX) > 1 or
+			   math.abs(winY - lastSavedPosY) > 1 then
+				gConfig.playerBarWindowPosX = winX;
+				gConfig.playerBarWindowPosY = winY;
+				lastSavedPosX = winX;
+				lastSavedPosY = winY;
+			end
+		end
     end
 	imgui.End();
 end
@@ -612,6 +676,11 @@ playerbar.Cleanup = function()
 	mpText = FontManager.destroy(mpText);
 	tpText = FontManager.destroy(tpText);
 	allFonts = nil;
+end
+
+playerbar.ResetPositions = function()
+	forcePositionReset = true;
+	hasAppliedSavedPosition = false;
 end
 
 return playerbar;

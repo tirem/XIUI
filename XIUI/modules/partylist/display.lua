@@ -15,10 +15,17 @@ local windowBg = require('libs.windowbackground');
 local encoding = require('submodules.gdifonts.encoding');
 local ashita_settings = require('settings');
 local castcostShared = require('modules.castcost.shared');
+local defaultPositions = require('libs.defaultpositions');
 
 local data = require('modules.partylist.data');
 
 local display = {};
+
+-- Position save/restore state (per-party)
+local hasAppliedSavedPosition = { false, false, false };
+local forcePositionReset = { false, false, false };
+local lastSavedPosX = { nil, nil, nil };
+local lastSavedPosY = { nil, nil, nil };
 
 -- Helper: Set font text only if changed (avoids texture regeneration)
 local function setCachedText(memIdx, fontKey, font, text)
@@ -515,7 +522,14 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Draw leader icon
     if (memInfo.leader) then
-        draw_circle({hpStartX + settings.dotRadius/2, hpStartY + settings.dotRadius/2}, settings.dotRadius, {1, 1, .5, 1}, settings.dotRadius * 3, true, nil, GetUIDrawList());
+        local dotColorARGB;
+        if memInfo.allianceLeader then
+            dotColorARGB = cache.colors.allianceLeaderDotColor or 0xFF00FFFF;
+        else
+            dotColorARGB = cache.colors.partyLeaderDotColor or 0xFFFFFF80;
+        end
+        local dotColor = ARGBToImGui(dotColorARGB);
+        draw_circle({hpStartX + settings.dotRadius/2, hpStartY + settings.dotRadius/2}, settings.dotRadius, dotColor, settings.dotRadius * 3, true, nil, GetUIDrawList());
     end
 
     -- Position name text
@@ -1236,17 +1250,20 @@ function display.DrawPartyWindow(settings, party, partyIndex)
 
         data.UpdateTextVisibility(true, partyIndex);
 
+        -- Expand height if expandHeight is always on, OR if expandHeightInAlliance is on and we're in an alliance
+        local shouldExpandHeight = settings.expandHeight or (settings.expandHeightInAlliance and data.isInAlliance());
+
         local lastVisibleMemberIdx = firstPlayerIndex;
         for i = firstPlayerIndex, lastPlayerIndex do
             local relIndex = i - firstPlayerIndex
-            if ((partyIndex == 1 and settings.expandHeight) or relIndex < partyMemberCount or relIndex < settings.minRows) then
+            if ((partyIndex == 1 and shouldExpandHeight) or relIndex < partyMemberCount or relIndex < settings.minRows) then
                 lastVisibleMemberIdx = i;
             end
         end
 
         for i = firstPlayerIndex, lastPlayerIndex do
             local relIndex = i - firstPlayerIndex
-            if ((partyIndex == 1 and settings.expandHeight) or relIndex < partyMemberCount or relIndex < settings.minRows) then
+            if ((partyIndex == 1 and shouldExpandHeight) or relIndex < partyMemberCount or relIndex < settings.minRows) then
                 display.DrawMember(i, settings, i == lastVisibleMemberIdx);
             else
                 data.UpdateTextVisibilityByMember(i, false);
@@ -1318,6 +1335,28 @@ function display.DrawPartyWindow(settings, party, partyIndex)
             {titleUV[1], titleUV[2]}, {titleUV[3], titleUV[4]},
             IM_COL32_WHITE
         );
+    end
+
+    -- Save position if moved (with change detection to avoid spam) - all party windows
+    local winPosX, winPosY = imgui.GetWindowPos();
+    if not gConfig.lockPositions then
+        if lastSavedPosX[partyIndex] == nil or
+           math.abs(winPosX - lastSavedPosX[partyIndex]) > 1 or
+           math.abs(winPosY - lastSavedPosY[partyIndex]) > 1 then
+            if partyIndex == 1 then
+                gConfig.partyListWindowPosX = winPosX;
+                gConfig.partyListWindowPosY = winPosY;
+            elseif partyIndex == 2 then
+                gConfig.partyList2WindowPosX = winPosX;
+                gConfig.partyList2WindowPosY = winPosY;
+            else
+                gConfig.partyList3WindowPosX = winPosX;
+                gConfig.partyList3WindowPosY = winPosY;
+            end
+            lastSavedPosX[partyIndex] = winPosX;
+            lastSavedPosY[partyIndex] = winPosY;
+            -- Position will be persisted on addon unload
+        end
     end
 
     imgui.End();
@@ -1442,6 +1481,13 @@ function display.DrawWindow(settings)
     else
         data.UpdateTextVisibility(false, 2);
         data.UpdateTextVisibility(false, 3);
+    end
+end
+
+display.ResetPositions = function()
+    for i = 1, 3 do
+        forcePositionReset[i] = true;
+        hasAppliedSavedPosition[i] = false;
     end
 end
 

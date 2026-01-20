@@ -386,6 +386,11 @@ function notifications.TestToastsOnly()
     print('[XIUI] Added 10 toast notifications (NO pool items)');
 end
 
+-- ResetPositions
+function notifications.ResetPositions()
+    display.ResetPositions();
+end
+
 -- Stress test: attempt to add 25 items (tests bounds checking - only 0-9 are valid)
 function notifications.TestTreasurePool25()
     -- Enable test mode to prevent memory sync from removing test items
