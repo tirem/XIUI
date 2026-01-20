@@ -373,31 +373,19 @@ M.bloodPactsRage = {
     -- Fenrir
     { name = 'Moonlit Charge', avatars = {'Fenrir'} },
     { name = 'Crescent Fang', avatars = {'Fenrir'} },
-    { name = 'Lunar Cry', avatars = {'Fenrir'} },
-    { name = 'Lunar Roar', avatars = {'Fenrir'} },
     { name = 'Eclipse Bite', avatars = {'Fenrir'} },
     { name = 'Howling Moon', avatars = {'Fenrir'} },
     { name = 'Impact', avatars = {'Fenrir'} },
     -- Diabolos
     { name = 'Camisado', avatars = {'Diabolos'} },
-    { name = 'Somnolence', avatars = {'Diabolos'} },
-    { name = 'Nightmare', avatars = {'Diabolos'} },
-    { name = 'Ultimate Terror', avatars = {'Diabolos'} },
-    { name = 'Noctoshield', avatars = {'Diabolos'} },
-    { name = 'Dream Shroud', avatars = {'Diabolos'} },
     { name = 'Nether Blast', avatars = {'Diabolos'} },
     { name = 'Night Terror', avatars = {'Diabolos'} },
     -- Carbuncle
     { name = 'Poison Nails', avatars = {'Carbuncle'} },
     { name = 'Holy Mist', avatars = {'Carbuncle'} },
     { name = 'Meteorite', avatars = {'Carbuncle'} },
-    -- Atomos
-    { name = 'Crobat Pummel', avatars = {'Atomos'} },
-    { name = 'Chronoshift', avatars = {'Atomos'} },
     -- Odin
     { name = 'Zantetsuken', avatars = {'Odin'} },
-    -- Alexander
-    { name = 'Perfect Defense', avatars = {'Alexander'} },
     -- Cait Sith
     { name = 'Regal Scratch', avatars = {'Cait Sith'} },
     { name = 'Level ? Holy', avatars = {'Cait Sith'} },
@@ -407,6 +395,8 @@ M.bloodPactsRage = {
     { name = 'Sonic Buffet', avatars = {'Siren'} },
     { name = 'Tornado II', avatars = {'Siren'} },
     { name = 'Hysteric Assault', avatars = {'Siren'} },
+    { name = 'Welt', avatars = {'Siren'} },
+    { name = 'Katabatic Blades', avatars = {'Siren'} },
 };
 
 -- SMN Blood Pacts - Ward (support)
@@ -445,20 +435,29 @@ M.bloodPactsWard = {
     -- Fenrir
     { name = 'Ecliptic Growl', avatars = {'Fenrir'} },
     { name = 'Ecliptic Howl', avatars = {'Fenrir'} },
+    { name = 'Lunar Cry', avatars = {'Fenrir'} },
+    { name = 'Lunar Roar', avatars = {'Fenrir'} },
     -- Diabolos
     { name = 'Pavor Nocturnus', avatars = {'Diabolos'} },
+    { name = 'Somnolence', avatars = {'Diabolos'} },
+    { name = 'Nightmare', avatars = {'Diabolos'} },
+    { name = 'Ultimate Terror', avatars = {'Diabolos'} },
+    { name = 'Noctoshield', avatars = {'Diabolos'} },
+    { name = 'Dream Shroud', avatars = {'Diabolos'} },
     -- Cait Sith
     { name = 'Mewing Lullaby', avatars = {'Cait Sith'} },
     { name = 'Eerie Eye', avatars = {'Cait Sith'} },
     { name = 'Altana\'s Favor', avatars = {'Cait Sith'} },
     { name = 'Raise II', avatars = {'Cait Sith'} },
     { name = 'Reraise II', avatars = {'Cait Sith'} },
+    -- Alexander
+    { name = 'Perfect Defense', avatars = {'Alexander'} },
+    -- Atomos
+    { name = 'Chronoshift', avatars = {'Atomos'} },
     -- Siren
     { name = 'Lunatic Voice', avatars = {'Siren'} },
     { name = 'Chinook', avatars = {'Siren'} },
     { name = 'Bitter Elegy', avatars = {'Siren'} },
-    { name = 'Welt', avatars = {'Siren'} },
-    { name = 'Katabatic Blades', avatars = {'Siren'} },
 };
 
 -- DRG Wyvern abilities
