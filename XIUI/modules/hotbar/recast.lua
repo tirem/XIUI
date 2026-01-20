@@ -11,6 +11,14 @@ local petregistry = require('modules.hotbar.petregistry');
 
 local M = {};
 
+-- Module-level setting for Hh:MM format (set once per frame, used by all functions)
+local useHHMMFormat = false;
+
+-- Set the Hh:MM format preference (call once per frame before any recast queries)
+function M.SetHHMMFormat(enabled)
+    useHHMMFormat = enabled or false;
+end
+
 -- Blood Pact timer IDs
 local BP_RAGE_TIMER_ID = 173;
 local BP_WARD_TIMER_ID = 174;
@@ -116,6 +124,7 @@ end
 
 -- Format recast time for display
 -- Returns: formatted string or nil if ready
+-- @param seconds: Time in seconds
 function M.FormatRecast(seconds)
     if not seconds or seconds <= 0 then
         return nil;
@@ -134,8 +143,13 @@ function M.FormatRecast(seconds)
             return string.format('%dd', days);
         end
     elseif hours >= 1 then
-        -- Show as Xh Ym for times >= 1 hour (e.g. "1h 30m")
-        return string.format('%dh %dm', hours, mins);
+        if useHHMMFormat then
+            -- Show as Hh:MM for times >= 1 hour (e.g. "1h:24" to distinguish from MM:SS)
+            return string.format('%dh:%02d', hours, mins);
+        else
+            -- Show as Xh Ym for times >= 1 hour (e.g. "1h 30m")
+            return string.format('%dh %dm', hours, mins);
+        end
     elseif seconds >= 60 then
         -- Show as MM:SS for times >= 1 minute (e.g. "14:49")
         return string.format('%d:%02d', mins, secs);

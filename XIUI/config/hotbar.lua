@@ -1628,6 +1628,15 @@ local function DrawVisualSettingsContent(settings, configKey)
         components.DrawPartySliderInt(settings, 'Label Text Size##' .. configKey, 'labelFontSize', 6, 24, '%d', nil, 10);
         imgui.ShowHelp('Text size for action labels below buttons.');
 
+        components.DrawPartySliderInt(settings, 'Cooldown Text Size##' .. configKey, 'recastTimerFontSize', 6, 24, '%d', DeferredUpdateVisuals, 11);
+        imgui.ShowHelp('Text size for cooldown timer display.');
+
+        components.DrawPartyCheckbox(settings, 'Flash Under 5 Seconds##' .. configKey, 'flashCooldownUnder5');
+        imgui.ShowHelp('Flash the cooldown timer text when remaining time is under 5 seconds.');
+
+        components.DrawPartyCheckbox(settings, 'Use Hh:MM Cooldown Format##' .. configKey, 'useHHMMCooldownFormat');
+        imgui.ShowHelp('Display cooldown timers as Hh:MM (e.g., "1h:49") instead of "1h 49m" for shorter text.');
+
         components.DrawPartySliderInt(settings, 'MP Cost Text Size##' .. configKey, 'mpCostFontSize', 6, 24, '%d', nil, 10);
         imgui.ShowHelp('Text size for MP cost display.');
 
@@ -2122,6 +2131,15 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
                 components.DrawPartySliderInt(crossbarSettings, 'Label Text Size##crossbar', 'labelFontSize', 6, 24, '%d', nil, 10);
                 imgui.ShowHelp('Text size for action labels.');
 
+                components.DrawPartySliderInt(crossbarSettings, 'Cooldown Text Size##crossbar', 'recastTimerFontSize', 6, 24, '%d', DeferredUpdateVisuals, 11);
+                imgui.ShowHelp('Text size for cooldown timer display.');
+
+                components.DrawPartyCheckbox(crossbarSettings, 'Flash Under 5 Seconds##crossbar', 'flashCooldownUnder5');
+                imgui.ShowHelp('Flash the cooldown timer text when remaining time is under 5 seconds.');
+
+                components.DrawPartyCheckbox(crossbarSettings, 'Use Hh:MM Cooldown Format##crossbar', 'useHHMMCooldownFormat');
+                imgui.ShowHelp('Display cooldown timers as Hh:MM (e.g., "1h:49") instead of "1h 49m" for shorter text.');
+
                 components.DrawPartySliderInt(crossbarSettings, 'Trigger Label Text Size##crossbar', 'triggerLabelFontSize', 6, 24, '%d', nil, 14);
                 imgui.ShowHelp('Text size for combo mode labels (L2, R2, etc.).');
 
@@ -2265,6 +2283,14 @@ local function DrawCrossbarColorSettings()
             SaveSettingsOnly();
         end
         imgui.ShowHelp('Color for action labels below slots.');
+
+        local timerColor = crossbarSettings.recastTimerFontColor or 0xFFFFFFFF;
+        local timerColorTable = ARGBToImGui(timerColor);
+        if imgui.ColorEdit4('Cooldown Timer Color##crossbar', timerColorTable, colorFlags) then
+            crossbarSettings.recastTimerFontColor = ImGuiToARGB(timerColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color for cooldown timer text displayed on slots.');
     end
 end
 
@@ -2792,6 +2818,15 @@ local function DrawColorSettingsContent(settings, configKey)
             SaveSettingsOnly();
         end
         imgui.ShowHelp('Color for action labels when the spell/ability is on cooldown.');
+
+        -- Cooldown timer color
+        local timerColor = settings.recastTimerFontColor or 0xFFFFFFFF;
+        local timerColorTable = ARGBToImGui(timerColor);
+        if imgui.ColorEdit4('Cooldown Timer Color##' .. configKey, timerColorTable, colorFlags) then
+            settings.recastTimerFontColor = ImGuiToARGB(timerColorTable);
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('Color for cooldown timer text displayed on slots.');
 
         -- Label no MP color (red)
         local noMpColor = settings.labelNoMpColor or 0xFFFF4444;

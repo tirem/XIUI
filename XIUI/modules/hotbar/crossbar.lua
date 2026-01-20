@@ -591,9 +591,9 @@ function M.Initialize(settings, moduleSettings)
 
             -- Timer font for cooldowns (centered)
             local timerFontSettings = moduleSettings and deep_copy_table(moduleSettings.label_font_settings) or {};
-            timerFontSettings.font_height = 11;
+            timerFontSettings.font_height = settings.recastTimerFontSize or 11;
             timerFontSettings.font_alignment = 1;  -- Center
-            timerFontSettings.font_color = 0xFFFFFFFF;
+            timerFontSettings.font_color = settings.recastTimerFontColor or 0xFFFFFFFF;
             timerFontSettings.outline_color = 0xFF000000;
             timerFontSettings.outline_width = 2;
             state.timerFonts[comboMode][slotIndex] = FontManager.create(timerFontSettings);
@@ -730,6 +730,10 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         labelOffsetX = settings.actionLabelOffsetX or 0,
         labelOffsetY = (settings.actionLabelOffsetY or 0) + 2,
         labelFontSize = settings.labelFontSize or 10,
+        recastTimerFontSize = settings.recastTimerFontSize or 11,
+        recastTimerFontColor = settings.recastTimerFontColor or 0xFFFFFFFF,
+        flashCooldownUnder5 = settings.flashCooldownUnder5 or false,
+        useHHMMCooldownFormat = settings.useHHMMCooldownFormat or false,
         labelFontColor = settings.labelFontColor or 0xFFFFFFFF,
         labelCooldownColor = settings.labelCooldownColor or 0xFF888888,
         labelNoMpColor = settings.labelNoMpColor or 0xFFFF4444,

@@ -62,6 +62,11 @@ local POS_BELOW = 1;
 local POS_LEFT = 2;
 local POS_RIGHT = 3;
 
+-- Check if target is player's pet
+local function IsPet(idx, pEnt)
+	return pEnt and pEnt.PetTargetIndex and pEnt.PetTargetIndex ~= 0 and idx == pEnt.PetTargetIndex;
+end
+
 local _XIUI_DEV_DEBUG_INTERPOLATION = false;
 local _XIUI_DEV_DEBUG_INTERPOLATION_DELAY = 1;
 local _XIUI_DEV_DEBUG_HP_PERCENT_PERSISTENT = 100;
@@ -733,7 +738,8 @@ targetbar.DrawWindow = function(settings)
 					totNameText:set_font_color(totColor);
 					lastTotNameTextColor = totColor;
 				end
-				totNameText:set_text(totEntity.Name);
+				local totName = IsPet(totIndex, playerEnt) and (totEntity.Name .. ' (Pet)') or totEntity.Name;
+				totNameText:set_text(totName);
 				totNameText:set_visible(true);
 			else
 				totNameText:set_visible(false);
@@ -958,7 +964,9 @@ targetbar.DrawWindow = function(settings)
 					totNameText:set_font_color(totColor);
 					lastTotNameTextColor = totColor;
 				end
-				totNameText:set_text(totEntity.Name);
+				local pEnt = GetPlayerEntity();
+				local totName = IsPet(totIndex, pEnt) and (totEntity.Name .. ' (Pet)') or totEntity.Name;
+				totNameText:set_text(totName);
 				totNameText:set_visible(true);
 			end
 			imgui.End();

@@ -601,6 +601,7 @@ function M.DrawSlot(resources, params)
     -- ========================================
     -- 3. Cooldown Info, MP Check & Availability Check
     -- ========================================
+    recast.SetHHMMFormat(params.useHHMMCooldownFormat or false);
     local cooldown = recast.GetCooldownInfo(bind);
     local isOnCooldown = cooldown.isOnCooldown;
     local recastText = cooldown.recastText;
@@ -849,6 +850,32 @@ function M.DrawSlot(resources, params)
     -- ========================================
     if resources.timerFont then
         if recastText and animOpacity > 0.5 then
+            -- Update font height if changed
+            if params.recastTimerFontSize and cache and cache.timerFontSize ~= params.recastTimerFontSize then
+                resources.timerFont:set_font_height(params.recastTimerFontSize);
+                cache.timerFontSize = params.recastTimerFontSize;
+            end
+            -- Update font color (with flashing effect if enabled and under 5 seconds)
+            if params.recastTimerFontColor then
+                local timerColor = params.recastTimerFontColor;
+                local remaining = cooldown.remaining or 0;
+                
+                -- Apply flashing effect if enabled and under 5 seconds
+                if params.flashCooldownUnder5 and remaining > 0 and remaining < 5 then
+                    local pulseAlpha = 0.5 + 0.5 * math.sin(os.clock() * 8);
+                    local alpha = math.floor(pulseAlpha * 255);
+                    local r = bit.rshift(bit.band(timerColor, 0x00FF0000), 16);
+                    local g = bit.rshift(bit.band(timerColor, 0x0000FF00), 8);
+                    local b = bit.band(timerColor, 0x000000FF);
+                    timerColor = bit.bor(bit.lshift(alpha, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
+                end
+                
+                -- Update when color changes
+                if cache.timerFontColor ~= timerColor then
+                    resources.timerFont:set_font_color(timerColor);
+                    cache.timerFontColor = timerColor;
+                end
+            end
             -- Only update text if changed
             if cache and cache.timerText ~= recastText then
                 resources.timerFont:set_text(recastText);

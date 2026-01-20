@@ -344,6 +344,12 @@ function M.createHotbarGlobalDefaults()
         -- Skillchain highlight settings
         skillchainHighlightEnabled = true,      -- Show skillchain highlight on WS slots
         skillchainHighlightColor = 0xFFD4AA44,  -- Gold color for highlight border (ARGB)
+
+        -- Cooldown timer settings
+        recastTimerFontSize = 11,               -- Font size for cooldown timer display
+        recastTimerFontColor = 0xFFFFFFFF,      -- Color for cooldown timer text
+        useHHMMCooldownFormat = false,          -- Use Hh:MM format (e.g., "1h:49") instead of "1h 49m"
+        flashCooldownUnder5 = false,            -- Flash cooldown timer text when remaining time is under 5 seconds
     };
 end
 
@@ -537,6 +543,12 @@ function M.createCrossbarDefaults()
         -- Window position (saved on drag)
         windowX = nil,                      -- nil = use default centered position
         windowY = nil,
+
+        -- Cooldown timer settings
+        recastTimerFontSize = 11,               -- Font size for cooldown timer display
+        recastTimerFontColor = 0xFFFFFFFF,      -- Color for cooldown timer text
+        useHHMMCooldownFormat = false,          -- Use Hh:MM format (e.g., "1h:49") instead of "1h 49m"
+        flashCooldownUnder5 = false,            -- Flash cooldown timer text when remaining time is under 5 seconds
 
         -- Per-job slot actions for each combo mode
         -- slotActions[jobId][comboMode][slotIndex] = action
