@@ -150,8 +150,6 @@ local PET_COMMAND_NAMES = {
     -- SMN commands
     ['Assault'] = true,
     ['Avatar\'s Favor'] = true,
-    -- DRG commands
-    ['Spirit Link'] = true,
     -- PUP commands
     ['Deploy'] = true,
     ['Retrieve'] = true,
