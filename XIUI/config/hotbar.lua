@@ -382,6 +382,12 @@ local function DrawGlobalPalettesSection()
     local availablePalettes = palette.GetAvailablePalettes(1, jobId, subjobId);
     local currentPalette = palette.GetActivePalette(1);  -- Same for all bars
 
+    -- Check if using fallback (shared library) palettes
+    local usingFallback = false;
+    if subjobId ~= 0 then
+        usingFallback = palette.IsUsingFallbackPalettes(jobId, subjobId);
+    end
+
     -- Ensure active palette is set if we have palettes but none active
     if #availablePalettes > 0 and not currentPalette then
         currentPalette = availablePalettes[1];
@@ -389,7 +395,14 @@ local function DrawGlobalPalettesSection()
     end
 
     imgui.TextColored(components.TAB_STYLE.gold, 'Palettes');
-    imgui.TextColored({0.7, 0.7, 0.7, 1.0}, 'Palettes affect all hotbars simultaneously.');
+    if imgui.SmallButton('Palette Manager##hotbar') then
+        paletteManager.Open();
+    end
+    if usingFallback then
+        imgui.SameLine();
+        imgui.TextColored({0.4, 0.8, 1.0, 1.0}, '(Shared Library)');
+        imgui.ShowHelp('These palettes are from your Shared Library.\nOpen Palette Manager to create subjob-specific palettes.');
+    end
     imgui.Spacing();
 
     -- Header with count
@@ -541,6 +554,12 @@ local function DrawCrossbarGlobalPalettesSection()
     local availablePalettes = palette.GetCrossbarAvailablePalettes(jobId, subjobId);
     local currentPalette = palette.GetActivePaletteForCombo('L2');  -- Global for all combos
 
+    -- Check if using fallback (shared library) palettes
+    local usingFallback = false;
+    if subjobId ~= 0 then
+        usingFallback = palette.IsUsingCrossbarFallbackPalettes(jobId, subjobId);
+    end
+
     -- Ensure active palette is set if we have palettes but none active
     if #availablePalettes > 0 and not currentPalette then
         currentPalette = availablePalettes[1];
@@ -548,7 +567,14 @@ local function DrawCrossbarGlobalPalettesSection()
     end
 
     imgui.TextColored(components.TAB_STYLE.gold, 'Crossbar Palettes');
-    imgui.TextColored({0.7, 0.7, 0.7, 1.0}, 'Palettes affect all crossbar combo modes simultaneously.');
+    if imgui.SmallButton('Palette Manager##crossbar') then
+        paletteManager.Open();
+    end
+    if usingFallback then
+        imgui.SameLine();
+        imgui.TextColored({0.4, 0.8, 1.0, 1.0}, '(Shared Library)');
+        imgui.ShowHelp('These palettes are from your Shared Library.\nOpen Palette Manager to create subjob-specific palettes.');
+    end
     imgui.Spacing();
 
     -- Header with count

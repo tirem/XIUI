@@ -196,16 +196,18 @@ local function DrawPaletteList()
     -- Check fallback status using centralized function
     local usingFallback = IsUsingFallback(windowState.selectedJobId, windowState.selectedSubjobId, windowState.selectedPaletteType);
 
-    -- Show fallback indicator
-    if usingFallback then
-        imgui.TextColored({0.7, 0.7, 0.3, 1.0}, '(Using shared palettes - no subjob-specific palettes exist)');
-        imgui.Spacing();
+    -- Palette list header with clearer source indication
+    local headerText;
+    if windowState.selectedSubjobId == 0 then
+        headerText = string.format('Shared Library (%s)', GetJobName(windowState.selectedJobId));
+    else
+        headerText = string.format('%s/%s', GetJobName(windowState.selectedJobId), GetJobName(windowState.selectedSubjobId));
     end
-
-    -- Palette list header
-    local headerText = string.format('Palettes for %s', windowState.selectedSubjobId == 0 and 'Shared' or
-                                     string.format('%s/%s', GetJobName(windowState.selectedJobId), GetJobName(windowState.selectedSubjobId)));
     imgui.Text(headerText);
+    if usingFallback then
+        imgui.SameLine();
+        imgui.TextColored({0.4, 0.8, 1.0, 1.0}, '(Shared Library)');
+    end
     imgui.Separator();
 
     -- List of palettes
@@ -359,6 +361,22 @@ local function DrawActionButtons(palettes)
             windowState.statusMessage = nil;
         end
     end
+
+    -- "Use Shared Library" button (only when viewing subjob-specific palettes)
+    local usingFallback = IsUsingFallback(windowState.selectedJobId, windowState.selectedSubjobId, windowState.selectedPaletteType);
+    if windowState.selectedSubjobId ~= 0 and not usingFallback then
+        imgui.Spacing();
+        imgui.Separator();
+        imgui.Spacing();
+        imgui.TextColored({0.6, 0.6, 0.6, 1.0}, 'Subjob-specific palettes override Shared Library.');
+        if imgui.Button('Use Shared Library') then
+            modalState.mode = 'use_shared';
+            modalState.isOpen = true;
+        end
+        if imgui.IsItemHovered() then
+            imgui.SetTooltip('Delete all subjob-specific palettes and use the Shared Library instead.');
+        end
+    end
 end
 
 -- Helper: Draw create/rename modal
@@ -416,6 +434,25 @@ local function DrawCreateRenameModal()
 
                 if success then
                     windowState.selectedPaletteName = newName;
+
+                    -- Activate the newly created palette if viewing current job's palettes
+                    if modalState.mode == 'create' then
+                        local currentJobId = data.jobId;
+                        local currentSubjobId = data.subjobId or 0;
+                        local viewingShared = (windowState.selectedSubjobId == 0);
+                        local viewingCurrentJob = (windowState.selectedJobId == currentJobId);
+                        local viewingCurrentSubjob = (windowState.selectedSubjobId == currentSubjobId);
+
+                        -- Activate if: viewing this job's shared library OR viewing exact job/subjob match
+                        if viewingCurrentJob and (viewingShared or viewingCurrentSubjob) then
+                            if windowState.selectedPaletteType == 'hotbar' then
+                                palette.SetActivePalette(1, newName, currentJobId, currentSubjobId);
+                            else
+                                palette.SetActivePaletteForCombo('L2', newName);
+                            end
+                        end
+                    end
+
                     modalState.isOpen = false;
                     imgui.CloseCurrentPopup();
                 else
@@ -621,6 +658,56 @@ local function DrawDeleteConfirmModal()
     end
 end
 
+-- Helper: Draw "Use Shared Library" confirmation modal
+local function DrawUseSharedModal()
+    if not modalState.isOpen or modalState.mode ~= 'use_shared' then
+        return;
+    end
+
+    imgui.OpenPopup('Use Shared Library##useSharedModal');
+
+    if imgui.BeginPopupModal('Use Shared Library##useSharedModal', nil, ImGuiWindowFlags_AlwaysAutoResize) then
+        local jobName = GetJobName(windowState.selectedJobId);
+        local subjobName = GetJobName(windowState.selectedSubjobId);
+
+        imgui.TextColored({1.0, 0.7, 0.3, 1.0}, 'Warning: This will delete all subjob-specific palettes!');
+        imgui.Spacing();
+        imgui.Text(string.format('This will delete all %s palettes for %s/%s', windowState.selectedPaletteType, jobName, subjobName));
+        imgui.Text('and revert to using the Shared Library.');
+        imgui.Spacing();
+        imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'This cannot be undone.');
+        imgui.Spacing();
+
+        -- Show error if any
+        if modalState.errorMessage then
+            imgui.TextColored({1.0, 0.3, 0.3, 1.0}, modalState.errorMessage);
+        end
+
+        if imgui.Button('Delete & Use Shared', {150, 0}) then
+            local success;
+            if windowState.selectedPaletteType == 'hotbar' then
+                success = palette.DeleteAllSubjobPalettes(windowState.selectedJobId, windowState.selectedSubjobId);
+            else
+                success = palette.DeleteAllCrossbarSubjobPalettes(windowState.selectedJobId, windowState.selectedSubjobId);
+            end
+            if success then
+                SetStatusMessage('Now using Shared Library');
+                windowState.selectedPaletteName = nil;
+                modalState.isOpen = false;
+                imgui.CloseCurrentPopup();
+            else
+                modalState.errorMessage = 'Failed to delete palettes';
+            end
+        end
+        imgui.SameLine();
+        if imgui.Button('Cancel', {80, 0}) then
+            modalState.isOpen = false;
+            imgui.CloseCurrentPopup();
+        end
+        imgui.EndPopup();
+    end
+end
+
 -- Draw the main palette manager window
 function M.Draw()
     if not windowState.isOpen then
@@ -654,6 +741,7 @@ function M.Draw()
         DrawCreateRenameModal();
         DrawCopyModal();
         DrawDeleteConfirmModal();
+        DrawUseSharedModal();
     end
     imgui.End();
 

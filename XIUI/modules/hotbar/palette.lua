@@ -1926,4 +1926,116 @@ function M.GetSubjobsWithPalettes(jobId)
     return subjobs;
 end
 
+-- ============================================
+-- Delete All Subjob Palettes (for "Use Shared Library" feature)
+-- ============================================
+
+-- Delete all subjob-specific hotbar palettes for a job/subjob combination
+-- This allows reverting to using the shared library (subjob 0) palettes
+-- Returns true on success
+function M.DeleteAllSubjobPalettes(jobId, subjobId)
+    if not subjobId or subjobId == 0 then
+        return false;  -- Can't delete shared palettes this way
+    end
+
+    local normalizedJobId = jobId or 1;
+    local pattern = string.format('%d:%d:%s', normalizedJobId, subjobId, M.PALETTE_KEY_PREFIX);
+    local deletedCount = 0;
+
+    -- Delete from all hotbars
+    for barIdx = 1, 6 do
+        local configKey = 'hotbarBar' .. barIdx;
+        local barSettings = gConfig and gConfig[configKey];
+        if barSettings and barSettings.slotActions then
+            local keysToDelete = {};
+            for storageKey, _ in pairs(barSettings.slotActions) do
+                if type(storageKey) == 'string' and storageKey:find(pattern, 1, true) == 1 then
+                    table.insert(keysToDelete, storageKey);
+                end
+            end
+            for _, key in ipairs(keysToDelete) do
+                barSettings.slotActions[key] = nil;
+                deletedCount = deletedCount + 1;
+            end
+        end
+    end
+
+    -- Clear palette order for this subjob
+    local orderKey = BuildJobSubjobKey(normalizedJobId, subjobId);
+    if gConfig.hotbar and gConfig.hotbar.paletteOrder then
+        gConfig.hotbar.paletteOrder[orderKey] = nil;
+    end
+
+    -- Clear active palette per job for this subjob
+    if gConfig.hotbar and gConfig.hotbar.activePalettePerJob then
+        gConfig.hotbar.activePalettePerJob[orderKey] = nil;
+    end
+
+    -- Reset active palette to pick up from shared library
+    if state.activePalette then
+        local oldPalette = state.activePalette;
+        state.activePalette = nil;
+        -- The next call to ValidatePalettesForJob will set up shared library
+        for i = 1, 6 do
+            M.FirePaletteChangedCallbacks(i, oldPalette, nil);
+        end
+    end
+
+    if deletedCount > 0 then
+        SaveSettingsToDisk();
+    end
+
+    return true;
+end
+
+-- Delete all subjob-specific crossbar palettes for a job/subjob combination
+-- This allows reverting to using the shared library (subjob 0) palettes
+-- Returns true on success
+function M.DeleteAllCrossbarSubjobPalettes(jobId, subjobId)
+    if not subjobId or subjobId == 0 then
+        return false;  -- Can't delete shared palettes this way
+    end
+
+    local normalizedJobId = jobId or 1;
+    local pattern = string.format('%d:%d:%s', normalizedJobId, subjobId, M.PALETTE_KEY_PREFIX);
+    local deletedCount = 0;
+
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    if crossbarSettings and crossbarSettings.slotActions then
+        local keysToDelete = {};
+        for storageKey, _ in pairs(crossbarSettings.slotActions) do
+            if type(storageKey) == 'string' and storageKey:find(pattern, 1, true) == 1 then
+                table.insert(keysToDelete, storageKey);
+            end
+        end
+        for _, key in ipairs(keysToDelete) do
+            crossbarSettings.slotActions[key] = nil;
+            deletedCount = deletedCount + 1;
+        end
+
+        -- Clear crossbar palette order for this subjob
+        local orderKey = BuildJobSubjobKey(normalizedJobId, subjobId);
+        if crossbarSettings.crossbarPaletteOrder then
+            crossbarSettings.crossbarPaletteOrder[orderKey] = nil;
+        end
+    end
+
+    -- Reset active crossbar palette to pick up from shared library
+    if state.crossbarActivePalette then
+        local oldPalette = state.crossbarActivePalette;
+        state.crossbarActivePalette = nil;
+        -- Fire callbacks for all combo modes
+        local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2' };
+        for _, mode in ipairs(comboModes) do
+            M.FirePaletteChangedCallbacks('crossbar:' .. mode, oldPalette, nil);
+        end
+    end
+
+    if deletedCount > 0 then
+        SaveSettingsToDisk();
+    end
+
+    return true;
+end
+
 return M;
