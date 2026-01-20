@@ -238,12 +238,14 @@ function M.Initialize(settings)
         end
 
         -- 7. Create cooldown timer fonts (centered over slot)
+        local recastTimerFontSize = barSettings.recastTimerFontSize or 11;
+        local recastTimerFontColor = barSettings.recastTimerFontColor or 0xFFFFFFFF;
         data.timerFonts[barIndex] = {};
         for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
             local timerSettings = deep_copy_table(fontSettings);
-            timerSettings.font_height = 11;
+            timerSettings.font_height = recastTimerFontSize;
             timerSettings.font_alignment = gdi.Alignment.Center;
-            timerSettings.font_color = 0xFFFFFFFF;
+            timerSettings.font_color = recastTimerFontColor;
             timerSettings.outline_color = 0xFF000000;
             timerSettings.outline_width = 2;
             local font = FontManager.create(timerSettings);

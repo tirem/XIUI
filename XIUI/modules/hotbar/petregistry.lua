@@ -490,6 +490,7 @@ M.automatonCommands = {
 
 -- BST pet commands (not job abilities - those go in Ability section)
 M.bstReadyCommands = {
+    { name = 'Fight', category = 'Command' },
     { name = 'Sic', category = 'Command' },
     { name = 'Ready', category = 'Command' },
     { name = 'Reward', category = 'Command' },
