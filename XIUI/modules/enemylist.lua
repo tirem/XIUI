@@ -339,7 +339,7 @@ enemylist.DrawWindow = function(settings)
 					elseif (gConfig.showEnemyListBordersUseNameColor) then
 						borderColor = imgui.GetColorU32(ARGBToRGBA(nameColor));
 					else
-						borderColor = imgui.GetColorU32(ARGBToRGBA(gConfig.colorCustomization.enemyList.borderColor));
+						borderColor = imgui.GetColorU32(ARGBToRGBA(gConfig.colorCustomization.enemyList.borderColor or 0xFF000000));
 					end
 
 					-- Draw border rectangle around the entire entry

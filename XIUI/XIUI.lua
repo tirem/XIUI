@@ -92,7 +92,7 @@ local TextureManager = require('libs.texturemanager');
 HzLimitedMode = true;
 
 -- Developer override to allow editing the Default profile
-g_AllowDefaultEdit = false;
+g_AllowDefaultEdit = true;
 
 -- Flag to skip settings_update callback during internal saves
 local bInternalSave = false;
@@ -323,7 +323,6 @@ local function MigrateAllLegacySettings()
     local installPath = AshitaCore:GetInstallPath();
     local xiuiPath = installPath .. 'config\\addons\\xiui\\';
     local imguiPath = installPath .. 'config\\imgui.ini';
-    local imguiBakPath = installPath .. 'config\\imgui.bak';
     local legacyFound = false;
 
     -- Helper to list directories
@@ -360,26 +359,22 @@ local function MigrateAllLegacySettings()
                 if (not legacyFound) then
                     legacyFound = true;
                     if (ashita.fs.exists(imguiPath)) then
-                        local inp = io.open(imguiPath, "rb");
-                        local outp = io.open(imguiBakPath, "wb");
-                        if (inp and outp) then
-                            outp:write(inp:read("*all"));
-                            inp:close();
-                            outp:close();
-                            print(chat.header(addon.name):append(chat.message('Created imgui.ini backup at: ')):append(chat.success(imguiBakPath)));
+                        profileManager.EnsureBackupDirectory(profileManager.LegacyXiuiBackupPath);
+                        local backupImguiPath = profileManager.LegacyXiuiBackupPath .. 'imgui.ini';
+                        
+                        if profileManager.CopyFile(imguiPath, backupImguiPath) then
+                            print(chat.header(addon.name):append(chat.message('Created legacy imgui.ini backup at: ')):append(chat.success(backupImguiPath)));
                         end
                     end
                 end
                 
-                -- 2. Backup character settings
-                local backupPath = xiuiPath .. char.dir .. '\\settings.bak';
-                local inp = io.open(settingsPath, "rb");
-                local outp = io.open(backupPath, "wb");
-                if (inp and outp) then
-                    outp:write(inp:read("*all"));
-                    inp:close();
-                    outp:close();
-                    print(chat.header(addon.name):append(chat.message('Created legacy settings backup at: ')):append(chat.success(backupPath)));
+                -- 2. Backup character settings to backups/legacy/xiui/CharName/settings.lua
+                local backupCharPath = profileManager.LegacyXiuiBackupPath .. char.name .. '\\';
+                profileManager.EnsureBackupDirectory(backupCharPath);
+                
+                local backupSettingsPath = backupCharPath .. 'settings.lua';
+                if profileManager.CopyFile(settingsPath, backupSettingsPath) then
+                     print(chat.header(addon.name):append(chat.message('Created legacy settings backup at: ')):append(chat.success(backupSettingsPath)));
                 end
                 
                 -- 3. Create Legacy Profile
@@ -422,9 +417,9 @@ local function MigrateAllLegacySettings()
                 -- 4. Update settings.lua
                 local f = io.open(settingsPath, "w+");
                 if f then
-                    f:write("return {\n");
-                    f:write(string.format("    currentProfile = %q,\n", profileName));
-                    f:write("};\n");
+                    f:write("local settings = {};\n");
+                    f:write(string.format("settings[\"currentProfile\"] = %q;\n", profileName));
+                    f:write("return settings;\n");
                     f:close();
                 end
                 
@@ -435,6 +430,16 @@ local function MigrateAllLegacySettings()
 end
 
 MigrateAllLegacySettings();
+
+-- Check for addon update and backup profiles if needed
+local globalProfiles = profileManager.GetGlobalProfiles();
+if (globalProfiles.version ~= addon.version) then
+    local oldVer = globalProfiles.version and ('v' .. globalProfiles.version) or 'unknown';
+    print(chat.header(addon.name):append(chat.message('Addon update detected (' .. oldVer .. ' -> v' .. addon.version .. '). Backing up profiles...')));
+    profileManager.BackupCurrentProfiles(addon.version);
+    -- Reload global profiles to ensure version is updated in memory
+    globalProfiles = profileManager.GetGlobalProfiles();
+end
 
 -- ==========================================================
 -- = LOAD PROFILE SETTINGS =

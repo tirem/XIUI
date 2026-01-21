@@ -352,21 +352,27 @@ local function DrawBarWindow(barIndex, settings)
         return;
     end
 
-    -- Get saved position or default
-    local savedPos = gConfig.hotbarBarPositions and gConfig.hotbarBarPositions[barIndex];
+    -- Get default position for fallback
     local defaultX, defaultY = GetDefaultBarPosition(barIndex);
-    local posX = savedPos and savedPos.x or defaultX;
-    local posY = savedPos and savedPos.y or defaultY;
+    local windowName = string.format('Hotbar%d', barIndex);
 
-    -- Safety check: if position is at or near (0,0), use default instead
-    -- This prevents bars from being stuck in the corner due to bad saved positions
-    if posX < 10 and posY < 10 then
-        posX = defaultX;
-        posY = defaultY;
-        -- Clear the bad saved position
-        if gConfig.hotbarBarPositions and gConfig.hotbarBarPositions[barIndex] then
-            gConfig.hotbarBarPositions[barIndex] = nil;
-        end
+    -- Apply saved position if exists (using helper for profile support), otherwise set default
+    local hasSaved = gConfig.windowPositions and gConfig.windowPositions[windowName];
+    
+    -- Migration: Check for legacy position if not found in standard system
+    if not hasSaved and gConfig.hotbarBarPositions and gConfig.hotbarBarPositions[barIndex] then
+        if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+        gConfig.windowPositions[windowName] = { 
+            x = gConfig.hotbarBarPositions[barIndex].x, 
+            y = gConfig.hotbarBarPositions[barIndex].y 
+        };
+        hasSaved = true;
+    end
+
+    if hasSaved then
+        ApplyWindowPosition(windowName);
+    else
+        imgui.SetNextWindowPos({defaultX, defaultY}, ImGuiCond_FirstUseEver);
     end
 
     -- Get dimensions (now includes layout)
@@ -408,17 +414,24 @@ local function DrawBarWindow(barIndex, settings)
     -- Window flags (dummy window for positioning)
     local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
 
-    local windowName = string.format('Hotbar%d', barIndex);
-
     -- Check if anchor is currently being dragged or positions are being reset - if so, force position
-    local anchorDragging = drawing.IsAnchorDragging('hotbar_' .. barIndex);
-    local posCondition = (anchorDragging or forcePositionReset) and ImGuiCond_Always or ImGuiCond_FirstUseEver;
-    imgui.SetNextWindowPos({posX, posY}, posCondition);
+    local anchorDragging = drawing.IsAnchorDragging(windowName);
+    
+    if anchorDragging or forcePositionReset then
+        -- Force position update during drag
+        local saved = gConfig.windowPositions and gConfig.windowPositions[windowName];
+        local targetX = saved and saved.x or defaultX;
+        local targetY = saved and saved.y or defaultY;
+        imgui.SetNextWindowPos({targetX, targetY}, ImGuiCond_Always);
+    end
+
     imgui.SetNextWindowSize({barWidth, barHeight}, ImGuiCond_Always);
 
     local windowPosX, windowPosY;
 
     if imgui.Begin(windowName, true, windowFlags) then
+        -- Save position if moved
+        SaveWindowPosition(windowName);
         windowPosX, windowPosY = imgui.GetWindowPos();
 
         -- Reserve space
@@ -604,25 +617,16 @@ local function DrawBarWindow(barIndex, settings)
     -- Draw move anchor (only visible when config is open)
     -- Must be called after we have window position
     if windowPosX ~= nil then
-        local anchorNewX, anchorNewY = drawing.DrawMoveAnchor('hotbar_' .. barIndex, windowPosX, windowPosY);
+        -- Use same window name as ImGui window so positions are shared
+        local anchorName = string.format('Hotbar%d', barIndex);
+        local anchorNewX, anchorNewY = drawing.DrawMoveAnchor(anchorName, windowPosX, windowPosY);
         if anchorNewX ~= nil then
             windowPosX = anchorNewX;
             windowPosY = anchorNewY;
-        end
-    end
-
-    -- Save position if changed
-    if windowPosX ~= nil then
-        if gConfig.hotbarBarPositions == nil then
-            gConfig.hotbarBarPositions = {};
-        end
-        if gConfig.hotbarBarPositions[barIndex] == nil then
-            gConfig.hotbarBarPositions[barIndex] = {};
-        end
-        if gConfig.hotbarBarPositions[barIndex].x ~= windowPosX or
-           gConfig.hotbarBarPositions[barIndex].y ~= windowPosY then
-            gConfig.hotbarBarPositions[barIndex].x = windowPosX;
-            gConfig.hotbarBarPositions[barIndex].y = windowPosY;
+            
+            -- Update config immediately so next frame's positioning logic picks it up
+            if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+            gConfig.windowPositions[anchorName] = { x = anchorNewX, y = anchorNewY };
         end
     end
 end
