@@ -626,6 +626,10 @@ function M.Initialize(settings, moduleSettings)
 
     -- Initial position - use saved position or default
     local savedPos = gConfig and gConfig.hotbarCrossbarPosition;
+    if not savedPos and gConfig.crossbarWindowPosX and gConfig.crossbarWindowPosY then
+        savedPos = { x = gConfig.crossbarWindowPosX, y = gConfig.crossbarWindowPosY };
+    end
+
     local defaultX, defaultY = GetDefaultPosition(settings);
     state.windowX = savedPos and savedPos.x or defaultX;
     state.windowY = savedPos and savedPos.y or defaultY;
@@ -772,6 +776,9 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         x = x,
         y = drawY,
         size = slotSize,
+        
+        -- Window wrapper name for inputs
+        windowName = 'Crossbar',
 
         -- Action Data
         bind = slotData,
@@ -1141,16 +1148,40 @@ function M.DrawWindow(settings, moduleSettings)
     -- Window flags (dummy window for positioning, like hotbar display.lua)
     local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
 
-    -- Get saved position or use default
-    local savedPos = gConfig.hotbarCrossbarPosition;
+    local windowName = 'Crossbar';
     local defaultX, defaultY = GetDefaultPosition(settings);
-    local posX = savedPos and savedPos.x or defaultX;
-    local posY = savedPos and savedPos.y or defaultY;
 
-    -- Check if anchor is currently being dragged - if so, force position from saved config
-    local anchorDragging = drawing.IsAnchorDragging('crossbar');
-    local posCondition = anchorDragging and ImGuiCond_Always or ImGuiCond_FirstUseEver;
-    imgui.SetNextWindowPos({posX, posY}, posCondition);
+    -- Check if anchor is currently being dragged - if so, force position
+    local anchorDragging = drawing.IsAnchorDragging(windowName);
+    
+    if anchorDragging then
+        -- Use state position directly during drag for immediate response
+        imgui.SetNextWindowPos({state.windowX, state.windowY}, ImGuiCond_Always);
+    else
+        -- Apply saved position (once) or default
+        local hasSaved = gConfig.windowPositions and gConfig.windowPositions[windowName];
+        
+        -- Migration: Check for legacy position if not found in standard system
+        if not hasSaved then
+            local legPos = gConfig.hotbarCrossbarPosition;
+            if not legPos and gConfig.crossbarWindowPosX and gConfig.crossbarWindowPosY then
+                legPos = { x = gConfig.crossbarWindowPosX, y = gConfig.crossbarWindowPosY };
+            end
+            
+            if legPos then
+                if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+                gConfig.windowPositions[windowName] = { x = legPos.x, y = legPos.y };
+                hasSaved = true;
+            end
+        end
+
+        if hasSaved then
+            ApplyWindowPosition(windowName);
+        else
+            imgui.SetNextWindowPos({defaultX, defaultY}, ImGuiCond_FirstUseEver);
+        end
+    end
+    
     imgui.SetNextWindowSize({width, height}, ImGuiCond_Always);
 
     -- Get current combo mode and pressed slot from controller
@@ -1300,6 +1331,8 @@ function M.DrawWindow(settings, moduleSettings)
 
     -- Begin ImGui window - ALL slot rendering happens inside to enable interactions
     if imgui.Begin('Crossbar', true, windowFlags) then
+        -- Save position if moved (profile support)
+        SaveWindowPosition('Crossbar');
         windowPosX, windowPosY = imgui.GetWindowPos();
 
         -- Update stored position for primitives
@@ -1396,20 +1429,15 @@ function M.DrawWindow(settings, moduleSettings)
     end
 
     -- Draw move anchor (only visible when config is open)
-    local anchorNewX, anchorNewY = drawing.DrawMoveAnchor('crossbar', state.windowX, state.windowY);
+    -- Use same window name as ImGui window so positions are shared
+    local anchorNewX, anchorNewY = drawing.DrawMoveAnchor('Crossbar', state.windowX, state.windowY);
     if anchorNewX ~= nil then
         state.windowX = anchorNewX;
         state.windowY = anchorNewY;
-    end
-
-    -- Save position if changed
-    if gConfig.hotbarCrossbarPosition == nil then
-        gConfig.hotbarCrossbarPosition = {};
-    end
-    if gConfig.hotbarCrossbarPosition.x ~= state.windowX or
-       gConfig.hotbarCrossbarPosition.y ~= state.windowY then
-        gConfig.hotbarCrossbarPosition.x = state.windowX;
-        gConfig.hotbarCrossbarPosition.y = state.windowY;
+        
+        -- Update config immediately so next frame's positioning logic picks it up
+        if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+        gConfig.windowPositions['Crossbar'] = { x = anchorNewX, y = anchorNewY };
     end
 
     -- Determine if we should show center elements (hidden in activeOnly mode)

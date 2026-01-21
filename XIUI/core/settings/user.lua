@@ -91,6 +91,8 @@ function M.createUserSettingsDefaults()
         hotbarEnabled = true,                 -- Show hotbar module
         hotbarPreview = false,                -- Show preview with test data
         hotbarBarPositions = nil,             -- Per-bar positions (nil = defaults)
+        crossbarWindowPosX = nil,             -- Crossbar X position
+        crossbarWindowPosY = nil,             -- Crossbar Y position
 
         -- Global hotbar visual settings (used when bar's useGlobalSettings = true)
         hotbarGlobal = factories.createHotbarGlobalDefaults(),

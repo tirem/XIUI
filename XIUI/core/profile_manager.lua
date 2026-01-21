@@ -1,7 +1,8 @@
 local profileManager = {};
 local addonName = 'xiui';
-local configPath = AshitaCore:GetInstallPath() .. '\\config\\addons\\' .. addonName .. '\\';
+local configPath = AshitaCore:GetInstallPath() .. 'config\\addons\\' .. addonName .. '\\';
 local profilesPath = configPath .. 'profiles\\';
+local backupsPath = configPath .. 'backups\\';
 
 -- Ensure directories exist
 if (not ashita.fs.exists(configPath)) then
@@ -10,76 +11,146 @@ end
 if (not ashita.fs.exists(profilesPath)) then
     ashita.fs.create_directory(profilesPath);
 end
+if (not ashita.fs.exists(backupsPath)) then
+    ashita.fs.create_directory(backupsPath);
+end
 
--- Robust serializer for Lua tables
-local function Serialize(t)
-    local function serialize_recursive(tbl, indent)
-        local keys = {}
-        for k in pairs(tbl) do table.insert(keys, k) end
-        table.sort(keys, function(a, b)
-            local ta, tb = type(a), type(b)
-            if ta ~= tb then 
-                -- Sort by type string representation
-                return tostring(ta) < tostring(tb) 
-            end
-            if ta == 'number' then return a < b end
-            if ta == 'string' then return a < b end
-            return tostring(a) < tostring(b)
-        end)
+-- Backup directories
+profileManager.LegacyHxuiBackupPath = backupsPath .. 'legacy\\hxui\\';
+profileManager.LegacyXiuiBackupPath = backupsPath .. 'legacy\\xiui\\';
+profileManager.ProfilesBackupPath = backupsPath .. 'profiles\\';
 
-        local lines = {}
-        local indentStr = string.rep("    ", indent)
-        local nextIndentStr = string.rep("    ", indent + 1)
+-- Helper to copy a file
+function profileManager.CopyFile(src, dest)
+    local inp = io.open(src, "rb");
+    if not inp then return false; end
+    local outp = io.open(dest, "wb");
+    if not outp then 
+        inp:close(); 
+        return false; 
+    end
+    
+    local content = inp:read("*all");
+    outp:write(content);
+    
+    inp:close();
+    outp:close();
+    return true;
+end
 
-        lines[#lines + 1] = "{"
-        
-        for _, k in ipairs(keys) do
-            local v = tbl[k]
-            local keyStr
-            if type(k) == "string" and k:match("^[%a_][%w_]*$") then
-                keyStr = k
-            else
-                -- Safe key serialization
-                if type(k) == "string" then
-                    keyStr = "[" .. string.format("%q", k) .. "]"
-                elseif type(k) == "number" then
-                    keyStr = "[" .. k .. "]"
-                elseif type(k) == "boolean" then
-                    keyStr = "[" .. tostring(k) .. "]"
-                end
-                -- Skip unsupported key types
-            end
-
-            if keyStr then
-                local valStr
-                if type(v) == "table" then
-                    valStr = serialize_recursive(v, indent + 1)
-                elseif type(v) == "string" then
-                    valStr = string.format("%q", v)
-                elseif type(v) == "number" then
-                    valStr = tostring(v)
-                elseif type(v) == "boolean" then
-                    valStr = tostring(v)
-                end
-                -- Skip unsupported value types
-
-                if valStr then
-                    lines[#lines + 1] = nextIndentStr .. keyStr .. " = " .. valStr .. ","
-                end
-            end
+-- Helper to ensure backup directory structure
+function profileManager.EnsureBackupDirectory(path)
+    if not ashita.fs.exists(path) then
+        -- Handle nested paths for legacy backups
+        if path:find("legacy") then
+             if not ashita.fs.exists(backupsPath .. 'legacy\\') then
+                 ashita.fs.create_directory(backupsPath .. 'legacy\\');
+             end
+             
+             if path:find("xiui") and not ashita.fs.exists(profileManager.LegacyXiuiBackupPath) then
+                 ashita.fs.create_directory(profileManager.LegacyXiuiBackupPath);
+             end
+             
+             if path:find("hxui") and not ashita.fs.exists(profileManager.LegacyHxuiBackupPath) then
+                 ashita.fs.create_directory(profileManager.LegacyHxuiBackupPath);
+             end
         end
         
-        lines[#lines + 1] = indentStr .. "}"
-        return table.concat(lines, "\n")
+        -- Handle profiles backup folder
+        if path:find("profiles") and not ashita.fs.exists(profileManager.ProfilesBackupPath) then
+             ashita.fs.create_directory(profileManager.ProfilesBackupPath);
+        end
+        
+        ashita.fs.create_directory(path);
+    end
+end
+
+-- Backup all current profiles to backups/profiles/ (flat)
+function profileManager.BackupCurrentProfiles(currentVersion)
+    -- Copy all .lua files from profilesPath to backupsPath/profiles/
+    -- Copy imgui.ini from Ashita config to backupsPath/profiles/
+    
+    local destPath = profileManager.ProfilesBackupPath;
+    profileManager.EnsureBackupDirectory(destPath);
+    
+    -- 1. Backup Profiles
+    local profiles = profileManager.GetGlobalProfiles();
+    
+    -- Also backup profilelist.lua itself
+    profileManager.CopyFile(profilesPath .. 'profilelist.lua', destPath .. 'profilelist.lua');
+    
+    if profiles and profiles.names then
+        for _, name in ipairs(profiles.names) do
+            local filename = name .. '.lua';
+            profileManager.CopyFile(profilesPath .. filename, destPath .. filename);
+        end
+    end
+    
+    -- 2. Backup ImGui
+    local imguiPath = AshitaCore:GetInstallPath() .. 'config\\imgui.ini';
+    if ashita.fs.exists(imguiPath) then
+        profileManager.CopyFile(imguiPath, destPath .. 'imgui.ini');
     end
 
-    return serialize_recursive(t, 0)
+    -- 3. Update version in profilelist.lua
+    if currentVersion then
+        profiles.version = currentVersion;
+        profileManager.SaveGlobalProfiles(profiles);
+    end
+    
+    return true;
+end
+
+
+-- Serialize table to legacy format (flat assignments)
+local function SerializeLegacy(tbl, prefix, lines)
+    lines = lines or {}
+    
+    -- Sort keys for deterministic output
+    local keys = {}
+    for k in pairs(tbl) do table.insert(keys, k) end
+    table.sort(keys, function(a, b)
+        local ta, tb = type(a), type(b)
+        if ta ~= tb then return tostring(ta) < tostring(tb) end
+        if ta == 'number' then return a < b end
+        if ta == 'string' then return a < b end
+        return tostring(a) < tostring(b)
+    end)
+
+    for _, k in ipairs(keys) do
+        local v = tbl[k]
+        local keyStr
+        if type(k) == "string" then
+             keyStr = string.format("[%q]", k)
+        elseif type(k) == "number" then
+             keyStr = string.format("[%d]", k)
+        elseif type(k) == "boolean" then
+             keyStr = string.format("[%s]", tostring(k))
+        end
+        
+        if keyStr then
+            local currentPath = prefix .. keyStr
+            if type(v) == "table" then
+                table.insert(lines, currentPath .. " = {};")
+                SerializeLegacy(v, currentPath, lines)
+            elseif type(v) == "string" then
+                table.insert(lines, currentPath .. " = " .. string.format("%q", v) .. ";")
+            elseif type(v) == "number" or type(v) == "boolean" then
+                table.insert(lines, currentPath .. " = " .. tostring(v) .. ";")
+            end
+        end
+    end
+    
+    return table.concat(lines, "\n")
 end
 
 function profileManager.SaveTable(path, t)
     local f = io.open(path, "w");
     if (f) then
-        f:write("return " .. Serialize(t) .. ";");
+        f:write("local settings = {};\n");
+        -- Pass a new table for lines to start fresh
+        f:write(SerializeLegacy(t, "settings", {}));
+        f:write("\nreturn settings;");
         f:close();
         return true;
     end
@@ -105,17 +176,7 @@ end
 
 
 function profileManager.GetGlobalProfiles()
-    local path = configPath .. 'profilelist.lua';
-    local oldPath = configPath .. 'profiles.lua';
-    
-    -- Rename old profiles.lua if it exists and new one doesn't
-    if (ashita.fs.exists(oldPath) and not ashita.fs.exists(path)) then
-        local oldContent = profileManager.LoadTable(oldPath);
-        if (oldContent) then
-            profileManager.SaveTable(path, oldContent);
-            os.remove(oldPath);
-        end
-    end
+    local path = profilesPath .. 'profilelist.lua';
 
     local profiles = profileManager.LoadTable(path);
     if (profiles == nil) then
@@ -129,7 +190,7 @@ function profileManager.GetGlobalProfiles()
 end
 
 function profileManager.SaveGlobalProfiles(profiles)
-    local path = configPath .. 'profilelist.lua';
+    local path = profilesPath .. 'profilelist.lua';
     return profileManager.SaveTable(path, profiles);
 end
 
@@ -148,15 +209,9 @@ function profileManager.SaveProfileSettings(name, settings)
     -- The passed 'settings' object (which is gConfig) already contains the up-to-date positions.
 
     local path = profilesPath .. name .. '.lua';
-    local f = io.open(path, "w");
-    if (f) then
-        -- Wrap settings in userSettings to maintain compatibility
-        local wrapper = { userSettings = settings };
-        f:write("return " .. Serialize(wrapper) .. ";");
-        f:close();
-        return true;
-    end
-    return false;
+    -- Wrap settings in userSettings to maintain compatibility and use the generic SaveTable
+    local wrapper = { userSettings = settings };
+    return profileManager.SaveTable(path, wrapper);
 end
 
 function profileManager.ProfileExists(name)
@@ -176,7 +231,7 @@ end
 -- Helper to parse imgui.ini for window positions
 -- Only used during legacy migration
 local function ParseImguiIni()
-    local iniPath = AshitaCore:GetInstallPath() .. '\\config\\imgui.ini';
+    local iniPath = AshitaCore:GetInstallPath() .. 'config\\imgui.ini';
     if (not ashita.fs.exists(iniPath)) then return nil; end
 
     local f = io.open(iniPath, 'r');

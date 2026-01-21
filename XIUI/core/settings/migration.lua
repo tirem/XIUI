@@ -4,6 +4,7 @@
 ]]--
 
 local M = {};
+local profileManager = require('core.profile_manager');
 
 -- Migrate settings from HXUI to XIUI (one-time migration for users upgrading from HXUI)
 -- IMPORTANT: This must be called BEFORE settings.load() so that copied files are picked up
@@ -31,39 +32,55 @@ function M.MigrateFromHXUI()
         local newSettingsDir = newConfigDir .. '\\' .. folderName;
         local newSettingsPath = newSettingsDir .. '\\settings.lua';
 
-        -- Only migrate if old settings exist and new settings don't
-        if ashita.fs.exists(oldSettingsPath) and not ashita.fs.exists(newSettingsPath) then
-            -- Ensure the new directory exists
-            ashita.fs.create_directory(newSettingsDir);
+        if ashita.fs.exists(oldSettingsPath) then
+            -- 1. Always ensure backup exists (even if we don't migrate)
+            local backupDir = profileManager.LegacyHxuiBackupPath .. folderName .. '\\';
+            if not ashita.fs.exists(backupDir .. 'settings.lua') then
+                profileManager.EnsureBackupDirectory(backupDir);
+                profileManager.CopyFile(oldSettingsPath, backupDir .. 'settings.lua');
+                
+                -- Backup global imgui.ini if it hasn't been backed up yet
+                local imguiPath = installPath .. '\\config\\imgui.ini';
+                local imguiBackupPath = profileManager.LegacyHxuiBackupPath .. 'imgui.ini';
+                if not ashita.fs.exists(imguiBackupPath) and ashita.fs.exists(imguiPath) then
+                     profileManager.CopyFile(imguiPath, imguiBackupPath);
+                end
+            end
 
-            -- Read old settings file
-            local oldFile = io.open(oldSettingsPath, 'rb');
-            if oldFile then
-                local success, content = pcall(function() return oldFile:read('*all'); end);
-                oldFile:close();
+            -- 2. Migrate only if new settings don't exist
+            if not ashita.fs.exists(newSettingsPath) then
+                -- Ensure the new directory exists
+                ashita.fs.create_directory(newSettingsDir);
 
-                if success and content then
-                    -- Write to new settings file
-                    local newFile = io.open(newSettingsPath, 'wb');
-                    if newFile then
-                        local writeSuccess, writeError = pcall(function()
-                            newFile:write(content);
-                        end);
-                        newFile:close();
+                -- 3. Read old settings file
+                local oldFile = io.open(oldSettingsPath, 'rb');
+                if oldFile then
+                    local success, content = pcall(function() return oldFile:read('*all'); end);
+                    oldFile:close();
 
-                        if writeSuccess then
-                            migratedCount = migratedCount + 1;
+                    if success and content then
+                        -- Write to new settings file
+                        local newFile = io.open(newSettingsPath, 'wb');
+                        if newFile then
+                            local writeSuccess, writeError = pcall(function()
+                                newFile:write(content);
+                            end);
+                            newFile:close();
+
+                            if writeSuccess then
+                                migratedCount = migratedCount + 1;
+                            else
+                                print(string.format('[XIUI] Warning: Failed to write settings migration to %s: %s', newSettingsPath, tostring(writeError)));
+                            end
                         else
-                            print(string.format('[XIUI] Warning: Failed to write settings migration to %s: %s', newSettingsPath, tostring(writeError)));
+                            print(string.format('[XIUI] Warning: Failed to open settings file for writing: %s', newSettingsPath));
                         end
                     else
-                        print(string.format('[XIUI] Warning: Failed to open settings file for writing: %s', newSettingsPath));
+                        print(string.format('[XIUI] Warning: Failed to read settings from %s', oldSettingsPath));
                     end
                 else
-                    print(string.format('[XIUI] Warning: Failed to read settings from %s', oldSettingsPath));
+                    print(string.format('[XIUI] Warning: Failed to open settings file for reading: %s', oldSettingsPath));
                 end
-            else
-                print(string.format('[XIUI] Warning: Failed to open settings file for reading: %s', oldSettingsPath));
             end
         end
     end
