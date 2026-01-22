@@ -36,30 +36,29 @@ local ITEM_CONTAINERS = { 0, 8, 10, 11, 12, 13, 14, 15, 16 };  -- Inventory, war
 -- Maps spell name prefixes to required tool item IDs
 -- IDs verified from https://www.ffxiah.com/browse/49/ninja-tools
 local NINJA_TOOL_MAPPING = {
-    -- Elemental Ninjutsu (damage)
-    ['Katon'] = 1161,      -- Uchitake (Fire)
-    ['Hyoton'] = 1164,     -- Tsurara (Ice)
-    ['Huton'] = 1167,      -- Kawahori-Ogi (Wind)
-    ['Doton'] = 1170,      -- Makibishi (Earth)
-    ['Raiton'] = 1173,     -- Hiraishin (Lightning)
-    ['Suiton'] = 1176,     -- Mizu-Deppo (Water)
-    -- Utility Ninjutsu
-    ['Utsusemi'] = 1179,   -- Shihei (Shadows)
-    ['Tonko'] = 1194,      -- Shinobi-Tabi (Invisible)
-    ['Monomi'] = 2553,     -- Sanjaku-Tenugui (Sneak)
-    -- Debuff Ninjutsu
-    ['Kurayami'] = 2555,   -- Soshi (Blind)
-    ['Hojo'] = 1185,       -- Kaginawa (Slow)
-    ['Jubaku'] = 1182,     -- Jusatsu (Paralyze)
-    ['Dokumori'] = 1191,   -- Kodoku (Poison)
-    ['Aisha'] = 1191,      -- Kodoku (Gravity - same as Dokumori)
-    -- High-level Ninjutsu
-    ['Migawari'] = 2970,   -- Mokujin (Substitute)
-    ['Yurin'] = 2644,      -- Ryuno (Intimidate)
-    ['Myoshu'] = 2642,     -- Kabenro (Acc boost)
-    ['Gekka'] = 2972,      -- Shikanofuda (Store TP)
-    ['Yain'] = 2643,       -- Jinko (Subtle Blow)
-    ['Kakka'] = 2972,      -- Shikanofuda (Attack boost - same as Gekka)
+    -- Elemental Ninjutsu (Inoshishinofuda - 2971)
+    ['Katon'] = { 1161, 2971 },     -- Uchitake (Fire)
+    ['Hyoton'] = { 1164, 2971 },    -- Tsurara (Ice)
+    ['Huton'] = { 1167, 2971 },     -- Kawahori-Ogi (Wind)
+    ['Doton'] = { 1170, 2971 },     -- Makibishi (Earth)
+    ['Raiton'] = { 1173, 2971 },    -- Hiraishin (Lightning)
+    ['Suiton'] = { 1176, 2971 },    -- Mizu-Deppo (Water)
+    -- Buffing Ninjutsu (Shikanofuda - 2972)
+    ['Utsusemi'] = { 1179, 2972 },   -- Shihei (Shadows)
+    ['Tonko'] = { 1194, 2972 },      -- Shinobi-Tabi (Invisible)
+    ['Monomi'] = { 2553, 2972 },     -- Sanjaku-Tenugui (Sneak)
+    ['Migawari'] = { 2970, 2972 },   -- Mokujin (One-shot immunity)
+    ['Myoshu'] = { 2642, 2972 },     -- Kabenro (Subtle blow)
+    ['Gekka'] = { 8803, 2972 },      -- Ranka (Enmity increase)
+    ['Yain'] = { 8804, 2972 },       -- Furusumi (Enmity decrease)
+    ['Kakka'] = { 2644, 2972 },      -- Ryuno (Store TP)
+    -- Debuffing Ninjutsu (Chonofuda - 2973)
+    ['Kurayami'] = { 1188, 2973 },   -- Sairui-ran (Blind)
+    ['Hojo'] = { 1185, 2973 },       -- Kaginawa (Slow)
+    ['Jubaku'] = { 1182, 2973 },     -- Jusatsu (Paralyze)
+    ['Dokumori'] = { 1191, 2973 },   -- Kodoku (Poison)
+    ['Aisha'] = { 2555, 2973 },      -- Soshi (Attack down)
+    ['Yurin'] = { 2643, 2973 },      -- Jinko (Reduces enemy TP gain)
 };
 
 -- Cache for ninjutsu spell type lookups
@@ -210,7 +209,7 @@ end
 -- Get the ninja tool ID required for a ninjutsu spell
 -- @param spellName: The spell name (e.g., "Utsusemi: Ni", "Katon: San")
 -- @return: Tool item ID or nil if not a ninjutsu spell
-local function GetNinjutsuToolId(spellName)
+local function GetNinjutsuToolIds(spellName)
     if not spellName then return nil; end
 
     -- Check cache first
@@ -224,19 +223,23 @@ local function GetNinjutsuToolId(spellName)
         baseName = baseName:gsub('%s+$', ''); -- Trim trailing whitespace
     end
 
-    local toolId = NINJA_TOOL_MAPPING[baseName];
-    ninjutsuCache[spellName] = toolId or false; -- Cache nil as false to distinguish from uncached
-    return toolId;
+    local toolIds = NINJA_TOOL_MAPPING[baseName];
+    ninjutsuCache[spellName] = toolIds or false; -- Cache nil as false to distinguish from uncached
+    return toolIds;
 end
 
 -- Get the quantity of ninja tools for a ninjutsu spell
 -- @param spellName: The spell name (e.g., "Utsusemi: Ni")
 -- @return: Tool quantity (0+) if ninjutsu spell with tool, nil if not a ninjutsu spell
 function M.GetNinjutsuToolQuantity(spellName)
-    local toolId = GetNinjutsuToolId(spellName);
-    if not toolId then return nil; end
+    local toolIds = GetNinjutsuToolIds(spellName);
+    if not toolIds then return nil; end
     -- Return 0 if no tools found (instead of nil) so we can show "x0" in red
-    return M.GetItemQuantity(toolId, nil) or 0;
+    local total = 0;
+    for _, itemId in ipairs(toolIds) do
+        total = total + (M.GetItemQuantity(itemId, nil) or 0);
+    end
+    return total;
 end
 
 -- Cached asset path
