@@ -182,7 +182,9 @@ enemylist.DrawWindow = function(settings)
 	imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {0, 0});
 	imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {0, 0});
 
+    ApplyWindowPosition('EnemyList');
 	if (imgui.Begin('EnemyList', true, windowFlags)) then
+		SaveWindowPosition('EnemyList');
 		-- Add top margin
 		imgui.Dummy({0, windowMargin});
 		local winStartX, winStartY = imgui.GetWindowPos();
@@ -337,7 +339,7 @@ enemylist.DrawWindow = function(settings)
 					elseif (gConfig.showEnemyListBordersUseNameColor) then
 						borderColor = imgui.GetColorU32(ARGBToRGBA(nameColor));
 					else
-						borderColor = imgui.GetColorU32(ARGBToRGBA(gConfig.colorCustomization.enemyList.borderColor));
+						borderColor = imgui.GetColorU32(ARGBToRGBA(gConfig.colorCustomization.enemyList.borderColor or 0xFF000000));
 					end
 
 					-- Draw border rectangle around the entire entry

@@ -108,6 +108,8 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
     end
 
     imgui.SetNextWindowSize({-1, -1}, ImGuiCond_Always);
+    
+    ApplyWindowPosition(windowName);
 
     local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
     if (gConfig.lockPositions) then
@@ -136,6 +138,7 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
     end
 
     if (imgui.Begin(windowName, true, windowFlags)) then
+        SaveWindowPosition(windowName);
         local locX, locY = imgui.GetWindowPos();
 
         -- Save position if moved (with change detection to avoid spam)

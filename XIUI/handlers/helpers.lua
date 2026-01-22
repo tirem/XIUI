@@ -33,10 +33,49 @@ local windowBackgroundLib = require('libs.windowbackground');
 local statusHandler = require('handlers.statushandler');
 local buffTable = require('libs.bufftable');
 
+local imgui = require('imgui');
+
 -- ========================================
 -- Global Exports for Backwards Compatibility
 -- ========================================
--- These expose functions globally so existing code continues to work
+
+-- Window Positioning Helper
+function ApplyWindowPosition(windowName)
+    if (gConfig and gConfig.windowPositions and gConfig.windowPositions[windowName]) then
+        if (not gConfig.appliedPositions) then gConfig.appliedPositions = {}; end
+        
+        if (not gConfig.appliedPositions[windowName]) then
+            local pos = gConfig.windowPositions[windowName];
+            -- print('[XIUI] Applying position for ' .. windowName .. ': ' .. pos.x .. ',' .. pos.y);
+            imgui.SetNextWindowPos({ pos.x, pos.y }, ImGuiCond_Always);
+            gConfig.appliedPositions[windowName] = true;
+        end
+    end
+end
+
+-- Save Window Position Helper
+-- Captures the current window position and updates the profile settings
+-- Must be called AFTER imgui.Begin()
+function SaveWindowPosition(windowName)
+    if (not gConfig) then return; end
+    
+    local x, y = imgui.GetWindowPos();
+    
+    -- Initialize if missing
+    if (not gConfig.windowPositions) then gConfig.windowPositions = {}; end
+    
+    local saved = gConfig.windowPositions[windowName];
+    
+    -- Update only if changed (to reduce table churn)
+    if (not saved) then
+        gConfig.windowPositions[windowName] = { x = x, y = y };
+        -- print('[XIUI] Saved NEW position for ' .. windowName .. ': ' .. x .. ',' .. y);
+    elseif (saved.x ~= x or saved.y ~= y) then
+        saved.x = x;
+        saved.y = y;
+        -- print('[XIUI] Updated position for ' .. windowName .. ': ' .. x .. ',' .. y);
+    end
+end
 
 -- Entity Constants (from entity.lua)
 SPAWN_FLAG_PLAYER = entityLib.SPAWN_FLAG_PLAYER;

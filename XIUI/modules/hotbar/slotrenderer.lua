@@ -1209,9 +1209,9 @@ function M.DrawSlot(resources, params)
 
     -- ========================================
     -- 11. ImGui: Hover/Pressed Visual Effects
-    -- Use foreground draw list to avoid window clipping issues
+    -- Use appropriate draw list (behind config when open)
     -- ========================================
-    local fgDrawList = imgui.GetForegroundDrawList();
+    local fgDrawList = GetUIDrawList();
     if fgDrawList and animOpacity > 0.5 then
         if isPressed then
             -- Pressed effect - red if on cooldown, white otherwise

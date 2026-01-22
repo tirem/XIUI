@@ -623,6 +623,11 @@ local function drawNotificationWindow(windowName, notifications, settings, split
     local totalHeight = 0;
     local stackUp = gConfig.notificationsDirection == 'up';
 
+    -- Apply saved window position (if any) from profile
+    -- This runs once per profile load/reset to restore position
+    -- For "Stack Up" mode, this sets the initial position which anchors are derived from
+    ApplyWindowPosition(windowName);
+
     -- Helper to calculate notification height
     local function getNotificationHeight(notification)
         local isMinified = notificationData.IsMinified(notification);
@@ -677,6 +682,7 @@ local function drawNotificationWindow(windowName, notifications, settings, split
     end
 
     -- Handle bottom-anchoring for "stack up" mode
+    ApplyWindowPosition(windowName);
     if stackUp then
         -- Get or initialize bottom anchor for this window
         local anchorKey = 'bottomAnchor_' .. windowName;
@@ -1332,6 +1338,7 @@ local function drawGroupWindow(groupNum, settings)
     end
 
     -- Handle bottom-anchoring for "stack up" mode
+    ApplyWindowPosition(windowName);
     if stackUp then
         local anchor = notificationData.groupWindowAnchors[groupNum];
         local isDragging = anchor and anchor.dragging;
@@ -1344,6 +1351,7 @@ local function drawGroupWindow(groupNum, settings)
 
     -- Create ImGui window
     if imgui.Begin(windowName, true, windowFlags) then
+        SaveWindowPosition(windowName);
         local renderSuccess, renderErr = pcall(function()
             local windowPosX, windowPosY = imgui.GetWindowPos();
             local drawList = imgui.GetWindowDrawList();

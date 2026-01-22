@@ -11,6 +11,9 @@ local imgui = require('imgui');
 
 local M = {};
 
+-- Local state for profile creation/management
+-- (Moved to config.lua)
+
 -- Section: Global Settings (combines General, Font, and Bar settings)
 function M.DrawSettings()
     if components.CollapsingSection('General##global') then
