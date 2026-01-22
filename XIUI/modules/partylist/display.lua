@@ -1119,7 +1119,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 end
                 if (imgui.Begin('PlayerBuffs'..memIdx, true, bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
                     imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {0, 3});
-                    DrawStatusIcons(statusIcons.ReorderForStatusSide(memInfo.buffs, buffTable, cache.statusSide), settings.iconSize, 7, 3);
+                    DrawStatusIcons(statusIcons.ReorderBuffsClosest(memInfo.buffs, buffTable, cache.statusSide), settings.iconSize, 7, 3);
                     imgui.PopStyleVar(1);
                 end
                 local buffWindowSizeX, _ = imgui.GetWindowSize();
