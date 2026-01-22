@@ -23,6 +23,7 @@ local display = nil;
 local crossbar = nil;
 
 local M = {};
+local ScanDirectoryForPngs; -- forward declaration for use before definition
 
 -- ============================================
 -- Constants
@@ -247,9 +248,9 @@ local searchFilter = { '' };
 -- Icon picker state
 local iconPickerOpen = false;
 local iconPickerFilter = { '' };
-local iconPickerTab = 1;  -- 1 = Spells, 2 = Items, 3 = Custom
-local iconPickerPage = { 1, 1, 1 };  -- Current page for each tab [spells, items, custom]
-local iconPickerLastFilter = { '', '', '' };  -- Track filter changes to reset page
+local iconPickerTab = 1;  -- 1 = Spells, 2 = Items, 3 = Abilities, 4 = Custom
+local iconPickerPage = { 1, 1, 1, 1 };  -- Current page for each tab [spells, items, abilities, custom]
+local iconPickerLastFilter = { '', '', '', '' };  -- Track filter changes to reset page
 local iconPickerSpellType = 'All';  -- Current spell type filter
 
 -- Spell type display names and order
@@ -353,6 +354,69 @@ local customIconsByCategoryCache = {};  -- Pre-filtered by category
 local customIconsCacheKey = nil;
 
 -- Custom icons directory path
+
+local function GetAbilityIconsDir()
+    if not abilityIconsDir then
+        abilityIconsDir = string.format('%saddons\\XIUI\\assets\\hotbar\\abilities\\', AshitaCore:GetInstallPath());
+    end
+    return abilityIconsDir;
+end
+
+local function GetAbilityIcons()
+    if abilityIconsCache then
+        return abilityIconsCache;
+    end
+
+    local dir = GetAbilityIconsDir();
+    local results = {};
+    -- Flat scan of ability icon directory (png)
+    ScanDirectoryForPngs(dir, '', results, nil);
+
+    abilityIconsCache = {};
+    for _, entry in ipairs(results) do
+        local relPath = entry.path or entry;
+        local name = relPath:gsub('^.+[\\/]', ''):gsub('%.png$', ''):gsub('%.PNG$', '');
+        table.insert(abilityIconsCache, { path = relPath, name = name });
+    end
+
+    table.sort(abilityIconsCache, function(a, b)
+        return (a.name or a.path):lower() < (b.name or b.path):lower();
+    end);
+
+    return abilityIconsCache;
+end
+
+local function GetAbilityIconsFiltered(filter)
+    filter = (filter or ''):lower();
+
+    local cacheKey = filter;
+    if cacheKey ~= filteredAbilitiesCacheKey then
+        filteredAbilitiesCache = nil;
+        filteredAbilitiesCacheKey = cacheKey;
+    end
+
+    if filteredAbilitiesCache then
+        return filteredAbilitiesCache;
+    end
+
+    local all = GetAbilityIcons();
+    if filter == '' then
+        filteredAbilitiesCache = all;
+        return all;
+    end
+
+    local out = {};
+    for _, icon in ipairs(all) do
+        local n = (icon.name or ''):lower();
+        if n:find(filter, 1, true) then
+            table.insert(out, icon);
+        end
+    end
+
+    filteredAbilitiesCache = out;
+    return out;
+end
+
 local customIconsDir = nil;
 
 -- New folder creation state
@@ -366,6 +430,11 @@ local filteredSpellsCache = nil;
 local filteredSpellsCacheKey = nil;  -- "filter:type" key for cache invalidation
 local filteredItemsCache = nil;
 local filteredItemsCacheKey = nil;  -- "filter" key for cache invalidation
+local filteredAbilitiesCache = nil;
+local filteredAbilitiesCacheKey = nil;  -- "filter" key for cache invalidation
+
+local abilityIconsDir = nil;
+local abilityIconsCache = nil;
 
 -- Icon picker grid constants
 local ICON_GRID_COLUMNS = 12;
@@ -571,7 +640,7 @@ end
 
 -- Recursively scan a directory for PNG files
 -- topLevelCategory: the immediate subdirectory name (for nested files)
-local function ScanDirectoryForPngs(dir, relativePath, results, topLevelCategory)
+ScanDirectoryForPngs = function(dir, relativePath, results, topLevelCategory)
     relativePath = relativePath or '';
     results = results or {};
     
@@ -2389,6 +2458,8 @@ local function DrawIconPicker()
         imgui.SameLine();
 
         -- Custom tab
+
+        -- Abilities tab
         if iconPickerTab == 3 then
             imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
             imgui.PushStyleColor(ImGuiCol_Border, COLORS.gold);
@@ -2396,8 +2467,24 @@ local function DrawIconPicker()
             imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgDark);
             imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
         end
-        if imgui.Button('Custom', {tabWidth, 24}) then
+        if imgui.Button('Abilities', {tabWidth, 24}) then
             iconPickerTab = 3;
+            -- Keep filter text, don't reset - reduces lag from cache rebuilds
+        end
+        imgui.PopStyleColor(2);
+
+        imgui.SameLine();
+
+        -- Custom tab
+        if iconPickerTab == 4 then
+            imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
+            imgui.PushStyleColor(ImGuiCol_Border, COLORS.gold);
+        else
+            imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgDark);
+            imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+        end
+        if imgui.Button('Custom', {tabWidth, 24}) then
+            iconPickerTab = 4;
             -- Keep filter text, don't reset - reduces lag from cache rebuilds
         end
         imgui.PopStyleColor(2);
@@ -2504,7 +2591,7 @@ local function DrawIconPicker()
         end
 
         -- Custom icon category filter buttons (only for custom tab)
-        if iconPickerTab == 3 then
+        if iconPickerTab == 4 then
             -- Load categories if not loaded
             LoadCustomIcons();
             
@@ -2537,7 +2624,7 @@ local function DrawIconPicker()
                     imgui.PushStyleColor(ImGuiCol_Text, COLORS.goldDim);
                     if imgui.Button(letter .. '##customFilter' .. i, {filterIconSize, filterIconSize}) then
                         customIconCategory = category;
-                        iconPickerPage[3] = 1;
+                        iconPickerPage[4] = 1;
                         customIconsCacheKey = nil;
                     end
                     imgui.PopStyleColor(3);
@@ -2550,7 +2637,7 @@ local function DrawIconPicker()
                     -- Use DrawIconButton for categories with icons
                     if DrawIconButton('##customFilter' .. i, categoryIcon, filterIconSize, isSelected, tooltip) then
                         customIconCategory = category;
-                        iconPickerPage[3] = 1;
+                        iconPickerPage[4] = 1;
                         customIconsCacheKey = nil;  -- Invalidate cache
                     end
                 end
@@ -2634,6 +2721,8 @@ local function DrawIconPicker()
         elseif iconPickerTab == 2 then
             cacheKey = filter .. ':item:' .. tostring(iconPickerItemType);
         elseif iconPickerTab == 3 then
+            cacheKey = filter .. ':ability';
+        elseif iconPickerTab == 4 then
             cacheKey = filter .. ':custom:' .. customIconCategory;
         end
 
@@ -2653,13 +2742,19 @@ local function DrawIconPicker()
                 filteredItemsCacheKey = cacheKey;
             end
         elseif iconPickerTab == 3 then
-            if cacheKey ~= customIconsCacheKey then
+            if cacheKey ~= filteredAbilitiesCacheKey then
                 iconPickerPage[3] = 1;
+                currentPage = 1;
+                filteredAbilitiesCache = nil;
+                filteredAbilitiesCacheKey = cacheKey;
+            end
+        elseif iconPickerTab == 4 then
+            if cacheKey ~= customIconsCacheKey then
+                iconPickerPage[4] = 1;
                 currentPage = 1;
                 customIconsCacheKey = cacheKey;
             end
         end
-
         -- Build filtered list (with caching to avoid rebuilding every frame)
         local filteredItems = {};
         if iconPickerTab == 1 then
@@ -2716,6 +2811,10 @@ local function DrawIconPicker()
                 end
             end
         elseif iconPickerTab == 3 then
+            -- Ability icons - from assets/hotbar/abilities
+            filteredItems = GetAbilityIconsFiltered(filter);
+
+        elseif iconPickerTab == 4 then
             -- Custom icons - use pre-filtered category list
             filteredItems = GetCustomIconsFiltered(customIconCategory, filter);
         end
@@ -2723,7 +2822,7 @@ local function DrawIconPicker()
         local totalItems = #filteredItems;
         local totalPages = math.max(1, math.ceil(totalItems / ICONS_PER_PAGE));
 
-        -- Show filtered count for spells and custom (items count shown near page navigation only)
+        -- Show filtered count for spells/abilities/custom (items count shown near page navigation only)
         if iconPickerTab == 1 then
             local allSpells = GetAllSpells();
             local countText = string.format('%d of %d spells', totalItems, #allSpells);
@@ -2732,6 +2831,10 @@ local function DrawIconPicker()
             end
             imgui.TextColored(COLORS.textMuted, countText);
         elseif iconPickerTab == 3 then
+            local allAbilities = GetAbilityIcons();
+            local countText = string.format('%d of %d ability icons', totalItems, #allAbilities);
+            imgui.TextColored(COLORS.textMuted, countText);
+        elseif iconPickerTab == 4 then
             local allCustom = LoadCustomIcons();
             local countText = string.format('%d of %d custom icons', totalItems, #allCustom);
             if customIconCategory ~= 'all' then
@@ -3023,6 +3126,40 @@ local function DrawIconPicker()
             end
         
         elseif iconPickerTab == 3 then
+            -- Ability icons - render from abilities directory
+            if totalItems == 0 then
+                imgui.TextColored(COLORS.textMuted, 'No ability icons found');
+                imgui.Spacing();
+                imgui.TextColored(COLORS.textMuted, 'Add PNG images to:');
+                imgui.TextColored(COLORS.goldDim, GetAbilityIconsDir());
+            else
+                local baseDir = GetAbilityIconsDir();
+                for i = startIdx, endIdx do
+                    local abilityIcon = filteredItems[i];
+                    if abilityIcon then
+                        local icon = TextureManager.getFileTexture(baseDir .. abilityIcon.path);
+                        if icon then
+                            local col = displayedCount % ICON_GRID_COLUMNS;
+                            if col > 0 then
+                                imgui.SameLine(0, ICON_GRID_GAP);
+                            end
+
+                            local tooltipText = abilityIcon.name or abilityIcon.path;
+                            local isSelected = (editingMacro.customIconType == 'ability' and editingMacro.customIconPath == abilityIcon.path);
+                            if DrawIconButton('##ability' .. i, icon, ICON_GRID_SIZE, isSelected, tooltipText) then
+                                editingMacro.customIconType = 'ability';
+                                editingMacro.customIconPath = abilityIcon.path;
+                                editingMacro.customIconId = nil;
+                                iconPickerOpen = false;
+                            end
+
+                            displayedCount = displayedCount + 1;
+                        end
+                    end
+                end
+            end
+
+        elseif iconPickerTab == 4 then
             -- Custom icons - render from custom directory with progressive loading
             if totalItems == 0 then
                 if customIconCategory ~= 'all' then
@@ -3147,8 +3284,8 @@ local function DrawIconPicker()
     if not isOpen[1] then
         iconPickerOpen = false;
         iconPickerFilter[1] = '';
-        iconPickerPage = { 1, 1, 1 };  -- Reset pages
-        iconPickerLastFilter = { '', '', '' };
+        iconPickerPage = { 1, 1, 1, 1 };  -- Reset pages
+        iconPickerLastFilter = { '', '', '', '' };
         iconPickerSpellType = 'All';  -- Reset spell type filter
         iconPickerItemType = 0;  -- Reset item type filter (0 = All)
         customIconCategory = 'all';  -- Reset custom category filter

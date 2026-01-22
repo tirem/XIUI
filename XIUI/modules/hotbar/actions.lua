@@ -180,6 +180,7 @@ end
 
 -- Cache for custom icons loaded from disk
 local customIconCache = {};
+local abilityIconCache = {};
 
 -- Mapping from summoning spell names to texture cache keys
 -- Spell names (as they appear in-game) -> texture key (as loaded in textures.lua)
@@ -634,7 +635,17 @@ function M.GetBindIcon(bind)
                                 customIconCache[macro.customIconPath] = icon;
                                 return icon, nil;
                             end
-                        end
+                                                elseif macro.customIconType == 'ability' and macro.customIconPath then
+                            if abilityIconCache[macro.customIconPath] then
+                                return abilityIconCache[macro.customIconPath], nil;
+                            end
+                            local abilityDir = string.format('%saddons\\XIUI\\assets\\hotbar\\abilities\\', AshitaCore:GetInstallPath());
+                            icon = textures:LoadTextureFromPath(abilityDir .. macro.customIconPath);
+                            if icon then
+                                abilityIconCache[macro.customIconPath] = icon;
+                                return icon, nil;
+                            end
+end
                     end
                     break;
                 end
@@ -664,7 +675,17 @@ function M.GetBindIcon(bind)
                 customIconCache[bind.customIconPath] = icon;
                 return icon, nil;
             end
-        end
+                elseif bind.customIconType == 'ability' and bind.customIconPath then
+            if abilityIconCache[bind.customIconPath] then
+                return abilityIconCache[bind.customIconPath], nil;
+            end
+            local abilityDir = string.format('%saddons\\XIUI\\assets\\hotbar\\abilities\\', AshitaCore:GetInstallPath());
+            icon = textures:LoadTextureFromPath(abilityDir .. bind.customIconPath);
+            if icon then
+                abilityIconCache[bind.customIconPath] = icon;
+                return icon, nil;
+            end
+end
     end
 
     if bind.actionType == 'ma' then
