@@ -41,24 +41,24 @@ local NINJA_TOOL_MAPPING = {
     ['Hyoton'] = { 1164, 2971 },    -- Tsurara (Ice)
     ['Huton'] = { 1167, 2971 },     -- Kawahori-Ogi (Wind)
     ['Doton'] = { 1170, 2971 },     -- Makibishi (Earth)
-    ['Raiton'] = { 1173, 2971 },    -- Hiraishin (Lightning)    
+    ['Raiton'] = { 1173, 2971 },    -- Hiraishin (Lightning)
     ['Suiton'] = { 1176, 2971 },    -- Mizu-Deppo (Water)
     -- Buffing Ninjutsu (Shikanofuda - 2972)
     ['Utsusemi'] = { 1179, 2972 },   -- Shihei (Shadows)
     ['Tonko'] = { 1194, 2972 },      -- Shinobi-Tabi (Invisible)
     ['Monomi'] = { 2553, 2972 },     -- Sanjaku-Tenugui (Sneak)
-	['Migawari'] = { 2970, 2972 },   -- Mokujin (One-shot immunity)
-	['Myoshu'] = { 2642, 2972 },     -- Kabenro (Subtle blow)
-	['Gekka'] = { 8803, 2972 },      -- Ranka (Enmity increase)
-	['Yain'] = { 8804, 2972 },       -- Furusumi (Enmity decrease)
-	['Kakka'] = { 2644, 2972 },      -- Ryuno (Store TP)
+    ['Migawari'] = { 2970, 2972 },   -- Mokujin (One-shot immunity)
+    ['Myoshu'] = { 2642, 2972 },     -- Kabenro (Subtle blow)
+    ['Gekka'] = { 8803, 2972 },      -- Ranka (Enmity increase)
+    ['Yain'] = { 8804, 2972 },       -- Furusumi (Enmity decrease)
+    ['Kakka'] = { 2644, 2972 },      -- Ryuno (Store TP)
     -- Debuffing Ninjutsu (Chonofuda - 2973)
     ['Kurayami'] = { 1188, 2973 },   -- Sairui-ran (Blind)
     ['Hojo'] = { 1185, 2973 },       -- Kaginawa (Slow)
     ['Jubaku'] = { 1182, 2973 },     -- Jusatsu (Paralyze)
     ['Dokumori'] = { 1191, 2973 },   -- Kodoku (Poison)
     ['Aisha'] = { 2555, 2973 },      -- Soshi (Attack down)
-	['Yurin'] = { 2643, 2973 },      -- Jinko (Reduces enemy TP gain)
+    ['Yurin'] = { 2643, 2973 },      -- Jinko (Reduces enemy TP gain)
 };
 
 -- Cache for ninjutsu spell type lookups
@@ -235,12 +235,11 @@ function M.GetNinjutsuToolQuantity(spellName)
     local toolIds = GetNinjutsuToolIds(spellName);
     if not toolIds then return nil; end
     -- Return 0 if no tools found (instead of nil) so we can show "x0" in red
-    local total = 0
+    local total = 0;
     for _, itemId in ipairs(toolIds) do
-        total = total + (M.GetItemQuantity(itemId, nil) or 0)
+        total = total + (M.GetItemQuantity(itemId, nil) or 0);
     end
-	
-	return total
+    return total;
 end
 
 -- Cached asset path
