@@ -462,7 +462,6 @@ M.bloodPactsWard = {
 
 -- DRG Wyvern abilities
 M.wyvernCommands = {
-    { name = 'Spirit Link', category = 'Ability' },
     { name = 'Steady Wing', category = 'Ability' },
     { name = 'Spirit Bond', category = 'Ability' },
     { name = 'Dragon Breaker', category = 'Ability' },

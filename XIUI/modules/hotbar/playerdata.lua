@@ -151,7 +151,7 @@ local PET_COMMAND_NAMES = {
     ['Assault'] = true,
     ['Avatar\'s Favor'] = true,
     -- DRG commands
-    ['Spirit Link'] = true,
+    ['Steady Wing'] = true,
     -- PUP commands
     ['Deploy'] = true,
     ['Retrieve'] = true,
