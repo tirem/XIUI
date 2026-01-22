@@ -302,7 +302,9 @@ targetbar.DrawWindow = function(settings)
 	end
 
 	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
+    ApplyWindowPosition('TargetBar');
     if (imgui.Begin('TargetBar', true, windowFlags)) then
+        SaveWindowPosition('TargetBar');
         
 		-- Obtain and prepare target information..
 		local dist  = ('%.1f'):fmt(math.sqrt(targetEntity.Distance));

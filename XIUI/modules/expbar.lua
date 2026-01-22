@@ -200,7 +200,9 @@ expbar.DrawWindow = function(settings)
         lastSavedPosY = gConfig.expBarWindowPosY;
     end
 	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
+    ApplyWindowPosition('ExpBar');
     if (imgui.Begin('ExpBar', true, windowFlags)) then
+        SaveWindowPosition('ExpBar');
 
 		-- Draw the progress bar        
 		-- Get window origin for text positioning

@@ -582,7 +582,9 @@ mobinfo.DrawWindow = function(settings)
     -- Hide all fonts initially - we'll show only what we need
     HideAllFonts();
 
+    ApplyWindowPosition('MobInfo');
     if imgui.Begin('MobInfo', true, windowFlags) then
+        SaveWindowPosition('MobInfo');
         -- If no data, show a simple message
         if mobInfo == nil then
             fonts.header:set_text('No mob data');

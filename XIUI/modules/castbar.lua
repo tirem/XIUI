@@ -99,7 +99,9 @@ castbar.DrawWindow = function(settings)
 		end
 
 		local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
+        ApplyWindowPosition('CastBar');
 		if (imgui.Begin('CastBar', true, windowFlags)) then
+            SaveWindowPosition('CastBar');
 			local startX, startY = imgui.GetCursorScreenPos();
 
 			-- Calculate bookend width and text padding (same as exp bar)

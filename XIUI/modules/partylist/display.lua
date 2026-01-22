@@ -1237,43 +1237,11 @@ function display.DrawPartyWindow(settings, party, partyIndex)
 
     imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {0,0});
     imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, { settings.barSpacing * scale.x, 0 });
-
-    -- Handle position reset or restore (for all party windows)
-    if forcePositionReset[partyIndex] then
-        local defX, defY;
-        if partyIndex == 1 then
-            defX, defY = defaultPositions.GetPartyListPosition();
-        elseif partyIndex == 2 then
-            defX, defY = defaultPositions.GetPartyList2Position();
-        else
-            defX, defY = defaultPositions.GetPartyList3Position();
-        end
-        imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
-        forcePositionReset[partyIndex] = false;
-        hasAppliedSavedPosition[partyIndex] = true;
-        lastSavedPosX[partyIndex] = defX;
-        lastSavedPosY[partyIndex] = defY;
-    elseif not hasAppliedSavedPosition[partyIndex] then
-        local savedPosX, savedPosY;
-        if partyIndex == 1 then
-            savedPosX = gConfig.partyListWindowPosX;
-            savedPosY = gConfig.partyListWindowPosY;
-        elseif partyIndex == 2 then
-            savedPosX = gConfig.partyList2WindowPosX;
-            savedPosY = gConfig.partyList2WindowPosY;
-        else
-            savedPosX = gConfig.partyList3WindowPosX;
-            savedPosY = gConfig.partyList3WindowPosY;
-        end
-        if savedPosX ~= nil then
-            imgui.SetNextWindowPos({savedPosX, savedPosY}, ImGuiCond_Once);
-            hasAppliedSavedPosition[partyIndex] = true;
-            lastSavedPosX[partyIndex] = savedPosX;
-            lastSavedPosY[partyIndex] = savedPosY;
-        end
-    end
-
+    
+    ApplyWindowPosition(windowName);
+    
     if (imgui.Begin(windowName, true, windowFlags)) then
+        SaveWindowPosition(windowName);
         imguiPosX, imguiPosY = imgui.GetWindowPos();
 
         local nameRefHeight = data.partyRefHeights[partyIndex].nameRefHeight;
@@ -1359,7 +1327,7 @@ function display.DrawPartyWindow(settings, party, partyIndex)
         titleHeight = titleHeight * .8;
         local titlePosX = imguiPosX + math.floor((bgWidth / 2) - (titleWidth / 2));
         local titlePosY = imguiPosY - titleHeight + 6;
-        local draw_list = imgui.GetForegroundDrawList();
+        local draw_list = GetUIDrawList();
         draw_list:AddImage(
             titleImage,
             {titlePosX, titlePosY},

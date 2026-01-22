@@ -1454,7 +1454,7 @@ local function DrawMacroTile(macro, index, x, y, size)
 
     -- No icon rendered - show abbreviated action name
     if not iconRendered then
-        local drawList = imgui.GetForegroundDrawList();
+        local drawList = GetUIDrawList();
         if drawList then
             local abbr = GetActionAbbreviation(macro);
             local textSize = imgui.CalcTextSize(abbr);

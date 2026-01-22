@@ -118,7 +118,7 @@ end
 -- Note: showConfig is a global from XIUI.lua
 function M.GetUIDrawList()
     if showConfig and showConfig[1] then
-        return imgui.GetWindowDrawList();
+        return imgui.GetBackgroundDrawList();
     else
         return imgui.GetForegroundDrawList();
     end
@@ -224,8 +224,8 @@ function M.DrawMoveAnchor(id, windowX, windowY, options)
         and (options.dotColorActive or ANCHOR_DEFAULTS.dotColorActive)
         or (options.dotColor or ANCHOR_DEFAULTS.dotColor);
 
-    -- Draw visuals on foreground draw list (on top of everything)
-    local drawList = imgui.GetForegroundDrawList();
+    -- Draw visuals on appropriate draw list (behind config when open)
+    local drawList = M.GetUIDrawList();
     local drawX = newAnchorX or anchorX;
     local drawY = newAnchorY or anchorY;
 
