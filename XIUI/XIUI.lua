@@ -92,7 +92,7 @@ local TextureManager = require('libs.texturemanager');
 HzLimitedMode = true;
 
 -- Developer override to allow editing the Default profile
-g_AllowDefaultEdit = true;
+g_AllowDefaultEdit = false;
 
 -- Flag to skip settings_update callback during internal saves
 local bInternalSave = false;
