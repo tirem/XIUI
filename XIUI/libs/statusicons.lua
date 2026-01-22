@@ -114,6 +114,100 @@ function M.ReorderDebuffsFirst(statusIds, buffTableLib, statusTimes)
     return M.ReorderForStatusSide(statusIds, buffTableLib, 1, statusTimes);
 end
 
+-- Reusable tables for buffs-closest ordering
+local reorderedStatusesBuffs = {};
+local reorderedTimesBuffs = {};
+
+-- Reorder status IDs so buffs are closest to the party frame (opposite of ReorderForStatusSide)
+-- @param statusIds: array of status IDs
+-- @param buffTableLib: the bufftable module with IsBuff function
+-- @param statusSide: 0 = Left (buffs on right), 1 = Right (buffs on left)
+-- @param statusTimes: optional array of status times (parallel to statusIds)
+-- @return: reordered array with buffs positioned closest to party frame, and optionally reordered times
+function M.ReorderBuffsClosest(statusIds, buffTableLib, statusSide, statusTimes)
+    if statusIds == nil or #statusIds == 0 then
+        return statusIds, statusTimes;
+    end
+
+    -- Clear reusable tables
+    for k in pairs(reorderedStatusesBuffs) do reorderedStatusesBuffs[k] = nil; end
+    if statusTimes then
+        for k in pairs(reorderedTimesBuffs) do reorderedTimesBuffs[k] = nil; end
+    end
+
+    local debuffIdx = 1;
+    local buffIdx = 1;
+    local debuffs = {};
+    local buffs = {};
+    local debuffTimes = {};
+    local buffTimes = {};
+
+    -- Separate debuffs and buffs (and their times if provided)
+    for i = 1, #statusIds do
+        local id = statusIds[i];
+        if id == -1 or id == 255 then
+            break;
+        end
+        if buffTableLib.IsBuff(id) then
+            buffs[buffIdx] = id;
+            if statusTimes then
+                buffTimes[buffIdx] = statusTimes[i];
+            end
+            buffIdx = buffIdx + 1;
+        else
+            debuffs[debuffIdx] = id;
+            if statusTimes then
+                debuffTimes[debuffIdx] = statusTimes[i];
+            end
+            debuffIdx = debuffIdx + 1;
+        end
+    end
+
+    -- Order based on statusSide so buffs are always closest to party frame
+    -- statusSide 0 (Left): icons to left of party frame, buffs should be rightmost (last)
+    -- statusSide 1 (Right): icons to right of party frame, buffs should be leftmost (first)
+    local idx = 1;
+    if statusSide == 0 then
+        -- Left side: debuffs first (left, far), buffs last in reverse order (right, closer to party frame)
+        for i = #debuffs, 1, -1 do
+            reorderedStatusesBuffs[idx] = debuffs[i];
+            if statusTimes then
+                reorderedTimesBuffs[idx] = debuffTimes[i];
+            end
+            idx = idx + 1;
+        end
+        -- Reverse buffs so first buff is rightmost (closest to party frame)
+        for i = #buffs, 1, -1 do
+            reorderedStatusesBuffs[idx] = buffs[i];
+            if statusTimes then
+                reorderedTimesBuffs[idx] = buffTimes[i];
+            end
+            idx = idx + 1;
+        end
+    else
+        -- Right side: buffs first (left, closer to party frame), debuffs last (right)
+        for i = 1, #buffs do
+            reorderedStatusesBuffs[idx] = buffs[i];
+            if statusTimes then
+                reorderedTimesBuffs[idx] = buffTimes[i];
+            end
+            idx = idx + 1;
+        end
+        for i = 1, #debuffs do
+            reorderedStatusesBuffs[idx] = debuffs[i];
+            if statusTimes then
+                reorderedTimesBuffs[idx] = debuffTimes[i];
+            end
+            idx = idx + 1;
+        end
+    end
+
+    if statusTimes then
+        return reorderedStatusesBuffs, reorderedTimesBuffs;
+    end
+    return reorderedStatusesBuffs;
+end
+
 -- ========================================
 -- Debuff Font Cache
 -- ========================================
