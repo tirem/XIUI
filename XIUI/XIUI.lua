@@ -478,6 +478,7 @@ settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
 showConfig = { false };
 local pendingVisualUpdate = false;
 local pendingProfileChange = nil;
+local pendingProfileDeletion = nil;
 bLoggedIn = gameState.CheckLoggedIn();
 local bInitialized = false;
 local wasInParty = false;  -- Tracks party state for detecting party leave
@@ -507,6 +508,22 @@ end
 function GetLayoutTemplate(partyIndex)
     local party = GetPartySettings(partyIndex);
     return party.layout == 1 and gConfig.layoutCompact or gConfig.layoutHorizontal;
+end
+
+local function GetDefaultWindowPositions()
+    return {
+        PlayerBar = { x = 20, y = 20 },
+        TargetBar = { x = 20, y = 100 },
+        PartyList = { x = 20, y = 200 },
+        CastBar = { x = 300, y = 300 },
+        Notifications_Group1 = { x = 800, y = 20 },
+        Notifications_Group2 = { x = 800, y = 200 },
+        TreasurePool = { x = 800, y = 200 },
+        PetBar = { x = 300, y = 400 },
+        ExpBar = { x = 20, y = 0 }, -- Top edge
+        GilTracker = { x = 20, y = 500 },
+        InventoryTracker = { x = 150, y = 500 },
+    };
 end
 
 function CreateProfile(name)
@@ -552,21 +569,7 @@ function DuplicateProfile(name)
     return true;
 end
 
-local function GetDefaultWindowPositions()
-    return {
-        PlayerBar = { x = 20, y = 20 },
-        TargetBar = { x = 20, y = 100 },
-        PartyList = { x = 20, y = 200 },
-        CastBar = { x = 300, y = 300 },
-        Notifications_Group1 = { x = 800, y = 20 },
-        Notifications_Group2 = { x = 800, y = 200 },
-        TreasurePool = { x = 800, y = 200 },
-        PetBar = { x = 300, y = 400 },
-        ExpBar = { x = 20, y = 0 }, -- Top edge
-        GilTracker = { x = 20, y = 500 },
-        InventoryTracker = { x = 150, y = 500 },
-    };
-end
+
 
 function ChangeProfile(name)
     if (not profileManager.ProfileExists(name)) then return false; end
@@ -734,9 +737,10 @@ function DeleteProfile(name)
         if (not RequestProfileChange('Default')) then
             return false;
         end
+        pendingProfileDeletion = name;
+    else
+        profileManager.DeleteProfile(name);
     end
-    
-    profileManager.DeleteProfile(name);
     
     local globalProfiles = profileManager.GetGlobalProfiles();
     
@@ -872,6 +876,11 @@ ashita.events.register('d3d_present', 'present_cb', function ()
         local name = pendingProfileChange;
         pendingProfileChange = nil;
         ChangeProfile(name);
+
+        if pendingProfileDeletion then
+            profileManager.DeleteProfile(pendingProfileDeletion);
+            pendingProfileDeletion = nil;
+        end
     end
 
     -- Process pending visual updates outside the render loop
@@ -919,6 +928,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 end);
 
 ashita.events.register('load', 'load_cb', function ()
+    profileManager.SyncProfilesWithDisk();
     gConfig.appliedPositions = {};
     UpdateUserSettings();
     uiModules.InitializeAll(gAdjustedSettings);
@@ -1270,6 +1280,12 @@ ashita.events.register('command', 'command_cb', function (e)
                     ChangeProfile(profiles[prevIndex]);
                     print(chat.header(addon.name):append(chat.message('Switched to profile: ')):append(chat.success(profiles[prevIndex])));
                 end
+                return;
+            end
+
+            -- /xiui profile sync
+            if (command_args[3] == 'sync') then
+                profileManager.SyncProfilesWithDisk();
                 return;
             end
 

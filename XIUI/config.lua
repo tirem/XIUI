@@ -189,7 +189,7 @@ local function DrawProfilesWindow()
 
     PushThemeStyles();
 
-    imgui.SetNextWindowSize({ 330, 135 }, ImGuiCond_Always);
+    imgui.SetNextWindowSize({ 350, 135 }, ImGuiCond_Always);
     -- Using + for flags as they are typically integers
     if (imgui.Begin("Profiles", showProfilesWindow, ImGuiWindowFlags_NoCollapse + ImGuiWindowFlags_NoResize)) then
 
@@ -233,10 +233,11 @@ local function DrawProfilesWindow()
         local wDup = math.max(getBtnWidth("Duplicate"), 50);
         local wRen = math.max(getBtnWidth("Rename"), 50);
         local wDel = math.max(getBtnWidth("Delete"), 50);
+        local wSync = math.max(getBtnWidth("Sync"), 50);
         
-        local totalWidth = wNew + wDup + wRen + wDel + (spacing * 3);
-        local avail = imgui.GetContentRegionAvail();
-        local startX = (avail - totalWidth) * 0.5;
+        local totalWidth = wNew + wDup + wRen + wDel + wSync + (spacing * 4);
+        local windowWidth = imgui.GetWindowWidth();
+        local startX = (windowWidth - totalWidth) * 0.5;
         if (startX < 0) then startX = 0; end
         
         imgui.SetCursorPosX(startX);
@@ -250,8 +251,7 @@ local function DrawProfilesWindow()
 
         imgui.SameLine();
         
-        -- Duplicate Button (Disabled if Default? Maybe allowed for Default to copy it)
-        -- We'll allow duplicating Default.
+        -- Duplicate Button
         if (imgui.Button("Duplicate", { wDup, 0 })) then
             DuplicateProfile(currentProfile);
         end
@@ -284,6 +284,14 @@ local function DrawProfilesWindow()
                 showDeleteProfileConfirm = true;
                 triggerDeleteProfilePopup = true;
             end
+        end
+
+        imgui.SameLine();
+
+        -- Sync Button
+        if (imgui.Button("Sync", { wSync, 0 })) then
+            local profileManager = require('core.profile_manager');
+            profileManager.SyncProfilesWithDisk();
         end
 
 

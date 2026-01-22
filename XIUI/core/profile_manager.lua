@@ -195,6 +195,49 @@ function profileManager.SaveGlobalProfiles(profiles)
     return profileManager.SaveTable(path, profiles);
 end
 
+function profileManager.SyncProfilesWithDisk()
+    local profiles = profileManager.GetGlobalProfiles();
+    local diskFiles = ashita.fs.get_directory(profilesPath, '.*\\.lua$');
+    local changed = false;
+    
+    if (diskFiles) then
+        -- Helper to check if list contains value
+        local function contains(t, val)
+            for _, v in ipairs(t) do
+                if v == val then return true; end
+            end
+            return false;
+        end
+        
+        for _, filename in ipairs(diskFiles) do
+            if (filename ~= 'profilelist.lua') then
+                local profileName = filename:match('(.+)%.lua$');
+                
+                if (profileName and not contains(profiles.names, profileName)) then
+                    table.insert(profiles.names, profileName);
+                    table.insert(profiles.order, profileName);
+                    changed = true;
+                    print(chat.header(addon.name):append(chat.message('Found new profile on disk: ')):append(chat.success(profileName)));
+                end
+            end
+        end
+        
+        -- Check if sorting is needed
+        local oldOrder = table.concat(profiles.order, ",");
+        table.sort(profiles.names);
+        table.sort(profiles.order);
+        local newOrder = table.concat(profiles.order, ",");
+        
+        if (oldOrder ~= newOrder) then
+            changed = true;
+        end
+        
+        if (changed) then
+            profileManager.SaveGlobalProfiles(profiles);
+        end
+    end
+end
+
 function profileManager.GetProfileSettings(name)
     local path = profilesPath .. name .. '.lua';
     local t = profileManager.LoadTable(path);
