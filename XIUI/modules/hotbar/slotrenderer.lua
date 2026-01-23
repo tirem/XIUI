@@ -105,6 +105,9 @@ local equipmentCheckCache = {};
 -- Type 4 = Weapon, Type 5 = Armor (includes all armor, accessories, etc.)
 local EQUIPMENT_TYPES = { [4] = true, [5] = true };
 
+-- Ammo slot mask - items that ONLY equip to this slot are consumables (bolts, bullets, arrows)
+local AMMO_SLOT_MASK = 0x0008;
+
 -- Check if an item is equipment (armor, weapons, accessories) by its item data
 -- Requires itemId for reliable detection
 -- @param itemId: Item ID to check (required for reliable detection)
@@ -127,19 +130,23 @@ local function IsEquipmentItem(itemId)
     local item = resMgr:GetItemById(itemId);
     if item then
         -- Multiple checks for equipment detection:
-        -- 1. Type field (4=Weapon, 5=Armor) - most reliable for retail
-        if item.Type and EQUIPMENT_TYPES[item.Type] then
+        -- 1. Ammo-only items (bolts, bullets, arrows) are consumables, not equipment
+        --    Must check FIRST since ammo has Type=4 (Weapon) but should show counts
+        if item.Slots and item.Slots == AMMO_SLOT_MASK then
+            isEquip = false;
+        -- 2. Type field (4=Weapon, 5=Armor) - most reliable for retail
+        elseif item.Type and EQUIPMENT_TYPES[item.Type] then
             isEquip = true;
-        -- 2. Slots field (non-zero = equippable to body slot)
+        -- 3. Other equippable slots = equipment
         elseif item.Slots and item.Slots > 0 then
             isEquip = true;
-        -- 3. Jobs field (non-zero = job-restricted, implies equipment)
+        -- 4. Jobs field (non-zero = job-restricted, implies equipment)
         elseif item.Jobs and item.Jobs > 0 then
             isEquip = true;
-        -- 4. Level field (non-zero = has level requirement, implies equipment)
+        -- 5. Level field (non-zero = has level requirement, implies equipment)
         elseif item.Level and item.Level > 0 then
             isEquip = true;
-        -- 5. StackSize=1 and not Usable type (Type 7) - catches Horizon augmented gear
+        -- 6. StackSize=1 and not Usable type (Type 7) - catches Horizon augmented gear
         --    Augmented items on private servers often have Type=1 but StackSize=1
         --    Consumables that stack (potions, food) have StackSize > 1
         elseif item.StackSize and item.StackSize == 1 and item.Type ~= 7 then
