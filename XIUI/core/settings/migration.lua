@@ -494,6 +494,11 @@ function M.MigrateIndividualSettings(gConfig, defaults)
         gConfig.colorCustomization.mobInfo = deep_copy_table(defaults.colorCustomization.mobInfo);
     end
 
+    -- Add subtargetBar color settings if missing
+    if gConfig.colorCustomization and not gConfig.colorCustomization.subtargetBar then
+        gConfig.colorCustomization.subtargetBar = deep_copy_table(defaults.colorCustomization.subtargetBar);
+    end
+
     -- Migrate new target bar settings (add missing fields for existing users)
     if gConfig.showTargetHpPercent == nil then
         gConfig.showTargetHpPercent = true;

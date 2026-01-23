@@ -195,6 +195,67 @@ function profileManager.SaveGlobalProfiles(profiles)
     return profileManager.SaveTable(path, profiles);
 end
 
+function profileManager.SyncProfilesWithDisk()
+    local profiles = profileManager.GetGlobalProfiles();
+    local diskFiles = ashita.fs.get_directory(profilesPath, '.*\\.lua$');
+    local changed = false;
+    
+    if (diskFiles) then
+        -- Helper to check if list contains value
+        local function contains(t, val)
+            for _, v in ipairs(t) do
+                if v == val then return true; end
+            end
+            return false;
+        end
+        
+        for _, filename in ipairs(diskFiles) do
+            if (filename ~= 'profilelist.lua') then
+                local profileName = filename:match('(.+)%.lua$');
+
+                if (profileName and not contains(profiles.names, profileName)) then
+                    table.insert(profiles.names, profileName);
+                    table.insert(profiles.order, profileName);
+                    changed = true;
+                    print(chat.header(addon.name):append(chat.message('Found new profile on disk: ')):append(chat.success(profileName)));
+                end
+            end
+        end
+
+        -- Remove profiles from list if file no longer exists
+        local i = 1;
+        while i <= #profiles.names do
+            local name = profiles.names[i];
+            if name ~= 'Default' and not profileManager.ProfileExists(name) then
+                table.remove(profiles.names, i);
+                for j, n in ipairs(profiles.order) do
+                    if n == name then
+                        table.remove(profiles.order, j);
+                        break;
+                    end
+                end
+                changed = true;
+                print(chat.header(addon.name):append(chat.message('Removed missing profile: ')):append(chat.error(name)));
+            else
+                i = i + 1;
+            end
+        end
+
+        -- Sort names for consistent display, but preserve order (user's custom arrangement)
+        local oldNames = table.concat(profiles.names, ",");
+        table.sort(profiles.names);
+        local newNames = table.concat(profiles.names, ",");
+
+        if (oldNames ~= newNames) then
+            changed = true;
+        end
+        
+        if (changed) then
+            profileManager.SaveGlobalProfiles(profiles);
+        end
+    end
+end
+
 function profileManager.GetProfileSettings(name)
     local path = profilesPath .. name .. '.lua';
     local t = profileManager.LoadTable(path);

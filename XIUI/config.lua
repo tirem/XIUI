@@ -189,7 +189,7 @@ local function DrawProfilesWindow()
 
     PushThemeStyles();
 
-    imgui.SetNextWindowSize({ 330, 135 }, ImGuiCond_Always);
+    imgui.SetNextWindowSize({ 350, 145 }, ImGuiCond_Always);
     -- Using + for flags as they are typically integers
     if (imgui.Begin("Profiles", showProfilesWindow, ImGuiWindowFlags_NoCollapse + ImGuiWindowFlags_NoResize)) then
 
@@ -216,55 +216,28 @@ local function DrawProfilesWindow()
         imgui.Spacing();
         imgui.Spacing();
 
-        -- Calculate button widths and positions for centering
-        -- Using fixed estimates or CalcTextSize if possible.
-        -- To be safe and consistent, we'll try to calculate.
-        
-        local style = imgui.GetStyle();
-        local spacing = style.ItemSpacing.x;
-        local padding = style.FramePadding.x * 2;
-        
-        -- Helper to get width
-        local function getBtnWidth(text)
-            return imgui.CalcTextSize(text) + padding;
-        end
-        
-        local wNew = math.max(getBtnWidth("New"), 50);
-        local wDup = math.max(getBtnWidth("Duplicate"), 50);
-        local wRen = math.max(getBtnWidth("Rename"), 50);
-        local wDel = math.max(getBtnWidth("Delete"), 50);
-        
-        local totalWidth = wNew + wDup + wRen + wDel + (spacing * 3);
-        local avail = imgui.GetContentRegionAvail();
-        local startX = (avail - totalWidth) * 0.5;
-        if (startX < 0) then startX = 0; end
-        
-        imgui.SetCursorPosX(startX);
-
-        -- Compact Profile Actions
-        if (imgui.Button("New", { wNew, 0 })) then
+        -- Profile action buttons (single row)
+        if (imgui.Button("New")) then
             newProfileName[1] = "";
             showNewProfilePopup = true;
             triggerNewProfilePopup = true;
         end
 
         imgui.SameLine();
-        
-        -- Duplicate Button (Disabled if Default? Maybe allowed for Default to copy it)
-        -- We'll allow duplicating Default.
-        if (imgui.Button("Duplicate", { wDup, 0 })) then
+
+        if (imgui.Button("Copy")) then
             DuplicateProfile(currentProfile);
         end
 
         imgui.SameLine();
 
-        -- Rename Button (Disabled if Default)
+        -- Rename (disabled for Default)
         if (currentProfile == "Default") then
             imgui.PushStyleVar(ImGuiStyleVar_Alpha, 0.5);
-            imgui.Button("Rename", { wRen, 0 });
+            imgui.Button("Rename");
             imgui.PopStyleVar();
         else
-            if (imgui.Button("Rename", { wRen, 0 })) then
+            if (imgui.Button("Rename")) then
                 renameProfileName[1] = currentProfile;
                 showRenameProfilePopup = true;
                 triggerRenameProfilePopup = true;
@@ -273,17 +246,32 @@ local function DrawProfilesWindow()
 
         imgui.SameLine();
 
-        -- Delete Button (Disabled if Default)
+        if (imgui.Button("Sync")) then
+            local profileManager = require('core.profile_manager');
+            profileManager.SyncProfilesWithDisk();
+        end
+
+        imgui.SameLine();
+
+        -- Delete (disabled for Default, red tint)
         if (currentProfile == "Default") then
             imgui.PushStyleVar(ImGuiStyleVar_Alpha, 0.5);
-            imgui.Button("Delete", { wDel, 0 });
+            imgui.PushStyleColor(ImGuiCol_Button, { 0.5, 0.2, 0.2, 1.0 });
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, { 0.6, 0.3, 0.3, 1.0 });
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, { 0.7, 0.3, 0.3, 1.0 });
+            imgui.Button("Del");
+            imgui.PopStyleColor(3);
             imgui.PopStyleVar();
         else
-            if (imgui.Button("Delete", { wDel, 0 })) then
+            imgui.PushStyleColor(ImGuiCol_Button, { 0.5, 0.2, 0.2, 1.0 });
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, { 0.7, 0.3, 0.3, 1.0 });
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, { 0.8, 0.2, 0.2, 1.0 });
+            if (imgui.Button("Del")) then
                 profileToDelete = currentProfile;
                 showDeleteProfileConfirm = true;
                 triggerDeleteProfilePopup = true;
             end
+            imgui.PopStyleColor(3);
         end
 
 

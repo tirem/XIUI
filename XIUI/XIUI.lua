@@ -91,9 +91,6 @@ local TextureManager = require('libs.texturemanager');
 -- Global switch to hard-disable functionality that is limited on HX servers
 HzLimitedMode = false;
 
--- Developer override to allow editing the Default profile
-g_AllowDefaultEdit = false;
-
 -- Flag to skip settings_update callback during internal saves
 local bInternalSave = false;
 
@@ -478,6 +475,7 @@ settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
 showConfig = { false };
 local pendingVisualUpdate = false;
 local pendingProfileChange = nil;
+local pendingProfileDeletion = nil;
 bLoggedIn = gameState.CheckLoggedIn();
 local bInitialized = false;
 local wasInParty = false;  -- Tracks party state for detecting party leave
@@ -507,6 +505,38 @@ end
 function GetLayoutTemplate(partyIndex)
     local party = GetPartySettings(partyIndex);
     return party.layout == 1 and gConfig.layoutCompact or gConfig.layoutHorizontal;
+end
+
+local function GetDefaultWindowPositions()
+    local defPos = require('libs.defaultpositions');
+    local px, py = defPos.GetPlayerBarPosition();
+    local tx, ty = defPos.GetTargetBarPosition();
+    local pl1x, pl1y = defPos.GetPartyListPosition();
+    local pl2x, pl2y = defPos.GetPartyList2Position();
+    local pl3x, pl3y = defPos.GetPartyList3Position();
+    local cx, cy = defPos.GetCastBarPosition();
+    local nx, ny = defPos.GetNotificationsPosition();
+    local tpx, tpy = defPos.GetTreasurePoolPosition();
+    local petx, pety = defPos.GetPetBarPosition();
+    local ex, ey = defPos.GetExpBarPosition();
+    local gx, gy = defPos.GetGilTrackerPosition();
+    local ix, iy = defPos.GetInventoryPosition();
+
+    return {
+        PlayerBar = { x = px, y = py },
+        TargetBar = { x = tx, y = ty },
+        PartyList = { x = pl1x, y = pl1y },
+        PartyList2 = { x = pl2x, y = pl2y },
+        PartyList3 = { x = pl3x, y = pl3y },
+        CastBar = { x = cx, y = cy },
+        Notifications_Group1 = { x = nx, y = ny },
+        Notifications_Group2 = { x = nx, y = ny + 180 },
+        TreasurePool = { x = tpx, y = tpy },
+        PetBar = { x = petx, y = pety },
+        ExpBar = { x = ex, y = ey },
+        GilTracker = { x = gx, y = gy },
+        InventoryTracker = { x = ix, y = iy },
+    };
 end
 
 function CreateProfile(name)
@@ -552,21 +582,7 @@ function DuplicateProfile(name)
     return true;
 end
 
-local function GetDefaultWindowPositions()
-    return {
-        PlayerBar = { x = 20, y = 20 },
-        TargetBar = { x = 20, y = 100 },
-        PartyList = { x = 20, y = 200 },
-        CastBar = { x = 300, y = 300 },
-        Notifications_Group1 = { x = 800, y = 20 },
-        Notifications_Group2 = { x = 800, y = 200 },
-        TreasurePool = { x = 800, y = 200 },
-        PetBar = { x = 300, y = 400 },
-        ExpBar = { x = 20, y = 0 }, -- Top edge
-        GilTracker = { x = 20, y = 500 },
-        InventoryTracker = { x = 150, y = 500 },
-    };
-end
+
 
 function ChangeProfile(name)
     if (not profileManager.ProfileExists(name)) then return false; end
@@ -617,6 +633,7 @@ end
 
 function ResetSettings()
     gConfig = deep_copy_table(defaultUserSettings);
+    gConfig.windowPositions = GetDefaultWindowPositions();
     gConfig.appliedPositions = {};
     profileManager.SaveProfileSettings(config.currentProfile, gConfig);
     UpdateSettings();
@@ -654,19 +671,12 @@ function UpdateUserSettings()
     settingsUpdater.UpdateUserSettings(gAdjustedSettings, settingsDefaults.default_settings, gConfig);
 end
 
-local function ShouldSaveProfile()
-    return config.currentProfile ~= 'Default' or g_AllowDefaultEdit;
-end
-
 function SaveSettingsToDisk()
     if gConfig.colorCustomization == nil then
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
-
-    if ShouldSaveProfile() then
-        profileManager.SaveProfileSettings(config.currentProfile, gConfig);
-    end
+    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
     bInternalSave = true;
     settings.save();
     bInternalSave = false;
@@ -677,10 +687,7 @@ function SaveSettingsOnly()
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
-
-    if ShouldSaveProfile() then
-        profileManager.SaveProfileSettings(config.currentProfile, gConfig);
-    end
+    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
     bInternalSave = true;
     settings.save();
     bInternalSave = false;
@@ -734,9 +741,10 @@ function DeleteProfile(name)
         if (not RequestProfileChange('Default')) then
             return false;
         end
+        pendingProfileDeletion = name;
+    else
+        profileManager.DeleteProfile(name);
     end
-    
-    profileManager.DeleteProfile(name);
     
     local globalProfiles = profileManager.GetGlobalProfiles();
     
@@ -871,7 +879,12 @@ ashita.events.register('d3d_present', 'present_cb', function ()
     if pendingProfileChange then
         local name = pendingProfileChange;
         pendingProfileChange = nil;
-        ChangeProfile(name);
+        if ChangeProfile(name) then
+            if pendingProfileDeletion then
+                profileManager.DeleteProfile(pendingProfileDeletion);
+                pendingProfileDeletion = nil;
+            end
+        end
     end
 
     -- Process pending visual updates outside the render loop
@@ -919,6 +932,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 end);
 
 ashita.events.register('load', 'load_cb', function ()
+    profileManager.SyncProfilesWithDisk();
     gConfig.appliedPositions = {};
     UpdateUserSettings();
     uiModules.InitializeAll(gAdjustedSettings);
@@ -1270,6 +1284,12 @@ ashita.events.register('command', 'command_cb', function (e)
                     ChangeProfile(profiles[prevIndex]);
                     print(chat.header(addon.name):append(chat.message('Switched to profile: ')):append(chat.success(profiles[prevIndex])));
                 end
+                return;
+            end
+
+            -- /xiui profile sync
+            if (command_args[3] == 'sync') then
+                profileManager.SyncProfilesWithDisk();
                 return;
             end
 

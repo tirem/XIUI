@@ -1516,6 +1516,29 @@ end
 
 -- Reset positions to default
 M.ResetPositions = function()
+    -- Reset positions for all notification groups
+    local defX, defY = defaultPositions.GetNotificationsPosition();
+    local maxGroups = gConfig and gConfig.notificationGroupCount or 2;
+
+    for groupNum = 1, maxGroups do
+        local windowName = 'Notifications_Group' .. groupNum;
+        local offsetY = (groupNum - 1) * 180;
+
+        -- Update the position in windowPositions
+        if gConfig and gConfig.windowPositions then
+            gConfig.windowPositions[windowName] = { x = defX, y = defY + offsetY };
+        end
+
+        -- Clear the applied flag so ApplyWindowPosition will re-apply
+        if gConfig and gConfig.appliedPositions then
+            gConfig.appliedPositions[windowName] = nil;
+        end
+
+        -- Clear bottom anchor for stack-up mode
+        notificationData.groupWindowAnchors[groupNum] = nil;
+    end
+
+    -- Legacy: also reset old main window flags
     forcePositionReset = true;
     hasAppliedSavedPosition = false;
 end
