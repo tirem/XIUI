@@ -499,6 +499,11 @@ function M.MigrateIndividualSettings(gConfig, defaults)
         gConfig.colorCustomization.subtargetBar = deep_copy_table(defaults.colorCustomization.subtargetBar);
     end
 
+    -- Add enemyList color settings if missing
+    if gConfig.colorCustomization and not gConfig.colorCustomization.enemyList then
+        gConfig.colorCustomization.enemyList = deep_copy_table(defaults.colorCustomization.enemyList);
+    end
+
     -- Migrate new target bar settings (add missing fields for existing users)
     if gConfig.showTargetHpPercent == nil then
         gConfig.showTargetHpPercent = true;
