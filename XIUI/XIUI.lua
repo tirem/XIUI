@@ -511,7 +511,9 @@ local function GetDefaultWindowPositions()
     local defPos = require('libs.defaultpositions');
     local px, py = defPos.GetPlayerBarPosition();
     local tx, ty = defPos.GetTargetBarPosition();
-    local plx, ply = defPos.GetPartyListPosition();
+    local pl1x, pl1y = defPos.GetPartyListPosition();
+    local pl2x, pl2y = defPos.GetPartyList2Position();
+    local pl3x, pl3y = defPos.GetPartyList3Position();
     local cx, cy = defPos.GetCastBarPosition();
     local nx, ny = defPos.GetNotificationsPosition();
     local tpx, tpy = defPos.GetTreasurePoolPosition();
@@ -523,7 +525,9 @@ local function GetDefaultWindowPositions()
     return {
         PlayerBar = { x = px, y = py },
         TargetBar = { x = tx, y = ty },
-        PartyList = { x = plx, y = ply },
+        PartyList = { x = pl1x, y = pl1y },
+        PartyList2 = { x = pl2x, y = pl2y },
+        PartyList3 = { x = pl3x, y = pl3y },
         CastBar = { x = cx, y = cy },
         Notifications_Group1 = { x = nx, y = ny },
         Notifications_Group2 = { x = nx, y = ny + 180 },
@@ -629,6 +633,7 @@ end
 
 function ResetSettings()
     gConfig = deep_copy_table(defaultUserSettings);
+    gConfig.windowPositions = GetDefaultWindowPositions();
     gConfig.appliedPositions = {};
     profileManager.SaveProfileSettings(config.currentProfile, gConfig);
     UpdateSettings();
