@@ -508,18 +508,30 @@ function GetLayoutTemplate(partyIndex)
 end
 
 local function GetDefaultWindowPositions()
+    local defPos = require('libs.defaultpositions');
+    local px, py = defPos.GetPlayerBarPosition();
+    local tx, ty = defPos.GetTargetBarPosition();
+    local plx, ply = defPos.GetPartyListPosition();
+    local cx, cy = defPos.GetCastBarPosition();
+    local nx, ny = defPos.GetNotificationsPosition();
+    local tpx, tpy = defPos.GetTreasurePoolPosition();
+    local petx, pety = defPos.GetPetBarPosition();
+    local ex, ey = defPos.GetExpBarPosition();
+    local gx, gy = defPos.GetGilTrackerPosition();
+    local ix, iy = defPos.GetInventoryPosition();
+
     return {
-        PlayerBar = { x = 20, y = 20 },
-        TargetBar = { x = 20, y = 100 },
-        PartyList = { x = 20, y = 200 },
-        CastBar = { x = 300, y = 300 },
-        Notifications_Group1 = { x = 800, y = 20 },
-        Notifications_Group2 = { x = 800, y = 200 },
-        TreasurePool = { x = 800, y = 200 },
-        PetBar = { x = 300, y = 400 },
-        ExpBar = { x = 20, y = 0 }, -- Top edge
-        GilTracker = { x = 20, y = 500 },
-        InventoryTracker = { x = 150, y = 500 },
+        PlayerBar = { x = px, y = py },
+        TargetBar = { x = tx, y = ty },
+        PartyList = { x = plx, y = ply },
+        CastBar = { x = cx, y = cy },
+        Notifications_Group1 = { x = nx, y = ny },
+        Notifications_Group2 = { x = nx, y = ny + 180 },
+        TreasurePool = { x = tpx, y = tpy },
+        PetBar = { x = petx, y = pety },
+        ExpBar = { x = ex, y = ey },
+        GilTracker = { x = gx, y = gy },
+        InventoryTracker = { x = ix, y = iy },
     };
 end
 
