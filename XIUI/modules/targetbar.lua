@@ -868,7 +868,7 @@ targetbar.DrawWindow = function(settings)
 						end
 						subtargetDistText:set_position_x(stDistX);
 						subtargetDistText:set_position_y(stTextY);
-						local stDistColor = gConfig.colorCustomization.subtargetBar.distanceTextColor;
+						local stDistColor = (gConfig.colorCustomization.subtargetBar and gConfig.colorCustomization.subtargetBar.distanceTextColor) or 0xFFFFFFFF;
 						if (lastSubtargetDistTextColor ~= stDistColor) then
 							subtargetDistText:set_font_color(stDistColor);
 							lastSubtargetDistTextColor = stDistColor;
