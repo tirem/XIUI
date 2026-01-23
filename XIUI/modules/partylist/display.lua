@@ -135,6 +135,8 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         hpDisplayText = tostring(hpPercent) .. '% (' .. tostring(memInfo.hp) .. ')';
     elseif hpDisplayMode == 'current_max' then
         hpDisplayText = tostring(memInfo.hp) .. '/' .. tostring(memInfo.maxhp);
+    elseif hpDisplayMode == 'none' then
+        hpDisplayText = '';
     else
         hpDisplayText = tostring(memInfo.hp);
     end
@@ -153,6 +155,8 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         mpDisplayText = tostring(mpPercent) .. '% (' .. tostring(memInfo.mp) .. ')';
     elseif mpDisplayMode == 'current_max' then
         mpDisplayText = tostring(memInfo.mp) .. '/' .. tostring(memInfo.maxmp);
+    elseif mpDisplayMode == 'none' then
+        mpDisplayText = '';
     else
         mpDisplayText = tostring(memInfo.mp);
     end

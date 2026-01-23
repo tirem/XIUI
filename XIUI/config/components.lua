@@ -751,7 +751,8 @@ function components.DrawDisplayModeDropdown(label, parentTable, configKey, helpT
         percent = 'Percent Only',
         both = 'Number (Percent)',
         both_percent_first = 'Percent (Number)',
-        current_max = 'Current/Max'
+        current_max = 'Current/Max',
+        none = 'None'
     };
 
     local labelToMode = {
@@ -759,7 +760,8 @@ function components.DrawDisplayModeDropdown(label, parentTable, configKey, helpT
         ['Percent Only'] = 'percent',
         ['Number (Percent)'] = 'both',
         ['Percent (Number)'] = 'both_percent_first',
-        ['Current/Max'] = 'current_max'
+        ['Current/Max'] = 'current_max',
+        ['None'] = 'none'
     };
 
     local currentMode = parentTable[configKey] or 'number';
@@ -770,7 +772,8 @@ function components.DrawDisplayModeDropdown(label, parentTable, configKey, helpT
         'Percent Only',
         'Number (Percent)',
         'Percent (Number)',
-        'Current/Max'
+        'Current/Max',
+        'None'
     }, function(newLabel)
         parentTable[configKey] = labelToMode[newLabel];
         SaveSettingsOnly();

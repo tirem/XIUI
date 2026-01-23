@@ -39,11 +39,11 @@ function M.DrawSettings()
 
         -- HP Display Mode dropdown
         components.DrawDisplayModeDropdown('HP Display##playerBar', gConfig, 'playerBarHpDisplayMode',
-            'How HP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (1234/1500).');
+            'How HP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), current/max (1234/1500), or none.');
 
         -- MP Display Mode dropdown
         components.DrawDisplayModeDropdown('MP Display##playerBar', gConfig, 'playerBarMpDisplayMode',
-            'How MP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (750/1000).');
+            'How MP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), current/max (750/1000), or none.');
     end
 
     -- Text offsets section (collapsed by default)
