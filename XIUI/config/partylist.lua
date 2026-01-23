@@ -102,11 +102,11 @@ local function DrawPartyTabContent(party, partyName)
 
         -- HP Display Mode dropdown
         components.DrawDisplayModeDropdown('HP Display##party' .. partyName, party, 'hpDisplayMode',
-            'How HP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (1234/1500).');
+            'How HP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), current/max (1234/1500), or none.');
 
         -- MP Display Mode dropdown
         components.DrawDisplayModeDropdown('MP Display##party' .. partyName, party, 'mpDisplayMode',
-            'How MP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), or current/max (750/1000).');
+            'How MP is displayed: number (1234), percent (100%), number first (1234 (100%)), percent first (100% (1234)), current/max (750/1000), or none.');
 
         components.DrawPartyCheckbox(party, 'Always Show MP Bar', 'alwaysShowMpBar');
         imgui.ShowHelp('When disabled, hides the MP bar for jobs without MP (WAR, MNK, THF, etc.). Cast bars will still appear when casting.');

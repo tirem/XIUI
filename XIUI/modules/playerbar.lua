@@ -507,6 +507,8 @@ playerbar.DrawWindow = function(settings)
 			hpDisplayText = string.format("%.0f", SelfHPPercent) .. '% (' .. tostring(SelfHP) .. ')';
 		elseif hpDisplayMode == 'current_max' then
 			hpDisplayText = tostring(SelfHP) .. '/' .. tostring(SelfHPMax);
+		elseif hpDisplayMode == 'none' then
+			hpDisplayText = '';
 		else
 			hpDisplayText = tostring(SelfHP);
 		end
@@ -553,6 +555,8 @@ playerbar.DrawWindow = function(settings)
 				mpDisplayText = string.format("%.0f", SelfMPPercent) .. '% (' .. tostring(SelfMP) .. ')';
 			elseif mpDisplayMode == 'current_max' then
 				mpDisplayText = tostring(SelfMP) .. '/' .. tostring(SelfMPMax);
+			elseif mpDisplayMode == 'none' then
+				mpDisplayText = '';
 			else
 				mpDisplayText = tostring(SelfMP);
 			end

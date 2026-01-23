@@ -489,10 +489,37 @@ function data.GetMemberInformation(memIdx)
         -- to avoid stale party API data after weakness/gear swaps (issue #92)
         -- For other party members, use party API percentage and calculate max
         if memIdx == 0 then
-            memberInfo.maxhp = player:GetHPMax();
-            memberInfo.maxmp = player:GetMPMax();
-            memberInfo.hpp = (memberInfo.maxhp > 0) and (memberInfo.hp / memberInfo.maxhp) or 0;
-            memberInfo.mpp = (memberInfo.maxmp > 0) and (memberInfo.mp / memberInfo.maxmp) or 0;
+            -- HP Calculation with sync/weakness fix
+            local hpPercentParty = party:GetMemberHPPercent(0);
+            local hpMaxPlayer = player:GetHPMax();
+            local hpMaxFromParty = 0;
+            if hpPercentParty and hpPercentParty > 0 then
+                hpMaxFromParty = math.floor((memberInfo.hp * 100) / hpPercentParty + 0.5);
+            end
+
+            memberInfo.maxhp = hpMaxPlayer;
+            if hpMaxFromParty > 0 then
+                if hpMaxPlayer == 0 or math.abs(hpMaxFromParty - hpMaxPlayer) > 50 then
+                    memberInfo.maxhp = hpMaxFromParty;
+                end
+            end
+            memberInfo.hpp = (memberInfo.maxhp > 0) and math.clamp(memberInfo.hp / memberInfo.maxhp, 0, 1) or ((hpPercentParty or 0) / 100);
+
+            -- MP Calculation with sync/weakness fix
+            local mpPercentParty = party:GetMemberMPPercent(0);
+            local mpMaxPlayer = player:GetMPMax();
+            local mpMaxFromParty = 0;
+            if mpPercentParty and mpPercentParty > 0 then
+                mpMaxFromParty = math.floor((memberInfo.mp * 100) / mpPercentParty + 0.5);
+            end
+
+            memberInfo.maxmp = mpMaxPlayer;
+            if mpMaxFromParty > 0 then
+                if mpMaxPlayer == 0 or math.abs(mpMaxFromParty - mpMaxPlayer) > 20 then
+                    memberInfo.maxmp = mpMaxFromParty;
+                end
+            end
+            memberInfo.mpp = (memberInfo.maxmp > 0) and math.clamp(memberInfo.mp / memberInfo.maxmp, 0, 1) or ((mpPercentParty or 0) / 100);
         else
             memberInfo.hpp = party:GetMemberHPPercent(memIdx) / 100;
             memberInfo.mpp = party:GetMemberMPPercent(memIdx) / 100;
