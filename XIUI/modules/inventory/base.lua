@@ -11,11 +11,6 @@ local defaultPositions = require('libs.defaultpositions');
 
 local BaseTracker = {};
 
--- Position save/restore state (shared across all inventory containers)
-local hasAppliedSavedPosition = false;
-local forcePositionReset = false;
-local lastSavedPosX, lastSavedPosY = nil, nil;
-
 -- Helper function to calculate dot grid offset
 local function GetDotOffset(row, column, settings)
     local x = (column * settings.dotRadius * 2) + (settings.dotSpacing * (column - 1));
@@ -123,35 +118,9 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
 
     local fontVisible = false;
 
-    -- Handle position reset or restore
-    if forcePositionReset then
-        local defX, defY = defaultPositions.GetInventoryPosition();
-        imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
-        forcePositionReset = false;
-        hasAppliedSavedPosition = true;
-        lastSavedPosX, lastSavedPosY = defX, defY;
-    elseif not hasAppliedSavedPosition and gConfig.inventoryWindowPosX ~= nil then
-        imgui.SetNextWindowPos({gConfig.inventoryWindowPosX, gConfig.inventoryWindowPosY}, ImGuiCond_Once);
-        hasAppliedSavedPosition = true;
-        lastSavedPosX = gConfig.inventoryWindowPosX;
-        lastSavedPosY = gConfig.inventoryWindowPosY;
-    end
-
     if (imgui.Begin(windowName, true, windowFlags)) then
         SaveWindowPosition(windowName);
         local locX, locY = imgui.GetWindowPos();
-
-        -- Save position if moved (with change detection to avoid spam)
-        if not gConfig.lockPositions then
-            if lastSavedPosX == nil or
-               math.abs(locX - lastSavedPosX) > 1 or
-               math.abs(locY - lastSavedPosY) > 1 then
-                gConfig.inventoryWindowPosX = locX;
-                gConfig.inventoryWindowPosY = locY;
-                lastSavedPosX = locX;
-                lastSavedPosY = locY;
-            end
-        end
 
         local style = imgui.GetStyle();
         local framePaddingX = style.FramePadding.x;
@@ -416,10 +385,36 @@ function BaseTracker.Create(config)
     return tracker;
 end
 
--- Reset position for all inventory windows (shared state)
+-- Reset position for all inventory windows
 BaseTracker.ResetPositions = function()
-    forcePositionReset = true;
-    hasAppliedSavedPosition = false;
+    if not gConfig then return; end
+
+    -- Initialize tables if needed
+    if not gConfig.appliedPositions then gConfig.appliedPositions = {}; end
+    if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+
+    -- Get base position and stagger offset
+    local baseX, baseY = defaultPositions.GetInventoryPosition();
+    local staggerY = 35;
+
+    -- Tracker window names and their vertical offsets
+    local trackerOffsets = {
+        ['InventoryTracker'] = 0,
+        ['SatchelTracker'] = 1,
+        ['SafeTracker'] = 2,
+        ['StorageTracker'] = 3,
+        ['LockerTracker'] = 4,
+        ['WardrobeTracker'] = 5,
+    };
+
+    -- Set default positions for each tracker
+    for windowName, offsetIndex in pairs(trackerOffsets) do
+        gConfig.appliedPositions[windowName] = nil;
+        gConfig.windowPositions[windowName] = {
+            x = baseX,
+            y = baseY + (offsetIndex * staggerY)
+        };
+    end
 end
 
 return BaseTracker;
