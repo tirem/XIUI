@@ -212,7 +212,7 @@ function profileManager.SyncProfilesWithDisk()
         for _, filename in ipairs(diskFiles) do
             if (filename ~= 'profilelist.lua') then
                 local profileName = filename:match('(.+)%.lua$');
-                
+
                 if (profileName and not contains(profiles.names, profileName)) then
                     table.insert(profiles.names, profileName);
                     table.insert(profiles.order, profileName);
@@ -221,14 +221,32 @@ function profileManager.SyncProfilesWithDisk()
                 end
             end
         end
-        
-        -- Check if sorting is needed
-        local oldOrder = table.concat(profiles.order, ",");
+
+        -- Remove profiles from list if file no longer exists
+        local i = 1;
+        while i <= #profiles.names do
+            local name = profiles.names[i];
+            if name ~= 'Default' and not profileManager.ProfileExists(name) then
+                table.remove(profiles.names, i);
+                for j, n in ipairs(profiles.order) do
+                    if n == name then
+                        table.remove(profiles.order, j);
+                        break;
+                    end
+                end
+                changed = true;
+                print(chat.header(addon.name):append(chat.message('Removed missing profile: ')):append(chat.error(name)));
+            else
+                i = i + 1;
+            end
+        end
+
+        -- Sort names for consistent display, but preserve order (user's custom arrangement)
+        local oldNames = table.concat(profiles.names, ",");
         table.sort(profiles.names);
-        table.sort(profiles.order);
-        local newOrder = table.concat(profiles.order, ",");
-        
-        if (oldOrder ~= newOrder) then
+        local newNames = table.concat(profiles.names, ",");
+
+        if (oldNames ~= newNames) then
             changed = true;
         end
         

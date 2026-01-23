@@ -875,11 +875,11 @@ ashita.events.register('d3d_present', 'present_cb', function ()
     if pendingProfileChange then
         local name = pendingProfileChange;
         pendingProfileChange = nil;
-        ChangeProfile(name);
-
-        if pendingProfileDeletion then
-            profileManager.DeleteProfile(pendingProfileDeletion);
-            pendingProfileDeletion = nil;
+        if ChangeProfile(name) then
+            if pendingProfileDeletion then
+                profileManager.DeleteProfile(pendingProfileDeletion);
+                pendingProfileDeletion = nil;
+            end
         end
     end
 
