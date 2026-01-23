@@ -91,9 +91,6 @@ local TextureManager = require('libs.texturemanager');
 -- Global switch to hard-disable functionality that is limited on HX servers
 HzLimitedMode = false;
 
--- Developer override to allow editing the Default profile
-g_AllowDefaultEdit = false;
-
 -- Flag to skip settings_update callback during internal saves
 local bInternalSave = false;
 
@@ -657,19 +654,12 @@ function UpdateUserSettings()
     settingsUpdater.UpdateUserSettings(gAdjustedSettings, settingsDefaults.default_settings, gConfig);
 end
 
-local function ShouldSaveProfile()
-    return config.currentProfile ~= 'Default' or g_AllowDefaultEdit;
-end
-
 function SaveSettingsToDisk()
     if gConfig.colorCustomization == nil then
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
-
-    if ShouldSaveProfile() then
-        profileManager.SaveProfileSettings(config.currentProfile, gConfig);
-    end
+    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
     bInternalSave = true;
     settings.save();
     bInternalSave = false;
@@ -680,10 +670,7 @@ function SaveSettingsOnly()
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
-
-    if ShouldSaveProfile() then
-        profileManager.SaveProfileSettings(config.currentProfile, gConfig);
-    end
+    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
     bInternalSave = true;
     settings.save();
     bInternalSave = false;

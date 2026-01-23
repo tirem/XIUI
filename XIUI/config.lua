@@ -217,7 +217,7 @@ local function DrawProfilesWindow()
         imgui.Spacing();
 
         -- Profile action buttons (single row)
-        if (imgui.Button("Add")) then
+        if (imgui.Button("New")) then
             newProfileName[1] = "";
             showNewProfilePopup = true;
             triggerNewProfilePopup = true;
