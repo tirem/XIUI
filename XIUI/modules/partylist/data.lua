@@ -478,8 +478,12 @@ function data.GetMemberInformation(memIdx)
         memberInfo.leader = false;
     end
 
-    -- partyIndex 1 = Party A (alliance leader's party)
-    memberInfo.allianceLeader = memberInfo.leader and partyIndex == 1;
+    -- Check if this member is THE alliance leader (not just their party's leader)
+    local allianceLeaderId = party:GetAllianceLeaderServerId();
+    memberInfo.allianceLeader = memberInfo.leader
+        and allianceLeaderId ~= nil
+        and allianceLeaderId ~= 0
+        and allianceLeaderId == memberServerId;
 
     if (memberInfo.inzone == true) then
         memberInfo.hp = party:GetMemberHP(memIdx);

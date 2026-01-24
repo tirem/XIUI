@@ -834,9 +834,25 @@ local function parseKeyEventFlags(event)
    return (getBit(lparam, 31) == 1)
 end
 
+--- Parse inline <wait #> subcommand from end of a command line
+--- @param line string The command line to parse
+--- @return string strippedLine, number|nil waitTime
+local function parseInlineWait(line)
+    local stripped, waitStr = line:match('^(.-)%s*<wait%s*(%d*%.?%d*)>%s*$');
+    if stripped then
+        local waitTime = tonumber(waitStr);
+        if not waitTime or waitTime <= 0 then
+            waitTime = 1;
+        end
+        return stripped, waitTime;
+    end
+    return line, nil;
+end
+
 --- Execute a command string (handles multi-line macros with /wait support)
 --- Splits by newlines and executes each non-empty line in sequence
 --- Properly handles /wait, /pause, /sleep by using Ashita's task scheduler
+--- Also handles inline <wait #> subcommands at end of command lines
 --- @param commandText string The command text (may contain newlines)
 --- @return boolean success Whether any command was executed
 function M.ExecuteCommandString(commandText)
@@ -885,11 +901,14 @@ function M.ExecuteCommandString(commandText)
                 executeNextLine(index + 1);
             end);
         else
+            -- Parse inline <wait #> subcommand
+            local commandToExecute, inlineWait = parseInlineWait(line);
+
             -- PROTECTED command execution
             local ok, err = pcall(function()
                 local chatManager = AshitaCore:GetChatManager();
                 if chatManager then
-                    chatManager:QueueCommand(-1, line);
+                    chatManager:QueueCommand(-1, commandToExecute);
                 end
             end);
 
@@ -897,9 +916,10 @@ function M.ExecuteCommandString(commandText)
                 print('[XIUI] Command execution error: ' .. tostring(err));
             end
 
-            -- Defer next line to avoid blocking
+            -- Schedule next line with inline wait delay if found
             if index < #lines then
-                ashita.tasks.once(0, function()
+                local delay = inlineWait or 0;
+                ashita.tasks.once(delay, function()
                     executeNextLine(index + 1);
                 end);
             end

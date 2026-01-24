@@ -117,6 +117,7 @@ local AMMO_STATUS_EFFECTS_BY_NAME = {
     ['Sleep Bolt']    = 2,    -- Sleep
     ['Blind Bolt']    = 5,    -- Blindness
     ['Venom Bolt']    = 3,    -- Poison
+    ['Bloody Bolt']   = 700,  -- Drain (custom icon)
     -- Arrows
     ['Sleep Arrow']     = 2,    -- Sleep
     ['Poison Arrow']    = 3,    -- Poison
@@ -1214,7 +1215,7 @@ function M.DrawSlot(resources, params)
     if bind and bind.actionType == 'item' and bind.itemId and animOpacity > 0.5 then
         local statusId = GetAmmoStatusEffect(bind.itemId);
         if statusId then
-            local statusIconPtr = statusHandler.get_icon_image(statusId);
+            local statusIconPtr = statusHandler.get_icon_from_theme(gConfig.statusIconTheme, statusId);
             if statusIconPtr then
                 local drawList = imgui.GetWindowDrawList();
                 if drawList then
