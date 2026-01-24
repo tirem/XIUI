@@ -384,13 +384,13 @@ playerbar.DrawWindow = function(settings)
 			local waveLeft = x + (progress * (width - waveWidth));
 			local waveRight = waveLeft + waveWidth;
 			
-			-- Draw gradient shimmer (transparent left, bright right)
+			-- Draw gradient shimmer (transparent left, bright cyan right)
 			imgui.GetWindowDrawList():AddRectFilledMultiColor(
 				{waveLeft, y1}, {waveRight, y2},
-				imgui.GetColorU32({1.0, 1.0, 1.0, 0.0}),
-				imgui.GetColorU32({1.0, 1.0, 1.0, 0.8}),
-				imgui.GetColorU32({1.0, 1.0, 1.0, 0.8}),
-				imgui.GetColorU32({1.0, 1.0, 1.0, 0.0})
+				imgui.GetColorU32({0.0, 0.9, 1.0, 0.0}),
+				imgui.GetColorU32({0.0, 0.9, 1.0, 0.9}),
+				imgui.GetColorU32({0.0, 0.9, 1.0, 0.9}),
+				imgui.GetColorU32({0.0, 0.9, 1.0, 0.0})
 			);
 		else
 			playerbar.restingTicker.wasResting = false;
