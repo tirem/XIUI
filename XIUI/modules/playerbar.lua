@@ -36,9 +36,8 @@ local baseWindowFlags = nil;
 local playerbar = {
 	interpolation = {},
 	restingTicker = {
-		nextTick = 0,
+		startTime = 0,
 		wasResting = false,
-		isFirstTick = true,  -- Track if this is the first tick after starting to rest
 	}
 };
 
@@ -360,47 +359,39 @@ playerbar.DrawWindow = function(settings)
 		local hpBarStartX, hpBarStartY = imgui.GetCursorScreenPos();
 		progressbar.ProgressBar(hpPercentData, {barSize, settings.barHeight}, {decorate = gConfig.showPlayerBarBookends});
 
-		-- Draw resting ticker if enabled
+		-- Draw resting ticker shimmer if enabled and player is resting
 		if gConfig.playerBarRestingTicker and playerEnt.Status == 33 then
-			local currentTime = os.clock();
 			local ticker = playerbar.restingTicker;
+			local currentTime = os.clock();
 			
-			-- Initialize tick timer when starting to rest
 			if not ticker.wasResting then
-				ticker.nextTick = currentTime + 21;
+				ticker.startTime = currentTime;
 				ticker.wasResting = true;
-				ticker.isFirstTick = true;
-			elseif playerEnt.Status ~= 33 then
-				ticker.wasResting = false;
-				ticker.isFirstTick = true;
 			end
 			
-			-- Update tick timer if it has passed
-			if ticker.nextTick <= currentTime then
-				ticker.nextTick = currentTime + 10;
-				ticker.isFirstTick = false;
-			end
+			-- Progress: first tick 21s, then 10s cycles
+			local elapsed = currentTime - ticker.startTime;
+			local progress = elapsed < 21 and (elapsed / 21) or ((elapsed - 21) % 10) / 10;
 			
-			-- Calculate progress (0.0 to 1.0)
-			local timeUntilTick = ticker.nextTick - currentTime;
-			local tickInterval = ticker.isFirstTick and 21 or 10;
-			local progress = math.max(0.0, math.min(1.0, 1.0 - (timeUntilTick / tickInterval)));
+			-- Calculate shimmer position
+			local bookendWidth = gConfig.showPlayerBarBookends and (settings.barHeight / 2) or 0;
+			local padding = 3.0;
+			local width = barSize - bookendWidth * 2 - (padding * 2);
+			local waveWidth = width * 0.06;
+			local x = hpBarStartX + bookendWidth + padding;
+			local y1 = hpBarStartY + padding;
+			local y2 = hpBarStartY + settings.barHeight - padding;
+			local waveLeft = x + (progress * (width - waveWidth));
+			local waveRight = waveLeft + waveWidth;
 			
-			-- Draw gold progress bar
-			if progress > 0 then
-				local bookendWidth = gConfig.showPlayerBarBookends and (settings.barHeight / 2) or 0;
-				local padding = 5.0;
-				local availableWidth = barSize - bookendWidth * 2 - (padding * 2);
-				local barStartX = hpBarStartX + bookendWidth + padding;
-				local barEndX = barStartX + (progress * availableWidth);
-				
-				imgui.GetWindowDrawList():AddRectFilled(
-					{barStartX, hpBarStartY},
-					{barEndX, hpBarStartY + 2.0},
-					imgui.GetColorU32({1.0, 0.84, 0.0, 1.0}),
-					0
-				);
-			end
+			-- Draw gradient shimmer (transparent left, bright right)
+			imgui.GetWindowDrawList():AddRectFilledMultiColor(
+				{waveLeft, y1}, {waveRight, y2},
+				imgui.GetColorU32({1.0, 1.0, 1.0, 0.0}),
+				imgui.GetColorU32({1.0, 1.0, 1.0, 0.8}),
+				imgui.GetColorU32({1.0, 1.0, 1.0, 0.8}),
+				imgui.GetColorU32({1.0, 1.0, 1.0, 0.0})
+			);
 		else
 			playerbar.restingTicker.wasResting = false;
 		end
