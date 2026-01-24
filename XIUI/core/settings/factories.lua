@@ -474,9 +474,6 @@ function M.createCrossbarDefaults()
             R2x2 = { petAware = false },
         },
 
-        -- Palette cycling button for crossbar (R1 + DPad while trigger held)
-        crossbarPaletteCycleButton = 'R1',  -- 'R1' or 'L1'
-
         -- Layout
         slotSize = 40,              -- Slot size in pixels
         slotGapV = 2,               -- Vertical gap between top and bottom slots

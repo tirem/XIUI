@@ -462,6 +462,9 @@ end
 gConfig = profileManager.GetProfileSettings(currentProfileName);
 if (gConfig == nil) then
     gConfig = deep_copy_table(defaultUserSettings);
+else
+    -- Merge with defaults to fill in any missing keys (from older versions)
+    DeepMergeWithDefaults(gConfig, defaultUserSettings);
 end
 
 gConfig.appliedPositions = {};
