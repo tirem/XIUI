@@ -683,40 +683,6 @@ local function DrawCrossbarGlobalPalettesSection()
     end
 
     imgui.Spacing();
-    imgui.Separator();
-    imgui.Spacing();
-
-    -- Palette cycle button config
-    imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Crossbar Cycle Button:');
-    imgui.SameLine();
-
-    local cycleButtons = { 'R1', 'L1' };
-    local currentCycleButton = crossbarSettings.crossbarPaletteCycleButton or 'R1';
-    local currentCycleIndex = 1;
-    for i, btn in ipairs(cycleButtons) do
-        if btn == currentCycleButton then
-            currentCycleIndex = i;
-            break;
-        end
-    end
-
-    imgui.SetNextItemWidth(80);
-    if imgui.BeginCombo('##crossbarCycleBtnGlobal', currentCycleButton) then
-        for i, btn in ipairs(cycleButtons) do
-            local isSelected = (i == currentCycleIndex);
-            if imgui.Selectable(btn .. '##cycleBtnGlobal' .. i, isSelected) then
-                crossbarSettings.crossbarPaletteCycleButton = btn;
-                SaveSettingsOnly();
-            end
-            if isSelected then
-                imgui.SetItemDefaultFocus();
-            end
-        end
-        imgui.EndCombo();
-    end
-    imgui.ShowHelp('Which shoulder button + DPad cycles crossbar palettes.\nHold R1 + R2 together, then press DPad Up/Down to cycle palettes.');
-
-    imgui.Spacing();
 end
 
 -- Keybind editor modal state
@@ -2646,7 +2612,7 @@ function M.DrawSettings(state)
         local currentCtrlIndex = (gConfig.hotbarGlobal.paletteCycleControllerEnabled ~= false) and 2 or 1;
 
         imgui.AlignTextToFramePadding();
-        imgui.Text('Controller Palette:');
+        imgui.Text('Palette Cycle:');
         imgui.SameLine();
         imgui.SetNextItemWidth(90);
         if imgui.BeginCombo('##ctrlPaletteCycle', ctrlOptions[currentCtrlIndex]) then
@@ -2690,7 +2656,7 @@ function M.DrawSettings(state)
                 imgui.EndCombo();
             end
         end
-        imgui.ShowHelp('Controller shortcut to cycle through hotbar palettes.\nPress the selected button + DPad Up/Down (without holding triggers) to cycle palettes for all hotbars.');
+        imgui.ShowHelp('Controller shortcut to cycle palettes.\nPress the selected button + DPad Up/Down to cycle palettes for all hotbars and the active crossbar.');
     end
 
     -- Log Palette Name checkbox (show if any palette cycling is potentially enabled)
