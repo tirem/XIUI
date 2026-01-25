@@ -238,14 +238,14 @@ local function GetCachedCrossbarIcon(comboMode, slotIndex, slotData)
 
     local cached = iconCache[comboMode][slotIndex];
 
-    -- Check if we have a valid cache entry for this bind (including icon info)
-    -- Also invalidate if cached icon doesn't have path (try to get primitive-enabled icon)
+    -- Check if we have a valid cache entry for this bind
     local bindKey = BuildCrossbarBindKey(slotData);
-    if cached and cached.bindKey == bindKey and cached.icon and cached.icon.path then
+    if cached and cached.bindKey == bindKey then
+        -- Cache hit - return icon even if nil (nil = no icon exists)
         return cached.icon;
     end
 
-    -- Cache miss or icon needs path - compute icon
+    -- Cache miss - compute icon
     local icon = nil;
     if slotData and slotData.actionType then
         icon = actions.GetBindIcon(slotData);
@@ -306,6 +306,9 @@ local state = {
 
     -- GDI Fonts per combo mode (for action labels, not keybinds)
     labelFonts = {},
+
+    -- Abbreviation fonts per combo mode (for actions without icons)
+    abbreviationFonts = {},
 
     -- Trigger label font (shows current combo mode)
     triggerLabelFont = nil,
@@ -662,6 +665,7 @@ function M.Initialize(settings, moduleSettings)
         state.quantityFonts[comboMode] = {};
         state.centerIconPrims[comboMode] = {};
         state.labelFonts[comboMode] = {};
+        state.abbreviationFonts[comboMode] = {};
 
         -- Create slot background primitives, icon primitives, and fonts
         for slotIndex = 1, SLOTS_PER_SIDE do
@@ -703,6 +707,15 @@ function M.Initialize(settings, moduleSettings)
             -- Create label font for action names
             local labelFontSettings = moduleSettings and moduleSettings.label_font_settings or {};
             state.labelFonts[comboMode][slotIndex] = FontManager.create(labelFontSettings);
+
+            -- Abbreviation font (centered gold text for actions without icons)
+            local abbrSettings = moduleSettings and deep_copy_table(moduleSettings.label_font_settings) or {};
+            abbrSettings.font_height = 12;
+            abbrSettings.font_alignment = 1;  -- Center
+            abbrSettings.font_color = 0xFFF4DA97;  -- Gold
+            abbrSettings.outline_color = 0xFF000000;
+            abbrSettings.outline_width = 2;
+            state.abbreviationFonts[comboMode][slotIndex] = FontManager.create(abbrSettings);
         end
 
         -- Create center icon primitives for each diamond (4 icons per diamond)
@@ -786,6 +799,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         mpCostFont = state.mpCostFonts[comboMode] and state.mpCostFonts[comboMode][slotIndex],
         quantityFont = state.quantityFonts[comboMode] and state.quantityFonts[comboMode][slotIndex],
         labelFont = state.labelFonts[comboMode] and state.labelFonts[comboMode][slotIndex],
+        abbreviationFont = state.abbreviationFonts[comboMode] and state.abbreviationFonts[comboMode][slotIndex],
     };
 
     -- Render slot using shared renderer (handles ALL rendering and interactions)
@@ -1680,6 +1694,18 @@ function M.UpdateVisuals(settings, moduleSettings)
             if labelFont then
                 state.labelFonts[comboMode][slotIndex] = FontManager.recreate(labelFont, labelSettings);
             end
+
+            -- Recreate abbreviation font
+            local abbrFont = state.abbreviationFonts[comboMode] and state.abbreviationFonts[comboMode][slotIndex];
+            if abbrFont then
+                local abbrSettings = moduleSettings and deep_copy_table(moduleSettings.label_font_settings) or {};
+                abbrSettings.font_height = 12;
+                abbrSettings.font_alignment = 1;  -- Center
+                abbrSettings.font_color = 0xFFF4DA97;  -- Gold
+                abbrSettings.outline_color = 0xFF000000;
+                abbrSettings.outline_width = 2;
+                state.abbreviationFonts[comboMode][slotIndex] = FontManager.recreate(abbrFont, abbrSettings);
+            end
         end
     end
 
@@ -1746,6 +1772,9 @@ function M.Cleanup()
 
             local labelFont = state.labelFonts[comboMode] and state.labelFonts[comboMode][slotIndex];
             if labelFont then FontManager.destroy(labelFont); end
+
+            local abbrFont = state.abbreviationFonts[comboMode] and state.abbreviationFonts[comboMode][slotIndex];
+            if abbrFont then FontManager.destroy(abbrFont); end
         end
 
         -- Destroy center icon primitives
@@ -1767,6 +1796,7 @@ function M.Cleanup()
         state.quantityFonts[comboMode] = nil;
         state.centerIconPrims[comboMode] = nil;
         state.labelFonts[comboMode] = nil;
+        state.abbreviationFonts[comboMode] = nil;
     end
 
     -- Destroy trigger label font
