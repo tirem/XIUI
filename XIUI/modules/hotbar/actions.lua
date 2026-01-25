@@ -445,45 +445,18 @@ function M.IsActionAvailable(bind)
 
     -- Handle job abilities
     elseif bind.actionType == 'ja' then
-        -- Check if player has this ability
-        local hasAbility = false;
-        local resMgr = AshitaCore:GetResourceManager();
-        if resMgr then
-            for abilityId = 1, 1024 do
-                if player:HasAbility(abilityId) then
-                    local ability = resMgr:GetAbilityById(abilityId);
-                    if ability and ability.Name and ability.Name[1] == bind.action then
-                        hasAbility = true;
-                        break;
-                    end
-                end
-            end
-        end
-        if not hasAbility then
+        -- Use playerdata's cached abilities as single source of truth
+        -- This ensures availability matches what's shown in the dropdown
+        local playerdata = require('modules.hotbar.playerdata');
+        if not playerdata.IsAbilityInCache(bind.action) then
             return false, "N/A";
         end
 
     -- Handle weapon skills
     elseif bind.actionType == 'ws' then
-        -- Check if player has this weapon skill
-        local hasWS = false;
-        local resMgr = AshitaCore:GetResourceManager();
-        if resMgr then
-            for abilityId = 1, 1024 do
-                if player:HasAbility(abilityId) then
-                    local ability = resMgr:GetAbilityById(abilityId);
-                    if ability and ability.Name and ability.Name[1] == bind.action then
-                        -- Verify it's a weapon skill (Type 3)
-                        local abilityType = ability.Type and bit.band(ability.Type, 7) or 0;
-                        if abilityType == 3 then
-                            hasWS = true;
-                            break;
-                        end
-                    end
-                end
-            end
-        end
-        if not hasWS then
+        -- Use playerdata's cached weaponskills as single source of truth
+        local playerdata = require('modules.hotbar.playerdata');
+        if not playerdata.IsWeaponskillInCache(bind.action) then
             return false, "N/A";
         end
     end

@@ -918,7 +918,7 @@ function M.DrawSlot(resources, params)
     -- ========================================
     -- Hide abbreviation when cooldown timer is showing (GDI renders before ImGui, so text would overlap)
     if not iconRendered and bind and animOpacity > 0.5 and not recastText then
-        local drawList = imgui.GetWindowDrawList();
+        local drawList = GetUIDrawList();
         if drawList then
             local abbr = GetActionAbbreviation(bind);
             local textSize = imgui.CalcTextSize(abbr);

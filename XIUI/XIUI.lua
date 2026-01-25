@@ -90,7 +90,7 @@ local diagnostics = require('libs.diagnostics');
 local TextureManager = require('libs.texturemanager');
 
 -- Global switch to hard-disable functionality that is limited on HX servers
-HzLimitedMode = false;
+HzLimitedMode = true;
 
 -- Flag to skip settings_update callback during internal saves
 local bInternalSave = false;
@@ -298,7 +298,7 @@ local rawSettings = settings.load({});
 if (rawSettings.profiles ~= nil) then
     print(chat.header(addon.name):append(chat.message('Migrating internal profiles to file system...')));
     local globalProfiles = profileManager.GetGlobalProfiles();
-    
+
     for name, data in pairs(rawSettings.profiles) do
         if not profileManager.ProfileExists(name) then
             profileManager.SaveProfileSettings(name, data);
@@ -309,7 +309,7 @@ if (rawSettings.profiles ~= nil) then
         end
     end
     profileManager.SaveGlobalProfiles(globalProfiles);
-    
+
     -- Clean up
     rawSettings.profiles = nil;
     rawSettings.profileOrder = nil;
@@ -342,40 +342,40 @@ local function MigrateAllLegacySettings()
     -- Iterate and check for legacy settings
     for _, char in ipairs(charFolders) do
         local settingsPath = xiuiPath .. char.dir .. '\\settings.lua';
-        
+
         if (ashita.fs.exists(settingsPath)) then
             -- Safely load settings table
             local success, result = pcall(dofile, settingsPath);
-            
+
             if (success and type(result) == 'table' and result.currentProfile == nil and next(result) ~= nil) then
                 -- FOUND LEGACY SETTINGS
-                
+
                 -- 1. Create global imgui.ini backup (Once)
                 if (not legacyFound) then
                     legacyFound = true;
                     if (ashita.fs.exists(imguiPath)) then
                         profileManager.EnsureBackupDirectory(profileManager.LegacyXiuiBackupPath);
                         local backupImguiPath = profileManager.LegacyXiuiBackupPath .. 'imgui.ini';
-                        
+
                         if profileManager.CopyFile(imguiPath, backupImguiPath) then
                             print(chat.header(addon.name):append(chat.message('Created legacy imgui.ini backup at: ')):append(chat.success(backupImguiPath)));
                         end
                     end
                 end
-                
+
                 -- 2. Backup character settings to backups/legacy/xiui/CharName/settings.lua
                 local backupCharPath = profileManager.LegacyXiuiBackupPath .. char.name .. '\\';
                 profileManager.EnsureBackupDirectory(backupCharPath);
-                
+
                 local backupSettingsPath = backupCharPath .. 'settings.lua';
                 if profileManager.CopyFile(settingsPath, backupSettingsPath) then
                      print(chat.header(addon.name):append(chat.message('Created legacy settings backup at: ')):append(chat.success(backupSettingsPath)));
                 end
-                
+
                 -- 3. Create Legacy Profile
                 local profileName = 'Legacy ' .. char.name;
                 local legacyData = deep_copy_table(defaultUserSettings);
-                
+
                 -- Merge settings
                 if (result.userSettings ~= nil and type(result.userSettings) == 'table') then
                     for k, v in pairs(result.userSettings) do legacyData[k] = v; end
@@ -391,16 +391,16 @@ local function MigrateAllLegacySettings()
                         end
                     end
                 end
-                
+
                 -- Import window positions from imgui.ini (if available)
                 local legacyPositions = profileManager.GetImguiPositions();
                 if (legacyPositions) then
                     legacyData.windowPositions = legacyPositions;
                 end
-                
+
                 -- Save Profile
                 profileManager.SaveProfileSettings(profileName, legacyData);
-                
+
                 -- Register Global Profile
                 local globalProfiles = profileManager.GetGlobalProfiles();
                 if not table.contains(globalProfiles.names, profileName) then
@@ -408,7 +408,7 @@ local function MigrateAllLegacySettings()
                     table.insert(globalProfiles.order, profileName);
                     profileManager.SaveGlobalProfiles(globalProfiles);
                 end
-                
+
                 -- 4. Update settings.lua
                 local f = io.open(settingsPath, "w+");
                 if f then
@@ -417,7 +417,7 @@ local function MigrateAllLegacySettings()
                     f:write("return settings;\n");
                     f:close();
                 end
-                
+
                 print(chat.header(addon.name):append(chat.message('Migrated ' .. char.name .. ' to profile: ')):append(chat.success(profileName)));
             end
         end
@@ -545,16 +545,16 @@ end
 
 function CreateProfile(name)
     if (profileManager.ProfileExists(name)) then return false; end
-    
+
     local newSettings = deep_copy_table(defaultUserSettings);
     newSettings.windowPositions = GetDefaultWindowPositions();
     profileManager.SaveProfileSettings(name, newSettings);
-    
+
     local globalProfiles = profileManager.GetGlobalProfiles();
     table.insert(globalProfiles.names, name);
     table.insert(globalProfiles.order, name);
     profileManager.SaveGlobalProfiles(globalProfiles);
-    
+
     RequestProfileChange(name);
     return true;
 end
@@ -562,26 +562,26 @@ end
 function DuplicateProfile(name)
     local baseName = name;
     -- If duplicating Default, we might want to name it "Profile (1)" or just "Default (1)"
-    
+
     local counter = 1;
     local newName = baseName .. " (" .. counter .. ")";
-    
+
     while (profileManager.ProfileExists(newName)) do
         counter = counter + 1;
         newName = baseName .. " (" .. counter .. ")";
     end
-    
+
     local currentSettings = profileManager.GetProfileSettings(name);
     if (currentSettings == nil) then return false; end
-    
+
     local newSettings = deep_copy_table(currentSettings);
     profileManager.SaveProfileSettings(newName, newSettings);
-    
+
     local globalProfiles = profileManager.GetGlobalProfiles();
     table.insert(globalProfiles.names, newName);
     table.insert(globalProfiles.order, newName);
     profileManager.SaveGlobalProfiles(globalProfiles);
-    
+
     RequestProfileChange(newName);
     return true;
 end
@@ -705,13 +705,13 @@ function RenameProfile(oldName, newName)
     if (oldName == 'Default') then return false; end
     if (profileManager.ProfileExists(newName)) then return false; end
     if (not profileManager.ProfileExists(oldName)) then return false; end
-    
+
     local settingsData = profileManager.GetProfileSettings(oldName);
     profileManager.SaveProfileSettings(newName, settingsData);
     profileManager.DeleteProfile(oldName);
-    
+
     local globalProfiles = profileManager.GetGlobalProfiles();
-    
+
     -- Update names list
     for i, name in ipairs(globalProfiles.names) do
         if name == oldName then
@@ -719,7 +719,7 @@ function RenameProfile(oldName, newName)
             break;
         end
     end
-    
+
     -- Update order list
     for i, name in ipairs(globalProfiles.order) do
         if name == oldName then
@@ -727,20 +727,20 @@ function RenameProfile(oldName, newName)
             break;
         end
     end
-    
+
     profileManager.SaveGlobalProfiles(globalProfiles);
-    
+
     if (config.currentProfile == oldName) then
         config.currentProfile = newName;
         settings.save();
     end
-    
+
     return true;
 end
 
 function DeleteProfile(name)
     if (name == 'Default') then return false; end
-    
+
     -- If deleting the active profile, switch to Default first
     if (config.currentProfile == name) then
         if (not RequestProfileChange('Default')) then
@@ -750,9 +750,9 @@ function DeleteProfile(name)
     else
         profileManager.DeleteProfile(name);
     end
-    
+
     local globalProfiles = profileManager.GetGlobalProfiles();
-    
+
     -- Remove from names
     for i, n in ipairs(globalProfiles.names) do
         if n == name then
@@ -760,7 +760,7 @@ function DeleteProfile(name)
             break;
         end
     end
-    
+
     -- Remove from order
     for i, n in ipairs(globalProfiles.order) do
         if n == name then
@@ -768,7 +768,7 @@ function DeleteProfile(name)
             break;
         end
     end
-    
+
     profileManager.SaveGlobalProfiles(globalProfiles);
     return true;
 end
@@ -776,7 +776,7 @@ end
 function MoveProfileUp(name)
     local globalProfiles = profileManager.GetGlobalProfiles();
     local order = globalProfiles.order;
-    
+
     for i, n in ipairs(order) do
         if n == name then
             if i > 1 then
@@ -793,7 +793,7 @@ end
 function MoveProfileDown(name)
     local globalProfiles = profileManager.GetGlobalProfiles();
     local order = globalProfiles.order;
-    
+
     for i, n in ipairs(order) do
         if n == name then
             if i < #order then
@@ -860,16 +860,16 @@ settings.register('settings', 'settings_update', function (s)
             -- Fallback
              gConfig = deep_copy_table(defaultUserSettings);
         end
-        
+
         -- Initialize runtime state
         gConfig.appliedPositions = {};
-        
+
         -- Run migrations
         settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
-        
+
         -- Update visuals
         UpdateSettings();
-        
+
         print(chat.header(addon.name):append(chat.message('Loaded profile: ')):append(chat.success(currentProfileName)));
     end
 end);
@@ -1271,7 +1271,7 @@ ashita.events.register('command', 'command_cb', function (e)
                  configMenu.OpenResetSettingsPopup();
                  return;
             end
-            
+
             -- /xiui profile next
             if (command_args[3] == 'next') then
                 local profiles = GetProfileNames();
