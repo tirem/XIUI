@@ -7,6 +7,19 @@ require('common');
 
 local M = {};
 
+-- Callback for slot data changes (used by macropalette for debounced saves)
+local onSlotDataChanged = nil;
+
+function M.SetSlotDataChangedCallback(callback)
+    onSlotDataChanged = callback;
+end
+
+local function NotifySlotDataChanged()
+    if onSlotDataChanged then
+        onSlotDataChanged();
+    end
+end
+
 -- Lazy-loaded to avoid circular dependencies
 local petpalette = nil;
 local function getPetPalette()
@@ -23,6 +36,51 @@ local function getPalette()
     end
     return palette;
 end
+
+-- ============================================
+-- Performance: Macro ID Lookup Cache
+-- ============================================
+-- O(1) lookup instead of O(n) linear search per GetMacroById call
+-- With 197 macros and 72 slots, this reduces from ~14,184 iterations/frame to 72 lookups
+
+local macroIdLookup = {};  -- macroIdLookup[paletteKey][macroId] = macro
+local macroIdLookupDirty = true;
+
+local function RebuildMacroLookup()
+    macroIdLookup = {};
+    if gConfig and gConfig.macroDB then
+        for paletteKey, macros in pairs(gConfig.macroDB) do
+            macroIdLookup[paletteKey] = {};
+            if type(macros) == 'table' then
+                for _, macro in ipairs(macros) do
+                    if macro.id then
+                        macroIdLookup[paletteKey][macro.id] = macro;
+                    end
+                end
+            end
+        end
+    end
+    macroIdLookupDirty = false;
+end
+
+local function GetMacroFromLookup(macroId, paletteKey)
+    if macroIdLookupDirty then
+        RebuildMacroLookup();
+    end
+    local paletteLookup = macroIdLookup[paletteKey];
+    if paletteLookup then
+        return paletteLookup[macroId];
+    end
+    return nil;
+end
+
+-- ============================================
+-- Performance: Storage Key Cache
+-- ============================================
+-- Eliminates 72+ string allocations per frame from GetStorageKeyForBar
+
+local storageKeyCache = {};  -- storageKeyCache[barIndex] = storageKey
+local storageKeyCacheDirty = true;
 
 -- ============================================
 -- Constants
@@ -217,7 +275,13 @@ local PER_BAR_ONLY_KEYS = {
 -- Returns: 'global', '{jobId}:{subjobId}' (base), '{jobId}:{subjobId}:{petKey}' (pet), or '{jobId}:{subjobId}:palette:{name}' (palette)
 -- Priority: global > pet-aware > general palette > base
 -- NOTE: Palettes can be subjob-specific or shared (subjob 0), with fallback to shared if no subjob-specific exist
+-- OPTIMIZED: Results are cached to avoid 72+ string allocations per frame
 function M.GetStorageKeyForBar(barIndex)
+    -- Check cache first (major optimization for runtime rendering)
+    if not storageKeyCacheDirty and storageKeyCache[barIndex] then
+        return storageKeyCache[barIndex];
+    end
+
     local configKey = 'hotbarBar' .. barIndex;
     local barSettings = gConfig and gConfig[configKey];
     local jobId = M.jobId or 1;
@@ -229,45 +293,65 @@ function M.GetStorageKeyForBar(barIndex)
     local baseKey = string.format('%d:%d', normalizedJobId, normalizedSubjobId);
 
     if not barSettings then
+        storageKeyCache[barIndex] = baseKey;
         return baseKey;
     end
 
+    local result;
+
     -- Global mode (non-job-specific)
     if barSettings.jobSpecific == false then
-        return GLOBAL_SLOT_KEY;
-    end
+        result = GLOBAL_SLOT_KEY;
+    else
+        -- Check if pet-aware mode is enabled for this bar
+        local petKey = nil;
+        if barSettings.petAware then
+            -- Get pet palette module (lazy load)
+            local pp = getPetPalette();
+            if pp then
+                -- Check for manual override or auto-detected pet
+                petKey = pp.GetEffectivePetKey(barIndex);
+            end
+        end
 
-    -- Check if pet-aware mode is enabled for this bar
-    if barSettings.petAware then
-        -- Get pet palette module (lazy load)
-        local pp = getPetPalette();
-        if pp then
-            -- Check for manual override or auto-detected pet
-            local effectivePetKey = pp.GetEffectivePetKey(barIndex);
-            if effectivePetKey then
-                return string.format('%s:%s', baseKey, effectivePetKey);
+        if petKey then
+            result = string.format('%s:%s', baseKey, petKey);
+        else
+            -- Check for general palette (user-defined named palettes)
+            -- Palettes use subjob-aware keys with fallback to shared (subjob 0) if no subjob-specific exist
+            local p = getPalette();
+            local paletteSuffix = p and p.GetEffectivePaletteKeySuffix(barIndex);
+            if paletteSuffix then
+                -- Determine which subjobId to use: check if using fallback to shared palettes
+                local effectiveSubjobId = normalizedSubjobId;
+                if p.IsUsingFallbackPalettes and p.IsUsingFallbackPalettes(normalizedJobId, normalizedSubjobId) then
+                    effectiveSubjobId = 0;  -- Use shared palette key
+                end
+                -- NEW FORMAT: '{jobId}:{subjobId}:palette:{name}'
+                result = string.format('%d:%d:%s', normalizedJobId, effectiveSubjobId, paletteSuffix);
+            else
+                -- No pet or palette - fall back to base job:subjob key
+                result = baseKey;
             end
         end
     end
 
-    -- Check for general palette (user-defined named palettes)
-    -- Palettes use subjob-aware keys with fallback to shared (subjob 0) if no subjob-specific exist
-    local p = getPalette();
-    if p then
-        local paletteSuffix = p.GetEffectivePaletteKeySuffix(barIndex);
-        if paletteSuffix then
-            -- Determine which subjobId to use: check if using fallback to shared palettes
-            local effectiveSubjobId = normalizedSubjobId;
-            if p.IsUsingFallbackPalettes and p.IsUsingFallbackPalettes(normalizedJobId, normalizedSubjobId) then
-                effectiveSubjobId = 0;  -- Use shared palette key
-            end
-            -- NEW FORMAT: '{jobId}:{subjobId}:palette:{name}'
-            return string.format('%d:%d:%s', normalizedJobId, effectiveSubjobId, paletteSuffix);
+    -- Cache the result
+    storageKeyCache[barIndex] = result;
+
+    -- If we've cached all bars, mark cache as clean
+    local allCached = true;
+    for i = 1, M.NUM_BARS do
+        if not storageKeyCache[i] then
+            allCached = false;
+            break;
         end
     end
+    if allCached then
+        storageKeyCacheDirty = false;
+    end
 
-    -- No pet or palette - fall back to base job:subjob key
-    return baseKey;
+    return result;
 end
 
 -- Get available storage keys (palettes) for a bar
@@ -590,30 +674,23 @@ end
 
 -- Helper to look up a macro from macroDB by id
 -- paletteKey can be a job ID (number) or composite key (string like "15:avatar:ifrit")
+-- OPTIMIZED: Uses O(1) lookup map instead of linear search
 local function GetMacroById(macroId, paletteKey)
     if not gConfig or not gConfig.macroDB then return nil; end
 
-    -- Try the specific palette key first
-    local macros = gConfig.macroDB[paletteKey];
-    if macros then
-        for _, macro in ipairs(macros) do
-            if macro.id == macroId then
-                return macro;
-            end
-        end
+    -- Try the specific palette key first using O(1) lookup
+    local macro = GetMacroFromLookup(macroId, paletteKey);
+    if macro then
+        return macro;
     end
 
     -- If paletteKey is a composite key and macro not found, try base job palette
     if type(paletteKey) == 'string' then
         local baseJobId = tonumber(paletteKey:match('^(%d+)'));
         if baseJobId then
-            local baseMacros = gConfig.macroDB[baseJobId];
-            if baseMacros then
-                for _, macro in ipairs(baseMacros) do
-                    if macro.id == macroId then
-                        return macro;
-                    end
-                end
+            macro = GetMacroFromLookup(macroId, baseJobId);
+            if macro then
+                return macro;
             end
         end
     end
@@ -845,7 +922,7 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
         recastSourceItemId = slotData.recastSourceItemId,
     };
 
-    SaveSettingsToDisk();
+    NotifySlotDataChanged();
 end
 
 -- Clear a crossbar slot (sets to nil)
@@ -864,7 +941,7 @@ function M.ClearCrossbarSlotData(comboMode, slotIndex)
     -- Clear the slot
     jobSlotActions[comboMode][slotIndex] = nil;
 
-    SaveSettingsToDisk();
+    NotifySlotDataChanged();
 end
 
 -- Clear all slot actions for a hotbar (used when switching between job-specific and global modes)
@@ -922,7 +999,7 @@ function M.SetSlotData(barIndex, slotIndex, slotData)
         jobSlotActions[slotIndex] = { cleared = true };
     end
 
-    SaveSettingsToDisk();
+    NotifySlotDataChanged();
 end
 
 -- Clear slot data for a hotbar slot (pet-aware)
@@ -937,13 +1014,28 @@ function M.ClearSlotData(barIndex, slotIndex)
     if jobSlotActions then
         -- Mark as explicitly cleared
         jobSlotActions[slotIndex] = { cleared = true };
-        SaveSettingsToDisk();
+        NotifySlotDataChanged();
     end
 end
 
 -- Get the current storage key for external use (e.g., macropalette)
 function M.GetCurrentStorageKey(barIndex)
     return M.GetStorageKeyForBar(barIndex);
+end
+
+-- ============================================
+-- Cache Invalidation Functions
+-- ============================================
+
+-- Mark macro lookup cache as dirty (call when macroDB changes)
+function M.MarkMacroLookupDirty()
+    macroIdLookupDirty = true;
+end
+
+-- Invalidate storage key cache (call on palette/pet/job changes)
+function M.InvalidateStorageKeyCache()
+    storageKeyCacheDirty = true;
+    storageKeyCache = {};
 end
 
 -- ============================================
@@ -1073,6 +1165,11 @@ function M.SetPlayerJob()
        return;
     end
     local currentSubjobId = player:GetSubJob();
+
+    -- Invalidate caches if job changed
+    if M.jobId ~= currentJobId or M.subjobId ~= currentSubjobId then
+        M.InvalidateStorageKeyCache();
+    end
 
     M.jobId = currentJobId;
     M.subjobId = currentSubjobId;

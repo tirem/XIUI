@@ -26,6 +26,7 @@ local treasurepoolModule = require('config.treasurepool');
 local hotbarModule = require('config.hotbar');
 
 local treasurePool = require('modules.treasurepool.init');
+local macropalette = require('modules.hotbar.macropalette');
 
 local config = {};
 
@@ -615,7 +616,12 @@ config.DrawWindow = function(us)
     -- Detect when config closes and clear treasure pool preview
     local isConfigOpen = showConfig[1];
     if wasConfigOpen and not isConfigOpen then
-        -- Config just closed - clear preview state and reset settings
+        -- Config just closed - save any pending hotbar changes
+        if macropalette.IsHotbarDirty() then
+            SaveSettingsToDisk();
+            macropalette.ClearHotbarDirty();
+        end
+        -- Clear preview state and reset settings
         treasurePool.ClearPreview();
         gConfig.treasurePoolMiniPreview = false;
         gConfig.treasurePoolFullPreview = false;
