@@ -304,6 +304,10 @@ local assetsPath = nil;
 -- Structure: slotCache[slotPrim] = { texturePath, iconPath, keybindText, keybindFontSize, keybindFontColor, timerText, ... }
 local slotCache = {};
 
+-- Reverse lookup: maps 'barIndex:slotIndex' or 'comboMode:slotIndex' to slotPrim
+-- Used for targeted cache invalidation
+local slotPrimLookup = {};
+
 -- Reusable result table for DrawSlot to avoid GC pressure
 -- (Creating tables per-slot per-frame causes ~7200 allocations/sec)
 local drawSlotResult = { isHovered = false, command = nil };
@@ -317,6 +321,23 @@ local function GetSlotCache(slotPrim)
     return slotCache[slotPrim];
 end
 
+-- Register a slot prim with its identifier for targeted invalidation
+-- key: 'barIndex:slotIndex' for hotbar, 'comboMode:slotIndex' for crossbar
+function M.RegisterSlotPrim(key, slotPrim)
+    if key and slotPrim then
+        slotPrimLookup[key] = slotPrim;
+    end
+end
+
+-- Invalidate cache for a slot by key (used for targeted updates)
+-- key: 'barIndex:slotIndex' for hotbar, 'comboMode:slotIndex' for crossbar
+function M.InvalidateSlotByKey(key)
+    local slotPrim = slotPrimLookup[key];
+    if slotPrim and slotCache[slotPrim] then
+        slotCache[slotPrim] = nil;
+    end
+end
+
 -- Clear cache for a slot
 function M.ClearSlotCache(slotPrim)
     if slotPrim then
@@ -327,12 +348,21 @@ end
 -- Clear all cached state
 function M.ClearAllCache()
     slotCache = {};
+    slotPrimLookup = {};
     availabilityCache = {};
     mpCostCache = {};
     equipmentCheckCache = {};
     ninjutsuCache = {};
     itemQuantityCache = {};
     ammoStatusCache = {};
+end
+
+-- Clear only slot rendering cache (icons, positions, colors)
+-- Does NOT clear availability, MP cost, or item quantity caches
+-- OPTIMIZED: Use this for palette changes to avoid unnecessary recalculation cascade
+function M.ClearSlotRenderingCache()
+    slotCache = {};
+    slotPrimLookup = {};
 end
 
 -- Clear availability cache (call on job change, level sync, etc.)

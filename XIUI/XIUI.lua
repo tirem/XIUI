@@ -953,6 +953,12 @@ ashita.events.register('load', 'load_cb', function ()
 end);
 
 ashita.events.register('unload', 'unload_cb', function ()
+    -- Save any pending hotbar changes before unload
+    if macropalette.IsHotbarDirty() then
+        SaveSettingsToDisk();
+        macropalette.ClearHotbarDirty();
+    end
+
     statusHandler.clear_cache();
     progressbar.Cleanup();
     TextureManager.clear();
@@ -1385,6 +1391,14 @@ ashita.events.register('command', 'command_cb', function (e)
                 before, after, before - after))));
             return;
         end
+
+        -- Manual save: /xiui save
+        if (command_args[2] == 'save') then
+            SaveSettingsToDisk();
+            macropalette.ClearHotbarDirty();
+            print(chat.header(addon.name):append(chat.message('Settings saved.')));
+            return;
+        end
     end
 end);
 
@@ -1468,6 +1482,11 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
             end
         end
     elseif (e.id == 0x00B) then
+        -- Save any pending hotbar changes before zone (loading screen masks the delay)
+        if macropalette.IsHotbarDirty() then
+            SaveSettingsToDisk();
+            macropalette.ClearHotbarDirty();
+        end
         notifications.HandleZonePacket();
         treasurePool.HandleZonePacket();
         gilTracker.HandleZoneOutPacket();  -- Track zone-out time for login detection (issue #111)

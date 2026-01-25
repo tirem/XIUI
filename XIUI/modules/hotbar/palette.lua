@@ -46,6 +46,25 @@ local state = {
 };
 
 -- ============================================
+-- Performance: Palette List Cache
+-- ============================================
+-- Caches GetAvailablePalettes results to avoid ~11,100 iterations/frame in config UI
+-- Uses TTL-based invalidation for freshness
+
+local paletteListCache = {};  -- paletteListCache[cacheKey] = { palettes, timestamp }
+local crossbarPaletteListCache = {};  -- crossbarPaletteListCache[cacheKey] = { palettes, timestamp }
+local PALETTE_CACHE_TTL = 0.5;  -- 500ms cache validity
+
+local function BuildPaletteCacheKey(jobId, subjobId)
+    return string.format('%d:%d', jobId or 1, subjobId or 0);
+end
+
+local function InvalidatePaletteListCache()
+    paletteListCache = {};
+    crossbarPaletteListCache = {};
+end
+
+-- ============================================
 -- Config Structure Helpers
 -- ============================================
 
@@ -409,9 +428,18 @@ end
 -- Fallback: If no subjob-specific palettes exist, falls back to shared palettes (subjob 0)
 -- barIndex param kept for backwards compatibility but all bars are scanned
 -- Returns: { 'Stuns', 'Heals', ... } (empty if no palettes defined)
+-- OPTIMIZED: Results are cached with TTL to avoid ~11,100 iterations/frame in config UI
 function M.GetAvailablePalettes(barIndex, jobId, subjobId)
     local normalizedJobId = jobId or 1;
     local normalizedSubjobId = subjobId or 0;
+
+    -- Check cache first
+    local cacheKey = BuildPaletteCacheKey(normalizedJobId, normalizedSubjobId);
+    local cached = paletteListCache[cacheKey];
+    local now = os.clock();
+    if cached and (now - cached.timestamp) < PALETTE_CACHE_TTL then
+        return cached.palettes;
+    end
 
     -- Check subjob-specific palettes first: '{jobId}:{subjobId}:palette:{name}'
     local subjobPattern = string.format('%d:%d:%s', normalizedJobId, normalizedSubjobId, M.PALETTE_KEY_PREFIX);
@@ -468,6 +496,9 @@ function M.GetAvailablePalettes(barIndex, jobId, subjobId)
     for _, paletteName in ipairs(remaining) do
         table.insert(palettes, paletteName);
     end
+
+    -- Cache the result
+    paletteListCache[cacheKey] = { palettes = palettes, timestamp = now };
 
     return palettes;
 end
@@ -634,6 +665,9 @@ function M.CreatePalette(barIndex, paletteName, jobId, subjobId)
     end
     table.insert(gConfig.hotbar.paletteOrder[orderKey], paletteName);
 
+    -- Invalidate cache since palettes changed
+    InvalidatePaletteListCache();
+
     SaveSettingsToDisk();
     return true;
 end
@@ -729,6 +763,9 @@ function M.DeletePalette(barIndex, paletteName, jobId, subjobId)
         end
     end
 
+    -- Invalidate cache since palettes changed
+    InvalidatePaletteListCache();
+
     -- If this was the active palette, switch to the first available palette
     if state.activePalette == paletteName then
         -- Get updated list after deletion
@@ -816,6 +853,9 @@ function M.RenamePalette(barIndex, oldName, newName, jobId, subjobId)
         state.activePalette = newName;
     end
 
+    -- Invalidate cache since palettes changed
+    InvalidatePaletteListCache();
+
     SaveSettingsToDisk();
     return true;
 end
@@ -884,6 +924,9 @@ function M.MovePalette(barIndex, paletteName, direction, jobId, subjobId)
     -- Swap positions
     order[currentIndex], order[newIndex] = order[newIndex], order[currentIndex];
 
+    -- Invalidate cache since palette order changed
+    InvalidatePaletteListCache();
+
     SaveSettingsToDisk();
     return true;
 end
@@ -914,6 +957,9 @@ function M.SetPaletteOrder(barIndex, palettes, jobId, subjobId)
     for _, name in ipairs(palettes) do
         table.insert(gConfig.hotbar.paletteOrder[orderKey], name);
     end
+
+    -- Invalidate cache since palette order changed
+    InvalidatePaletteListCache();
 
     SaveSettingsToDisk();
     return true;
@@ -1024,16 +1070,26 @@ end
 -- Fallback: If no subjob-specific palettes exist, falls back to shared palettes (subjob 0)
 -- Returns: { 'Stuns', 'Heals', ... } - palettes available ONLY for crossbar (empty if none defined)
 -- Crossbar palettes are SEPARATE from hotbar palettes
+-- OPTIMIZED: Results are cached with TTL
 function M.GetCrossbarAvailablePalettes(jobId, subjobId)
+    local normalizedJobId = jobId or 1;
+    local normalizedSubjobId = subjobId or 0;
+
+    -- Check cache first
+    local cacheKey = BuildPaletteCacheKey(normalizedJobId, normalizedSubjobId);
+    local cached = crossbarPaletteListCache[cacheKey];
+    local now = os.clock();
+    if cached and (now - cached.timestamp) < PALETTE_CACHE_TTL then
+        return cached.palettes;
+    end
+
     local palettes = {};
 
     local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
     if not crossbarSettings or not crossbarSettings.slotActions then
+        crossbarPaletteListCache[cacheKey] = { palettes = palettes, timestamp = now };
         return palettes;
     end
-
-    local normalizedJobId = jobId or 1;
-    local normalizedSubjobId = subjobId or 0;
 
     -- Check subjob-specific palettes first: '{jobId}:{subjobId}:palette:{name}'
     local subjobPattern = string.format('%d:%d:%s', normalizedJobId, normalizedSubjobId, M.PALETTE_KEY_PREFIX);
@@ -1087,6 +1143,9 @@ function M.GetCrossbarAvailablePalettes(jobId, subjobId)
     for _, paletteName in ipairs(remaining) do
         table.insert(palettes, paletteName);
     end
+
+    -- Cache the result
+    crossbarPaletteListCache[cacheKey] = { palettes = palettes, timestamp = now };
 
     return palettes;
 end
@@ -1281,6 +1340,9 @@ function M.CreateCrossbarPalette(paletteName, jobId, subjobId)
     end
     table.insert(crossbarSettings.crossbarPaletteOrder[orderKey], paletteName);
 
+    -- Invalidate cache since palettes changed
+    InvalidatePaletteListCache();
+
     SaveSettingsToDisk();
     return true;
 end
@@ -1398,6 +1460,9 @@ function M.DeleteCrossbarPalette(paletteName, jobId, subjobId)
         state.crossbarActivePalette = nil;
     end
 
+    -- Invalidate cache since palettes changed
+    InvalidatePaletteListCache();
+
     SaveSettingsToDisk();
     return true;
 end
@@ -1464,6 +1529,9 @@ function M.RenameCrossbarPalette(oldName, newName, jobId, subjobId)
     if state.crossbarActivePalette == oldName then
         state.crossbarActivePalette = newName;
     end
+
+    -- Invalidate cache since palettes changed
+    InvalidatePaletteListCache();
 
     SaveSettingsToDisk();
     return true;
@@ -1534,6 +1602,9 @@ function M.MoveCrossbarPalette(paletteName, direction, jobId, subjobId)
 
     -- Swap positions
     order[currentIndex], order[newIndex] = order[newIndex], order[currentIndex];
+
+    -- Invalidate cache since palette order changed
+    InvalidatePaletteListCache();
 
     SaveSettingsToDisk();
     return true;

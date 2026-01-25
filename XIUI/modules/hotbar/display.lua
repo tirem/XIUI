@@ -157,6 +157,13 @@ local function ClearIconCache()
     iconCache = {};
 end
 
+-- Clear icon cache for a specific slot (call on targeted slot updates)
+local function ClearIconCacheForSlot(barIndex, slotIndex)
+    if iconCache[barIndex] then
+        iconCache[barIndex][slotIndex] = nil;
+    end
+end
+
 -- ============================================
 -- Helper Functions
 -- ============================================
@@ -774,6 +781,11 @@ end
 -- Expose cache clear for external callers (e.g., when slot actions change)
 function M.ClearIconCache()
     ClearIconCache();
+end
+
+-- Expose targeted cache clear for single slot updates (e.g., drag/drop)
+function M.ClearIconCacheForSlot(barIndex, slotIndex)
+    ClearIconCacheForSlot(barIndex, slotIndex);
 end
 
 -- Reset all bar positions to defaults (called when settings are reset)

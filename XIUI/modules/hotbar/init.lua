@@ -301,6 +301,8 @@ function M.Initialize(settings)
 
     -- Register pet change callback to clear slot caches
     petpalette.OnPetChanged(function(oldPetKey, newPetKey)
+        -- Invalidate storage key cache (pet change affects storage keys)
+        data.InvalidateStorageKeyCache();
         -- Clear ALL caches when pet changes to force full refresh
         slotrenderer.ClearAllCache();
         display.ClearIconCache();
@@ -311,14 +313,17 @@ function M.Initialize(settings)
         macropalette.ClearPetCommandsCache();
     end);
 
-    -- Register palette change callback to clear crossbar icon cache
+    -- Register palette change callback to clear caches
     palette.OnPaletteChanged(function(barIdentifier, oldPaletteName, newPaletteName)
+        -- Invalidate storage key cache (palette change affects storage keys)
+        data.InvalidateStorageKeyCache();
         -- Clear crossbar icon cache when any palette changes (hotbar or crossbar)
         if crossbarInitialized then
             crossbar.ClearIconCache();
         end
-        -- Clear slot renderer cache for hotbar
-        slotrenderer.ClearAllCache();
+        -- Clear ONLY slot rendering cache (not availability/MP/item caches)
+        -- OPTIMIZED: Selective invalidation avoids unnecessary recalculation cascade
+        slotrenderer.ClearSlotRenderingCache();
     end);
 
     -- Initialize macro patching system (backups original bytes, applies macrofix by default)
@@ -539,9 +544,10 @@ function M.DrawWindow(settings)
             elseif lastPayload.type == 'crossbar_slot' then
                 -- Crossbar slot was dragged outside - clear it
                 data.ClearCrossbarSlotData(lastPayload.comboMode, lastPayload.slotIndex);
-                -- Clear icon cache so slot updates immediately
+                -- Clear icon cache for this slot (targeted - fast)
                 if crossbarInitialized then
-                    crossbar.ClearIconCache();
+                    crossbar.ClearIconCacheForSlot(lastPayload.comboMode, lastPayload.slotIndex);
+                    slotrenderer.InvalidateSlotByKey(lastPayload.comboMode .. ':' .. lastPayload.slotIndex);
                 end
             end
         end
@@ -568,6 +574,9 @@ end
 -- Cleanup on addon unload
 function M.Cleanup()
     if not M.initialized then return; end
+
+    -- Flush any pending slot saves before cleanup
+    macropalette.FlushPendingSave();
 
     -- Destroy fonts for each bar
     for barIndex = 1, data.NUM_BARS do

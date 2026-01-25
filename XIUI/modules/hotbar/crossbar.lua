@@ -265,6 +265,13 @@ local function ClearCrossbarIconCache()
     iconCache = {};
 end
 
+-- Clear crossbar icon cache for a specific slot
+local function ClearCrossbarIconCacheForSlot(comboMode, slotIndex)
+    if iconCache[comboMode] then
+        iconCache[comboMode][slotIndex] = nil;
+    end
+end
+
 local state = {
     initialized = false,
 
@@ -844,8 +851,14 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
                     data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
                 end
             end
-            -- Clear icon cache so slots update immediately
-            M.ClearIconCache();
+            -- Clear icon cache for affected slots (targeted - fast)
+            ClearCrossbarIconCacheForSlot(comboMode, slotIndex);
+            slotrenderer.InvalidateSlotByKey(comboMode .. ':' .. slotIndex);
+            -- For crossbar slot swaps, also clear the source slot
+            if payload.type == 'crossbar_slot' then
+                ClearCrossbarIconCacheForSlot(payload.comboMode, payload.slotIndex);
+                slotrenderer.InvalidateSlotByKey(payload.comboMode .. ':' .. payload.slotIndex);
+            end
         end,
         dragType = 'crossbar_slot',
         getDragData = function()
@@ -859,8 +872,9 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         end,
         onRightClick = function()
             data.ClearCrossbarSlotData(comboMode, slotIndex);
-            -- Clear icon cache so slot updates immediately
-            M.ClearIconCache();
+            -- Clear icon cache for this slot (targeted - fast)
+            ClearCrossbarIconCacheForSlot(comboMode, slotIndex);
+            slotrenderer.InvalidateSlotByKey(comboMode .. ':' .. slotIndex);
         end,
         showTooltip = true,
 
@@ -1823,6 +1837,11 @@ end
 -- Clear icon cache (call when job changes)
 function M.ClearIconCache()
     ClearCrossbarIconCache();
+end
+
+-- Clear icon cache for a specific slot (call on targeted slot updates)
+function M.ClearIconCacheForSlot(comboMode, slotIndex)
+    ClearCrossbarIconCacheForSlot(comboMode, slotIndex);
 end
 
 -- Reset crossbar position to default (called when settings are reset)
