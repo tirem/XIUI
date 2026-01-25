@@ -128,15 +128,15 @@ local function GetCachedIcon(barIndex, slotIndex, bind)
 
     -- Check if we have a valid cache entry for this bind
     -- Compare by actionType+action+target+icon to detect actual changes
-    -- Also invalidate if cached icon doesn't have path (try to get primitive-enabled icon)
     if cached then
         local bindKey = BuildBindKey(bind);
-        if cached.bindKey == bindKey and cached.icon and cached.icon.path then
+        if cached.bindKey == bindKey then
+            -- Cache hit - return icon even if nil (nil = no icon exists)
             return cached.icon;
         end
     end
 
-    -- Cache miss or icon needs path - compute icon
+    -- Cache miss - compute icon
     local icon = nil;
     if bind then
         _, icon = actions.BuildCommand(bind);
