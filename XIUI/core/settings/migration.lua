@@ -504,6 +504,17 @@ function M.MigrateIndividualSettings(gConfig, defaults)
         gConfig.colorCustomization.enemyList = deep_copy_table(defaults.colorCustomization.enemyList);
     end
 
+    -- Migrate new enemyList color fields for existing users
+    if gConfig.colorCustomization and gConfig.colorCustomization.enemyList then
+        local el = gConfig.colorCustomization.enemyList;
+        local elDefaults = defaults.colorCustomization.enemyList;
+        if el.backgroundColor == nil then el.backgroundColor = elDefaults.backgroundColor; end
+        if el.borderColor == nil then el.borderColor = elDefaults.borderColor; end
+        if el.targetBorderColor == nil then el.targetBorderColor = elDefaults.targetBorderColor; end
+        if el.subtargetBorderColor == nil then el.subtargetBorderColor = elDefaults.subtargetBorderColor; end
+        if el.targetNameTextColor == nil then el.targetNameTextColor = elDefaults.targetNameTextColor; end
+    end
+
     -- Migrate new target bar settings (add missing fields for existing users)
     if gConfig.showTargetHpPercent == nil then
         gConfig.showTargetHpPercent = true;

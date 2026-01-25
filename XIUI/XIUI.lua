@@ -602,6 +602,7 @@ function ChangeProfile(name)
     uiModules.HideAll();
 
     gConfig = profileManager.GetProfileSettings(name);
+    DeepMergeWithDefaults(gConfig, defaultUserSettings);  -- Fill missing settings from defaults
     gConfig.appliedPositions = {}; -- Ensure we re-apply positions for the new profile
 
     -- If profile has no saved positions, inject defaults
@@ -853,6 +854,7 @@ settings.register('settings', 'settings_update', function (s)
         local newGConfig = profileManager.GetProfileSettings(currentProfileName);
         if (newGConfig) then
             gConfig = newGConfig;
+            DeepMergeWithDefaults(gConfig, defaultUserSettings);  -- Fill missing settings from defaults
         else
             -- Fallback
              gConfig = deep_copy_table(defaultUserSettings);
