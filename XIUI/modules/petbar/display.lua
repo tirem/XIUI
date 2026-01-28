@@ -9,6 +9,9 @@ local imgui = require('imgui');
 local ffi = require('ffi');
 local progressbar = require('libs.progressbar');
 local drawing = require('libs.drawing');
+local statusIcons = require('libs.statusicons');
+local statusHandler = require('handlers.statushandler');
+local buffTable = require('libs.bufftable');
 
 local data = require('modules.petbar.data');
 local color = require('libs.color');
@@ -989,13 +992,57 @@ function display.DrawWindow(settings)
                 data.tpText:set_visible(false);
             end
 
-            -- Add spacing for text row if any vitals text is shown
-            -- recastTopSpacing controls the gap between vitals text and recast section (anchored mode)
-            local recastTopSpacing = typeSettings.recastTopSpacing or 2;
-            if displayMpBar or displayTpBar then
-                local maxVitalsFontSize = math.max(displayMpBar and mpFontSize or 0, displayTpBar and tpFontSize or 0);
-                imgui.Dummy({totalRowWidth, maxVitalsFontSize + recastTopSpacing});
+            -- ============================================
+            -- Pet Status Icons (buffs/debuffs on pet)
+            -- Positioned on same row as MP/TP text values
+            -- ============================================
+            local showStatusIcons = gConfig.petBarShowStatusIcons;
+            if showStatusIcons == nil then showStatusIcons = true; end
+
+            -- Calculate the text row Y position (same as MP/TP text)
+            local textRowY = mpBarY;
+            if displayMpBar and displayTpBar then
+                local maxBarHeight = math.max(mpBarHeight, tpBarHeight);
+                textRowY = mpBarY + maxBarHeight + 2;
+            elseif displayMpBar then
+                textRowY = mpBarY + mpBarHeight + 2;
+            elseif displayTpBar then
+                textRowY = mpBarY + tpBarHeight + 2;
             end
+
+            -- Draw status icons on the same row as MP/TP text (left side)
+            if showStatusIcons then
+                local effectIds, effectTimes = data.GetPetStatusEffects();
+                -- When settings open with preview, show 2 dummy icons if none (so user can see layout)
+                if showConfig and showConfig[1] and gConfig.petBarPreview and (not effectIds or #effectIds == 0) then
+                    effectIds = { 56, 92 };   -- Berserk, Evasion Boost (common pet buffs)
+                    effectTimes = { 45, nil };
+                end
+                if effectIds and #effectIds > 0 then
+                    -- Clamp so 0/invalid from saved config doesn't hide icons (default 16)
+                    local statusIconSize = math.max(8, tonumber(gConfig.petBarStatusIconSize) or 16);
+
+                    -- Position icons at left side, same Y as MP/TP text
+                    imgui.SetCursorScreenPos({barsStartX, textRowY});
+
+                    statusIcons.DrawStatusIcons(
+                        effectIds,
+                        statusIconSize,
+                        6,      -- maxColumns (single row)
+                        1,      -- maxRows
+                        false,  -- drawBg (background behind icons)
+                        0,      -- xOffset
+                        effectTimes,
+                        nil,    -- settings (use defaults)
+                        statusHandler,
+                        buffTable
+                    );
+
+                    -- Set cursor to fixed position after icons (icon + timer height)
+                    imgui.SetCursorScreenPos({barsStartX, textRowY + statusIconSize - 5});
+                end
+            end
+            imgui.Dummy({0, 8});
         else
             -- Hide vitals fonts when no pet
             data.nameText:set_visible(false);
@@ -1284,8 +1331,9 @@ function display.DrawWindow(settings)
             windowState.height = windowHeight;
         end
 
-        -- Store main window position for pet target window
+        -- Store main window position for pet target window (top = stable anchor for snap Y offset)
         data.lastMainWindowPosX = windowPosX;
+        data.lastMainWindowTop = windowPosY;
         data.lastMainWindowBottom = windowPosY + windowHeight + 4;
 
         -- Update background primitives

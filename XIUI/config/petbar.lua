@@ -1053,6 +1053,24 @@ local function DrawPetBarSettingsContent()
     components.DrawCheckbox('Hide During Events', 'petBarHideDuringEvents');
     components.DrawCheckbox('Preview Mode', 'petBarPreview');
     imgui.ShowHelp('Show the pet bar with mock data. Preview shows the pet type from the selected tab below.');
+
+    imgui.Spacing();
+    imgui.Separator();
+    imgui.Spacing();
+
+    -- Pet Status Icons
+    imgui.TextColored(components.TAB_STYLE.gold, 'Pet Status Icons');
+    imgui.ShowHelp('Show buff/debuff status icons on your pet.');
+
+    components.DrawCheckbox('Show Status Icons', 'petBarShowStatusIcons');
+    imgui.ShowHelp('Display status effect icons (buffs/debuffs) on your pet.');
+
+    if gConfig.petBarShowStatusIcons ~= false then
+        if gConfig.petBarStatusIconSize == nil or type(gConfig.petBarStatusIconSize) ~= 'number' or gConfig.petBarStatusIconSize < 8 then
+            gConfig.petBarStatusIconSize = 16;
+        end
+        components.DrawSlider('Icon Size##petStatus', 'petBarStatusIconSize', 8, 32);
+    end
 end
 
 -- Helper: Draw Pet Target specific settings (used in tab)
@@ -1071,6 +1089,7 @@ local function DrawPetTargetSettingsContent()
     if gConfig.petTargetSnapToPetBar then
         components.DrawSlider('Snap Offset X##petTargetSnap', 'petTargetSnapOffsetX', -200, 200);
         components.DrawSlider('Snap Offset Y##petTargetSnap', 'petTargetSnapOffsetY', -200, 200);
+        imgui.ShowHelp('Offset from top of pet bar. Stays fixed when buffs change the bar height.');
     end
 
     if components.CollapsingSection('Display Options##petTarget', false) then

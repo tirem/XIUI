@@ -82,6 +82,7 @@ local palette = require('modules.hotbar.palette');
 local skillchainModule = require('modules.hotbar.skillchain');
 local configMenu = require('config');
 local debuffHandler = require('handlers.debuffhandler');
+local petBuffHandler = require('handlers.petbuffhandler');
 local actionTracker = require('handlers.actiontracker');
 local mobInfo = require('modules.mobinfo.init');
 local statusHandler = require('handlers.statushandler');
@@ -1433,6 +1434,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
             end
             if gConfig.showPartyList then partyList.HandleActionPacket(actionPacket); end
             debuffHandler.HandleActionPacket(actionPacket);
+            petBuffHandler.HandleActionPacket(actionPacket);
             actionTracker.HandleActionPacket(actionPacket);
             if gConfig.showNotifications then notifications.HandleActionPacket(actionPacket); end
             -- Skillchain tracking for hotbar/crossbar WS highlighting
@@ -1451,6 +1453,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         enemyList.HandleZonePacket(e);
         partyList.HandleZonePacket(e);
         debuffHandler.HandleZonePacket(e);
+        petBuffHandler.HandleZonePacket();
         actionTracker.HandleZonePacket();
         mobInfo.data.HandleZonePacket(e);
         statusHandler.clear_zone_cache();  -- Clear status icon cache to prevent accumulation
@@ -1467,6 +1470,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         local messagePacket = ParseMessagePacket(e.data);
         if messagePacket then
             debuffHandler.HandleMessagePacket(messagePacket);
+            petBuffHandler.HandleMessagePacket(messagePacket);
             if gConfig.showNotifications then
                 notifications.HandleMessagePacket(e, messagePacket, 0x0029);
             end
