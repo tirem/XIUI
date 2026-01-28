@@ -1042,7 +1042,13 @@ function display.DrawWindow(settings)
                     imgui.SetCursorScreenPos({barsStartX, textRowY + statusIconSize - 5});
                 end
             end
-            imgui.Dummy({0, 8});
+            -- Add spacing for text row if any vitals text is shown
+            -- recastTopSpacing controls the gap between vitals text and recast section (anchored mode)
+            local recastTopSpacing = typeSettings.recastTopSpacing or 2;
+            if displayMpBar or displayTpBar then
+                local maxVitalsFontSize = math.max(displayMpBar and mpFontSize or 0, displayTpBar and tpFontSize or 0);
+                imgui.Dummy({totalRowWidth, maxVitalsFontSize + recastTopSpacing});
+            end
         else
             -- Hide vitals fonts when no pet
             data.nameText:set_visible(false);
