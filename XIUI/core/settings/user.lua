@@ -723,6 +723,10 @@ function M.createUserSettingsDefaults()
         petBarJugOffsetX = 5,
         petBarJugOffsetY = -17,
 
+        -- Pet Status Icons (buffs/debuffs on pet)
+        petBarShowStatusIcons = true,
+        petBarStatusIconSize = 16,
+
         -- Pet ability icon toggles per job
         -- SMN abilities
         petBarSmnShowBPRage = true,
