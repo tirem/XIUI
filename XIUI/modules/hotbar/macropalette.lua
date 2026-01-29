@@ -57,6 +57,15 @@ local COLORS = {
     usable = {0.5, 0.7, 1.0, 1.0},  -- Blue tint for usable items
 };
 
+-- Deferred save state for hotbar slot changes
+-- Instead of saving immediately (which causes ~500ms freeze), we track dirty state
+-- and save only at natural pause points: zone change, palette close, config close, unload
+local hotbarDataDirty = false;
+
+local function MarkHotbarDirty()
+    hotbarDataDirty = true;
+end
+
 -- Helper to generate abbreviated text from action name (max 4 chars)
 -- If preferAction is true, prioritize action name over displayName (for previews)
 local function GetActionAbbreviation(macro, preferAction)
@@ -95,7 +104,8 @@ local function GetActionAbbreviation(macro, preferAction)
     return name:sub(1, 4):upper();
 end
 
--- Helper to clear all hotbar/crossbar icon caches
+-- Helper to clear all hotbar/crossbar icon caches (full clear - expensive)
+local slotrenderer = nil;  -- Lazy-loaded
 local function ClearAllIconCaches()
     -- Lazy-load display to avoid circular dependency
     if display == nil then
@@ -112,6 +122,56 @@ local function ClearAllIconCaches()
     end
     if crossbar and crossbar.ClearIconCache then
         crossbar.ClearIconCache();
+    end
+    -- Lazy-load slotrenderer to clear slot rendering cache
+    if slotrenderer == nil then
+        local success, mod = pcall(require, 'modules.hotbar.slotrenderer');
+        if success then slotrenderer = mod; end
+    end
+    if slotrenderer and slotrenderer.ClearSlotRenderingCache then
+        slotrenderer.ClearSlotRenderingCache();
+    end
+end
+
+-- Helper to clear icon cache for a single hotbar slot (targeted - fast)
+local function ClearSlotIconCache(barIndex, slotIndex)
+    -- Lazy-load modules
+    if display == nil then
+        local success, mod = pcall(require, 'modules.hotbar.display');
+        if success then display = mod; end
+    end
+    if slotrenderer == nil then
+        local success, mod = pcall(require, 'modules.hotbar.slotrenderer');
+        if success then slotrenderer = mod; end
+    end
+    -- Clear display icon cache for this slot
+    if display and display.ClearIconCacheForSlot then
+        display.ClearIconCacheForSlot(barIndex, slotIndex);
+    end
+    -- Clear slotrenderer cache for this slot
+    if slotrenderer and slotrenderer.InvalidateSlotByKey then
+        slotrenderer.InvalidateSlotByKey(barIndex .. ':' .. slotIndex);
+    end
+end
+
+-- Helper to clear icon cache for a single crossbar slot (targeted - fast)
+local function ClearCrossbarSlotIconCache(comboMode, slotIndex)
+    -- Lazy-load modules
+    if crossbar == nil then
+        local success, mod = pcall(require, 'modules.hotbar.crossbar');
+        if success then crossbar = mod; end
+    end
+    if slotrenderer == nil then
+        local success, mod = pcall(require, 'modules.hotbar.slotrenderer');
+        if success then slotrenderer = mod; end
+    end
+    -- Clear crossbar icon cache for this slot
+    if crossbar and crossbar.ClearIconCacheForSlot then
+        crossbar.ClearIconCacheForSlot(comboMode, slotIndex);
+    end
+    -- Clear slotrenderer cache for this slot
+    if slotrenderer and slotrenderer.InvalidateSlotByKey then
+        slotrenderer.InvalidateSlotByKey(comboMode .. ':' .. slotIndex);
     end
 end
 
@@ -1055,6 +1115,7 @@ function M.AddMacro(macroData)
     macroData.id = maxId + 1;
     table.insert(db, macroData);
     SaveSettingsToDisk();
+    data.MarkMacroLookupDirty();
 
     return macroData.id;
 end
@@ -1070,6 +1131,7 @@ function M.UpdateMacro(macroId, macroData)
             SaveSettingsToDisk();
             -- Clear icon cache so hotbar slots referencing this macro update
             ClearAllIconCaches();
+            data.MarkMacroLookupDirty();
             return true;
         end
     end
@@ -1135,6 +1197,7 @@ function M.DeleteMacro(macroId)
             SaveSettingsToDisk();
             -- Clear icon cache so hotbar slots update immediately
             ClearAllIconCaches();
+            data.MarkMacroLookupDirty();
             return true;
         end
     end
@@ -1255,7 +1318,7 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
                 macroRef = macroData.id,  -- Store reference to source macro for live updates
                 macroPaletteKey = macroPaletteKey,  -- Store which palette the macro came from
             };
-            SaveSettingsToDisk();
+            MarkHotbarDirty();
         end
 
     elseif payload.type == 'slot' then
@@ -1319,7 +1382,7 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
         jobSlotActions[targetSlotIndex] = sourceData;
         sourceJobSlotActions[sourceSlotIndex] = targetData;
 
-        SaveSettingsToDisk();
+        MarkHotbarDirty();
 
     elseif payload.type == 'crossbar_slot' then
         -- Dragging from crossbar to hotbar (one-way copy, doesn't clear source)
@@ -1339,12 +1402,16 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
                 macroRef = sourceBindData.macroRef,  -- Preserve macro reference
                 macroPaletteKey = sourceBindData.macroPaletteKey,  -- Preserve palette key
             };
-            SaveSettingsToDisk();
+            MarkHotbarDirty();
         end
     end
 
-    -- Clear icon cache so slots update immediately after drag/drop
-    ClearAllIconCaches();
+    -- Clear icon cache for affected slots (targeted - fast)
+    ClearSlotIconCache(targetBarIndex, targetSlotIndex);
+    -- For slot swaps, also clear the source slot
+    if payload.type == 'slot' then
+        ClearSlotIconCache(payload.barIndex, payload.slotIndex);
+    end
     return true;
 end
 
@@ -1352,8 +1419,8 @@ end
 function M.ClearSlot(barIndex, slotIndex)
     -- Use the pet-aware clear function from data.lua
     data.ClearSlotData(barIndex, slotIndex);
-    -- Clear icon cache so the slot updates immediately
-    ClearAllIconCaches();
+    -- Clear icon cache for this slot (targeted - fast)
+    ClearSlotIconCache(barIndex, slotIndex);
 end
 
 -- ============================================
@@ -1376,6 +1443,11 @@ function M.OpenPalette()
 end
 
 function M.ClosePalette()
+    -- Save any pending hotbar changes when user closes the palette
+    if hotbarDataDirty then
+        SaveSettingsToDisk();
+        hotbarDataDirty = false;
+    end
     paletteOpen = false;
     selectedMacroIndex = nil;
     editingMacro = nil;
@@ -3794,5 +3866,27 @@ end
 function M.RenderDragPreview()
     dragdrop.Render();
 end
+
+-- Flush any pending slot save (call on unload to ensure changes are persisted)
+function M.FlushPendingSave()
+    if hotbarDataDirty then
+        SaveSettingsToDisk();
+        hotbarDataDirty = false;
+    end
+end
+
+-- Check if hotbar has unsaved changes
+function M.IsHotbarDirty()
+    return hotbarDataDirty;
+end
+
+-- Clear the dirty flag (call after saving)
+function M.ClearHotbarDirty()
+    hotbarDataDirty = false;
+end
+
+-- Register as callback with data.lua for unified slot change handling
+-- When slots change, just mark dirty - don't save immediately
+data.SetSlotDataChangedCallback(MarkHotbarDirty);
 
 return M;

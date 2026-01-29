@@ -128,15 +128,15 @@ local function GetCachedIcon(barIndex, slotIndex, bind)
 
     -- Check if we have a valid cache entry for this bind
     -- Compare by actionType+action+target+icon to detect actual changes
-    -- Also invalidate if cached icon doesn't have path (try to get primitive-enabled icon)
     if cached then
         local bindKey = BuildBindKey(bind);
-        if cached.bindKey == bindKey and cached.icon and cached.icon.path then
+        if cached.bindKey == bindKey then
+            -- Cache hit - return icon even if nil (nil = no icon exists)
             return cached.icon;
         end
     end
 
-    -- Cache miss or icon needs path - compute icon
+    -- Cache miss - compute icon
     local icon = nil;
     if bind then
         _, icon = actions.BuildCommand(bind);
@@ -155,6 +155,13 @@ end
 -- Clear icon cache (call when slots change)
 local function ClearIconCache()
     iconCache = {};
+end
+
+-- Clear icon cache for a specific slot (call on targeted slot updates)
+local function ClearIconCacheForSlot(barIndex, slotIndex)
+    if iconCache[barIndex] then
+        iconCache[barIndex][slotIndex] = nil;
+    end
 end
 
 -- ============================================
@@ -222,6 +229,7 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
         labelFont = data.labelFonts[barIndex] and data.labelFonts[barIndex][slotIndex],
         mpCostFont = data.mpCostFonts[barIndex] and data.mpCostFonts[barIndex][slotIndex],
         quantityFont = data.quantityFonts[barIndex] and data.quantityFonts[barIndex][slotIndex],
+        abbreviationFont = data.abbreviationFonts[barIndex] and data.abbreviationFonts[barIndex][slotIndex],
     };
 
     -- Get icon for this action (cached - only rebuilds when bind changes)
@@ -409,6 +417,9 @@ local function DrawBarWindow(barIndex, settings)
         if data.quantityFonts[barIndex] and data.quantityFonts[barIndex][hiddenSlot] then
             data.quantityFonts[barIndex][hiddenSlot]:set_visible(false);
         end
+        if data.abbreviationFonts[barIndex] and data.abbreviationFonts[barIndex][hiddenSlot] then
+            data.abbreviationFonts[barIndex][hiddenSlot]:set_visible(false);
+        end
     end
 
     -- Window flags (dummy window for positioning)
@@ -545,6 +556,9 @@ local function DrawBarWindow(barIndex, settings)
                         end
                         if data.quantityFonts[barIndex] and data.quantityFonts[barIndex][slotIndex] then
                             data.quantityFonts[barIndex][slotIndex]:set_visible(false);
+                        end
+                        if data.abbreviationFonts[barIndex] and data.abbreviationFonts[barIndex][slotIndex] then
+                            data.abbreviationFonts[barIndex][slotIndex]:set_visible(false);
                         end
                     else
                         -- Check for skillchain prediction on weapon skill slots
@@ -774,6 +788,11 @@ end
 -- Expose cache clear for external callers (e.g., when slot actions change)
 function M.ClearIconCache()
     ClearIconCache();
+end
+
+-- Expose targeted cache clear for single slot updates (e.g., drag/drop)
+function M.ClearIconCacheForSlot(barIndex, slotIndex)
+    ClearIconCacheForSlot(barIndex, slotIndex);
 end
 
 -- Reset all bar positions to defaults (called when settings are reset)

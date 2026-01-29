@@ -700,6 +700,8 @@ macrolib.set_macro_bar_mode = function(mode)
     elseif currentMode == 'macrofix' then
         MacroBlockLog('  Restoring macrofix patches...');
         restoreMacrofix();
+        -- Also restore controller patches (may be applied for hold-to-show)
+        restoreHideController();
     end
 
     -- Apply new mode
@@ -737,6 +739,8 @@ macrolib.restore_default = function()
         restoreHideController();  -- Also restore controller patches
     elseif currentMode == 'macrofix' then
         restoreMacrofix();
+        -- Also restore controller patches (may be applied for hold-to-show)
+        restoreHideController();
     end
     currentMode = nil;
     MacroBlockLog('restore_default: restored original game state');
@@ -749,6 +753,44 @@ end
 
 macrolib.get_macro_bar_mode = function()
     return currentMode;
+end
+
+--[[
+* Sets controller hold-to-show behavior for native macro bars.
+* When enabled, holding L2/R2 shows macros and releasing hides them.
+* When disabled, L2/R2 acts as a toggle (tap to show, tap again to hide).
+* Only applies when disableMacroBars is OFF (macrofix mode).
+* @param {boolean} enabled - true for hold-to-show, false for tap-to-toggle
+--]]
+macrolib.set_controller_hold_to_show = function(enabled)
+    if not initialized then
+        initializePatches();
+    end
+    if enabled then
+        applyHideController();
+    else
+        restoreHideController();
+    end
+end
+
+--[[
+* Checks if controller hold-to-show patches are currently active.
+* @return {boolean} True if any controller patch is active.
+--]]
+macrolib.is_controller_hold_to_show_active = function()
+    for _, p in ipairs(hideDataController) do
+        if p.addr ~= 0 then
+            local isActive = true;
+            for i = 1, #p.patch do
+                if ashita.memory.read_uint8(p.addr + i - 1) ~= p.patch[i] then
+                    isActive = false;
+                    break;
+                end
+            end
+            if isActive then return true; end
+        end
+    end
+    return false;
 end
 
 macrolib.set_debug_enabled = function(enabled)
@@ -767,6 +809,7 @@ macrolib.get_diagnostics = function()
         hidePatchesController = {},
         macrofixPatches = {},
         macrofixConflict = macrofixConflictDetected,  -- True if macrofix addon was loaded first
+        controllerHoldToShow = macrolib.is_controller_hold_to_show_active(),
     };
 
     for _, p in ipairs(hideData) do

@@ -377,12 +377,25 @@ local function DrawGlobalPalettesSection()
     local availablePalettes = palette.GetAvailablePalettes(1, jobId, subjobId);
     local currentPalette = palette.GetActivePalette(1);  -- Same for all bars
 
+    -- OPTIMIZED: Cache palette count and index for reuse within this frame
+    local paletteCount = #availablePalettes;
+    local currentPaletteIndex = nil;
+    if currentPalette then
+        for i, name in ipairs(availablePalettes) do
+            if name == currentPalette then
+                currentPaletteIndex = i;
+                break;
+            end
+        end
+    end
+
     -- Check if using fallback (shared library) palettes
     local usingFallback = palette.IsUsingFallback(jobId, subjobId, 'hotbar');
 
     -- Ensure active palette is set if we have palettes but none active
-    if #availablePalettes > 0 and not currentPalette then
+    if paletteCount > 0 and not currentPalette then
         currentPalette = availablePalettes[1];
+        currentPaletteIndex = 1;
         palette.SetActivePalette(1, currentPalette);
     end
 
@@ -400,17 +413,14 @@ local function DrawGlobalPalettesSection()
     -- Header with count
     imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Palettes:');
     imgui.SameLine();
-    imgui.TextColored({0.5, 1.0, 0.5, 1.0}, tostring(#availablePalettes) .. ' palette(s)');
+    imgui.TextColored({0.5, 1.0, 0.5, 1.0}, tostring(paletteCount) .. ' palette(s)');
     imgui.ShowHelp('Create named palettes to quickly switch between different hotbar configurations.\nPalettes are GLOBAL - switching changes all 6 hotbars at once.\nUse keybind cycling or /xiui palette <name> to switch.');
 
     -- Current palette selector with inline buttons
     -- Get display name with number prefix for the closed dropdown
     local currentDisplayName = currentPalette or 'Select palette';
-    if currentPalette then
-        local idx = palette.GetPaletteIndex(1, currentPalette, jobId, subjobId);
-        if idx then
-            currentDisplayName = idx .. '. ' .. currentPalette;
-        end
+    if currentPalette and currentPaletteIndex then
+        currentDisplayName = currentPaletteIndex .. '. ' .. currentPalette;
     end
 
     imgui.SetNextItemWidth(150);
@@ -447,7 +457,7 @@ local function DrawGlobalPalettesSection()
     imgui.PopStyleColor(2);
 
     -- Delete button (only if more than 1 palette exists - can't delete the last one)
-    local paletteCount = palette.GetPaletteCount(1, jobId, subjobId);
+    -- OPTIMIZED: Using cached paletteCount instead of calling GetPaletteCount again
     if currentPalette and paletteCount > 1 then
         imgui.SameLine();
         imgui.PushStyleColor(ImGuiCol_Button, {0.6, 0.2, 0.2, 1.0});
@@ -470,9 +480,9 @@ local function DrawGlobalPalettesSection()
         imgui.SameLine();
 
         -- Up arrow button
-        local paletteIndex = palette.GetPaletteIndex(1, currentPalette, jobId, subjobId);
-        local canMoveUp = paletteIndex and paletteIndex > 1;
-        local canMoveDown = paletteIndex and paletteIndex < paletteCount;
+        -- OPTIMIZED: Using cached currentPaletteIndex instead of calling GetPaletteIndex again
+        local canMoveUp = currentPaletteIndex and currentPaletteIndex > 1;
+        local canMoveDown = currentPaletteIndex and currentPaletteIndex < paletteCount;
 
         if not canMoveUp then
             imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.2, 0.2, 0.5});
@@ -546,12 +556,25 @@ local function DrawCrossbarGlobalPalettesSection()
     local availablePalettes = palette.GetCrossbarAvailablePalettes(jobId, subjobId);
     local currentPalette = palette.GetActivePaletteForCombo('L2');  -- Global for all combos
 
+    -- OPTIMIZED: Cache palette count and index for reuse within this frame
+    local paletteCount = #availablePalettes;
+    local currentPaletteIndex = nil;
+    if currentPalette then
+        for i, name in ipairs(availablePalettes) do
+            if name == currentPalette then
+                currentPaletteIndex = i;
+                break;
+            end
+        end
+    end
+
     -- Check if using fallback (shared library) palettes
     local usingFallback = palette.IsUsingFallback(jobId, subjobId, 'crossbar');
 
     -- Ensure active palette is set if we have palettes but none active
-    if #availablePalettes > 0 and not currentPalette then
+    if paletteCount > 0 and not currentPalette then
         currentPalette = availablePalettes[1];
+        currentPaletteIndex = 1;
         palette.SetActivePaletteForCombo('L2', currentPalette);
     end
 
@@ -569,17 +592,14 @@ local function DrawCrossbarGlobalPalettesSection()
     -- Header with count
     imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Palettes:');
     imgui.SameLine();
-    imgui.TextColored({0.5, 1.0, 0.5, 1.0}, tostring(#availablePalettes) .. ' palette(s)');
+    imgui.TextColored({0.5, 1.0, 0.5, 1.0}, tostring(paletteCount) .. ' palette(s)');
     imgui.ShowHelp('Create named palettes to quickly switch between crossbar configurations.\nPalettes are GLOBAL - switching changes all combo modes (L2, R2, L2+R2, etc.) at once.');
 
     -- Current palette selector with inline buttons
     -- Get display name with number prefix for the closed dropdown
     local currentDisplayName = currentPalette or 'Select palette';
-    if currentPalette then
-        local idx = palette.GetCrossbarPaletteIndex(currentPalette, jobId, subjobId);
-        if idx then
-            currentDisplayName = idx .. '. ' .. currentPalette;
-        end
+    if currentPalette and currentPaletteIndex then
+        currentDisplayName = currentPaletteIndex .. '. ' .. currentPalette;
     end
 
     imgui.SetNextItemWidth(150);
@@ -616,7 +636,7 @@ local function DrawCrossbarGlobalPalettesSection()
     imgui.PopStyleColor(2);
 
     -- Delete button (only if more than 1 palette exists - can't delete the last one)
-    local paletteCount = palette.GetCrossbarPaletteCount(jobId, subjobId);
+    -- OPTIMIZED: Using cached paletteCount instead of calling GetCrossbarPaletteCount again
     if currentPalette and paletteCount > 1 then
         imgui.SameLine();
         imgui.PushStyleColor(ImGuiCol_Button, {0.6, 0.2, 0.2, 1.0});
@@ -638,17 +658,9 @@ local function DrawCrossbarGlobalPalettesSection()
         imgui.TextColored({0.5, 0.5, 0.5, 1.0}, '|');
         imgui.SameLine();
 
-        -- Find current palette index
-        local paletteIndex = nil;
-        for i, name in ipairs(availablePalettes) do
-            if name == currentPalette then
-                paletteIndex = i;
-                break;
-            end
-        end
-
-        local canMoveUp = paletteIndex and paletteIndex > 1;
-        local canMoveDown = paletteIndex and paletteIndex < #availablePalettes;
+        -- OPTIMIZED: Using cached currentPaletteIndex instead of recalculating
+        local canMoveUp = currentPaletteIndex and currentPaletteIndex > 1;
+        local canMoveDown = currentPaletteIndex and currentPaletteIndex < paletteCount;
 
         if not canMoveUp then
             imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.2, 0.2, 0.5});
@@ -681,40 +693,6 @@ local function DrawCrossbarGlobalPalettesSection()
     if crossbarGlobalPaletteErrorMessage then
         imgui.TextColored({1.0, 0.4, 0.4, 1.0}, crossbarGlobalPaletteErrorMessage);
     end
-
-    imgui.Spacing();
-    imgui.Separator();
-    imgui.Spacing();
-
-    -- Palette cycle button config
-    imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Crossbar Cycle Button:');
-    imgui.SameLine();
-
-    local cycleButtons = { 'R1', 'L1' };
-    local currentCycleButton = crossbarSettings.crossbarPaletteCycleButton or 'R1';
-    local currentCycleIndex = 1;
-    for i, btn in ipairs(cycleButtons) do
-        if btn == currentCycleButton then
-            currentCycleIndex = i;
-            break;
-        end
-    end
-
-    imgui.SetNextItemWidth(80);
-    if imgui.BeginCombo('##crossbarCycleBtnGlobal', currentCycleButton) then
-        for i, btn in ipairs(cycleButtons) do
-            local isSelected = (i == currentCycleIndex);
-            if imgui.Selectable(btn .. '##cycleBtnGlobal' .. i, isSelected) then
-                crossbarSettings.crossbarPaletteCycleButton = btn;
-                SaveSettingsOnly();
-            end
-            if isSelected then
-                imgui.SetItemDefaultFocus();
-            end
-        end
-        imgui.EndCombo();
-    end
-    imgui.ShowHelp('Which shoulder button + DPad cycles crossbar palettes.\nHold R1 + R2 together, then press DPad Up/Down to cycle palettes.');
 
     imgui.Spacing();
 end
@@ -2133,6 +2111,14 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
                 end
                 imgui.ShowHelp('Show current combo mode text in center (L2+R2, R2+L2, L2x2, R2x2). X/Y offsets adjust position.');
 
+                -- Show Palette Name with X/Y offsets
+                components.DrawPartyCheckbox(crossbarSettings, 'Show Palette Name##crossbar', 'showPaletteName');
+                if crossbarSettings.showPaletteName then
+                    imgui.SameLine();
+                    components.DrawInlineOffsets(crossbarSettings, 'crossbarpalette', 'paletteNameOffsetX', 'paletteNameOffsetY', 35);
+                end
+                imgui.ShowHelp('Display current palette name and index (e.g., "Stuns (2/5)"). X/Y offsets adjust position.');
+
                 -- Show Action Labels with X/Y offsets
                 components.DrawPartyCheckbox(crossbarSettings, 'Show Action Labels##crossbar', 'showActionLabels');
                 if crossbarSettings.showActionLabels then
@@ -2220,6 +2206,9 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
 
                 components.DrawPartySliderInt(crossbarSettings, 'Combo Text Size##crossbar', 'comboTextFontSize', 8, 24, '%d', nil, 12);
                 imgui.ShowHelp('Font size for combo mode text (L2+R2, R2+L2, etc.).');
+
+                components.DrawPartySliderInt(crossbarSettings, 'Palette Name Text Size##crossbar', 'paletteNameFontSize', 8, 24, '%d', nil, 10);
+                imgui.ShowHelp('Font size for palette name display.');
             end
 
             -- Visual Feedback section
@@ -2387,6 +2376,20 @@ function M.DrawSettings(state)
         SaveSettingsOnly();
         DeferredUpdateVisuals();
     end
+
+    -- Controller Hold-to-Show checkbox (only shown when Disable XI Macros is OFF)
+    if not gConfig.hotbarGlobal.disableMacroBars then
+        imgui.Indent(20);
+        local holdToShow = { gConfig.hotbarGlobal.controllerHoldToShow ~= false };  -- default true
+        if imgui.Checkbox('Controller Hold-to-Show', holdToShow) then
+            gConfig.hotbarGlobal.controllerHoldToShow = holdToShow[1];
+            SaveSettingsOnly();
+            DeferredUpdateVisuals();
+        end
+        imgui.ShowHelp('When enabled (default), native macro bars auto-hide when\ntriggers are released. Disable for legacy tap-to-toggle.\nOnly affects controller input.');
+        imgui.Unindent(20);
+    end
+
     imgui.SameLine();
     -- Get diagnostic info for tooltip
     local diag = macrosLib.get_diagnostics();
@@ -2414,7 +2417,9 @@ function M.DrawSettings(state)
     if diag.mode == 'hide' then
         imgui.TextColored({0.5, 1.0, 0.5, 1.0}, '(hidden)');  -- Green when hidden
     elseif diag.mode == 'macrofix' then
-        imgui.TextColored({0.5, 0.8, 1.0, 1.0}, '(macrofix)');  -- Cyan for macrofix mode
+        -- Show hold-to-show status when in macrofix mode
+        local statusText = diag.controllerHoldToShow and '(macrofix, hold-to-show)' or '(macrofix)';
+        imgui.TextColored({0.5, 0.8, 1.0, 1.0}, statusText);  -- Cyan for macrofix mode
     else
         imgui.TextColored({1.0, 0.7, 0.3, 1.0}, '(init...)');  -- Orange if still initializing
     end
@@ -2429,6 +2434,12 @@ function M.DrawSettings(state)
             modeStr = 'macrofix (fast built-in macros)';
         end
         imgui.Text('Mode: ' .. modeStr);
+
+        -- Show controller hold-to-show status when in macrofix mode
+        if diag.mode == 'macrofix' then
+            local holdStatus = diag.controllerHoldToShow and 'enabled' or 'disabled';
+            imgui.Text('Controller Hold-to-Show: ' .. holdStatus);
+        end
 
         -- Check if macrofix addon is loaded (safely - GetAddonManager may not exist)
         local macrofixLoaded = false;
@@ -2613,7 +2624,7 @@ function M.DrawSettings(state)
         local currentCtrlIndex = (gConfig.hotbarGlobal.paletteCycleControllerEnabled ~= false) and 2 or 1;
 
         imgui.AlignTextToFramePadding();
-        imgui.Text('Controller Palette:');
+        imgui.Text('Palette Cycle:');
         imgui.SameLine();
         imgui.SetNextItemWidth(90);
         if imgui.BeginCombo('##ctrlPaletteCycle', ctrlOptions[currentCtrlIndex]) then
@@ -2657,7 +2668,7 @@ function M.DrawSettings(state)
                 imgui.EndCombo();
             end
         end
-        imgui.ShowHelp('Controller shortcut to cycle through hotbar palettes.\nPress the selected button + DPad Up/Down (without holding triggers) to cycle palettes for all hotbars.');
+        imgui.ShowHelp('Controller shortcut to cycle palettes.\nPress the selected button + DPad Up/Down to cycle palettes for all hotbars and the active crossbar.');
     end
 
     -- Log Palette Name checkbox (show if any palette cycling is potentially enabled)
