@@ -404,6 +404,33 @@ function M.GetCacheSubJobId()
     return cacheSubJobId;
 end
 
+--- Check if an ability name is in the cached abilities list
+--- This ensures availability check uses same data as dropdown
+---@param abilityName string The ability name to check
+---@return boolean isAvailable True if ability is in cached list
+function M.IsAbilityInCache(abilityName)
+    if not cachedAbilities then return true; end  -- No cache = assume available
+    for _, ability in ipairs(cachedAbilities) do
+        if ability.name == abilityName then
+            return true;
+        end
+    end
+    return false;
+end
+
+--- Check if a weaponskill name is in the cached weaponskills list
+---@param wsName string The weaponskill name to check
+---@return boolean isAvailable True if weaponskill is in cached list
+function M.IsWeaponskillInCache(wsName)
+    if not cachedWeaponskills then return true; end
+    for _, ws in ipairs(cachedWeaponskills) do
+        if ws.name == wsName then
+            return true;
+        end
+    end
+    return false;
+end
+
 -- Export helper for external use
 M.IsGarbageSpellName = IsGarbageSpellName;
 M.CONTAINERS = CONTAINERS;

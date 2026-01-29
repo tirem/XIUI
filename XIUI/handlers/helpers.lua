@@ -180,6 +180,7 @@ CalculateFastCast = fastcastLib.CalculateFastCast;
 SeparateNumbers = formatLib.SeparateNumbers;
 FormatInt = formatLib.FormatInt;
 deep_copy_table = formatLib.deep_copy_table;
+DeepMergeWithDefaults = formatLib.DeepMergeWithDefaults;
 GetJobStr = formatLib.GetJobStr;
 
 -- Color Utilities (from color.lua)

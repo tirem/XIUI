@@ -117,6 +117,7 @@ local AMMO_STATUS_EFFECTS_BY_NAME = {
     ['Sleep Bolt']    = 2,    -- Sleep
     ['Blind Bolt']    = 5,    -- Blindness
     ['Venom Bolt']    = 3,    -- Poison
+    ['Bloody Bolt']   = 700,  -- Drain (custom icon)
     -- Arrows
     ['Sleep Arrow']     = 2,    -- Sleep
     ['Poison Arrow']    = 3,    -- Poison
@@ -303,6 +304,10 @@ local assetsPath = nil;
 -- Structure: slotCache[slotPrim] = { texturePath, iconPath, keybindText, keybindFontSize, keybindFontColor, timerText, ... }
 local slotCache = {};
 
+-- Reverse lookup: maps 'barIndex:slotIndex' or 'comboMode:slotIndex' to slotPrim
+-- Used for targeted cache invalidation
+local slotPrimLookup = {};
+
 -- Reusable result table for DrawSlot to avoid GC pressure
 -- (Creating tables per-slot per-frame causes ~7200 allocations/sec)
 local drawSlotResult = { isHovered = false, command = nil };
@@ -316,6 +321,23 @@ local function GetSlotCache(slotPrim)
     return slotCache[slotPrim];
 end
 
+-- Register a slot prim with its identifier for targeted invalidation
+-- key: 'barIndex:slotIndex' for hotbar, 'comboMode:slotIndex' for crossbar
+function M.RegisterSlotPrim(key, slotPrim)
+    if key and slotPrim then
+        slotPrimLookup[key] = slotPrim;
+    end
+end
+
+-- Invalidate cache for a slot by key (used for targeted updates)
+-- key: 'barIndex:slotIndex' for hotbar, 'comboMode:slotIndex' for crossbar
+function M.InvalidateSlotByKey(key)
+    local slotPrim = slotPrimLookup[key];
+    if slotPrim and slotCache[slotPrim] then
+        slotCache[slotPrim] = nil;
+    end
+end
+
 -- Clear cache for a slot
 function M.ClearSlotCache(slotPrim)
     if slotPrim then
@@ -326,12 +348,21 @@ end
 -- Clear all cached state
 function M.ClearAllCache()
     slotCache = {};
+    slotPrimLookup = {};
     availabilityCache = {};
     mpCostCache = {};
     equipmentCheckCache = {};
     ninjutsuCache = {};
     itemQuantityCache = {};
     ammoStatusCache = {};
+end
+
+-- Clear only slot rendering cache (icons, positions, colors)
+-- Does NOT clear availability, MP cost, or item quantity caches
+-- OPTIMIZED: Use this for palette changes to avoid unnecessary recalculation cascade
+function M.ClearSlotRenderingCache()
+    slotCache = {};
+    slotPrimLookup = {};
 end
 
 -- Clear availability cache (call on job change, level sync, etc.)
@@ -884,33 +915,52 @@ function M.DrawSlot(resources, params)
 
     -- ========================================
     -- 4b. Abbreviation Text Fallback (when no icon available)
+    -- Uses GdiFonts for cached text rendering (avoids per-frame ImGui overhead)
     -- ========================================
-    -- Hide abbreviation when cooldown timer is showing (GDI renders before ImGui, so text would overlap)
     if not iconRendered and bind and animOpacity > 0.5 and not recastText then
-        local drawList = imgui.GetWindowDrawList();
-        if drawList then
+        if resources.abbreviationFont then
             local abbr = GetActionAbbreviation(bind);
-            local textSize = imgui.CalcTextSize(abbr);
-            local textX = x + (size - textSize) / 2;
-            local textY = y + (size - 14) / 2;  -- Approximate font height
 
-            -- Gold color for abbreviation text (matching XIUI style)
-            -- Apply dimming when unavailable/not enough MP
-            local textColorMult = 1.0;
-            if isUnavailable then
-                textColorMult = 0.35;
-            elseif notEnoughMp then
-                textColorMult = 0.6;
+            -- Only update text when changed
+            if cache and cache.abbreviation ~= abbr then
+                resources.abbreviationFont:set_text(abbr);
+                cache.abbreviation = abbr;
             end
-            textColorMult = textColorMult * dimFactor;
 
-            local textColor = imgui.GetColorU32({
-                0.957 * textColorMult,
-                0.855 * textColorMult,
-                0.592 * textColorMult,
-                animOpacity
-            });
-            drawList:AddText({textX, textY}, textColor, abbr);
+            -- Compute color with dimming for unavailable/low MP
+            local colorMult = 1.0;
+            if isUnavailable then colorMult = 0.35;
+            elseif notEnoughMp then colorMult = 0.6; end
+            colorMult = colorMult * dimFactor;
+
+            -- Gold base: R=244, G=218, B=151 (0xF4DA97)
+            local r = math.floor(244 * colorMult);
+            local g = math.floor(218 * colorMult);
+            local b = math.floor(151 * colorMult);
+            local a = math.floor(animOpacity * 255);
+            local abbrColor = bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
+
+            if cache and cache.abbreviationColor ~= abbrColor then
+                resources.abbreviationFont:set_font_color(abbrColor);
+                cache.abbreviationColor = abbrColor;
+            end
+
+            -- Center position
+            local abbrX = x + size / 2;
+            local abbrY = y + size / 2 - 6;
+            if cache and (cache.abbrX ~= abbrX or cache.abbrY ~= abbrY) then
+                resources.abbreviationFont:set_position_x(abbrX);
+                resources.abbreviationFont:set_position_y(abbrY);
+                cache.abbrX = abbrX;
+                cache.abbrY = abbrY;
+            end
+
+            resources.abbreviationFont:set_visible(true);
+        end
+    else
+        if resources.abbreviationFont then
+            resources.abbreviationFont:set_visible(false);
+            if cache then cache.abbreviation = nil; end
         end
     end
 
@@ -1214,7 +1264,7 @@ function M.DrawSlot(resources, params)
     if bind and bind.actionType == 'item' and bind.itemId and animOpacity > 0.5 then
         local statusId = GetAmmoStatusEffect(bind.itemId);
         if statusId then
-            local statusIconPtr = statusHandler.get_icon_image(statusId);
+            local statusIconPtr = statusHandler.get_icon_from_theme(gConfig.statusIconTheme, statusId);
             if statusIconPtr then
                 local drawList = imgui.GetWindowDrawList();
                 if drawList then
@@ -1505,6 +1555,7 @@ function M.HideSlot(resources)
     if resources.labelFont then resources.labelFont:set_visible(false); end
     if resources.mpCostFont then resources.mpCostFont:set_visible(false); end
     if resources.quantityFont then resources.quantityFont:set_visible(false); end
+    if resources.abbreviationFont then resources.abbreviationFont:set_visible(false); end
 end
 
 return M;

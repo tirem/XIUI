@@ -78,6 +78,25 @@ function M.deep_copy_table(orig)
     return copy
 end
 
+-- Deep merge target with defaults, preserving existing values
+-- Missing keys get defaults; existing values kept; nested tables recursed
+function M.DeepMergeWithDefaults(target, defaults)
+    if type(defaults) ~= 'table' then return target; end
+    if type(target) ~= 'table' then return M.deep_copy_table(defaults); end
+
+    for key, defaultValue in pairs(defaults) do
+        local targetValue = target[key];
+
+        if targetValue == nil then
+            target[key] = M.deep_copy_table(defaultValue);
+        elseif type(defaultValue) == 'table' and type(targetValue) == 'table' then
+            M.DeepMergeWithDefaults(targetValue, defaultValue);
+        end
+    end
+
+    return target;
+end
+
 -- Get job abbreviation string from job index
 function M.GetJobStr(jobIdx)
     if (jobIdx == nil or jobIdx == 0 or jobIdx == -1) then

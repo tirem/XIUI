@@ -564,43 +564,33 @@ function Controller.HandleXInputState(e)
                 tostring(rbHeld),
                 tostring(lbHeld)));
 
-            -- Crossbar cycling: when trigger IS held
-            if state.activeCombo ~= COMBO_MODES.NONE then
-                -- Check which shoulder button is configured for crossbar cycling
-                local crossbarCycleButton = crossbarSettings and crossbarSettings.crossbarPaletteCycleButton or 'R1';
-                local crossbarButtonHeld = (crossbarCycleButton == 'L1' and lbHeld) or (crossbarCycleButton ~= 'L1' and rbHeld);
+            -- Check which shoulder button is configured for palette cycling
+            local cycleButton = globalSettings and globalSettings.hotbarPaletteCycleButton or 'R1';
+            local cycleButtonHeld = (cycleButton == 'L1' and lbHeld) or (cycleButton ~= 'L1' and rbHeld);
 
-                DebugLog(string.format('Palette cycle check: cycleButton=%s, shoulderHeld=%s',
-                    crossbarCycleButton, tostring(crossbarButtonHeld)));
+            DebugLog(string.format('Palette cycle check: cycleButton=%s, shoulderHeld=%s',
+                cycleButton, tostring(cycleButtonHeld)));
 
-                if crossbarButtonHeld then
-                    -- Determine active combo mode
-                    local activeCombo = state.activeCombo;
+            if cycleButtonHeld then
+                -- Check log setting
+                local logPaletteName = gConfig.hotbarGlobal and gConfig.hotbarGlobal.logPaletteName;
+                if logPaletteName == nil then logPaletteName = true; end
 
-                    -- Check if this combo mode is pet-aware
-                    local modeSettings = crossbarSettings and crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[activeCombo];
-                    local isPetAware = modeSettings and modeSettings.petAware;
-
-                    if isPetAware then
-                        -- Cycle pet palettes for this combo mode
-                        local newPalette = petpalette.CycleCrossbarPalette(activeCombo, direction, jobId);
-                        DebugLog('Crossbar pet palette cycled for ' .. activeCombo .. ': ' .. (direction == 1 and 'next' or 'prev') .. ' -> ' .. tostring(newPalette));
-                    else
-                        -- Cycle general palettes for this combo mode
-                        local newPalette = palette.CyclePaletteForCombo(activeCombo, direction, jobId, subjobId);
-                        if newPalette then
-                            DebugLog('Crossbar palette cycled for ' .. activeCombo .. ': ' .. (direction == 1 and 'next' or 'prev') .. ' -> ' .. newPalette);
-                        else
-                            DebugLog('Crossbar palette cycle returned nil (no palettes defined for job ' .. tostring(jobId) .. ')');
-                        end
-                    end
-
-                    consumed = true;
-                else
-                    DebugLog('Palette cycle skipped: shoulder button not held');
+                -- Cycle hotbar palettes
+                for i = 1, 6 do
+                    palette.CyclePalette(i, direction, jobId, subjobId);
                 end
+
+                -- Cycle crossbar palette (global for all combo modes)
+                palette.CyclePaletteForCombo(nil, direction, jobId, subjobId);
+
+                if logPaletteName then
+                    print('[XIUI] Palettes cycled: ' .. (direction == 1 and 'next' or 'prev'));
+                end
+                DebugLog('Palettes cycled: ' .. (direction == 1 and 'next' or 'prev'));
+                consumed = true;
             else
-                DebugLog('Palette cycle skipped: no trigger held (combo=none)');
+                DebugLog('Palette cycle skipped: shoulder button not held');
             end
 
             -- Clear the dpad press so it doesn't trigger slot activation
@@ -754,50 +744,37 @@ function Controller.HandleXInputButton(e)
             local paletteCycleEnabled = globalSettings and globalSettings.paletteCycleControllerEnabled ~= false;
 
             if paletteCycleEnabled then
-                local crossbarCycleButton = crossbarSettings and crossbarSettings.crossbarPaletteCycleButton or 'R1';
-                local crossbarButtonHeld = (crossbarCycleButton == 'L1' and state.leftShoulderHeld) or (crossbarCycleButton ~= 'L1' and state.rightShoulderHeld);
+                local cycleButton = globalSettings and globalSettings.hotbarPaletteCycleButton or 'R1';
+                local cycleButtonHeld = (cycleButton == 'L1' and state.leftShoulderHeld) or (cycleButton ~= 'L1' and state.rightShoulderHeld);
 
                 DebugLog(string.format('DPAD %s via xinput_button - RB=%s, LB=%s, cycleButton=%s, shoulderHeld=%s',
                     isDpadUp and 'UP' or 'DOWN',
                     tostring(state.rightShoulderHeld),
                     tostring(state.leftShoulderHeld),
-                    crossbarCycleButton,
-                    tostring(crossbarButtonHeld)));
+                    cycleButton,
+                    tostring(cycleButtonHeld)));
 
-                if crossbarButtonHeld then
+                if cycleButtonHeld then
                     local direction = isDpadDown and 1 or -1;
                     local jobId = data.jobId or 1;
                     local subjobId = data.subjobId or 0;
-                    local activeCombo = state.activeCombo;
 
-                    -- Check if this combo mode is pet-aware
-                    local modeSettings = crossbarSettings and crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[activeCombo];
-                    local isPetAware = modeSettings and modeSettings.petAware;
-
-                    -- Check log setting (same as hotbar in actions.lua)
+                    -- Check log setting
                     local logPaletteName = gConfig.hotbarGlobal and gConfig.hotbarGlobal.logPaletteName;
                     if logPaletteName == nil then logPaletteName = true; end
 
-                    if isPetAware then
-                        local newPalette = petpalette.CycleCrossbarPalette(activeCombo, direction, jobId);
-                        if logPaletteName then
-                            print('[XIUI] Crossbar palette: ' .. (newPalette or '(default)'));
-                        end
-                        DebugLog('Crossbar pet palette cycled for ' .. activeCombo .. ': ' .. (direction == 1 and 'next' or 'prev') .. ' -> ' .. tostring(newPalette));
-                    else
-                        local newPalette, palettesExist = palette.CyclePaletteForCombo(activeCombo, direction, jobId, subjobId);
-                        if newPalette then
-                            if logPaletteName then
-                                print('[XIUI] Crossbar palette: ' .. newPalette);
-                            end
-                            DebugLog('Crossbar palette cycled for ' .. activeCombo .. ': ' .. (direction == 1 and 'next' or 'prev') .. ' -> ' .. newPalette);
-                        elseif not palettesExist then
-                            if logPaletteName then
-                                print('[XIUI] No crossbar palettes defined for this job');
-                            end
-                            DebugLog('No crossbar palettes defined for job ' .. tostring(jobId));
-                        end
+                    -- Cycle hotbar palettes
+                    for i = 1, 6 do
+                        palette.CyclePalette(i, direction, jobId, subjobId);
                     end
+
+                    -- Cycle crossbar palette (global for all combo modes)
+                    palette.CyclePaletteForCombo(nil, direction, jobId, subjobId);
+
+                    if logPaletteName then
+                        print('[XIUI] Palettes cycled: ' .. (direction == 1 and 'next' or 'prev'));
+                    end
+                    DebugLog('Palettes cycled: ' .. (direction == 1 and 'next' or 'prev'));
 
                     return true;  -- Block the button, don't activate slot
                 end
@@ -892,46 +869,21 @@ function Controller.HandleDInputButton(e)
                 local subjobId = data.subjobId or 0;
                 local consumed = false;
 
-                -- Crossbar cycling: when trigger IS held
-                if state.activeCombo ~= COMBO_MODES.NONE then
-                    -- Check which shoulder button is configured for crossbar cycling
-                    local crossbarCycleButton = crossbarSettings and crossbarSettings.crossbarPaletteCycleButton or 'R1';
-                    local crossbarButtonHeld = (crossbarCycleButton == 'L1' and state.leftShoulderHeld) or (crossbarCycleButton ~= 'L1' and state.rightShoulderHeld);
+                -- Check which shoulder button is configured for palette cycling
+                local cycleButton = globalSettings and globalSettings.hotbarPaletteCycleButton or 'R1';
+                local cycleButtonHeld = (cycleButton == 'L1' and state.leftShoulderHeld) or (cycleButton ~= 'L1' and state.rightShoulderHeld);
 
-                    if crossbarButtonHeld then
-                        local activeCombo = state.activeCombo;
-
-                        -- Check if this combo mode is pet-aware
-                        local modeSettings = crossbarSettings and crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[activeCombo];
-                        local isPetAware = modeSettings and modeSettings.petAware;
-
-                        if isPetAware then
-                            -- Cycle pet palettes for this combo mode
-                            petpalette.CycleCrossbarPalette(activeCombo, direction, jobId);
-                            DebugLog('Crossbar pet palette cycled (DInput) for ' .. activeCombo .. ': ' .. (direction == 1 and 'next' or 'prev'));
-                        else
-                            -- Cycle general palettes for this combo mode
-                            palette.CyclePaletteForCombo(activeCombo, direction, jobId, subjobId);
-                            DebugLog('Crossbar palette cycled (DInput) for ' .. activeCombo .. ': ' .. (direction == 1 and 'next' or 'prev'));
-                        end
-
-                        consumed = true;
+                if cycleButtonHeld then
+                    -- Cycle hotbar palettes
+                    for i = 1, 6 do
+                        palette.CyclePalette(i, direction, jobId, subjobId);
                     end
-                -- Hotbar cycling: when trigger is NOT held
-                elseif state.activeCombo == COMBO_MODES.NONE then
-                    -- Check which shoulder button is configured for hotbar cycling
-                    local hotbarCycleButton = globalSettings and globalSettings.hotbarPaletteCycleButton or 'R1';
-                    local hotbarButtonHeld = (hotbarCycleButton == 'L1' and state.leftShoulderHeld) or (hotbarCycleButton ~= 'L1' and state.rightShoulderHeld);
 
-                    if hotbarButtonHeld then
-                        -- Cycle all bars that have palettes
-                        for i = 1, 6 do
-                            palette.CyclePalette(i, direction, jobId, subjobId);
-                        end
+                    -- Cycle crossbar palette (global for all combo modes)
+                    palette.CyclePaletteForCombo(nil, direction, jobId, subjobId);
 
-                        DebugLog('Hotbar palette cycled via DInput controller: ' .. (direction == 1 and 'next' or 'prev'));
-                        consumed = true;
-                    end
+                    DebugLog('Palettes cycled via DInput controller: ' .. (direction == 1 and 'next' or 'prev'));
+                    consumed = true;
                 end
 
                 if consumed then

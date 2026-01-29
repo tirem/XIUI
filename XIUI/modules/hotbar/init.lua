@@ -103,10 +103,9 @@ function M.Initialize(settings)
     -- Helper function to validate palettes once job is ready
     local function ValidatePalettesWhenReady(attempt)
         attempt = attempt or 1;
-        local maxAttempts = 20;  -- ~10 seconds max wait (0.5s * 20)
+        local maxAttempts = 20;
 
-        data.SetPlayerJob();
-        if data.jobId then
+        if data.SetPlayerJob() then
             palette.ValidatePalettesForJob(data.jobId, data.subjobId);
             macropalette.SyncToCurrentJob();
             display.ClearIconCache();
@@ -115,7 +114,6 @@ function M.Initialize(settings)
                 crossbar.ClearIconCache();
             end
         elseif attempt < maxAttempts then
-            -- Job not ready yet, retry after delay (increases slightly each attempt)
             local delay = math.min(0.5, 0.2 + (attempt * 0.05));
             ashita.tasks.once(delay, function()
                 ValidatePalettesWhenReady(attempt + 1);
@@ -285,7 +283,21 @@ function M.Initialize(settings)
             data.quantityFonts[barIndex][slotIndex] = font;
         end
 
-        -- 10. Create hotbar number font
+        -- 10. Create abbreviation fonts (centered, gold color for icon-less actions)
+        data.abbreviationFonts[barIndex] = {};
+        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
+            local abbrSettings = deep_copy_table(fontSettings);
+            abbrSettings.font_height = 12;
+            abbrSettings.font_alignment = gdi.Alignment.Center;
+            abbrSettings.font_color = 0xFFF4DA97;  -- Gold color
+            abbrSettings.outline_color = 0xFF000000;
+            abbrSettings.outline_width = 2;
+            local font = FontManager.create(abbrSettings);
+            font:set_visible(false);
+            data.abbreviationFonts[barIndex][slotIndex] = font;
+        end
+
+        -- 11. Create hotbar number font
         local numSettings = deep_copy_table(fontSettings);
         numSettings.font_height = 12;
         data.hotbarNumberFonts[barIndex] = FontManager.create(numSettings);
@@ -301,6 +313,8 @@ function M.Initialize(settings)
 
     -- Register pet change callback to clear slot caches
     petpalette.OnPetChanged(function(oldPetKey, newPetKey)
+        -- Invalidate storage key cache (pet change affects storage keys)
+        data.InvalidateStorageKeyCache();
         -- Clear ALL caches when pet changes to force full refresh
         slotrenderer.ClearAllCache();
         display.ClearIconCache();
@@ -311,14 +325,17 @@ function M.Initialize(settings)
         macropalette.ClearPetCommandsCache();
     end);
 
-    -- Register palette change callback to clear crossbar icon cache
+    -- Register palette change callback to clear caches
     palette.OnPaletteChanged(function(barIdentifier, oldPaletteName, newPaletteName)
+        -- Invalidate storage key cache (palette change affects storage keys)
+        data.InvalidateStorageKeyCache();
         -- Clear crossbar icon cache when any palette changes (hotbar or crossbar)
         if crossbarInitialized then
             crossbar.ClearIconCache();
         end
-        -- Clear slot renderer cache for hotbar
-        slotrenderer.ClearAllCache();
+        -- Clear ONLY slot rendering cache (not availability/MP/item caches)
+        -- OPTIMIZED: Selective invalidation avoids unnecessary recalculation cascade
+        slotrenderer.ClearSlotRenderingCache();
     end);
 
     -- Initialize macro patching system (backups original bytes, applies macrofix by default)
@@ -328,6 +345,10 @@ function M.Initialize(settings)
     local disableMacroBars = gConfig and gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars or false;
     if disableMacroBars then
         macrosLib.hide_macro_bar();  -- Switch to hide mode
+    else
+        -- Apply controller hold-to-show setting (only relevant when macros are not fully disabled)
+        local holdToShow = gConfig.hotbarGlobal.controllerHoldToShow ~= false;  -- default true
+        macrosLib.set_controller_hold_to_show(holdToShow);
     end
     -- If checkbox is OFF, macrofix is already applied by initialize_patches()
 
@@ -432,6 +453,9 @@ function M.UpdateVisuals(settings)
         macrosLib.hide_macro_bar();  -- Hide mode: macro bar hidden
     else
         macrosLib.show_macro_bar();  -- Macrofix mode: fast built-in macros
+        -- Apply controller hold-to-show setting (only relevant when macros are not fully disabled)
+        local holdToShow = gConfig.hotbarGlobal.controllerHoldToShow ~= false;  -- default true
+        macrosLib.set_controller_hold_to_show(holdToShow);
     end
 
     -- Handle crossbar enable/disable based on mode
@@ -532,9 +556,10 @@ function M.DrawWindow(settings)
             elseif lastPayload.type == 'crossbar_slot' then
                 -- Crossbar slot was dragged outside - clear it
                 data.ClearCrossbarSlotData(lastPayload.comboMode, lastPayload.slotIndex);
-                -- Clear icon cache so slot updates immediately
+                -- Clear icon cache for this slot (targeted - fast)
                 if crossbarInitialized then
-                    crossbar.ClearIconCache();
+                    crossbar.ClearIconCacheForSlot(lastPayload.comboMode, lastPayload.slotIndex);
+                    slotrenderer.InvalidateSlotByKey(lastPayload.comboMode .. ':' .. lastPayload.slotIndex);
                 end
             end
         end
@@ -561,6 +586,9 @@ end
 -- Cleanup on addon unload
 function M.Cleanup()
     if not M.initialized then return; end
+
+    -- Flush any pending slot saves before cleanup
+    macropalette.FlushPendingSave();
 
     -- Destroy fonts for each bar
     for barIndex = 1, data.NUM_BARS do
@@ -605,6 +633,15 @@ function M.Cleanup()
             for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
                 if data.quantityFonts[barIndex][slotIndex] then
                     FontManager.destroy(data.quantityFonts[barIndex][slotIndex]);
+                end
+            end
+        end
+
+        -- Abbreviation fonts
+        if data.abbreviationFonts[barIndex] then
+            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
+                if data.abbreviationFonts[barIndex][slotIndex] then
+                    FontManager.destroy(data.abbreviationFonts[barIndex][slotIndex]);
                 end
             end
         end
@@ -688,20 +725,32 @@ function M.HandleZonePacket()
 end
 
 function M.HandleJobChangePacket(e)
-    ashita.tasks.once(0.5, function()
-        data.SetPlayerJob();
-        macropalette.SyncToCurrentJob();
-        -- Validate palettes for new job (clears if palette doesn't exist for this job)
-        palette.ValidatePalettesForJob(data.jobId, data.subjobId);
-        -- Clear icon caches to force refresh for new job's actions
-        display.ClearIconCache();
-        if crossbarInitialized then
-            crossbar.ClearIconCache();
+    local function TrySetJob(attempt)
+        attempt = attempt or 1;
+        local maxAttempts = 20;
+
+        if data.SetPlayerJob() then
+            -- Job successfully read - proceed with refresh
+            macropalette.SyncToCurrentJob();
+            palette.ValidatePalettesForJob(data.jobId, data.subjobId);
+            display.ClearIconCache();
+            if crossbarInitialized then
+                crossbar.ClearIconCache();
+            end
+            slotrenderer.ClearAvailabilityCache();
+            petpalette.CheckPetState();
+        elseif attempt < maxAttempts then
+            -- Not logged in yet or job not ready - retry
+            local delay = math.min(0.5, 0.2 + (attempt * 0.05));
+            ashita.tasks.once(delay, function()
+                TrySetJob(attempt + 1);
+            end);
         end
-        -- Clear availability cache (may have stale data from during zone transition)
-        slotrenderer.ClearAvailabilityCache();
-        -- Check pet state after job change
-        petpalette.CheckPetState();
+    end
+
+    -- Initial delay to allow zone transition to complete
+    ashita.tasks.once(0.5, function()
+        TrySetJob(1);
     end);
 end
 
