@@ -339,9 +339,18 @@ function data.TrackPetSummon(petName, petJob)
              -- Fallback or indicate unknown?
         end
     elseif petJob == data.JOB_SMN then
-        data.petType = 'avatar';
-        data.petExpireTime = nil;  -- Avatars don't expire on timer
-        data.charmExpireTime = nil;
+        -- SMN/BST charm: if sub is BST and pet is not an avatar, use charm bar
+        local player = GetPlayerSafe();
+        local subJob = player and player:GetSubJob() or 0;
+        if subJob == data.JOB_BST and not data.petImageMap[petName] then
+            data.petType = 'charm';
+            data.petExpireTime = nil;
+            -- charmExpireTime set via packet interception
+        else
+            data.petType = 'avatar';
+            data.petExpireTime = nil;
+            data.charmExpireTime = nil;
+        end
     elseif petJob == data.JOB_DRG then
         data.petType = 'wyvern';
         data.petExpireTime = nil;  -- Wyverns don't expire on timer
@@ -881,6 +890,11 @@ function data.GetPetRecasts()
     -- Real mode: get actual pet job
     local petJob = data.GetPetJob();
     if not petJob then return timers; end
+
+    -- SMN/BST charm: use BST ability list (Sic, Reward) instead of SMN (blood pacts)
+    if petJob == data.JOB_SMN and data.GetPetTypeKey() == 'charm' then
+        petJob = data.JOB_BST;
+    end
 
     -- Pet ability IDs for direct memory reading
     -- These are the ability recast timer IDs used by the game

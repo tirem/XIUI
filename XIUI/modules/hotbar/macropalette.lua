@@ -1230,6 +1230,7 @@ function M.StartDragMacro(macroIndex, macroData)
     dragdrop.StartDrag('macro', {
         data = macroData,
         macroIndex = macroIndex,
+        paletteKey = GetEffectivePaletteType(),  -- palette the macro was dragged from (job/tab)
         label = macroData.displayName or macroData.action or 'Macro',
         icon = icon,
     });
@@ -1302,8 +1303,8 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
         -- Dragging from palette to slot
         local macroData = payload.data;
         if macroData then
-            -- Get the current macro palette key to store with the reference
-            local macroPaletteKey = GetEffectivePaletteType();
+            -- Use palette the macro was dragged from (payload.paletteKey), not current tab at drop time
+            local macroPaletteKey = payload.paletteKey or GetEffectivePaletteType();
             jobSlotActions[targetSlotIndex] = {
                 actionType = macroData.actionType,
                 action = macroData.action,
@@ -1311,12 +1312,12 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
                 displayName = macroData.displayName,
                 equipSlot = macroData.equipSlot,
                 macroText = macroData.macroText,
-                itemId = macroData.itemId,  -- Store item ID for fast icon lookup
-                customIconType = macroData.customIconType,  -- Custom icon override
+                itemId = macroData.itemId,
+                customIconType = macroData.customIconType,
                 customIconId = macroData.customIconId,
-                customIconPath = macroData.customIconPath,  -- Custom icon path for 'custom' type
-                macroRef = macroData.id,  -- Store reference to source macro for live updates
-                macroPaletteKey = macroPaletteKey,  -- Store which palette the macro came from
+                customIconPath = macroData.customIconPath,
+                macroRef = macroData.id,
+                macroPaletteKey = macroPaletteKey,
             };
             MarkHotbarDirty();
         end

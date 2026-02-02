@@ -853,7 +853,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         dropAccepts = {'macro', 'crossbar_slot', 'slot'},
         onDrop = function(payload)
             if payload.type == 'macro' then
-                data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
+                data.SetCrossbarSlotData(comboMode, slotIndex, payload.data, payload.paletteKey);
             elseif payload.type == 'crossbar_slot' then
                 -- Swap crossbar slots
                 local targetData = data.GetCrossbarSlotData(comboMode, slotIndex);
