@@ -1312,12 +1312,12 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
                 displayName = macroData.displayName,
                 equipSlot = macroData.equipSlot,
                 macroText = macroData.macroText,
-                itemId = macroData.itemId,
-                customIconType = macroData.customIconType,
+                itemId = macroData.itemId,  -- Store item ID for fast icon lookup
+                customIconType = macroData.customIconType,  -- Custom icon override
                 customIconId = macroData.customIconId,
-                customIconPath = macroData.customIconPath,
-                macroRef = macroData.id,
-                macroPaletteKey = macroPaletteKey,
+                customIconPath = macroData.customIconPath,  -- Custom icon path for 'custom' type
+                macroRef = macroData.id,  -- Store reference to source macro for live updates
+                macroPaletteKey = macroPaletteKey,  -- Store which palette the macro came from
             };
             MarkHotbarDirty();
         end
