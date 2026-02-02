@@ -904,12 +904,12 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData, sourcePaletteKey)
         gConfig.hotbarCrossbar = {};
     end
 
-    -- Store the slot data
-    -- Use macroRef if present (from slot swap), otherwise use id (from macro palette drop)
     -- Use per-combo-mode storage key (considers pet-aware and palette settings per combo)
     local storageKey = M.GetCrossbarStorageKeyForCombo(comboMode);
     local comboSlots = ensureCrossbarSlotActionsStructure(gConfig.hotbarCrossbar, storageKey, comboMode);
 
+    -- Store the slot data
+    -- Use macroRef if present (from slot swap), otherwise use id (from macro palette drop)
     comboSlots[slotIndex] = {
         actionType = slotData.actionType,
         action = slotData.action,
@@ -923,6 +923,7 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData, sourcePaletteKey)
         customIconPath = slotData.customIconPath,
         macroRef = slotData.macroRef or slotData.id,  -- Store reference to source macro for live updates
         macroPaletteKey = slotData.macroPaletteKey or sourcePaletteKey,  -- Store which palette the macro came from
+        -- Recast source override (for macros showing cooldown from different action)
         recastSourceType = slotData.recastSourceType,
         recastSourceAction = slotData.recastSourceAction,
         recastSourceItemId = slotData.recastSourceItemId,
