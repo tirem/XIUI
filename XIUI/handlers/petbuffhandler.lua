@@ -22,10 +22,12 @@ local PET_ABILITY_BUFFS = {
     [78]  = { effectId = 42, duration = 180, playerCast = true },  -- BST Reward (Regen)
 };
 
--- Message IDs for status gain, loss, and death
+-- Message IDs for status gain, loss, and death (aligned with debuffhandler)
 local statusOnMes = {
-    [32]=true, [82]=true, [127]=true, [141]=true, [146]=true, [186]=true, [194]=true,
-    [203]=true, [205]=true, [236]=true, [238]=true, [242]=true, [243]=true, [364]=true,
+    [29]=true, [32]=true, [82]=true, [84]=true, [101]=true, [127]=true, [141]=true, [146]=true, [160]=true, [164]=true, [166]=true,
+    [186]=true, [194]=true, [203]=true, [205]=true, [230]=true, [236]=true, [237]=true, [238]=true, [242]=true, [243]=true,
+    [266]=true, [267]=true, [268]=true, [269]=true, [271]=true, [272]=true, [277]=true, [278]=true, [279]=true, [280]=true,
+    [319]=true, [320]=true, [364]=true, [375]=true, [412]=true, [645]=true, [754]=true, [755]=true, [804]=true,
 };
 local statusOffMes = {
     [64]=true, [159]=true, [168]=true, [204]=true, [206]=true,
@@ -48,15 +50,6 @@ local function ClearAllEffects()
     petEffects = {};
 end
 
-local function GetHorizonRageDuration()
-    local player = GetPlayerSafe();
-    if not player then return 60; end
-    local tp = player:GetPetTP();
-    if not tp or tp > 3000 then tp = 0; end
-    if tp < 1000 then return 60; end
-    return 60 + math.floor((tp - 1000) * 0.06);
-end
-
 local function ApplyEffect(opts)
     if not opts or not opts.effect then return; end
     local effectId = opts.effect;
@@ -76,11 +69,18 @@ end
 local function tryApplyUnknownStatus(message, param, pkt, alreadyHandled)
     if alreadyHandled or not statusOnMes[message] then return; end
     local effectId = param;
-    if pkt.Type == 4 and (not effectId or effectId == 0 or effectId > 1000) then
+    if (not effectId or effectId == 0 or effectId > 1000) and pkt and pkt.Type == 4 then
         effectId = buffTable.GetBuffIdBySpellId(pkt.Param);
     end
     if not effectId or effectId <= 0 or effectId >= 1000 then return; end
-    ApplyEffect({ effect = effectId });
+    local duration;
+    for _, buffData in pairs(PET_ABILITY_BUFFS) do
+        if buffData.effectId == effectId then
+            duration = buffData.duration;
+            break;
+        end
+    end
+    ApplyEffect({ effect = effectId, duration = duration });
 end
 
 petBuffHandler.HandleActionPacket = function(actionPacket)
@@ -95,6 +95,10 @@ petBuffHandler.HandleActionPacket = function(actionPacket)
     end
 
     local abilityId = actionPacket.Param;
+    local playerEntity = GetPlayerEntity();
+    local playerServerId = playerEntity and playerEntity.ServerId or nil;
+    local actorIsMyPet = (actionPacket.UserId == petServerId);
+    local actorIsMe = playerServerId and (actionPacket.UserId == playerServerId);
 
     for _, target in pairs(actionPacket.Targets or {}) do
         if target.Id == petServerId then
@@ -104,19 +108,34 @@ petBuffHandler.HandleActionPacket = function(actionPacket)
                 local handled = false;
 
                 local buffData = PET_ABILITY_BUFFS[abilityId];
-                if buffData then
-                    local duration = buffData.duration;
-                    if buffData.effectId == 56 and _G.HzLimitedMode then
-                        duration = GetHorizonRageDuration();
+                -- Jug pets: server sends mob skill ID in Param, not ability ID; match by result effect ID
+                if not buffData and param and param > 0 and param < 1000 then
+                    for _, b in pairs(PET_ABILITY_BUFFS) do
+                        if b.effectId == param then
+                            buffData = b;
+                            break;
+                        end
                     end
-                    ApplyEffect({ effect = buffData.effectId, duration = duration });
-                    handled = true;
+                end
+                if buffData then
+                    local allowApply = actorIsMyPet or (buffData.playerCast and actorIsMe);
+                    if allowApply then
+                        ApplyEffect({ effect = buffData.effectId, duration = buffData.duration });
+                        handled = true;
+                    end
                 end
 
                 tryApplyUnknownStatus(message, param, actionPacket, handled);
 
+                if action.AdditionalEffect and action.AdditionalEffect.Message and action.AdditionalEffect.Param then
+                    tryApplyUnknownStatus(action.AdditionalEffect.Message, action.AdditionalEffect.Param, actionPacket, false);
+                end
+
                 if statusOffMes[message] and param and petEffects[param] then
                     RemoveEffect(param);
+                end
+                if action.AdditionalEffect and action.AdditionalEffect.Param and statusOffMes[action.AdditionalEffect.Message] and petEffects[action.AdditionalEffect.Param] then
+                    RemoveEffect(action.AdditionalEffect.Param);
                 end
             end
         end
@@ -130,10 +149,12 @@ petBuffHandler.HandleMessagePacket = function(messagePacket)
     if not petServerId then return; end
 
     local targetId = messagePacket.target;
+    local senderId = messagePacket.sender;
     local message = messagePacket.message;
     local param = messagePacket.param;
 
-    if targetId ~= petServerId then return; end
+    local isPetRelevant = (targetId == petServerId) or (message == 206 and senderId == petServerId);
+    if not isPetRelevant then return; end
 
     if deathMes[message] then
         ClearAllEffects();
@@ -141,7 +162,14 @@ petBuffHandler.HandleMessagePacket = function(messagePacket)
     end
 
     if statusOnMes[message] and param and param > 0 and param < 1000 then
-        ApplyEffect({ effect = param });
+        local duration;
+        for _, buffData in pairs(PET_ABILITY_BUFFS) do
+            if buffData.effectId == param then
+                duration = buffData.duration;
+                break;
+            end
+        end
+        ApplyEffect({ effect = param, duration = duration });
     end
 
     if statusOffMes[message] and param and petEffects[param] then
