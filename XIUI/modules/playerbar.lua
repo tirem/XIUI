@@ -384,13 +384,19 @@ playerbar.DrawWindow = function(settings)
 			local waveLeft = x + (progress * (width - waveWidth));
 			local waveRight = waveLeft + waveWidth;
 			
-			-- Draw gradient shimmer (transparent left, bright cyan right)
+			-- Draw gradient shimmer (transparent left, bright color right) - color from settings
+			local tickerColor = gConfig.colorCustomization.playerBar.restingTickerColor or 0xFF00E6FF;
+			local r = bit.band(bit.rshift(tickerColor, 16), 0xFF) / 255;
+			local g = bit.band(bit.rshift(tickerColor, 8), 0xFF) / 255;
+			local b = bit.band(tickerColor, 0xFF) / 255;
+			local a = bit.band(bit.rshift(tickerColor, 24), 0xFF) / 255;
+			if a < 0.1 then a = 0.9; end  -- Ensure visible if user sets alpha to 0
 			imgui.GetWindowDrawList():AddRectFilledMultiColor(
 				{waveLeft, y1}, {waveRight, y2},
-				imgui.GetColorU32({0.0, 0.9, 1.0, 0.0}),
-				imgui.GetColorU32({0.0, 0.9, 1.0, 0.9}),
-				imgui.GetColorU32({0.0, 0.9, 1.0, 0.9}),
-				imgui.GetColorU32({0.0, 0.9, 1.0, 0.0})
+				imgui.GetColorU32({r, g, b, 0.0}),
+				imgui.GetColorU32({r, g, b, a}),
+				imgui.GetColorU32({r, g, b, a}),
+				imgui.GetColorU32({r, g, b, 0.0})
 			);
 		else
 			playerbar.restingTicker.wasResting = false;

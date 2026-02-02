@@ -73,6 +73,10 @@ end
 function M.DrawColorSettings()
     if components.CollapsingSection('HP Bar Colors##playerBarColor') then
         components.DrawHPBarColorsRow(gConfig.colorCustomization.playerBar.hpGradient, "##playerBar");
+        if not gConfig.colorCustomization.playerBar.restingTickerColor then
+            gConfig.colorCustomization.playerBar.restingTickerColor = 0xFF00E6FF;
+        end
+        components.DrawTextColorPicker("Resting Ticker", gConfig.colorCustomization.playerBar, 'restingTickerColor', "Color of the resting ticker spark on the HP bar");
     end
 
     if components.CollapsingSection('MP/TP Bar Colors##playerBarColor') then
