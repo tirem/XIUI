@@ -904,13 +904,11 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData, sourcePaletteKey)
         gConfig.hotbarCrossbar = {};
     end
 
+    -- Store the slot data
+    -- Use macroRef if present (from slot swap), otherwise use id (from macro palette drop)
     -- Use per-combo-mode storage key (considers pet-aware and palette settings per combo)
     local storageKey = M.GetCrossbarStorageKeyForCombo(comboMode);
     local comboSlots = ensureCrossbarSlotActionsStructure(gConfig.hotbarCrossbar, storageKey, comboMode);
-
-    -- When dropping from macro palette, sourcePaletteKey is the palette the macro was dragged from
-    local macroRef = slotData.macroRef or slotData.id;
-    local macroPaletteKey = slotData.macroPaletteKey or sourcePaletteKey;
 
     comboSlots[slotIndex] = {
         actionType = slotData.actionType,
@@ -923,8 +921,8 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData, sourcePaletteKey)
         customIconType = slotData.customIconType,
         customIconId = slotData.customIconId,
         customIconPath = slotData.customIconPath,
-        macroRef = macroRef,
-        macroPaletteKey = macroPaletteKey,
+        macroRef = slotData.macroRef or slotData.id,  -- Store reference to source macro for live updates
+        macroPaletteKey = slotData.macroPaletteKey or sourcePaletteKey,  -- Store which palette the macro came from
         recastSourceType = slotData.recastSourceType,
         recastSourceAction = slotData.recastSourceAction,
         recastSourceItemId = slotData.recastSourceItemId,
