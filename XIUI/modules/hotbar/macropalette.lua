@@ -428,7 +428,7 @@ local filteredItemsCache = nil;
 local filteredItemsCacheKey = nil;  -- "filter" key for cache invalidation
 
 -- Icon picker grid constants
-local ICON_GRID_COLUMNS = 12;
+local ICON_GRID_COLUMNS_DEFAULT = 12;  -- Default columns, recalculated based on window width
 local ICON_GRID_SIZE = 36;
 local ICON_GRID_GAP = 4;
 local ICONS_PER_PAGE = 120;  -- 10 rows of 12 icons - loads in ~1 second
@@ -2411,14 +2411,16 @@ local function DrawIconPicker()
 
     local isOpen = { true };
 
-    -- Calculate window size for 12 icons per row
+    -- Calculate default window size for 12 icons per row
     -- Grid: 12 icons * 36px + 11 gaps * 4px = 432 + 44 = 476px
     -- Add padding (16px) + scrollbar (~16px) + child border (4px) = 512px
-    local gridContentWidth = (ICON_GRID_SIZE * ICON_GRID_COLUMNS) + (ICON_GRID_GAP * (ICON_GRID_COLUMNS - 1));
-    local windowWidth = gridContentWidth + 40;  -- padding + scrollbar + borders
+    local gridContentWidth = (ICON_GRID_SIZE * ICON_GRID_COLUMNS_DEFAULT) + (ICON_GRID_GAP * (ICON_GRID_COLUMNS_DEFAULT - 1));
+    local defaultWindowWidth = gridContentWidth + 40;  -- padding + scrollbar + borders
     local windowHeight = 500;  -- Extra height for spell type filter buttons
+    local minWindowWidth = (ICON_GRID_SIZE * 4) + (ICON_GRID_GAP * 3) + 40;  -- Minimum 4 icons per row
 
-    imgui.SetNextWindowSize({windowWidth, windowHeight}, ImGuiCond_FirstUseEver);
+    imgui.SetNextWindowSize({defaultWindowWidth, windowHeight}, ImGuiCond_FirstUseEver);
+    imgui.SetNextWindowSizeConstraints({minWindowWidth, 300}, {1000, 800});
 
     PushWindowStyle();
 
@@ -2962,6 +2964,10 @@ local function DrawIconPicker()
         imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
         imgui.BeginChild('IconGrid', {0, 0}, true, childFlags);
 
+        -- Calculate dynamic column count based on available width (icons wrap to next row)
+        local availableWidth = imgui.GetContentRegionAvail();
+        local iconGridColumns = math.max(1, math.floor((availableWidth + ICON_GRID_GAP) / (ICON_GRID_SIZE + ICON_GRID_GAP)));
+
         local displayedCount = 0;
 
         if iconPickerTab == 1 then
@@ -2985,8 +2991,8 @@ local function DrawIconPicker()
                         end
 
                         if icon and icon.image then
-                            -- Handle grid layout
-                            local col = displayedCount % ICON_GRID_COLUMNS;
+                            -- Handle grid layout (dynamic columns based on window width)
+                            local col = displayedCount % iconGridColumns;
                             if col > 0 then
                                 imgui.SameLine(0, ICON_GRID_GAP);
                             end
@@ -3069,8 +3075,8 @@ local function DrawIconPicker()
                     local icon = iconLoadState.pageIconCache[cacheIdx];
 
                     if item and icon and icon.image then
-                        -- Handle grid layout
-                        local col = displayedCount % ICON_GRID_COLUMNS;
+                        -- Handle grid layout (dynamic columns based on window width)
+                        local col = displayedCount % iconGridColumns;
                         if col > 0 then
                             imgui.SameLine(0, ICON_GRID_GAP);
                         end
@@ -3182,8 +3188,8 @@ local function DrawIconPicker()
                     local icon = iconLoadState.pageIconCache[cacheIdx];
 
                     if customIcon and icon and icon.image then
-                        -- Handle grid layout
-                        local col = displayedCount % ICON_GRID_COLUMNS;
+                        -- Handle grid layout (dynamic columns based on window width)
+                        local col = displayedCount % iconGridColumns;
                         if col > 0 then
                             imgui.SameLine(0, ICON_GRID_GAP);
                         end
@@ -3253,24 +3259,27 @@ function M.DrawMacroEditor()
     local title = isCreatingNew and 'Create Macro###MacroEditor' or 'Edit Macro###MacroEditor';
     local isOpen = { true };
 
-    imgui.SetNextWindowSize({420, 420}, ImGuiCond_FirstUseEver);
+    imgui.SetNextWindowSize({420, 480}, ImGuiCond_FirstUseEver);
 
     -- Apply XIUI styling
     PushWindowStyle();
 
     if imgui.Begin(title, isOpen, ImGuiWindowFlags_NoCollapse) then
-        -- Get window position for icon preview placement
-        local windowPos = {imgui.GetWindowPos()};
-        local windowWidth = imgui.GetWindowWidth();
+        -- Icon preview section at the top right (uses window-relative positioning for scrolling)
         local iconPreviewSize = 64;
-        local iconPreviewX = windowPos[1] + windowWidth - iconPreviewSize - 20;
-        local iconPreviewY = windowPos[2] + 35;
+        local contentWidth = imgui.GetContentRegionAvail();
+        local iconPreviewX = contentWidth - iconPreviewSize - 10;
 
-        -- Draw icon preview on right side
-        DrawIconPreview(editingMacro, iconPreviewX, iconPreviewY, iconPreviewSize);
+        -- Draw icon preview and Change button together
+        local startCursorY = imgui.GetCursorPosY();
+        imgui.SetCursorPosX(iconPreviewX);
 
-        -- Change Icon button below preview
-        imgui.SetCursorScreenPos({iconPreviewX - 10, iconPreviewY + iconPreviewSize + 8});
+        -- Get screen position for icon preview (DrawIconPreview needs screen coords)
+        local screenPos = {imgui.GetCursorScreenPos()};
+        DrawIconPreview(editingMacro, screenPos[1], screenPos[2], iconPreviewSize);
+
+        -- Change Icon button below preview (use window-relative SetCursorPos for scroll support)
+        imgui.SetCursorPos({iconPreviewX - 10, startCursorY + iconPreviewSize + 8});
         imgui.PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1);
         imgui.PushStyleColor(ImGuiCol_Border, COLORS.gold);
         if imgui.Button('Change', {iconPreviewSize + 20, 22}) then
@@ -3280,8 +3289,8 @@ function M.DrawMacroEditor()
         imgui.PopStyleColor();
         imgui.PopStyleVar();
 
-        -- Reset cursor for main content
-        imgui.SetCursorScreenPos({windowPos[1] + 10, windowPos[2] + 35});
+        -- Reset cursor for main content (left side, use window-relative positioning)
+        imgui.SetCursorPos({8, startCursorY});
 
         -- Action Type dropdown with label
         imgui.TextColored(COLORS.goldDim, 'Action Type');
