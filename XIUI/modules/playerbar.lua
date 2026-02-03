@@ -37,6 +37,45 @@ local playerbar = {
 	interpolation = {}
 };
 
+-- ============================================
+-- Change Detection Cache
+-- ============================================
+-- Tracks previous frame's player state to detect changes that require
+-- immediate UI refresh (level sync, level up, weakness, HP/MP down/boost,
+-- equipment changes, etc.). When any tracked value changes, we reset
+-- interpolation to prevent stale/incorrect bar animations.
+local prevPlayerState = {
+	currentHp = nil,
+	maxHp = nil,
+	currentMp = nil,
+	maxMp = nil,
+	mainJobLevel = nil,
+	subJobLevel = nil,
+	isLevelSynced = nil,
+	buffSignature = nil,  -- Simple hash of active buffs to detect buff changes
+};
+
+-- Compute a simple signature/hash of player buffs for change-detection.
+-- Uses weighted sum so buff order matters (catches reordering as well as add/remove).
+-- Buff changes from weakness, HP/MP down, HP/MP boost, etc. will change this value.
+local function computePlayerBuffSignature(player)
+	if player == nil then return 0; end
+	local signature = 0;
+	-- Iterate typical buff slots 0..31
+	for slotIndex = 0, 31 do
+		local buffId = 0;
+		if player.GetBuff ~= nil then
+			buffId = player:GetBuff(slotIndex) or 0;
+		elseif player.GetBuffs ~= nil then
+			-- Fallback: some wrappers return a 1-indexed array
+			local buffArray = player:GetBuffs();
+			buffId = (buffArray and buffArray[slotIndex + 1]) or 0;
+		end
+		-- Weight by slot index to make signature order-sensitive
+		signature = signature + (buffId * (slotIndex + 1));
+	end
+	return signature;
+end
 -- Get cached interpolation colors, only recompute when config changes
 local function getCachedInterpColors()
 	local currentConfig = gConfig.colorCustomization and gConfig.colorCustomization.shared;
@@ -96,36 +135,99 @@ playerbar.DrawWindow = function(settings)
 	end
 
 	local SelfHP = party:GetMemberHP(0);
-	local SelfHPPercentParty = party:GetMemberHPPercent(0);
-	local SelfHPMaxPlayer = player:GetHPMax();
-	local SelfHPMaxFromParty = 0;
-	if SelfHPPercentParty and SelfHPPercentParty > 0 then
-		SelfHPMaxFromParty = math.floor((SelfHP * 100) / SelfHPPercentParty + 0.5);
-	end
-	local SelfHPMax = SelfHPMaxPlayer;
-	if SelfHPMaxFromParty > 0 then
-		if SelfHPMaxPlayer == 0 or math.abs(SelfHPMaxFromParty - SelfHPMaxPlayer) > 50 then
-			SelfHPMax = SelfHPMaxFromParty;
-		end
-	end
-	local SelfHPPercent = (SelfHPMax > 0) and math.clamp((SelfHP / SelfHPMax) * 100, 0, 100) or (SelfHPPercentParty or 0);
+	local SelfHPMax = player:GetHPMax();
+	-- Calculate percentage from actual values to avoid stale party API data (issue #92)
+	local SelfHPPercent = (SelfHPMax > 0) and math.clamp((SelfHP / SelfHPMax) * 100, 0, 100) or 0;
 	local SelfMP = party:GetMemberMP(0);
-	local SelfMPPercentParty = party:GetMemberMPPercent(0);
-	local SelfMPMaxPlayer = player:GetMPMax();
-	local SelfMPMaxFromParty = 0;
-	if SelfMPPercentParty and SelfMPPercentParty > 0 then
-		SelfMPMaxFromParty = math.floor((SelfMP * 100) / SelfMPPercentParty + 0.5);
-	end
-	local SelfMPMax = SelfMPMaxPlayer;
-	if SelfMPMaxFromParty > 0 then
-		if SelfMPMaxPlayer == 0 or math.abs(SelfMPMaxFromParty - SelfMPMaxPlayer) > 20 then
-			SelfMPMax = SelfMPMaxFromParty;
-		end
-	end
-	local SelfMPPercent = (SelfMPMax > 0) and math.clamp((SelfMP / SelfMPMax) * 100, 0, 100) or (SelfMPPercentParty or 0);
+	local SelfMPMax = player:GetMPMax();
+	local SelfMPPercent = (SelfMPMax > 0) and math.clamp((SelfMP / SelfMPMax) * 100, 0, 100) or 0;
 	local SelfTP = party:GetMemberTP(0);
 
+	-- ============================================
+	-- Gather current state for change detection
+	-- ============================================
+	-- These values help detect: level sync gain/loss, level up, weakness,
+	-- HP/MP down, HP/MP boost, equipment changes, and other max value changes.
+	local currentMainJobLevel = 0;
+	local currentSubJobLevel = 0;
+	local isCurrentlyLevelSynced = false;
+
+	if player ~= nil then
+		if player.GetMainJobLevel ~= nil then
+			currentMainJobLevel = player:GetMainJobLevel() or 0;
+		end
+		if player.GetSubJobLevel ~= nil then
+			currentSubJobLevel = player:GetSubJobLevel() or 0;
+		end
+		-- Check level sync status (different APIs may be available)
+		if player.MainJobSync ~= nil then
+			isCurrentlyLevelSynced = player.MainJobSync ~= 0;
+		elseif player.GetIsLevelSyncActive ~= nil then
+			isCurrentlyLevelSynced = player:GetIsLevelSyncActive() ~= 0;
+		end
+	end
+
+	local currentBuffSignature = computePlayerBuffSignature(player);
+
 	local currentTime = os.clock();
+
+	-- ============================================
+	-- Change Detection: Reset interpolation on significant state changes
+	-- ============================================
+	-- When max HP/MP, level, level sync, or buffs change, we must immediately
+	-- reset interpolation to prevent incorrect bar animations. This handles:
+	-- - Level sync gain/loss
+	-- - Level up (including while level synced)
+	-- - Weakness status gain/loss
+	-- - Max HP/MP Down status gain/loss
+	-- - Max HP/MP Boost status gain/loss
+	-- - Equipment changes affecting max HP/MP
+	if prevPlayerState.maxHp ~= nil then
+		local hasMaxValueChanged = (prevPlayerState.maxHp ~= SelfHPMax) or (prevPlayerState.maxMp ~= SelfMPMax);
+		local hasLevelChanged = (prevPlayerState.mainJobLevel ~= currentMainJobLevel) or (prevPlayerState.subJobLevel ~= currentSubJobLevel);
+		local hasLevelSyncChanged = (prevPlayerState.isLevelSynced ~= isCurrentlyLevelSynced);
+		local hasBuffsChanged = (prevPlayerState.buffSignature ~= currentBuffSignature);
+
+		local shouldResetInterpolation = hasMaxValueChanged or hasLevelChanged or hasLevelSyncChanged or hasBuffsChanged;
+
+		if shouldResetInterpolation then
+			-- Immediately reset all interpolation state so UI reflects current values
+			playerbar.interpolation.currentHpp = SelfHPPercent;
+			playerbar.interpolation.interpolationDamagePercent = 0;
+			playerbar.interpolation.interpolationHealPercent = 0;
+			playerbar.interpolation.lastHitTime = nil;
+			playerbar.interpolation.lastHealTime = nil;
+			playerbar.interpolation.lastHitAmount = nil;
+			playerbar.interpolation.lastHealAmount = nil;
+			playerbar.interpolation.hitDelayStartTime = nil;
+			playerbar.interpolation.healDelayStartTime = nil;
+			-- Force color cache refresh
+			cachedInterpColors = nil;
+			-- Update cached state with current values
+			prevPlayerState.currentHp = SelfHP;
+			prevPlayerState.maxHp = SelfHPMax;
+			prevPlayerState.currentMp = SelfMP;
+			prevPlayerState.maxMp = SelfMPMax;
+			prevPlayerState.mainJobLevel = currentMainJobLevel;
+			prevPlayerState.subJobLevel = currentSubJobLevel;
+			prevPlayerState.isLevelSynced = isCurrentlyLevelSynced;
+			prevPlayerState.buffSignature = currentBuffSignature;
+		else
+			-- No significant change - just track current HP/MP for next frame comparison
+			prevPlayerState.currentHp = SelfHP;
+			prevPlayerState.currentMp = SelfMP;
+		end
+	else
+		-- First frame initialization
+		prevPlayerState.currentHp = SelfHP;
+		prevPlayerState.maxHp = SelfHPMax;
+		prevPlayerState.currentMp = SelfMP;
+		prevPlayerState.maxMp = SelfMPMax;
+		prevPlayerState.mainJobLevel = currentMainJobLevel;
+		prevPlayerState.subJobLevel = currentSubJobLevel;
+		prevPlayerState.isLevelSynced = isCurrentlyLevelSynced;
+		prevPlayerState.buffSignature = currentBuffSignature;
+	end
 
 	-- Initialize interpolation if not set
 	if not playerbar.interpolation.currentHpp then
