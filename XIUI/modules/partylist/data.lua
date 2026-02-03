@@ -67,6 +67,59 @@ data.maxTpTextWidthCache = {
 -- HP interpolation tracking for each party member (indexed by absolute member index 0-17)
 data.memberInterpolation = {};
 
+-- ============================================
+-- Per-Member Change Detection Cache
+-- ============================================
+-- Tracks previous frame state for each party member to detect changes that
+-- require immediate UI refresh (level sync, level up, weakness, HP/MP down/boost,
+-- zone changes, buff changes, etc.). Indexed by member index (0-17) or serverid.
+data.prevMemberState = {};
+
+-- ============================================
+-- Buff Signature Helper
+-- ============================================
+-- Computes a simple signature/hash of buffs for change-detection.
+-- Uses weighted sum so buff order matters (catches reordering as well as add/remove).
+-- Buff changes from weakness, HP/MP down, HP/MP boost, etc. will change this value.
+-- @param buffsOrServerId - Either a player object with GetBuff(), a buff array, or a serverid number
+-- @return number - A signature value that changes when buffs change
+function data.computeBuffSignature(buffsOrServerId)
+    local signature = 0;
+    if buffsOrServerId == nil then return 0; end
+
+    if type(buffsOrServerId) == 'table' then
+        -- Check if it's a player-like object with GetBuff method
+        if buffsOrServerId.GetBuff ~= nil then
+            for slotIndex = 0, 31 do
+                local buffId = buffsOrServerId:GetBuff(slotIndex) or 0;
+                signature = signature + (buffId * (slotIndex + 1));
+            end
+            return signature;
+        end
+        -- Otherwise treat as an array of buff ids (1-indexed)
+        for index, buffId in ipairs(buffsOrServerId) do
+            signature = signature + ((buffId or 0) * index);
+        end
+        return signature;
+    elseif type(buffsOrServerId) == 'number' then
+        -- Treat as serverid - fetch buff array from status handler
+        local buffArray = nil;
+        if statusHandler.get_member_status_serverid ~= nil then
+            buffArray = statusHandler.get_member_status_serverid(buffsOrServerId);
+        else
+            buffArray = statusHandler.get_member_status(buffsOrServerId);
+        end
+        if buffArray then
+            for index, buffId in ipairs(buffArray) do
+                signature = signature + ((buffId or 0) * index);
+            end
+        end
+        return signature;
+    end
+
+    return signature;
+end
+
 -- Cache converted border colors
 data.cachedBorderColorU32 = nil;
 data.cachedBorderColorARGB = nil;
@@ -396,6 +449,45 @@ function data.GetMemberInformation(memIdx)
         };
         memInfo.buffs = previewBuffs[memIdx % 6];
         memInfo.sync = false;
+
+        -- ============================================
+        -- Preview Mode: Change Detection
+        -- ============================================
+        -- Detect changes that should force interpolation/layout recalculation
+        local previewKey = memInfo.serverid;
+        local currentBuffSignature = data.computeBuffSignature(memInfo.buffs);
+        local prevState = data.prevMemberState[previewKey];
+
+        if prevState ~= nil then
+            local hasStateChanged = prevState.maxHp ~= memInfo.maxhp
+                or prevState.maxMp ~= memInfo.maxmp
+                or prevState.level ~= memInfo.level
+                or prevState.subJobLevel ~= memInfo.subjoblevel
+                or prevState.zone ~= memInfo.zone
+                or prevState.buffSignature ~= currentBuffSignature;
+
+            if hasStateChanged then
+                -- Reset interpolation and invalidate layout
+                data.memberInterpolation[memIdx] = nil;
+                data.partyRefHeightsValid = false;
+                -- Clear text and color caches (consistent with runtime mode)
+                data.memberTextCache[memIdx] = nil;
+                data.memberTextColorCache[memIdx] = nil;
+            end
+        end
+
+        -- Cache current state for next frame comparison
+        data.prevMemberState[previewKey] = {
+            currentHp = memInfo.hp,
+            currentMp = memInfo.mp,
+            maxHp = memInfo.maxhp,
+            maxMp = memInfo.maxmp,
+            level = memInfo.level,
+            subJobLevel = memInfo.subjoblevel,
+            zone = memInfo.zone,
+            isLevelSynced = memInfo.sync,
+            buffSignature = currentBuffSignature
+        };
         memInfo.subTargeted = memIdx == 2 or memIdx == 8 or memIdx == 14;
         memInfo.zone = 100;
         memInfo.inzone = memIdx % 4 ~= 0;
@@ -493,37 +585,10 @@ function data.GetMemberInformation(memIdx)
         -- to avoid stale party API data after weakness/gear swaps (issue #92)
         -- For other party members, use party API percentage and calculate max
         if memIdx == 0 then
-            -- HP Calculation with sync/weakness fix
-            local hpPercentParty = party:GetMemberHPPercent(0);
-            local hpMaxPlayer = player:GetHPMax();
-            local hpMaxFromParty = 0;
-            if hpPercentParty and hpPercentParty > 0 then
-                hpMaxFromParty = math.floor((memberInfo.hp * 100) / hpPercentParty + 0.5);
-            end
-
-            memberInfo.maxhp = hpMaxPlayer;
-            if hpMaxFromParty > 0 then
-                if hpMaxPlayer == 0 or math.abs(hpMaxFromParty - hpMaxPlayer) > 50 then
-                    memberInfo.maxhp = hpMaxFromParty;
-                end
-            end
-            memberInfo.hpp = (memberInfo.maxhp > 0) and math.clamp(memberInfo.hp / memberInfo.maxhp, 0, 1) or ((hpPercentParty or 0) / 100);
-
-            -- MP Calculation with sync/weakness fix
-            local mpPercentParty = party:GetMemberMPPercent(0);
-            local mpMaxPlayer = player:GetMPMax();
-            local mpMaxFromParty = 0;
-            if mpPercentParty and mpPercentParty > 0 then
-                mpMaxFromParty = math.floor((memberInfo.mp * 100) / mpPercentParty + 0.5);
-            end
-
-            memberInfo.maxmp = mpMaxPlayer;
-            if mpMaxFromParty > 0 then
-                if mpMaxPlayer == 0 or math.abs(mpMaxFromParty - mpMaxPlayer) > 20 then
-                    memberInfo.maxmp = mpMaxFromParty;
-                end
-            end
-            memberInfo.mpp = (memberInfo.maxmp > 0) and math.clamp(memberInfo.mp / memberInfo.maxmp, 0, 1) or ((mpPercentParty or 0) / 100);
+            memberInfo.maxhp = player:GetHPMax();
+            memberInfo.maxmp = player:GetMPMax();
+            memberInfo.hpp = (memberInfo.maxhp > 0) and (memberInfo.hp / memberInfo.maxhp) or 0;
+            memberInfo.mpp = (memberInfo.maxmp > 0) and (memberInfo.mp / memberInfo.maxmp) or 0;
         else
             memberInfo.hpp = party:GetMemberHPPercent(memIdx) / 100;
             memberInfo.mpp = party:GetMemberMPPercent(memIdx) / 100;
@@ -568,6 +633,50 @@ function data.GetMemberInformation(memIdx)
             memberInfo.buffs = statusHandler.get_member_status(memberInfo.serverid);
         end
         memberInfo.sync = bit.band(party:GetMemberFlagMask(memIdx), 0x100) == 0x100;
+
+        -- ============================================
+        -- Runtime Mode: Change Detection (serverid-keyed)
+        -- ============================================
+        -- Use serverid as the cache key when available so member swapping
+        -- between slots doesn't confuse our cached state. Fall back to
+        -- memIdx if serverid is not available.
+        local cacheKey = memberInfo.serverid and memberInfo.serverid ~= 0 and memberInfo.serverid or memIdx;
+
+        -- Detect changes that should force interpolation/layout recalculation.
+        local currentBuffSignature = data.computeBuffSignature(memberInfo.buffs);
+        local prevState = data.prevMemberState[cacheKey];
+
+        if prevState ~= nil then
+            local hasStateChanged = prevState.maxHp ~= memberInfo.maxhp
+                or prevState.maxMp ~= memberInfo.maxmp
+                or prevState.level ~= memberInfo.level
+                or prevState.subJobLevel ~= memberInfo.subjoblevel
+                or prevState.zone ~= memberInfo.zone
+                or prevState.buffSignature ~= currentBuffSignature;
+
+            if hasStateChanged then
+                -- Reset interpolation for this member to prevent incorrect bar animations
+                data.memberInterpolation[memIdx] = nil;
+                -- Invalidate reference heights in case layout needs recalculation
+                data.partyRefHeightsValid = false;
+                -- Clear text and color caches to force regeneration with new values
+                data.memberTextCache[memIdx] = nil;
+                data.memberTextColorCache[memIdx] = nil;
+            end
+        end
+
+        -- Cache current state for next frame comparison (keyed by serverid or slot)
+        data.prevMemberState[cacheKey] = {
+            currentHp = memberInfo.hp,
+            currentMp = memberInfo.mp,
+            maxHp = memberInfo.maxhp,
+            maxMp = memberInfo.maxmp,
+            level = memberInfo.level,
+            subJobLevel = memberInfo.subjoblevel,
+            zone = memberInfo.zone,
+            isLevelSynced = memberInfo.sync,
+            buffSignature = currentBuffSignature
+        };
     else
         memberInfo.hp = 0;
         memberInfo.hpp = 0;
