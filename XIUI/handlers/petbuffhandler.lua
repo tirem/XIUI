@@ -22,18 +22,25 @@ local PET_ABILITY_BUFFS = {
     [78]  = { effectId = 42, duration = 180, playerCast = true },  -- BST Reward (Regen)
 };
 
--- Message IDs for status gain, loss, and death (aligned with debuffhandler)
+-- Message IDs for "target gains/receives/is <status>" (LSB msg_basic.h + msg_std.h). Param = effect icon/ID.
 local statusOnMes = {
-    [29]=true, [32]=true, [82]=true, [84]=true, [101]=true, [127]=true, [141]=true, [146]=true, [160]=true, [164]=true, [166]=true,
-    [186]=true, [194]=true, [203]=true, [205]=true, [230]=true, [236]=true, [237]=true, [238]=true, [242]=true, [243]=true,
-    [266]=true, [267]=true, [268]=true, [269]=true, [271]=true, [272]=true, [277]=true, [278]=true, [279]=true, [280]=true,
-    [319]=true, [320]=true, [364]=true, [375]=true, [412]=true, [645]=true, [754]=true, [755]=true, [804]=true,
+    [29]=true, [84]=true,   -- IS_PARALYZED, IS_PARALYZED_2 (<target> is paralyzed)
+    [186]=true,             -- USES_SKILL_GAINS_EFFECT
+    [203]=true,             -- IS_STATUS
+    [205]=true,             -- MsgStd::GainsEffect
+    [230]=true, [236]=true, [237]=true,  -- MAGIC_GAINS_EFFECT, MAGIC_STATUS, MAGIC_RECEIVES_EFFECT
+    [242]=true, [243]=true, -- USES_SKILL_STATUS, USES_SKILL_RECEIVES_EFFECT
+    [266]=true, [277]=true, [278]=true,  -- TARGET_GAINS_EFFECT, TARGET_STATUS, TARGET_RECEIVES_EFFECT
+    [374]=true,             -- STATUS_SPIKES (attacker gains from spikes)
+    [420]=true, [421]=true, -- ROLL_MAIN, ROLL_SUB (target receives effect)
 };
+-- Message IDs for "effect wears off / target loses status" (LSB msg_basic.h + msg_std.h). Param = effect icon/ID.
+-- Includes normal expiry, dispel, DRG Spirit Link and BST Reward II clearing pet buffs (server sends 206 per effect).
 local statusOffMes = {
-    [64]=true, [159]=true, [168]=true, [204]=true, [206]=true,
-    [321]=true, [322]=true, [341]=true, [342]=true, [343]=true,
-    [344]=true, [350]=true, [378]=true, [531]=true, [647]=true,
-    [805]=true, [806]=true,
+    [206]=true,             -- MsgStd::EffectWearsOff
+    [343]=true,             -- MsgBasic::TARGET_EFFECT_DISAPPEARS
+    [378]=true,             -- MsgBasic::USES_ABILITY_DISPEL
+    [426]=true, [427]=true, -- MsgBasic::DOUBLEUP_BUST, DOUBLEUP_BUST_SUB
 };
 local deathMes = {
     [6]=true, [20]=true, [97]=true, [113]=true, [406]=true, [605]=true, [646]=true,
