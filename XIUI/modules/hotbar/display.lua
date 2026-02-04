@@ -631,16 +631,21 @@ local function DrawBarWindow(barIndex, settings)
     -- Draw move anchor (only visible when config is open)
     -- Must be called after we have window position
     if windowPosX ~= nil then
-        -- Use same window name as ImGui window so positions are shared
-        local anchorName = string.format('Hotbar%d', barIndex);
-        local anchorNewX, anchorNewY = drawing.DrawMoveAnchor(anchorName, windowPosX, windowPosY);
-        if anchorNewX ~= nil then
-            windowPosX = anchorNewX;
-            windowPosY = anchorNewY;
-            
-            -- Update config immediately so next frame's positioning logic picks it up
-            if not gConfig.windowPositions then gConfig.windowPositions = {}; end
-            gConfig.windowPositions[anchorName] = { x = anchorNewX, y = anchorNewY };
+        -- Only show anchor when movement is NOT locked (per-bar or global)
+        local barLocked = (barSettings and barSettings.lockMovement) or false;
+        local globalLocked = gConfig and gConfig.hotbarLockMovement;
+        if not barLocked and not globalLocked then
+            -- Use same window name as ImGui window so positions are shared
+            local anchorName = string.format('Hotbar%d', barIndex);
+            local anchorNewX, anchorNewY = drawing.DrawMoveAnchor(anchorName, windowPosX, windowPosY);
+            if anchorNewX ~= nil then
+                windowPosX = anchorNewX;
+                windowPosY = anchorNewY;
+                
+                -- Update config immediately so next frame's positioning logic picks it up
+                if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+                gConfig.windowPositions[anchorName] = { x = anchorNewX, y = anchorNewY };
+            end
         end
     end
 end

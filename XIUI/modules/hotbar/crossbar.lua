@@ -1518,15 +1518,19 @@ function M.DrawWindow(settings, moduleSettings)
     end
 
     -- Draw move anchor (only visible when config is open)
-    -- Use same window name as ImGui window so positions are shared
-    local anchorNewX, anchorNewY = drawing.DrawMoveAnchor('Crossbar', state.windowX, state.windowY);
-    if anchorNewX ~= nil then
-        state.windowX = anchorNewX;
-        state.windowY = anchorNewY;
-        
-        -- Update config immediately so next frame's positioning logic picks it up
-        if not gConfig.windowPositions then gConfig.windowPositions = {}; end
-        gConfig.windowPositions['Crossbar'] = { x = anchorNewX, y = anchorNewY };
+    -- Only show when crossbar movement is NOT locked
+    local crossbarLocked = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.lockMovement;
+    if not crossbarLocked then
+        -- Use same window name as ImGui window so positions are shared
+        local anchorNewX, anchorNewY = drawing.DrawMoveAnchor('Crossbar', state.windowX, state.windowY);
+        if anchorNewX ~= nil then
+            state.windowX = anchorNewX;
+            state.windowY = anchorNewY;
+            
+            -- Update config immediately so next frame's positioning logic picks it up
+            if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+            gConfig.windowPositions['Crossbar'] = { x = anchorNewX, y = anchorNewY };
+        end
     end
 
     -- Determine if we should show center elements (hidden in activeOnly mode)

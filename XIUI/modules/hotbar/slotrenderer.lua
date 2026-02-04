@@ -12,6 +12,7 @@ local imgui = require('imgui');
 local recast = require('modules.hotbar.recast');
 local actions = require('modules.hotbar.actions');
 local dragdrop = require('libs.dragdrop');
+local data = require('modules.hotbar.data');
 local textures = require('modules.hotbar.textures');
 local skillchain = require('modules.hotbar.skillchain');
 local statusHandler = require('handlers.statushandler');
@@ -1380,7 +1381,33 @@ function M.DrawSlot(resources, params)
     -- ========================================
     -- 12. Drop Zone Registration
     -- ========================================
-    if params.dropZoneId and params.onDrop then
+    -- Helper: determine if movement/drag-drop is locked for this slot
+    local function IsMovementLockedForDropZone(dropZoneId)
+        if not dropZoneId then return false; end
+        -- Hotbar drop zones: hotbar_<barIndex>_<slotIndex>
+        local hbar = dropZoneId:match('^hotbar_(%d+)_');
+        if hbar then
+            local barIndex = tonumber(hbar);
+            if barIndex then
+                local barSettings = data.GetBarSettings(barIndex);
+                if (barSettings and barSettings.lockMovement) or gConfig.hotbarLockMovement then
+                    return true;
+                end
+            end
+            return false;
+        end
+        -- Crossbar drop zones: crossbar_<comboMode>_<slotIndex>
+        local cbar = dropZoneId:match('^crossbar_([^_]+)_');
+        if cbar then
+            if gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.lockMovement then
+                return true;
+            end
+            return false;
+        end
+        return false;
+    end
+
+    if params.dropZoneId and params.onDrop and not IsMovementLockedForDropZone(params.dropZoneId) then
         dragdrop.DropZone(params.dropZoneId, x, y, size, size, {
             accepts = params.dropAccepts or {'macro'},
             highlightColor = params.dropHighlightColor or 0xA8FFFFFF,
@@ -1401,10 +1428,17 @@ function M.DrawSlot(resources, params)
         -- Drag source
         if bind and params.dragType and params.getDragData then
             if isItemActive and imgui.IsMouseDragging(0, 3) then
-                if not dragdrop.IsDragging() and not dragdrop.IsDragPending() then
-                    local dragData = params.getDragData();
-                    if dragData then
-                        dragdrop.StartDrag(params.dragType, dragData);
+                -- Prevent starting drags when movement is locked for this slot
+                local movementLocked = params.dropZoneId and (
+                    (params.dropZoneId:match('^hotbar_') and ((data.GetBarSettings(tonumber(params.dropZoneId:match('^hotbar_(%d+)_'))) or {}).lockMovement or gConfig.hotbarLockMovement))
+                    or (params.dropZoneId:match('^crossbar_') and gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.lockMovement)
+                );
+                if not movementLocked then
+                    if not dragdrop.IsDragging() and not dragdrop.IsDragPending() then
+                        local dragData = params.getDragData();
+                        if dragData then
+                            dragdrop.StartDrag(params.dragType, dragData);
+                        end
                     end
                 end
             end

@@ -9,6 +9,7 @@ local components = require('config.components');
 local statusHandler = require('handlers.statushandler');
 local imgui = require('imgui');
 local data = require('modules.hotbar.data');
+local drawing = require('libs.drawing');
 local actions = require('modules.hotbar.actions');
 local jobs = require('libs.jobs');
 local macropalette = require('modules.hotbar.macropalette');
@@ -1694,6 +1695,14 @@ local function DrawBarVisualSettings(configKey, barLabel)
     components.DrawPartyCheckbox(barSettings, 'Enabled##' .. configKey, 'enabled');
     imgui.ShowHelp('Enable or disable this hotbar.');
 
+    -- Per-bar Lock Movement: disables drag/drop and slot swapping for this bar
+    components.DrawPartyCheckbox(barSettings, 'Lock Movement##' .. configKey, 'lockMovement', function()
+        if barSettings.lockMovement then
+            drawing.ResetAnchorState('Hotbar' .. tostring(barIndex));
+        end
+        DeferredUpdateVisuals();
+    end);
+
     -- Use Global Settings checkbox
     components.DrawPartyCheckbox(barSettings, 'Use Global Settings##' .. configKey, 'useGlobalSettings');
     imgui.ShowHelp('When enabled, this bar uses the Global tab settings for visuals. Disable to customize this bar independently.');
@@ -1952,6 +1961,15 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
     end
 
     imgui.Spacing();
+
+    -- Lock movement for crossbar (disable drag/drop and slot swapping)
+    components.DrawPartyCheckbox(crossbarSettings, 'Lock Movement##crossbar', 'lockMovement', function()
+        if crossbarSettings.lockMovement then
+            drawing.ResetAnchorState('Crossbar');
+        end
+        DeferredUpdateVisuals();
+    end);
+    imgui.ShowHelp('When enabled, prevents dragging/dropping and swapping of crossbar slots.');
 
     -- Controller Input settings (combo modes, double-tap) - directly under controller
     components.DrawPartyCheckbox(crossbarSettings, 'Enable L2+R2 / R2+L2##crossbar', 'enableExpandedCrossbar');
@@ -2437,6 +2455,17 @@ function M.DrawSettings(state)
 
     -- Basic toggles at top
     components.DrawCheckbox('Enabled', 'hotbarEnabled');
+    -- Lock Movement disables drag/drop and slot swapping for hotbar bars
+    components.DrawCheckbox('Lock Movement', 'hotbarLockMovement', function()
+        -- Only reset anchors when lock is being ENABLED
+        if gConfig.hotbarLockMovement then
+            for i = 1, 6 do
+                drawing.ResetAnchorState('Hotbar' .. tostring(i));
+            end
+            drawing.ResetAnchorState('Crossbar');
+        end
+        DeferredUpdateVisuals();
+    end);
     components.DrawCheckbox('Hide When Menu Open', 'hotbarHideOnMenuFocus');
     imgui.ShowHelp('Hide hotbars when a game menu is open (equipment, map, etc.).');
 

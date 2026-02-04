@@ -373,6 +373,8 @@ function M.createHotbarBarDefaults(overrides)
 
         -- Layout settings (always per-bar)
         enabled = true,
+        -- Lock movement (disable drag/drop and slot swapping for this bar)
+        lockMovement = false,
         rows = 1,               -- Number of rows (1-12)
         columns = 12,           -- Number of columns (1-12)
         slots = 12,             -- Total slots, auto-calculated from rows*columns
@@ -549,6 +551,8 @@ function M.createCrossbarDefaults()
         -- Expanded crossbar (L2+R2 combos)
         enableExpandedCrossbar = true,      -- Enable L2+R2 and R2+L2 combos
         useSharedExpandedBar = false,       -- When true, L2+R2 and R2+L2 share the same bar (Shared)
+        -- Lock movement (disable drag/drop and slot swapping for crossbar)
+        lockMovement = false,
 
         -- Double-tap crossbar (tap trigger twice quickly)
         enableDoubleTap = false,            -- Enable L2x2 and R2x2 double-tap modes
