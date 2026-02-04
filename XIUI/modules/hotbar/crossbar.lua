@@ -1638,6 +1638,8 @@ function M.SetHidden(hidden)
 
                 local labelFont = state.labelFonts[comboMode] and state.labelFonts[comboMode][slotIndex];
                 if labelFont then labelFont:set_visible(false); end
+                local abbrFont = state.abbreviationFonts[comboMode] and state.abbreviationFonts[comboMode][slotIndex];
+                if abbrFont then abbrFont:set_visible(false); end
             end
 
             -- Hide center icon primitives
