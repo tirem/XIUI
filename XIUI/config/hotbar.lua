@@ -1979,7 +1979,7 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
     if crossbarSettings.enableExpandedCrossbar then
         imgui.Indent(20);
         components.DrawPartyCheckbox(crossbarSettings, 'Use Shared Expanded Bar##crossbar', 'useSharedExpandedBar', DeferredUpdateVisuals);
-        imgui.ShowHelp('When enabled, L2+R2 and R2+L2 will access the same shared expanded bar instead of separate bars.\\nThis shared bar is completely independent from the separate L2+R2 and R2+L2 bars.');
+        imgui.ShowHelp('When enabled, L2+R2 and R2+L2 will access the same shared expanded bar instead of separate bars.\nThis shared bar is completely independent from the separate L2+R2 and R2+L2 bars.');
         imgui.Unindent(20);
     end
 

@@ -1429,10 +1429,8 @@ function M.DrawSlot(resources, params)
         if bind and params.dragType and params.getDragData then
             if isItemActive and imgui.IsMouseDragging(0, 3) then
                 -- Prevent starting drags when movement is locked for this slot
-                local movementLocked = params.dropZoneId and (
-                    (params.dropZoneId:match('^hotbar_') and ((data.GetBarSettings(tonumber(params.dropZoneId:match('^hotbar_(%d+)_'))) or {}).lockMovement or gConfig.hotbarLockMovement))
-                    or (params.dropZoneId:match('^crossbar_') and gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.lockMovement)
-                );
+                local movementLocked = params.dropZoneId and IsMovementLockedForDropZone(params.dropZoneId) or false;
+
                 if not movementLocked then
                     if not dragdrop.IsDragging() and not dragdrop.IsDragPending() then
                         local dragData = params.getDragData();

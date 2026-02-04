@@ -926,7 +926,7 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
         gConfig.hotbarCrossbar = {};
     end
 
-    -- Map L2R2/R2L2 to SharedShared when shared expanded bar is enabled
+    -- Map L2R2/R2L2 to Shared when shared expanded bar is enabled
     local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
 
     -- Use per-combo-mode storage key (considers pet-aware and palette settings per combo)
