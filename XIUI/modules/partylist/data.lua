@@ -102,10 +102,10 @@ data.frameCache = {
     player = nil,
     entity = nil,
     playerTarget = nil,
-    t1 = nil,
-    t2 = nil,
-    subTargetActive = false,
-    stPartyIndex = nil,
+    mainTargetIndex = nil,         -- Primary target index from GetTargets()
+    secondaryTargetIndex = nil,    -- Secondary target index from GetTargets()
+    isSubtargeting = false,        -- Whether subtarget mode is currently active
+    partyCursorMemberIndex = nil,  -- Party member index when using <stpc>/<stpt> cursor
     activeMemberCount = {0, 0, 0},
     activeMemberList = {{}, {}, {}},
 };
@@ -380,7 +380,6 @@ function data.GetMemberInformation(memIdx)
             memInfo.maxmp = 0;
             memInfo.mp = 0;
         end
-        memInfo.targeted = memIdx == 4 or memIdx == 10 or memIdx == 16;
         memInfo.serverid = -memIdx - 1;
         -- Preview buffs/debuffs - different combinations per member
         -- Common buff IDs: 1=KO, 2=Sleep, 3=Poison, 4=Paralysis, 5=Blindness, 6=Silence, 7=Petrification
@@ -396,7 +395,11 @@ function data.GetMemberInformation(memIdx)
         };
         memInfo.buffs = previewBuffs[memIdx % 6];
         memInfo.sync = false;
-        memInfo.subTargeted = memIdx == 2 or memIdx == 8 or memIdx == 14;
+        -- Preview: members 4,10,16 are targets (blue), members 2,8,14 are subtargets (yellow)
+        local isPreviewTarget = memIdx == 4 or memIdx == 10 or memIdx == 16;
+        local isPreviewSubtarget = memIdx == 2 or memIdx == 8 or memIdx == 14;
+        memInfo.targeted = isPreviewTarget or isPreviewSubtarget;
+        memInfo.isSubtargetStyle = isPreviewSubtarget;
         memInfo.zone = 100;
         memInfo.inzone = memIdx % 4 ~= 0;
         memInfo.name = (memIdx % 6 == 1) and 'Thisisaverylongname' or ('Player ' .. (memIdx + 1));
@@ -548,18 +551,40 @@ function data.GetMemberInformation(memIdx)
         memberInfo.index = party:GetMemberTargetIndex(memIdx);
 
         if (data.frameCache.playerTarget ~= nil) then
-            local thisIdx = memberInfo.index;
-            local t1 = data.frameCache.t1;
-            local t2 = data.frameCache.t2;
-            local sActive = data.frameCache.subTargetActive;
-            local stPartyIdx = data.frameCache.stPartyIndex;
-            -- targeted = subtarget cursor when subtargeting (what you'll act on), original otherwise
-            -- subTargeted = original target when subtargeting (held target), or party subtarget
-            memberInfo.targeted = (t1 == thisIdx and not sActive) or (t2 == thisIdx and sActive);
-            memberInfo.subTargeted = (t1 == thisIdx and sActive) or (stPartyIdx ~= nil and stPartyIdx == memIdx);
+            local memberTargetIndex = memberInfo.index;
+            local mainTargetIndex = data.frameCache.mainTargetIndex;
+            local secondaryTargetIndex = data.frameCache.secondaryTargetIndex;
+            local partyCursorMemberIndex = data.frameCache.partyCursorMemberIndex;
+            local isSubtargeting = data.frameCache.isSubtargeting;
+            -- GetTargets() returns different things based on mode:
+            -- Party cursor mode (<stpc>/<stpt>): mainTargetIndex = subtarget, secondaryTargetIndex = held target
+            -- Entity-based mode (with swap): mainTargetIndex = held target, secondaryTargetIndex = subtarget
+            -- Entity-based mode (no swap): mainTargetIndex = subtarget, secondaryTargetIndex = 0
+            -- Normal targeting (no subtarget): mainTargetIndex = target, secondaryTargetIndex = 0, isSubtargeting = false
+            local isHeldTarget;
+            local isSubtarget;
+            if partyCursorMemberIndex ~= nil then
+                -- Party cursor mode: mainTargetIndex is the subtarget, secondaryTargetIndex is the held target
+                isHeldTarget = (secondaryTargetIndex == memberTargetIndex);
+                isSubtarget = (partyCursorMemberIndex == memIdx);
+            elseif secondaryTargetIndex ~= nil and secondaryTargetIndex ~= 0 then
+                -- Entity-based mode with swap: mainTargetIndex is the held target, secondaryTargetIndex is the subtarget
+                isHeldTarget = (mainTargetIndex == memberTargetIndex);
+                isSubtarget = (secondaryTargetIndex == memberTargetIndex);
+            elseif isSubtargeting then
+                -- Entity-based mode without swap (no held target): mainTargetIndex is the subtarget
+                isHeldTarget = false;
+                isSubtarget = (mainTargetIndex == memberTargetIndex);
+            else
+                -- Normal targeting (no subtarget active): mainTargetIndex is the regular target
+                isHeldTarget = false;
+                isSubtarget = false;
+            end
+            memberInfo.targeted = isHeldTarget or isSubtarget or (mainTargetIndex == memberTargetIndex and not isSubtargeting);
+            memberInfo.isSubtargetStyle = isSubtarget;
         else
             memberInfo.targeted = false;
-            memberInfo.subTargeted = false;
+            memberInfo.isSubtargetStyle = false;
         end
 
         if (memIdx == 0) then
@@ -584,7 +609,6 @@ function data.GetMemberInformation(memIdx)
         memberInfo.serverid = 0;
         memberInfo.buffs = nil;
         memberInfo.sync = false;
-        memberInfo.subTargeted = false;
         memberInfo.index = nil;
     end
 

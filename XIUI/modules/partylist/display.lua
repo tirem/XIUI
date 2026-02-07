@@ -51,7 +51,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
             subjob = '', subjoblevel = '',
             targeted = false, serverid = 0,
             buffs = nil, sync = false,
-            subTargeted = false, zone = '',
+            zone = '',
             inzone = false, name = '', leader = false
         };
     end
@@ -63,8 +63,6 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Check if this job has MP (considers main job and sub job)
     local jobHasMP = JobHasMP(memInfo.job, memInfo.subjob);
-
-    local subTargetActive = GetSubTargetActive();
 
     -- Get HP colors
     local hpNameColor, hpGradient = GetCustomHpColors(memInfo.hpp, cache.colors);
@@ -208,7 +206,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
     end
 
     -- Draw selection box
-    if (memInfo.targeted == true or memInfo.subTargeted) then
+    if memInfo.targeted then
         local drawList = imgui.GetBackgroundDrawList();
 
         local selectionWidth = allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2;
@@ -221,9 +219,10 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         local selectionTL = {hpStartX - settings.cursorPaddingX1, topOfMember - settings.cursorPaddingY1 - centerOffsetY + selectionOffsetY};
         local selectionBR = {selectionTL[1] + selectionWidth, selectionTL[2] + selectionHeight};
 
+        -- Use subtarget colors (yellow) when this member is the subtarget, target colors (blue) otherwise
         local selectionGradient;
         local borderColorARGB;
-        if memInfo.subTargeted then
+        if memInfo.isSubtargetStyle then
             selectionGradient = GetCustomGradient(cache.colors, 'subtargetGradient') or {'#d9a54d', '#edcf78'};
             borderColorARGB = cache.colors.subtargetBorderColor or 0xFFfdd017;
         else
@@ -263,7 +262,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
             -- Draw border
             local borderColor;
-            if memInfo.subTargeted then
+            if memInfo.isSubtargetStyle then
                 if data.cachedSubtargetBorderColorARGB ~= borderColorARGB then
                     data.cachedSubtargetBorderColorARGB = borderColorARGB;
                     data.cachedSubtargetBorderColorU32 = ARGBToU32(borderColorARGB);
@@ -277,6 +276,34 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 borderColor = data.cachedBorderColorU32;
             end
             drawList:AddRect({selectionTL[1], selectionTL[2]}, {selectionBR[1], selectionBR[2]}, borderColor, 6, 15, 2);
+        end
+
+        -- Draw cursor arrow
+        local cursorTexture = data.cursorTextures[cache.cursor];
+        if cursorTexture ~= nil then
+            local cursorImage = tonumber(ffi.cast("uint32_t", cursorTexture.image));
+            local cursorWidth = cursorTexture.width * settings.arrowSize;
+            local cursorHeight = cursorTexture.height * settings.arrowSize;
+            local cursorX = selectionTL[1] - cursorWidth;
+            local cursorY = selectionTL[2] + (selectionHeight / 2) - (cursorHeight / 2);
+
+            local tintColor;
+            if memInfo.isSubtargetStyle then
+                tintColor = ARGBToABGR(cache.subtargetArrowTint);
+            else
+                tintColor = ARGBToABGR(cache.targetArrowTint);
+            end
+
+            local draw_list = GetUIDrawList();
+            draw_list:AddImage(
+                cursorImage,
+                {cursorX, cursorY},
+                {cursorX + cursorWidth, cursorY + cursorHeight},
+                {0, 0}, {1, 1},
+                tintColor
+            );
+
+            data.partySubTargeted = true;
         end
 
         data.partyTargeted = true;
@@ -991,46 +1018,6 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
             end
         end
 
-        -- Draw cursor
-        if ((memInfo.targeted == true and not subTargetActive) or memInfo.subTargeted) then
-            local cursorTexture = data.cursorTextures[cache.cursor];
-            if (cursorTexture ~= nil) then
-                local cursorImage = tonumber(ffi.cast("uint32_t", cursorTexture.image));
-                local cursorWidth = cursorTexture.width * settings.arrowSize;
-                local cursorHeight = cursorTexture.height * settings.arrowSize;
-
-                local selectionScaleY = cache.selectionBoxScaleY or 1;
-                local selectionOffsetY = cache.selectionBoxOffsetY or 0;
-                local unscaledHeight = entryHeight + settings.cursorPaddingY1 + settings.cursorPaddingY2;
-                local selectionHeight = unscaledHeight * selectionScaleY;
-                local topOfMember = hpStartY - nameRefHeight - settings.nameTextOffsetY;
-                local centerOffsetY = (selectionHeight - unscaledHeight) / 2;
-                local selectionTL_X = hpStartX - settings.cursorPaddingX1;
-                local selectionTL_Y = topOfMember - settings.cursorPaddingY1 - centerOffsetY + selectionOffsetY;
-
-                local cursorX = selectionTL_X - cursorWidth;
-                local cursorY = selectionTL_Y + (selectionHeight / 2) - (cursorHeight / 2);
-
-                local tintColor;
-                if (memInfo.subTargeted) then
-                    tintColor = ARGBToABGR(cache.subtargetArrowTint);
-                else
-                    tintColor = ARGBToABGR(cache.targetArrowTint);
-                end
-
-                local draw_list = GetUIDrawList();
-                draw_list:AddImage(
-                    cursorImage,
-                    {cursorX, cursorY},
-                    {cursorX + cursorWidth, cursorY + cursorHeight},
-                    {0, 0}, {1, 1},
-                    tintColor
-                );
-
-                data.partySubTargeted = true;
-            end
-        end
-
         -- Draw buffs/debuffs
         if (partyIndex == 1 and memInfo.buffs ~= nil and #memInfo.buffs > 0) then
             if (cache.statusTheme == 0 or cache.statusTheme == 1) then
@@ -1428,14 +1415,14 @@ function display.DrawWindow(settings)
 
     -- Cache target info
     if data.frameCache.playerTarget ~= nil then
-        data.frameCache.t1, data.frameCache.t2 = GetTargets();
-        data.frameCache.stPartyIndex = GetStPartyIndex();
-        data.frameCache.subTargetActive = GetSubTargetActive();
+        data.frameCache.mainTargetIndex, data.frameCache.secondaryTargetIndex = GetTargets();
+        data.frameCache.partyCursorMemberIndex = GetStPartyIndex();
+        data.frameCache.isSubtargeting = GetSubTargetActive();
     else
-        data.frameCache.t1 = nil;
-        data.frameCache.t2 = nil;
-        data.frameCache.stPartyIndex = nil;
-        data.frameCache.subTargetActive = false;
+        data.frameCache.mainTargetIndex = nil;
+        data.frameCache.secondaryTargetIndex = nil;
+        data.frameCache.partyCursorMemberIndex = nil;
+        data.frameCache.isSubtargeting = false;
     end
 
     -- Pre-calculate active member counts
