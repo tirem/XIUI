@@ -32,10 +32,6 @@ local stabilizationStartTime = nil;  -- When we first saw valid inventory data
 local stabilizationGil = nil;        -- Gil value when stabilization started
 local STABILIZATION_DELAY = 3;       -- Seconds to wait before initializing tracking
 
--- Zone tracking (distinguishes fresh login from normal zone changes)
-local lastZoneOutTime = nil;         -- os.clock() when we last received zone-out (0x00B)
-local ZONE_TIMEOUT = 60;             -- If 0x00A arrives more than 60s after 0x00B, treat as login
-
 -- Gil/hr display throttling (avoid jittery updates every frame)
 local cachedGilPerHour = 0;          -- Cached calculated value
 local cachedGilPerHourStr = '+0/hr'; -- Cached formatted string
@@ -43,6 +39,7 @@ local lastGilPerHourCalcTime = 0;    -- When we last recalculated
 local GIL_PER_HOUR_UPDATE_INTERVAL = 3;  -- Recalculate every 3 seconds
 
 local giltracker = {};
+local pending_logout = false;  -- true if the last zone-out was a logout (should reset on next zone-in)
 
 local function GetLoggedInPlayerName()
     local playerIndex = AshitaCore:GetMemoryManager():GetParty():GetMemberTargetIndex(0);
@@ -96,24 +93,24 @@ giltracker.DrawWindow = function(settings)
 		return;
 	end
 
-    local loggedInName = GetLoggedInPlayerName();
+	local loggedInName = GetLoggedInPlayerName();
 
-    if loggedInName == nil then
+	if loggedInName == nil then
 		SetFontsVisible(allFonts,false);
-        return;
-    end
+		return;
+	end
 
-    if lastPlayerName ~= loggedInName then
-        lastPlayerName = loggedInName;
-        trackingStartGil = nil;
-        trackingStartTime = nil;
-        lastKnownGil = nil;
-        stabilizationStartTime = nil;
-        stabilizationGil = nil;
-        cachedGilPerHour = 0;
-        cachedGilPerHourStr = '+0/hr';
-        lastGilPerHourCalcTime = 0;
-    end
+	-- Reset tracking on character change (switching characters) or first login after addon load
+	-- This is the ONLY place session tracking resets (besides manual reset command)
+	if lastPlayerName == nil then
+		-- First time seeing a player name after addon load = fresh login
+		lastPlayerName = loggedInName;
+		giltracker.ResetTracking();
+	elseif lastPlayerName ~= loggedInName then
+		-- Player name changed = character switch
+		lastPlayerName = loggedInName;
+		giltracker.ResetTracking();
+	end
 
     if (player.isZoning) then
 		SetFontsVisible(allFonts,false);
@@ -475,14 +472,13 @@ giltracker.Initialize = function(settings)
 	allFonts = {gilText, gilPerHourText};
 	gilTexture = TextureManager.getFileTexture("gil");
 
-	-- Reset tracking state on initialize (fresh login)
+	-- Reset tracking state on initialize (addon load = fresh session)
 	trackingStartGil = nil;
 	trackingStartTime = nil;
 	lastKnownGil = nil;
-    lastPlayerName = nil;
+    lastPlayerName = nil;  -- nil triggers reset on first DrawWindow with valid player
 	stabilizationStartTime = nil;
 	stabilizationGil = nil;
-	lastZoneOutTime = nil;
 	cachedGilPerHour = 0;
 	cachedGilPerHourStr = '+0/hr';
 	lastGilPerHourCalcTime = 0;
@@ -523,7 +519,6 @@ giltracker.Cleanup = function()
     lastPlayerName = nil;
 	stabilizationStartTime = nil;
 	stabilizationGil = nil;
-	lastZoneOutTime = nil;
 	cachedGilPerHour = 0;
 	cachedGilPerHourStr = '+0/hr';
 	lastGilPerHourCalcTime = 0;
@@ -563,44 +558,29 @@ giltracker.ResetPositions = function()
 	hasAppliedSavedPosition = false;
 end
 
--- Handle zone-out packet (0x00B) - record timestamp
-giltracker.HandleZoneOutPacket = function()
-	lastZoneOutTime = os.clock();
+-- Zone packet handlers are no-ops. Login detection is performed via
+-- `gameState.CheckLoggedIn()` in `DrawWindow`, and character switches are
+-- detected via player name change. Zone changes should NOT reset tracking.
+giltracker.HandleZoneOutPacket = function(e)
+	-- Inspect the zone-out packet to determine if this was a logout/disconnect.
+	-- Packet structure: byte at offset 0x04+1 (1-based) == 1 indicates logout (per logincmd addon).
+	pending_logout = false;
+	if not e or not e.data_modified then
+		return;
+	end
+	local readSuccess, logoutFlag = pcall(string.byte, e.data_modified, 0x04 + 1)
+	if readSuccess and logoutFlag == 1 then
+		pending_logout = true;
+	end
 end
 
--- Handle zone-in packet (0x00A)
--- Only resets tracking on fresh login, not normal zone changes (issue #111)
--- Fresh login = no recent zone-out (0x00B) within ZONE_TIMEOUT seconds
-giltracker.HandleZoneInPacket = function()
-	local now = os.clock();
-	local isFreshLogin = true;
-
-    -- Check if player name changed (fast relog detection)
-    local player = GetPlayerSafe();
-    if player and lastPlayerName ~= player.Name then
-        -- Force fresh login if name changed
-        isFreshLogin = true;
-        -- Update lastPlayerName here to prevent double reset (though double reset is harmless)
-        lastPlayerName = player.Name;
-    elseif lastZoneOutTime ~= nil then
-		local timeSinceZoneOut = now - lastZoneOutTime;
-		if timeSinceZoneOut < ZONE_TIMEOUT then
-			isFreshLogin = false;
-		end
+giltracker.HandleZoneInPacket = function(e)
+	-- If the previous zone-out indicated a logout, treat this zone-in as a fresh login
+	-- and reset tracking. Otherwise keep session tracking intact for normal zone changes.
+	if pending_logout then
+		giltracker.ResetTracking();
 	end
-
-	if isFreshLogin then
-		-- Reset tracking for fresh login - stabilization will handle initialization
-		trackingStartGil = nil;
-		trackingStartTime = nil;
-		lastKnownGil = nil;
-		stabilizationStartTime = nil;
-		stabilizationGil = nil;
-		cachedGilPerHour = 0;
-		cachedGilPerHourStr = '+0/hr';
-		lastGilPerHourCalcTime = 0;
-	end
-	-- Normal zone change: keep tracking state intact
+	pending_logout = false;
 end
 
 -- Force immediate recalculation on next frame (e.g., when display mode changes)

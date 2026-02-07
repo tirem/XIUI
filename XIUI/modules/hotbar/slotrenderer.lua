@@ -535,6 +535,19 @@ local function DrawSkillchainHighlight(drawList, x, y, size, scName, color, opac
     end
 end
 
+-- Helper: determine if movement/drag-drop is locked for this slot
+-- Shift key overrides the lock to allow dragging while locked
+local function IsMovementLockedForDropZone(dropZoneId)
+    if not dropZoneId then return false; end
+    if imgui.GetIO().KeyShift then
+        return false;
+    end
+    if gConfig and gConfig.hotbarLockMovement then
+        return true;
+    end
+    return false;
+end
+
 --[[
     Render a slot with all components and handle all interactions.
     MUST be called inside an ImGui window context.
@@ -1380,7 +1393,7 @@ function M.DrawSlot(resources, params)
     -- ========================================
     -- 12. Drop Zone Registration
     -- ========================================
-    if params.dropZoneId and params.onDrop then
+    if params.dropZoneId and params.onDrop and not IsMovementLockedForDropZone(params.dropZoneId) then
         dragdrop.DropZone(params.dropZoneId, x, y, size, size, {
             accepts = params.dropAccepts or {'macro'},
             highlightColor = params.dropHighlightColor or 0xA8FFFFFF,
@@ -1401,10 +1414,15 @@ function M.DrawSlot(resources, params)
         -- Drag source
         if bind and params.dragType and params.getDragData then
             if isItemActive and imgui.IsMouseDragging(0, 3) then
-                if not dragdrop.IsDragging() and not dragdrop.IsDragPending() then
-                    local dragData = params.getDragData();
-                    if dragData then
-                        dragdrop.StartDrag(params.dragType, dragData);
+                -- Prevent starting drags when movement is locked for this slot
+                local movementLocked = params.dropZoneId and IsMovementLockedForDropZone(params.dropZoneId) or false;
+
+                if not movementLocked then
+                    if not dragdrop.IsDragging() and not dragdrop.IsDragPending() then
+                        local dragData = params.getDragData();
+                        if dragData then
+                            dragdrop.StartDrag(params.dragType, dragData);
+                        end
                     end
                 end
             end
@@ -1422,9 +1440,9 @@ function M.DrawSlot(resources, params)
             end
         end
 
-        -- Right click
+        -- Right click (disabled when Lock Movement is enabled)
         if isItemHovered and imgui.IsMouseClicked(1) and bind then
-            if params.onRightClick then
+            if params.onRightClick and not gConfig.hotbarLockMovement then
                 params.onRightClick();
             end
         end

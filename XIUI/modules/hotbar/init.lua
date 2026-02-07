@@ -371,6 +371,9 @@ function M.Initialize(settings)
             doubleTapEnabled = crossbarConfig.enableDoubleTap or false,
             doubleTapWindow = crossbarConfig.doubleTapWindow or 0.3,
             controllerScheme = crossbarConfig.controllerScheme,
+            triggerPressThreshold = crossbarConfig.triggerPressThreshold or 30,
+            triggerReleaseThreshold = crossbarConfig.triggerReleaseThreshold or 15,
+            minTriggerHold = crossbarConfig.minTriggerHold or 0.05,
             customButtonMapping = customButtonMapping,
         });
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
@@ -478,6 +481,9 @@ function M.UpdateVisuals(settings)
             doubleTapEnabled = gConfig.hotbarCrossbar.enableDoubleTap or false,
             doubleTapWindow = gConfig.hotbarCrossbar.doubleTapWindow or 0.3,
             controllerScheme = gConfig.hotbarCrossbar.controllerScheme,
+            triggerPressThreshold = gConfig.hotbarCrossbar.triggerPressThreshold or 30,
+            triggerReleaseThreshold = gConfig.hotbarCrossbar.triggerReleaseThreshold or 15,
+            minTriggerHold = gConfig.hotbarCrossbar.minTriggerHold or 0.05,
         });
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
             crossbar.ActivateSlot(comboMode, slotIndex);

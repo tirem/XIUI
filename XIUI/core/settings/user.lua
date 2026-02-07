@@ -89,6 +89,8 @@ function M.createUserSettingsDefaults()
 
         -- Hotbar settings (global)
         hotbarEnabled = true,                 -- Show hotbar module
+        -- Lock movement: when true, disables drag/drop and slot swapping for hotbar bars
+        hotbarLockMovement = false,
         hotbarPreview = false,                -- Show preview with test data
         hotbarBarPositions = nil,             -- Per-bar positions (nil = defaults)
         crossbarWindowPosX = nil,             -- Crossbar X position

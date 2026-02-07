@@ -437,6 +437,26 @@ function M.GetPetPaletteModule()
 end
 
 -- ============================================
+-- Shared Expanded Bar Helper
+-- ============================================
+
+-- Map combo mode to effective storage mode (handles shared L2+R2/R2+L2 bar)
+-- When useSharedExpandedBar is enabled, L2R2 and R2L2 both map to 'Shared'
+-- This allows both combos to access the same bar while keeping separate bars when disabled
+local function GetEffectiveComboModeForStorage(comboMode)
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    if crossbarSettings and crossbarSettings.useSharedExpandedBar then
+        if comboMode == 'L2R2' or comboMode == 'R2L2' then
+            return 'Shared';
+        end
+    end
+    return comboMode;
+end
+
+-- Expose for external use (e.g., crossbar icon caching)
+M.GetEffectiveComboModeForStorage = GetEffectiveComboModeForStorage;
+
+-- ============================================
 -- Crossbar Storage Key Resolution (GLOBAL Palette)
 -- ============================================
 
@@ -836,7 +856,7 @@ local function ensureCrossbarSlotActionsStructure(crossbarSettings, storageKey, 
 end
 
 -- Get slot data for a crossbar slot
--- comboMode: 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', or 'R2x2'
+-- comboMode: 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2', or 'Shared'
 -- slotIndex: 1-8
 -- Returns nil if no data exists
 function M.GetCrossbarSlotData(comboMode, slotIndex)
@@ -844,13 +864,16 @@ function M.GetCrossbarSlotData(comboMode, slotIndex)
 
     if not gConfig.hotbarCrossbar then return nil; end
 
+    -- Map L2R2/R2L2 to Shared when shared expanded bar is enabled
+    local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
+
     -- Use per-combo-mode storage key (considers pet-aware and palette settings per combo)
-    local storageKey = M.GetCrossbarStorageKeyForCombo(comboMode);
+    local storageKey = M.GetCrossbarStorageKeyForCombo(effectiveComboMode);
     local jobSlotActions = getCrossbarSlotActionsForJob(gConfig.hotbarCrossbar.slotActions, storageKey);
     if not jobSlotActions then return nil; end
-    if not jobSlotActions[comboMode] then return nil; end
+    if not jobSlotActions[effectiveComboMode] then return nil; end
 
-    local slotAction = jobSlotActions[comboMode][slotIndex];
+    local slotAction = jobSlotActions[effectiveComboMode][slotIndex];
     if not slotAction then return nil; end
 
     -- If this slot has a macro reference, look up the current macro data
@@ -887,7 +910,7 @@ function M.GetCrossbarSlotData(comboMode, slotIndex)
 end
 
 -- Set slot data for a crossbar slot
--- comboMode: 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', or 'R2x2'
+-- comboMode: 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2', or 'Shared'
 -- slotIndex: 1-8
 -- slotData: { actionType, action, target, displayName, equipSlot, macroText, itemId, customIconType, customIconId, customIconPath }
 --           or nil to clear the slot
@@ -903,9 +926,12 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
         gConfig.hotbarCrossbar = {};
     end
 
+    -- Map L2R2/R2L2 to Shared when shared expanded bar is enabled
+    local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
+
     -- Use per-combo-mode storage key (considers pet-aware and palette settings per combo)
-    local storageKey = M.GetCrossbarStorageKeyForCombo(comboMode);
-    local comboSlots = ensureCrossbarSlotActionsStructure(gConfig.hotbarCrossbar, storageKey, comboMode);
+    local storageKey = M.GetCrossbarStorageKeyForCombo(effectiveComboMode);
+    local comboSlots = ensureCrossbarSlotActionsStructure(gConfig.hotbarCrossbar, storageKey, effectiveComboMode);
 
     -- Store the slot data
     -- Use macroRef if present (from slot swap), otherwise use id (from macro palette drop)
@@ -932,20 +958,23 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
 end
 
 -- Clear a crossbar slot (sets to nil)
--- comboMode: 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', or 'R2x2'
+-- comboMode: 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2', or 'Shared'
 -- slotIndex: 1-8
 function M.ClearCrossbarSlotData(comboMode, slotIndex)
     -- Early return if structure doesn't exist
     if not gConfig.hotbarCrossbar then return; end
 
+    -- Map L2R2/R2L2 to Shared when shared expanded bar is enabled
+    local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
+
     -- Use per-combo-mode storage key (considers pet-aware and palette settings per combo)
-    local storageKey = M.GetCrossbarStorageKeyForCombo(comboMode);
+    local storageKey = M.GetCrossbarStorageKeyForCombo(effectiveComboMode);
     local jobSlotActions = getCrossbarSlotActionsForJob(gConfig.hotbarCrossbar.slotActions, storageKey);
     if not jobSlotActions then return; end
-    if not jobSlotActions[comboMode] then return; end
+    if not jobSlotActions[effectiveComboMode] then return; end
 
     -- Clear the slot
-    jobSlotActions[comboMode][slotIndex] = nil;
+    jobSlotActions[effectiveComboMode][slotIndex] = nil;
 
     NotifySlotDataChanged();
 end

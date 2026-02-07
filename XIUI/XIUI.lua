@@ -1472,7 +1472,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         actionTracker.HandleZonePacket();
         mobInfo.data.HandleZonePacket(e);
         statusHandler.clear_zone_cache();  -- Clear status icon cache to prevent accumulation
-        gilTracker.HandleZoneInPacket();  -- Only reset on fresh login, not zone changes (issue #111)
+        gilTracker.HandleZoneInPacket(e);  -- Only reset on fresh login, not zone changes (issue #111)
         TextureManager.clearOnZone();
         MarkPartyCacheDirty();
         ClearEntityCache();
@@ -1520,7 +1520,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         end
         notifications.HandleZonePacket();
         treasurePool.HandleZonePacket();
-        gilTracker.HandleZoneOutPacket();  -- Track zone-out time for login detection (issue #111)
+        gilTracker.HandleZoneOutPacket(e);  -- Track zone-out/logout for login detection (issue #111)
         TextureManager.clearOnZone();
         bLoggedIn = false;
         -- Also notify hotbar of zone (clears state)
