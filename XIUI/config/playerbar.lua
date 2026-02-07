@@ -25,6 +25,8 @@ function M.DrawSettings()
         imgui.ShowHelp('Always display the MP Bar even if your current jobs cannot cast spells.');
         components.DrawCheckbox('TP Bar Flash Effects', 'playerBarTpFlashEnabled');
         imgui.ShowHelp('Flash effect when TP reaches 1000 or higher.');
+        components.DrawCheckbox('Resting Ticker', 'playerBarRestingTicker');
+        imgui.ShowHelp('Show a glowing spark that moves along the HP bar indicating when the next resting tick will occur.');
     end
 
     if components.CollapsingSection('Scale & Position##playerBar') then
@@ -71,6 +73,7 @@ end
 function M.DrawColorSettings()
     if components.CollapsingSection('HP Bar Colors##playerBarColor') then
         components.DrawHPBarColorsRow(gConfig.colorCustomization.playerBar.hpGradient, "##playerBar");
+        components.DrawTextColorPicker("Resting Ticker", gConfig.colorCustomization.playerBar, 'restingTickerColor', "Color of the resting ticker spark on the HP bar");
     end
 
     if components.CollapsingSection('MP/TP Bar Colors##playerBarColor') then

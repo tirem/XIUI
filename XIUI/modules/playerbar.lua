@@ -34,7 +34,11 @@ local lastInterpColorConfig = nil;
 local baseWindowFlags = nil;
 
 local playerbar = {
-	interpolation = {}
+	interpolation = {},
+	restingTicker = {
+		startTime = 0,
+		wasResting = false,
+	}
 };
 
 -- Get cached interpolation colors, only recompute when config changes
@@ -356,6 +360,46 @@ playerbar.DrawWindow = function(settings)
 		-- Capture HP bar start position
 		local hpBarStartX, hpBarStartY = imgui.GetCursorScreenPos();
 		progressbar.ProgressBar(hpPercentData, {barSize, settings.barHeight}, {decorate = gConfig.showPlayerBarBookends});
+
+		-- Draw resting ticker shimmer if enabled and player is resting
+		if gConfig.playerBarRestingTicker and playerEnt.Status == 33 then
+			local ticker = playerbar.restingTicker;
+			local currentTime = os.clock();
+			
+			if not ticker.wasResting then
+				ticker.startTime = currentTime;
+				ticker.wasResting = true;
+			end
+			
+			-- Progress: first tick 21s, then 10s cycles
+			local elapsed = currentTime - ticker.startTime;
+			local progress = elapsed < 21 and (elapsed / 21) or ((elapsed - 21) % 10) / 10;
+			
+			-- Calculate shimmer position
+			local bookendWidth = gConfig.showPlayerBarBookends and (settings.barHeight / 2) or 0;
+			local padding = 3.0;
+			local width = barSize - bookendWidth * 2 - (padding * 2);
+			local waveWidth = width * 0.06;
+			local x = hpBarStartX + bookendWidth + padding;
+			local y1 = hpBarStartY + padding;
+			local y2 = hpBarStartY + settings.barHeight - padding;
+			local waveLeft = x + (progress * (width - waveWidth));
+			local waveRight = waveLeft + waveWidth;
+			
+			-- Draw gradient shimmer (transparent left, bright color right) - color from settings
+			local tickerColor = gConfig.colorCustomization.playerBar.restingTickerColor or 0xFF00E6FF;
+			local tickerRGBA = ARGBToImGui(tickerColor);
+			local r, g, b, a = tickerRGBA[1], tickerRGBA[2], tickerRGBA[3], tickerRGBA[4];
+			imgui.GetWindowDrawList():AddRectFilledMultiColor(
+				{waveLeft, y1}, {waveRight, y2},
+				imgui.GetColorU32({r, g, b, 0.0}),
+				imgui.GetColorU32({r, g, b, a}),
+				imgui.GetColorU32({r, g, b, a}),
+				imgui.GetColorU32({r, g, b, 0.0})
+			);
+		else
+			playerbar.restingTicker.wasResting = false;
+		end
 
 		imgui.SameLine();
 		local hpEndX = imgui.GetCursorPosX();	

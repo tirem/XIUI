@@ -27,6 +27,7 @@ function M.createColorCustomizationDefaults()
             tpEmptyTextColor = 0xFF8DC7FF,  -- TP < 1000
             tpFullTextColor = 0xFF8DC7FF,   -- TP >= 1000
             tpFlashColor = 0xFF2fa9ff,      -- TP flash effect color
+            restingTickerColor = 0xFF00E6FF, -- Resting ticker spark color (cyan)
         },
 
         -- Target Bar
