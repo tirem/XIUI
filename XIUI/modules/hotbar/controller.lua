@@ -149,8 +149,11 @@ local state = {
     -- Double-tap detection
     doubleTapEnabled = false,
     doubleTapWindow = DEFAULT_DOUBLE_TAP_WINDOW,
+    minTriggerHold = 0.05,  -- Minimum time trigger must be held for release to count
     leftTriggerLastRelease = 0,
     rightTriggerLastRelease = 0,
+    leftTriggerPressTime = 0,
+    rightTriggerPressTime = 0,
     isLeftDoubleTap = false,
     isRightDoubleTap = false,
 
@@ -204,6 +207,15 @@ function Controller.Initialize(settings)
         if settings.doubleTapWindow then
             state.doubleTapWindow = settings.doubleTapWindow;
         end
+        if settings.triggerPressThreshold then
+            state.triggerPressThreshold = settings.triggerPressThreshold;
+        end
+        if settings.triggerReleaseThreshold then
+            state.triggerReleaseThreshold = settings.triggerReleaseThreshold;
+        end
+        if settings.minTriggerHold then
+            state.minTriggerHold = settings.minTriggerHold;
+        end
     end
 
     DebugLog(string.format('Controller initialized (device: %s, XInput: %s, DirectInput: %s, threshold: %d, doubleTap: %s)',
@@ -242,6 +254,17 @@ end
 
 function Controller.SetDoubleTapWindow(window)
     state.doubleTapWindow = window or DEFAULT_DOUBLE_TAP_WINDOW;
+end
+
+function Controller.SetTriggerThresholds(pressThreshold, releaseThreshold)
+    state.triggerPressThreshold = pressThreshold or DEFAULT_TRIGGER_THRESHOLD;
+    state.triggerReleaseThreshold = releaseThreshold or 15;
+    DebugLog(string.format('Trigger thresholds set: press=%d, release=%d', state.triggerPressThreshold, state.triggerReleaseThreshold));
+end
+
+function Controller.SetMinTriggerHold(seconds)
+    state.minTriggerHold = seconds or 0.05;
+    DebugLog(string.format('Min trigger hold set to %.3f sec', state.minTriggerHold));
 end
 
 -- Update expanded crossbar setting
@@ -318,16 +341,30 @@ local function UpdateComboState(leftHeld, rightHeld)
     local leftJustPressed = leftHeld and not wasLeftHeld;
     local rightJustPressed = rightHeld and not wasRightHeld;
 
-    -- Track trigger releases for double-tap detection
+    -- Track trigger releases for double-tap detection (with debounce)
     if wasLeftHeld and not leftHeld then
-        state.leftTriggerLastRelease = currentTime;
-        state.isLeftDoubleTap = false;
-        DebugLog('L2 released');
+        local heldDuration = currentTime - (state.leftTriggerPressTime or 0);
+        local required = state.minTriggerHold or 0.05;
+        if heldDuration >= required then
+            state.leftTriggerLastRelease = currentTime;
+            state.isLeftDoubleTap = false;
+            DebugLog('L2 released');
+        else
+            DebugLog(string.format('L2 release ignored (bounce): held=%.3fs (< %.3fs)', heldDuration, required));
+        end
+        state.leftTriggerPressTime = 0;
     end
     if wasRightHeld and not rightHeld then
-        state.rightTriggerLastRelease = currentTime;
-        state.isRightDoubleTap = false;
-        DebugLog('R2 released');
+        local heldDuration = currentTime - (state.rightTriggerPressTime or 0);
+        local required = state.minTriggerHold or 0.05;
+        if heldDuration >= required then
+            state.rightTriggerLastRelease = currentTime;
+            state.isRightDoubleTap = false;
+            DebugLog('R2 released');
+        else
+            DebugLog(string.format('R2 release ignored (bounce): held=%.3fs (< %.3fs)', heldDuration, required));
+        end
+        state.rightTriggerPressTime = 0;
     end
 
     -- Handle combo state based on trigger combinations
@@ -352,6 +389,7 @@ local function UpdateComboState(leftHeld, rightHeld)
     elseif leftHeld and not rightHeld then
         -- Only L2 held
         if leftJustPressed then
+            state.leftTriggerPressTime = currentTime;
             -- Check for double-tap
             local timeSinceRelease = currentTime - state.leftTriggerLastRelease;
             local isDoubleTap = state.doubleTapEnabled
@@ -381,6 +419,7 @@ local function UpdateComboState(leftHeld, rightHeld)
     elseif rightHeld and not leftHeld then
         -- Only R2 held
         if rightJustPressed then
+            state.rightTriggerPressTime = currentTime;
             -- Check for double-tap
             local timeSinceRelease = currentTime - state.rightTriggerLastRelease;
             local isDoubleTap = state.doubleTapEnabled
@@ -422,6 +461,8 @@ local function UpdateComboState(leftHeld, rightHeld)
         state.pressedSlotTime = 0;
         state.heldButtons = {};
         state.dpadHeldSlot = nil;
+        state.leftTriggerPressTime = 0;
+        state.rightTriggerPressTime = 0;
     end
 
     if state.activeCombo ~= oldCombo then
@@ -954,6 +995,11 @@ function Controller.HandleDInputButton(e)
 
     -- Handle trigger buttons (L2/R2 on DirectInput are discrete buttons, not analog)
     if device.IsTriggerButton and device.IsTriggerButton(buttonId) then
+        -- DualSense uses analog trigger intensity path; ignore discrete trigger buttons
+        if device.HasAnalogTriggers then
+            DebugLog(string.format('Ignoring discrete trigger button %d for analog-capable device %s', buttonId, tostring(device.Name)));
+            return false;
+        end
         local isL2 = device.IsL2Button(buttonId);
         local isR2 = device.IsR2Button(buttonId);
         local triggerName = isL2 and 'L2' or (isR2 and 'R2' or 'unknown');
@@ -979,14 +1025,19 @@ function Controller.HandleDInputButton(e)
 
     -- Handle analog trigger intensity (DualSense-specific, offsets 12 and 16)
     if device.IsTriggerIntensity and device.IsTriggerIntensity(buttonId) then
-        -- Treat intensity > 0 as trigger held (alternative to button press detection)
         local intensity = buttonState;
         local isL2 = device.IsL2Button(buttonId);
         local isR2 = device.IsR2Button(buttonId);
 
-        -- Use hysteresis for analog triggers
-        local pressThreshold = 30;
-        local releaseThreshold = 15;
+        -- DualSense reports signed values: -128 (rest) to +127 (full press).
+        -- Normalize to unsigned 0-255 range to match XInput thresholds.
+        if device.Name == 'DualSense' then
+            intensity = (intensity or 0) + 128;  -- -128→0, 0→128, 127→255
+        end
+
+        -- Use hysteresis for analog triggers (same thresholds as XInput)
+        local pressThreshold = state.triggerPressThreshold or DEFAULT_TRIGGER_THRESHOLD;
+        local releaseThreshold = state.triggerReleaseThreshold or 15;
         local wasHeld = isL2 and state.leftTriggerHeld or state.rightTriggerHeld;
         local isHeld = IsTriggerHeld(intensity, wasHeld, pressThreshold, releaseThreshold);
 

@@ -9,6 +9,7 @@ local components = require('config.components');
 local statusHandler = require('handlers.statushandler');
 local imgui = require('imgui');
 local data = require('modules.hotbar.data');
+local drawing = require('libs.drawing');
 local actions = require('modules.hotbar.actions');
 local jobs = require('libs.jobs');
 local macropalette = require('modules.hotbar.macropalette');
@@ -1944,6 +1945,24 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
     end
     imgui.ShowHelp('Select which button mapping profile to use.\n\n- Xbox: For XInput controllers (Xbox, 8BitDo in X-mode)\n- PlayStation: For DualSense/DualShock via DirectInput\n- Switch Pro: For Nintendo Switch Pro controller\n- Generic DirectInput: For other DirectInput controllers\n\nChanging this will also update the button icon theme.');
 
+    -- Analog Trigger Threshold Settings (Xbox and PlayStation only)
+    local hasAnalogTriggers = (currentScheme == 'xbox' or currentScheme == 'dualsense');
+    if hasAnalogTriggers then
+        imgui.Spacing();
+        imgui.Text('Analog Trigger Settings');
+        imgui.Separator();
+
+        components.DrawPartySliderInt(crossbarSettings, 'Press Threshold##crossbar', 'triggerPressThreshold', 5, 250, '%d', function()
+            controller.SetTriggerThresholds(crossbarSettings.triggerPressThreshold, crossbarSettings.triggerReleaseThreshold);
+        end, 30);
+        imgui.ShowHelp('Analog trigger value (0-255) required to register as pressed. Higher values require a deeper press. Default: 30');
+
+        components.DrawPartySliderInt(crossbarSettings, 'Release Threshold##crossbar', 'triggerReleaseThreshold', 5, 250, '%d', function()
+            controller.SetTriggerThresholds(crossbarSettings.triggerPressThreshold, crossbarSettings.triggerReleaseThreshold);
+        end, 15);
+        imgui.ShowHelp('Analog trigger value (0-255) below which the trigger is considered released. Provides hysteresis to prevent jitter. Default: 15');
+    end
+
     imgui.Spacing();
 
     -- Custom DirectInput button mapping section (only for dinput scheme)
@@ -2015,6 +2034,14 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
     components.DrawPartyCheckbox(crossbarSettings, 'Enable L2+R2 / R2+L2##crossbar', 'enableExpandedCrossbar');
     imgui.ShowHelp('Enable L2+R2 and R2+L2 combo modes. Hold one trigger, then press the other to access expanded bars.');
 
+    -- Nested option: Use shared expanded bar (only visible when L2+R2/R2+L2 is enabled)
+    if crossbarSettings.enableExpandedCrossbar then
+        imgui.Indent(20);
+        components.DrawPartyCheckbox(crossbarSettings, 'Use Shared Expanded Bar##crossbar', 'useSharedExpandedBar', DeferredUpdateVisuals);
+        imgui.ShowHelp('When enabled, L2+R2 and R2+L2 will access the same shared expanded bar instead of separate bars.\nThis shared bar is completely independent from the separate L2+R2 and R2+L2 bars.');
+        imgui.Unindent(20);
+    end
+
     components.DrawPartyCheckbox(crossbarSettings, 'Enable Double-Tap##crossbar', 'enableDoubleTap', DeferredUpdateVisuals);
     imgui.ShowHelp('Enable L2x2 and R2x2 double-tap modes. Tap a trigger twice quickly (hold on second tap) to access double-tap bars.');
 
@@ -2023,6 +2050,14 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
             controller.SetDoubleTapWindow(crossbarSettings.doubleTapWindow);
         end, 0.3);
         imgui.ShowHelp('Time window to register a double-tap (in seconds).');
+
+        -- Minimum Trigger Hold (only for analog controllers with double-tap enabled)
+        if hasAnalogTriggers then
+            components.DrawPartySlider(crossbarSettings, 'Minimum Trigger Hold##crossbar', 'minTriggerHold', 0.01, 0.15, '%.3f sec', function()
+                controller.SetMinTriggerHold(crossbarSettings.minTriggerHold);
+            end, 0.05);
+            imgui.ShowHelp('Minimum time the trigger must be held before releasing for the release to count toward double-tap detection. Prevents false double-taps from analog jitter or accidental taps. Default: 0.050 sec (50ms)');
+        end
     end
 
     imgui.Spacing();
@@ -2071,9 +2106,46 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
     if crossbarSettings.editMode then
         -- Preview bar dropdown on same line as checkbox
         imgui.SameLine();
-        local previewBarOptions = { 'L2', 'R2', 'L2+R2', 'R2+L2', 'L2x2', 'R2x2' };
-        local previewBarKeys = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2' };
+
+        -- Build preview bar options dynamically based on settings
+        local previewBarOptions = { 'L2', 'R2' };
+        local previewBarKeys = { 'L2', 'R2' };
+
+        -- Add expanded bar options
+        if crossbarSettings.enableExpandedCrossbar then
+            if crossbarSettings.useSharedExpandedBar then
+                -- Shared mode: show single "L2+R2 (Shared)" option
+                table.insert(previewBarOptions, 'L2+R2 (Shared)');
+                table.insert(previewBarKeys, 'Shared');
+            else
+                -- Separate mode: show both L2+R2 and R2+L2
+                table.insert(previewBarOptions, 'L2+R2');
+                table.insert(previewBarKeys, 'L2R2');
+                table.insert(previewBarOptions, 'R2+L2');
+                table.insert(previewBarKeys, 'R2L2');
+            end
+        end
+
+        -- Add double-tap options if enabled
+        if crossbarSettings.enableDoubleTap then
+            table.insert(previewBarOptions, 'L2x2');
+            table.insert(previewBarKeys, 'L2x2');
+            table.insert(previewBarOptions, 'R2x2');
+            table.insert(previewBarKeys, 'R2x2');
+        end
+
         local currentPreviewBar = crossbarSettings.editModeBar or 'L2';
+        -- Handle migration: if current bar is L2R2 or R2L2 but shared mode is now enabled, switch to Shared
+        if crossbarSettings.useSharedExpandedBar and (currentPreviewBar == 'L2R2' or currentPreviewBar == 'R2L2') then
+            currentPreviewBar = 'Shared';
+            crossbarSettings.editModeBar = 'Shared';
+        end
+        -- Handle migration: if current bar is Shared but shared mode is now disabled, switch to L2R2
+        if not crossbarSettings.useSharedExpandedBar and currentPreviewBar == 'Shared' then
+            currentPreviewBar = 'L2R2';
+            crossbarSettings.editModeBar = 'L2R2';
+        end
+
         local currentPreviewLabel = currentPreviewBar;
         -- Convert key to label
         for i, key in ipairs(previewBarKeys) do
@@ -2083,7 +2155,7 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
             end
         end
 
-        imgui.SetNextItemWidth(80);
+        imgui.SetNextItemWidth(110);
         if imgui.BeginCombo('##editModeBar', currentPreviewLabel) then
             for i, label in ipairs(previewBarOptions) do
                 local isSelected = (previewBarKeys[i] == currentPreviewBar);
@@ -2442,6 +2514,18 @@ function M.DrawSettings(state)
 
     -- Basic toggles at top
     components.DrawCheckbox('Enabled', 'hotbarEnabled');
+    -- Lock Movement disables drag/drop and slot swapping for hotbar bars
+    components.DrawCheckbox('Lock Movement', 'hotbarLockMovement', function()
+        -- Only reset anchors when lock is being ENABLED
+        if gConfig.hotbarLockMovement then
+            for i = 1, 6 do
+                drawing.ResetAnchorState('Hotbar' .. tostring(i));
+            end
+            drawing.ResetAnchorState('Crossbar');
+        end
+        DeferredUpdateVisuals();
+    end);
+    imgui.ShowHelp('When enabled, prevents dragging/dropping and swapping of hotbar and crossbar slots.');
     components.DrawCheckbox('Hide When Menu Open', 'hotbarHideOnMenuFocus');
     imgui.ShowHelp('Hide hotbars when a game menu is open (equipment, map, etc.).');
 

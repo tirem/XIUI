@@ -548,10 +548,20 @@ function M.createCrossbarDefaults()
 
         -- Expanded crossbar (L2+R2 combos)
         enableExpandedCrossbar = true,      -- Enable L2+R2 and R2+L2 combos
+        useSharedExpandedBar = false,       -- When true, L2+R2 and R2+L2 share the same bar (Shared)
 
         -- Double-tap crossbar (tap trigger twice quickly)
         enableDoubleTap = false,            -- Enable L2x2 and R2x2 double-tap modes
         doubleTapWindow = 0.3,              -- Time window for double-tap detection (seconds)
+
+        -- Analog trigger thresholds (0-255 normalized range)
+        -- Used by Xbox (XInput) and PlayStation (DirectInput with signed->unsigned conversion)
+        triggerPressThreshold = 30,         -- Trigger value to register as pressed
+        triggerReleaseThreshold = 15,       -- Trigger value to register as released (hysteresis)
+
+        -- Minimum trigger hold time for double-tap detection (debounce)
+        -- Prevents analog jitter from causing false double-taps
+        minTriggerHold = 0.05,              -- Seconds (default 50ms)
 
         -- Window position (saved on drag)
         windowX = nil,                      -- nil = use default centered position
