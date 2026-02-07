@@ -399,7 +399,6 @@ function data.GetMemberInformation(memIdx)
         local isPreviewTarget = memIdx == 4 or memIdx == 10 or memIdx == 16;
         local isPreviewSubtarget = memIdx == 2 or memIdx == 8 or memIdx == 14;
         memInfo.targeted = isPreviewTarget or isPreviewSubtarget;
-        memInfo.subTargeted = isPreviewSubtarget;
         memInfo.isSubtargetStyle = isPreviewSubtarget;
         memInfo.zone = 100;
         memInfo.inzone = memIdx % 4 ~= 0;
@@ -582,11 +581,9 @@ function data.GetMemberInformation(memIdx)
                 isSubtarget = false;
             end
             memberInfo.targeted = isHeldTarget or isSubtarget or (mainTargetIndex == memberTargetIndex and not isSubtargeting);
-            memberInfo.subTargeted = (partyCursorMemberIndex ~= nil and partyCursorMemberIndex == memIdx);
             memberInfo.isSubtargetStyle = isSubtarget;
         else
             memberInfo.targeted = false;
-            memberInfo.subTargeted = false;
             memberInfo.isSubtargetStyle = false;
         end
 
@@ -612,7 +609,6 @@ function data.GetMemberInformation(memIdx)
         memberInfo.serverid = 0;
         memberInfo.buffs = nil;
         memberInfo.sync = false;
-        memberInfo.subTargeted = false;
         memberInfo.index = nil;
     end
 

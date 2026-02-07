@@ -51,7 +51,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
             subjob = '', subjoblevel = '',
             targeted = false, serverid = 0,
             buffs = nil, sync = false,
-            subTargeted = false, zone = '',
+            zone = '',
             inzone = false, name = '', leader = false
         };
     end
