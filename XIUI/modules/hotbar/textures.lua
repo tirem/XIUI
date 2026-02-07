@@ -123,12 +123,34 @@ textures.Initialize = function(self)
     end
 
     -- Xbox face buttons (alternative naming)
-    local xboxIcons = { { name = 'A', key = 'A' }, { name = 'B', key = 'B' }, { name = 'X', key = 'Xbox_X' }, { name = 'Y', key = 'Y' } };
-    for _, icon in ipairs(xboxIcons) do
-        local fullPath = controllerDirectory .. 'Xbox\\' .. icon.name .. '.png';
+    local xboxIcons = { 'A', 'B', 'X', 'Y' };
+    for _, iconName in ipairs(xboxIcons) do
+        local fullPath = controllerDirectory .. 'Xbox\\' .. iconName .. '.png';
         local texture = LoadTextureFromPath(fullPath);
         if texture then
-            self.Cache['controller_' .. icon.key] = texture;
+            -- Store under generic controller_<name> keys (consistent with PlayStation/Nintendo/Stadia)
+            self.Cache['controller_' .. iconName] = texture;
+        end
+    end
+
+    -- Nintendo / Pro controller face buttons (load into generic controller_<name> keys like PlayStation)
+    local nintendoIcons = { 'A', 'B', 'X', 'Y' };
+    for _, iconName in ipairs(nintendoIcons) do
+        local fullPath = controllerDirectory .. 'Nintendo\\' .. iconName .. '.png';
+        local texture = LoadTextureFromPath(fullPath);
+        if texture then
+            -- Store under the same key pattern used for PlayStation (controller_X, controller_A, etc.)
+            self.Cache['controller_' .. iconName] = texture;
+        end
+    end
+
+    -- Stadia face buttons (load into generic controller_<name> keys like PlayStation)
+    local stadiaIcons = { 'A', 'B', 'X', 'Y' };
+    for _, iconName in ipairs(stadiaIcons) do
+        local fullPath = controllerDirectory .. 'Stadia\\' .. iconName .. '.png';
+        local texture = LoadTextureFromPath(fullPath);
+        if texture then
+            self.Cache['controller_' .. iconName] = texture;
         end
     end
 

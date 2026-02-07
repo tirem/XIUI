@@ -1906,7 +1906,7 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
         xbox = 'Xbox',
         dualsense = 'PlayStation',
         switchpro = 'Nintendo',
-        dinput = 'PlayStation',
+        dinput = 'Xbox',
     };
 
     imgui.AlignTextToFramePadding();

@@ -359,6 +359,122 @@ local function CreateSwitchProDevice()
 end
 
 -- ============================================
+-- Stadia Controller Profile
+-- ============================================
+local function CreateStadiaDevice()
+    local buttons = {
+        -- Face buttons (Xbox layout labels - DirectInput button IDs)
+        A = 48,      -- Bottom button (like A on Xbox)
+        B = 49,      -- Right button (like B on Xbox)
+        X = 50,      -- Left button (like X on Xbox)
+        Y = 51,      -- Top button (like Y on Xbox)
+        -- Shoulder buttons
+        L1 = 52,
+        R1 = 53,
+        -- Trigger buttons (digital - state 128 for pressed)
+        L2 = 60,
+        R2 = 59,
+        -- Other buttons
+        L3 = 54,
+        R3 = 55,
+        OPTIONS = 56,
+        MENU = 57,
+        STADIA = 58,
+        ASSISTANT = 61,
+        CAPTURE = 62,
+        -- D-Pad offset
+        DPAD = DPAD_BUTTON_OFFSET,
+    };
+
+    local device = {
+        XInput = false,
+        DirectInput = true,
+        Name = 'Stadia',
+        DisplayName = 'Stadia Controller',
+        Buttons = buttons,
+        HasAnalogTriggers = false,  -- Stadia triggers are digital
+    };
+
+    -- D-pad angle to slot mapping
+    device.DPadAngleToSlot = {
+        [DPAD_ANGLES.UP] = 1,
+        [DPAD_ANGLES.RIGHT] = 2,
+        [DPAD_ANGLES.DOWN] = 3,
+        [DPAD_ANGLES.LEFT] = 4,
+    };
+
+    -- Face button to slot mapping (Xbox layout: Y/B/A/X mapped to slots 5/6/7/8)
+    device.ButtonToSlot = {
+        [buttons.Y] = 5,  -- Top (ID 51)
+        [buttons.B] = 6,  -- Right (ID 49)
+        [buttons.A] = 7,  -- Bottom (ID 48)
+        [buttons.X] = 8,  -- Left (ID 50)
+    };
+
+    -- Crossbar buttons
+    device.CrossbarButtons = {
+        [buttons.Y] = true,
+        [buttons.B] = true,
+        [buttons.A] = true,
+        [buttons.X] = true,
+    };
+
+    -- Methods
+    function device.GetSlotFromButton(buttonId)
+        return device.ButtonToSlot[buttonId];
+    end
+
+    function device.GetSlotFromDPad(angle)
+        if angle == nil or angle == -1 or angle == 65535 then return nil; end
+        return device.DPadAngleToSlot[angle];
+    end
+
+    function device.GetSlotFromDPadButton(buttonId, buttonState)
+        if buttonId ~= DPAD_BUTTON_OFFSET then return nil; end
+        return device.GetSlotFromDPad(buttonState);
+    end
+
+    function device.IsCrossbarButton(buttonId)
+        return device.CrossbarButtons[buttonId] == true;
+    end
+
+    function device.IsDPadButton(buttonId)
+        return buttonId == DPAD_BUTTON_OFFSET;
+    end
+
+    function device.IsTriggerButton(buttonId)
+        return buttonId == buttons.L2 or buttonId == buttons.R2;
+    end
+
+    function device.IsTriggerIntensity(buttonId)
+        return false;  -- Stadia has no analog triggers
+    end
+
+    function device.IsL2Button(buttonId)
+        return buttonId == buttons.L2;
+    end
+
+    function device.IsR2Button(buttonId)
+        return buttonId == buttons.R2;
+    end
+
+    -- Shoulder button detection for palette cycling (R1/L1)
+    function device.IsShoulderButton(buttonId)
+        return buttonId == buttons.L1 or buttonId == buttons.R1;
+    end
+
+    function device.IsR1Button(buttonId)
+        return buttonId == buttons.R1;
+    end
+
+    function device.IsL1Button(buttonId)
+        return buttonId == buttons.L1;
+    end
+
+    return device;
+end
+
+-- ============================================
 -- Generic DirectInput Profile (Fallback)
 -- ============================================
 -- For controllers that don't match DualSense or Switch Pro
@@ -471,13 +587,14 @@ end
 -- ============================================
 
 -- Scheme names (ordered for UI display)
-local SCHEME_NAMES = { 'xbox', 'dualsense', 'switchpro', 'dinput' };
+local SCHEME_NAMES = { 'xbox', 'dualsense', 'switchpro', 'stadia', 'dinput' };
 
 -- Display names for UI
 local SCHEME_DISPLAY_NAMES = {
     xbox = 'Xbox / XInput',
     dualsense = 'PlayStation (DualSense/DualShock)',
     switchpro = 'Nintendo Switch Pro',
+    stadia = 'Stadia Controller',
     dinput = 'Generic DirectInput',
 };
 
@@ -492,6 +609,8 @@ function M.GetDevice(schemeName, userConfig)
         return CreateDualSenseDevice();
     elseif schemeName == 'switchpro' or schemeName == 'switch' then
         return CreateSwitchProDevice();
+    elseif schemeName == 'stadia' then
+        return CreateStadiaDevice();
     elseif schemeName == 'dinput' or schemeName == 'generic' then
         return CreateGenericDInputDevice(userConfig);
     else
@@ -529,7 +648,7 @@ end
 function M.NormalizeScheme(schemeName)
     if schemeName == 'xbox' or schemeName == 'xinput' then
         return 'xinput';
-    elseif schemeName == 'dualsense' or schemeName == 'switchpro' or schemeName == 'dinput' or schemeName == 'generic' then
+    elseif schemeName == 'dualsense' or schemeName == 'switchpro' or schemeName == 'stadia' or schemeName == 'dinput' or schemeName == 'generic' then
         return 'dinput';
     end
     return 'xinput';  -- Default

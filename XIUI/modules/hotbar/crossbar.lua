@@ -184,13 +184,19 @@ local CENTER_ICON_CONFIG = {
             { dir = 'up',    iconName = 'Y' },
             { dir = 'right', iconName = 'B' },
             { dir = 'down',  iconName = 'A' },
-            { dir = 'left',  iconName = 'Xbox_X' },
+            { dir = 'left',  iconName = 'X' },
         },
         Nintendo = {
-            { dir = 'up',    iconName = 'Xbox_X' },  -- X on top
+            { dir = 'up',    iconName = 'X' },  -- X on top
             { dir = 'right', iconName = 'A' },       -- A on right
             { dir = 'down',  iconName = 'B' },       -- B on bottom
             { dir = 'left',  iconName = 'Y' },       -- Y on left
+        },
+        Stadia = {
+            { dir = 'up',    iconName = 'Y' },
+            { dir = 'right', iconName = 'B' },
+            { dir = 'down',  iconName = 'A' },
+            { dir = 'left',  iconName = 'X' },
         },
     },
 };
