@@ -241,6 +241,7 @@ function M.createUserSettingsDefaults()
         showPlayerBarBookends = false,
         alwaysShowMpBar = true,
         playerBarTpFlashEnabled = true,
+        playerBarRestingTicker = false,  -- Show resting ticker spark on HP bar
         playerBarHideDuringEvents = true,
         playerBarHideWhenInParty = false,  -- Hide player bar when in party/alliance (info shown in party list)
         playerBarHpDisplayMode = 'number', -- 'number', 'percent', 'both', 'both_percent_first', 'current_max'
