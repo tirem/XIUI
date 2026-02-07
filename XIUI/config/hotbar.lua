@@ -41,7 +41,6 @@ local jobSpecificConfirmState = {
 local buttonDetectionState = {
     active = false,
     progress = 0,
-    maxProgress = 8,
 };
 
 -- ============================================
@@ -2000,6 +1999,10 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
             local progress, maxProgress = buttondetect.GetProgress();
             imgui.ProgressBar(progress / maxProgress, {-1, 20}, string.format('Button %d of %d', progress, maxProgress));
             imgui.TextWrapped('Detecting buttons... ' .. (buttondetect.GetCurrentPrompt() or ''));
+            if imgui.Button('Cancel##buttondetect', {0, 0}) then
+                buttondetect.Cancel();
+                buttonDetectionState.active = false;
+            end
         end
 
         imgui.Unindent(20);

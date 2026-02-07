@@ -647,18 +647,4 @@ function M.createNotificationGroupDefaults(overrides)
     return defaults;
 end
 
--- Custom DirectInput button mappings (user-configurable)
-M.customControllerMappings = {
-    dinput = {
-        L2 = 0x04,
-        R2 = 0x05,
-        FACE_BUTTON_TOP = 0x00,
-        FACE_BUTTON_RIGHT = 0x01,
-        FACE_BUTTON_BOTTOM = 0x02,
-        FACE_BUTTON_LEFT = 0x03,
-        L1 = 0x06,
-        R1 = 0x07,
-    },
-};
-
 return M;
