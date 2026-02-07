@@ -1935,7 +1935,7 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
     imgui.ShowHelp('Select which button mapping profile to use.\n\n- Xbox: For XInput controllers (Xbox, 8BitDo in X-mode)\n- PlayStation: For DualSense/DualShock via DirectInput\n- Switch Pro: For Nintendo Switch Pro controller\n- Generic DirectInput: For other DirectInput controllers\n\nChanging this will also update the button icon theme.');
 
     -- Analog Trigger Threshold Settings (Xbox and PlayStation only)
-    local hasAnalogTriggers = (currentScheme == 'xbox' or currentScheme == 'dualsense' or currentScheme == 'dinput');
+    local hasAnalogTriggers = (currentScheme == 'xbox' or currentScheme == 'dualsense');
     if hasAnalogTriggers then
         imgui.Spacing();
         imgui.Text('Analog Trigger Settings');
