@@ -8,6 +8,7 @@ require('handlers.helpers');
 local windowBg = require('libs.windowbackground');
 local packets = require('libs.packets');
 local abilityRecast = require('libs.abilityrecast');
+local petBuffHandler = require('handlers.petbuffhandler');
 
 local data = {};
 
@@ -515,6 +516,7 @@ data.recastMaxTimers = {};
 
 -- Window positioning (shared with pet target)
 data.lastMainWindowPosX = 0;
+data.lastMainWindowTop = 0;   -- Top of pet bar (stable anchor for snap Y offset)
 data.lastMainWindowBottom = 0;
 data.lastTotalRowWidth = 150;
 data.lastWindowFlags = nil;
@@ -1529,6 +1531,27 @@ function data.ExtendCharmDuration(seconds)
             gConfig.petBarCharmExpireTime = data.charmExpireTime;
         end
     end
+end
+
+-- ============================================
+-- Pet Status Effects (buffs/debuffs)
+-- ============================================
+
+-- Get active status effects on the pet
+-- Returns: effectIds table, effectTimes table (remaining seconds)
+-- Returns nil, nil if no pet or no active effects
+function data.GetPetStatusEffects()
+    return petBuffHandler.GetActiveEffects();
+end
+
+-- Check if pet has a specific status effect
+function data.PetHasEffect(effectId)
+    return petBuffHandler.HasEffect(effectId);
+end
+
+-- Get remaining time for a specific effect on the pet
+function data.GetPetEffectRemainingTime(effectId)
+    return petBuffHandler.GetEffectRemainingTime(effectId);
 end
 
 return data;
