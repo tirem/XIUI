@@ -12,7 +12,6 @@ local imgui = require('imgui');
 local recast = require('modules.hotbar.recast');
 local actions = require('modules.hotbar.actions');
 local dragdrop = require('libs.dragdrop');
-local data = require('modules.hotbar.data');
 local textures = require('modules.hotbar.textures');
 local skillchain = require('modules.hotbar.skillchain');
 local statusHandler = require('handlers.statushandler');
@@ -534,6 +533,19 @@ local function DrawSkillchainHighlight(drawList, x, y, size, scName, color, opac
             );
         end
     end
+end
+
+-- Helper: determine if movement/drag-drop is locked for this slot
+-- Shift key overrides the lock to allow dragging while locked
+local function IsMovementLockedForDropZone(dropZoneId)
+    if not dropZoneId then return false; end
+    if imgui.GetIO().KeyShift then
+        return false;
+    end
+    if gConfig and gConfig.hotbarLockMovement then
+        return true;
+    end
+    return false;
 end
 
 --[[
@@ -1381,21 +1393,6 @@ function M.DrawSlot(resources, params)
     -- ========================================
     -- 12. Drop Zone Registration
     -- ========================================
-    -- Helper: determine if movement/drag-drop is locked for this slot
-    -- Shift key overrides the lock to allow dragging while locked
-    local function IsMovementLockedForDropZone(dropZoneId)
-        if not dropZoneId then return false; end
-        -- Shift key overrides the lock
-        if imgui.GetIO().KeyShift then
-            return false;
-        end
-        -- Check global lock setting for all hotbar and crossbar drop zones
-        if gConfig and gConfig.hotbarLockMovement then
-            return true;
-        end
-        return false;
-    end
-
     if params.dropZoneId and params.onDrop and not IsMovementLockedForDropZone(params.dropZoneId) then
         dragdrop.DropZone(params.dropZoneId, x, y, size, size, {
             accepts = params.dropAccepts or {'macro'},

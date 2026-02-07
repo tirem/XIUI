@@ -82,6 +82,7 @@ local palette = require('modules.hotbar.palette');
 local skillchainModule = require('modules.hotbar.skillchain');
 local configMenu = require('config');
 local debuffHandler = require('handlers.debuffhandler');
+local petBuffHandler = require('handlers.petbuffhandler');
 local actionTracker = require('handlers.actiontracker');
 local mobInfo = require('modules.mobinfo.init');
 local statusHandler = require('handlers.statushandler');
@@ -292,7 +293,13 @@ local migrationResult = settingsMigration.MigrateFromHXUI();
 -- ==========================================================
 
 -- Load raw settings to detect legacy data (without default filtering)
-local rawSettings = settings.load({});
+-- Use pcall to handle first-load case where no settings exist
+local rawSettingsSuccess, rawSettings = pcall(function()
+    return settings.load({});
+end);
+if not rawSettingsSuccess then
+    rawSettings = {}; -- No existing settings, nothing to migrate
+end
 
 -- 1. Check for intermediate "profiles" table (from recent dev versions)
 if (rawSettings.profiles ~= nil) then
@@ -595,7 +602,9 @@ function ChangeProfile(name)
     profileManager.SaveProfileSettings(config.currentProfile, gConfig);
 
     config.currentProfile = name;
+    bInternalSave = true;
     settings.save(); -- Save character preference
+    bInternalSave = false;
 
     -- Clear textures to prevent ghosting
     TextureManager.clear();
@@ -699,6 +708,14 @@ function SaveSettingsOnly()
     UpdateUserSettings();
 end
 
+-- Save character settings without triggering settings_update callback
+-- Used by modules that need to persist to disk but don't want reload side-effects
+function SaveCharacterSettingsInternal()
+    bInternalSave = true;
+    settings.save();
+    bInternalSave = false;
+end
+
 -- New functions for profile management
 
 function RenameProfile(oldName, newName)
@@ -732,7 +749,9 @@ function RenameProfile(oldName, newName)
 
     if (config.currentProfile == oldName) then
         config.currentProfile = newName;
+        bInternalSave = true;
         settings.save();
+        bInternalSave = false;
     end
 
     return true;
@@ -1433,6 +1452,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
             end
             if gConfig.showPartyList then partyList.HandleActionPacket(actionPacket); end
             debuffHandler.HandleActionPacket(actionPacket);
+            petBuffHandler.HandleActionPacket(actionPacket);
             actionTracker.HandleActionPacket(actionPacket);
             if gConfig.showNotifications then notifications.HandleActionPacket(actionPacket); end
             -- Skillchain tracking for hotbar/crossbar WS highlighting
@@ -1451,6 +1471,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         enemyList.HandleZonePacket(e);
         partyList.HandleZonePacket(e);
         debuffHandler.HandleZonePacket(e);
+        petBuffHandler.HandleZonePacket();
         actionTracker.HandleZonePacket();
         mobInfo.data.HandleZonePacket(e);
         statusHandler.clear_zone_cache();  -- Clear status icon cache to prevent accumulation
@@ -1467,6 +1488,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         local messagePacket = ParseMessagePacket(e.data);
         if messagePacket then
             debuffHandler.HandleMessagePacket(messagePacket);
+            petBuffHandler.HandleMessagePacket(messagePacket);
             if gConfig.showNotifications then
                 notifications.HandleMessagePacket(e, messagePacket, 0x0029);
             end
@@ -1494,6 +1516,11 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         if macropalette.IsHotbarDirty() then
             SaveSettingsToDisk();
             macropalette.ClearHotbarDirty();
+        end
+        -- Save any pending palette selection changes before zone
+        if palette.IsPaletteStateDirty() then
+            SaveSettingsToDisk();
+            palette.ClearPaletteStateDirty();
         end
         notifications.HandleZonePacket();
         treasurePool.HandleZonePacket();

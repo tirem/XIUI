@@ -428,9 +428,14 @@ local function saveCachedOriginalBytes()
     if not gConfig then return; end
     gConfig.macrofixOriginalBytes = cachedOriginalBytes;
 
-    -- Persist to disk via settings module
-    local settings = require('settings');
-    settings.save();
+    -- Persist to disk via global internal save (avoids triggering settings_update reload)
+    if SaveCharacterSettingsInternal then
+        SaveCharacterSettingsInternal();
+    else
+        -- Fallback if global not available yet
+        local settings = require('settings');
+        settings.save();
+    end
     MacroBlockLog('  Saved original bytes to settings cache (persisted to disk)');
 end
 

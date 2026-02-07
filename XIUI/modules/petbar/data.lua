@@ -8,6 +8,7 @@ require('handlers.helpers');
 local windowBg = require('libs.windowbackground');
 local packets = require('libs.packets');
 local abilityRecast = require('libs.abilityrecast');
+local petBuffHandler = require('handlers.petbuffhandler');
 
 local data = {};
 
@@ -339,9 +340,18 @@ function data.TrackPetSummon(petName, petJob)
              -- Fallback or indicate unknown?
         end
     elseif petJob == data.JOB_SMN then
-        data.petType = 'avatar';
-        data.petExpireTime = nil;  -- Avatars don't expire on timer
-        data.charmExpireTime = nil;
+        -- SMN/BST charm: if sub is BST and pet is not an avatar, use charm bar
+        local player = GetPlayerSafe();
+        local subJob = player and player:GetSubJob() or 0;
+        if subJob == data.JOB_BST and not data.petImageMap[petName] then
+            data.petType = 'charm';
+            data.petExpireTime = nil;
+            -- charmExpireTime set via packet interception
+        else
+            data.petType = 'avatar';
+            data.petExpireTime = nil;
+            data.charmExpireTime = nil;
+        end
     elseif petJob == data.JOB_DRG then
         data.petType = 'wyvern';
         data.petExpireTime = nil;  -- Wyverns don't expire on timer
@@ -506,6 +516,7 @@ data.recastMaxTimers = {};
 
 -- Window positioning (shared with pet target)
 data.lastMainWindowPosX = 0;
+data.lastMainWindowTop = 0;   -- Top of pet bar (stable anchor for snap Y offset)
 data.lastMainWindowBottom = 0;
 data.lastTotalRowWidth = 150;
 data.lastWindowFlags = nil;
@@ -881,6 +892,11 @@ function data.GetPetRecasts()
     -- Real mode: get actual pet job
     local petJob = data.GetPetJob();
     if not petJob then return timers; end
+
+    -- SMN/BST charm: use BST ability list (Sic, Reward) instead of SMN (blood pacts)
+    if petJob == data.JOB_SMN and data.GetPetTypeKey() == 'charm' then
+        petJob = data.JOB_BST;
+    end
 
     -- Pet ability IDs for direct memory reading
     -- These are the ability recast timer IDs used by the game
@@ -1515,6 +1531,27 @@ function data.ExtendCharmDuration(seconds)
             gConfig.petBarCharmExpireTime = data.charmExpireTime;
         end
     end
+end
+
+-- ============================================
+-- Pet Status Effects (buffs/debuffs)
+-- ============================================
+
+-- Get active status effects on the pet
+-- Returns: effectIds table, effectTimes table (remaining seconds)
+-- Returns nil, nil if no pet or no active effects
+function data.GetPetStatusEffects()
+    return petBuffHandler.GetActiveEffects();
+end
+
+-- Check if pet has a specific status effect
+function data.PetHasEffect(effectId)
+    return petBuffHandler.HasEffect(effectId);
+end
+
+-- Get remaining time for a specific effect on the pet
+function data.GetPetEffectRemainingTime(effectId)
+    return petBuffHandler.GetEffectRemainingTime(effectId);
 end
 
 return data;

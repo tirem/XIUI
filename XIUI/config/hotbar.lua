@@ -38,6 +38,12 @@ local jobSpecificConfirmState = {
     isCrossbar = false,
 };
 
+-- Button detection wizard state
+local buttonDetectionState = {
+    active = false,
+    progress = 0,
+};
+
 -- ============================================
 -- Unified Palette Modal System
 -- Shared between hotbar and crossbar palettes
@@ -1918,7 +1924,12 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
             local isSelected = (scheme == currentScheme);
             if imgui.Selectable(deviceDisplayNames[scheme], isSelected) then
                 crossbarSettings.controllerScheme = scheme;
-                controller.SetControllerScheme(scheme);
+                -- If switching to dinput, apply custom mapping if it exists
+                local customMapping = nil;
+                if scheme == 'dinput' and crossbarSettings.customControllerMappings and crossbarSettings.customControllerMappings.dinput then
+                    customMapping = crossbarSettings.customControllerMappings.dinput;
+                end
+                controller.SetControllerScheme(scheme, customMapping);
                 -- Auto-adjust theme to match profile
                 local matchingTheme = profileToTheme[scheme];
                 if matchingTheme then
@@ -1935,7 +1946,7 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
     imgui.ShowHelp('Select which button mapping profile to use.\n\n- Xbox: For XInput controllers (Xbox, 8BitDo in X-mode)\n- PlayStation: For DualSense/DualShock via DirectInput\n- Switch Pro: For Nintendo Switch Pro controller\n- Generic DirectInput: For other DirectInput controllers\n\nChanging this will also update the button icon theme.');
 
     -- Analog Trigger Threshold Settings (Xbox and PlayStation only)
-    local hasAnalogTriggers = (currentScheme == 'xbox' or currentScheme == 'dualsense' or currentScheme == 'dinput');
+    local hasAnalogTriggers = (currentScheme == 'xbox' or currentScheme == 'dualsense');
     if hasAnalogTriggers then
         imgui.Spacing();
         imgui.Text('Analog Trigger Settings');
@@ -1952,6 +1963,71 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
         imgui.ShowHelp('Analog trigger value (0-255) below which the trigger is considered released. Provides hysteresis to prevent jitter. Default: 15');
     end
 
+    imgui.Spacing();
+
+    -- Custom DirectInput button mapping section (only for dinput scheme)
+    if currentScheme == 'dinput' then
+        imgui.Indent(20);
+
+        local hasCustomMapping = crossbarSettings.customControllerMappings and 
+                                  crossbarSettings.customControllerMappings.dinput;
+
+        -- Configure button
+        if imgui.Button('Configure Button Mapping##dinput', {0, 0}) then
+            local buttondetect = require('modules.hotbar.buttondetect');
+            buttonDetectionState.active = true;
+            buttonDetectionState.progress = 0;
+            buttondetect.StartDetection(function(results)
+                if not crossbarSettings.customControllerMappings then
+                    crossbarSettings.customControllerMappings = {};
+                end
+                crossbarSettings.customControllerMappings.dinput = results;
+                buttonDetectionState.active = false;
+                SaveSettingsOnly();
+                -- Re-initialize controller with new mapping
+                controller.SetControllerScheme('dinput', results);
+            end);
+        end
+        imgui.SameLine();
+        imgui.ShowHelp('Launch wizard to configure button layout for your controller. Custom mappings allow you to define your own button layout for DirectInput controllers.');
+
+        -- Status indicator
+        imgui.SameLine();
+        if hasCustomMapping then
+            imgui.TextColored({0, 1, 0, 1}, '(Using custom mapping)');
+        else
+            imgui.TextColored({0.7, 0.7, 0.7, 1}, '(Using default mapping)');
+        end
+
+        -- Clear custom mapping button (only show if custom mapping exists)
+        if hasCustomMapping then
+            imgui.SameLine();
+            if imgui.Button('Clear Custom Mapping##dinput', {150, 0}) then
+                crossbarSettings.customControllerMappings.dinput = nil;
+                SaveSettingsOnly();
+                -- Re-initialize controller without custom mapping
+                controller.SetControllerScheme('dinput');
+            end
+            imgui.SameLine();
+            imgui.ShowHelp('Remove custom mapping and revert to defaults.');
+        end
+
+        -- Show progress bar during detection
+        if buttonDetectionState.active then
+            local buttondetect = require('modules.hotbar.buttondetect');
+            local progress, maxProgress = buttondetect.GetProgress();
+            imgui.ProgressBar(progress / maxProgress, {-1, 20}, string.format('Button %d of %d', progress, maxProgress));
+            imgui.TextWrapped('Detecting buttons... ' .. (buttondetect.GetCurrentPrompt() or ''));
+            if imgui.Button('Cancel##buttondetect', {0, 0}) then
+                buttondetect.Cancel();
+                buttonDetectionState.active = false;
+            end
+        end
+
+        imgui.Unindent(20);
+    end
+
+    imgui.Spacing();
     imgui.Spacing();
 
     -- Controller Input settings (combo modes, double-tap) - directly under controller
