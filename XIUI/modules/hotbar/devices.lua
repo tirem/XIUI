@@ -367,10 +367,10 @@ local function CreateGenericDInputDevice(userConfig)
 
     -- Default to DualSense-style offsets
     local buttons = {
-        FACE_TOP = userConfig.FACE_TOP or 51,      -- Triangle/X
-        FACE_RIGHT = userConfig.FACE_RIGHT or 50,  -- Circle/A
-        FACE_BOTTOM = userConfig.FACE_BOTTOM or 49, -- Cross/B
-        FACE_LEFT = userConfig.FACE_LEFT or 48,    -- Square/Y
+        FACE_BUTTON_TOP = userConfig.FACE_BUTTON_TOP or 51,       -- TOP BUTTON (e.g. Triangle/X)
+        FACE_BUTTON_RIGHT = userConfig.FACE_BUTTON_RIGHT or 50,   -- RIGHT BUTTON (e.g. Circle/A)
+        FACE_BUTTON_BOTTOM = userConfig.FACE_BUTTON_BOTTOM or 49, -- BOTTOM BUTTON (e.g. Cross/B)
+        FACE_BUTTON_LEFT = userConfig.FACE_BUTTON_LEFT or 48,     -- LEFT BUTTON (e.g. Square/Y)
         L1 = userConfig.L1 or 52,
         R1 = userConfig.R1 or 53,
         L2 = userConfig.L2 or 54,
@@ -397,18 +397,18 @@ local function CreateGenericDInputDevice(userConfig)
 
     -- Face button to slot mapping
     device.ButtonToSlot = {
-        [buttons.FACE_TOP] = 5,
-        [buttons.FACE_RIGHT] = 6,
-        [buttons.FACE_BOTTOM] = 7,
-        [buttons.FACE_LEFT] = 8,
+        [buttons.FACE_BUTTON_TOP] = 5,
+        [buttons.FACE_BUTTON_RIGHT] = 6,
+        [buttons.FACE_BUTTON_BOTTOM] = 7,
+        [buttons.FACE_BUTTON_LEFT] = 8,
     };
 
     -- Crossbar buttons
     device.CrossbarButtons = {
-        [buttons.FACE_TOP] = true,
-        [buttons.FACE_RIGHT] = true,
-        [buttons.FACE_BOTTOM] = true,
-        [buttons.FACE_LEFT] = true,
+        [buttons.FACE_BUTTON_TOP] = true,
+        [buttons.FACE_BUTTON_RIGHT] = true,
+        [buttons.FACE_BUTTON_BOTTOM] = true,
+        [buttons.FACE_BUTTON_LEFT] = true,
     };
 
     -- Methods
