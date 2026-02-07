@@ -13,14 +13,16 @@ local detectState = {
     currentIndex = 1,
 };
 
-local buttonOrder = { 'L2', 'R2', 'CROSS', 'CIRCLE', 'SQUARE', 'TRIANGLE' };
+local buttonOrder = { 'L2', 'R2', 'FACE_BUTTON_TOP', 'FACE_BUTTON_RIGHT', 'FACE_BUTTON_BOTTOM', 'FACE_BUTTON_LEFT', 'L1', 'R1' };
 local buttonPrompts = {
     L2 = 'Press your LEFT TRIGGER (L2/LT/ZL)',
     R2 = 'Press your RIGHT TRIGGER (R2/RT/ZR)',
-    CROSS = 'Press your BOTTOM face button (X/A/B)',
-    CIRCLE = 'Press your RIGHT face button (O/B/A)',
-    SQUARE = 'Press your LEFT face button (Square/X/Y)',
-    TRIANGLE = 'Press your TOP face button (Triangle/Y/X)',
+    FACE_BUTTON_TOP = 'Press your TOP face button (Triangle/Y/X)',
+    FACE_BUTTON_RIGHT = 'Press your RIGHT face button (Circle/B/A)',
+    FACE_BUTTON_BOTTOM = 'Press your BOTTOM face button (Cross/A/B)',
+    FACE_BUTTON_LEFT = 'Press your LEFT face button (Square/X/Y)',
+    L1 = 'Press your LEFT SHOULDER button (L1/LB)',
+    R1 = 'Press your RIGHT SHOULDER button (R1/RB)',
 };
 
 function M.StartDetection(callback)

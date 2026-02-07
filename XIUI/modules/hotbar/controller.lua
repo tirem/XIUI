@@ -134,6 +134,7 @@ local state = {
     -- Device mapping (current controller scheme)
     deviceName = 'xbox',
     device = nil,  -- Will be set to device mapping table
+    customButtonMapping = nil,  -- Custom DirectInput button mapping (if applicable)
 
     -- Trigger state tracking
     leftTriggerHeld = false,
@@ -190,7 +191,8 @@ function Controller.Initialize(settings)
 
     -- Use user-selected controller profile, or default
     state.deviceName = (settings and settings.controllerScheme) or DEFAULT_CONTROLLER_PROFILE;
-    state.device = devices.GetDevice(state.deviceName);
+    state.customButtonMapping = settings and settings.customButtonMapping or nil;
+    state.device = devices.GetDevice(state.deviceName, state.customButtonMapping);
 
     if settings then
         if settings.expandedCrossbarEnabled ~= nil then
@@ -213,9 +215,10 @@ function Controller.Initialize(settings)
 end
 
 -- Set controller scheme
-function Controller.SetControllerScheme(schemeName)
+function Controller.SetControllerScheme(schemeName, customButtonMapping)
     state.deviceName = schemeName or DEFAULT_CONTROLLER_PROFILE;
-    state.device = devices.GetDevice(state.deviceName);
+    state.customButtonMapping = customButtonMapping or nil;
+    state.device = devices.GetDevice(state.deviceName, state.customButtonMapping);
     DebugLog(string.format('Controller scheme set to: %s (XInput: %s, DirectInput: %s)',
         state.deviceName, tostring(state.device.XInput), tostring(state.device.DirectInput)));
 end

@@ -359,11 +359,19 @@ function M.Initialize(settings)
     local crossbarNeeded = crossbarMode == 'crossbar' or crossbarMode == 'both';
     if crossbarNeeded and crossbarConfig then
         crossbar.Initialize(crossbarConfig, gAdjustedSettings.crossbarSettings);
+        
+        -- Get custom button mapping if Generic DirectInput is selected
+        local customButtonMapping = nil;
+        if crossbarConfig.controllerScheme == 'dinput' and crossbarConfig.customControllerMappings and crossbarConfig.customControllerMappings.dinput then
+            customButtonMapping = crossbarConfig.customControllerMappings.dinput;
+        end
+        
         controller.Initialize({
             expandedCrossbarEnabled = crossbarConfig.enableExpandedCrossbar ~= false,
             doubleTapEnabled = crossbarConfig.enableDoubleTap or false,
             doubleTapWindow = crossbarConfig.doubleTapWindow or 0.3,
             controllerScheme = crossbarConfig.controllerScheme,
+            customButtonMapping = customButtonMapping,
         });
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
             crossbar.ActivateSlot(comboMode, slotIndex);
@@ -489,7 +497,13 @@ function M.UpdateVisuals(settings)
         controller.SetExpandedCrossbarEnabled(gConfig.hotbarCrossbar.enableExpandedCrossbar ~= false);
         controller.SetDoubleTapEnabled(gConfig.hotbarCrossbar.enableDoubleTap or false);
         controller.SetDoubleTapWindow(gConfig.hotbarCrossbar.doubleTapWindow or 0.3);
-        controller.SetControllerScheme(gConfig.hotbarCrossbar.controllerScheme);
+        
+        -- Update controller scheme with custom mapping if applicable
+        local customMapping = nil;
+        if gConfig.hotbarCrossbar.controllerScheme == 'dinput' and gConfig.hotbarCrossbar.customControllerMappings and gConfig.hotbarCrossbar.customControllerMappings.dinput then
+            customMapping = gConfig.hotbarCrossbar.customControllerMappings.dinput;
+        end
+        controller.SetControllerScheme(gConfig.hotbarCrossbar.controllerScheme, customMapping);
         -- Update controller blocking state (crossbar-specific)
         controller.SetBlockingEnabled(disableMacroBars);
     end
