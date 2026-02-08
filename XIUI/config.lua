@@ -617,14 +617,14 @@ config.DrawWindow = function(us)
     -- Detect when config closes and clear treasure pool preview
     local isConfigOpen = showConfig[1];
     if wasConfigOpen and not isConfigOpen then
-        -- Config just closed - save any pending hotbar changes
+        -- Config just closed - always save profile to persist window positions
+        SaveSettingsToDisk();
+        
+        -- Clear dirty flags if they were set
         if macropalette.IsHotbarDirty() then
-            SaveSettingsToDisk();
             macropalette.ClearHotbarDirty();
         end
-        -- Check for unsaved palette selection changes
         if palette.IsPaletteStateDirty() then
-            SaveSettingsToDisk();
             palette.ClearPaletteStateDirty();
         end
         -- Clear preview state and reset settings
