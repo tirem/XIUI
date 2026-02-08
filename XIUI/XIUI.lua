@@ -28,8 +28,11 @@ addon.version   = '1.7.4';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/XIUI'
 
+-- Load common first (required before imgui_compat for Ashita 4.3 sugar library compatibility)
+require('common');
 -- Ashita version targeting (for ImGui compatibility)
-_G._XIUI_USE_ASHITA_4_3 = false;
+-- Set to true to force 4.3 mode, false for main, or nil for auto-detection
+_G._XIUI_USE_ASHITA_4_3 = nil;
 require('handlers.imgui_compat');
 
 -- =================
@@ -44,9 +47,11 @@ local _XIUI_DEV_HOT_RELOAD_FILES = {};
 -- This logs ALL xinput/dinput events from Ashita before any XIUI processing
 DEBUG_RAW_INPUT = false;
 
-require('common');
 local chat = require('chat');
 local settings = require('settings');
+-- Pre-load d3d8 before gdifonts to ensure module cache is populated correctly
+-- This prevents issues on Ashita 4.3 where the sugar library can interfere
+local d3d8 = require('d3d8');
 local gdi = require('submodules.gdifonts.include');
 
 -- Core modules
