@@ -29,7 +29,8 @@ addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/XIUI'
 
 -- Ashita version targeting (for ImGui compatibility)
-_G._XIUI_USE_ASHITA_4_3 = false;
+-- Set to nil for auto-detection, true to force 4.3 mode, and false for 4.16 mode
+_G._XIUI_USE_ASHITA_4_3 = nil;
 require('handlers.imgui_compat');
 
 -- =================
@@ -95,6 +96,12 @@ HzLimitedMode = true;
 
 -- Flag to skip settings_update callback during internal saves
 local bInternalSave = false;
+-- For Ashita 4.3+, callbacks are async so we need to defer clearing the flag
+local bIsAshita43 = (ImGuiChildFlags_Borders ~= nil);
+local bPendingInternalSaveClear = false;
+-- For Ashita 4.3+, callbacks are async so we need to defer clearing the flag
+local bIsAshita43 = (ImGuiChildFlags_Borders ~= nil);
+local bPendingInternalSaveClear = false;
 
 
 
@@ -604,7 +611,8 @@ function ChangeProfile(name)
     config.currentProfile = name;
     bInternalSave = true;
     settings.save(); -- Save character preference
-    bInternalSave = false;
+    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
+    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
 
     -- Clear textures to prevent ghosting
     TextureManager.clear();
@@ -653,7 +661,8 @@ function ResetSettings()
     UpdateSettings();
     bInternalSave = true;
     settings.save();
-    bInternalSave = false;
+    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
+    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
 
     -- Reset all module positions to defaults
     uiMods.playerbar.ResetPositions();
@@ -693,7 +702,8 @@ function SaveSettingsToDisk()
     profileManager.SaveProfileSettings(config.currentProfile, gConfig);
     bInternalSave = true;
     settings.save();
-    bInternalSave = false;
+    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
+    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
 end
 
 function SaveSettingsOnly()
@@ -704,7 +714,8 @@ function SaveSettingsOnly()
     profileManager.SaveProfileSettings(config.currentProfile, gConfig);
     bInternalSave = true;
     settings.save();
-    bInternalSave = false;
+    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
+    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
     UpdateUserSettings();
 end
 
@@ -713,7 +724,8 @@ end
 function SaveCharacterSettingsInternal()
     bInternalSave = true;
     settings.save();
-    bInternalSave = false;
+    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
+    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
 end
 
 -- New functions for profile management
@@ -751,7 +763,8 @@ function RenameProfile(oldName, newName)
         config.currentProfile = newName;
         bInternalSave = true;
         settings.save();
-        bInternalSave = false;
+        if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
+        if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
     end
 
     return true;
@@ -900,6 +913,18 @@ end);
 ashita.events.register('d3d_present', 'present_cb', function ()
     if not bInitialized then return; end
 
+    -- Clear internal save flag (deferred for Ashita 4.3+ async callbacks)
+    if bPendingInternalSaveClear then
+        bInternalSave = false;
+        bPendingInternalSaveClear = false;
+    end
+
+    -- Clear internal save flag (deferred for Ashita 4.3+ async callbacks)
+    if bPendingInternalSaveClear then
+        bInternalSave = false;
+        bPendingInternalSaveClear = false;
+    end
+
     -- Process pending profile change outside the render loop
     if pendingProfileChange then
         local name = pendingProfileChange;
@@ -975,14 +1000,18 @@ ashita.events.register('load', 'load_cb', function ()
 end);
 
 ashita.events.register('unload', 'unload_cb', function ()
-    -- Save any pending hotbar changes before unload
+    -- Always save profile on unload to persist window positions and all settings
+    SaveSettingsToDisk();
+	-- Clear dirty flags					
     if macropalette.IsHotbarDirty() then
-        SaveSettingsToDisk();
+    -- Always save profile on unload to persist window positions and all settings
+    SaveSettingsToDisk();
+	-- Clear dirty flags					
+    if macropalette.IsHotbarDirty() then
         macropalette.ClearHotbarDirty();
     end
     -- Save any pending palette selection changes
     if palette.IsPaletteStateDirty() then
-        SaveSettingsToDisk();
         palette.ClearPaletteStateDirty();
     end
 
