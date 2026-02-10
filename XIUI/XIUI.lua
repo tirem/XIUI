@@ -99,9 +99,6 @@ local bInternalSave = false;
 -- For Ashita 4.3+, callbacks are async so we need to defer clearing the flag
 local bIsAshita43 = (ImGuiChildFlags_Borders ~= nil);
 local bPendingInternalSaveClear = false;
--- For Ashita 4.3+, callbacks are async so we need to defer clearing the flag
-local bIsAshita43 = (ImGuiChildFlags_Borders ~= nil);
-local bPendingInternalSaveClear = false;
 
 
 
@@ -612,7 +609,6 @@ function ChangeProfile(name)
     bInternalSave = true;
     settings.save(); -- Save character preference
     if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
-    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
 
     -- Clear textures to prevent ghosting
     TextureManager.clear();
@@ -662,7 +658,6 @@ function ResetSettings()
     bInternalSave = true;
     settings.save();
     if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
-    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
 
     -- Reset all module positions to defaults
     uiMods.playerbar.ResetPositions();
@@ -703,7 +698,6 @@ function SaveSettingsToDisk()
     bInternalSave = true;
     settings.save();
     if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
-    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
 end
 
 function SaveSettingsOnly()
@@ -715,7 +709,6 @@ function SaveSettingsOnly()
     bInternalSave = true;
     settings.save();
     if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
-    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
     UpdateUserSettings();
 end
 
@@ -724,7 +717,6 @@ end
 function SaveCharacterSettingsInternal()
     bInternalSave = true;
     settings.save();
-    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
     if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
 end
 
@@ -763,7 +755,6 @@ function RenameProfile(oldName, newName)
         config.currentProfile = newName;
         bInternalSave = true;
         settings.save();
-        if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
         if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
     end
 
@@ -912,12 +903,6 @@ end);
 
 ashita.events.register('d3d_present', 'present_cb', function ()
     if not bInitialized then return; end
-
-    -- Clear internal save flag (deferred for Ashita 4.3+ async callbacks)
-    if bPendingInternalSaveClear then
-        bInternalSave = false;
-        bPendingInternalSaveClear = false;
-    end
 
     -- Clear internal save flag (deferred for Ashita 4.3+ async callbacks)
     if bPendingInternalSaveClear then
