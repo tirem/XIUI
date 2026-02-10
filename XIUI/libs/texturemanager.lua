@@ -405,7 +405,7 @@ function M.getFileTexture(path)
 end
 
 -- Get custom icon from hotbar custom icons directory
--- @param relativePath string - Path relative to assets/hotbar/custom/
+-- @param relativePath string - Path relative to assets/hotbar/custom/, or @pack/ prefixed for icon packs
 -- @return table|nil - Texture table with .image field, or nil
 function M.getCustomIcon(relativePath)
     if relativePath == nil or relativePath == '' then
@@ -414,7 +414,13 @@ function M.getCustomIcon(relativePath)
 
     local key = 'custom_' .. relativePath;
     return getOrCreate(key, function()
-        local fullPath = string.format('%s/assets/hotbar/custom/%s', addon.path, relativePath);
+        local fullPath;
+        if relativePath:sub(1, 6) == '@pack/' then
+            local packPath = relativePath:sub(7);
+            fullPath = string.format('%s/submodules/xiui-icons/XIUI/assets/hotbar/%s', addon.path, packPath);
+        else
+            fullPath = string.format('%s/assets/hotbar/custom/%s', addon.path, relativePath);
+        end
         return loadTextureFromFile(fullPath);
     end, 'custom_icons');
 end

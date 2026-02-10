@@ -377,7 +377,7 @@ end
 
 local function GetAssetsPath()
     if not assetsPath then
-        assetsPath = string.format('%saddons\\XIUI\\assets\\hotbar\\', AshitaCore:GetInstallPath());
+        assetsPath = string.format('%saddons\\XIUI\\assets\\hotbar\\internal\\', AshitaCore:GetInstallPath());
     end
     return assetsPath;
 end
@@ -423,7 +423,7 @@ local skillchainIconsPath = nil;
 
 local function GetSkillchainIconsPath()
     if not skillchainIconsPath then
-        skillchainIconsPath = string.format('%saddons\\XIUI\\assets\\hotbar\\skillchain\\', AshitaCore:GetInstallPath());
+        skillchainIconsPath = string.format('%saddons\\XIUI\\assets\\hotbar\\internal\\skillchain\\', AshitaCore:GetInstallPath());
     end
     return skillchainIconsPath;
 end
