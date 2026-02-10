@@ -1004,10 +1004,6 @@ ashita.events.register('unload', 'unload_cb', function ()
     SaveSettingsToDisk();
 	-- Clear dirty flags					
     if macropalette.IsHotbarDirty() then
-    -- Always save profile on unload to persist window positions and all settings
-    SaveSettingsToDisk();
-	-- Clear dirty flags					
-    if macropalette.IsHotbarDirty() then
         macropalette.ClearHotbarDirty();
     end
     -- Save any pending palette selection changes
