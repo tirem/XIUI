@@ -181,33 +181,88 @@ end
 -- Cache for custom icons loaded from disk
 local customIconCache = {};
 
--- Mapping from summoning spell names to texture cache keys
--- Spell names (as they appear in-game) -> texture key (as loaded in textures.lua)
-local summonSpellToIconKey = {
-    -- Avatars
-    ['Carbuncle'] = 'summon_Carbuncle',
-    ['Ifrit'] = 'summon_Ifrit',
-    ['Shiva'] = 'summon_Shiva',
-    ['Garuda'] = 'summon_Garuda',
-    ['Titan'] = 'summon_Titan',
-    ['Ramuh'] = 'summon_Ramuh',
-    ['Leviathan'] = 'summon_Leviathan',
-    ['Fenrir'] = 'summon_Fenrir',
-    ['Diabolos'] = 'summon_Diabolos',
-    ['Cait Sith'] = 'summon_CaitSith',
-    ['Alexander'] = 'summon_Alexander',
-    ['Odin'] = 'summon_Odin',
-    ['Atomos'] = 'summon_Atomos',
-    ['Siren'] = 'summon_Siren',
-    -- Spirits
-    ['Fire Spirit'] = 'summon_FireSpirit',
-    ['Ice Spirit'] = 'summon_IceSpirit',
-    ['Air Spirit'] = 'summon_AirSpirit',
-    ['Earth Spirit'] = 'summon_EarthSpirit',
-    ['Thunder Spirit'] = 'summon_ThunderSpirit',
-    ['Water Spirit'] = 'summon_WaterSpirit',
-    ['Light Spirit'] = 'summon_LightSpirit',
-    ['Dark Spirit'] = 'summon_DarkSpirit',
+-- Mapping from blood pact ability names to texture cache keys
+local bloodPactToIconKey = {
+    -- Carbuncle
+    ['Poison Nails'] = 'bp_Carbuncle_PoisonNails',
+    ['Healing Ruby'] = 'bp_Carbuncle_HealingRuby',
+    ['Healing Ruby II'] = 'bp_Carbuncle_HealingRubyII',
+    ['Meteorite'] = 'bp_Carbuncle_Meteorite',
+    ['Glittering Ruby'] = 'bp_Carbuncle_GlitteringRuby',
+    ['Searing Light'] = 'bp_Carbuncle_SearingLight',
+    ['Shining Ruby'] = 'bp_Carbuncle_ShiningRuby',
+    -- Ifrit
+    ['Punch'] = 'bp_Ifrit_Punch',
+    ['Double Punch'] = 'bp_Ifrit_DoublePunch',
+    ['Burning Strike'] = 'bp_Ifrit_BurningStrike',
+    ['Crimson Howl'] = 'bp_Ifrit_CrimsonHowl',
+    ['Fire II'] = 'bp_Ifrit_FireII',
+    ['Fire IV'] = 'bp_Ifrit_FireIV',
+    ['Flaming Crush'] = 'bp_Ifrit_FlamingCrush',
+    ['Inferno'] = 'bp_Ifrit_Inferno',
+    -- Shiva
+    ['Axe Kick'] = 'bp_Shiva_AxeKick',
+    ['Double Slap'] = 'bp_Shiva_DoubleSlap',
+    ['Rush'] = 'bp_Shiva_Rush',
+    ['Frost Armor'] = 'bp_Shiva_FrostArmor',
+    ['Sleepga'] = 'bp_Shiva_Sleepga',
+    ['Blizzard II'] = 'bp_Shiva_BlizzardII',
+    ['Blizzard IV'] = 'bp_Shiva_BlizzardIV',
+    ['Diamond Dust'] = 'bp_Shiva_DiamondDust',
+    -- Garuda
+    ['Claw'] = 'bp_Garuda_Claw',
+    ['Predator Claws'] = 'bp_Garuda_PredatorClaws',
+    ['Aerial Armor'] = 'bp_Garuda_AerialArmor',
+    ['Whispering Wind'] = 'bp_Garuda_WhisperingWind',
+    ['Hastega'] = 'bp_Garuda_Hastega',
+    ['Aero II'] = 'bp_Garuda_AeroII',
+    ['Aero IV'] = 'bp_Garuda_AeroIV',
+    ['Aerial Blast'] = 'bp_Garuda_AerialBlast',
+    -- Leviathan
+    ['Barracuda Dive'] = 'bp_Leviathan_BarracudaDive',
+    ['Spinning Dive'] = 'bp_Leviathan_SpinningDive1',
+    ['Tail Whip'] = 'bp_Leviathan_TailWhip',
+    ['Spring Water'] = 'bp_Leviathan_SpringWater',
+    ['Slowga'] = 'bp_Leviathan_Slowga',
+    ['Water II'] = 'bp_Leviathan_WaterII',
+    ['Water IV'] = 'bp_Leviathan_WaterIV',
+    ['Tidal Wave'] = 'bp_Leviathan_TidalWave',
+    -- Ramuh
+    ['Shock Strike'] = 'bp_Ramuh_ShockStrike',
+    ['Chaotic Strike'] = 'bp_Ramuh_ChaoticStrike',
+    ['Rolling Thunder'] = 'bp_Ramuh_RollingThunder',
+    ['Lightning Armor'] = 'bp_Ramuh_LightningArmor',
+    ['Thunderspark'] = 'bp_Ramuh_Thunderspark',
+    ['Thunder II'] = 'bp_Ramuh_ThunderII',
+    ['Thunder IV'] = 'bp_Ramuh_ThunderIV',
+    ['Judgment Bolt'] = 'bp_Ramuh_JudgmentBolt',
+    -- Titan
+    ['Rock Throw'] = 'bp_Titan_RockThrow',
+    ['Rock Buster'] = 'bp_Titan_RockBuster',
+    ['Megalith Throw'] = 'bp_Titan_MegalithThrow',
+    ['Mountain Buster'] = 'bp_Titan_MountainBuster',
+    ['Earthen Ward'] = 'bp_Titan_EarthenWard',
+    ['Stone II'] = 'bp_Titan_StoneII',
+    ['Stone IV'] = 'bp_Titan_StoneIV',
+    ['Earthen Fury'] = 'bp_Titan_EarthenFury',
+    -- Fenrir
+    ['Moonlit Charge'] = 'bp_Fenrir_MoonlitCharge',
+    ['Crescent Fang'] = 'bp_Fenrir_CrescentFang',
+    ['Eclipse Bite'] = 'bp_Fenrir_EclipseBite',
+    ['Ecliptic Growl'] = 'bp_Fenrir_EclipticGrowl',
+    ['Ecliptic Howl'] = 'bp_Fenrir_EclipticHowl',
+    ['Lunar Cry'] = 'bp_Fenrir_LunarCry',
+    ['Lunar Roar'] = 'bp_Fenrir_LunarRoar',
+    ['Howling Moon'] = 'bp_Fenrir_HowlingMoon',
+    -- Diabolos
+    ['Camisado'] = 'bp_Diabolos_Camisado',
+    ['Nether Blast'] = 'bp_Diabolos_NetherBlast',
+    ['Somnolence'] = 'bp_Diabolos_Somnolence',
+    ['Ultimate Terror'] = 'bp_Diabolos_UltimateTerror',
+    ['Nightmare'] = 'bp_Diabolos_Nightmare',
+    ['Noctoshield'] = 'bp_Diabolos_Noctoshield',
+    ['Dream Shroud'] = 'bp_Diabolos_DreamShroud',
+    ['Ruinous Omen'] = 'bp_Diabolos_RuinousOmen',
 };
 
 -- Mapping from pet command names to texture cache keys
@@ -592,6 +647,16 @@ function M.GetBindIcon(bind)
                             icon = textures:Get('spells' .. string.format('%05d', macro.customIconId));
                             iconId = macro.customIconId;
                             if icon then return icon, iconId; end
+                            -- Fallback: trusts/blue magic use name-based keys
+                            local spellRes = AshitaCore:GetResourceManager():GetSpellById(macro.customIconId);
+                            if spellRes then
+                                local spellName = spellRes.Name[1];
+                                local nameKey = trustToIconKey[spellName] or blueMagicToIconKey[spellName];
+                                if nameKey then
+                                    icon = textures:Get(nameKey);
+                                    if icon then return icon, iconId; end
+                                end
+                            end
                         elseif macro.customIconType == 'item' and macro.customIconId then
                             icon = LoadItemIconById(macro.customIconId);
                             iconId = macro.customIconId;
@@ -621,6 +686,16 @@ function M.GetBindIcon(bind)
             icon = textures:Get('spells' .. string.format('%05d', bind.customIconId));
             iconId = bind.customIconId;
             if icon then return icon, iconId; end
+            -- Fallback: trusts/blue magic use name-based keys
+            local spellRes = AshitaCore:GetResourceManager():GetSpellById(bind.customIconId);
+            if spellRes then
+                local spellName = spellRes.Name[1];
+                local nameKey = trustToIconKey[spellName] or blueMagicToIconKey[spellName];
+                if nameKey then
+                    icon = textures:Get(nameKey);
+                    if icon then return icon, iconId; end
+                end
+            end
         elseif bind.customIconType == 'item' and bind.customIconId then
             icon = LoadItemIconById(bind.customIconId);
             iconId = bind.customIconId;
@@ -641,16 +716,6 @@ function M.GetBindIcon(bind)
     end
 
     if bind.actionType == 'ma' then
-        -- Check for summoning magic first (custom icons)
-        local summonIconKey = summonSpellToIconKey[bind.action];
-        if summonIconKey then
-            icon = textures:Get(summonIconKey);
-            if icon then
-                local spell = GetSpellByName(bind.action);
-                if spell then iconId = spell.id; end
-                return icon, iconId;
-            end
-        end
         -- Check for Trust icons
         local trustIconKey = trustToIconKey[bind.action];
         if trustIconKey then
@@ -708,7 +773,15 @@ function M.GetBindIcon(bind)
             end
         end
     elseif bind.actionType == 'pet' then
-        -- Check for pet command icons first
+        -- Check for blood pact ability icons
+        local bpIconKey = bloodPactToIconKey[bind.action];
+        if bpIconKey then
+            icon = textures:Get(bpIconKey);
+            if icon then
+                return icon, iconId;
+            end
+        end
+        -- Check for pet command icons
         local petIconKey = petCommandToIconKey[bind.action];
         if petIconKey then
             icon = textures:Get(petIconKey);

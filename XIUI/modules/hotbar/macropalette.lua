@@ -2986,7 +2986,7 @@ local function DrawIconPicker()
                         local icon = nil;
 
                         -- For Trusts, Summons, and Blue Magic, try to get custom icons first
-                        if spell.type == 'Trust' or spell.type == 'SummonerPact' or spell.type == 'BlueMagic' then
+                        if spell.type == 'Trust' or spell.type == 'BlueMagic' then
                             icon = actions.GetBindIcon({ actionType = 'ma', action = spell.name });
                         end
 
