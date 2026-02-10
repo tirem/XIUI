@@ -154,50 +154,48 @@ textures.Initialize = function(self)
         end
     end
 
-    -- Load SMN icons (summons, abilities, pet commands) from hotbar/SMN directory
-    local smnDirectory = string.format('%saddons\\XIUI\\assets\\hotbar\\SMN\\', AshitaCore:GetInstallPath());
-    local smnIcons = {
-        -- Summoning magic (avatars)
-        { file = 'Carbuncle', key = 'summon_Carbuncle' },
-        { file = 'Ifrit', key = 'summon_Ifrit' },
-        { file = 'Shiva', key = 'summon_Shiva' },
-        { file = 'Garuda', key = 'summon_Garuda' },
-        { file = 'Titan', key = 'summon_Titan' },
-        { file = 'Ramuh', key = 'summon_Ramuh' },
-        { file = 'Leviathan', key = 'summon_Leviathan' },
-        { file = 'Fenrir', key = 'summon_Fenrir' },
-        { file = 'Diabolos', key = 'summon_Diabolos' },
-        { file = 'CaitSith', key = 'summon_CaitSith' },
-        { file = 'Alexander', key = 'summon_Alexander' },
-        { file = 'Odin', key = 'summon_Odin' },
-        { file = 'Atomos', key = 'summon_Atomos' },
-        { file = 'Siren', key = 'summon_Siren' },
-        -- Summoning magic (spirits)
-        { file = 'FireSpirit', key = 'summon_FireSpirit' },
-        { file = 'IceSpirit', key = 'summon_IceSpirit' },
-        { file = 'AirSpirit', key = 'summon_AirSpirit' },
-        { file = 'EarthSpirit', key = 'summon_EarthSpirit' },
-        { file = 'ThunderSpirit', key = 'summon_ThunderSpirit' },
-        { file = 'WaterSpirit', key = 'summon_WaterSpirit' },
-        { file = 'LightSpirit', key = 'summon_LightSpirit' },
-        { file = 'DarkSpirit', key = 'summon_DarkSpirit' },
-        -- Pet commands
-        { file = 'Assault', key = 'ability_Assault' },
-        { file = 'Release', key = 'ability_Release' },
-        { file = 'Retreat', key = 'ability_Retreat' },
-        -- SMN job abilities
+    -- Load SMN icons from xiui-icons submodule
+    local smnSubmoduleDir = string.format('%saddons\\XIUI\\submodules\\xiui-icons\\XIUI\\assets\\hotbar\\SMN\\', AshitaCore:GetInstallPath());
+
+    -- SMN job abilities + pet commands from Abilities/
+    local smnAbilities = {
         { file = 'Apogee', key = 'ability_Apogee' },
         { file = 'AstralConduit1', key = 'ability_AstralConduit' },
         { file = 'AstralFlow', key = 'ability_AstralFlow' },
         { file = 'AvatarsFavor', key = 'ability_AvatarsFavor' },
         { file = 'ElementalSiphon', key = 'ability_ElementalSiphon' },
         { file = 'ManaCede', key = 'ability_ManaCede' },
+        { file = 'Assault', key = 'ability_Assault' },
+        { file = 'Release', key = 'ability_Release' },
+        { file = 'Retreat', key = 'ability_Retreat' },
     };
-    for _, icon in ipairs(smnIcons) do
-        local fullPath = smnDirectory .. icon.file .. '.png';
+    for _, icon in ipairs(smnAbilities) do
+        local fullPath = smnSubmoduleDir .. 'Abilities\\' .. icon.file .. '.png';
         local texture = LoadTextureFromPath(fullPath);
         if texture then
             self.Cache[icon.key] = texture;
+        end
+    end
+
+    -- Blood pact ability icons from per-avatar subdirectories
+    local avatarBloodPacts = {
+        ['Carbuncle'] = { 'GlitteringRuby', 'HealingRuby', 'HealingRubyII', 'Meteorite', 'PoisonNails', 'SearingLight', 'ShiningRuby' },
+        ['Ifrit'] = { 'BurningStrike', 'CrimsonHowl', 'DoublePunch', 'FireII', 'FireIV', 'FlamingCrush', 'Inferno', 'Punch' },
+        ['Shiva'] = { 'AxeKick', 'BlizzardII', 'BlizzardIV', 'DiamondDust', 'DoubleSlap', 'FrostArmor', 'Rush', 'Sleepga' },
+        ['Garuda'] = { 'AerialArmor', 'AerialBlast', 'AeroII', 'AeroIV', 'Claw', 'Hastega', 'PredatorClaws', 'WhisperingWind' },
+        ['Leviathan'] = { 'BarracudaDive', 'Slowga', 'SpinningDive1', 'SpringWater', 'TailWhip', 'TidalWave', 'WaterII', 'WaterIV' },
+        ['Ramuh'] = { 'ChaoticStrike', 'JudgmentBolt', 'LightningArmor', 'RollingThunder', 'ShockStrike', 'ThunderII', 'ThunderIV', 'Thunderspark' },
+        ['Titan'] = { 'EarthenFury', 'EarthenWard', 'MegalithThrow', 'MountainBuster', 'RockBuster', 'RockThrow', 'StoneII', 'StoneIV' },
+        ['Fenrir'] = { 'CrescentFang', 'EclipseBite', 'EclipticGrowl', 'EclipticHowl', 'HowlingMoon', 'LunarCry', 'LunarRoar', 'MoonlitCharge' },
+        ['Diabolos'] = { 'Camisado', 'DreamShroud', 'NetherBlast', 'Nightmare', 'Noctoshield', 'RuinousOmen', 'Somnolence', 'UltimateTerror' },
+    };
+    for avatar, pacts in pairs(avatarBloodPacts) do
+        for _, pact in ipairs(pacts) do
+            local fullPath = smnSubmoduleDir .. avatar .. '\\' .. pact .. '.png';
+            local texture = LoadTextureFromPath(fullPath);
+            if texture then
+                self.Cache['bp_' .. avatar .. '_' .. pact] = texture;
+            end
         end
     end
 

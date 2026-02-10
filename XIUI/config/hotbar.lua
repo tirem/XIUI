@@ -916,7 +916,7 @@ local framesDirectory = nil;
 -- Get the frames directory path
 local function GetFramesDirectory()
     if not framesDirectory then
-        framesDirectory = string.format('%saddons\\XIUI\\assets\\hotbar\\frames\\', AshitaCore:GetInstallPath());
+        framesDirectory = string.format('%saddons\\XIUI\\assets\\hotbar\\internal\\frames\\', AshitaCore:GetInstallPath());
     end
     return framesDirectory;
 end
