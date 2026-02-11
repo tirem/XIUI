@@ -1084,12 +1084,20 @@ local function DrawPetTargetSettingsContent()
     imgui.ShowHelp('Show information about what the pet is targeting in a separate window.');
 
     components.DrawCheckbox('Snap to Pet Bar', 'petTargetSnapToPetBar');
-    imgui.ShowHelp('Position the pet target window directly below the pet bar.');
+    imgui.ShowHelp('Position the pet target window relative to the pet bar.');
 
     if gConfig.petTargetSnapToPetBar then
+        local anchorOptions = { 'Bottom', 'Top' };
+        local currentAnchor = (gConfig.petTargetSnapAnchor == 'top') and 'Top' or 'Bottom';
+        components.DrawComboBox('Anchor Point##petTargetSnap', currentAnchor, anchorOptions, function(newValue)
+            gConfig.petTargetSnapAnchor = (newValue == 'Top') and 'top' or 'bottom';
+            SaveSettingsOnly();
+        end);
+        imgui.ShowHelp('Bottom: offset from bottom of pet bar (shifts when buffs change height). Top: offset from top (stays fixed when buffs change height).');
+
         components.DrawSlider('Snap Offset X##petTargetSnap', 'petTargetSnapOffsetX', -200, 200);
         components.DrawSlider('Snap Offset Y##petTargetSnap', 'petTargetSnapOffsetY', -200, 200);
-        imgui.ShowHelp('Offset from top of pet bar. Stays fixed when buffs change the bar height.');
+        imgui.ShowHelp(string.format('Offset from %s of pet bar.', (gConfig.petTargetSnapAnchor == 'top') and 'top' or 'bottom'));
     end
 
     if components.CollapsingSection('Display Options##petTarget', false) then

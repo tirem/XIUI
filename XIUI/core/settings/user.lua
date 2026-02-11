@@ -821,8 +821,9 @@ function M.createUserSettingsDefaults()
 
         -- Pet Target snap to petbar (positions pet target directly below petbar)
         petTargetSnapToPetBar = true,        -- When enabled, pet target snaps below petbar
+        petTargetSnapAnchor = 'bottom',      -- 'bottom' = offset from bottom of pet bar, 'top' = offset from top (static when buffs change height)
         petTargetSnapOffsetX = 0,            -- Horizontal offset from petbar position
-        petTargetSnapOffsetY = 16,           -- Vertical offset below petbar (accounts for background border)
+        petTargetSnapOffsetY = 0,           -- Vertical offset below petbar (accounts for background border)
 
         -- Per-pet-type settings (Avatar, Charm, Jug, Automaton, Wyvern each have independent visual settings)
         petBarAvatar = factories.createPetBarTypeDefaults(),

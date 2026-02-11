@@ -144,13 +144,15 @@ function pettarget.DrawWindow(settings)
     -- Get pet target specific color config
     local colorConfig = gConfig.colorCustomization and gConfig.colorCustomization.petTarget or {};
 
-    -- Handle snap to petbar positioning (Y offset is from top of pet bar so it stays static when buffs change height)
+    -- Handle snap to petbar positioning (anchor: bottom = offset from bottom, top = offset from top so it stays static when buffs change height)
     local snapEnabled = gConfig.petTargetSnapToPetBar;
-    if snapEnabled and data.lastMainWindowPosX ~= nil and data.lastMainWindowTop ~= nil then
+    local anchor = gConfig.petTargetSnapAnchor or 'bottom';
+    local anchorY = (anchor == 'top' and data.lastMainWindowTop) or data.lastMainWindowBottom;
+    if snapEnabled and data.lastMainWindowPosX ~= nil and anchorY ~= nil then
         local snapOffsetX = gConfig.petTargetSnapOffsetX or 0;
         local snapOffsetY = gConfig.petTargetSnapOffsetY or 4;
         local snapX = data.lastMainWindowPosX + snapOffsetX;
-        local snapY = data.lastMainWindowTop + snapOffsetY;
+        local snapY = anchorY + snapOffsetY;
         imgui.SetNextWindowPos({snapX, snapY}, ImGuiCond_Always);
     end
 
