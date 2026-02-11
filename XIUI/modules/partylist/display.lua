@@ -632,7 +632,14 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 local castBarHeight = math.max(6, nameRefHeight * 0.8 * cache.castBarScaleY);
                 local castBarOffsetX = cache.castBarOffsetX or 0;
                 local castBarOffsetY = cache.castBarOffsetY or 0;
-                local castBarX = namePosX + spellNameWidth + 4 + castBarOffsetX;
+                local castBarX;
+                if cache.castBarAnchor == false then
+                    -- Start cast bar at same X position as spell name (may overlap)
+                    castBarX = namePosX + castBarOffsetX;
+                else
+                    -- Anchor cast bar to end of the spell name
+                    castBarX = namePosX + spellNameWidth + 4 + castBarOffsetX;
+                end
                 local castBarY = hpStartY - nameRefHeight - settings.nameTextOffsetY + (nameRefHeight - castBarHeight) / 2 + castBarOffsetY;
                 local castGradient = GetCustomGradient(cache.colors, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
                 progressbar.ProgressBar(
