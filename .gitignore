@@ -14,3 +14,5 @@ XIUI/assets/hotbar/items/
 
 # Windows null device workaround (created when bash runs CMD-style redirects)
 nul
+
+.github/copilot-instructions.md
