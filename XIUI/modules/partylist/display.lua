@@ -635,7 +635,9 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 local castBarX;
                 if cache.castBarAnchor == false then
                     -- Start cast bar at same X position as spell name (may overlap)
+                    -- Apply internal -10 Y offset when not anchored for better default positioning
                     castBarX = namePosX + castBarOffsetX;
+                    castBarOffsetY = castBarOffsetY - 10;
                 else
                     -- Anchor cast bar to end of the spell name
                     castBarX = namePosX + spellNameWidth + 4 + castBarOffsetX;

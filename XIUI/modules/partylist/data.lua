@@ -191,7 +191,7 @@ function data.updatePartyConfigCache()
         cache.castBarScaleY = party.castBarScaleY or 0.6;
         cache.castBarOffsetX = party.castBarOffsetX or 0;
         cache.castBarOffsetY = party.castBarOffsetY or 0;
-        cache.castBarAnchor = (party.castBarAnchor == nil) and true or party.castBarAnchor;
+        cache.castBarAnchor = party.castBarAnchor ~= false;
         cache.castBarStyle = party.castBarStyle or 'name';
         cache.showBookends = party.showBookends;
         cache.showTitle = party.showTitle;
