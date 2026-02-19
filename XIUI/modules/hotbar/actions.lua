@@ -350,6 +350,9 @@ local otherAbilityToIconKey = {
 local currentPressedHotbar = nil;
 local currentPressedSlot = nil;
 
+-- Only one macro flow runs at a time; starting a new one cancels the previous.
+local activeMacroId = 0;
+
 -- Icon cache for items (keyed by item name since we look up by name)
 local itemIconCache = {};
 
@@ -827,8 +830,9 @@ end
 --- Properly handles /wait, /pause, /sleep by using Ashita's task scheduler
 --- Also handles inline <wait #> subcommands at end of command lines
 --- @param commandText string The command text (may contain newlines)
+--- @param isMacro boolean|nil If true, enforces single-macro-at-a-time execution
 --- @return boolean success Whether any command was executed
-function M.ExecuteCommandString(commandText)
+function M.ExecuteCommandString(commandText, isMacro)
     if not commandText or commandText == '' then
         return false;
     end
@@ -847,10 +851,21 @@ function M.ExecuteCommandString(commandText)
         return false;
     end
 
+    local myMacroId = nil;
+    if isMacro then
+        activeMacroId = activeMacroId + 1;
+        myMacroId = activeMacroId;
+    end
+
     -- Recursive function to execute lines with proper /wait handling
     -- This chains tasks instead of scheduling them all at once
     local function executeNextLine(index)
         if index > #lines then
+            return;
+        end
+
+        -- If this is a macro flow, bail out when a newer macro has started
+        if myMacroId and myMacroId ~= activeMacroId then
             return;
         end
 
@@ -914,7 +929,7 @@ function M.HandleKeybind(hotbar, slot)
 
     -- Build and execute command
     local command, _ = M.BuildCommand(bind);
-    return M.ExecuteCommandString(command);
+    return M.ExecuteCommandString(command, bind.actionType == 'macro');
 end
 
 -- Find hotbar and slot that matches the pressed key + modifiers
@@ -1152,7 +1167,7 @@ function M.ExecuteAction(slotAction)
 
     -- Build and execute command (handles multi-line macros)
     local command, _ = M.BuildCommand(slotAction);
-    return M.ExecuteCommandString(command);
+    return M.ExecuteCommandString(command, slotAction.actionType == 'macro');
 end
 
 -- Clear the custom icon cache (call when icons may have changed)
