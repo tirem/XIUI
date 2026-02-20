@@ -3,6 +3,8 @@
 * Data-driven module management for initialization, rendering, cleanup, and visibility
 ]]--
 
+local gameState = require('core.gamestate');
+
 local M = {};
 
 -- Module registry - defines all UI modules and their configuration
@@ -12,6 +14,7 @@ local M = {};
 --   configKey: key in gConfig for visibility (optional)
 --   hideOnEventKey: config key for hiding during events (optional)
 --   hideOnMenuFocusKey: config key for hiding when game menu is open (optional)
+--   skipMenuHideWhenEngaged: skip menu hiding when player is in combat (optional)
 --   hasSetHidden: whether module has SetHidden function
 local registry = {};
 
@@ -96,9 +99,11 @@ function M.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive, men
         shouldShow = not gConfig[entry.hideOnEventKey];
     end
 
-    -- Check menu focus hiding
-    if shouldShow and entry.hideOnMenuFocusKey and menuOpen then
-        shouldShow = not gConfig[entry.hideOnMenuFocusKey];
+    -- Check menu focus hiding (skip for modules that opt out during combat)
+    if shouldShow and entry.hideOnMenuFocusKey and menuOpen and gConfig[entry.hideOnMenuFocusKey] then
+        if not (entry.skipMenuHideWhenEngaged and gameState.IsPlayerEngaged()) then
+            shouldShow = false;
+        end
     end
 
     if shouldShow then

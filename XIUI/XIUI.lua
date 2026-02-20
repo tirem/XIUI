@@ -282,6 +282,7 @@ uiModules.Register('hotbar', {
     configKey = 'showhotbar',
     hideOnEventKey = 'hotbarHideDuringEvents',
     hideOnMenuFocusKey = 'hotbarHideOnMenuFocus',
+    skipMenuHideWhenEngaged = true,
     hasSetHidden = true,
 });
 
@@ -931,7 +932,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
     end
 
     local eventSystemActive = gameState.GetEventSystemActive();
-    local menuOpen = gameState.GetMenuName() ~= '';
+    local menuOpen = gameState.IsMenuOpen();
 
     if not gameState.ShouldHideUI(gConfig.hideDuringEvents, bLoggedIn) then
         -- Sync treasure pool from memory (authoritative source of truth)

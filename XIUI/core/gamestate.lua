@@ -57,6 +57,22 @@ function M.IsMapOpen()
     return string.match(M.GetMenuName(), 'map') ~= nil;
 end
 
+function M.IsPlayerEngaged()
+    local playerEnt = GetPlayerEntity();
+    return playerEnt ~= nil and playerEnt.Status == 1;
+end
+
+-- Menus that should NOT trigger "hide when menu open" (chat input, combat sub-menus, etc.)
+local IGNORED_MENUS = {
+    ['menu    inline'] = true,  -- Chat box / text input
+};
+
+function M.IsMenuOpen()
+    local menuName = M.GetMenuName():gsub('%s+$', '');
+    if menuName == '' then return false; end
+    return not IGNORED_MENUS[menuName];
+end
+
 -- Check if Ashita's FontManager has been hidden (e.g., by autohide addon)
 function M.GetFontManagerHidden()
     local fontManager = AshitaCore:GetFontManager();
