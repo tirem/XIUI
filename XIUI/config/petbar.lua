@@ -1091,6 +1091,13 @@ local function DrawPetTargetSettingsContent()
         local currentAnchor = (gConfig.petTargetSnapAnchor == 'top') and 'Top' or 'Bottom';
         components.DrawComboBox('Anchor Point##petTargetSnap', currentAnchor, anchorOptions, function(newValue)
             gConfig.petTargetSnapAnchor = (newValue == 'Top') and 'top' or 'bottom';
+            if newValue == 'Top' then
+                gConfig.petTargetSnapOffsetX = 180;
+                gConfig.petTargetSnapOffsetY = 0;
+            else
+                gConfig.petTargetSnapOffsetX = 0;
+                gConfig.petTargetSnapOffsetY = 16;
+            end
             SaveSettingsOnly();
         end);
         imgui.ShowHelp('Bottom: offset from bottom of pet bar (shifts when buffs change height). Top: offset from top (stays fixed when buffs change height).');
