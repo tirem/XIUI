@@ -675,6 +675,32 @@ function ResetSettings()
     hotbar.ResetPositions();
 end
 
+function CenterAllPositions()
+    local defPos = require('libs.defaultpositions');
+    local sw, sh = defPos.GetScreenSize();
+    local cx = sw / 2;
+    local cy = sh / 2;
+
+    if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+
+    -- Center every known window position
+    for windowName, _ in pairs(gConfig.windowPositions) do
+        gConfig.windowPositions[windowName] = { x = cx, y = cy };
+    end
+
+    -- Force re-apply on next frame
+    gConfig.appliedPositions = {};
+
+    -- Reset the config window position too
+    configMenu.ResetConfigWindowPosition();
+
+    -- Save
+    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    bInternalSave = true;
+    settings.save();
+    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
+end
+
 function SavePartyListLayoutSetting(key, value)
     local currentLayout = (gConfig.partyListLayout == 1) and gConfig.partyListLayout2 or gConfig.partyListLayout1;
     currentLayout[key] = value;
@@ -1295,6 +1321,13 @@ ashita.events.register('command', 'command_cb', function (e)
         -- ============================================
 
         if (command_args[2] == 'profile') then
+            -- /xiui profile reset positions
+            if (command_args[3] == 'reset' and command_args[4] == 'positions') then
+                CenterAllPositions();
+                print(chat.header(addon.name):append(chat.message('All UI positions reset to center.')));
+                return;
+            end
+
             -- /xiui profile reset
             if (command_args[3] == 'reset') then
                  configMenu.OpenResetSettingsPopup();

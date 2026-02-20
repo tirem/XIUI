@@ -85,6 +85,8 @@ end
 
 -- State for confirmation dialogs
 local showRestoreDefaultsConfirm = false;
+local showResetPositionsConfirm = false;
+local pendingResetConfigWindow = false;
 
 -- Social icon textures
 local discordTexture = nil;
@@ -642,6 +644,11 @@ config.DrawWindow = function(us)
     PushThemeStyles();
 
     imgui.SetNextWindowSize({ 900, 650 }, ImGuiCond_FirstUseEver);
+    imgui.SetNextWindowPos({ 50, 50 }, ImGuiCond_FirstUseEver);
+    if pendingResetConfigWindow then
+        imgui.SetNextWindowPos({ 50, 50 }, ImGuiCond_Always);
+        pendingResetConfigWindow = false;
+    end
     if(imgui.Begin("XIUI Config - v" .. addon.version, showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
         local windowWidth = imgui.GetContentRegionAvail();
         local sidebarWidth = 180;
@@ -710,6 +717,13 @@ config.DrawWindow = function(us)
 
         imgui.SameLine();
         imgui.ShowHelp('Reset current profile settings.');
+
+        imgui.SameLine();
+        if imgui.Button('Center UI', { 0, boxSize }) then
+            showResetPositionsConfirm = true;
+        end
+        imgui.SameLine();
+        imgui.ShowHelp('Move all UI elements to the center of the screen.');
 
         imgui.SameLine();
         imgui.SetCursorPosX(windowWidth - (boxSize * 3) - (boxSpacing * 2));
@@ -792,7 +806,29 @@ config.DrawWindow = function(us)
             imgui.EndPopup();
         end
 
+        -- Reset Positions confirmation popup
+        if (showResetPositionsConfirm) then
+            imgui.OpenPopup("Confirm Center UI");
+            showResetPositionsConfirm = false;
+        end
 
+        if (imgui.BeginPopupModal("Confirm Center UI", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+            anyModalOpen = true;
+            imgui.Text("Move all UI elements to the center of the screen?");
+            imgui.Text("This only affects positions, not your other settings.");
+            imgui.NewLine();
+
+            if (imgui.Button("Confirm", { 120, 0 })) then
+                CenterAllPositions();
+                imgui.CloseCurrentPopup();
+            end
+            imgui.SameLine();
+            if (imgui.Button("Cancel", { 120, 0 })) then
+                imgui.CloseCurrentPopup();
+            end
+
+            imgui.EndPopup();
+        end
 
         -- Update global modal state for other modules
         if (DrawProfilePopups()) then
@@ -969,6 +1005,10 @@ end
 function config.OpenResetSettingsPopup()
     showConfig[1] = true;
     showRestoreDefaultsConfirm = true;
+end
+
+function config.ResetConfigWindowPosition()
+    pendingResetConfigWindow = true;
 end
 
 return config;
