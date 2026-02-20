@@ -691,6 +691,9 @@ function CenterAllPositions()
     -- Force re-apply on next frame
     gConfig.appliedPositions = {};
 
+    -- Reset the config window position too
+    configMenu.ResetConfigWindowPosition();
+
     -- Save
     profileManager.SaveProfileSettings(config.currentProfile, gConfig);
     bInternalSave = true;
@@ -1318,6 +1321,13 @@ ashita.events.register('command', 'command_cb', function (e)
         -- ============================================
 
         if (command_args[2] == 'profile') then
+            -- /xiui profile reset positions
+            if (command_args[3] == 'reset' and command_args[4] == 'positions') then
+                CenterAllPositions();
+                print(chat.header(addon.name):append(chat.message('All UI positions reset to center.')));
+                return;
+            end
+
             -- /xiui profile reset
             if (command_args[3] == 'reset') then
                  configMenu.OpenResetSettingsPopup();

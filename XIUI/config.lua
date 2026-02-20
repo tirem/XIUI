@@ -86,6 +86,7 @@ end
 -- State for confirmation dialogs
 local showRestoreDefaultsConfirm = false;
 local showResetPositionsConfirm = false;
+local pendingResetConfigWindow = false;
 
 -- Social icon textures
 local discordTexture = nil;
@@ -643,6 +644,11 @@ config.DrawWindow = function(us)
     PushThemeStyles();
 
     imgui.SetNextWindowSize({ 900, 650 }, ImGuiCond_FirstUseEver);
+    imgui.SetNextWindowPos({ 50, 50 }, ImGuiCond_FirstUseEver);
+    if pendingResetConfigWindow then
+        imgui.SetNextWindowPos({ 50, 50 }, ImGuiCond_Always);
+        pendingResetConfigWindow = false;
+    end
     if(imgui.Begin("XIUI Config - v" .. addon.version, showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
         local windowWidth = imgui.GetContentRegionAvail();
         local sidebarWidth = 180;
@@ -999,6 +1005,10 @@ end
 function config.OpenResetSettingsPopup()
     showConfig[1] = true;
     showRestoreDefaultsConfirm = true;
+end
+
+function config.ResetConfigWindowPosition()
+    pendingResetConfigWindow = true;
 end
 
 return config;
