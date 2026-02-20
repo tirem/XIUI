@@ -41,7 +41,7 @@ M.DURATION = {
 };
 
 -- Queue Limits
-M.MAX_ACTIVE_NOTIFICATIONS = 10;       -- Max active notifications on screen
+M.MAX_ACTIVE_NOTIFICATIONS = 60;       -- Max active notifications on screen (6 groups × 10 per group)
 M.MAX_PINNED_NOTIFICATIONS = 3;        -- Max minimized invites
 
 -- Treasure Pool Constants
@@ -349,25 +349,26 @@ function M.GetMinifyProgress(notification)
     return notification.minifyProgress or 0;
 end
 
--- Get display duration for notification type (from settings)
+-- Get display duration for notification type (uses per-group settings)
 function M.GetDurationForType(notificationType, settings)
-    -- Get the user-configured display duration from gConfig
-    local displayDuration = gConfig and gConfig.notificationsDisplayDuration or 3.0;
-
     if notificationType == M.NOTIFICATION_TYPE.PARTY_INVITE then
         return 999999;  -- Persistent until action
     elseif notificationType == M.NOTIFICATION_TYPE.TRADE_INVITE then
         return 999999;  -- Persistent until action
     end
 
-    -- All other notification types use the configured display duration
-    return displayDuration;
+    return M.GetDurationForTypeFromGroup(notificationType);
 end
 
--- Get max active notifications from config (capped at hard limit)
+-- Get max active notifications by summing per-group maxVisible (capped at hard limit)
 local function GetMaxActiveNotifications()
-    local configMax = gConfig and gConfig.notificationsMaxVisible or 5;
-    return math.min(configMax, M.MAX_ACTIVE_NOTIFICATIONS);
+    local total = 0;
+    local maxGroups = gConfig and gConfig.notificationGroupCount or 2;
+    for groupNum = 1, maxGroups do
+        local groupSettings = M.GetGroupSettings(groupNum);
+        total = total + (groupSettings and groupSettings.maxVisible or 5);
+    end
+    return math.min(total, M.MAX_ACTIVE_NOTIFICATIONS);
 end
 
 -- Create a new notification object
@@ -449,7 +450,8 @@ local function UpdateNotificationState(notification, currentTime)
         local visibleDuration = currentTime - notification.stateStartTime;
         if M.IsPersistentType(notification.type) then
             -- Persistent types (invites) minify after timeout
-            local minifyTimeout = gConfig and gConfig.notificationsInviteMinifyTimeout or 10.0;
+            local groupNum = M.GetGroupForType(notification.type);
+            local minifyTimeout = M.GetInviteMinifyTimeoutForGroup(groupNum);
             if visibleDuration >= minifyTimeout then
                 notification.state = M.STATE.MINIFYING;
                 notification.stateStartTime = currentTime;
