@@ -80,6 +80,8 @@ end
 -- DrawWindow
 -- ============================================
 function pettarget.DrawWindow(settings)
+    local isPreview = showConfig and showConfig[1] and gConfig.petBarPreview;
+
     -- Only show if we have a valid pet (prevents showing when "Always Visible" is on but no pet)
     if data.GetPetData() == nil then
         if targetNameText then targetNameText:set_visible(false); end
@@ -89,51 +91,65 @@ function pettarget.DrawWindow(settings)
         return;
     end
 
-    -- Only show if pet target tracking is enabled and we have a target
-    if gConfig.petBarShowTarget == false or data.petTargetServerId == nil then
-        if targetNameText then
-            targetNameText:set_visible(false);
-        end
-        if targetHpText then
-            targetHpText:set_visible(false);
-        end
-        if targetDistanceText then
-            targetDistanceText:set_visible(false);
-        end
-        HideBackground();
-        return;
-    end
+    local targetName, targetHp, targetDistance, targetIndex;
 
-    -- Check if pet is targeting itself (e.g., after self-buff like Aerial Armor)
-    local petEntity = data.GetPetEntity();
-    if petEntity and petEntity.ServerId and data.petTargetServerId == petEntity.ServerId then
-        if targetNameText then
-            targetNameText:set_visible(false);
+    if isPreview then
+        targetName = 'Goblin Mugger';
+        targetHp = 72;
+        targetDistance = 6.3;
+        targetIndex = 999;
+    else
+        -- Only show if pet target tracking is enabled and we have a target
+        if gConfig.petBarShowTarget == false or data.petTargetServerId == nil then
+            if targetNameText then
+                targetNameText:set_visible(false);
+            end
+            if targetHpText then
+                targetHpText:set_visible(false);
+            end
+            if targetDistanceText then
+                targetDistanceText:set_visible(false);
+            end
+            HideBackground();
+            return;
         end
-        if targetHpText then
-            targetHpText:set_visible(false);
-        end
-        if targetDistanceText then
-            targetDistanceText:set_visible(false);
-        end
-        HideBackground();
-        return;
-    end
 
-    local targetEnt = data.GetEntityByServerId(data.petTargetServerId);
-    if targetEnt == nil or targetEnt.ActorPointer == 0 or targetEnt.HPPercent <= 0 then
-        if targetNameText then
-            targetNameText:set_visible(false);
+        -- Check if pet is targeting itself (e.g., after self-buff like Aerial Armor)
+        local petEntity = data.GetPetEntity();
+        if petEntity and petEntity.ServerId and data.petTargetServerId == petEntity.ServerId then
+            if targetNameText then
+                targetNameText:set_visible(false);
+            end
+            if targetHpText then
+                targetHpText:set_visible(false);
+            end
+            if targetDistanceText then
+                targetDistanceText:set_visible(false);
+            end
+            HideBackground();
+            return;
         end
-        if targetHpText then
-            targetHpText:set_visible(false);
+
+        local targetEnt = data.GetEntityByServerId(data.petTargetServerId);
+        if targetEnt == nil or targetEnt.ActorPointer == 0 or targetEnt.HPPercent <= 0 then
+            if targetNameText then
+                targetNameText:set_visible(false);
+            end
+            if targetHpText then
+                targetHpText:set_visible(false);
+            end
+            if targetDistanceText then
+                targetDistanceText:set_visible(false);
+            end
+            HideBackground();
+            data.petTargetServerId = nil;
+            return;
         end
-        if targetDistanceText then
-            targetDistanceText:set_visible(false);
-        end
-        HideBackground();
-        data.petTargetServerId = nil;
-        return;
+
+        targetName = targetEnt.Name or 'Unknown';
+        targetHp = targetEnt.HPPercent;
+        targetDistance = math.sqrt(targetEnt.Distance or 0);
+        targetIndex = targetEnt.TargetIndex or 0;
     end
 
     -- Use cached values from main pet bar
@@ -150,13 +166,13 @@ function pettarget.DrawWindow(settings)
     local anchorY = (anchor == 'top' and data.lastMainWindowTop) or data.lastMainWindowBottom;
     if snapEnabled and data.lastMainWindowPosX ~= nil and anchorY ~= nil then
         local snapOffsetX = gConfig.petTargetSnapOffsetX or 0;
-        local snapOffsetY = gConfig.petTargetSnapOffsetY or 4;
+        local snapOffsetY = gConfig.petTargetSnapOffsetY or 16;
         local snapX = data.lastMainWindowPosX + snapOffsetX;
         local snapY = anchorY + snapOffsetY;
         imgui.SetNextWindowPos({snapX, snapY}, ImGuiCond_Always);
     end
 
-    if gConfig.lockPositions or snapEnabled then
+    if (gConfig.lockPositions and not isPreview) or snapEnabled then
         windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
     end
 
@@ -165,11 +181,6 @@ function pettarget.DrawWindow(settings)
         SaveWindowPosition('PetBarTarget');
         local targetWinPosX, targetWinPosY = imgui.GetWindowPos();
         local targetStartX, targetStartY = imgui.GetCursorScreenPos();
-
-        local targetName = targetEnt.Name or 'Unknown';
-        local targetHp = targetEnt.HPPercent;
-        local targetDistance = math.sqrt(targetEnt.Distance or 0);
-        local targetIndex = targetEnt.TargetIndex or 0;
 
         local targetNameFontSize = gConfig.petBarTargetNameFontSize or gConfig.petBarTargetFontSize or settings.vitals_font_settings.font_height;
         local targetHpFontSize = gConfig.petBarTargetHpFontSize or gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
