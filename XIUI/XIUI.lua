@@ -282,7 +282,6 @@ uiModules.Register('hotbar', {
     configKey = 'showhotbar',
     hideOnEventKey = 'hotbarHideDuringEvents',
     hideOnMenuFocusKey = 'hotbarHideOnMenuFocus',
-    skipMenuHideWhenEngaged = true,
     hasSetHidden = true,
 });
 
