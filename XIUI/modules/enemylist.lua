@@ -17,8 +17,14 @@ local lastSavedPosX, lastSavedPosY = nil, nil;
 -- Note: RENDER_FLAG_VISIBLE and RENDER_FLAG_HIDDEN are now imported from helpers.lua
 
 -- Background rendering constants
-local bgAlpha = 0.4;
 local bgRadius = 3;
+
+-- Apply opacity to an ARGB color by replacing its alpha byte
+local function ApplyOpacityToColor(color, opacity)
+	local alphaByte = math.floor((opacity or 1.0) * 255);
+	local rgb = bit.band(color or 0xFFFFFFFF, 0x00FFFFFF);
+	return bit.bor(bit.lshift(alphaByte, 24), rgb);
+end
 
 -- Layout constants
 local windowMargin = 6;  -- Extra margin around window content to prevent clipping
@@ -371,7 +377,12 @@ enemylist.DrawWindow = function(settings)
 					bg.position_y = entryStartY;
 					bg.width = entryWidth;
 					bg.height = entryHeight;
-					bg.color = gConfig.colorCustomization.enemyList.backgroundColor;
+					local bgColor = gConfig.colorCustomization.enemyList.backgroundColor;
+					local bgOpacity = gConfig.enemyListBackgroundOpacity;
+					if (bgOpacity ~= nil and bgOpacity < 1.0) then
+						bgColor = ApplyOpacityToColor(bgColor, bgOpacity);
+					end
+					bg.color = bgColor;
 					bg.visible = true;
 				end
 
@@ -567,8 +578,12 @@ enemylist.DrawWindow = function(settings)
 							targetBg.position_y = targetContainerY;
 							targetBg.width = targetWidth;
 							targetBg.height = targetTotalHeight;
-							-- Semi-transparent black (0.4 alpha * 255 = 102 = 0x66)
-							targetBg.color = 0x66000000;
+							local targetBgColor = gConfig.colorCustomization.enemyList.targetBackgroundColor or gConfig.colorCustomization.enemyList.backgroundColor;
+							local targetBgOpacity = gConfig.enemyListTargetBackgroundOpacity;
+							if (targetBgOpacity ~= nil and targetBgOpacity < 1.0) then
+								targetBgColor = ApplyOpacityToColor(targetBgColor, targetBgOpacity);
+							end
+							targetBg.color = targetBgColor;
 							targetBg.visible = true;
 						end
 
