@@ -289,6 +289,7 @@ function M.createUserSettingsDefaults()
         showEnemyId = false,
         showEnemyIdHex = true,
         targetBarHideDuringEvents = true,
+        targetBarHpColorByType = false,  -- Use different HP bar colors per entity type
         splitTargetOfTarget = false,
         totBarScaleX = 1,
         totBarScaleY = 1,

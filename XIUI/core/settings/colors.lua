@@ -36,6 +36,11 @@ function M.createColorCustomizationDefaults()
             castBarGradient = T{ enabled = true, start = '#ffaa00', stop = '#ffcc44' },
             distanceTextColor = 0xFFFFFFFF,
             castTextColor = 0xFFFFAA00,  -- Orange color for enemy casting
+            -- Per-entity-type HP bar gradients (used when targetBarHpColorByType is enabled)
+            hpGradientPartyPlayer = T{ enabled = true, start = '#3898ce', stop = '#78c4ee' },    -- Blue/teal
+            hpGradientOtherPlayer = T{ enabled = true, start = '#8888cc', stop = '#aaaaee' },    -- Lavender
+            hpGradientNpc = T{ enabled = true, start = '#5aab5a', stop = '#7dcf7d' },            -- Green
+            hpGradientMob = T{ enabled = true, start = '#e26c6c', stop = '#fb9494' },            -- Red-pink (same as default)
             -- Note: HP percent text color is set dynamically based on HP amount
             -- Note: Entity name colors are in shared section
         },
@@ -43,6 +48,11 @@ function M.createColorCustomizationDefaults()
         -- Target of Target Bar
         totBar = T{
             hpGradient = T{ enabled = true, start = '#e16c6c', stop = '#fb9494' },
+            -- Per-entity-type HP bar gradients (used when targetBarHpColorByType is enabled)
+            hpGradientPartyPlayer = T{ enabled = true, start = '#3898ce', stop = '#78c4ee' },
+            hpGradientOtherPlayer = T{ enabled = true, start = '#8888cc', stop = '#aaaaee' },
+            hpGradientNpc = T{ enabled = true, start = '#5aab5a', stop = '#7dcf7d' },
+            hpGradientMob = T{ enabled = true, start = '#e16c6c', stop = '#fb9494' },
         },
 
         -- Subtarget Bar

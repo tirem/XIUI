@@ -64,6 +64,8 @@ local function DrawTargetBarSettingsContent()
             imgui.ShowHelp('Also show HP% for NPCs, players, and other non-monster targets.');
             imgui.Unindent(20);
         end
+        components.DrawCheckbox('Color HP Bar by Target Type', 'targetBarHpColorByType');
+        imgui.ShowHelp('Use different HP bar colors for party members, other players, NPCs, and mobs.\nConfigure colors in the Color Settings tab.');
         components.DrawCheckbox('Show Bookends', 'showTargetBarBookends');
         components.DrawCheckbox('Show Lock On', 'showTargetBarLockOnBorder');
         imgui.ShowHelp('Display the lock icon and colored border when locked on to a target.');
@@ -383,7 +385,14 @@ end
 -- Helper: Draw Target Bar specific color settings (used in tab)
 local function DrawTargetBarColorSettingsContent()
     if components.CollapsingSection('Bar Colors##targetBarColor') then
-        components.DrawGradientPicker("Target HP Bar", gConfig.colorCustomization.targetBar.hpGradient, "Target HP bar color");
+        if gConfig.targetBarHpColorByType then
+            components.DrawGradientPicker("HP Bar: Party Member", gConfig.colorCustomization.targetBar.hpGradientPartyPlayer, "HP bar color when targeting a party/alliance member");
+            components.DrawGradientPicker("HP Bar: Other Player", gConfig.colorCustomization.targetBar.hpGradientOtherPlayer, "HP bar color when targeting a non-party player");
+            components.DrawGradientPicker("HP Bar: NPC", gConfig.colorCustomization.targetBar.hpGradientNpc, "HP bar color when targeting an NPC");
+            components.DrawGradientPicker("HP Bar: Monster", gConfig.colorCustomization.targetBar.hpGradientMob, "HP bar color when targeting a monster");
+        else
+            components.DrawGradientPicker("Target HP Bar", gConfig.colorCustomization.targetBar.hpGradient, "Target HP bar color");
+        end
         if (not HzLimitedMode) then
             components.DrawGradientPicker("Cast Bar", gConfig.colorCustomization.targetBar.castBarGradient, "Enemy cast bar color");
         end
@@ -398,7 +407,14 @@ local function DrawTargetBarColorSettingsContent()
     end
 
     if components.CollapsingSection('Target of Target##targetBarColor') then
-        components.DrawGradientPicker("ToT HP Bar", gConfig.colorCustomization.totBar.hpGradient, "Target of Target HP bar color");
+        if gConfig.targetBarHpColorByType then
+            components.DrawGradientPicker("ToT HP: Party Member", gConfig.colorCustomization.totBar.hpGradientPartyPlayer, "ToT HP bar color for party/alliance members");
+            components.DrawGradientPicker("ToT HP: Other Player", gConfig.colorCustomization.totBar.hpGradientOtherPlayer, "ToT HP bar color for non-party players");
+            components.DrawGradientPicker("ToT HP: NPC", gConfig.colorCustomization.totBar.hpGradientNpc, "ToT HP bar color for NPCs");
+            components.DrawGradientPicker("ToT HP: Monster", gConfig.colorCustomization.totBar.hpGradientMob, "ToT HP bar color for monsters");
+        else
+            components.DrawGradientPicker("ToT HP Bar", gConfig.colorCustomization.totBar.hpGradient, "Target of Target HP bar color");
+        end
         imgui.ShowHelp("ToT name text color is set dynamically based on target type");
     end
 end

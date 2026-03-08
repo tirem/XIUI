@@ -67,6 +67,21 @@ local function IsPet(idx, pEnt)
 	return pEnt and pEnt.PetTargetIndex and pEnt.PetTargetIndex ~= 0 and idx == pEnt.PetTargetIndex;
 end
 
+-- Get HP gradient key based on entity type (for per-type HP bar coloring)
+local function GetEntityHpGradientKey(entity, index)
+	if entity == nil then return 'hpGradientMob'; end
+	local flag = entity.SpawnFlags;
+	if bit.band(flag, SPAWN_FLAG_PLAYER) == SPAWN_FLAG_PLAYER then
+		if IsMemberOfParty(index) then
+			return 'hpGradientPartyPlayer';
+		end
+		return 'hpGradientOtherPlayer';
+	elseif bit.band(flag, SPAWN_FLAG_NPC) == SPAWN_FLAG_NPC then
+		return 'hpGradientNpc';
+	end
+	return 'hpGradientMob';
+end
+
 local _XIUI_DEV_DEBUG_INTERPOLATION = false;
 local _XIUI_DEV_DEBUG_INTERPOLATION_DELAY = 1;
 local _XIUI_DEV_DEBUG_HP_PERCENT_PERSISTENT = 100;
@@ -322,7 +337,12 @@ targetbar.DrawWindow = function(settings)
 			end
 		end
 
-		local targetGradient = GetCustomGradient(gConfig.colorCustomization.targetBar, 'hpGradient') or {'#e26c6c', '#fb9494'};
+		-- Select HP gradient: per-type if enabled, otherwise single gradient
+		local gradientKey = 'hpGradient';
+		if gConfig.targetBarHpColorByType then
+			gradientKey = GetEntityHpGradientKey(targetEntity, targetIndex);
+		end
+		local targetGradient = GetCustomGradient(gConfig.colorCustomization.targetBar, gradientKey) or {'#e26c6c', '#fb9494'};
 		local hpGradientStart = targetGradient[1];
 		local hpGradientEnd = targetGradient[2];
 
@@ -722,7 +742,11 @@ targetbar.DrawWindow = function(settings)
 				local totTextPadding = 8;
 
 				-- Get interpolated HP data for ToT bar using shared helper
-				local totGradient = GetCustomGradient(gConfig.colorCustomization.totBar, 'hpGradient') or {'#e16c6c', '#fb9494'};
+				local totGradientKey = 'hpGradient';
+				if gConfig.targetBarHpColorByType then
+					totGradientKey = GetEntityHpGradientKey(totEntity, totIndex);
+				end
+				local totGradient = GetCustomGradient(gConfig.colorCustomization.totBar, totGradientKey) or {'#e16c6c', '#fb9494'};
 				local totHpPercentData = HpInterpolation.update('tot', totEntity.HPPercent, totIndex, settings, currentTime, totGradient);
 				progressbar.ProgressBar(totHpPercentData, {settings.barWidth / 3, settings.totBarHeight}, {decorate = gConfig.showTargetBarBookends});
 				-- Submit a dummy item to properly extend window bounds after SetCursorScreenPos
@@ -950,7 +974,11 @@ targetbar.DrawWindow = function(settings)
 				local totTextPaddingSplit = 8;
 
 				-- Get interpolated HP data for split ToT bar using shared helper
-				local totGradientSplit = GetCustomGradient(gConfig.colorCustomization.totBar, 'hpGradient') or {'#e16c6c', '#fb9494'};
+				local totGradientKeySplit = 'hpGradient';
+				if gConfig.targetBarHpColorByType then
+					totGradientKeySplit = GetEntityHpGradientKey(totEntity, totIndex);
+				end
+				local totGradientSplit = GetCustomGradient(gConfig.colorCustomization.totBar, totGradientKeySplit) or {'#e16c6c', '#fb9494'};
 				local totHpPercentDataSplit = HpInterpolation.update('tot', totEntity.HPPercent, totIndex, settings, currentTime, totGradientSplit);
 				progressbar.ProgressBar(totHpPercentDataSplit, {settings.totBarWidth, settings.totBarHeightSplit}, {decorate = gConfig.showTargetBarBookends});
 
