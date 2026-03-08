@@ -4,3 +4,6 @@
 [submodule "XIUI/submodules/mobdb"]
 	path = XIUI/submodules/mobdb
 	url = https://github.com/ThornyFFXI/mobdb.git
+[submodule "XIUI/submodules/xiui-icons"]
+	path = XIUI/submodules/xiui-icons
+	url = https://github.com/Vincerno/xiui-icons.git
