@@ -1434,8 +1434,7 @@ function M.DrawSlot(resources, params)
                 if params.onClick then
                     params.onClick();
                 elseif command then
-                    -- Default: execute the command (handles multi-line macros)
-                    actions.ExecuteCommandString(command);
+                    actions.ExecuteCommandString(command, bind and bind.actionType == 'macro');
                 end
             end
         end
