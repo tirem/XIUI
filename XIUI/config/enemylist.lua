@@ -68,19 +68,26 @@ function M.DrawSettings()
         if (gConfig.showEnemyListDebuffs) then
             components.DrawLeftRightAnchorDropdown('Debuff Anchor', gConfig, 'enemyListDebuffsAnchor',
                 'Which side of the enemy entry to anchor debuff icons.');
-            components.DrawSlider('Debuff Offset X', 'enemyListDebuffOffsetX', -100, 200);
+            components.DrawSlider('Debuff Offset X', 'enemyListDebuffOffsetX', -500, 500);
             imgui.ShowHelp('Horizontal offset for debuff icons from the anchor edge.');
-            components.DrawSlider('Debuff Offset Y', 'enemyListDebuffOffsetY', -100, 200);
+            components.DrawSlider('Debuff Offset Y', 'enemyListDebuffOffsetY', -500, 500);
             imgui.ShowHelp('Vertical offset for debuff icons from top of entry.');
             components.DrawSlider('Status Effect Icon Size', 'enemyListIconScale', 0.1, 3.0, '%.1f');
         end
     end
 
+    if components.CollapsingSection('Background##enemyList') then
+        components.DrawSlider('Entry Background Opacity', 'enemyListBackgroundOpacity', 0.0, 1.0, '%.2f');
+        imgui.ShowHelp('Opacity of the background behind each enemy entry. Set to 0 to hide.');
+        components.DrawSlider('Target Background Opacity', 'enemyListTargetBackgroundOpacity', 0.0, 1.0, '%.2f');
+        imgui.ShowHelp('Opacity of the background behind enemy target containers. Set to 0 to hide.');
+    end
+
     if components.CollapsingSection('Enemy Targets##enemyList', false) then
         if (gConfig.showEnemyListTargets) then
-            components.DrawSlider('Target Offset X', 'enemyListTargetOffsetX', -100, 200);
+            components.DrawSlider('Target Offset X', 'enemyListTargetOffsetX', -500, 500);
             imgui.ShowHelp('Horizontal offset for enemy target container from the enemy entry.');
-            components.DrawSlider('Target Offset Y', 'enemyListTargetOffsetY', -100, 100);
+            components.DrawSlider('Target Offset Y', 'enemyListTargetOffsetY', -500, 500);
             imgui.ShowHelp('Vertical offset for enemy target container.');
             components.DrawSlider('Target Width', 'enemyListTargetWidth', 50, 200);
             imgui.ShowHelp('Width of the enemy target container.');
@@ -104,7 +111,8 @@ function M.DrawColorSettings()
     end
 
     if components.CollapsingSection('Background Colors##enemyListColor') then
-        components.DrawTextColorPicker("Background", gConfig.colorCustomization.enemyList, 'backgroundColor', "Background color for list entries");
+        components.DrawTextColorPicker("Entry Background", gConfig.colorCustomization.enemyList, 'backgroundColor', "Background color for enemy list entries");
+        components.DrawTextColorPicker("Target Background", gConfig.colorCustomization.enemyList, 'targetBackgroundColor', "Background color for enemy target containers");
         components.DrawTextColorPicker("Default Border", gConfig.colorCustomization.enemyList, 'borderColor', "Default border color for enemies");
         components.DrawTextColorPicker("Target Border", gConfig.colorCustomization.enemyList, 'targetBorderColor', "Border color for currently targeted enemy");
         components.DrawTextColorPicker("Subtarget Border", gConfig.colorCustomization.enemyList, 'subtargetBorderColor', "Border color for subtargeted enemy");

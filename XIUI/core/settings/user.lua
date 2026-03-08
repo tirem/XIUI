@@ -317,6 +317,9 @@ function M.createUserSettingsDefaults()
         showEnemyListBookends = false,
         showEnemyListBorders = true,
         showEnemyListBordersUseNameColor = false,
+        -- Enemy list background opacity
+        enemyListBackgroundOpacity = 1.0,
+        enemyListTargetBackgroundOpacity = 1.0,
         -- Enemy target container settings
         enemyListTargetOffsetX = 0,
         enemyListTargetOffsetY = 43,
