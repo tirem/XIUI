@@ -71,6 +71,7 @@ function M.createPartyDefaults(overrides)
         castBarScaleY = 0.6,
         castBarOffsetX = 0,
         castBarOffsetY = 0,
+        castBarAnchor = true, -- When true, anchor cast bar to end of spell name (hidden option)
         showBookends = false,
         showTitle = true,
         flashTP = false,

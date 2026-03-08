@@ -259,6 +259,9 @@ local function DrawPartyTabContent(party, partyName)
             imgui.ShowHelp('Replace Name: replaces player name with spell name during cast.\nUse MP Bar: replaces MP bar with cast bar and MP text with spell name.\nUse TP Bar: replaces TP bar with cast bar and TP text with spell name.');
 
             if party.castBarStyle == 'name' then
+                imgui.SameLine();
+                components.DrawPartyCheckbox(party, 'Anchor Cast Bar', 'castBarAnchor');
+                imgui.ShowHelp('When enabled (default), the cast bar is anchored to the end of the spell name. When disabled, the cast bar starts at the same X position as the spell name (use offsets to fine-tune).');
                 imgui.Text('Scale');
                 imgui.PushItemWidth(100);
                 components.DrawPartySlider(party, 'X##castScaleX', 'castBarScaleX', 0.1, 3.0, '%.1f');
