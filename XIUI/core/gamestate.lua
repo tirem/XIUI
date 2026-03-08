@@ -57,6 +57,26 @@ function M.IsMapOpen()
     return string.match(M.GetMenuName(), 'map') ~= nil;
 end
 
+-- Menus that should NOT trigger "hide when menu open" (chat input, combat sub-menus, etc.)
+-- Matched against the short name portion after stripping "menu" prefix and whitespace
+local IGNORED_MENUS = {
+    inline   = true,  -- Chat box / text input
+    playermo = true,  -- Player menu (self-target/engage)
+    chatctrl = true,  -- Chat mode select
+    magselec = true,  -- Magic side menu
+    magic    = true,  -- Magic / Trust menu
+    abiselec = true,  -- Abilities side menu
+    ability  = true,  -- JA, WS, Pet commands
+};
+
+function M.IsMenuOpen()
+    local menuName = M.GetMenuName():gsub('%s+$', '');
+    if menuName == '' then return false; end
+    -- Extract the short name (strip "menu" prefix and internal whitespace)
+    local shortName = menuName:match('^menu%s+(.+)') or menuName;
+    return not IGNORED_MENUS[shortName];
+end
+
 -- Check if Ashita's FontManager has been hidden (e.g., by autohide addon)
 function M.GetFontManagerHidden()
     local fontManager = AshitaCore:GetFontManager();

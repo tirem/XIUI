@@ -271,6 +271,7 @@ local PER_BAR_ONLY_KEYS = {
     slotActions = true,
     jobSpecific = true,
     petAware = true,
+    showPetIndicator = true,
 };
 
 -- ============================================
