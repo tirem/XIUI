@@ -268,8 +268,12 @@ function M.Render(itemInfo, itemType, settings, colors)
         end
 
     elseif itemType == 'mount' then
-        -- Mount: Just show name
-        -- No additional info needed
+        -- Mount: Show name + cooldown
+        if isOnCooldown and itemInfo.maxRecast and itemInfo.maxRecast > 0 then
+            cooldownPercent = 1 - (itemInfo.currentRecast / itemInfo.maxRecast);
+            cooldownPercent = math.clamp(cooldownPercent, 0, 1);
+            cooldownText = formatCooldown(itemInfo.currentRecast);
+        end
     end
 
     -- Set up ImGui window
