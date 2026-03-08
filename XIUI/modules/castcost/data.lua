@@ -271,14 +271,33 @@ function M.GetAbilityInfo(abilityId)
     };
 end
 
+-- Mount recast cooldown is always 60 seconds in FFXI
+local MOUNT_MAX_RECAST = 60;
+
+-- Get mount recast timer via IPlayer (returns remaining seconds, or 0 if ready)
+function M.GetMountRecast()
+    local player = GetPlayerSafe();
+    if player == nil then return 0; end
+
+    local timer = player:GetMountRecast();
+    if timer == nil or timer <= 0 then return 0; end
+
+    -- Convert from 1/60th seconds to seconds (same format as other recasts)
+    return timer / 60;
+end
+
 function M.GetMountInfo(mountId)
     if mountId == nil or mountId < 0 then return nil; end
     local mountName = AshitaCore:GetResourceManager():GetString('mounts.names', mountId);
     if mountName == nil then return nil; end
 
+    local currentRecast = M.GetMountRecast();
+
     return {
         id = mountId,
         name = encoding:ShiftJIS_To_UTF8(mountName, true),
+        currentRecast = currentRecast,
+        maxRecast = MOUNT_MAX_RECAST,
     };
 end
 
