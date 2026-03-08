@@ -825,10 +825,27 @@ local function parseInlineWait(line)
     return line, nil;
 end
 
+--- Check if any line in a macro contains a wait directive
+--- @param lines table Array of command line strings
+--- @return boolean hasWait True if any line has /wait, /pause, /sleep, or <wait N>
+local function macroHasWait(lines)
+    for _, line in ipairs(lines) do
+        if line:match('^/wait%s') or line:match('^/wait$')
+            or line:match('^/pause%s') or line:match('^/pause$')
+            or line:match('^/sleep%s') or line:match('^/sleep$')
+            or line:match('<wait%s*%d') then
+            return true;
+        end
+    end
+    return false;
+end
+
 --- Execute a command string (handles multi-line macros with /wait support)
 --- Splits by newlines and executes each non-empty line in sequence
---- Properly handles /wait, /pause, /sleep by using Ashita's task scheduler
---- Also handles inline <wait #> subcommands at end of command lines
+--- For macros WITHOUT waits: queues all lines synchronously using Macro mode (2)
+--- so the game processes them as a native macro batch with fallthrough behavior.
+--- For macros WITH waits: uses Ashita's task scheduler for proper delay handling.
+--- Also handles inline <wait #> subcommands at end of command lines.
 --- @param commandText string The command text (may contain newlines)
 --- @param isMacro boolean|nil If true, enforces single-macro-at-a-time execution
 --- @return boolean success Whether any command was executed
@@ -857,8 +874,33 @@ function M.ExecuteCommandString(commandText, isMacro)
         myMacroId = activeMacroId;
     end
 
-    -- Recursive function to execute lines with proper /wait handling
-    -- This chains tasks instead of scheduling them all at once
+    -- SYNCHRONOUS FAST PATH: For macros without any wait directives, queue all
+    -- lines in the same frame using mode 2 (Macro). This tells the game engine
+    -- these commands come from the macro subsystem, enabling native fallthrough
+    -- behavior where failed commands (e.g., wrong WS for equipped weapon) are
+    -- skipped and the next line is tried automatically.
+    -- NOTE: The game's macro command stack is LIFO, so we queue in reverse order.
+    if isMacro and not macroHasWait(lines) then
+        local ok, err = pcall(function()
+            local chatManager = AshitaCore:GetChatManager();
+            if chatManager then
+                for i = #lines, 1, -1 do
+                    local trimmed = lines[i]:match('^%s*(.-)%s*$');
+                    if trimmed and trimmed ~= '' then
+                        chatManager:QueueCommand(2, trimmed);
+                    end
+                end
+            end
+        end);
+        if not ok then
+            print('[XIUI] Command execution error: ' .. tostring(err));
+        end
+        return true;
+    end
+
+    -- ASYNC PATH: For macros with wait directives or non-macro commands.
+    -- Recursive function to execute lines with proper /wait handling.
+    -- This chains tasks instead of scheduling them all at once.
     local function executeNextLine(index)
         if index > #lines then
             return;
@@ -893,10 +935,13 @@ function M.ExecuteCommandString(commandText, isMacro)
             local commandToExecute, inlineWait = parseInlineWait(line);
 
             -- PROTECTED command execution
+            -- Use mode 2 (Macro) for macro flows to get native fallthrough,
+            -- mode -1 (AshitaParse) for non-macro single commands
+            local cmdMode = isMacro and 2 or -1;
             local ok, err = pcall(function()
                 local chatManager = AshitaCore:GetChatManager();
                 if chatManager then
-                    chatManager:QueueCommand(-1, commandToExecute);
+                    chatManager:QueueCommand(cmdMode, commandToExecute);
                 end
             end);
 
