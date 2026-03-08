@@ -3,6 +3,8 @@
 * Data-driven module management for initialization, rendering, cleanup, and visibility
 ]]--
 
+local chat = require('chat');
+
 local M = {};
 
 -- Module registry - defines all UI modules and their configuration
@@ -14,6 +16,10 @@ local M = {};
 --   hideOnMenuFocusKey: config key for hiding when game menu is open (optional)
 --   hasSetHidden: whether module has SetHidden function
 local registry = {};
+
+-- Rate-limited per-module error tracking
+local moduleErrorTimes = {};
+local MODULE_ERROR_INTERVAL = 60;
 
 function M.Register(name, config)
     registry[name] = config;
@@ -107,7 +113,14 @@ function M.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive, men
             entry.module.SetHidden(false);
         end
         if entry.module.DrawWindow then
-            entry.module.DrawWindow(gAdjustedSettings[entry.settingsKey]);
+            local ok, err = pcall(entry.module.DrawWindow, gAdjustedSettings[entry.settingsKey]);
+            if not ok then
+                local now = os.time();
+                if not moduleErrorTimes[name] or (now - moduleErrorTimes[name] >= MODULE_ERROR_INTERVAL) then
+                    moduleErrorTimes[name] = now;
+                    print(chat.header('XIUI'):append(chat.error('Module \'' .. name .. '\' error: ' .. tostring(err))));
+                end
+            end
         end
         return true;
     else

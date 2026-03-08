@@ -23,6 +23,12 @@ function M.GetD3D8Device()
     return d3d8dev;
 end
 
+-- Force re-fetch of D3D device on next access.
+-- Call on zone changes to handle potential device resets under Wine/Proton.
+function M.ResetD3D8Device()
+    d3d8dev = nil;
+end
+
 -- ========================================
 -- Safe Memory Access Functions
 -- ========================================
