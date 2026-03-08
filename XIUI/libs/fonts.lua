@@ -3,9 +3,25 @@
 * FontManager, ColorCachedFont, and font helper functions
 ]]--
 
+local chat = require('chat');
 local gdi = require('submodules.gdifonts.include');
 
 local M = {};
+
+-- Wrap gdi:create_object in pcall to prevent crashes from font failures (e.g., missing fonts on Linux/Wine)
+local fontCreateErrorLogged = false;
+local function safeCreateObject(settings)
+    local ok, result = pcall(gdi.create_object, gdi, settings);
+    if ok then
+        return result;
+    end
+    if not fontCreateErrorLogged then
+        fontCreateErrorLogged = true;
+        print(chat.header('XIUI'):append(chat.error('Font creation failed: ' .. tostring(result))));
+        print(chat.header('XIUI'):append(chat.error('If on Linux/Wine, install corefonts and gdiplus via winetricks.')));
+    end
+    return nil;
+end
 
 -- ========================================
 -- Font Registry (for lightweight property updates)
@@ -59,7 +75,7 @@ end
 M.FontManager = {
     -- Create a single font object (registered for batch updates)
     create = function(settings)
-        local fontObj = gdi:create_object(settings);
+        local fontObj = safeCreateObject(settings);
         if fontObj then
             fontObj._registryId = registerFont(fontObj);
         end
@@ -81,7 +97,7 @@ M.FontManager = {
             unregisterFont(fontObj._registryId);
             gdi:destroy_object(fontObj);
         end
-        local newFont = gdi:create_object(settings);
+        local newFont = safeCreateObject(settings);
         if newFont then
             newFont._registryId = registerFont(newFont);
         end
@@ -92,7 +108,7 @@ M.FontManager = {
     createBatch = function(fontSettingsTable)
         local fonts = {};
         for key, settings in pairs(fontSettingsTable) do
-            local fontObj = gdi:create_object(settings);
+            local fontObj = safeCreateObject(settings);
             if fontObj then
                 fontObj._registryId = registerFont(fontObj);
             end

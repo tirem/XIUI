@@ -927,67 +927,81 @@ end);
 * Event Handlers
 ]]--
 
+-- Rate-limited error logging for render errors (avoids chat spam)
+local lastPresentErrorTime = 0;
+local PRESENT_ERROR_INTERVAL = 60; -- seconds between error messages
+
 ashita.events.register('d3d_present', 'present_cb', function ()
     if not bInitialized then return; end
 
-    -- Clear internal save flag (deferred for Ashita 4.3+ async callbacks)
-    if bPendingInternalSaveClear then
-        bInternalSave = false;
-        bPendingInternalSaveClear = false;
-    end
+    local ok, err = pcall(function()
+        -- Clear internal save flag (deferred for Ashita 4.3+ async callbacks)
+        if bPendingInternalSaveClear then
+            bInternalSave = false;
+            bPendingInternalSaveClear = false;
+        end
 
-    -- Process pending profile change outside the render loop
-    if pendingProfileChange then
-        local name = pendingProfileChange;
-        pendingProfileChange = nil;
-        if ChangeProfile(name) then
-            if pendingProfileDeletion then
-                profileManager.DeleteProfile(pendingProfileDeletion);
-                pendingProfileDeletion = nil;
+        -- Process pending profile change outside the render loop
+        if pendingProfileChange then
+            local name = pendingProfileChange;
+            pendingProfileChange = nil;
+            if ChangeProfile(name) then
+                if pendingProfileDeletion then
+                    profileManager.DeleteProfile(pendingProfileDeletion);
+                    pendingProfileDeletion = nil;
+                end
             end
         end
-    end
 
-    -- Process pending visual updates outside the render loop
-    if pendingVisualUpdate then
-        pendingVisualUpdate = false;
-        statusHandler.clear_cache();
-        UpdateUserSettings();
-        uiModules.UpdateVisualsAll(gAdjustedSettings);
-    end
-
-    local eventSystemActive = gameState.GetEventSystemActive();
-    local menuOpen = gameState.IsMenuOpen();
-
-    if not gameState.ShouldHideUI(gConfig.hideDuringEvents, bLoggedIn) then
-        -- Sync treasure pool from memory (authoritative source of truth)
-        -- This ensures we never miss items, even if packets were dropped
-        if gConfig.showNotifications then
-            notifications.SyncTreasurePoolFromMemory();
-            -- Check pending pool items - creates "Treasure Pool" notification if item
-            -- hasn't been awarded (0x00D3) within 200ms of dropping (0x00D2)
-            notifications.CheckPendingPoolNotifications();
+        -- Process pending visual updates outside the render loop
+        if pendingVisualUpdate then
+            pendingVisualUpdate = false;
+            statusHandler.clear_cache();
+            UpdateUserSettings();
+            uiModules.UpdateVisualsAll(gAdjustedSettings);
         end
 
-        -- Render all registered modules
-        for name, _ in pairs(uiModules.GetAll()) do
-            uiModules.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive, menuOpen);
+        local eventSystemActive = gameState.GetEventSystemActive();
+        local menuOpen = gameState.IsMenuOpen();
+
+        if not gameState.ShouldHideUI(gConfig.hideDuringEvents, bLoggedIn) then
+            -- Sync treasure pool from memory (authoritative source of truth)
+            -- This ensures we never miss items, even if packets were dropped
+            if gConfig.showNotifications then
+                notifications.SyncTreasurePoolFromMemory();
+                -- Check pending pool items - creates "Treasure Pool" notification if item
+                -- hasn't been awarded (0x00D3) within 200ms of dropping (0x00D2)
+                notifications.CheckPendingPoolNotifications();
+            end
+
+            -- Render all registered modules
+            for name, _ in pairs(uiModules.GetAll()) do
+                uiModules.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive, menuOpen);
+            end
+
+            configMenu.DrawWindow();
+        else
+            uiModules.HideAll();
         end
 
-        configMenu.DrawWindow();
-    else
-        uiModules.HideAll();
-    end
-
-    -- XIUI DEV ONLY
-    if _XIUI_DEV_HOT_RELOADING_ENABLED then
-        local currentTime = os.time();
-        if not _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME then
-            _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME = currentTime;
+        -- XIUI DEV ONLY
+        if _XIUI_DEV_HOT_RELOADING_ENABLED then
+            local currentTime = os.time();
+            if not _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME then
+                _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME = currentTime;
+            end
+            if currentTime - _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME > _XIUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS then
+                _check_hot_reload();
+                _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME = currentTime;
+            end
         end
-        if currentTime - _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME > _XIUI_DEV_HOT_RELOAD_POLL_TIME_SECONDS then
-            _check_hot_reload();
-            _XIUI_DEV_HOT_RELOAD_LAST_RELOAD_TIME = currentTime;
+    end);
+
+    if not ok then
+        local now = os.time();
+        if now - lastPresentErrorTime >= PRESENT_ERROR_INTERVAL then
+            lastPresentErrorTime = now;
+            print(chat.header(addon.name):append(chat.error('Render error: ' .. tostring(err))));
         end
     end
 end);
@@ -1522,6 +1536,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         TextureManager.clearOnZone();
         MarkPartyCacheDirty();
         ClearEntityCache();
+        ResetD3D8Device();
         bLoggedIn = true;
         -- Initialize hotbar job on zone-in (handles initial login and job change during zone)
         if gConfig.hotbarEnabled then
@@ -1569,6 +1584,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         treasurePool.HandleZonePacket();
         gilTracker.HandleZoneOutPacket(e);  -- Track zone-out/logout for login detection (issue #111)
         TextureManager.clearOnZone();
+        ResetD3D8Device();
         bLoggedIn = false;
         -- Also notify hotbar of zone (clears state)
         if gConfig.hotbarEnabled then

@@ -88,6 +88,7 @@ CURE_SPELLS = fastcastLib.CURE_SPELLS;
 
 -- Memory Accessors (from memory.lua)
 GetD3D8Device = memoryLib.GetD3D8Device;
+ResetD3D8Device = memoryLib.ResetD3D8Device;
 GetPlayerSafe = memoryLib.GetPlayerSafe;
 GetPartySafe = memoryLib.GetPartySafe;
 GetEntitySafe = memoryLib.GetEntitySafe;
