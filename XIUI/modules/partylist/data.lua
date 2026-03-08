@@ -606,11 +606,21 @@ function data.GetMemberInformation(memIdx)
         memberInfo.level = '';
         memberInfo.subjob = '';
         memberInfo.subjoblevel = '';
-        memberInfo.targeted = false;
         memberInfo.serverid = 0;
         memberInfo.buffs = nil;
         memberInfo.sync = false;
         memberInfo.index = nil;
+
+        -- Party cursor subtarget detection works by member index, not entity index,
+        -- so it's valid even for out-of-zone members (e.g. changing party leader)
+        local partyCursorMemberIndex = data.frameCache.partyCursorMemberIndex;
+        if partyCursorMemberIndex ~= nil and partyCursorMemberIndex == memIdx then
+            memberInfo.targeted = true;
+            memberInfo.isSubtargetStyle = true;
+        else
+            memberInfo.targeted = false;
+            memberInfo.isSubtargetStyle = false;
+        end
     end
 
     return memberInfo;
