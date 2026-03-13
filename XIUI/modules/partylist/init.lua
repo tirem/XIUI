@@ -6,7 +6,6 @@
 require('common');
 require('handlers.helpers');
 local ffi = require('ffi');
-local gdi = require('submodules.gdifonts.include');
 local windowBg = require('libs.windowbackground');
 local encoding = require('submodules.gdifonts.encoding');
 local TextureManager = require('libs.texturemanager');
@@ -38,38 +37,6 @@ partyList.Initialize = function(settings)
     data.cachedFontFamily = settings.name_font_settings.font_family or '';
     data.cachedFontFlags = settings.name_font_settings.font_flags or 0;
     data.cachedOutlineWidth = settings.name_font_settings.outline_width or 2;
-
-    -- Initialize font objects
-    for i = 0, data.memberTextCount - 1 do
-        local partyIndex = math.ceil((i + 1) / data.partyMaxSize);
-        local fontSizes = data.getFontSizes(partyIndex);
-
-        local name_font_settings = deep_copy_table(settings.name_font_settings);
-        local hp_font_settings = deep_copy_table(settings.hp_font_settings);
-        local mp_font_settings = deep_copy_table(settings.mp_font_settings);
-        local tp_font_settings = deep_copy_table(settings.tp_font_settings);
-        local distance_font_settings = deep_copy_table(settings.name_font_settings);
-        local zone_font_settings = deep_copy_table(settings.name_font_settings);
-        local job_font_settings = deep_copy_table(settings.name_font_settings);
-
-        name_font_settings.font_height = math.max(fontSizes.name, 6);
-        hp_font_settings.font_height = math.max(fontSizes.hp, 6);
-        mp_font_settings.font_height = math.max(fontSizes.mp, 6);
-        tp_font_settings.font_height = math.max(fontSizes.tp, 6);
-        distance_font_settings.font_height = math.max(fontSizes.distance, 6);
-        distance_font_settings.font_alignment = 2; -- Right-align so text doesn't shift as distance changes
-        zone_font_settings.font_height = math.max(fontSizes.zone, 6);
-        job_font_settings.font_height = math.max(fontSizes.job, 6);
-
-        data.memberText[i] = {};
-        data.memberText[i].name = FontManager.create(name_font_settings);
-        data.memberText[i].hp = FontManager.create(hp_font_settings);
-        data.memberText[i].mp = FontManager.create(mp_font_settings);
-        data.memberText[i].tp = FontManager.create(tp_font_settings);
-        data.memberText[i].distance = FontManager.create(distance_font_settings);
-        data.memberText[i].zone = FontManager.create(zone_font_settings);
-        data.memberText[i].job = FontManager.create(job_font_settings);
-    end
 
     -- Load party titles texture (via TextureManager)
     data.partyTitlesTexture = TextureManager.getFileTexture('PartyList-Titles');
@@ -121,86 +88,17 @@ partyList.UpdateVisuals = function(settings)
     data.partyConfigCacheValid = false;
     data.updatePartyConfigCache();
 
-    -- Clear text caches since font settings may have changed
-    data.memberTextCache = {};
     data.maxTpTextWidthCache = { [1] = nil, [2] = nil, [3] = nil };
+    display.ResetFont();
 
-    -- Check if font settings changed
-    local fontFamilyChanged = false;
-    local fontFlagsChanged = false;
-    local outlineWidthChanged = false;
-
-    if settings.name_font_settings.font_family ~= data.cachedFontFamily then
-        fontFamilyChanged = true;
-        data.cachedFontFamily = settings.name_font_settings.font_family;
-    end
-
-    if settings.name_font_settings.font_flags ~= data.cachedFontFlags then
-        fontFlagsChanged = true;
-        data.cachedFontFlags = settings.name_font_settings.font_flags;
-    end
-
-    if settings.name_font_settings.outline_width ~= data.cachedOutlineWidth then
-        outlineWidthChanged = true;
-        data.cachedOutlineWidth = settings.name_font_settings.outline_width;
-    end
-
-    -- Check which party font sizes changed
-    local sizesChanged = {false, false, false};
+    -- Update cached font sizes
     for partyIndex = 1, 3 do
-        if settings.fontSizes[partyIndex] ~= data.cachedFontSizes[partyIndex] then
-            sizesChanged[partyIndex] = true;
-            data.cachedFontSizes[partyIndex] = settings.fontSizes[partyIndex];
-        end
+        data.cachedFontSizes[partyIndex] = settings.fontSizes[partyIndex];
+        data.calculateRefHeights(partyIndex);
     end
-
-    if fontFamilyChanged or fontFlagsChanged or outlineWidthChanged then
-        sizesChanged = {true, true, true};
-    end
-
-    -- Recreate fonts for affected parties
-    for partyIndex = 1, 3 do
-        if sizesChanged[partyIndex] then
-            local firstMemberIdx = (partyIndex - 1) * data.partyMaxSize;
-            local lastMemberIdx = firstMemberIdx + data.partyMaxSize - 1;
-            local fontSizes = data.getFontSizes(partyIndex);
-
-            for i = firstMemberIdx, lastMemberIdx do
-                if data.memberText[i] then
-                    local name_font_settings = deep_copy_table(settings.name_font_settings);
-                    local hp_font_settings = deep_copy_table(settings.hp_font_settings);
-                    local mp_font_settings = deep_copy_table(settings.mp_font_settings);
-                    local tp_font_settings = deep_copy_table(settings.tp_font_settings);
-                    local distance_font_settings = deep_copy_table(settings.name_font_settings);
-                    local zone_font_settings = deep_copy_table(settings.name_font_settings);
-                    local job_font_settings = deep_copy_table(settings.name_font_settings);
-
-                    name_font_settings.font_height = math.max(fontSizes.name, 6);
-                    hp_font_settings.font_height = math.max(fontSizes.hp, 6);
-                    mp_font_settings.font_height = math.max(fontSizes.mp, 6);
-                    tp_font_settings.font_height = math.max(fontSizes.tp, 6);
-                    distance_font_settings.font_height = math.max(fontSizes.distance, 6);
-                    distance_font_settings.font_alignment = 2; -- Right-align so text doesn't shift as distance changes
-                    zone_font_settings.font_height = math.max(fontSizes.zone, 6);
-                    job_font_settings.font_height = math.max(fontSizes.job, 6);
-
-                    data.memberText[i].name = FontManager.recreate(data.memberText[i].name, name_font_settings);
-                    data.memberText[i].hp = FontManager.recreate(data.memberText[i].hp, hp_font_settings);
-                    data.memberText[i].mp = FontManager.recreate(data.memberText[i].mp, mp_font_settings);
-                    data.memberText[i].tp = FontManager.recreate(data.memberText[i].tp, tp_font_settings);
-                    data.memberText[i].distance = FontManager.recreate(data.memberText[i].distance, distance_font_settings);
-                    data.memberText[i].zone = FontManager.recreate(data.memberText[i].zone, zone_font_settings);
-                    data.memberText[i].job = FontManager.recreate(data.memberText[i].job, job_font_settings);
-
-                    -- Invalidate color cache for this member (forces color to be reapplied)
-                    data.memberTextColorCache[i] = nil;
-                end
-            end
-
-            -- Recalculate reference heights for this party
-            data.calculateRefHeights(partyIndex);
-        end
-    end
+    data.cachedFontFamily = settings.name_font_settings.font_family or '';
+    data.cachedFontFlags = settings.name_font_settings.font_flags or 0;
+    data.cachedOutlineWidth = settings.name_font_settings.outline_width or 2;
 
     -- Update cursor textures (via TextureManager)
     for partyIndex = 1, 3 do
@@ -248,19 +146,6 @@ end
 -- Cleanup
 -- ============================================
 partyList.Cleanup = function()
-    -- Destroy fonts
-    for i = 0, data.memberTextCount - 1 do
-        if data.memberText[i] then
-            FontManager.destroy(data.memberText[i].name);
-            FontManager.destroy(data.memberText[i].hp);
-            FontManager.destroy(data.memberText[i].mp);
-            FontManager.destroy(data.memberText[i].tp);
-            FontManager.destroy(data.memberText[i].distance);
-            FontManager.destroy(data.memberText[i].zone);
-            FontManager.destroy(data.memberText[i].job);
-        end
-    end
-
     -- Destroy background primitives using windowbackground library
     for i = 1, 3 do
         local backgroundPrim = data.partyWindowPrim[i].background;

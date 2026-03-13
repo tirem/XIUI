@@ -14,7 +14,6 @@ local data = {};
 -- Constants
 -- ============================================
 data.partyMaxSize = 6;
-data.memberTextCount = data.partyMaxSize * 3;
 
 -- UV coordinates for partylist titles atlas (4 titles stacked vertically)
 data.titleUVs = {
@@ -44,17 +43,7 @@ data.cursorTextures = T{};
 data.currentCursorName = nil;
 data.partyTargeted = false;
 data.partySubTargeted = false;
-data.memberText = {};
 data.partyTitlesTexture = nil;
-
--- Reference text heights for baseline alignment
-data.referenceTextHeights = {};
-
--- Cache last set colors to avoid expensive SetColor() calls every frame
-data.memberTextColorCache = {};
-
--- Cache last set text to avoid expensive texture regeneration every frame
-data.memberTextCache = {};
 
 -- Cached max TP text width per party (for layout 1 "3000" calculation)
 -- This never changes so we calculate once per party
@@ -626,36 +615,7 @@ function data.GetMemberInformation(memIdx)
     return memberInfo;
 end
 
--- ============================================
--- Text Visibility Helpers
--- ============================================
-
-function data.UpdateTextVisibilityByMember(memIdx, visible)
-    local mt = data.memberText[memIdx];
-    if mt then
-        mt.hp:set_visible(visible);
-        mt.mp:set_visible(visible);
-        mt.tp:set_visible(visible);
-        mt.name:set_visible(visible);
-        mt.distance:set_visible(visible);
-        mt.zone:set_visible(visible);
-        mt.job:set_visible(visible);
-    end
-end
-
 function data.UpdateTextVisibility(visible, partyIndex)
-    if partyIndex == nil then
-        for i = 0, data.memberTextCount - 1 do
-            data.UpdateTextVisibilityByMember(i, visible);
-        end
-    else
-        local firstPlayerIndex = (partyIndex - 1) * data.partyMaxSize;
-        local lastPlayerIndex = firstPlayerIndex + data.partyMaxSize - 1;
-        for i = firstPlayerIndex, lastPlayerIndex do
-            data.UpdateTextVisibilityByMember(i, visible);
-        end
-    end
-
     -- Handle background visibility using windowbackground library
     -- When visible=false, hide backgrounds; when visible=true, backgrounds
     -- will be shown on next windowBg.update() call in DrawPartyWindow
@@ -676,33 +636,12 @@ end
 -- ============================================
 
 function data.calculateRefHeights(partyIndex)
-    local firstMemberIdx = (partyIndex - 1) * data.partyMaxSize;
-    if data.memberText[firstMemberIdx] == nil then return; end
-
+    local fontSizes = data.getFontSizes(partyIndex);
     local refHeights = data.partyRefHeights[partyIndex];
-
-    -- Include all characters used in display modes: numbers, percent, parentheses, slash, space
-    local numericRefString = "0123456789%() /";
-    data.memberText[firstMemberIdx].hp:set_text(numericRefString);
-    local _, hpRefH = data.memberText[firstMemberIdx].hp:get_text_size();
-    refHeights.hpRefHeight = hpRefH;
-    data.memberText[firstMemberIdx].hp:set_text('');
-
-    data.memberText[firstMemberIdx].mp:set_text(numericRefString);
-    local _, mpRefH = data.memberText[firstMemberIdx].mp:get_text_size();
-    refHeights.mpRefHeight = mpRefH;
-    data.memberText[firstMemberIdx].mp:set_text('');
-
-    data.memberText[firstMemberIdx].tp:set_text(numericRefString);
-    local _, tpRefH = data.memberText[firstMemberIdx].tp:get_text_size();
-    refHeights.tpRefHeight = tpRefH;
-    data.memberText[firstMemberIdx].tp:set_text('');
-
-    local textRefString = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-    data.memberText[firstMemberIdx].name:set_text(textRefString);
-    local _, nameRefH = data.memberText[firstMemberIdx].name:get_text_size();
-    refHeights.nameRefHeight = nameRefH;
-    data.memberText[firstMemberIdx].name:set_text('');
+    refHeights.hpRefHeight = fontSizes.hp;
+    refHeights.mpRefHeight = fontSizes.mp;
+    refHeights.tpRefHeight = fontSizes.tp;
+    refHeights.nameRefHeight = fontSizes.name;
 end
 
 -- ============================================
@@ -710,14 +649,11 @@ end
 -- ============================================
 
 function data.Reset()
-    data.memberText = {};
     data.partyWindowPrim = {
         {background = {}},
         {background = {}},
         {background = {}}
     };
-    data.memberTextColorCache = {};
-    data.memberTextCache = {};
     data.maxTpTextWidthCache = { [1] = nil, [2] = nil, [3] = nil };
     data.memberInterpolation = {};
     data.partyCasts = {};
