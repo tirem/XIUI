@@ -675,24 +675,16 @@ function ResetSettings()
     hotbar.ResetPositions();
 end
 
-function CenterAllPositions()
-    local defPos = require('libs.defaultpositions');
-    local sw, sh = defPos.GetScreenSize();
-    local cx = sw / 2;
-    local cy = sh / 2;
-
+function RecoverAllPositions()
     if not gConfig.windowPositions then gConfig.windowPositions = {}; end
 
-    -- Center every known window position
+    -- Move every known window position to top-left corner
     for windowName, _ in pairs(gConfig.windowPositions) do
-        gConfig.windowPositions[windowName] = { x = cx, y = cy };
+        gConfig.windowPositions[windowName] = { x = 20, y = 20 };
     end
 
     -- Force re-apply on next frame
     gConfig.appliedPositions = {};
-
-    -- Reset the config window position too
-    configMenu.ResetConfigWindowPosition();
 
     -- Save
     profileManager.SaveProfileSettings(config.currentProfile, gConfig);
@@ -1337,8 +1329,8 @@ ashita.events.register('command', 'command_cb', function (e)
         if (command_args[2] == 'profile') then
             -- /xiui profile reset positions
             if (command_args[3] == 'reset' and command_args[4] == 'positions') then
-                CenterAllPositions();
-                print(chat.header(addon.name):append(chat.message('All UI positions reset to center.')));
+                RecoverAllPositions();
+                print(chat.header(addon.name):append(chat.message('All UI positions recovered to top-left.')));
                 return;
             end
 

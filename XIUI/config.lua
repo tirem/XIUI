@@ -34,6 +34,10 @@ local config = {};
 -- Track previous config state to detect when config closes
 local wasConfigOpen = false;
 
+-- Track last known config window geometry for smart reposition on open
+local lastConfigPosX, lastConfigPosY = 20, 20;
+local lastConfigSizeW, lastConfigSizeH = 900, 650;
+
 -- Global modal state (accessible by other modules to know when to dim foreground elements)
 _XIUI_MODAL_OPEN = false;
 
@@ -85,7 +89,6 @@ end
 
 -- State for confirmation dialogs
 local showRestoreDefaultsConfirm = false;
-local pendingResetConfigWindow = false;
 
 -- Social icon textures
 local discordTexture = nil;
@@ -633,6 +636,7 @@ config.DrawWindow = function(us)
         gConfig.treasurePoolMiniPreview = false;
         gConfig.treasurePoolFullPreview = false;
     end
+    local configJustOpened = isConfigOpen and not wasConfigOpen;
     wasConfigOpen = isConfigOpen;
 
     -- Early exit if config window isn't shown (atom0s recommendation)
@@ -642,11 +646,29 @@ config.DrawWindow = function(us)
     -- XIUI Theme Colors (dark + gold accent)
     PushThemeStyles();
 
-    imgui.SetNextWindowSize({ 900, 650 }, ImGuiCond_FirstUseEver);
-    imgui.SetNextWindowPos({ 50, 50 }, ImGuiCond_FirstUseEver);
-    if pendingResetConfigWindow then
-        imgui.SetNextWindowPos({ 50, 50 }, ImGuiCond_Always);
-        pendingResetConfigWindow = false;
+    -- Constrain config window to never exceed the game's render resolution.
+    -- Prevents the window from being larger than the screen or lost off-screen on small resolutions.
+    local io = imgui.GetIO();
+    local sw = io.DisplaySize.x;
+    local sh = io.DisplaySize.y;
+    if not sw or sw < 1 then return; end
+    if not sh or sh < 1 then return; end
+    local maxW = math.min(900, sw - 40);
+    local maxH = math.min(650, sh - 40);
+    imgui.SetNextWindowSizeConstraints({ 400, 300 }, { sw, sh });
+    -- On open: only reset size if it exceeds screen, only reset position if any part is off-screen
+    if configJustOpened then
+        local sizeExceeds = lastConfigSizeW > (sw - 40) or lastConfigSizeH > (sh - 40);
+        if sizeExceeds then
+            imgui.SetNextWindowSize({ maxW, maxH }, ImGuiCond_Always);
+        end
+        local offScreen = lastConfigPosX < 0
+            or lastConfigPosY < 0
+            or (lastConfigPosX + lastConfigSizeW) > sw
+            or (lastConfigPosY + lastConfigSizeH) > sh;
+        if offScreen then
+            imgui.SetNextWindowPos({ 20, 20 }, ImGuiCond_Always);
+        end
     end
     if(imgui.Begin("XIUI Config - v" .. addon.version, showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
         local windowWidth = imgui.GetContentRegionAvail();
@@ -942,6 +964,12 @@ config.DrawWindow = function(us)
         imgui.EndChild();
     end
 
+    -- Capture config window geometry while open for smart reposition on next open.
+    -- Two local assignments per frame — negligible cost, but ensures we always have
+    -- current values even on addon unload or profile change without an extra frame.
+    lastConfigPosX, lastConfigPosY = imgui.GetWindowPos();
+    lastConfigSizeW, lastConfigSizeH = imgui.GetWindowSize();
+
     imgui.End();
 
     -- Draw migration wizard if open (after main window so it overlays)
@@ -973,10 +1001,6 @@ end
 function config.OpenResetSettingsPopup()
     showConfig[1] = true;
     showRestoreDefaultsConfirm = true;
-end
-
-function config.ResetConfigWindowPosition()
-    pendingResetConfigWindow = true;
 end
 
 return config;
