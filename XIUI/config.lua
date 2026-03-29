@@ -643,9 +643,6 @@ config.DrawWindow = function(us)
     -- This prevents unnecessary style pushes and imgui.End() calls when window is hidden
     if (not showConfig[1]) then return; end
 
-    -- XIUI Theme Colors (dark + gold accent)
-    PushThemeStyles();
-
     -- Constrain config window to never exceed the game's render resolution.
     -- Prevents the window from being larger than the screen or lost off-screen on small resolutions.
     local io = imgui.GetIO();
@@ -653,6 +650,11 @@ config.DrawWindow = function(us)
     local sh = io.DisplaySize.y;
     if not sw or sw < 1 then return; end
     if not sh or sh < 1 then return; end
+
+    -- XIUI Theme Colors (dark + gold accent)
+    -- Push theme styles AFTER validating DisplaySize to avoid leaking
+    -- style/var pushes on early returns (which corrupt ImGui state).
+    PushThemeStyles();
     local maxW = math.min(900, sw - 40);
     local maxH = math.min(650, sh - 40);
     imgui.SetNextWindowSizeConstraints({ 400, 300 }, { sw, sh });
