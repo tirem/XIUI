@@ -35,7 +35,6 @@
 
 require('common');
 require('handlers.helpers');
-local primitives = require('primitives');
 local windowBg = require('libs.windowbackground');
 local dragdrop = require('libs.dragdrop');
 local imtext = require('libs.imtext');
@@ -130,7 +129,7 @@ function M.Initialize(settings)
         end);
     end
 
-    -- Primitive base data
+    -- Create background primitives for each bar
     local primData = {
         visible = false,
         can_focus = false,
@@ -139,54 +138,13 @@ function M.Initialize(settings)
         height = 100,
     };
 
-    -- Create resources for each bar
     for barIndex = 1, data.NUM_BARS do
-        -- Get per-bar settings
         local barSettings = data.GetBarSettings(barIndex);
         local bgTheme = barSettings.backgroundTheme or '-None-';
         local bgScale = barSettings.bgScale or 1.0;
         local borderScale = barSettings.borderScale or 1.0;
-        local slotCount = data.GetBarSlotCount(barIndex);
 
-        -- 1. Create background primitive (renders at bottom)
         data.bgHandles[barIndex] = windowBg.create(primData, bgTheme, bgScale, borderScale);
-
-        -- 2. Create slot primitives (render above background) - up to MAX_SLOTS_PER_BAR
-        data.slotPrims[barIndex] = {};
-        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-            local prim = primitives.new(primData);
-            prim.visible = false;
-            prim.can_focus = false;
-            data.slotPrims[barIndex][slotIndex] = prim;
-        end
-
-        -- 3. Create icon primitives (render above slot backgrounds)
-        data.iconPrims[barIndex] = {};
-        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-            local prim = primitives.new(primData);
-            prim.visible = false;
-            prim.can_focus = false;
-            data.iconPrims[barIndex][slotIndex] = prim;
-        end
-
-        -- 4. Create cooldown overlay primitives (render above icons)
-        data.cooldownPrims[barIndex] = {};
-        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-            local prim = primitives.new(primData);
-            prim.visible = false;
-            prim.can_focus = false;
-            data.cooldownPrims[barIndex][slotIndex] = prim;
-        end
-
-        -- 5. Create frame overlay primitives (render above cooldown overlays)
-        data.framePrims[barIndex] = {};
-        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-            local prim = primitives.new(primData);
-            prim.visible = false;
-            prim.can_focus = false;
-            data.framePrims[barIndex][slotIndex] = prim;
-        end
-
     end
 
     -- Initialize display layer
@@ -443,45 +401,8 @@ function M.Cleanup()
     macropalette.FlushPendingSave();
 
     for barIndex = 1, data.NUM_BARS do
-        -- Destroy background
         if data.bgHandles[barIndex] then
             windowBg.destroy(data.bgHandles[barIndex]);
-        end
-
-        -- Destroy slot primitives
-        if data.slotPrims[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.slotPrims[barIndex][slotIndex] then
-                    data.slotPrims[barIndex][slotIndex]:destroy();
-                end
-            end
-        end
-
-        -- Destroy icon primitives
-        if data.iconPrims[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.iconPrims[barIndex][slotIndex] then
-                    data.iconPrims[barIndex][slotIndex]:destroy();
-                end
-            end
-        end
-
-        -- Destroy cooldown primitives
-        if data.cooldownPrims[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.cooldownPrims[barIndex][slotIndex] then
-                    data.cooldownPrims[barIndex][slotIndex]:destroy();
-                end
-            end
-        end
-
-        -- Destroy frame primitives
-        if data.framePrims[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.framePrims[barIndex][slotIndex] then
-                    data.framePrims[barIndex][slotIndex]:destroy();
-                end
-            end
         end
     end
 

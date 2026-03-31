@@ -126,12 +126,28 @@ function M.Reset()
 end
 
 --- Measure text width and height at the given font size.
+--- Uses PushFont to measure with the loaded custom font for accurate centering.
 --- @param text string
 --- @param fontSize number|nil Pixel size (nil uses ImGui default)
 --- @return number width, number height
 function M.Measure(text, fontSize)
     if not text or text == '' then return 0, 0; end
     if fontSize then fontSize = fontSize + GDI_SIZE_OFFSET; end
+
+    local font = loadedFont;
+    if font and fontSize then
+        local pushOk = pcall(imgui.PushFont, font);
+        if pushOk then
+            local lineH = imgui.GetTextLineHeight();
+            local w = imgui.CalcTextSize(text);
+            imgui.PopFont();
+            if lineH > 0 then
+                local scale = fontSize / lineH;
+                return w * scale, fontSize;
+            end
+        end
+    end
+
     local defaultHeight = getLineHeight();
     if fontSize and defaultHeight > 0 then
         local scale = fontSize / defaultHeight;

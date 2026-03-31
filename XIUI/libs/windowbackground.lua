@@ -191,7 +191,10 @@ function M.updateBackground(bgHandle, x, y, width, height, options)
 
     -- Handle '-None-' theme
     if theme == '-None-' then
-        bgPrim.visible = false;
+        if bgHandle._cache and bgHandle._cache.bg_vis ~= false then
+            bgPrim.visible = false;
+        end
+        if bgHandle._cache then bgHandle._cache.bg_vis = false; end
         return;
     end
 
@@ -199,24 +202,31 @@ function M.updateBackground(bgHandle, x, y, width, height, options)
     local bgWidth = width + (padding * 2);
     local bgHeight = height + (paddingY * 2);
 
-    -- Update background - set position and size BEFORE visibility
-    -- to avoid a frame where primitive is visible at old position
-    bgPrim.position_x = x - padding;
-    bgPrim.position_y = y - paddingY;
-    bgPrim.width = math.ceil(bgWidth / bgScale);
-    bgPrim.height = math.ceil(bgHeight / bgScale);
-    bgPrim.scale_x = bgScale;
-    bgPrim.scale_y = bgScale;
+    local posX = x - padding;
+    local posY = y - paddingY;
+    local w = math.ceil(bgWidth / bgScale);
+    local h = math.ceil(bgHeight / bgScale);
 
-    -- Apply color (with optional separate opacity)
+    local finalColor;
     if options.bgOpacity ~= nil then
-        bgPrim.color = ApplyOpacityToColor(bgColor, options.bgOpacity);
+        finalColor = ApplyOpacityToColor(bgColor, options.bgOpacity);
     else
-        bgPrim.color = bgColor;
+        finalColor = bgColor;
     end
 
-    -- Set visibility last, after all other properties are set
-    bgPrim.visible = bgPrim.exists;
+    -- Cache-guarded property sets
+    local c = bgHandle._cache;
+    if not c then c = {}; bgHandle._cache = c; end
+
+    if c.bg_px ~= posX then bgPrim.position_x = posX; c.bg_px = posX; end
+    if c.bg_py ~= posY then bgPrim.position_y = posY; c.bg_py = posY; end
+    if c.bg_w ~= w then bgPrim.width = w; c.bg_w = w; end
+    if c.bg_h ~= h then bgPrim.height = h; c.bg_h = h; end
+    if c.bg_sx ~= bgScale then bgPrim.scale_x = bgScale; c.bg_sx = bgScale; end
+    if c.bg_sy ~= bgScale then bgPrim.scale_y = bgScale; c.bg_sy = bgScale; end
+    if c.bg_color ~= finalColor then bgPrim.color = finalColor; c.bg_color = finalColor; end
+    local vis = bgPrim.exists;
+    if c.bg_vis ~= vis then bgPrim.visible = vis; c.bg_vis = vis; end
 end
 
 --[[
@@ -254,7 +264,12 @@ function M.updateBorders(borderHandle, x, y, width, height, options)
     if not isWindowTheme then
         for _, k in ipairs(M.BORDER_KEYS) do
             if borderHandle[k] then
-                borderHandle[k].visible = false;
+                local ckey = k .. '_vis';
+                local c = borderHandle._cache;
+                if not c or c[ckey] ~= false then
+                    borderHandle[k].visible = false;
+                    if c then c[ckey] = false; end
+                end
             end
         end
         return;
@@ -274,51 +289,69 @@ function M.updateBorders(borderHandle, x, y, width, height, options)
         finalColor = borderColor;
     end
 
-    -- Bottom-right corner - set properties before visibility
+    -- Cache-guarded property sets
+    local c = borderHandle._cache;
+    if not c then c = {}; borderHandle._cache = c; end
+
+    -- Bottom-right corner
     local br = borderHandle.br;
-    br.position_x = bgX + bgWidth - math.floor((borderSize * borderScale) - (bgOffset * borderScale));
-    br.position_y = bgY + bgHeight - math.floor((borderSize * borderScale) - (bgOffset * borderScale));
-    br.width = borderSize;
-    br.height = borderSize;
-    br.color = finalColor;
-    br.scale_x = borderScale;
-    br.scale_y = borderScale;
+    local brPosX = bgX + bgWidth - math.floor((borderSize * borderScale) - (bgOffset * borderScale));
+    local brPosY = bgY + bgHeight - math.floor((borderSize * borderScale) - (bgOffset * borderScale));
+    if c.br_px ~= brPosX then br.position_x = brPosX; c.br_px = brPosX; end
+    if c.br_py ~= brPosY then br.position_y = brPosY; c.br_py = brPosY; end
+    if c.br_w ~= borderSize then br.width = borderSize; c.br_w = borderSize; end
+    if c.br_h ~= borderSize then br.height = borderSize; c.br_h = borderSize; end
+    if c.br_color ~= finalColor then br.color = finalColor; c.br_color = finalColor; end
+    if c.br_sx ~= borderScale then br.scale_x = borderScale; c.br_sx = borderScale; end
+    if c.br_sy ~= borderScale then br.scale_y = borderScale; c.br_sy = borderScale; end
 
-    -- Top-right edge (L-shaped from top to br) - set properties before visibility
+    -- Top-right edge (L-shaped from top to br)
     local tr = borderHandle.tr;
-    tr.position_x = br.position_x;
-    tr.position_y = bgY - (bgOffset * borderScale);
-    tr.width = borderSize;
-    tr.height = math.ceil((br.position_y - tr.position_y) / borderScale);
-    tr.color = finalColor;
-    tr.scale_x = borderScale;
-    tr.scale_y = borderScale;
+    local trPosX = brPosX;
+    local trPosY = bgY - (bgOffset * borderScale);
+    local trH = math.ceil((brPosY - trPosY) / borderScale);
+    if c.tr_px ~= trPosX then tr.position_x = trPosX; c.tr_px = trPosX; end
+    if c.tr_py ~= trPosY then tr.position_y = trPosY; c.tr_py = trPosY; end
+    if c.tr_w ~= borderSize then tr.width = borderSize; c.tr_w = borderSize; end
+    if c.tr_h ~= trH then tr.height = trH; c.tr_h = trH; end
+    if c.tr_color ~= finalColor then tr.color = finalColor; c.tr_color = finalColor; end
+    if c.tr_sx ~= borderScale then tr.scale_x = borderScale; c.tr_sx = borderScale; end
+    if c.tr_sy ~= borderScale then tr.scale_y = borderScale; c.tr_sy = borderScale; end
 
-    -- Top-left (L-shaped: top and left edges) - set properties before visibility
+    -- Top-left (L-shaped: top and left edges)
     local tl = borderHandle.tl;
-    tl.position_x = bgX - (bgOffset * borderScale);
-    tl.position_y = bgY - (bgOffset * borderScale);
-    tl.width = math.ceil((tr.position_x - tl.position_x) / borderScale);
-    tl.height =  tr.height;
-    tl.color = finalColor;
-    tl.scale_x = borderScale;
-    tl.scale_y = borderScale;
+    local tlPosX = bgX - (bgOffset * borderScale);
+    local tlPosY = bgY - (bgOffset * borderScale);
+    local tlW = math.ceil((trPosX - tlPosX) / borderScale);
+    if c.tl_px ~= tlPosX then tl.position_x = tlPosX; c.tl_px = tlPosX; end
+    if c.tl_py ~= tlPosY then tl.position_y = tlPosY; c.tl_py = tlPosY; end
+    if c.tl_w ~= tlW then tl.width = tlW; c.tl_w = tlW; end
+    if c.tl_h ~= trH then tl.height = trH; c.tl_h = trH; end
+    if c.tl_color ~= finalColor then tl.color = finalColor; c.tl_color = finalColor; end
+    if c.tl_sx ~= borderScale then tl.scale_x = borderScale; c.tl_sx = borderScale; end
+    if c.tl_sy ~= borderScale then tl.scale_y = borderScale; c.tl_sy = borderScale; end
 
-    -- Bottom-left edge (L-shaped from left to br) - set properties before visibility
+    -- Bottom-left edge (L-shaped from left to br)
     local bl = borderHandle.bl;
-    bl.position_x = tl.position_x;
-    bl.position_y = br.position_y;
-    bl.width = tl.width;
-    bl.height = br.height;
-    bl.color = finalColor;
-    bl.scale_x = borderScale;
-    bl.scale_y = borderScale;
+    local blPosX = tlPosX;
+    local blPosY = brPosY;
+    if c.bl_px ~= blPosX then bl.position_x = blPosX; c.bl_px = blPosX; end
+    if c.bl_py ~= blPosY then bl.position_y = blPosY; c.bl_py = blPosY; end
+    if c.bl_w ~= tlW then bl.width = tlW; c.bl_w = tlW; end
+    if c.bl_h ~= borderSize then bl.height = borderSize; c.bl_h = borderSize; end
+    if c.bl_color ~= finalColor then bl.color = finalColor; c.bl_color = finalColor; end
+    if c.bl_sx ~= borderScale then bl.scale_x = borderScale; c.bl_sx = borderScale; end
+    if c.bl_sy ~= borderScale then bl.scale_y = borderScale; c.bl_sy = borderScale; end
 
-    -- Set visibility last for all borders, after all properties are set
-    br.visible = br.exists;
-    tr.visible = tr.exists;
-    tl.visible = tl.exists;
-    bl.visible = bl.exists;
+    -- Set visibility last for all borders
+    local brVis = br.exists;
+    if c.br_vis ~= brVis then br.visible = brVis; c.br_vis = brVis; end
+    local trVis = tr.exists;
+    if c.tr_vis ~= trVis then tr.visible = trVis; c.tr_vis = trVis; end
+    local tlVis = tl.exists;
+    if c.tl_vis ~= tlVis then tl.visible = tlVis; c.tl_vis = tlVis; end
+    local blVis = bl.exists;
+    if c.bl_vis ~= blVis then bl.visible = blVis; c.bl_vis = blVis; end
 end
 
 --[[
@@ -348,6 +381,7 @@ end
 function M.hideBackground(bgHandle)
     if bgHandle and bgHandle.bg then
         bgHandle.bg.visible = false;
+        if bgHandle._cache then bgHandle._cache.bg_vis = false; end
     end
 end
 
@@ -360,6 +394,11 @@ function M.hideBorders(borderHandle)
         for _, k in ipairs(M.BORDER_KEYS) do
             if borderHandle[k] then
                 borderHandle[k].visible = false;
+            end
+        end
+        if borderHandle._cache then
+            for _, k in ipairs(M.BORDER_KEYS) do
+                borderHandle._cache[k .. '_vis'] = false;
             end
         end
     end
@@ -386,6 +425,7 @@ end
 ]]--
 function M.setBackgroundTheme(bgHandle, themeName, bgScale)
     if not bgHandle or not bgHandle.bg then return; end
+    bgHandle._cache = nil;
 
     -- Always update scale if provided (lightweight operation)
     if bgScale then
@@ -417,6 +457,7 @@ end
 ]]--
 function M.setBordersTheme(borderHandle, themeName, borderScale)
     if not borderHandle then return; end
+    borderHandle._cache = nil;
 
     -- Always update scale if provided (lightweight operation)
     if borderScale then
@@ -460,6 +501,7 @@ end
     @param borderScale number: Optional new border scale
 ]]--
 function M.setTheme(handle, themeName, bgScale, borderScale)
+    handle._cache = nil;
     -- Save old themeName before sub-functions modify it
     -- (setBackgroundTheme updates handle.themeName, which would cause
     -- setBordersTheme's change detection to fail)

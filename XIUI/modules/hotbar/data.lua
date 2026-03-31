@@ -105,22 +105,6 @@ M.ROW_GAP = 6;
 -- Background primitive handles (one per bar)
 M.bgHandles = {};
 
--- Button slot primitives (per bar, per slot)
--- M.slotPrims[barIndex][slotIndex] = primitive
-M.slotPrims = {};
-
--- Icon primitives (per bar, per slot)
--- Renders action icons as primitives instead of ImGui
-M.iconPrims = {};
-
--- Cooldown overlay primitives (per bar, per slot)
--- Dark overlay shown when action is on cooldown
-M.cooldownPrims = {};
-
--- Frame overlay primitives (per bar, per slot)
--- Decorative frame rendered above icons
-M.framePrims = {};
-
 -- ============================================
 -- Job State
 -- ============================================
@@ -1097,10 +1081,6 @@ end
 function M.Cleanup()
     M.Clear();
     M.bgHandles = {};
-    M.slotPrims = {};
-    M.iconPrims = {};
-    M.cooldownPrims = {};
-    M.framePrims = {};
 end
 
 return M;

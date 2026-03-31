@@ -301,69 +301,52 @@ end
 -- Cached asset path
 local assetsPath = nil;
 
--- Per-slot cache to avoid redundant updates
--- Structure: slotCache[slotPrim] = { texturePath, iconPath, keybindText, keybindFontSize, keybindFontColor, timerText, ... }
-local slotCache = {};
-
--- Reverse lookup: maps 'barIndex:slotIndex' or 'comboMode:slotIndex' to slotPrim
--- Used for targeted cache invalidation
-local slotPrimLookup = {};
-
 -- Reusable result table for DrawSlot to avoid GC pressure
--- (Creating tables per-slot per-frame causes ~7200 allocations/sec)
 local drawSlotResult = { isHovered = false, command = nil };
 
--- Get or create cache entry for a slot (keyed by slotPrim for uniqueness)
-local function GetSlotCache(slotPrim)
-    if not slotPrim then return nil; end
-    if not slotCache[slotPrim] then
-        slotCache[slotPrim] = {};
+-- Reusable position/UV tables for AddImage (avoids per-call table allocations)
+local imgP1 = {0, 0};
+local imgP2 = {0, 0};
+local UV0 = {0, 0};
+local UV1 = {1, 1};
+
+-- Texture cache: keeps texture tables alive (prevents GC release of D3D textures)
+-- and stores the derived uint32 pointer for fast AddImage calls.
+-- Entry: { tex = textureTable, ptr = uint32Number } or false (load failed)
+local texturePtrCache = {};
+
+local function GetCachedTexturePtr(filePath)
+    if not filePath then return nil; end
+    local cached = texturePtrCache[filePath];
+    if cached then return cached.ptr; end
+    if cached == false then return nil; end
+    local tex = textures:LoadTextureFromPath(filePath);
+    if tex and tex.image then
+        local ptr = tonumber(ffi.cast("uint32_t", tex.image));
+        if ptr and ptr ~= 0 then
+            texturePtrCache[filePath] = { tex = tex, ptr = ptr };
+            return ptr;
+        end
     end
-    return slotCache[slotPrim];
+    texturePtrCache[filePath] = false;
+    return nil;
 end
 
--- Register a slot prim with its identifier for targeted invalidation
--- key: 'barIndex:slotIndex' for hotbar, 'comboMode:slotIndex' for crossbar
-function M.RegisterSlotPrim(key, slotPrim)
-    if key and slotPrim then
-        slotPrimLookup[key] = slotPrim;
-    end
-end
+-- No-op: slot invalidation was used for D3D primitive caching, ImGui draws are stateless
+function M.InvalidateSlotByKey(key) end
 
--- Invalidate cache for a slot by key (used for targeted updates)
--- key: 'barIndex:slotIndex' for hotbar, 'comboMode:slotIndex' for crossbar
-function M.InvalidateSlotByKey(key)
-    local slotPrim = slotPrimLookup[key];
-    if slotPrim and slotCache[slotPrim] then
-        slotCache[slotPrim] = nil;
-    end
-end
-
--- Clear cache for a slot
-function M.ClearSlotCache(slotPrim)
-    if slotPrim then
-        slotCache[slotPrim] = nil;
-    end
-end
-
--- Clear all cached state
 function M.ClearAllCache()
-    slotCache = {};
-    slotPrimLookup = {};
     availabilityCache = {};
     mpCostCache = {};
     equipmentCheckCache = {};
     ninjutsuCache = {};
     itemQuantityCache = {};
     ammoStatusCache = {};
+    texturePtrCache = {};
 end
 
--- Clear only slot rendering cache (icons, positions, colors)
--- Does NOT clear availability, MP cost, or item quantity caches
--- OPTIMIZED: Use this for palette changes to avoid unnecessary recalculation cascade
 function M.ClearSlotRenderingCache()
-    slotCache = {};
-    slotPrimLookup = {};
+    texturePtrCache = {};
 end
 
 -- Clear availability cache (call on job change, level sync, etc.)
@@ -551,58 +534,12 @@ end
 
 --[[
     Render a slot with all components and handle all interactions.
-    MUST be called inside an ImGui window context.
+    All rendering uses ImGui draw lists (AddImage for textures, imtext for text).
+    MUST be called inside an ImGui window context for interactions to work.
 
-    @param resources: Table containing primitives for this slot
-        - slotPrim: Slot background primitive
-        - iconPrim: Action icon primitive
-        - framePrim: (optional) Frame overlay primitive
-        Text rendering uses imtext.lua (no GDI font objects needed)
-
-    @param params: Table containing rendering and interaction parameters
-        Position/Size:
-        - x, y: Position in screen coordinates
-        - size: Slot size in pixels
-
-        Action Data:
-        - bind: Action data table (with actionType, action, target, etc.) or nil
-        - icon: Icon texture data (with .image and .path) or nil
-
-        Visual Settings:
-        - slotBgColor: Slot background color (default 0xFFFFFFFF)
-        - keybindText: (optional) Keybind display text (e.g., "1", "C2")
-        - keybindFontSize: (optional) Keybind font size
-        - keybindFontColor: (optional) Keybind font color
-        - showLabel: (optional) Whether to show action label below slot
-        - labelText: (optional) Action label text
-        - labelOffsetX/Y: (optional) Label position offsets
-        - showFrame: (optional) Whether to show decorative frame overlay
-        - showMpCost: (optional) Whether to show MP cost for spells
-        - mpCostFontSize: (optional) MP cost font size
-        - mpCostFontColor: (optional) MP cost font color
-
-        State Modifiers:
-        - dimFactor: Dim multiplier for inactive states (default 1.0)
-        - animOpacity: Animation opacity 0-1 (default 1.0)
-        - isPressed: Whether slot is currently pressed (controller button)
-
-        Skillchain:
-        - skillchainName: (optional) Skillchain name to show highlight for (e.g., 'Light')
-        - skillchainColor: (optional) Highlight color ARGB (default 0xFFD4AA44 gold)
-
-        Interaction Config:
-        - buttonId: Unique ID for ImGui button (required for interactions)
-        - dropZoneId: ID for drop zone registration
-        - dropAccepts: Array of accepted drag types (default {'macro'})
-        - onDrop: Callback(payload) when something is dropped on slot
-        - dragType: Type string for drag operations (e.g., 'macro', 'crossbar_slot')
-        - getDragData: Callback() that returns drag payload data
-        - onClick: Callback() when slot is clicked (executes action)
-        - onRightClick: Callback() when slot is right-clicked (clear slot)
-        - showTooltip: Whether to show tooltip on hover (default true)
-
-    @return table: { isHovered, command }
-    NOTE: Returns a reused table - do NOT cache the return value, read values immediately
+    @param resources: Unused (kept for API compatibility)
+    @param params: Rendering and interaction parameters (position, bind, icon, visual settings, callbacks)
+    @return table: { isHovered, command } (reused - read values immediately, do NOT cache)
 ]]--
 function M.DrawSlot(resources, params)
     local x = params.x;
@@ -623,7 +560,6 @@ function M.DrawSlot(resources, params)
 
     -- Skip rendering if fully transparent
     if animOpacity <= 0.01 then
-        M.HideSlot(resources);
         return result;
     end
 
@@ -634,65 +570,39 @@ function M.DrawSlot(resources, params)
     result.isHovered = isHovered;
 
     -- ========================================
-    -- 1. Slot Background Primitive
+    -- 1. Slot Background (ImGui AddImage)
     -- ========================================
-    local cache = GetSlotCache(resources.slotPrim);
-    if resources.slotPrim then
-        -- Only set texture once (cached)
-        local texturePath = GetAssetsPath() .. 'slot.png';
-        if cache and cache.slotTexturePath ~= texturePath then
-            resources.slotPrim.texture = texturePath;
-            cache.slotTexturePath = texturePath;
-        end
+    local drawList = GetUIDrawList();
+    do
+        local slotTexPtr = GetCachedTexturePtr(GetAssetsPath() .. 'slot.png');
+        if slotTexPtr and drawList then
+            local finalColor = slotBgColor;
+            local hoverDim = (isHovered and not dragdrop.IsDragging()) and 0.8 or 1.0;
+            local totalDim = dimFactor * hoverDim;
 
-        -- Only update position if changed
-        if cache and (cache.slotX ~= x or cache.slotY ~= y) then
-            resources.slotPrim.position_x = x;
-            resources.slotPrim.position_y = y;
-            cache.slotX = x;
-            cache.slotY = y;
-        end
+            if totalDim < 1.0 then
+                local a = bit.rshift(bit.band(slotBgColor, 0xFF000000), 24);
+                local r = math.floor(bit.rshift(bit.band(slotBgColor, 0x00FF0000), 16) * totalDim);
+                local g = math.floor(bit.rshift(bit.band(slotBgColor, 0x0000FF00), 8) * totalDim);
+                local b = math.floor(bit.band(slotBgColor, 0x000000FF) * totalDim);
+                finalColor = bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
+            end
 
-        -- Scale slot texture (40x40 base)
-        local scale = size / 40;
-        if cache and cache.slotScale ~= scale then
-            resources.slotPrim.scale_x = scale;
-            resources.slotPrim.scale_y = scale;
-            cache.slotScale = scale;
-        end
+            local slotOpacity = params.slotOpacity or 1.0;
+            if slotOpacity < 1.0 then
+                local a = math.floor(bit.rshift(bit.band(finalColor, 0xFF000000), 24) * slotOpacity);
+                finalColor = bit.bor(bit.lshift(a, 24), bit.band(finalColor, 0x00FFFFFF));
+            end
 
-        -- Calculate final color with hover darkening and dim factor
-        local finalColor = slotBgColor;
-        local hoverDim = (isHovered and not dragdrop.IsDragging()) and 0.8 or 1.0;
-        local totalDim = dimFactor * hoverDim;
+            if animOpacity < 1.0 then
+                local a = math.floor(bit.rshift(bit.band(finalColor, 0xFF000000), 24) * animOpacity);
+                finalColor = bit.bor(bit.lshift(a, 24), bit.band(finalColor, 0x00FFFFFF));
+            end
 
-        if totalDim < 1.0 then
-            local a = bit.rshift(bit.band(slotBgColor, 0xFF000000), 24);
-            local r = math.floor(bit.rshift(bit.band(slotBgColor, 0x00FF0000), 16) * totalDim);
-            local g = math.floor(bit.rshift(bit.band(slotBgColor, 0x0000FF00), 8) * totalDim);
-            local b = math.floor(bit.band(slotBgColor, 0x000000FF) * totalDim);
-            finalColor = bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
+            imgP1[1] = x; imgP1[2] = y;
+            imgP2[1] = x + size; imgP2[2] = y + size;
+            drawList:AddImage(slotTexPtr, imgP1, imgP2, UV0, UV1, finalColor);
         end
-
-        -- Apply slot opacity setting (before animation opacity)
-        local slotOpacity = params.slotOpacity or 1.0;
-        if slotOpacity < 1.0 then
-            local a = math.floor(bit.rshift(bit.band(finalColor, 0xFF000000), 24) * slotOpacity);
-            finalColor = bit.bor(bit.lshift(a, 24), bit.band(finalColor, 0x00FFFFFF));
-        end
-
-        -- Apply animation opacity to alpha channel
-        if animOpacity < 1.0 then
-            local a = math.floor(bit.rshift(bit.band(finalColor, 0xFF000000), 24) * animOpacity);
-            finalColor = bit.bor(bit.lshift(a, 24), bit.band(finalColor, 0x00FFFFFF));
-        end
-
-        -- Only update color if changed
-        if cache and cache.slotColor ~= finalColor then
-            resources.slotPrim.color = finalColor;
-            cache.slotColor = finalColor;
-        end
-        resources.slotPrim.visible = true;
     end
 
     -- ========================================
@@ -754,175 +664,87 @@ function M.DrawSlot(resources, params)
     end
 
     -- ========================================
-    -- 4. Icon Rendering (Primitive for file-based, ImGui for memory-based)
+    -- 4. Icon Rendering (unified ImGui AddImage path)
     -- ========================================
     local iconRendered = false;
 
-    -- Try primitive rendering first (for icons with file paths like spell icons)
-    if resources.iconPrim then
-        if icon and icon.path then
-            -- Only set texture path if changed (expensive D3D operation)
-            if cache and cache.iconPath ~= icon.path then
-                resources.iconPrim.texture = icon.path;
-                cache.iconPath = icon.path;
-                -- Clear cached dimensions when texture changes
-                cache.iconTexWidth = nil;
-                cache.iconTexHeight = nil;
-            end
+    if icon and icon.image and drawList then
+        local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
+        if iconPtr then
+            local texWidth = icon.width or 40;
+            local texHeight = icon.height or 40;
 
-            -- Read ACTUAL texture dimensions from primitive (cached after first read)
-            local texWidth, texHeight;
-            if cache and cache.iconTexWidth then
-                texWidth = cache.iconTexWidth;
-                texHeight = cache.iconTexHeight;
-            else
-                texWidth = resources.iconPrim.width;
-                texHeight = resources.iconPrim.height;
-                -- Fallback if dimensions not available
-                if not texWidth or texWidth <= 0 then texWidth = 40; end
-                if not texHeight or texHeight <= 0 then texHeight = 40; end
-                if cache then
-                    cache.iconTexWidth = texWidth;
-                    cache.iconTexHeight = texHeight;
-                end
-            end
-
-            -- Calculate scale to fit icon within slot with padding
             local scale = targetIconSize / math.max(texWidth, texHeight);
-
-            -- Calculate actual rendered size after scaling
             local renderedWidth = texWidth * scale;
             local renderedHeight = texHeight * scale;
 
-            -- Center the icon within the slot
             local iconX = x + (size - renderedWidth) / 2;
             local iconY = y + (size - renderedHeight) / 2;
 
-            -- Only update position/scale if changed
-            if cache and (cache.iconX ~= iconX or cache.iconY ~= iconY or cache.iconScale ~= scale) then
-                resources.iconPrim.position_x = iconX;
-                resources.iconPrim.position_y = iconY;
-                resources.iconPrim.scale_x = scale;
-                resources.iconPrim.scale_y = scale;
-                cache.iconX = iconX;
-                cache.iconY = iconY;
-                cache.iconScale = scale;
-            end
-
-            -- Calculate color: unavailable/cooldown/noMP darkening + dim factor + animation opacity
             local colorMult = 1.0;
             local applyGreyTint = false;
             if isUnavailable then
-                colorMult = 0.35;  -- Significantly dimmed when unavailable
-                applyGreyTint = true;  -- Apply grey/desaturated tint
+                colorMult = 0.35;
+                applyGreyTint = true;
             elseif isOnCooldown then
                 colorMult = 0.4;
             elseif notEnoughMp then
-                colorMult = 0.6;  -- Slightly dimmed when not enough MP
+                colorMult = 0.6;
             end
             colorMult = colorMult * dimFactor;
 
-            -- Calculate RGB values
             local r, g, b;
             if applyGreyTint then
-                -- Grey tint for unavailable actions (desaturated)
-                local grey = math.floor(180 * colorMult);  -- Lighter grey base
+                local grey = math.floor(180 * colorMult);
                 r, g, b = grey, grey, grey;
             else
                 local rgb = math.floor(255 * colorMult);
                 r, g, b = rgb, rgb, rgb;
             end
 
-            local alpha = math.floor(255 * animOpacity * (isUnavailable and 0.7 or 1.0));  -- Lower opacity when unavailable
-            local iconColor = bit.bor(
+            local alpha = math.floor(255 * animOpacity * (isUnavailable and 0.7 or 1.0));
+            local tintColor = bit.bor(
                 bit.lshift(alpha, 24),
                 bit.lshift(r, 16),
                 bit.lshift(g, 8),
                 b
             );
 
-            -- Only update color if changed
-            if cache and cache.iconColor ~= iconColor then
-                resources.iconPrim.color = iconColor;
-                cache.iconColor = iconColor;
-            end
-            resources.iconPrim.visible = true;
+            imgP1[1] = iconX; imgP1[2] = iconY;
+            imgP2[1] = iconX + renderedWidth; imgP2[2] = iconY + renderedHeight;
+            drawList:AddImage(iconPtr, imgP1, imgP2, UV0, UV1, tintColor);
             iconRendered = true;
-        else
-            resources.iconPrim.visible = false;
-            if cache then cache.iconPath = nil; end
         end
     end
 
-    -- Fallback to ImGui rendering for icons without paths (item icons loaded from game memory)
-    if not iconRendered and icon and icon.image then
-        local drawList = imgui.GetWindowDrawList();
-        if drawList then
-            local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
-            if iconPtr then
-                -- Get icon dimensions (item icons are typically 32x32)
-                local texWidth = icon.width or 32;
-                local texHeight = icon.height or 32;
+    -- ========================================
+    -- 5. Frame Overlay (rendered above icon, below text)
+    -- ========================================
+    if params.showFrame and animOpacity > 0.01 and drawList then
+        local framePath = nil;
+        if params.customFramePath and params.customFramePath ~= '' then
+            framePath = GetAssetsPath() .. params.customFramePath;
+        else
+            framePath = textures:GetPath('frame');
+        end
 
-                -- Calculate scale to fit icon within slot with padding
-                local scale = targetIconSize / math.max(texWidth, texHeight);
+        if framePath then
+            local frameTexPtr = GetCachedTexturePtr(framePath);
+            if frameTexPtr then
+                local frameAlpha = math.floor(255 * animOpacity);
+                local frameColor = bit.bor(bit.lshift(frameAlpha, 24), 0x00FFFFFF);
 
-                -- Calculate actual rendered size after scaling
-                local renderedWidth = texWidth * scale;
-                local renderedHeight = texHeight * scale;
-
-                -- Center the icon within the slot
-                local iconX = x + (size - renderedWidth) / 2;
-                local iconY = y + (size - renderedHeight) / 2;
-
-                -- Calculate color: unavailable/cooldown/noMP darkening + dim factor + animation opacity
-                local colorMult = 1.0;
-                local applyGreyTint = false;
-                if isUnavailable then
-                    colorMult = 0.35;  -- Significantly dimmed when unavailable
-                    applyGreyTint = true;
-                elseif isOnCooldown then
-                    colorMult = 0.4;
-                elseif notEnoughMp then
-                    colorMult = 0.6;  -- Slightly dimmed when not enough MP
-                end
-                colorMult = colorMult * dimFactor;
-
-                -- Calculate RGB values
-                local r, g, b;
-                if applyGreyTint then
-                    local grey = math.floor(180 * colorMult);
-                    r, g, b = grey, grey, grey;
-                else
-                    local rgb = math.floor(255 * colorMult);
-                    r, g, b = rgb, rgb, rgb;
-                end
-
-                local alpha = math.floor(255 * animOpacity * (isUnavailable and 0.7 or 1.0));
-                local tintColor = bit.bor(
-                    bit.lshift(alpha, 24),
-                    bit.lshift(r, 16),
-                    bit.lshift(g, 8),
-                    b
-                );
-
-                drawList:AddImage(
-                    iconPtr,
-                    {iconX, iconY},
-                    {iconX + renderedWidth, iconY + renderedHeight},
-                    {0, 0}, {1, 1},
-                    tintColor
-                );
-                iconRendered = true;
+                imgP1[1] = x; imgP1[2] = y;
+                imgP2[1] = x + size; imgP2[2] = y + size;
+                drawList:AddImage(frameTexPtr, imgP1, imgP2, UV0, UV1, frameColor);
             end
         end
     end
 
     -- ========================================
-    -- 4b. Abbreviation Text Fallback (when no icon available)
+    -- 6. Abbreviation Text Fallback (when no icon available)
     -- ========================================
-    local textDrawList = GetUIDrawList();
-    if not iconRendered and bind and animOpacity > 0.5 and not recastText and textDrawList then
+    if not iconRendered and bind and animOpacity > 0.5 and not recastText and drawList then
         local abbr = GetActionAbbreviation(bind);
         local colorMult = 1.0;
         if isUnavailable then colorMult = 0.35;
@@ -936,13 +758,13 @@ function M.DrawSlot(resources, params)
         local abbrW = imtext.Measure(abbr, 12);
         local abbrX = x + (size - abbrW) / 2;
         local abbrY = y + size / 2 - 6;
-        imtext.Draw(textDrawList, abbr, abbrX, abbrY, abbrColor, 12);
+        imtext.Draw(drawList, abbr, abbrX, abbrY, abbrColor, 12);
     end
 
     -- ========================================
-    -- 5. Timer Text (cooldown)
+    -- 7. Timer Text (cooldown)
     -- ========================================
-    if recastText and animOpacity > 0.5 and textDrawList then
+    if recastText and animOpacity > 0.5 and drawList then
         local timerFontSize = params.recastTimerFontSize or 11;
         local timerColor = params.recastTimerFontColor or 0xFFFFFFFF;
         local remaining = cooldown.remaining or 0;
@@ -957,13 +779,13 @@ function M.DrawSlot(resources, params)
         local timerW = imtext.Measure(recastText, timerFontSize);
         local timerX = x + (size - timerW) / 2;
         local timerY = y + size / 2 - 6;
-        imtext.Draw(textDrawList, recastText, timerX, timerY, timerColor, timerFontSize);
+        imtext.Draw(drawList, recastText, timerX, timerY, timerColor, timerFontSize);
     end
 
     -- ========================================
-    -- 6. Keybind Text
+    -- 8. Keybind Text
     -- ========================================
-    if params.keybindText and params.keybindText ~= '' and animOpacity > 0.5 and textDrawList then
+    if params.keybindText and params.keybindText ~= '' and animOpacity > 0.5 and drawList then
         local kbFontSize = params.keybindFontSize or 10;
         local kbColor = params.keybindFontColor or 0xFFFFFFFF;
         local kbAnchor = params.keybindAnchor or 'topLeft';
@@ -972,13 +794,13 @@ function M.DrawSlot(resources, params)
             local kbW = imtext.Measure(params.keybindText, kbFontSize);
             kbX = kbX - kbW;
         end
-        imtext.Draw(textDrawList, params.keybindText, kbX, kbY, kbColor, kbFontSize);
+        imtext.DrawSimple(drawList, params.keybindText, kbX, kbY, kbColor, kbFontSize);
     end
 
     -- ========================================
-    -- 7. Label Text (action name below slot)
+    -- 9. Label Text (action name below slot)
     -- ========================================
-    if params.showLabel and params.labelText and params.labelText ~= '' and animOpacity > 0.5 and textDrawList then
+    if params.showLabel and params.labelText and params.labelText ~= '' and animOpacity > 0.5 and drawList then
         local lblFontSize = params.labelFontSize or 10;
         local labelColor = params.labelFontColor or 0xFFFFFFFF;
         if isUnavailable then
@@ -991,16 +813,16 @@ function M.DrawSlot(resources, params)
         local lblW = imtext.Measure(params.labelText, lblFontSize);
         local labelX = x + (size - lblW) / 2 + (params.labelOffsetX or 0);
         local labelY = y + size + 2 + (params.labelOffsetY or 0);
-        imtext.Draw(textDrawList, params.labelText, labelX, labelY, labelColor, lblFontSize);
+        imtext.Draw(drawList, params.labelText, labelX, labelY, labelColor, lblFontSize);
     end
 
     -- ========================================
-    -- 8. MP Cost Text (anchored position)
+    -- 10. MP Cost Text (anchored position)
     -- Shows "X" when action is unavailable, otherwise shows MP cost
     -- ========================================
     do
         local showMpCost = params.showMpCost ~= false;
-        if showMpCost and bind and animOpacity > 0.5 and textDrawList then
+        if showMpCost and bind and animOpacity > 0.5 and drawList then
             local mpAnchor = params.mpCostAnchor or 'topRight';
             local mpFontSize = params.mpCostFontSize or 10;
             local mpX, mpY = GetAnchoredPosition(x, y, size, mpAnchor, params.mpCostOffsetX, params.mpCostOffsetY);
@@ -1012,7 +834,7 @@ function M.DrawSlot(resources, params)
                     local w = imtext.Measure(xText, mpFontSize);
                     mpX = mpX - w;
                 end
-                imtext.Draw(textDrawList, xText, mpX, mpY, xColor, mpFontSize);
+                imtext.DrawSimple(drawList, xText, mpX, mpY, xColor, mpFontSize);
             else
                 local mpCost = mpCostCache[bindKey];
                 if mpCost == nil then
@@ -1029,14 +851,14 @@ function M.DrawSlot(resources, params)
                         local w = imtext.Measure(mpText, mpFontSize);
                         mpX = mpX - w;
                     end
-                    imtext.Draw(textDrawList, mpText, mpX, mpY, mpCostColor, mpFontSize);
+                    imtext.DrawSimple(drawList, mpText, mpX, mpY, mpCostColor, mpFontSize);
                 end
             end
         end
     end
 
     -- ========================================
-    -- 9. Item/Tool Quantity Text (anchored position)
+    -- 11. Item/Tool Quantity Text (anchored position)
     -- Shows quantity for: consumable items, ninjutsu tools
     -- ========================================
     do
@@ -1046,18 +868,7 @@ function M.DrawSlot(resources, params)
 
         if showQuantity and bind and animOpacity > 0.5 then
             if bind.actionType == 'item' then
-                local isEquipment = nil;
-                if bind.itemId then
-                    if cache and cache.isEquipment ~= nil and cache.equipmentCheckItemId == bind.itemId then
-                        isEquipment = cache.isEquipment;
-                    else
-                        isEquipment = IsEquipmentItem(bind.itemId);
-                        if cache then
-                            cache.isEquipment = isEquipment;
-                            cache.equipmentCheckItemId = bind.itemId;
-                        end
-                    end
-                end
+                local isEquipment = bind.itemId and IsEquipmentItem(bind.itemId) or nil;
                 if isEquipment ~= true then
                     quantity = M.GetItemQuantity(bind.itemId, bind.action) or 0;
                     shouldShowQty = true;
@@ -1071,7 +882,7 @@ function M.DrawSlot(resources, params)
             end
         end
 
-        if shouldShowQty and quantity ~= nil and textDrawList then
+        if shouldShowQty and quantity ~= nil and drawList then
             local qtyText = 'x' .. tostring(quantity);
             local qtyFontSize = params.quantityFontSize or 10;
             local qtyColor = quantity == 0 and 0xFFFF4444 or (params.quantityFontColor or 0xFFFFFFFF);
@@ -1081,105 +892,39 @@ function M.DrawSlot(resources, params)
                 local w = imtext.Measure(qtyText, qtyFontSize);
                 qtyX = qtyX - w;
             end
-            imtext.Draw(textDrawList, qtyText, qtyX, qtyY, qtyColor, qtyFontSize);
+            imtext.DrawSimple(drawList, qtyText, qtyX, qtyY, qtyColor, qtyFontSize);
         end
     end
 
     -- ========================================
-    -- 9b. Ammo Status Effect Icon (top-right corner)
+    -- 12. Ammo Status Effect Icon (top-right corner)
     -- Shows status effect icon for ammo that applies debuffs
     -- ========================================
     if bind and bind.actionType == 'item' and bind.itemId and animOpacity > 0.5 then
         local statusId = GetAmmoStatusEffect(bind.itemId);
         if statusId then
             local statusIconPtr = statusHandler.get_icon_from_theme(gConfig.statusIconTheme, statusId);
-            if statusIconPtr then
-                local drawList = imgui.GetWindowDrawList();
-                if drawList then
-                    local iconSize = size * 0.35;
-                    local padding = 2;
-                    local iconX = x + size - iconSize - padding;
-                    local iconY = y + padding;
+            if statusIconPtr and drawList then
+                local iconSize = size * 0.35;
+                local padding = 2;
+                local iconX = x + size - iconSize - padding;
+                local iconY = y + padding;
 
-                    -- Apply animation opacity
-                    local iconAlpha = math.floor(255 * animOpacity);
-                    local iconTint = bit.bor(bit.lshift(iconAlpha, 24), 0x00FFFFFF);
+                local iconAlpha = math.floor(255 * animOpacity);
+                local iconTint = bit.bor(bit.lshift(iconAlpha, 24), 0x00FFFFFF);
 
-                    drawList:AddImage(
-                        statusIconPtr,
-                        {iconX, iconY},
-                        {iconX + iconSize, iconY + iconSize},
-                        {0, 0}, {1, 1},
-                        iconTint
-                    );
-                end
+                imgP1[1] = iconX; imgP1[2] = iconY;
+                imgP2[1] = iconX + iconSize; imgP2[2] = iconY + iconSize;
+                drawList:AddImage(statusIconPtr, imgP1, imgP2, UV0, UV1, iconTint);
             end
         end
     end
 
     -- ========================================
-    -- 10. Frame Overlay (Primitive)
+    -- 13. Hover/Pressed Visual Effects
     -- ========================================
-    if resources.framePrim then
-        if params.showFrame and animOpacity > 0.01 then
-            -- Determine frame texture path: custom path or default
-            local framePath = nil;
-            if params.customFramePath and params.customFramePath ~= '' then
-                -- Custom path: resolve relative to hotbar assets directory
-                framePath = GetAssetsPath() .. params.customFramePath;
-            else
-                -- Default: use cached path from textures module
-                framePath = textures:GetPath('frame');
-            end
-
-            if framePath then
-                -- Only set texture if changed
-                if cache and cache.frameTexturePath ~= framePath then
-                    resources.framePrim.texture = framePath;
-                    cache.frameTexturePath = framePath;
-                end
-
-                -- Position frame over slot
-                if cache and (cache.frameX ~= x or cache.frameY ~= y) then
-                    resources.framePrim.position_x = x;
-                    resources.framePrim.position_y = y;
-                    cache.frameX = x;
-                    cache.frameY = y;
-                end
-
-                -- Scale frame to slot size (frame.png is 40x40 base)
-                local frameScale = size / 40;
-                if cache and cache.frameScale ~= frameScale then
-                    resources.framePrim.scale_x = frameScale;
-                    resources.framePrim.scale_y = frameScale;
-                    cache.frameScale = frameScale;
-                end
-
-                -- Apply animation opacity to frame
-                local frameAlpha = math.floor(255 * animOpacity);
-                local frameColor = bit.bor(bit.lshift(frameAlpha, 24), 0x00FFFFFF);
-                if cache and cache.frameColor ~= frameColor then
-                    resources.framePrim.color = frameColor;
-                    cache.frameColor = frameColor;
-                end
-
-                resources.framePrim.visible = true;
-            else
-                resources.framePrim.visible = false;
-            end
-        else
-            resources.framePrim.visible = false;
-        end
-    end
-
-    -- ========================================
-    -- 11. ImGui: Hover/Pressed Visual Effects
-    -- Use appropriate draw list (behind config when open)
-    -- ========================================
-    local fgDrawList = GetUIDrawList();
-    if fgDrawList and animOpacity > 0.5 then
+    if drawList and animOpacity > 0.5 then
         if isPressed then
-            -- Pressed effect - red if on cooldown, white otherwise
             local pressedTintColor, pressedBorderColor;
             if isOnCooldown then
                 pressedTintColor = imgui.GetColorU32({1.0, 0.2, 0.2, 0.35 * animOpacity});
@@ -1188,25 +933,23 @@ function M.DrawSlot(resources, params)
                 pressedTintColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.25 * animOpacity});
                 pressedBorderColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.5 * animOpacity});
             end
-            fgDrawList:AddRectFilled({x, y}, {x + size, y + size}, pressedTintColor, 4);
-            fgDrawList:AddRect({x, y}, {x + size, y + size}, pressedBorderColor, 4, 0, 2);
+            drawList:AddRectFilled({x, y}, {x + size, y + size}, pressedTintColor, 4);
+            drawList:AddRect({x, y}, {x + size, y + size}, pressedBorderColor, 4, 0, 2);
         elseif isHovered and not dragdrop.IsDragging() then
-            -- Hover effect (mouse)
             local hoverTintColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.15 * animOpacity});
             local hoverBorderColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.10 * animOpacity});
-            fgDrawList:AddRectFilled({x, y}, {x + size, y + size}, hoverTintColor, 2);
-            fgDrawList:AddRect({x, y}, {x + size, y + size}, hoverBorderColor, 2, 0, 1);
+            drawList:AddRectFilled({x, y}, {x + size, y + size}, hoverTintColor, 2);
+            drawList:AddRect({x, y}, {x + size, y + size}, hoverBorderColor, 2, 0, 1);
         end
 
-        -- Skillchain highlight (animated dotted border + icon)
         if params.skillchainName then
-            local scColor = params.skillchainColor or 0xFFD4AA44;  -- Default gold
-            DrawSkillchainHighlight(fgDrawList, x, y, size, params.skillchainName, scColor, animOpacity);
+            local scColor = params.skillchainColor or 0xFFD4AA44;
+            DrawSkillchainHighlight(drawList, x, y, size, params.skillchainName, scColor, animOpacity);
         end
     end
 
     -- ========================================
-    -- 12. Drop Zone Registration
+    -- 14. Drop Zone Registration
     -- ========================================
     if params.dropZoneId and params.onDrop and not IsMovementLockedForDropZone(params.dropZoneId) then
         dragdrop.DropZone(params.dropZoneId, x, y, size, size, {
@@ -1217,7 +960,7 @@ function M.DrawSlot(resources, params)
     end
 
     -- ========================================
-    -- 11. ImGui Interaction Button
+    -- 15. Interaction Button
     -- ========================================
     if params.buttonId then
         imgui.SetCursorScreenPos({x, y});
@@ -1266,7 +1009,7 @@ function M.DrawSlot(resources, params)
     end
 
     -- ========================================
-    -- 12. Tooltip
+    -- 16. Tooltip
     -- ========================================
     local showTooltip = params.showTooltip ~= false;
     if showTooltip and isHovered and bind and not dragdrop.IsDragging() and animOpacity > 0.5 then
@@ -1374,17 +1117,6 @@ function M.DrawTooltip(bind)
 
     imgui.PopStyleVar();
     imgui.PopStyleColor(2);
-end
-
---[[
-    Hide all resources for a slot.
-    Use when slot should not be visible (animation, disabled bar, etc.)
-]]--
-function M.HideSlot(resources)
-    if not resources then return; end
-    if resources.slotPrim then resources.slotPrim.visible = false; end
-    if resources.iconPrim then resources.iconPrim.visible = false; end
-    if resources.framePrim then resources.framePrim.visible = false; end
 end
 
 return M;

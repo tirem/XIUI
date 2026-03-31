@@ -218,8 +218,8 @@ local function GetAssetsPath()
     return assetsPath;
 end
 
--- Pre-allocated reusable tables for DrawSlot (avoids ~144 table allocations per frame)
-local slotResources = { slotPrim = nil, iconPrim = nil, framePrim = nil };
+-- Pre-allocated reusable tables for DrawSlot
+local slotResources = {};
 local slotParams = {};
 local HOTBAR_DROP_ACCEPTS = {'macro', 'slot', 'crossbar_slot'};
 
@@ -252,17 +252,8 @@ end
 
 -- Draw a single hotbar slot using shared renderer
 local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings, animOpacity, skillchainName)
-    -- Update reusable resources table
-    slotResources.slotPrim = data.slotPrims[barIndex] and data.slotPrims[barIndex][slotIndex];
-    slotResources.iconPrim = data.iconPrims[barIndex] and data.iconPrims[barIndex][slotIndex];
-    slotResources.framePrim = data.framePrims[barIndex] and data.framePrims[barIndex][slotIndex];
-
     -- Get icon for this action (cached - only rebuilds when bind changes)
     local icon = GetCachedIcon(barIndex, slotIndex, bind);
-
-    -- Hide cooldown overlay primitive (not used - we tint the icon instead)
-    local cooldownPrim = data.cooldownPrims[barIndex] and data.cooldownPrims[barIndex][slotIndex];
-    if cooldownPrim then cooldownPrim.visible = false; end
 
     -- Check if this slot is currently pressed (keyboard)
     local pressedHotbar = actions.GetPressedHotbar();
@@ -338,24 +329,8 @@ local function DrawBarWindow(barIndex, settings)
 
     -- Check if bar is enabled
     if not barSettings.enabled then
-        -- Hide bar resources
         if data.bgHandles[barIndex] then
             windowBg.hide(data.bgHandles[barIndex]);
-        end
-        -- Hide unused slot, icon, cooldown, and frame primitives
-        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-            if data.slotPrims[barIndex] and data.slotPrims[barIndex][slotIndex] then
-                data.slotPrims[barIndex][slotIndex].visible = false;
-            end
-            if data.iconPrims[barIndex] and data.iconPrims[barIndex][slotIndex] then
-                data.iconPrims[barIndex][slotIndex].visible = false;
-            end
-            if data.cooldownPrims[barIndex] and data.cooldownPrims[barIndex][slotIndex] then
-                data.cooldownPrims[barIndex][slotIndex].visible = false;
-            end
-            if data.framePrims[barIndex] and data.framePrims[barIndex][slotIndex] then
-                data.framePrims[barIndex][slotIndex].visible = false;
-            end
         end
         return;
     end
@@ -386,23 +361,7 @@ local function DrawBarWindow(barIndex, settings)
     -- Get dimensions (now includes layout)
     local barWidth, barHeight, buttonSize, buttonGap, rowGap, layout = GetBarDimensions(barIndex);
 
-    -- Pre-hide any slot primitives/fonts beyond the current slot count
-    -- This prevents orphaned primitives when layout changes (e.g., reducing columns)
     local slotCount = layout.slots;
-    for hiddenSlot = slotCount + 1, data.MAX_SLOTS_PER_BAR do
-        if data.slotPrims[barIndex] and data.slotPrims[barIndex][hiddenSlot] then
-            data.slotPrims[barIndex][hiddenSlot].visible = false;
-        end
-        if data.iconPrims[barIndex] and data.iconPrims[barIndex][hiddenSlot] then
-            data.iconPrims[barIndex][hiddenSlot].visible = false;
-        end
-        if data.cooldownPrims[barIndex] and data.cooldownPrims[barIndex][hiddenSlot] then
-            data.cooldownPrims[barIndex][hiddenSlot].visible = false;
-        end
-        if data.framePrims[barIndex] and data.framePrims[barIndex][hiddenSlot] then
-            data.framePrims[barIndex][hiddenSlot].visible = false;
-        end
-    end
 
     -- Window flags (dummy window for positioning)
     local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
@@ -510,18 +469,8 @@ local function DrawBarWindow(barIndex, settings)
 
                     local bind = data.GetKeybindForSlot(barIndex, slotIndex);
 
-                    -- Hide empty slots if setting enabled and not editing/dragging
                     if hideEmptySlots and not paletteOpen and not keybindEditorOpen and not isDragging and not bind then
-                        -- Hide this slot's primitives and fonts
-                        if data.slotPrims[barIndex] and data.slotPrims[barIndex][slotIndex] then
-                            data.slotPrims[barIndex][slotIndex].visible = false;
-                        end
-                        if data.iconPrims[barIndex] and data.iconPrims[barIndex][slotIndex] then
-                            data.iconPrims[barIndex][slotIndex].visible = false;
-                        end
-                        if data.framePrims[barIndex] and data.framePrims[barIndex][slotIndex] then
-                            data.framePrims[barIndex][slotIndex].visible = false;
-                        end
+                        -- Empty slot: skip rendering (ImGui draws are stateless, nothing to hide)
                     else
                         -- Check for skillchain prediction on weapon skill slots
                         local slotSkillchainName = nil;
@@ -536,8 +485,6 @@ local function DrawBarWindow(barIndex, settings)
             end
         end
 
-        -- NOTE: Hide loop for unused slots already handled at lines 226-245
-        -- (removed duplicate hide loop that was here)
 
         imgui.End();
     end
@@ -653,54 +600,9 @@ function M.DrawWindow(settings)
 end
 
 function M.HideWindow()
-    -- Hide all backgrounds
     for barIndex = 1, data.NUM_BARS do
         if data.bgHandles[barIndex] then
             windowBg.hide(data.bgHandles[barIndex]);
-        end
-    end
-
-    -- Hide slot primitives
-    for barIndex = 1, data.NUM_BARS do
-        if data.slotPrims[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.slotPrims[barIndex][slotIndex] then
-                    data.slotPrims[barIndex][slotIndex].visible = false;
-                end
-            end
-        end
-    end
-
-    -- Hide icon primitives
-    for barIndex = 1, data.NUM_BARS do
-        if data.iconPrims[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.iconPrims[barIndex][slotIndex] then
-                    data.iconPrims[barIndex][slotIndex].visible = false;
-                end
-            end
-        end
-    end
-
-    -- Hide cooldown primitives
-    for barIndex = 1, data.NUM_BARS do
-        if data.cooldownPrims[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.cooldownPrims[barIndex][slotIndex] then
-                    data.cooldownPrims[barIndex][slotIndex].visible = false;
-                end
-            end
-        end
-    end
-
-    -- Hide frame primitives
-    for barIndex = 1, data.NUM_BARS do
-        if data.framePrims[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.framePrims[barIndex][slotIndex] then
-                    data.framePrims[barIndex][slotIndex].visible = false;
-                end
-            end
         end
     end
 end

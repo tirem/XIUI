@@ -1,14 +1,13 @@
 --[[
 * XIUI Crossbar - Display Module
 * Renders crossbar UI with controller-friendly layout
-* Uses primitives for backgrounds, ImGui/imtext for text, ImGui for icons
+* Uses windowBg for background, ImGui/imtext for text and icons
 ]]--
 
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
 local ffi = require('ffi');
-local primitives = require('primitives');
 local windowBg = require('libs.windowbackground');
 local drawing = require('libs.drawing');
 local imtext = require('libs.imtext');
@@ -288,20 +287,6 @@ local state = {
     -- Window background
     bgHandle = nil,
 
-    -- Slot primitives per combo mode
-    -- slotPrims[comboMode][slotIndex] = primitive
-    slotPrims = {},
-
-    -- Icon primitives per combo mode (action icons)
-    -- iconPrims[comboMode][slotIndex] = primitive
-    iconPrims = {},
-
-    -- Center icon primitives per combo mode (in the middle of each diamond)
-    -- centerIconPrims[comboMode][diamondType][iconIndex] = primitive
-    -- diamondType: 'dpad' or 'face'
-    -- iconIndex: 1-4 (the 4 icons in the center mini-diamond)
-    centerIconPrims = {},
-
     -- Window position (updated by ImGui window)
     windowX = 0,
     windowY = 0,
@@ -341,29 +326,6 @@ local state = {
         wasHidden = false,
     },
 };
-
--- ============================================
--- Primitive Creation
--- ============================================
-
--- Base primitive data for creating new primitives
-local basePrimData = {
-    visible = false,
-    can_focus = false,
-    locked = true,
-    width = 48,
-    height = 48,
-};
-
--- Create a primitive using the primitives module
-local function CreatePrimitive(primData)
-    local prim = primitives.new(primData or basePrimData);
-    if prim then
-        prim.visible = false;
-        prim.can_focus = false;
-    end
-    return prim;
-end
 
 -- ============================================
 -- Helper Functions
@@ -640,40 +602,6 @@ function M.Initialize(settings, moduleSettings)
     local primData = moduleSettings and moduleSettings.prim_data or {};
     state.bgHandle = windowBg.create(primData, settings.backgroundTheme, settings.bgScale, settings.borderScale);
 
-    -- Create primitives for each combo mode (including double-tap and shared modes)
-    local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2', 'Shared' };
-
-    for _, comboMode in ipairs(comboModes) do
-        state.slotPrims[comboMode] = {};
-        state.iconPrims[comboMode] = {};
-        state.centerIconPrims[comboMode] = {};
-
-        -- Create slot background primitives and icon primitives
-        for slotIndex = 1, SLOTS_PER_SIDE do
-            -- Slot background primitive
-            local slotPrim = CreatePrimitive(basePrimData);
-            state.slotPrims[comboMode][slotIndex] = slotPrim;
-
-            -- Icon primitive (renders above slot background)
-            local iconPrim = CreatePrimitive(basePrimData);
-            state.iconPrims[comboMode][slotIndex] = iconPrim;
-        end
-
-        -- Create center icon primitives for each diamond (4 icons per diamond)
-        state.centerIconPrims[comboMode]['dpad'] = {};
-        state.centerIconPrims[comboMode]['face'] = {};
-
-        for iconIdx = 1, 4 do
-            -- D-pad center icons
-            local dpadIconPrim = CreatePrimitive(basePrimData);
-            state.centerIconPrims[comboMode]['dpad'][iconIdx] = dpadIconPrim;
-
-            -- Face button center icons
-            local faceIconPrim = CreatePrimitive(basePrimData);
-            state.centerIconPrims[comboMode]['face'][iconIdx] = faceIconPrim;
-        end
-    end
-
     -- Set loaded theme
     state.loadedBgTheme = settings.backgroundTheme;
 
@@ -684,8 +612,8 @@ end
 -- Rendering
 -- ============================================
 
--- Pre-allocated reusable tables for DrawSlot (avoids per-slot table allocations per frame)
-local cbResources = { slotPrim = nil, iconPrim = nil };
+-- Pre-allocated reusable tables for DrawSlot
+local cbResources = {};
 local cbParams = {};
 local CB_DROP_ACCEPTS = {'macro', 'crossbar_slot', 'slot'};
 
@@ -767,10 +695,6 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
 
     -- Get icon for this action (cached - only rebuilds when bind changes)
     local icon = GetCachedCrossbarIcon(comboMode, slotIndex, slotData);
-
-    -- Update reusable resources table
-    cbResources.slotPrim = state.slotPrims[comboMode] and state.slotPrims[comboMode][slotIndex];
-    cbResources.iconPrim = state.iconPrims[comboMode] and state.iconPrims[comboMode][slotIndex];
 
     -- Update reusable params table in-place
     local p = cbParams;
@@ -879,19 +803,6 @@ local function DrawDiamondCenterIconsImGui(diamondType, groupX, groupY, settings
                     {0, 0}, {1, 1},
                     tintColor
                 );
-            end
-        end
-    end
-end
-
--- Legacy primitive-based drawing (kept for compatibility but not used)
-local function DrawDiamondCenterIcons(comboMode, diamondType, groupX, groupY, settings, isActive)
-    -- Hide primitives since we're using ImGui now
-    local centerPrims = state.centerIconPrims[comboMode] and state.centerIconPrims[comboMode][diamondType];
-    if centerPrims then
-        for iconIdx = 1, 4 do
-            if centerPrims[iconIdx] then
-                centerPrims[iconIdx].visible = false;
             end
         end
     end
@@ -1058,10 +969,6 @@ local function DrawLeftSide(mode, groupX, groupY, slotSize, settings, isActive, 
         DrawSlot(mode, slotIndex, slotX, slotY, slotSize, settings, isActive, isPressed, animOpacity, yOffset, slotSkillchainName);
     end
 
-    -- Hide left center icon primitives (legacy)
-    DrawDiamondCenterIcons(mode, 'dpad', groupX, groupY, settings, isActive);
-    DrawDiamondCenterIcons(mode, 'face', groupX, groupY, settings, isActive);
-
     -- Draw center button icons via ImGui (if visible enough)
     if drawList and settings.showButtonIcons and animOpacity > 0.1 then
         local drawY = groupY + yOffset;
@@ -1089,10 +996,6 @@ local function DrawRightSide(mode, groupX, groupY, slotSize, settings, isActive,
         end
         DrawSlot(mode, slotIndex, slotX, slotY, slotSize, settings, isActive, isPressed, animOpacity, yOffset, slotSkillchainName);
     end
-
-    -- Hide right center icon primitives (legacy)
-    DrawDiamondCenterIcons(mode, 'dpad', groupX, groupY, settings, isActive);
-    DrawDiamondCenterIcons(mode, 'face', groupX, groupY, settings, isActive);
 
     -- Draw center button icons via ImGui (if visible enough)
     if drawList and settings.showButtonIcons and animOpacity > 0.1 then
@@ -1285,24 +1188,13 @@ function M.DrawWindow(settings, moduleSettings)
         end
     end
 
-    -- Hide all slot and icon primitives first (we'll show the ones we need)
-    local allModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2', 'Shared' };
-    for _, mode in ipairs(allModes) do
-        for slotIndex = 1, SLOTS_PER_SIDE do
-            local slotPrim = state.slotPrims[mode] and state.slotPrims[mode][slotIndex];
-            if slotPrim then slotPrim.visible = false; end
-            local iconPrim = state.iconPrims[mode] and state.iconPrims[mode][slotIndex];
-            if iconPrim then iconPrim.visible = false; end
-        end
-    end
-
     -- Begin ImGui window - ALL slot rendering happens inside to enable interactions
     if imgui.Begin('Crossbar', true, windowFlags) then
         -- Save position if moved (profile support)
         SaveWindowPosition('Crossbar');
         windowPosX, windowPosY = imgui.GetWindowPos();
 
-        -- Update stored position for primitives
+        -- Update stored position 
         state.windowX = windowPosX;
         state.windowY = windowPosY;
 
@@ -1507,35 +1399,6 @@ function M.SetHidden(hidden)
         end
         -- Note: Don't show bgHandle here - DrawWindow handles showing it after positioning
     end
-
-    -- Only HIDE primitives when hidden=true
-    -- DrawWindow is responsible for showing them at the correct positions
-    -- Setting visible=true here would show them at (0,0) before they're positioned
-    if hidden then
-        local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2', 'Shared' };
-        for _, comboMode in ipairs(comboModes) do
-            for slotIndex = 1, SLOTS_PER_SIDE do
-                local slotPrim = state.slotPrims[comboMode] and state.slotPrims[comboMode][slotIndex];
-                if slotPrim then slotPrim.visible = false; end
-
-                local iconPrim = state.iconPrims[comboMode] and state.iconPrims[comboMode][slotIndex];
-                if iconPrim then iconPrim.visible = false; end
-            end
-
-            -- Hide center icon primitives
-            for _, diamondType in ipairs({'dpad', 'face'}) do
-                local centerPrims = state.centerIconPrims[comboMode] and state.centerIconPrims[comboMode][diamondType];
-                if centerPrims then
-                    for iconIdx = 1, 4 do
-                        if centerPrims[iconIdx] then
-                            centerPrims[iconIdx].visible = false;
-                        end
-                    end
-                end
-            end
-        end
-    end
-    -- When hidden=false, don't do anything - DrawWindow will handle visibility
 end
 
 -- ============================================
@@ -1571,34 +1434,6 @@ function M.Cleanup()
     if state.bgHandle then
         windowBg.destroy(state.bgHandle);
         state.bgHandle = nil;
-    end
-
-    -- Destroy all primitives
-    local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2', 'Shared' };
-    for _, comboMode in ipairs(comboModes) do
-        for slotIndex = 1, SLOTS_PER_SIDE do
-            local slotPrim = state.slotPrims[comboMode] and state.slotPrims[comboMode][slotIndex];
-            if slotPrim then slotPrim:destroy(); end
-
-            local iconPrim = state.iconPrims[comboMode] and state.iconPrims[comboMode][slotIndex];
-            if iconPrim then iconPrim:destroy(); end
-        end
-
-        -- Destroy center icon primitives
-        for _, diamondType in ipairs({'dpad', 'face'}) do
-            local centerPrims = state.centerIconPrims[comboMode] and state.centerIconPrims[comboMode][diamondType];
-            if centerPrims then
-                for iconIdx = 1, 4 do
-                    if centerPrims[iconIdx] then
-                        centerPrims[iconIdx]:destroy();
-                    end
-                end
-            end
-        end
-
-        state.slotPrims[comboMode] = nil;
-        state.iconPrims[comboMode] = nil;
-        state.centerIconPrims[comboMode] = nil;
     end
 
     -- Clear icon cache
