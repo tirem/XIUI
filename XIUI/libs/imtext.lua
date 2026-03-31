@@ -30,6 +30,8 @@ local cachedOutlineCol = nil;
 local lastArgb = nil;
 local lastColU32 = nil;
 
+local pos = {0, 0};
+
 local fontFamilyToFile = {
     tahoma        = { regular = 'tahoma.ttf',     bold = 'tahomabd.ttf' },
     arial         = { regular = 'arial.ttf',       bold = 'arialbd.ttf' },
@@ -55,8 +57,6 @@ end
 local function loadFont(fontFamily, isBold)
     local fontKey = (fontFamily or 'Tahoma') .. (isBold and ':bold' or ':regular');
     if loadAttempted and fontKey == currentFontKey then return; end
-    loadAttempted = true;
-    currentFontKey = fontKey;
 
     local path = resolveFontPath(fontFamily or 'Tahoma', isBold);
     local ok, result = pcall(function()
@@ -64,8 +64,8 @@ local function loadFont(fontFamily, isBold)
     end);
     if ok and result then
         loadedFont = result;
-    else
-        loadedFont = nil;
+        loadAttempted = true;
+        currentFontKey = fontKey;
     end
 end
 
@@ -156,21 +156,30 @@ function M.Draw(drawList, text, x, y, argbColor, fontSize)
     if ow > 0 then
         local outlineCol = getOutlineCol();
         if fontSize and font then
-            drawList:AddText(font, fontSize, {x - ow, y}, outlineCol, text);
-            drawList:AddText(font, fontSize, {x + ow, y}, outlineCol, text);
-            drawList:AddText(font, fontSize, {x, y - ow}, outlineCol, text);
-            drawList:AddText(font, fontSize, {x, y + ow}, outlineCol, text);
+            pos[1] = x - ow; pos[2] = y;
+            drawList:AddText(font, fontSize, pos, outlineCol, text);
+            pos[1] = x + ow;
+            drawList:AddText(font, fontSize, pos, outlineCol, text);
+            pos[1] = x; pos[2] = y - ow;
+            drawList:AddText(font, fontSize, pos, outlineCol, text);
+            pos[2] = y + ow;
+            drawList:AddText(font, fontSize, pos, outlineCol, text);
         else
-            drawList:AddText({x - ow, y}, outlineCol, text);
-            drawList:AddText({x + ow, y}, outlineCol, text);
-            drawList:AddText({x, y - ow}, outlineCol, text);
-            drawList:AddText({x, y + ow}, outlineCol, text);
+            pos[1] = x - ow; pos[2] = y;
+            drawList:AddText(pos, outlineCol, text);
+            pos[1] = x + ow;
+            drawList:AddText(pos, outlineCol, text);
+            pos[1] = x; pos[2] = y - ow;
+            drawList:AddText(pos, outlineCol, text);
+            pos[2] = y + ow;
+            drawList:AddText(pos, outlineCol, text);
         end
     end
+    pos[1] = x; pos[2] = y;
     if fontSize and font then
-        drawList:AddText(font, fontSize, {x, y}, col, text);
+        drawList:AddText(font, fontSize, pos, col, text);
     else
-        drawList:AddText({x, y}, col, text);
+        drawList:AddText(pos, col, text);
     end
 end
 
@@ -186,10 +195,11 @@ function M.DrawSimple(drawList, text, x, y, argbColor, fontSize)
     if fontSize then fontSize = fontSize + GDI_SIZE_OFFSET; end
     local font = M.GetFont();
     local col = argbToU32(argbColor);
+    pos[1] = x; pos[2] = y;
     if fontSize and font then
-        drawList:AddText(font, fontSize, {x, y}, col, text);
+        drawList:AddText(font, fontSize, pos, col, text);
     else
-        drawList:AddText({x, y}, col, text);
+        drawList:AddText(pos, col, text);
     end
 end
 

@@ -35,10 +35,10 @@
 
 require('common');
 require('handlers.helpers');
-local gdi = require('submodules.gdifonts.include');
 local primitives = require('primitives');
 local windowBg = require('libs.windowbackground');
 local dragdrop = require('libs.dragdrop');
+local imtext = require('libs.imtext');
 
 local data = require('modules.hotbar.data');
 local display = require('modules.hotbar.display');
@@ -130,27 +130,6 @@ function M.Initialize(settings)
         end);
     end
 
-    -- Validate font settings
-    local fontSettings = settings and settings.font_settings;
-    local keybindFontSettings = settings and settings.keybind_font_settings;
-    local labelFontSettings = settings and settings.label_font_settings;
-
-    if not fontSettings then
-        print('[XIUI hotbar] Warning: Invalid font settings, using defaults');
-        fontSettings = {
-            font_family = 'Consolas',
-            font_height = 10,
-            font_color = 0xFFFFFFFF,
-            font_flags = 0,
-            outline_color = 0xFF000000,
-            outline_width = 2,
-        };
-    end
-
-    -- Use keybind/label specific settings or fall back to base font settings
-    keybindFontSettings = keybindFontSettings or fontSettings;
-    labelFontSettings = labelFontSettings or fontSettings;
-
     -- Primitive base data
     local primData = {
         visible = false,
@@ -161,8 +140,6 @@ function M.Initialize(settings)
     };
 
     -- Create resources for each bar
-    data.allFonts = {};
-
     for barIndex = 1, data.NUM_BARS do
         -- Get per-bar settings
         local barSettings = data.GetBarSettings(barIndex);
@@ -210,103 +187,7 @@ function M.Initialize(settings)
             data.framePrims[barIndex][slotIndex] = prim;
         end
 
-        -- Get per-bar font sizes
-        local kbFontSize = barSettings.keybindFontSize or 10;
-        local lblFontSize = barSettings.labelFontSize or 10;
-
-        -- 5. Create keybind fonts for each slot - up to MAX_SLOTS_PER_BAR
-        data.keybindFonts[barIndex] = {};
-        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-            local kbSettings = deep_copy_table(keybindFontSettings);
-            kbSettings.font_height = kbFontSize;
-            local font = FontManager.create(kbSettings);
-            font:set_visible(false);
-            data.keybindFonts[barIndex][slotIndex] = font;
-        end
-
-        -- 6. Create label fonts for each slot (centered alignment for labels below slots)
-        data.labelFonts[barIndex] = {};
-        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-            local lblSettings = deep_copy_table(labelFontSettings);
-            lblSettings.font_height = lblFontSize;
-            lblSettings.font_alignment = gdi.Alignment.Center;
-            local font = FontManager.create(lblSettings);
-            font:set_visible(false);
-            data.labelFonts[barIndex][slotIndex] = font;
-        end
-
-        -- 7. Create cooldown timer fonts (centered over slot)
-        local recastTimerFontSize = barSettings.recastTimerFontSize or 11;
-        local recastTimerFontColor = barSettings.recastTimerFontColor or 0xFFFFFFFF;
-        data.timerFonts[barIndex] = {};
-        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-            local timerSettings = deep_copy_table(fontSettings);
-            timerSettings.font_height = recastTimerFontSize;
-            timerSettings.font_alignment = gdi.Alignment.Center;
-            timerSettings.font_color = recastTimerFontColor;
-            timerSettings.outline_color = 0xFF000000;
-            timerSettings.outline_width = 2;
-            local font = FontManager.create(timerSettings);
-            font:set_visible(false);
-            data.timerFonts[barIndex][slotIndex] = font;
-        end
-
-        -- 8. Create MP cost fonts (right-aligned at top-right corner)
-        local mpCostFontSize = barSettings.mpCostFontSize or 10;
-        local mpCostFontColor = barSettings.mpCostFontColor or 0xFFD4FF97;
-        data.mpCostFonts[barIndex] = {};
-        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-            local mpSettings = deep_copy_table(fontSettings);
-            mpSettings.font_height = mpCostFontSize;
-            mpSettings.font_alignment = gdi.Alignment.Right;
-            mpSettings.font_color = mpCostFontColor;
-            mpSettings.outline_color = 0xFF000000;
-            mpSettings.outline_width = 2;
-            local font = FontManager.create(mpSettings);
-            font:set_visible(false);
-            data.mpCostFonts[barIndex][slotIndex] = font;
-        end
-
-        -- 9. Create item quantity fonts (right-aligned at bottom-right corner)
-        local quantityFontSize = barSettings.quantityFontSize or 10;
-        local quantityFontColor = barSettings.quantityFontColor or 0xFFFFFFFF;
-        data.quantityFonts[barIndex] = {};
-        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-            local qtySettings = deep_copy_table(fontSettings);
-            qtySettings.font_height = quantityFontSize;
-            qtySettings.font_alignment = gdi.Alignment.Right;
-            qtySettings.font_color = quantityFontColor;
-            qtySettings.outline_color = 0xFF000000;
-            qtySettings.outline_width = 2;
-            local font = FontManager.create(qtySettings);
-            font:set_visible(false);
-            data.quantityFonts[barIndex][slotIndex] = font;
-        end
-
-        -- 10. Create abbreviation fonts (centered, gold color for icon-less actions)
-        data.abbreviationFonts[barIndex] = {};
-        for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-            local abbrSettings = deep_copy_table(fontSettings);
-            abbrSettings.font_height = 12;
-            abbrSettings.font_alignment = gdi.Alignment.Center;
-            abbrSettings.font_color = 0xFFF4DA97;  -- Gold color
-            abbrSettings.outline_color = 0xFF000000;
-            abbrSettings.outline_width = 2;
-            local font = FontManager.create(abbrSettings);
-            font:set_visible(false);
-            data.abbreviationFonts[barIndex][slotIndex] = font;
-        end
-
-        -- 11. Create hotbar number font
-        local numSettings = deep_copy_table(fontSettings);
-        numSettings.font_height = 12;
-        data.hotbarNumberFonts[barIndex] = FontManager.create(numSettings);
-        data.hotbarNumberFonts[barIndex]:set_visible(false);
     end
-
-    -- Build the flattened font list for batch visibility operations.
-    -- (Must be rebuilt after any recreate() calls, too.)
-    data.RebuildAllFonts();
 
     -- Initialize display layer
     display.Initialize(settings);
@@ -399,64 +280,14 @@ end
 function M.UpdateVisuals(settings)
     if not M.initialized then return; end
 
-    local fontSettings = settings and settings.font_settings;
-    local keybindFontSettings = settings and settings.keybind_font_settings or fontSettings;
-    local labelFontSettings = settings and settings.label_font_settings or fontSettings;
-
-    if not fontSettings then return; end
-
-    -- Recreate fonts for each bar
-    for barIndex = 1, data.NUM_BARS do
-        -- Get per-bar font sizes
-        local barSettings = data.GetBarSettings(barIndex);
-        local kbFontSize = barSettings.keybindFontSize or 10;
-        local lblFontSize = barSettings.labelFontSize or 10;
-
-        -- Keybind fonts
-        if data.keybindFonts[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.keybindFonts[barIndex][slotIndex] then
-                    local kbSettings = deep_copy_table(keybindFontSettings);
-                    kbSettings.font_height = kbFontSize;
-                    data.keybindFonts[barIndex][slotIndex] = FontManager.recreate(
-                        data.keybindFonts[barIndex][slotIndex], kbSettings
-                    );
-                end
-            end
-        end
-
-        -- Label fonts
-        if data.labelFonts[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.labelFonts[barIndex][slotIndex] then
-                    local lblSettings = deep_copy_table(labelFontSettings);
-                    lblSettings.font_height = lblFontSize;
-                    lblSettings.font_alignment = gdi.Alignment.Center;
-                    data.labelFonts[barIndex][slotIndex] = FontManager.recreate(
-                        data.labelFonts[barIndex][slotIndex], lblSettings
-                    );
-                end
-            end
-        end
-
-        -- Hotbar number font
-        if data.hotbarNumberFonts[barIndex] then
-            local numSettings = deep_copy_table(fontSettings);
-            numSettings.font_height = 12;
-            data.hotbarNumberFonts[barIndex] = FontManager.recreate(
-                data.hotbarNumberFonts[barIndex], numSettings
-            );
-        end
-    end
-
-    -- IMPORTANT: recreate() changes object references; rebuild the batch list so hiding works reliably.
-    data.RebuildAllFonts();
-
-    -- Clear slot cache since fonts were recreated (cache tracks font text state)
+    -- Clear slot cache since settings changed
     slotrenderer.ClearAllCache();
 
     -- Update display layer (handles theme changes)
     display.UpdateVisuals(settings);
+
+    -- Reset imtext font cache so new settings take effect
+    imtext.Reset();
 
     -- Apply correct macro bar mode based on setting
     local disableMacroBars = gConfig and gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars or false;
@@ -522,6 +353,8 @@ end
 function M.DrawWindow(settings)
     if not M.initialized then return; end
     if not M.visible then return; end
+
+    imtext.SetConfigFromSettings(settings and settings.font_settings);
 
     -- Update drag/drop state (must be called every frame, before drop zones)
     dragdrop.Update();
@@ -590,7 +423,6 @@ end
 function M.SetHidden(hidden)
     M.visible = not hidden;
     if hidden then
-        data.SetAllFontsVisible(false);
         for barIndex = 1, data.NUM_BARS do
             if data.bgHandles[barIndex] then
                 windowBg.hide(data.bgHandles[barIndex]);
@@ -610,67 +442,7 @@ function M.Cleanup()
     -- Flush any pending slot saves before cleanup
     macropalette.FlushPendingSave();
 
-    -- Destroy fonts for each bar
     for barIndex = 1, data.NUM_BARS do
-        -- Keybind fonts
-        if data.keybindFonts[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.keybindFonts[barIndex][slotIndex] then
-                    FontManager.destroy(data.keybindFonts[barIndex][slotIndex]);
-                end
-            end
-        end
-
-        -- Label fonts
-        if data.labelFonts[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.labelFonts[barIndex][slotIndex] then
-                    FontManager.destroy(data.labelFonts[barIndex][slotIndex]);
-                end
-            end
-        end
-
-        -- Timer fonts
-        if data.timerFonts[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.timerFonts[barIndex][slotIndex] then
-                    FontManager.destroy(data.timerFonts[barIndex][slotIndex]);
-                end
-            end
-        end
-
-        -- MP cost fonts
-        if data.mpCostFonts[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.mpCostFonts[barIndex][slotIndex] then
-                    FontManager.destroy(data.mpCostFonts[barIndex][slotIndex]);
-                end
-            end
-        end
-
-        -- Item quantity fonts
-        if data.quantityFonts[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.quantityFonts[barIndex][slotIndex] then
-                    FontManager.destroy(data.quantityFonts[barIndex][slotIndex]);
-                end
-            end
-        end
-
-        -- Abbreviation fonts
-        if data.abbreviationFonts[barIndex] then
-            for slotIndex = 1, data.MAX_SLOTS_PER_BAR do
-                if data.abbreviationFonts[barIndex][slotIndex] then
-                    FontManager.destroy(data.abbreviationFonts[barIndex][slotIndex]);
-                end
-            end
-        end
-
-        -- Hotbar number font
-        if data.hotbarNumberFonts[barIndex] then
-            FontManager.destroy(data.hotbarNumberFonts[barIndex]);
-        end
-
         -- Destroy background
         if data.bgHandles[barIndex] then
             windowBg.destroy(data.bgHandles[barIndex]);

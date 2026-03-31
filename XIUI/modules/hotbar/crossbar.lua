@@ -1,7 +1,7 @@
 --[[
 * XIUI Crossbar - Display Module
 * Renders crossbar UI with controller-friendly layout
-* Uses primitives for backgrounds, GDI fonts for text, ImGui for icons
+* Uses primitives for backgrounds, ImGui/imtext for text, ImGui for icons
 ]]--
 
 require('common');
@@ -11,8 +11,7 @@ local ffi = require('ffi');
 local primitives = require('primitives');
 local windowBg = require('libs.windowbackground');
 local drawing = require('libs.drawing');
-local fonts = require('libs.fonts');
-local FontManager = fonts.FontManager;
+local imtext = require('libs.imtext');
 local dragdrop = require('libs.dragdrop');
 
 local data = require('modules.hotbar.data');
@@ -297,38 +296,11 @@ local state = {
     -- iconPrims[comboMode][slotIndex] = primitive
     iconPrims = {},
 
-    -- Timer fonts per combo mode (cooldown timers)
-    -- timerFonts[comboMode][slotIndex] = font
-    timerFonts = {},
-
-    -- MP cost fonts per combo mode
-    -- mpCostFonts[comboMode][slotIndex] = font
-    mpCostFonts = {},
-
-    -- Item quantity fonts per combo mode
-    -- quantityFonts[comboMode][slotIndex] = font
-    quantityFonts = {},
-
     -- Center icon primitives per combo mode (in the middle of each diamond)
     -- centerIconPrims[comboMode][diamondType][iconIndex] = primitive
     -- diamondType: 'dpad' or 'face'
     -- iconIndex: 1-4 (the 4 icons in the center mini-diamond)
     centerIconPrims = {},
-
-    -- GDI Fonts per combo mode (for action labels, not keybinds)
-    labelFonts = {},
-
-    -- Abbreviation fonts per combo mode (for actions without icons)
-    abbreviationFonts = {},
-
-    -- Trigger label font (shows current combo mode)
-    triggerLabelFont = nil,
-
-    -- Combo text font (shows L2+R2, R2+L2, etc. in center)
-    comboTextFont = nil,
-
-    -- Palette name font (shows current palette name and index)
-    paletteNameFont = nil,
 
     -- Window position (updated by ImGui window)
     windowX = 0,
@@ -668,20 +640,15 @@ function M.Initialize(settings, moduleSettings)
     local primData = moduleSettings and moduleSettings.prim_data or {};
     state.bgHandle = windowBg.create(primData, settings.backgroundTheme, settings.bgScale, settings.borderScale);
 
-    -- Create primitives and fonts for each combo mode (including double-tap and shared modes)
+    -- Create primitives for each combo mode (including double-tap and shared modes)
     local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2', 'Shared' };
 
     for _, comboMode in ipairs(comboModes) do
         state.slotPrims[comboMode] = {};
         state.iconPrims[comboMode] = {};
-        state.timerFonts[comboMode] = {};
-        state.mpCostFonts[comboMode] = {};
-        state.quantityFonts[comboMode] = {};
         state.centerIconPrims[comboMode] = {};
-        state.labelFonts[comboMode] = {};
-        state.abbreviationFonts[comboMode] = {};
 
-        -- Create slot background primitives, icon primitives, and fonts
+        -- Create slot background primitives and icon primitives
         for slotIndex = 1, SLOTS_PER_SIDE do
             -- Slot background primitive
             local slotPrim = CreatePrimitive(basePrimData);
@@ -690,46 +657,6 @@ function M.Initialize(settings, moduleSettings)
             -- Icon primitive (renders above slot background)
             local iconPrim = CreatePrimitive(basePrimData);
             state.iconPrims[comboMode][slotIndex] = iconPrim;
-
-            -- Timer font for cooldowns (centered)
-            local timerFontSettings = moduleSettings and deep_copy_table(moduleSettings.label_font_settings) or {};
-            timerFontSettings.font_height = settings.recastTimerFontSize or 11;
-            timerFontSettings.font_alignment = 1;  -- Center
-            timerFontSettings.font_color = settings.recastTimerFontColor or 0xFFFFFFFF;
-            timerFontSettings.outline_color = 0xFF000000;
-            timerFontSettings.outline_width = 2;
-            state.timerFonts[comboMode][slotIndex] = FontManager.create(timerFontSettings);
-
-            -- MP cost font (right-aligned, for spell MP cost display)
-            local mpCostFontSettings = moduleSettings and deep_copy_table(moduleSettings.label_font_settings) or {};
-            mpCostFontSettings.font_height = settings.mpCostFontSize or 10;
-            mpCostFontSettings.font_alignment = 2;  -- Right
-            mpCostFontSettings.font_color = settings.mpCostFontColor or 0xFFD4FF97;
-            mpCostFontSettings.outline_color = 0xFF000000;
-            mpCostFontSettings.outline_width = 2;
-            state.mpCostFonts[comboMode][slotIndex] = FontManager.create(mpCostFontSettings);
-
-            -- Item quantity font (right-aligned, for item count display)
-            local quantityFontSettings = moduleSettings and deep_copy_table(moduleSettings.label_font_settings) or {};
-            quantityFontSettings.font_height = settings.quantityFontSize or 10;
-            quantityFontSettings.font_alignment = 2;  -- Right
-            quantityFontSettings.font_color = settings.quantityFontColor or 0xFFFFFFFF;
-            quantityFontSettings.outline_color = 0xFF000000;
-            quantityFontSettings.outline_width = 2;
-            state.quantityFonts[comboMode][slotIndex] = FontManager.create(quantityFontSettings);
-
-            -- Create label font for action names
-            local labelFontSettings = moduleSettings and moduleSettings.label_font_settings or {};
-            state.labelFonts[comboMode][slotIndex] = FontManager.create(labelFontSettings);
-
-            -- Abbreviation font (centered gold text for actions without icons)
-            local abbrSettings = moduleSettings and deep_copy_table(moduleSettings.label_font_settings) or {};
-            abbrSettings.font_height = 12;
-            abbrSettings.font_alignment = 1;  -- Center
-            abbrSettings.font_color = 0xFFF4DA97;  -- Gold
-            abbrSettings.outline_color = 0xFF000000;
-            abbrSettings.outline_width = 2;
-            state.abbreviationFonts[comboMode][slotIndex] = FontManager.create(abbrSettings);
         end
 
         -- Create center icon primitives for each diamond (4 icons per diamond)
@@ -747,24 +674,6 @@ function M.Initialize(settings, moduleSettings)
         end
     end
 
-    -- Create trigger label font
-    local triggerFontSettings = moduleSettings and moduleSettings.trigger_font_settings or {};
-    state.triggerLabelFont = FontManager.create(triggerFontSettings);
-
-    -- Create combo text font (uses global font settings with center alignment)
-    local comboTextFontSettings = moduleSettings and deep_copy_table(moduleSettings.trigger_font_settings) or {};
-    comboTextFontSettings.font_height = settings.comboTextFontSize or 10;
-    comboTextFontSettings.font_color = 0xFFFFFFFF;  -- White
-    comboTextFontSettings.font_alignment = 1;  -- Center alignment
-    state.comboTextFont = FontManager.create(comboTextFontSettings);
-
-    -- Create palette name font (center aligned, below crossbar)
-    local paletteNameFontSettings = moduleSettings and deep_copy_table(moduleSettings.trigger_font_settings) or {};
-    paletteNameFontSettings.font_height = settings.paletteNameFontSize or 10;
-    paletteNameFontSettings.font_color = 0xFFFFFFFF;
-    paletteNameFontSettings.font_alignment = 1;  -- Center alignment
-    state.paletteNameFont = FontManager.create(paletteNameFontSettings);
-
     -- Set loaded theme
     state.loadedBgTheme = settings.backgroundTheme;
 
@@ -775,6 +684,64 @@ end
 -- Rendering
 -- ============================================
 
+-- Pre-allocated reusable tables for DrawSlot (avoids per-slot table allocations per frame)
+local cbResources = { slotPrim = nil, iconPrim = nil };
+local cbParams = {};
+local CB_DROP_ACCEPTS = {'macro', 'crossbar_slot', 'slot'};
+
+-- Pre-created closures and string IDs per combo/slot (avoids closure + string allocations per frame)
+local cbInteraction = {};
+
+local function GetCbInteraction(comboMode, slotIndex)
+    if not cbInteraction[comboMode] then
+        cbInteraction[comboMode] = {};
+    end
+    if not cbInteraction[comboMode][slotIndex] then
+        cbInteraction[comboMode][slotIndex] = {
+            buttonId = string.format('##crossbar_%s_%d', comboMode, slotIndex),
+            dropZoneId = string.format('crossbar_%s_%d', comboMode, slotIndex),
+            pressKey = comboMode .. '_' .. slotIndex,
+            onDrop = function(payload)
+                if payload.type == 'macro' then
+                    if payload.data then payload.data.macroPaletteKey = payload.data.macroPaletteKey or data.jobId; end
+                    data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
+                elseif payload.type == 'crossbar_slot' then
+                    local targetData = data.GetCrossbarSlotData(comboMode, slotIndex);
+                    data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
+                    data.SetCrossbarSlotData(payload.comboMode, payload.slotIndex, targetData);
+                elseif payload.type == 'slot' then
+                    if payload.data then
+                        data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
+                    end
+                end
+                ClearCrossbarIconCacheForSlot(comboMode, slotIndex);
+                slotrenderer.InvalidateSlotByKey(comboMode .. ':' .. slotIndex);
+                if payload.type == 'crossbar_slot' then
+                    ClearCrossbarIconCacheForSlot(payload.comboMode, payload.slotIndex);
+                    slotrenderer.InvalidateSlotByKey(payload.comboMode .. ':' .. payload.slotIndex);
+                end
+            end,
+            getDragData = function()
+                local sd = data.GetCrossbarSlotData(comboMode, slotIndex);
+                local ic = GetCachedCrossbarIcon(comboMode, slotIndex, sd);
+                return {
+                    comboMode = comboMode,
+                    slotIndex = slotIndex,
+                    data = sd,
+                    icon = ic,
+                    label = sd and (sd.displayName or sd.action) or ('Slot ' .. slotIndex),
+                };
+            end,
+            onRightClick = function()
+                data.ClearCrossbarSlotData(comboMode, slotIndex);
+                ClearCrossbarIconCacheForSlot(comboMode, slotIndex);
+                slotrenderer.InvalidateSlotByKey(comboMode .. ':' .. slotIndex);
+            end,
+        };
+    end
+    return cbInteraction[comboMode][slotIndex];
+end
+
 -- Draw a single slot with drag/drop support using shared renderer
 -- animOpacity: 0-1 for animation fade (default 1.0)
 -- yOffset: Y offset in pixels for animation (default 0)
@@ -783,14 +750,16 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
     animOpacity = animOpacity or 1.0;
     yOffset = yOffset or 0;
 
+    -- Get pre-created interaction closures and IDs
+    local interaction = GetCbInteraction(comboMode, slotIndex);
+
     -- Apply Y offset for animation
     local drawY = y + yOffset;
 
-    -- Get press scale animation for icon (scales up when pressed, animates back down on release)
-    local pressKey = comboMode .. '_' .. slotIndex;
+    -- Get press scale animation for icon
     local iconPressScale = 1.0;
     if settings.enablePressScale ~= false then
-        iconPressScale = animation.getPressScale(pressKey, isPressed and isActive);
+        iconPressScale = animation.getPressScale(interaction.pressKey, isPressed and isActive);
     end
 
     -- Get slot data
@@ -799,119 +768,60 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
     -- Get icon for this action (cached - only rebuilds when bind changes)
     local icon = GetCachedCrossbarIcon(comboMode, slotIndex, slotData);
 
-    -- Calculate dim factor for inactive slots
-    local dimFactor = 1.0;
-    if not isActive then
-        dimFactor = settings.inactiveSlotDim or 0.5;
-    end
+    -- Update reusable resources table
+    cbResources.slotPrim = state.slotPrims[comboMode] and state.slotPrims[comboMode][slotIndex];
+    cbResources.iconPrim = state.iconPrims[comboMode] and state.iconPrims[comboMode][slotIndex];
 
-    -- Gather resources for this slot
-    local resources = {
-        slotPrim = state.slotPrims[comboMode] and state.slotPrims[comboMode][slotIndex],
-        iconPrim = state.iconPrims[comboMode] and state.iconPrims[comboMode][slotIndex],
-        timerFont = state.timerFonts[comboMode] and state.timerFonts[comboMode][slotIndex],
-        mpCostFont = state.mpCostFonts[comboMode] and state.mpCostFonts[comboMode][slotIndex],
-        quantityFont = state.quantityFonts[comboMode] and state.quantityFonts[comboMode][slotIndex],
-        labelFont = state.labelFonts[comboMode] and state.labelFonts[comboMode][slotIndex],
-        abbreviationFont = state.abbreviationFonts[comboMode] and state.abbreviationFonts[comboMode][slotIndex],
-    };
+    -- Update reusable params table in-place
+    local p = cbParams;
+    p.x = x;
+    p.y = drawY;
+    p.size = slotSize;
+    p.windowName = 'Crossbar';
+    p.bind = slotData;
+    p.icon = icon;
+    p.slotBgColor = settings.slotBackgroundColor or 0x55000000;
+    p.slotOpacity = settings.slotOpacity or 1.0;
+    p.dimFactor = isActive and 1.0 or (settings.inactiveSlotDim or 0.5);
+    p.animOpacity = animOpacity;
+    p.isPressed = isPressed and isActive;
+    p.iconPressScale = iconPressScale;
+    p.showMpCost = settings.showMpCost ~= false;
+    p.mpCostFontSize = settings.mpCostFontSize or 10;
+    p.mpCostFontColor = settings.mpCostFontColor or 0xFFD4FF97;
+    p.mpCostNoMpColor = settings.mpCostNoMpColor or 0xFFFF4444;
+    p.mpCostOffsetX = settings.mpCostOffsetX or 0;
+    p.mpCostOffsetY = settings.mpCostOffsetY or 0;
+    p.showQuantity = settings.showQuantity ~= false;
+    p.quantityFontSize = settings.quantityFontSize or 10;
+    p.quantityFontColor = settings.quantityFontColor or 0xFFFFFFFF;
+    p.quantityOffsetX = settings.quantityOffsetX or 0;
+    p.quantityOffsetY = settings.quantityOffsetY or 0;
+    p.showLabel = settings.showActionLabels or false;
+    p.labelText = slotData and (slotData.displayName or slotData.action or '') or '';
+    p.labelOffsetX = settings.actionLabelOffsetX or 0;
+    p.labelOffsetY = (settings.actionLabelOffsetY or 0) + 2;
+    p.labelFontSize = settings.labelFontSize or 10;
+    p.recastTimerFontSize = settings.recastTimerFontSize or 11;
+    p.recastTimerFontColor = settings.recastTimerFontColor or 0xFFFFFFFF;
+    p.flashCooldownUnder5 = settings.flashCooldownUnder5 or false;
+    p.useHHMMCooldownFormat = settings.useHHMMCooldownFormat or false;
+    p.labelFontColor = settings.labelFontColor or 0xFFFFFFFF;
+    p.labelCooldownColor = settings.labelCooldownColor or 0xFF888888;
+    p.labelNoMpColor = settings.labelNoMpColor or 0xFFFF4444;
+    p.buttonId = interaction.buttonId;
+    p.dropZoneId = interaction.dropZoneId;
+    p.dropAccepts = CB_DROP_ACCEPTS;
+    p.onDrop = interaction.onDrop;
+    p.dragType = 'crossbar_slot';
+    p.getDragData = interaction.getDragData;
+    p.onRightClick = interaction.onRightClick;
+    p.showTooltip = true;
+    p.skillchainName = skillchainName;
+    p.skillchainColor = gConfig.hotbarGlobal.skillchainHighlightColor or 0xFFD4AA44;
 
     -- Render slot using shared renderer (handles ALL rendering and interactions)
-    slotrenderer.DrawSlot(resources, {
-        -- Position/Size
-        x = x,
-        y = drawY,
-        size = slotSize,
-        
-        -- Window wrapper name for inputs
-        windowName = 'Crossbar',
-
-        -- Action Data
-        bind = slotData,
-        icon = icon,
-
-        -- Visual Settings
-        slotBgColor = settings.slotBackgroundColor or 0x55000000,
-        slotOpacity = settings.slotOpacity or 1.0,
-        dimFactor = dimFactor,
-        animOpacity = animOpacity,
-        isPressed = isPressed and isActive,
-        iconPressScale = iconPressScale,
-        showMpCost = settings.showMpCost ~= false,
-        mpCostFontSize = settings.mpCostFontSize or 10,
-        mpCostFontColor = settings.mpCostFontColor or 0xFFD4FF97,
-        mpCostNoMpColor = settings.mpCostNoMpColor or 0xFFFF4444,
-        mpCostOffsetX = settings.mpCostOffsetX or 0,
-        mpCostOffsetY = settings.mpCostOffsetY or 0,
-        showQuantity = settings.showQuantity ~= false,
-        quantityFontSize = settings.quantityFontSize or 10,
-        quantityFontColor = settings.quantityFontColor or 0xFFFFFFFF,
-        quantityOffsetX = settings.quantityOffsetX or 0,
-        quantityOffsetY = settings.quantityOffsetY or 0,
-        showLabel = settings.showActionLabels or false,
-        labelText = slotData and (slotData.displayName or slotData.action or '') or '',
-        labelOffsetX = settings.actionLabelOffsetX or 0,
-        labelOffsetY = (settings.actionLabelOffsetY or 0) + 2,
-        labelFontSize = settings.labelFontSize or 10,
-        recastTimerFontSize = settings.recastTimerFontSize or 11,
-        recastTimerFontColor = settings.recastTimerFontColor or 0xFFFFFFFF,
-        flashCooldownUnder5 = settings.flashCooldownUnder5 or false,
-        useHHMMCooldownFormat = settings.useHHMMCooldownFormat or false,
-        labelFontColor = settings.labelFontColor or 0xFFFFFFFF,
-        labelCooldownColor = settings.labelCooldownColor or 0xFF888888,
-        labelNoMpColor = settings.labelNoMpColor or 0xFFFF4444,
-
-        -- Interaction Config (use original Y for interaction, not animated Y)
-        buttonId = string.format('##crossbar_%s_%d', comboMode, slotIndex),
-        dropZoneId = string.format('crossbar_%s_%d', comboMode, slotIndex),
-        dropAccepts = {'macro', 'crossbar_slot', 'slot'},
-        onDrop = function(payload)
-            if payload.type == 'macro' then
-                -- Ensure stored slot has a macroPaletteKey (fallback to current job if missing)
-                if payload.data then payload.data.macroPaletteKey = payload.data.macroPaletteKey or data.jobId; end
-                data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
-            elseif payload.type == 'crossbar_slot' then
-                -- Swap crossbar slots
-                local targetData = data.GetCrossbarSlotData(comboMode, slotIndex);
-                data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
-                data.SetCrossbarSlotData(payload.comboMode, payload.slotIndex, targetData);
-            elseif payload.type == 'slot' then
-                -- Copy from hotbar slot to crossbar (one-way copy, doesn't clear source)
-                if payload.data then
-                    data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
-                end
-            end
-            -- Clear icon cache for affected slots (targeted - fast)
-            ClearCrossbarIconCacheForSlot(comboMode, slotIndex);
-            slotrenderer.InvalidateSlotByKey(comboMode .. ':' .. slotIndex);
-            -- For crossbar slot swaps, also clear the source slot
-            if payload.type == 'crossbar_slot' then
-                ClearCrossbarIconCacheForSlot(payload.comboMode, payload.slotIndex);
-                slotrenderer.InvalidateSlotByKey(payload.comboMode .. ':' .. payload.slotIndex);
-            end
-        end,
-        dragType = 'crossbar_slot',
-        getDragData = function()
-            return {
-                comboMode = comboMode,
-                slotIndex = slotIndex,
-                data = slotData,
-                icon = icon,
-                label = slotData and (slotData.displayName or slotData.action) or ('Slot ' .. slotIndex),
-            };
-        end,
-        onRightClick = function()
-            data.ClearCrossbarSlotData(comboMode, slotIndex);
-            -- Clear icon cache for this slot (targeted - fast)
-            ClearCrossbarIconCacheForSlot(comboMode, slotIndex);
-            slotrenderer.InvalidateSlotByKey(comboMode .. ':' .. slotIndex);
-        end,
-        showTooltip = true,
-
-        -- Skillchain highlight
-        skillchainName = skillchainName,
-        skillchainColor = gConfig.hotbarGlobal.skillchainHighlightColor or 0xFFD4AA44,
-    });
+    slotrenderer.DrawSlot(cbResources, p);
 end
 
 -- Note: HandleSlotInteraction removed - now handled by slotrenderer.DrawSlot
@@ -1059,19 +969,14 @@ end
 -- Draw combo text in center for complex combos (L2R2, R2L2, L2x2, R2x2) or edit mode
 local function DrawComboText(activeCombo, centerX, topY, settings)
     if not settings.showComboText and not settings.editMode then
-        if state.comboTextFont then
-            state.comboTextFont:set_visible(false);
-        end
         return;
     end
 
     -- Determine combo text based on active combo
     local comboText = nil;
     if activeCombo == COMBO_MODES.L2_THEN_R2 then
-        -- Show "Shared" when shared expanded bar is enabled
         comboText = settings.useSharedExpandedBar and 'Shared' or 'L2+R2';
     elseif activeCombo == COMBO_MODES.R2_THEN_L2 then
-        -- Show "Shared" when shared expanded bar is enabled
         comboText = settings.useSharedExpandedBar and 'Shared' or 'R2+L2';
     elseif activeCombo == 'Shared' then
         comboText = 'Shared';
@@ -1090,48 +995,29 @@ local function DrawComboText(activeCombo, centerX, topY, settings)
         comboText = '(!) ' .. (comboText or 'EDIT');
     end
 
-    -- Only show for complex combos (or edit mode)
-    if not comboText then
-        if state.comboTextFont then
-            state.comboTextFont:set_visible(false);
-        end
-        return;
-    end
+    if not comboText then return; end
 
-    -- Get font size and offsets from settings
     local fontSize = settings.comboTextFontSize or 10;
     local offsetX = settings.comboTextOffsetX or 0;
     local offsetY = settings.comboTextOffsetY or 0;
 
-    -- Update and show GDI font for text (centered)
-    if state.comboTextFont then
-        state.comboTextFont:set_font_height(fontSize);
-        state.comboTextFont:set_text(comboText);
-        state.comboTextFont:set_position_x(centerX + offsetX);
-        state.comboTextFont:set_position_y(topY + offsetY);
-        -- Yellow warning color in edit mode, white otherwise
+    -- Draw centered text via imtext
+    local drawList = GetUIDrawList();
+    if drawList then
         local fontColor = settings.editMode and 0xFFFFFF00 or 0xFFFFFFFF;
-        state.comboTextFont:set_font_color(fontColor);
-        state.comboTextFont:set_visible(true);
+        local textW = imtext.Measure(comboText, fontSize);
+        local drawX = centerX + offsetX - (textW / 2);
+        local drawY = topY + offsetY;
+        imtext.Draw(drawList, comboText, drawX, drawY, fontColor, fontSize);
     end
 end
 
 -- Draw palette name below crossbar (e.g., "Stuns (2/5)")
 local function DrawPaletteName(centerX, bottomY, settings)
-    if not settings.showPaletteName then
-        if state.paletteNameFont then
-            state.paletteNameFont:set_visible(false);
-        end
-        return;
-    end
+    if not settings.showPaletteName then return; end
 
     local paletteName = palette.GetActivePaletteForCombo('L2');
-    if not paletteName then
-        if state.paletteNameFont then
-            state.paletteNameFont:set_visible(false);
-        end
-        return;
-    end
+    if not paletteName then return; end
 
     local jobId = data.jobId or 1;
     local subjobId = data.subjobId or 0;
@@ -1143,12 +1029,12 @@ local function DrawPaletteName(centerX, bottomY, settings)
     local offsetX = settings.paletteNameOffsetX or 0;
     local offsetY = settings.paletteNameOffsetY or 0;
 
-    if state.paletteNameFont then
-        state.paletteNameFont:set_font_height(fontSize);
-        state.paletteNameFont:set_text(displayText);
-        state.paletteNameFont:set_position_x(centerX + offsetX);
-        state.paletteNameFont:set_position_y(bottomY + offsetY);
-        state.paletteNameFont:set_visible(true);
+    local drawList = GetUIDrawList();
+    if drawList then
+        local textW = imtext.Measure(displayText, fontSize);
+        local drawX = centerX + offsetX - (textW / 2);
+        local drawY = bottomY + offsetY;
+        imtext.Draw(drawList, displayText, drawX, drawY, 0xFFFFFFFF, fontSize);
     end
 end
 
@@ -1410,20 +1296,6 @@ function M.DrawWindow(settings, moduleSettings)
         end
     end
 
-    -- Hide all GDI fonts for all modes (we'll show the ones we need during DrawSlot)
-    for _, mode in ipairs(allModes) do
-        for slotIndex = 1, SLOTS_PER_SIDE do
-            local labelFont = state.labelFonts[mode] and state.labelFonts[mode][slotIndex];
-            if labelFont then labelFont:set_visible(false); end
-            local timerFont = state.timerFonts[mode] and state.timerFonts[mode][slotIndex];
-            if timerFont then timerFont:set_visible(false); end
-            local mpCostFont = state.mpCostFonts[mode] and state.mpCostFonts[mode][slotIndex];
-            if mpCostFont then mpCostFont:set_visible(false); end
-            local quantityFont = state.quantityFonts[mode] and state.quantityFonts[mode][slotIndex];
-            if quantityFont then quantityFont:set_visible(false); end
-        end
-    end
-
     -- Begin ImGui window - ALL slot rendering happens inside to enable interactions
     if imgui.Begin('Crossbar', true, windowFlags) then
         -- Save position if moved (profile support)
@@ -1648,20 +1520,6 @@ function M.SetHidden(hidden)
 
                 local iconPrim = state.iconPrims[comboMode] and state.iconPrims[comboMode][slotIndex];
                 if iconPrim then iconPrim.visible = false; end
-
-                local timerFont = state.timerFonts[comboMode] and state.timerFonts[comboMode][slotIndex];
-                if timerFont then timerFont:set_visible(false); end
-
-                local mpCostFont = state.mpCostFonts[comboMode] and state.mpCostFonts[comboMode][slotIndex];
-                if mpCostFont then mpCostFont:set_visible(false); end
-
-                local quantityFont = state.quantityFonts[comboMode] and state.quantityFonts[comboMode][slotIndex];
-                if quantityFont then quantityFont:set_visible(false); end
-
-                local labelFont = state.labelFonts[comboMode] and state.labelFonts[comboMode][slotIndex];
-                if labelFont then labelFont:set_visible(false); end
-                local abbrFont = state.abbreviationFonts[comboMode] and state.abbreviationFonts[comboMode][slotIndex];
-                if abbrFont then abbrFont:set_visible(false); end
             end
 
             -- Hide center icon primitives
@@ -1675,21 +1533,6 @@ function M.SetHidden(hidden)
                     end
                 end
             end
-        end
-
-        -- Hide trigger label
-        if state.triggerLabelFont then
-            state.triggerLabelFont:set_visible(false);
-        end
-
-        -- Hide combo text
-        if state.comboTextFont then
-            state.comboTextFont:set_visible(false);
-        end
-
-        -- Hide palette name
-        if state.paletteNameFont then
-            state.paletteNameFont:set_visible(false);
         end
     end
     -- When hidden=false, don't do anything - DrawWindow will handle visibility
@@ -1710,56 +1553,10 @@ function M.UpdateVisuals(settings, moduleSettings)
         state.loadedBgTheme = settings.backgroundTheme;
     end
 
-    -- Recreate fonts if settings changed
-    local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2', 'Shared' };
-    for _, comboMode in ipairs(comboModes) do
-        for slotIndex = 1, SLOTS_PER_SIDE do
-            -- Recreate label font
-            local labelFont = state.labelFonts[comboMode] and state.labelFonts[comboMode][slotIndex];
-            local labelSettings = moduleSettings and moduleSettings.label_font_settings or {};
-            if labelFont then
-                state.labelFonts[comboMode][slotIndex] = FontManager.recreate(labelFont, labelSettings);
-            end
+    -- Reset imtext so it reloads fonts on next draw
+    imtext.Reset();
 
-            -- Recreate abbreviation font
-            local abbrFont = state.abbreviationFonts[comboMode] and state.abbreviationFonts[comboMode][slotIndex];
-            if abbrFont then
-                local abbrSettings = moduleSettings and deep_copy_table(moduleSettings.label_font_settings) or {};
-                abbrSettings.font_height = 12;
-                abbrSettings.font_alignment = 1;  -- Center
-                abbrSettings.font_color = 0xFFF4DA97;  -- Gold
-                abbrSettings.outline_color = 0xFF000000;
-                abbrSettings.outline_width = 2;
-                state.abbreviationFonts[comboMode][slotIndex] = FontManager.recreate(abbrFont, abbrSettings);
-            end
-        end
-    end
-
-    -- Recreate trigger label font
-    if state.triggerLabelFont then
-        local triggerSettings = moduleSettings and moduleSettings.trigger_font_settings or {};
-        state.triggerLabelFont = FontManager.recreate(state.triggerLabelFont, triggerSettings);
-    end
-
-    -- Recreate combo text font
-    if state.comboTextFont then
-        local comboTextSettings = moduleSettings and deep_copy_table(moduleSettings.trigger_font_settings) or {};
-        comboTextSettings.font_height = settings.comboTextFontSize or 10;
-        comboTextSettings.font_color = 0xFFFFFFFF;  -- White
-        comboTextSettings.font_alignment = 1;  -- Center alignment
-        state.comboTextFont = FontManager.recreate(state.comboTextFont, comboTextSettings);
-    end
-
-    -- Recreate palette name font
-    if state.paletteNameFont then
-        local paletteNameSettings = moduleSettings and deep_copy_table(moduleSettings.trigger_font_settings) or {};
-        paletteNameSettings.font_height = settings.paletteNameFontSize or 10;
-        paletteNameSettings.font_color = 0xFFFFFFFF;
-        paletteNameSettings.font_alignment = 1;  -- Center alignment
-        state.paletteNameFont = FontManager.recreate(state.paletteNameFont, paletteNameSettings);
-    end
-
-    -- Clear slot cache since fonts were recreated (cache tracks font text state)
+    -- Clear slot cache so text re-renders with new settings
     slotrenderer.ClearAllCache();
 end
 
@@ -1776,31 +1573,15 @@ function M.Cleanup()
         state.bgHandle = nil;
     end
 
-    -- Destroy all primitives and fonts
+    -- Destroy all primitives
     local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2', 'Shared' };
     for _, comboMode in ipairs(comboModes) do
-        -- Destroy slot primitives, icon primitives, and fonts
         for slotIndex = 1, SLOTS_PER_SIDE do
             local slotPrim = state.slotPrims[comboMode] and state.slotPrims[comboMode][slotIndex];
             if slotPrim then slotPrim:destroy(); end
 
             local iconPrim = state.iconPrims[comboMode] and state.iconPrims[comboMode][slotIndex];
             if iconPrim then iconPrim:destroy(); end
-
-            local timerFont = state.timerFonts[comboMode] and state.timerFonts[comboMode][slotIndex];
-            if timerFont then FontManager.destroy(timerFont); end
-
-            local mpCostFont = state.mpCostFonts[comboMode] and state.mpCostFonts[comboMode][slotIndex];
-            if mpCostFont then FontManager.destroy(mpCostFont); end
-
-            local quantityFont = state.quantityFonts[comboMode] and state.quantityFonts[comboMode][slotIndex];
-            if quantityFont then FontManager.destroy(quantityFont); end
-
-            local labelFont = state.labelFonts[comboMode] and state.labelFonts[comboMode][slotIndex];
-            if labelFont then FontManager.destroy(labelFont); end
-
-            local abbrFont = state.abbreviationFonts[comboMode] and state.abbreviationFonts[comboMode][slotIndex];
-            if abbrFont then FontManager.destroy(abbrFont); end
         end
 
         -- Destroy center icon primitives
@@ -1817,34 +1598,14 @@ function M.Cleanup()
 
         state.slotPrims[comboMode] = nil;
         state.iconPrims[comboMode] = nil;
-        state.timerFonts[comboMode] = nil;
-        state.mpCostFonts[comboMode] = nil;
-        state.quantityFonts[comboMode] = nil;
         state.centerIconPrims[comboMode] = nil;
-        state.labelFonts[comboMode] = nil;
-        state.abbreviationFonts[comboMode] = nil;
-    end
-
-    -- Destroy trigger label font
-    if state.triggerLabelFont then
-        FontManager.destroy(state.triggerLabelFont);
-        state.triggerLabelFont = nil;
-    end
-
-    -- Destroy combo text font
-    if state.comboTextFont then
-        FontManager.destroy(state.comboTextFont);
-        state.comboTextFont = nil;
-    end
-
-    -- Destroy palette name font
-    if state.paletteNameFont then
-        FontManager.destroy(state.paletteNameFont);
-        state.paletteNameFont = nil;
     end
 
     -- Clear icon cache
     ClearCrossbarIconCache();
+
+    -- Clear pre-created closures so they're recreated on reinit
+    cbInteraction = {};
 
     -- Clear slotrenderer cache
     slotrenderer.ClearAllCache();

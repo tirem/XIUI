@@ -109,14 +109,6 @@ M.bgHandles = {};
 -- M.slotPrims[barIndex][slotIndex] = primitive
 M.slotPrims = {};
 
--- Fonts for keybind labels (per bar, per slot)
--- M.keybindFonts[barIndex][slotIndex] = font
-M.keybindFonts = {};
-
--- Fonts for action labels (per bar, per slot)
--- M.labelFonts[barIndex][slotIndex] = font
-M.labelFonts = {};
-
 -- Icon primitives (per bar, per slot)
 -- Renders action icons as primitives instead of ImGui
 M.iconPrims = {};
@@ -128,28 +120,6 @@ M.cooldownPrims = {};
 -- Frame overlay primitives (per bar, per slot)
 -- Decorative frame rendered above icons
 M.framePrims = {};
-
--- Cooldown timer fonts (per bar, per slot)
--- Shows remaining recast time (e.g., "2:30", "45s")
-M.timerFonts = {};
-
--- MP cost fonts (per bar, per slot)
--- Shows MP cost for magic spells
-M.mpCostFonts = {};
-
--- Item quantity fonts (per bar, per slot)
--- Shows quantity of usable items (e.g., "x5")
-M.quantityFonts = {};
-
--- Abbreviation fonts (per bar, per slot)
--- Shows text abbreviation when action has no icon
-M.abbreviationFonts = {};
-
--- Fonts for hotbar numbers (1-6)
-M.hotbarNumberFonts = {};
-
--- All fonts for batch operations
-M.allFonts = nil;
 
 -- ============================================
 -- Job State
@@ -1075,116 +1045,6 @@ function M.InvalidateStorageKeyCache()
 end
 
 -- ============================================
--- Font Visibility Helpers
--- ============================================
-
--- Rebuild the flattened all-fonts list used for batch operations.
--- IMPORTANT: When fonts are recreated (FontManager.recreate), references change, so we must refresh this list
--- or SetAllFontsVisible() will toggle stale/destroyed objects and leave the new fonts visible.
-function M.RebuildAllFonts()
-    local all = {};
-
-    for barIndex = 1, M.NUM_BARS do
-        -- Per-slot fonts
-        for slotIndex = 1, M.MAX_SLOTS_PER_BAR do
-            local f;
-
-            f = M.keybindFonts[barIndex] and M.keybindFonts[barIndex][slotIndex];
-            if f then table.insert(all, f); end
-
-            f = M.labelFonts[barIndex] and M.labelFonts[barIndex][slotIndex];
-            if f then table.insert(all, f); end
-
-            f = M.timerFonts[barIndex] and M.timerFonts[barIndex][slotIndex];
-            if f then table.insert(all, f); end
-
-            f = M.mpCostFonts[barIndex] and M.mpCostFonts[barIndex][slotIndex];
-            if f then table.insert(all, f); end
-
-            f = M.quantityFonts[barIndex] and M.quantityFonts[barIndex][slotIndex];
-            if f then table.insert(all, f); end
-
-            f = M.abbreviationFonts[barIndex] and M.abbreviationFonts[barIndex][slotIndex];
-            if f then table.insert(all, f); end
-        end
-
-        -- Per-bar fonts
-        if M.hotbarNumberFonts[barIndex] then
-            table.insert(all, M.hotbarNumberFonts[barIndex]);
-        end
-    end
-
-    M.allFonts = all;
-end
-
-function M.SetAllFontsVisible(visible)
-    if M.allFonts then
-        SetFontsVisible(M.allFonts, visible);
-    end
-end
-
-function M.SetBarFontsVisible(barIndex, visible)
-    -- Hotbar number font
-    if M.hotbarNumberFonts[barIndex] then
-        M.hotbarNumberFonts[barIndex]:set_visible(visible);
-    end
-
-    -- Keybind fonts for this bar
-    if M.keybindFonts[barIndex] then
-        for _, font in pairs(M.keybindFonts[barIndex]) do
-            if font then
-                font:set_visible(visible);
-            end
-        end
-    end
-
-    -- Label fonts for this bar
-    if M.labelFonts[barIndex] then
-        for _, font in pairs(M.labelFonts[barIndex]) do
-            if font then
-                font:set_visible(visible);
-            end
-        end
-    end
-
-    -- Timer fonts for this bar
-    if M.timerFonts[barIndex] then
-        for _, font in pairs(M.timerFonts[barIndex]) do
-            if font then
-                font:set_visible(visible);
-            end
-        end
-    end
-
-    -- MP cost fonts for this bar
-    if M.mpCostFonts[barIndex] then
-        for _, font in pairs(M.mpCostFonts[barIndex]) do
-            if font then
-                font:set_visible(visible);
-            end
-        end
-    end
-
-    -- Item quantity fonts for this bar
-    if M.quantityFonts[barIndex] then
-        for _, font in pairs(M.quantityFonts[barIndex]) do
-            if font then
-                font:set_visible(visible);
-            end
-        end
-    end
-
-    -- Abbreviation fonts for this bar
-    if M.abbreviationFonts[barIndex] then
-        for _, font in pairs(M.abbreviationFonts[barIndex]) do
-            if font then
-                font:set_visible(visible);
-            end
-        end
-    end
-end
-
--- ============================================
 -- Preview Mode (stub for compatibility)
 -- ============================================
 
@@ -1241,14 +1101,6 @@ function M.Cleanup()
     M.iconPrims = {};
     M.cooldownPrims = {};
     M.framePrims = {};
-    M.keybindFonts = {};
-    M.labelFonts = {};
-    M.timerFonts = {};
-    M.mpCostFonts = {};
-    M.quantityFonts = {};
-    M.abbreviationFonts = {};
-    M.hotbarNumberFonts = {};
-    M.allFonts = nil;
 end
 
 return M;

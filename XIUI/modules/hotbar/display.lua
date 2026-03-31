@@ -1,6 +1,6 @@
 --[[
 * XIUI hotbar - Display Module
-* Renders 6 independent hotbar windows with primitives and GDI fonts
+* Renders 6 independent hotbar windows with primitives and imtext
 ]]--
 
 require('common');
@@ -22,6 +22,7 @@ local petpalette = require('modules.hotbar.petpalette');
 local palette = require('modules.hotbar.palette');
 local skillchain = require('modules.hotbar.skillchain');
 local targetLib = require('libs.target');
+local imtext = require('libs.imtext');
 
 local M = {};
 
@@ -217,32 +218,47 @@ local function GetAssetsPath()
     return assetsPath;
 end
 
+-- Pre-allocated reusable tables for DrawSlot (avoids ~144 table allocations per frame)
+local slotResources = { slotPrim = nil, iconPrim = nil, framePrim = nil };
+local slotParams = {};
+local HOTBAR_DROP_ACCEPTS = {'macro', 'slot', 'crossbar_slot'};
+
+-- Pre-created closures and string IDs per slot (avoids ~288 closure + 72 array allocations per frame)
+local slotInteraction = {};
+
+local function GetSlotInteraction(barIndex, slotIndex)
+    if not slotInteraction[barIndex] then
+        slotInteraction[barIndex] = {};
+    end
+    if not slotInteraction[barIndex][slotIndex] then
+        slotInteraction[barIndex][slotIndex] = {
+            buttonId = string.format('##hotbarslot_%d_%d', barIndex, slotIndex),
+            dropZoneId = string.format('hotbar_%d_%d', barIndex, slotIndex),
+            onDrop = function(payload)
+                macropalette.HandleDropOnSlot(payload, barIndex, slotIndex);
+            end,
+            getDragData = function()
+                local b = data.GetKeybindForSlot(barIndex, slotIndex);
+                macropalette.StartDragSlot(barIndex, slotIndex, b);
+                return nil;
+            end,
+            onRightClick = function()
+                macropalette.ClearSlot(barIndex, slotIndex);
+            end,
+        };
+    end
+    return slotInteraction[barIndex][slotIndex];
+end
+
 -- Draw a single hotbar slot using shared renderer
 local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings, animOpacity, skillchainName)
-    -- Gather resources for this slot
-    local resources = {
-        slotPrim = data.slotPrims[barIndex] and data.slotPrims[barIndex][slotIndex],
-        iconPrim = data.iconPrims[barIndex] and data.iconPrims[barIndex][slotIndex],
-        framePrim = data.framePrims[barIndex] and data.framePrims[barIndex][slotIndex],
-        timerFont = data.timerFonts[barIndex] and data.timerFonts[barIndex][slotIndex],
-        keybindFont = data.keybindFonts[barIndex] and data.keybindFonts[barIndex][slotIndex],
-        labelFont = data.labelFonts[barIndex] and data.labelFonts[barIndex][slotIndex],
-        mpCostFont = data.mpCostFonts[barIndex] and data.mpCostFonts[barIndex][slotIndex],
-        quantityFont = data.quantityFonts[barIndex] and data.quantityFonts[barIndex][slotIndex],
-        abbreviationFont = data.abbreviationFonts[barIndex] and data.abbreviationFonts[barIndex][slotIndex],
-    };
+    -- Update reusable resources table
+    slotResources.slotPrim = data.slotPrims[barIndex] and data.slotPrims[barIndex][slotIndex];
+    slotResources.iconPrim = data.iconPrims[barIndex] and data.iconPrims[barIndex][slotIndex];
+    slotResources.framePrim = data.framePrims[barIndex] and data.framePrims[barIndex][slotIndex];
 
     -- Get icon for this action (cached - only rebuilds when bind changes)
     local icon = GetCachedIcon(barIndex, slotIndex, bind);
-    local labelText = bind and (bind.displayName or bind.action or '') or '';
-
-    -- Get per-bar display settings
-    local showActionLabels = barSettings and barSettings.showActionLabels or false;
-    local showSlotFrame = barSettings and barSettings.showSlotFrame or false;
-    local customFramePath = barSettings and barSettings.customFramePath or '';
-
-    -- NOTE: Keybind font settings are now applied in slotrenderer with caching
-    -- (removed redundant set_font_height/set_font_color calls that happened every frame)
 
     -- Hide cooldown overlay primitive (not used - we tint the icon instead)
     local cooldownPrim = data.cooldownPrims[barIndex] and data.cooldownPrims[barIndex][slotIndex];
@@ -251,82 +267,67 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     -- Check if this slot is currently pressed (keyboard)
     local pressedHotbar = actions.GetPressedHotbar();
     local pressedSlot = actions.GetPressedSlot();
-    local isPressed = (pressedHotbar == barIndex and pressedSlot == slotIndex);
+
+    -- Get pre-created interaction closures and IDs
+    local interaction = GetSlotInteraction(barIndex, slotIndex);
+
+    -- Update reusable params table in-place
+    local p = slotParams;
+    p.x = x;
+    p.y = y;
+    p.size = buttonSize;
+    p.bind = bind;
+    p.icon = icon;
+    p.slotBgColor = barSettings and barSettings.slotBackgroundColor or 0xFFFFFFFF;
+    p.slotOpacity = barSettings and barSettings.slotOpacity or 1.0;
+    p.keybindText = (barSettings and barSettings.showKeybinds ~= false) and data.GetKeybindDisplay(barIndex, slotIndex) or nil;
+    p.keybindFontSize = barSettings and barSettings.keybindFontSize or 10;
+    p.keybindFontColor = barSettings and barSettings.keybindFontColor or 0xFFFFFFFF;
+    p.keybindAnchor = barSettings and barSettings.keybindAnchor or 'topLeft';
+    p.keybindOffsetX = barSettings and barSettings.keybindOffsetX or 0;
+    p.keybindOffsetY = barSettings and barSettings.keybindOffsetY or 0;
+    p.showLabel = barSettings and barSettings.showActionLabels or false;
+    p.labelText = bind and (bind.displayName or bind.action or '') or '';
+    p.labelOffsetX = barSettings and barSettings.actionLabelOffsetX or 0;
+    p.labelOffsetY = (barSettings and barSettings.actionLabelOffsetY or 0) + data.LABEL_GAP;
+    p.labelFontSize = barSettings and barSettings.labelFontSize or 10;
+    p.recastTimerFontSize = barSettings and barSettings.recastTimerFontSize or 11;
+    p.recastTimerFontColor = barSettings and barSettings.recastTimerFontColor or 0xFFFFFFFF;
+    p.flashCooldownUnder5 = barSettings and barSettings.flashCooldownUnder5 or false;
+    p.useHHMMCooldownFormat = barSettings and barSettings.useHHMMCooldownFormat or false;
+    p.labelFontColor = barSettings and barSettings.labelFontColor or 0xFFFFFFFF;
+    p.labelCooldownColor = barSettings and barSettings.labelCooldownColor or 0xFF888888;
+    p.labelNoMpColor = barSettings and barSettings.labelNoMpColor or 0xFFFF4444;
+    p.showFrame = barSettings and barSettings.showSlotFrame or false;
+    p.customFramePath = barSettings and barSettings.customFramePath or '';
+    p.isPressed = (pressedHotbar == barIndex and pressedSlot == slotIndex);
+    p.showMpCost = barSettings and barSettings.showMpCost ~= false;
+    p.mpCostFontSize = barSettings and barSettings.mpCostFontSize or 10;
+    p.mpCostFontColor = barSettings and barSettings.mpCostFontColor or 0xFFD4FF97;
+    p.mpCostNoMpColor = barSettings and barSettings.labelNoMpColor or 0xFFFF4444;
+    p.mpCostAnchor = barSettings and barSettings.mpCostAnchor or 'topRight';
+    p.mpCostOffsetX = barSettings and barSettings.mpCostOffsetX or 0;
+    p.mpCostOffsetY = barSettings and barSettings.mpCostOffsetY or 0;
+    p.showQuantity = barSettings and barSettings.showQuantity ~= false;
+    p.quantityFontSize = barSettings and barSettings.quantityFontSize or 10;
+    p.quantityFontColor = barSettings and barSettings.quantityFontColor or 0xFFFFFFFF;
+    p.quantityAnchor = barSettings and barSettings.quantityAnchor or 'bottomRight';
+    p.quantityOffsetX = barSettings and barSettings.quantityOffsetX or 0;
+    p.quantityOffsetY = barSettings and barSettings.quantityOffsetY or 0;
+    p.buttonId = interaction.buttonId;
+    p.dropZoneId = interaction.dropZoneId;
+    p.dropAccepts = HOTBAR_DROP_ACCEPTS;
+    p.onDrop = interaction.onDrop;
+    p.dragType = 'slot';
+    p.getDragData = interaction.getDragData;
+    p.onRightClick = interaction.onRightClick;
+    p.showTooltip = true;
+    p.animOpacity = animOpacity or 1.0;
+    p.skillchainName = skillchainName;
+    p.skillchainColor = gConfig.hotbarGlobal.skillchainHighlightColor or 0xFFD4AA44;
 
     -- Render slot using shared renderer (handles ALL rendering and interactions)
-    local result = slotrenderer.DrawSlot(resources, {
-        -- Position/Size
-        x = x,
-        y = y,
-        size = buttonSize,
-
-        -- Action Data
-        bind = bind,
-        icon = icon,
-
-        -- Visual Settings
-        slotBgColor = barSettings and barSettings.slotBackgroundColor or 0xFFFFFFFF,
-        slotOpacity = barSettings and barSettings.slotOpacity or 1.0,
-        keybindText = (barSettings and barSettings.showKeybinds ~= false) and data.GetKeybindDisplay(barIndex, slotIndex) or nil,
-        keybindFontSize = barSettings and barSettings.keybindFontSize or 10,
-        keybindFontColor = barSettings and barSettings.keybindFontColor or 0xFFFFFFFF,
-        keybindAnchor = barSettings and barSettings.keybindAnchor or 'topLeft',
-        keybindOffsetX = barSettings and barSettings.keybindOffsetX or 0,
-        keybindOffsetY = barSettings and barSettings.keybindOffsetY or 0,
-        showLabel = showActionLabels,
-        labelText = labelText,
-        labelOffsetX = barSettings and barSettings.actionLabelOffsetX or 0,
-        labelOffsetY = (barSettings and barSettings.actionLabelOffsetY or 0) + data.LABEL_GAP,
-        labelFontSize = barSettings and barSettings.labelFontSize or 10,
-        recastTimerFontSize = barSettings and barSettings.recastTimerFontSize or 11,
-        recastTimerFontColor = barSettings and barSettings.recastTimerFontColor or 0xFFFFFFFF,
-        flashCooldownUnder5 = barSettings and barSettings.flashCooldownUnder5 or false,
-        useHHMMCooldownFormat = barSettings and barSettings.useHHMMCooldownFormat or false,
-        labelFontColor = barSettings and barSettings.labelFontColor or 0xFFFFFFFF,
-        labelCooldownColor = barSettings and barSettings.labelCooldownColor or 0xFF888888,
-        labelNoMpColor = barSettings and barSettings.labelNoMpColor or 0xFFFF4444,
-        showFrame = showSlotFrame,
-        customFramePath = customFramePath,
-        isPressed = isPressed,
-        showMpCost = barSettings and barSettings.showMpCost ~= false,
-        mpCostFontSize = barSettings and barSettings.mpCostFontSize or 10,
-        mpCostFontColor = barSettings and barSettings.mpCostFontColor or 0xFFD4FF97,
-        mpCostNoMpColor = barSettings and barSettings.labelNoMpColor or 0xFFFF4444,
-        mpCostAnchor = barSettings and barSettings.mpCostAnchor or 'topRight',
-        mpCostOffsetX = barSettings and barSettings.mpCostOffsetX or 0,
-        mpCostOffsetY = barSettings and barSettings.mpCostOffsetY or 0,
-        showQuantity = barSettings and barSettings.showQuantity ~= false,
-        quantityFontSize = barSettings and barSettings.quantityFontSize or 10,
-        quantityFontColor = barSettings and barSettings.quantityFontColor or 0xFFFFFFFF,
-        quantityAnchor = barSettings and barSettings.quantityAnchor or 'bottomRight',
-        quantityOffsetX = barSettings and barSettings.quantityOffsetX or 0,
-        quantityOffsetY = barSettings and barSettings.quantityOffsetY or 0,
-
-        -- Interaction Config
-        buttonId = string.format('##hotbarslot_%d_%d', barIndex, slotIndex),
-        dropZoneId = string.format('hotbar_%d_%d', barIndex, slotIndex),
-        dropAccepts = {'macro', 'slot', 'crossbar_slot'},
-        onDrop = function(payload)
-            macropalette.HandleDropOnSlot(payload, barIndex, slotIndex);
-        end,
-        dragType = 'slot',
-        getDragData = function()
-            macropalette.StartDragSlot(barIndex, slotIndex, bind);
-            return nil;  -- StartDragSlot handles the drag itself
-        end,
-        onRightClick = function()
-            macropalette.ClearSlot(barIndex, slotIndex);
-        end,
-        showTooltip = true,
-
-        -- Animation
-        animOpacity = animOpacity or 1.0,
-
-        -- Skillchain highlight
-        skillchainName = skillchainName,
-        skillchainColor = gConfig.hotbarGlobal.skillchainHighlightColor or 0xFFD4AA44,
-    });
-
+    local result = slotrenderer.DrawSlot(slotResources, p);
     return result.isHovered;
 end
 
@@ -338,7 +339,6 @@ local function DrawBarWindow(barIndex, settings)
     -- Check if bar is enabled
     if not barSettings.enabled then
         -- Hide bar resources
-        data.SetBarFontsVisible(barIndex, false);
         if data.bgHandles[barIndex] then
             windowBg.hide(data.bgHandles[barIndex]);
         end
@@ -402,24 +402,6 @@ local function DrawBarWindow(barIndex, settings)
         if data.framePrims[barIndex] and data.framePrims[barIndex][hiddenSlot] then
             data.framePrims[barIndex][hiddenSlot].visible = false;
         end
-        if data.keybindFonts[barIndex] and data.keybindFonts[barIndex][hiddenSlot] then
-            data.keybindFonts[barIndex][hiddenSlot]:set_visible(false);
-        end
-        if data.labelFonts[barIndex] and data.labelFonts[barIndex][hiddenSlot] then
-            data.labelFonts[barIndex][hiddenSlot]:set_visible(false);
-        end
-        if data.timerFonts[barIndex] and data.timerFonts[barIndex][hiddenSlot] then
-            data.timerFonts[barIndex][hiddenSlot]:set_visible(false);
-        end
-        if data.mpCostFonts[barIndex] and data.mpCostFonts[barIndex][hiddenSlot] then
-            data.mpCostFonts[barIndex][hiddenSlot]:set_visible(false);
-        end
-        if data.quantityFonts[barIndex] and data.quantityFonts[barIndex][hiddenSlot] then
-            data.quantityFonts[barIndex][hiddenSlot]:set_visible(false);
-        end
-        if data.abbreviationFonts[barIndex] and data.abbreviationFonts[barIndex][hiddenSlot] then
-            data.abbreviationFonts[barIndex][hiddenSlot]:set_visible(false);
-        end
     end
 
     -- Window flags (dummy window for positioning)
@@ -476,19 +458,17 @@ local function DrawBarWindow(barIndex, settings)
         end
 
         -- Draw hotbar number to the LEFT of the bar (outside container)
-        if data.hotbarNumberFonts[barIndex] then
-            local showNumber = barSettings.showHotbarNumber;
-            if showNumber == nil then showNumber = true; end
-            if showNumber then
-                data.hotbarNumberFonts[barIndex]:set_text(tostring(barIndex));
-                -- Position to the left of the bar with optional offsets
-                local hbnOffsetX = barSettings.hotbarNumberOffsetX or 0;
-                local hbnOffsetY = barSettings.hotbarNumberOffsetY or 0;
-                data.hotbarNumberFonts[barIndex]:set_position_x(windowPosX - 16 + hbnOffsetX);
-                data.hotbarNumberFonts[barIndex]:set_position_y(windowPosY + (barHeight / 2) - 6 + hbnOffsetY);
-                data.hotbarNumberFonts[barIndex]:set_visible(true);
-            else
-                data.hotbarNumberFonts[barIndex]:set_visible(false);
+        local showNumber = barSettings.showHotbarNumber;
+        if showNumber == nil then showNumber = true; end
+        if showNumber then
+            local hbnOffsetX = barSettings.hotbarNumberOffsetX or 0;
+            local hbnOffsetY = barSettings.hotbarNumberOffsetY or 0;
+            local hbnText = tostring(barIndex);
+            local hbnX = windowPosX - 16 + hbnOffsetX;
+            local hbnY = windowPosY + (barHeight / 2) - 6 + hbnOffsetY;
+            local hbnDrawList = GetUIDrawList();
+            if hbnDrawList then
+                imtext.Draw(hbnDrawList, hbnText, hbnX, hbnY, 0xFFFFFFFF, 12);
             end
         end
 
@@ -541,24 +521,6 @@ local function DrawBarWindow(barIndex, settings)
                         end
                         if data.framePrims[barIndex] and data.framePrims[barIndex][slotIndex] then
                             data.framePrims[barIndex][slotIndex].visible = false;
-                        end
-                        if data.keybindFonts[barIndex] and data.keybindFonts[barIndex][slotIndex] then
-                            data.keybindFonts[barIndex][slotIndex]:set_visible(false);
-                        end
-                        if data.labelFonts[barIndex] and data.labelFonts[barIndex][slotIndex] then
-                            data.labelFonts[barIndex][slotIndex]:set_visible(false);
-                        end
-                        if data.timerFonts[barIndex] and data.timerFonts[barIndex][slotIndex] then
-                            data.timerFonts[barIndex][slotIndex]:set_visible(false);
-                        end
-                        if data.mpCostFonts[barIndex] and data.mpCostFonts[barIndex][slotIndex] then
-                            data.mpCostFonts[barIndex][slotIndex]:set_visible(false);
-                        end
-                        if data.quantityFonts[barIndex] and data.quantityFonts[barIndex][slotIndex] then
-                            data.quantityFonts[barIndex][slotIndex]:set_visible(false);
-                        end
-                        if data.abbreviationFonts[barIndex] and data.abbreviationFonts[barIndex][slotIndex] then
-                            data.abbreviationFonts[barIndex][slotIndex]:set_visible(false);
                         end
                     else
                         -- Check for skillchain prediction on weapon skill slots
@@ -698,9 +660,6 @@ function M.HideWindow()
         end
     end
 
-    -- Hide all fonts
-    data.SetAllFontsVisible(false);
-
     -- Hide slot primitives
     for barIndex = 1, data.NUM_BARS do
         if data.slotPrims[barIndex] then
@@ -785,6 +744,8 @@ function M.Cleanup()
     texturesInitialized = false;
     -- Clear icon cache
     ClearIconCache();
+    -- Clear pre-created closures so they're recreated on reinit
+    slotInteraction = {};
     -- Clear slotrenderer cache
     slotrenderer.ClearAllCache();
 end

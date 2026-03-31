@@ -15,6 +15,7 @@ local dragdrop = require('libs.dragdrop');
 local textures = require('modules.hotbar.textures');
 local skillchain = require('modules.hotbar.skillchain');
 local statusHandler = require('handlers.statushandler');
+local imtext = require('libs.imtext');
 
 -- Cache for MP cost lookups (keyed by action key string)
 local mpCostCache = {};
@@ -552,13 +553,11 @@ end
     Render a slot with all components and handle all interactions.
     MUST be called inside an ImGui window context.
 
-    @param resources: Table containing primitives and fonts for this slot
+    @param resources: Table containing primitives for this slot
         - slotPrim: Slot background primitive
         - iconPrim: Action icon primitive
-        - timerFont: GDI font for cooldown timer
-        - keybindFont: (optional) GDI font for keybind label
-        - labelFont: (optional) GDI font for action name
-        - mpCostFont: (optional) GDI font for MP cost display
+        - framePrim: (optional) Frame overlay primitive
+        Text rendering uses imtext.lua (no GDI font objects needed)
 
     @param params: Table containing rendering and interaction parameters
         Position/Size:
@@ -626,13 +625,6 @@ function M.DrawSlot(resources, params)
     if animOpacity <= 0.01 then
         M.HideSlot(resources);
         return result;
-    end
-
-    -- Build command for this action (used for click execution)
-    local command = nil;
-    if bind then
-        command = actions.BuildCommand(bind);
-        result.command = command;
     end
 
     -- Check hover state
@@ -928,289 +920,134 @@ function M.DrawSlot(resources, params)
 
     -- ========================================
     -- 4b. Abbreviation Text Fallback (when no icon available)
-    -- Uses GdiFonts for cached text rendering (avoids per-frame ImGui overhead)
     -- ========================================
-    if not iconRendered and bind and animOpacity > 0.5 and not recastText then
-        if resources.abbreviationFont then
-            local abbr = GetActionAbbreviation(bind);
-
-            -- Only update text when changed
-            if cache and cache.abbreviation ~= abbr then
-                resources.abbreviationFont:set_text(abbr);
-                cache.abbreviation = abbr;
-            end
-
-            -- Compute color with dimming for unavailable/low MP
-            local colorMult = 1.0;
-            if isUnavailable then colorMult = 0.35;
-            elseif notEnoughMp then colorMult = 0.6; end
-            colorMult = colorMult * dimFactor;
-
-            -- Gold base: R=244, G=218, B=151 (0xF4DA97)
-            local r = math.floor(244 * colorMult);
-            local g = math.floor(218 * colorMult);
-            local b = math.floor(151 * colorMult);
-            local a = math.floor(animOpacity * 255);
-            local abbrColor = bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
-
-            if cache and cache.abbreviationColor ~= abbrColor then
-                resources.abbreviationFont:set_font_color(abbrColor);
-                cache.abbreviationColor = abbrColor;
-            end
-
-            -- Center position
-            local abbrX = x + size / 2;
-            local abbrY = y + size / 2 - 6;
-            if cache and (cache.abbrX ~= abbrX or cache.abbrY ~= abbrY) then
-                resources.abbreviationFont:set_position_x(abbrX);
-                resources.abbreviationFont:set_position_y(abbrY);
-                cache.abbrX = abbrX;
-                cache.abbrY = abbrY;
-            end
-
-            resources.abbreviationFont:set_visible(true);
-        end
-    else
-        if resources.abbreviationFont then
-            resources.abbreviationFont:set_visible(false);
-            if cache then cache.abbreviation = nil; end
-        end
+    local textDrawList = GetUIDrawList();
+    if not iconRendered and bind and animOpacity > 0.5 and not recastText and textDrawList then
+        local abbr = GetActionAbbreviation(bind);
+        local colorMult = 1.0;
+        if isUnavailable then colorMult = 0.35;
+        elseif notEnoughMp then colorMult = 0.6; end
+        colorMult = colorMult * dimFactor;
+        local r = math.floor(244 * colorMult);
+        local g = math.floor(218 * colorMult);
+        local b = math.floor(151 * colorMult);
+        local a = math.floor(animOpacity * 255);
+        local abbrColor = bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
+        local abbrW = imtext.Measure(abbr, 12);
+        local abbrX = x + (size - abbrW) / 2;
+        local abbrY = y + size / 2 - 6;
+        imtext.Draw(textDrawList, abbr, abbrX, abbrY, abbrColor, 12);
     end
 
     -- ========================================
-    -- 5. Timer Font (GDI - cooldown text)
+    -- 5. Timer Text (cooldown)
     -- ========================================
-    if resources.timerFont then
-        if recastText and animOpacity > 0.5 then
-            -- Update font height if changed
-            if params.recastTimerFontSize and cache and cache.timerFontSize ~= params.recastTimerFontSize then
-                resources.timerFont:set_font_height(params.recastTimerFontSize);
-                cache.timerFontSize = params.recastTimerFontSize;
-            end
-            -- Update font color (with flashing effect if enabled and under 5 seconds)
-            if params.recastTimerFontColor then
-                local timerColor = params.recastTimerFontColor;
-                local remaining = cooldown.remaining or 0;
-                
-                -- Apply flashing effect if enabled and under 5 seconds
-                if params.flashCooldownUnder5 and remaining > 0 and remaining < 5 then
-                    local pulseAlpha = 0.5 + 0.5 * math.sin(os.clock() * 8);
-                    local alpha = math.floor(pulseAlpha * 255);
-                    local r = bit.rshift(bit.band(timerColor, 0x00FF0000), 16);
-                    local g = bit.rshift(bit.band(timerColor, 0x0000FF00), 8);
-                    local b = bit.band(timerColor, 0x000000FF);
-                    timerColor = bit.bor(bit.lshift(alpha, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
-                end
-                
-                -- Update when color changes
-                if cache.timerFontColor ~= timerColor then
-                    resources.timerFont:set_font_color(timerColor);
-                    cache.timerFontColor = timerColor;
-                end
-            end
-            -- Only update text if changed
-            if cache and cache.timerText ~= recastText then
-                resources.timerFont:set_text(recastText);
-                cache.timerText = recastText;
-            end
-            -- Only update position if changed
-            local timerX = x + size / 2;
-            local timerY = y + size / 2 - 6;
-            if cache and (cache.timerX ~= timerX or cache.timerY ~= timerY) then
-                resources.timerFont:set_position_x(timerX);
-                resources.timerFont:set_position_y(timerY);
-                cache.timerX = timerX;
-                cache.timerY = timerY;
-            end
-            resources.timerFont:set_visible(true);
-        else
-            resources.timerFont:set_visible(false);
-            if cache then cache.timerText = nil; end
+    if recastText and animOpacity > 0.5 and textDrawList then
+        local timerFontSize = params.recastTimerFontSize or 11;
+        local timerColor = params.recastTimerFontColor or 0xFFFFFFFF;
+        local remaining = cooldown.remaining or 0;
+        if params.flashCooldownUnder5 and remaining > 0 and remaining < 5 then
+            local pulseAlpha = 0.5 + 0.5 * math.sin(os.clock() * 8);
+            local alpha = math.floor(pulseAlpha * 255);
+            local cr = bit.rshift(bit.band(timerColor, 0x00FF0000), 16);
+            local cg = bit.rshift(bit.band(timerColor, 0x0000FF00), 8);
+            local cb = bit.band(timerColor, 0x000000FF);
+            timerColor = bit.bor(bit.lshift(alpha, 24), bit.lshift(cr, 16), bit.lshift(cg, 8), cb);
         end
+        local timerW = imtext.Measure(recastText, timerFontSize);
+        local timerX = x + (size - timerW) / 2;
+        local timerY = y + size / 2 - 6;
+        imtext.Draw(textDrawList, recastText, timerX, timerY, timerColor, timerFontSize);
     end
 
     -- ========================================
-    -- 6. Keybind Font (GDI)
+    -- 6. Keybind Text
     -- ========================================
-    if resources.keybindFont then
-        if params.keybindText and params.keybindText ~= '' then
-            -- Only update text if changed
-            if cache and cache.keybindText ~= params.keybindText then
-                resources.keybindFont:set_text(params.keybindText);
-                cache.keybindText = params.keybindText;
-            end
-            -- Calculate position using anchor
-            local kbX, kbY = GetAnchoredPosition(x, y, size, params.keybindAnchor, params.keybindOffsetX, params.keybindOffsetY);
-            if cache and (cache.keybindX ~= kbX or cache.keybindY ~= kbY) then
-                resources.keybindFont:set_position_x(kbX);
-                resources.keybindFont:set_position_y(kbY);
-                cache.keybindX = kbX;
-                cache.keybindY = kbY;
-            end
-            -- Only update font settings if changed
-            if params.keybindFontSize and cache and cache.keybindFontSize ~= params.keybindFontSize then
-                resources.keybindFont:set_font_height(params.keybindFontSize);
-                cache.keybindFontSize = params.keybindFontSize;
-            end
-            if params.keybindFontColor and cache and cache.keybindFontColor ~= params.keybindFontColor then
-                resources.keybindFont:set_font_color(params.keybindFontColor);
-                cache.keybindFontColor = params.keybindFontColor;
-            end
-            resources.keybindFont:set_visible(animOpacity > 0.5);
-        else
-            resources.keybindFont:set_visible(false);
+    if params.keybindText and params.keybindText ~= '' and animOpacity > 0.5 and textDrawList then
+        local kbFontSize = params.keybindFontSize or 10;
+        local kbColor = params.keybindFontColor or 0xFFFFFFFF;
+        local kbAnchor = params.keybindAnchor or 'topLeft';
+        local kbX, kbY = GetAnchoredPosition(x, y, size, kbAnchor, params.keybindOffsetX, params.keybindOffsetY);
+        if kbAnchor == 'topRight' or kbAnchor == 'bottomRight' then
+            local kbW = imtext.Measure(params.keybindText, kbFontSize);
+            kbX = kbX - kbW;
         end
+        imtext.Draw(textDrawList, params.keybindText, kbX, kbY, kbColor, kbFontSize);
     end
 
     -- ========================================
-    -- 7. Label Font (GDI - action name below slot)
+    -- 7. Label Text (action name below slot)
     -- ========================================
-    if resources.labelFont then
-        if params.showLabel and params.labelText and params.labelText ~= '' then
-            -- Only update font size if changed
-            if params.labelFontSize and cache and cache.labelFontSize ~= params.labelFontSize then
-                resources.labelFont:set_font_height(params.labelFontSize);
-                cache.labelFontSize = params.labelFontSize;
-            end
-            -- Only update text if changed
-            if cache and cache.labelText ~= params.labelText then
-                resources.labelFont:set_text(params.labelText);
-                cache.labelText = params.labelText;
-            end
-            -- Only update position if changed
-            local labelX = x + size / 2 + (params.labelOffsetX or 0);
-            local labelY = y + size + 2 + (params.labelOffsetY or 0);
-            if cache and (cache.labelX ~= labelX or cache.labelY ~= labelY) then
-                resources.labelFont:set_position_x(labelX);
-                resources.labelFont:set_position_y(labelY);
-                cache.labelX = labelX;
-                cache.labelY = labelY;
-            end
-
-            -- Determine label color based on state
-            -- Priority: Unavailable (grey) > Cooldown (grey) > Not enough MP (red) > Normal
-            local labelColor = params.labelFontColor or 0xFFFFFFFF;
-
-            if isUnavailable then
-                -- Grey when action is unavailable (wrong job, under synced, etc)
-                labelColor = 0xFF888888;
-            elseif isOnCooldown then
-                -- Grey when on cooldown
-                labelColor = params.labelCooldownColor or 0xFF888888;
-            elseif notEnoughMp then
-                -- Red when not enough MP
-                labelColor = params.labelNoMpColor or 0xFFFF4444;
-            end
-
-            -- Only update color if changed
-            if cache and cache.labelFontColor ~= labelColor then
-                resources.labelFont:set_font_color(labelColor);
-                cache.labelFontColor = labelColor;
-            end
-
-            resources.labelFont:set_visible(animOpacity > 0.5);
-        else
-            resources.labelFont:set_visible(false);
+    if params.showLabel and params.labelText and params.labelText ~= '' and animOpacity > 0.5 and textDrawList then
+        local lblFontSize = params.labelFontSize or 10;
+        local labelColor = params.labelFontColor or 0xFFFFFFFF;
+        if isUnavailable then
+            labelColor = 0xFF888888;
+        elseif isOnCooldown then
+            labelColor = params.labelCooldownColor or 0xFF888888;
+        elseif notEnoughMp then
+            labelColor = params.labelNoMpColor or 0xFFFF4444;
         end
+        local lblW = imtext.Measure(params.labelText, lblFontSize);
+        local labelX = x + (size - lblW) / 2 + (params.labelOffsetX or 0);
+        local labelY = y + size + 2 + (params.labelOffsetY or 0);
+        imtext.Draw(textDrawList, params.labelText, labelX, labelY, labelColor, lblFontSize);
     end
 
     -- ========================================
-    -- 8. MP Cost Font (GDI - anchored position)
+    -- 8. MP Cost Text (anchored position)
     -- Shows "X" when action is unavailable, otherwise shows MP cost
     -- ========================================
-    if resources.mpCostFont then
+    do
         local showMpCost = params.showMpCost ~= false;
-        if showMpCost and bind and animOpacity > 0.5 then
-            -- Calculate position using anchor
-            local mpX, mpY = GetAnchoredPosition(x, y, size, params.mpCostAnchor, params.mpCostOffsetX, params.mpCostOffsetY);
-            
-            -- If action is unavailable, show "X" instead of MP cost
+        if showMpCost and bind and animOpacity > 0.5 and textDrawList then
+            local mpAnchor = params.mpCostAnchor or 'topRight';
+            local mpFontSize = params.mpCostFontSize or 10;
+            local mpX, mpY = GetAnchoredPosition(x, y, size, mpAnchor, params.mpCostOffsetX, params.mpCostOffsetY);
+
             if isUnavailable then
                 local xText = "X";
-                if cache and cache.mpCostText ~= xText then
-                    resources.mpCostFont:set_text(xText);
-                    cache.mpCostText = xText;
-                end
-                if cache and (cache.mpCostX ~= mpX or cache.mpCostY ~= mpY) then
-                    resources.mpCostFont:set_position_x(mpX);
-                    resources.mpCostFont:set_position_y(mpY);
-                    cache.mpCostX = mpX;
-                    cache.mpCostY = mpY;
-                end
-                if params.mpCostFontSize and cache and cache.mpCostFontSize ~= params.mpCostFontSize then
-                    resources.mpCostFont:set_font_height(params.mpCostFontSize);
-                    cache.mpCostFontSize = params.mpCostFontSize;
-                end
-                -- Red color for unavailable "X"
                 local xColor = 0xFFFF4444;
-                if cache and cache.mpCostFontColor ~= xColor then
-                    resources.mpCostFont:set_font_color(xColor);
-                    cache.mpCostFontColor = xColor;
+                if mpAnchor == 'topRight' or mpAnchor == 'bottomRight' then
+                    local w = imtext.Measure(xText, mpFontSize);
+                    mpX = mpX - w;
                 end
-                resources.mpCostFont:set_visible(true);
+                imtext.Draw(textDrawList, xText, mpX, mpY, xColor, mpFontSize);
             else
-                -- Normal MP cost display
                 local mpCost = mpCostCache[bindKey];
                 if mpCost == nil then
-                    mpCost = actions.GetMPCost(bind) or false;  -- false = no MP cost
+                    mpCost = actions.GetMPCost(bind) or false;
                     mpCostCache[bindKey] = mpCost;
                 end
-
                 if mpCost and mpCost ~= false then
                     local mpText = tostring(mpCost);
-                    -- Only update text if changed
-                    if cache and cache.mpCostText ~= mpText then
-                        resources.mpCostFont:set_text(mpText);
-                        cache.mpCostText = mpText;
-                    end
-                    if cache and (cache.mpCostX ~= mpX or cache.mpCostY ~= mpY) then
-                        resources.mpCostFont:set_position_x(mpX);
-                        resources.mpCostFont:set_position_y(mpY);
-                        cache.mpCostX = mpX;
-                        cache.mpCostY = mpY;
-                    end
-                    -- Only update font settings if changed
-                    if params.mpCostFontSize and cache and cache.mpCostFontSize ~= params.mpCostFontSize then
-                        resources.mpCostFont:set_font_height(params.mpCostFontSize);
-                        cache.mpCostFontSize = params.mpCostFontSize;
-                    end
-
-                    -- Determine MP cost color - red if not enough MP
                     local mpCostColor = params.mpCostFontColor or 0xFFD4FF97;
                     if notEnoughMp then
                         mpCostColor = params.mpCostNoMpColor or 0xFFFF4444;
                     end
-
-                    if cache and cache.mpCostFontColor ~= mpCostColor then
-                        resources.mpCostFont:set_font_color(mpCostColor);
-                        cache.mpCostFontColor = mpCostColor;
+                    if mpAnchor == 'topRight' or mpAnchor == 'bottomRight' then
+                        local w = imtext.Measure(mpText, mpFontSize);
+                        mpX = mpX - w;
                     end
-                    resources.mpCostFont:set_visible(true);
-                else
-                    resources.mpCostFont:set_visible(false);
+                    imtext.Draw(textDrawList, mpText, mpX, mpY, mpCostColor, mpFontSize);
                 end
             end
-        else
-            resources.mpCostFont:set_visible(false);
         end
     end
 
     -- ========================================
-    -- 9. Item/Tool Quantity Font (GDI - anchored position)
+    -- 9. Item/Tool Quantity Text (anchored position)
     -- Shows quantity for: consumable items, ninjutsu tools
     -- ========================================
-    if resources.quantityFont then
+    do
         local showQuantity = params.showQuantity ~= false;
         local quantity = nil;
         local shouldShowQty = false;
 
         if showQuantity and bind and animOpacity > 0.5 then
             if bind.actionType == 'item' then
-                -- Skip quantity display for equipment items (armor, weapons, accessories)
-                -- IsEquipmentItem returns: true = equipment, false = consumable, nil = unknown (no itemId)
                 local isEquipment = nil;
                 if bind.itemId then
-                    -- Check cache first, but invalidate if itemId changed (slot was reassigned)
                     if cache and cache.isEquipment ~= nil and cache.equipmentCheckItemId == bind.itemId then
                         isEquipment = cache.isEquipment;
                     else
@@ -1221,14 +1058,11 @@ function M.DrawSlot(resources, params)
                         end
                     end
                 end
-                -- Show quantity for consumables (isEquipment == false) or when we can't determine (isEquipment == nil)
-                -- Hide quantity only when we're certain it's equipment (isEquipment == true)
                 if isEquipment ~= true then
                     quantity = M.GetItemQuantity(bind.itemId, bind.action) or 0;
                     shouldShowQty = true;
                 end
             elseif bind.actionType == 'ma' then
-                -- Check if this is a ninjutsu spell that requires a tool
                 local toolQty = M.GetNinjutsuToolQuantity(bind.action);
                 if toolQty ~= nil then
                     quantity = toolQty;
@@ -1237,36 +1071,17 @@ function M.DrawSlot(resources, params)
             end
         end
 
-        if shouldShowQty and quantity ~= nil then
-            -- Format quantity text
+        if shouldShowQty and quantity ~= nil and textDrawList then
             local qtyText = 'x' .. tostring(quantity);
-            -- Only update text if changed
-            if cache and cache.quantityText ~= qtyText then
-                resources.quantityFont:set_text(qtyText);
-                cache.quantityText = qtyText;
-            end
-            -- Calculate position using anchor
-            local qtyX, qtyY = GetAnchoredPosition(x, y, size, params.quantityAnchor, params.quantityOffsetX, params.quantityOffsetY);
-            if cache and (cache.quantityX ~= qtyX or cache.quantityY ~= qtyY) then
-                resources.quantityFont:set_position_x(qtyX);
-                resources.quantityFont:set_position_y(qtyY);
-                cache.quantityX = qtyX;
-                cache.quantityY = qtyY;
-            end
-            -- Only update font settings if changed
-            if params.quantityFontSize and cache and cache.quantityFontSize ~= params.quantityFontSize then
-                resources.quantityFont:set_font_height(params.quantityFontSize);
-                cache.quantityFontSize = params.quantityFontSize;
-            end
-            -- Use red color for 0 quantity, normal color otherwise
+            local qtyFontSize = params.quantityFontSize or 10;
             local qtyColor = quantity == 0 and 0xFFFF4444 or (params.quantityFontColor or 0xFFFFFFFF);
-            if cache and cache.quantityFontColor ~= qtyColor then
-                resources.quantityFont:set_font_color(qtyColor);
-                cache.quantityFontColor = qtyColor;
+            local qtyAnchor = params.quantityAnchor or 'bottomRight';
+            local qtyX, qtyY = GetAnchoredPosition(x, y, size, qtyAnchor, params.quantityOffsetX, params.quantityOffsetY);
+            if qtyAnchor == 'topRight' or qtyAnchor == 'bottomRight' then
+                local w = imtext.Measure(qtyText, qtyFontSize);
+                qtyX = qtyX - w;
             end
-            resources.quantityFont:set_visible(true);
-        else
-            resources.quantityFont:set_visible(false);
+            imtext.Draw(textDrawList, qtyText, qtyX, qtyY, qtyColor, qtyFontSize);
         end
     end
 
@@ -1428,13 +1243,16 @@ function M.DrawSlot(resources, params)
             end
         end
 
-        -- Left click to execute
+        -- Left click to execute (BuildCommand deferred to click time to avoid per-frame cost)
         if isItemHovered and imgui.IsMouseReleased(0) then
             if not dragdrop.IsDragging() and not dragdrop.WasDragAttempted() then
                 if params.onClick then
                     params.onClick();
-                elseif command then
-                    actions.ExecuteCommandString(command, bind and bind.actionType == 'macro');
+                elseif bind then
+                    local cmd = actions.BuildCommand(bind);
+                    if cmd then
+                        actions.ExecuteCommandString(cmd, bind.actionType == 'macro');
+                    end
                 end
             end
         end
@@ -1567,12 +1385,6 @@ function M.HideSlot(resources)
     if resources.slotPrim then resources.slotPrim.visible = false; end
     if resources.iconPrim then resources.iconPrim.visible = false; end
     if resources.framePrim then resources.framePrim.visible = false; end
-    if resources.timerFont then resources.timerFont:set_visible(false); end
-    if resources.keybindFont then resources.keybindFont:set_visible(false); end
-    if resources.labelFont then resources.labelFont:set_visible(false); end
-    if resources.mpCostFont then resources.mpCostFont:set_visible(false); end
-    if resources.quantityFont then resources.quantityFont:set_visible(false); end
-    if resources.abbreviationFont then resources.abbreviationFont:set_visible(false); end
 end
 
 return M;
