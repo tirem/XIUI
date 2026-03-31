@@ -8,7 +8,7 @@
 require('common');
 local ffi = require('ffi');
 local gamestate = require('core.gamestate');
-local encoding = require('submodules.gdifonts.encoding');
+local encoding = require('libs.encoding');
 local abilityRecast = require('libs.abilityrecast');
 
 local M = {};

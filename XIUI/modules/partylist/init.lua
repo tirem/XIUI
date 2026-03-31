@@ -7,7 +7,7 @@ require('common');
 require('handlers.helpers');
 local ffi = require('ffi');
 local windowBg = require('libs.windowbackground');
-local encoding = require('submodules.gdifonts.encoding');
+local encoding = require('libs.encoding');
 local TextureManager = require('libs.texturemanager');
 
 local data = require('modules.partylist.data');

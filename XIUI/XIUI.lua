@@ -48,8 +48,6 @@ DEBUG_RAW_INPUT = false;
 require('common');
 local chat = require('chat');
 local settings = require('settings');
-local gdi = require('submodules.gdifonts.include');
-
 -- Core modules
 local settingsDefaults = require('core.settings.init');
 local settingsMigration = require('core.settings.migration');
@@ -1047,7 +1045,7 @@ ashita.events.register('unload', 'unload_cb', function ()
         mobInfo.data.Cleanup();
     end
 
-    gdi:destroy_interface();
+
 end);
 
 ashita.events.register('command', 'command_cb', function (e)

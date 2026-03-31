@@ -910,9 +910,6 @@ M.lastColors = {
 
 -- Helper to set all fonts visible/hidden
 function M.SetAllFontsVisible(visible)
-    if M.allFonts then
-        SetFontsVisible(M.allFonts, visible);
-    end
 end
 
 -- Clear color cache

@@ -1323,9 +1323,6 @@ end
 -- ============================================
 
 function data.SetAllFontsVisible(visible)
-    if data.allFonts then
-        SetFontsVisible(data.allFonts, visible);
-    end
 end
 
 -- ============================================

@@ -3,7 +3,6 @@
 * Handles applying user settings to the adjusted settings used by modules
 ]]--
 
-local gdi = require('submodules.gdifonts.include');
 
 local M = {};
 
@@ -76,7 +75,7 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
     applyGlobalFontSettings(gAdjustedSettings.partyListSettings.name_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
     -- Title font has italic flag combined
     gAdjustedSettings.partyListSettings.title_font_settings.font_family = us.fontFamily;
-    gAdjustedSettings.partyListSettings.title_font_settings.font_flags = bit.bor(fontWeightFlags, gdi.FontFlags.Italic);
+    gAdjustedSettings.partyListSettings.title_font_settings.font_flags = bit.bor(fontWeightFlags, 2);
     gAdjustedSettings.partyListSettings.title_font_settings.outline_width = us.fontOutlineWidth;
 
     -- Cast Bar fonts
@@ -107,17 +106,17 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
 
     -- Notifications fonts (title uses Bold + global weight, subtitle uses no weight flags)
     applyGlobalFontSettings(gAdjustedSettings.notificationsSettings.title_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
-    gAdjustedSettings.notificationsSettings.title_font_settings.font_flags = bit.bor(fontWeightFlags, gdi.FontFlags.Bold);
+    gAdjustedSettings.notificationsSettings.title_font_settings.font_flags = bit.bor(fontWeightFlags, 1);
     -- Subtitle: only apply font family and outline, NOT weight flags (keep it normal/light)
     gAdjustedSettings.notificationsSettings.font_settings.font_family = us.fontFamily;
-    gAdjustedSettings.notificationsSettings.font_settings.font_flags = gdi.FontFlags.None;
+    gAdjustedSettings.notificationsSettings.font_settings.font_flags = 0;
     gAdjustedSettings.notificationsSettings.font_settings.outline_width = us.fontOutlineWidth;
 
     -- Treasure Pool fonts
     applyGlobalFontSettings(gAdjustedSettings.treasurePoolSettings.font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
     applyGlobalFontSettings(gAdjustedSettings.treasurePoolSettings.title_font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
     -- Title font uses bold
-    gAdjustedSettings.treasurePoolSettings.title_font_settings.font_flags = bit.bor(fontWeightFlags, gdi.FontFlags.Bold);
+    gAdjustedSettings.treasurePoolSettings.title_font_settings.font_flags = bit.bor(fontWeightFlags, 1);
 
     -- Hotbar fonts
     applyGlobalFontSettings(gAdjustedSettings.hotbarSettings.font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
@@ -290,7 +289,7 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
     -- Gil Tracker
     gAdjustedSettings.gilTrackerSettings.iconScale = ds.gilTrackerSettings.iconScale * us.gilTrackerScale;
     gAdjustedSettings.gilTrackerSettings.font_settings.font_height = math.max(us.gilTrackerFontSize, 8);
-    gAdjustedSettings.gilTrackerSettings.font_settings.font_alignment = us.gilTrackerRightAlign and gdi.Alignment.Right or gdi.Alignment.Left;
+    gAdjustedSettings.gilTrackerSettings.font_settings.font_alignment = us.gilTrackerRightAlign and 2 or 0;
     gAdjustedSettings.gilTrackerSettings.rightAlign = us.gilTrackerRightAlign;
     gAdjustedSettings.gilTrackerSettings.iconRight = us.gilTrackerIconRight;
     gAdjustedSettings.gilTrackerSettings.showIcon = us.gilTrackerShowIcon;

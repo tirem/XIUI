@@ -175,11 +175,8 @@ M.loadedBgTheme = nil;
 -- Font/Primitive Helpers
 -- ============================================
 
--- Set all fonts visible/hidden
+-- Set all fonts visible/hidden (no-op: fonts migrated to imtext)
 function M.SetAllFontsVisible(visible)
-    if M.allFonts then
-        SetFontsVisible(M.allFonts, visible);
-    end
 end
 
 -- Hide all background primitives
@@ -202,22 +199,8 @@ function M.HideAllBackgrounds()
     end
 end
 
--- Hide split window placeholder fonts
+-- Hide split window placeholder fonts (no-op: fonts migrated to imtext)
 function M.HideSplitFonts()
-    if M.splitTitleFonts then
-        for _, font in pairs(M.splitTitleFonts) do
-            if font then
-                font:set_visible(false);
-            end
-        end
-    end
-    if M.splitSubtitleFonts then
-        for _, font in pairs(M.splitSubtitleFonts) do
-            if font then
-                font:set_visible(false);
-            end
-        end
-    end
 end
 
 -- Check if background theme changed and reload textures if needed
@@ -1401,22 +1384,6 @@ end
 
 -- Hide all resources for a specific group
 function M.HideGroupResources(groupNum)
-    -- Hide fonts
-    if M.groupTitleFonts[groupNum] then
-        for slot = 1, M.MAX_NOTIFICATIONS_PER_GROUP do
-            if M.groupTitleFonts[groupNum][slot] then
-                M.groupTitleFonts[groupNum][slot]:set_visible(false);
-            end
-        end
-    end
-    if M.groupSubtitleFonts[groupNum] then
-        for slot = 1, M.MAX_NOTIFICATIONS_PER_GROUP do
-            if M.groupSubtitleFonts[groupNum][slot] then
-                M.groupSubtitleFonts[groupNum][slot]:set_visible(false);
-            end
-        end
-    end
-
     -- Hide backgrounds
     if M.groupBgPrims[groupNum] then
         for slot = 1, M.MAX_NOTIFICATIONS_PER_GROUP do

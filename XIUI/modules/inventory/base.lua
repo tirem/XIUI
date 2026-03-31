@@ -6,7 +6,7 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
-local gdi = require('submodules.gdifonts.include');
+local imtext = require('libs.imtext');
 local defaultPositions = require('libs.defaultpositions');
 
 local BaseTracker = {};
@@ -29,16 +29,11 @@ local function GetUsedSlotColor(usedSlots, colorConfig, threshold1, threshold2)
     end
 end
 
--- Helper function to convert dot color (RGBA table) to ARGB hex for font
-local function DotColorToFontColor(dotColor)
-    return ColorTableToARGB(dotColor);
-end
-
 -- Helper function to get text color based on thresholds (returns ARGB hex)
 local function GetTextColor(usedSlots, colorConfig, threshold1, threshold2, useThresholdColor)
     if useThresholdColor then
         local dotColor = GetUsedSlotColor(usedSlots, colorConfig, threshold1, threshold2);
-        return DotColorToFontColor(dotColor);
+        return ColorTableToARGB(dotColor);
     else
         return colorConfig.textColor;
     end
@@ -96,14 +91,9 @@ end
 -- Draw a single container window (used for both combined and per-container modes)
 -- label: optional prefix like "W1" or "S2" for per-container mode
 -- textUseThresholdColor: if true, text color follows dot threshold colors
-local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settings, colorConfig, threshold1, threshold2, textFont, lastTextColorRef, showDots, showText, label, textUseThresholdColor)
-    -- If showText is requested but font is nil, disable text to prevent errors
-    if showText and textFont == nil then
-        showText = false;
-    end
-
+local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settings, colorConfig, threshold1, threshold2, drawList, fontSize, showDots, showText, label, textUseThresholdColor)
     imgui.SetNextWindowSize({-1, -1}, ImGuiCond_Always);
-    
+
     ApplyWindowPosition(windowName);
 
     local windowFlags = bit.bor(ImGuiWindowFlags_NoDecoration, ImGuiWindowFlags_AlwaysAutoResize, ImGuiWindowFlags_NoFocusOnAppearing, ImGuiWindowFlags_NoNav, ImGuiWindowFlags_NoBackground, ImGuiWindowFlags_NoBringToFrontOnFocus, ImGuiWindowFlags_NoDocking);
@@ -115,8 +105,6 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
     if not showDots then
         imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, { 0, 0 });
     end
-
-    local fontVisible = false;
 
     if (imgui.Begin(windowName, true, windowFlags)) then
         SaveWindowPosition(windowName);
@@ -133,11 +121,10 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
 
             -- Calculate text dimensions if showing text (needed for combined draggable area)
             local textWidth, textHeight = 0, 0;
+            local displayText;
             if showText then
-                textFont:set_font_height(settings.font_settings.font_height);
-                local displayText = (label and (label .. ' ') or '') .. usedSlots .. '/' .. maxSlots;
-                textFont:set_text(displayText);
-                textWidth, textHeight = textFont:get_text_size();
+                displayText = (label and (label .. ' ') or '') .. usedSlots .. '/' .. maxSlots;
+                textWidth, textHeight = imtext.Measure(displayText, fontSize);
             end
 
             -- Create dummy that covers both text (above) and dots areas for dragging
@@ -146,8 +133,8 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
 
             -- DEBUG: Draw red rectangle around draggable area
             if DEBUG_DRAW then
-                local draw_list = imgui.GetWindowDrawList();
-                draw_list:AddRect({locX, locY}, {locX + winSizeX, locY + totalHeight}, 0xFF0000FF, 0, 0, 2);
+                local debugDrawList = imgui.GetWindowDrawList();
+                debugDrawList:AddRect({locX, locY}, {locX + winSizeX, locY + totalHeight}, 0xFF0000FF, 0, 0, 2);
             end
 
             -- Dots are drawn below the text
@@ -155,25 +142,16 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
             DrawContainerDots(locX, locY + dotsOffsetY, framePaddingX, usedSlots, maxSlots, settings, colorConfig, threshold1, threshold2);
 
             if showText then
-                -- Position text above the dots, right-aligned to the actual dots edge
-                -- Font is right-aligned, so position_x is the RIGHT edge of text
+                -- Right-aligned: left edge = right edge - textWidth
                 local dotsWidth = (groupOffsetX * totalGroups) - settings.groupSpacing + settings.dotRadius;
-                textFont:set_position_x(locX + framePaddingX + dotsWidth);
-                textFont:set_position_y(locY);
-
+                local textX = locX + framePaddingX + dotsWidth - textWidth;
                 local textColor = GetTextColor(usedSlots, colorConfig, threshold1, threshold2, textUseThresholdColor);
-                if (lastTextColorRef.color ~= textColor) then
-                    textFont:set_font_color(textColor);
-                    lastTextColorRef.color = textColor;
-                end
-                fontVisible = true;
+                imtext.Draw(drawList, displayText, textX, locY, textColor, fontSize);
             end
         elseif showText then
             -- Text-only mode
-            textFont:set_font_height(settings.font_settings.font_height);
             local displayText = (label and (label .. ' ') or '') .. usedSlots .. '/' .. maxSlots;
-            textFont:set_text(displayText);
-            local textWidth, textHeight = textFont:get_text_size();
+            local textWidth, textHeight = imtext.Measure(displayText, fontSize);
 
             -- Get cursor position (where content actually starts, after window padding)
             local cursorX, cursorY = imgui.GetCursorScreenPos();
@@ -183,22 +161,13 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
 
             -- DEBUG: Draw red rectangle around draggable area
             if DEBUG_DRAW then
-                local draw_list = imgui.GetWindowDrawList();
-                draw_list:AddRect({cursorX, cursorY}, {cursorX + textWidth, cursorY + textHeight}, 0xFF0000FF, 0, 0, 2);
+                local debugDrawList = imgui.GetWindowDrawList();
+                debugDrawList:AddRect({cursorX, cursorY}, {cursorX + textWidth, cursorY + textHeight}, 0xFF0000FF, 0, 0, 2);
             end
 
-            -- Position text at cursor position (over the dummy area)
-            -- Font is right-aligned by default, so position_x is the RIGHT edge of text
-            -- We need to set it to cursorX + textWidth so text renders starting at cursorX
-            textFont:set_position_x(cursorX + textWidth);
-            textFont:set_position_y(cursorY);
-
+            -- Left edge is cursorX (right-aligned equivalent: cursorX + textWidth - textWidth)
             local textColor = GetTextColor(usedSlots, colorConfig, threshold1, threshold2, textUseThresholdColor);
-            if (lastTextColorRef.color ~= textColor) then
-                textFont:set_font_color(textColor);
-                lastTextColorRef.color = textColor;
-            end
-            fontVisible = true;
+            imtext.Draw(drawList, displayText, cursorX, cursorY, textColor, fontSize);
         end
     end
     imgui.End();
@@ -207,8 +176,6 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
     if not showDots then
         imgui.PopStyleVar(1);
     end
-
-    return fontVisible;
 end
 
 -- Create a new tracker instance
@@ -216,35 +183,15 @@ end
 function BaseTracker.Create(config)
     local tracker = {};
 
-    -- Font storage - we need one font per potential container for per-container mode
-    local fonts = {};  -- Array of fonts, index matches container index
-    local lastTextColors = {};  -- Array of {color = value} refs for each font
-    local maxContainers = #config.containers;
-
     tracker.DrawWindow = function(settings)
         local player = GetPlayerSafe();
-        if (player == nil) then
-            for i = 1, maxContainers do
-                if fonts[i] then fonts[i]:set_visible(false); end
-            end
-            return;
-        end
+        if (player == nil) then return; end
 
         local mainJob = player:GetMainJob();
-        if (player.isZoning or mainJob == 0) then
-            for i = 1, maxContainers do
-                if fonts[i] then fonts[i]:set_visible(false); end
-            end
-            return;
-        end
+        if (player.isZoning or mainJob == 0) then return; end
 
         local inventory = GetInventorySafe();
-        if (inventory == nil) then
-            for i = 1, maxContainers do
-                if fonts[i] then fonts[i]:set_visible(false); end
-            end
-            return;
-        end
+        if (inventory == nil) then return; end
 
         -- Gather container data
         local containers = {};
@@ -265,13 +212,7 @@ function BaseTracker.Create(config)
             end
         end
 
-        -- If no containers are unlocked, hide all
-        if not anyUnlocked then
-            for i = 1, maxContainers do
-                if fonts[i] then fonts[i]:set_visible(false); end
-            end
-            return;
-        end
+        if not anyUnlocked then return; end
 
         local colorConfig = gConfig.colorCustomization[config.colorKey];
         local threshold1 = gConfig[config.configPrefix .. 'ColorThreshold1'];
@@ -283,14 +224,17 @@ function BaseTracker.Create(config)
 
         local showLabels = settings.showLabels;
 
+        local drawList = GetUIDrawList();
+        local fontSize = settings.font_settings.font_height;
+        imtext.SetConfigFromSettings(settings.font_settings);
+
         -- Per-container mode: each unlocked container gets its own window
         if showPerContainer and #config.containers > 1 then
-            local fontIndex = 1;
             for i, container in ipairs(containers) do
                 if container.unlocked then
                     local windowName = config.windowName .. '_' .. i;
                     local label = (showLabels and config.containerLabels) and config.containerLabels[i] or nil;
-                    local fontVisible = DrawSingleContainerWindow(
+                    DrawSingleContainerWindow(
                         windowName,
                         container.used,
                         container.max,
@@ -298,28 +242,19 @@ function BaseTracker.Create(config)
                         colorConfig,
                         threshold1,
                         threshold2,
-                        fonts[fontIndex],
-                        lastTextColors[fontIndex],
+                        drawList,
+                        fontSize,
                         showDots,
                         showText,
                         label,
                         textUseThresholdColor
                     );
-                    if fonts[fontIndex] then
-                        fonts[fontIndex]:set_visible(fontVisible);
-                    end
-                    fontIndex = fontIndex + 1;
                 end
-            end
-            -- Hide unused fonts
-            for j = fontIndex, maxContainers do
-                if fonts[j] then fonts[j]:set_visible(false); end
             end
         else
             -- Combined mode: single window with all containers combined
-            -- Use first label if showLabels is enabled (for single-container trackers or combined multi-container)
             local label = (showLabels and config.containerLabels) and config.containerLabels[1] or nil;
-            local fontVisible = DrawSingleContainerWindow(
+            DrawSingleContainerWindow(
                 config.windowName,
                 totalUsed,
                 totalMax,
@@ -327,59 +262,29 @@ function BaseTracker.Create(config)
                 colorConfig,
                 threshold1,
                 threshold2,
-                fonts[1],
-                lastTextColors[1],
+                drawList,
+                fontSize,
                 showDots,
                 showText,
                 label,
                 textUseThresholdColor
             );
-            if fonts[1] then
-                fonts[1]:set_visible(fontVisible);
-            end
-            -- Hide other fonts
-            for j = 2, maxContainers do
-                if fonts[j] then fonts[j]:set_visible(false); end
-            end
         end
     end
 
     tracker.Initialize = function(settings)
-        -- Create fonts for each potential container
-        for i = 1, maxContainers do
-            fonts[i] = FontManager.create(settings.font_settings);
-            lastTextColors[i] = { color = nil };
-        end
+        imtext.SetConfigFromSettings(settings.font_settings);
     end
 
     tracker.UpdateVisuals = function(settings)
-        -- Recreate all fonts
-        for i = 1, maxContainers do
-            if fonts[i] then
-                fonts[i] = FontManager.recreate(fonts[i], settings.font_settings);
-            else
-                fonts[i] = FontManager.create(settings.font_settings);
-            end
-            lastTextColors[i] = { color = nil };
-        end
+        imtext.Reset();
+        imtext.SetConfigFromSettings(settings.font_settings);
     end
 
     tracker.SetHidden = function(hidden)
-        if (hidden == true) then
-            for i = 1, maxContainers do
-                if fonts[i] then fonts[i]:set_visible(false); end
-            end
-        end
     end
 
     tracker.Cleanup = function()
-        for i = 1, maxContainers do
-            if fonts[i] then
-                fonts[i] = FontManager.destroy(fonts[i]);
-            end
-        end
-        fonts = {};
-        lastTextColors = {};
     end
 
     return tracker;

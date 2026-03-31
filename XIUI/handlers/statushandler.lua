@@ -5,7 +5,7 @@
 -------------------------------------------------------------------------------
 local ffi = require('ffi');
 local imgui = require('imgui');
-local encoding = require('submodules.gdifonts.encoding');
+local encoding = require('libs.encoding');
 local TextureManager = require('libs.texturemanager');
 
 -- Party buffs table, populated by packet 0x076 via ReadPartyBuffsFromPacket()
