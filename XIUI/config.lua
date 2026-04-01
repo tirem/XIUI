@@ -37,6 +37,7 @@ local wasConfigOpen = false;
 -- Track last known config window geometry for smart reposition on open
 local lastConfigPosX, lastConfigPosY = 20, 20;
 local lastConfigSizeW, lastConfigSizeH = 900, 650;
+local configHasBeenOpened = false;
 
 -- Global modal state (accessible by other modules to know when to dim foreground elements)
 _XIUI_MODAL_OPEN = false;
@@ -658,10 +659,12 @@ config.DrawWindow = function(us)
     local maxW = math.min(900, sw - 40);
     local maxH = math.min(650, sh - 40);
     imgui.SetNextWindowSizeConstraints({ 400, 300 }, { sw, sh });
-    -- On open: only reset size if it exceeds screen, only reset position if any part is off-screen
+    -- On open: set ideal size for the current resolution and reset position if off-screen.
     if configJustOpened then
-        local sizeExceeds = lastConfigSizeW > (sw - 40) or lastConfigSizeH > (sh - 40);
-        if sizeExceeds then
+        if not configHasBeenOpened then
+            imgui.SetNextWindowSize({ maxW, maxH }, ImGuiCond_Always);
+            configHasBeenOpened = true;
+        elseif lastConfigSizeW > (sw - 40) or lastConfigSizeH > (sh - 40) then
             imgui.SetNextWindowSize({ maxW, maxH }, ImGuiCond_Always);
         end
         local offScreen = lastConfigPosX < 0
