@@ -52,12 +52,6 @@ local windowState = {
     height = nil,
 };
 
--- Position saving state
-local hasAppliedSavedPosition = false;
-local lastSavedPosX = nil;
-local lastSavedPosY = nil;
-local forcePositionReset = false;
-
 -- ============================================
 -- Initialization
 -- ============================================
@@ -280,7 +274,7 @@ function M.Render(itemInfo, itemType, settings, colors)
     imgui.SetNextWindowSize({ -1, -1 }, ImGuiCond_Always);
 
     -- Apply saved position from profile
-    ApplyWindowPosition('CastCost');
+    local positionJustApplied = ApplyWindowPosition('CastCost');
 
     local windowFlags = bit.bor(
         ImGuiWindowFlags_NoDecoration,
@@ -569,43 +563,42 @@ function M.Render(itemInfo, itemType, settings, colors)
             local winPosX, winPosY = imgui.GetWindowPos();
             local totalHeight = contentHeight + (paddingY * 2);
 
-            if windowState.height ~= nil and windowState.height ~= totalHeight then
+            -- Detect external position change (forced reset, user drag, etc.)
+            local positionChanged = windowState.y ~= nil and windowState.y ~= winPosY;
+
+            if positionJustApplied or positionChanged then
+                -- Position was externally moved; clear tracking so height adjustment
+                -- doesn't fire until state is re-established on the next frame
+                windowState.x = nil;
+                windowState.y = nil;
+                windowState.height = nil;
+            elseif windowState.height ~= nil and windowState.height ~= totalHeight then
                 -- Height changed, adjust Y to keep bottom edge fixed
                 local newPosY = windowState.y + windowState.height - totalHeight;
                 imgui.SetWindowPos('CastCost', { winPosX, newPosY });
                 winPosY = newPosY;
-            end
-
-            -- Save current state
-            windowState.x = winPosX;
-            windowState.y = winPosY;
-            windowState.height = totalHeight;
-        end
-
-        -- Save position when user moves window (check on mouse release)
-        if not gConfig.lockPositions then
-            local winPosX, winPosY = imgui.GetWindowPos();
-            -- Only save if position changed significantly (avoid floating point noise)
-            local posChanged = (lastSavedPosX == nil or lastSavedPosY == nil) or
-                               (math.abs(winPosX - lastSavedPosX) > 1) or
-                               (math.abs(winPosY - lastSavedPosY) > 1);
-            if posChanged and not imgui.IsMouseDown(0) then
-                -- Mouse released and position changed - save to settings
-                local cc = gConfig.castCost or {};
-                cc.windowPosX = winPosX;
-                cc.windowPosY = winPosY;
-                gConfig.castCost = cc;
-                lastSavedPosX = winPosX;
-                lastSavedPosY = winPosY;
+                windowState.x = winPosX;
+                windowState.y = winPosY;
+                windowState.height = totalHeight;
+            else
+                windowState.x = winPosX;
+                windowState.y = winPosY;
+                windowState.height = totalHeight;
             end
         end
+
     end
     imgui.End();
 end
 
 M.ResetPositions = function()
-    forcePositionReset = true;
-    hasAppliedSavedPosition = false;
+    local defX, defY = defaultPositions.GetCastCostPosition();
+    if gConfig.windowPositions then
+        gConfig.windowPositions['CastCost'] = { x = defX, y = defY };
+    end
+    if gConfig.appliedPositions then
+        gConfig.appliedPositions['CastCost'] = nil;
+    end
 end
 
 return M;

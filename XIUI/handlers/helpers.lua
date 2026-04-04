@@ -49,8 +49,10 @@ function ApplyWindowPosition(windowName)
             -- print('[XIUI] Applying position for ' .. windowName .. ': ' .. pos.x .. ',' .. pos.y);
             imgui.SetNextWindowPos({ pos.x, pos.y }, ImGuiCond_Always);
             gConfig.appliedPositions[windowName] = true;
+            return true;
         end
     end
+    return false;
 end
 
 -- Save Window Position Helper

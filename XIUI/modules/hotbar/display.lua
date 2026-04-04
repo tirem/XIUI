@@ -366,16 +366,6 @@ local function DrawBarWindow(barIndex, settings)
 
     -- Apply saved position if exists (using helper for profile support), otherwise set default
     local hasSaved = gConfig.windowPositions and gConfig.windowPositions[windowName];
-    
-    -- Migration: Check for legacy position if not found in standard system
-    if not hasSaved and gConfig.hotbarBarPositions and gConfig.hotbarBarPositions[barIndex] then
-        if not gConfig.windowPositions then gConfig.windowPositions = {}; end
-        gConfig.windowPositions[windowName] = { 
-            x = gConfig.hotbarBarPositions[barIndex].x, 
-            y = gConfig.hotbarBarPositions[barIndex].y 
-        };
-        hasSaved = true;
-    end
 
     if hasSaved then
         ApplyWindowPosition(windowName);
@@ -802,6 +792,13 @@ end
 -- Reset all bar positions to defaults (called when settings are reset)
 function M.ResetPositions()
     forcePositionReset = true;
+    if gConfig.windowPositions and gConfig.appliedPositions then
+        for barIndex = 1, data.NUM_BARS do
+            local windowName = string.format('Hotbar%d', barIndex);
+            gConfig.windowPositions[windowName] = nil;
+            gConfig.appliedPositions[windowName] = nil;
+        end
+    end
 end
 
 return M;

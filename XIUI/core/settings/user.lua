@@ -17,32 +17,6 @@ function M.createUserSettingsDefaults()
         tooltipScale = 1.0,
         hideDuringEvents = true,
 
-        -- Window positions (saved when user moves windows, nil = use defaults)
-        playerBarWindowPosX = nil,
-        playerBarWindowPosY = nil,
-        targetBarWindowPosX = nil,
-        targetBarWindowPosY = nil,
-        castBarWindowPosX = nil,
-        castBarWindowPosY = nil,
-        enemyListWindowPosX = nil,
-        enemyListWindowPosY = nil,
-        partyListWindowPosX = nil,
-        partyListWindowPosY = nil,
-        partyList2WindowPosX = nil,
-        partyList2WindowPosY = nil,
-        partyList3WindowPosX = nil,
-        partyList3WindowPosY = nil,
-        expBarWindowPosX = nil,
-        expBarWindowPosY = nil,
-        gilTrackerWindowPosX = nil,
-        gilTrackerWindowPosY = nil,
-        inventoryWindowPosX = nil,  -- Shared by all inventory container types
-        inventoryWindowPosY = nil,
-        treasurePoolWindowPosX = nil,
-        treasurePoolWindowPosY = nil,
-        notificationsWindowPosX = nil,
-        notificationsWindowPosY = nil,
-
         showPlayerBar = true,
         showTargetBar = true,
         showEnemyList = true,
@@ -92,9 +66,6 @@ function M.createUserSettingsDefaults()
         -- Lock movement: when true, disables drag/drop and slot swapping for hotbar bars
         hotbarLockMovement = false,
         hotbarPreview = false,                -- Show preview with test data
-        hotbarBarPositions = nil,             -- Per-bar positions (nil = defaults)
-        crossbarWindowPosX = nil,             -- Crossbar X position
-        crossbarWindowPosY = nil,             -- Crossbar Y position
 
         -- Global hotbar visual settings (used when bar's useGlobalSettings = true)
         hotbarGlobal = factories.createHotbarGlobalDefaults(),
@@ -696,9 +667,6 @@ function M.createUserSettingsDefaults()
         petBarScaleY = 1.0,
         petBarHideDuringEvents = true,
         petBarPreview = true,
-        -- Window positions (saved when user moves window)
-        petBarWindowPosX = nil,
-        petBarWindowPosY = nil,
         petBarPreviewType = 2, -- Avatar (SMN)
         petBarShowDistance = true,
         petBarShowTarget = true,

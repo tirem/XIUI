@@ -686,6 +686,9 @@ function RecoverAllPositions()
     -- Force re-apply on next frame
     gConfig.appliedPositions = {};
 
+    -- Clear persisted alignment state so alignBottom doesn't override the restored positions
+    gConfig.partyListState = {};
+
     -- Save
     profileManager.SaveProfileSettings(config.currentProfile, gConfig);
     bInternalSave = true;

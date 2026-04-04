@@ -11,12 +11,6 @@ local hpText;
 local mpText;
 local tpText;
 local allFonts; -- Table for batch visibility operations
-local resetPosNextFrame = false;
-
--- Position save/restore state
-local hasAppliedSavedPosition = false;
-local forcePositionReset = false;
-local lastSavedPosX, lastSavedPosY = nil, nil;
 
 -- Cache last set colors to avoid expensive SetColor() calls every frame
 local lastHpTextColor;
@@ -263,20 +257,6 @@ playerbar.DrawWindow = function(settings)
 	playerbar.interpolation.lastFrameTime = currentTime;
 
 	-- Draw the player window
-	-- Handle position reset or restore
-	if forcePositionReset then
-		local defX, defY = defaultPositions.GetPlayerBarPosition();
-		imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
-		forcePositionReset = false;
-		hasAppliedSavedPosition = true;
-		lastSavedPosX, lastSavedPosY = defX, defY;
-	elseif not hasAppliedSavedPosition and gConfig.playerBarWindowPosX ~= nil then
-		imgui.SetNextWindowPos({gConfig.playerBarWindowPosX, gConfig.playerBarWindowPosY}, ImGuiCond_Once);
-		hasAppliedSavedPosition = true;
-		lastSavedPosX = gConfig.playerBarWindowPosX;
-		lastSavedPosY = gConfig.playerBarWindowPosY;
-	end
-
 	-- Get base window flags with NoMove dynamically added if positions are locked
 	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
     ApplyWindowPosition('PlayerBar');
@@ -666,19 +646,6 @@ playerbar.DrawWindow = function(settings)
 		end
 
 		tpText:set_visible(true);
-
-		-- Save position if moved (with change detection to avoid spam)
-		local winX, winY = imgui.GetWindowPos();
-		if not gConfig.lockPositions then
-			if lastSavedPosX == nil or
-			   math.abs(winX - lastSavedPosX) > 1 or
-			   math.abs(winY - lastSavedPosY) > 1 then
-				gConfig.playerBarWindowPosX = winX;
-				gConfig.playerBarWindowPosY = winY;
-				lastSavedPosX = winX;
-				lastSavedPosY = winY;
-			end
-		end
     end
 	imgui.End();
 end
@@ -727,8 +694,13 @@ playerbar.Cleanup = function()
 end
 
 playerbar.ResetPositions = function()
-	forcePositionReset = true;
-	hasAppliedSavedPosition = false;
+	local defX, defY = defaultPositions.GetPlayerBarPosition();
+	if gConfig.windowPositions then
+		gConfig.windowPositions['PlayerBar'] = { x = defX, y = defY };
+	end
+	if gConfig.appliedPositions then
+		gConfig.appliedPositions['PlayerBar'] = nil;
+	end
 end
 
 return playerbar;
