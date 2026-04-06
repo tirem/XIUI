@@ -652,11 +652,8 @@ end
 function M.Initialize(settings, moduleSettings)
     if state.initialized then return; end
 
-    -- Initial position - use saved position or default
-    local savedPos = gConfig and gConfig.hotbarCrossbarPosition;
-    if not savedPos and gConfig.crossbarWindowPosX and gConfig.crossbarWindowPosY then
-        savedPos = { x = gConfig.crossbarWindowPosX, y = gConfig.crossbarWindowPosY };
-    end
+    -- Initial position - use saved position from profile or default
+    local savedPos = gConfig and gConfig.windowPositions and gConfig.windowPositions['Crossbar'];
 
     local defaultX, defaultY = GetDefaultPosition(settings);
     state.windowX = savedPos and savedPos.x or defaultX;
@@ -1255,20 +1252,6 @@ function M.DrawWindow(settings, moduleSettings)
     else
         -- Apply saved position (once) or default
         local hasSaved = gConfig.windowPositions and gConfig.windowPositions[windowName];
-        
-        -- Migration: Check for legacy position if not found in standard system
-        if not hasSaved then
-            local legPos = gConfig.hotbarCrossbarPosition;
-            if not legPos and gConfig.crossbarWindowPosX and gConfig.crossbarWindowPosY then
-                legPos = { x = gConfig.crossbarWindowPosX, y = gConfig.crossbarWindowPosY };
-            end
-            
-            if legPos then
-                if not gConfig.windowPositions then gConfig.windowPositions = {}; end
-                gConfig.windowPositions[windowName] = { x = legPos.x, y = legPos.y };
-                hasSaved = true;
-            end
-        end
 
         if hasSaved then
             ApplyWindowPosition(windowName);
@@ -1907,6 +1890,12 @@ function M.ResetPositions()
     local defaultX, defaultY = GetDefaultPosition(settings);
     state.windowX = defaultX;
     state.windowY = defaultY;
+    if gConfig.windowPositions then
+        gConfig.windowPositions['Crossbar'] = { x = defaultX, y = defaultY };
+    end
+    if gConfig.appliedPositions then
+        gConfig.appliedPositions['Crossbar'] = nil;
+    end
 end
 
 return M;

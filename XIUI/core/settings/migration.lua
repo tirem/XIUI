@@ -850,6 +850,98 @@ function M.MigrateCrossbarComboModeSettings(gConfig, defaults)
     end
 end
 
+-- Migrate legacy per-module *WindowPosX/Y fields into the unified windowPositions table
+-- This ensures old profiles don't retain stale position data that could conflict
+function M.MigrateLegacyPositionFields(gConfig)
+    if not gConfig then return; end
+
+    -- Map of legacy field name pairs to windowPositions key
+    local legacyFields = {
+        { xKey = 'playerBarWindowPosX',   yKey = 'playerBarWindowPosY',   windowName = 'PlayerBar' },
+        { xKey = 'targetBarWindowPosX',   yKey = 'targetBarWindowPosY',   windowName = 'TargetBar' },
+        { xKey = 'castBarWindowPosX',     yKey = 'castBarWindowPosY',     windowName = 'CastBar' },
+        { xKey = 'enemyListWindowPosX',   yKey = 'enemyListWindowPosY',   windowName = 'EnemyList' },
+        { xKey = 'partyListWindowPosX',   yKey = 'partyListWindowPosY',   windowName = 'PartyList' },
+        { xKey = 'partyList2WindowPosX',  yKey = 'partyList2WindowPosY',  windowName = 'PartyList2' },
+        { xKey = 'partyList3WindowPosX',  yKey = 'partyList3WindowPosY',  windowName = 'PartyList3' },
+        { xKey = 'expBarWindowPosX',      yKey = 'expBarWindowPosY',      windowName = 'ExpBar' },
+        { xKey = 'gilTrackerWindowPosX',  yKey = 'gilTrackerWindowPosY',  windowName = 'GilTracker' },
+        { xKey = 'treasurePoolWindowPosX', yKey = 'treasurePoolWindowPosY', windowName = 'TreasurePool' },
+        { xKey = 'petBarWindowPosX',      yKey = 'petBarWindowPosY',      windowName = 'PetBar' },
+        { xKey = 'notificationsWindowPosX', yKey = 'notificationsWindowPosY', windowName = 'Notifications_Group1' },
+        { xKey = 'crossbarWindowPosX',    yKey = 'crossbarWindowPosY',    windowName = 'Crossbar' },
+    };
+
+    local migrated = false;
+
+    for _, entry in ipairs(legacyFields) do
+        local x = gConfig[entry.xKey];
+        local y = gConfig[entry.yKey];
+
+        if x ~= nil and y ~= nil then
+            -- Migrate to windowPositions if no entry exists yet
+            if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+            if not gConfig.windowPositions[entry.windowName] then
+                gConfig.windowPositions[entry.windowName] = { x = x, y = y };
+            end
+            migrated = true;
+        end
+
+        -- Always clear the legacy fields
+        gConfig[entry.xKey] = nil;
+        gConfig[entry.yKey] = nil;
+    end
+
+    -- Handle nested castCost.windowPosX/Y
+    if gConfig.castCost then
+        local ccX = gConfig.castCost.windowPosX;
+        local ccY = gConfig.castCost.windowPosY;
+        if ccX ~= nil and ccY ~= nil then
+            if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+            if not gConfig.windowPositions['CastCost'] then
+                gConfig.windowPositions['CastCost'] = { x = ccX, y = ccY };
+            end
+            migrated = true;
+        end
+        gConfig.castCost.windowPosX = nil;
+        gConfig.castCost.windowPosY = nil;
+    end
+
+    -- Handle legacy hotbarCrossbarPosition table
+    if gConfig.hotbarCrossbarPosition then
+        local pos = gConfig.hotbarCrossbarPosition;
+        if pos.x and pos.y then
+            if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+            if not gConfig.windowPositions['Crossbar'] then
+                gConfig.windowPositions['Crossbar'] = { x = pos.x, y = pos.y };
+            end
+            migrated = true;
+        end
+        gConfig.hotbarCrossbarPosition = nil;
+    end
+
+    -- Handle legacy inventoryWindowPosX/Y (doesn't directly map, just clean up)
+    gConfig.inventoryWindowPosX = nil;
+    gConfig.inventoryWindowPosY = nil;
+
+    -- Handle legacy hotbarBarPositions (per-bar position table)
+    if gConfig.hotbarBarPositions then
+        if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+        for barIndex, pos in pairs(gConfig.hotbarBarPositions) do
+            if pos.x and pos.y then
+                local windowName = string.format('Hotbar%d', barIndex);
+                if not gConfig.windowPositions[windowName] then
+                    gConfig.windowPositions[windowName] = { x = pos.x, y = pos.y };
+                end
+                migrated = true;
+            end
+        end
+        gConfig.hotbarBarPositions = nil;
+    end
+
+    return migrated;
+end
+
 -- Run structure migrations (called AFTER settings.load())
 -- These handle migrating old settings structures to new ones
 function M.RunStructureMigrations(gConfig, defaults)
@@ -864,6 +956,7 @@ function M.RunStructureMigrations(gConfig, defaults)
     M.MigrateBlockedGameKeys(gConfig, defaults);
     M.MigrateNotificationGroups(gConfig, defaults);
     M.MigrateCrossbarComboModeSettings(gConfig, defaults);
+    M.MigrateLegacyPositionFields(gConfig);
 end
 
 -- Legacy function for backward compatibility (if any external code calls it)

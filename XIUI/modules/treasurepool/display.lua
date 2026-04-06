@@ -32,11 +32,6 @@ local defaultPositions = require('libs.defaultpositions');
 
 local M = {};
 
--- Position save/restore state
-local hasAppliedSavedPosition = false;
-local forcePositionReset = false;
-local lastSavedPosX, lastSavedPosY = nil, nil;
-
 -- Debug logging (set to true to enable)
 local DEBUG_ENABLED = false;
 local function debugLog(msg, ...)
@@ -364,19 +359,6 @@ function M.DrawWindow(settings)
         end
 
         imgui.Dummy({windowWidth, totalHeight});
-
-        -- Save position if moved (with change detection to avoid spam)
-        local winPosX, winPosY = imgui.GetWindowPos();
-        if not gConfig.lockPositions then
-            if lastSavedPosX == nil or
-               math.abs(winPosX - lastSavedPosX) > 1 or
-               math.abs(winPosY - lastSavedPosY) > 1 then
-                gConfig.treasurePoolWindowPosX = winPosX;
-                gConfig.treasurePoolWindowPosY = winPosY;
-                lastSavedPosX = winPosX;
-                lastSavedPosY = winPosY;
-            end
-        end
 
         -- Handle scroll input when hovering over window
         if needsScroll and imgui.IsWindowHovered() then
@@ -1615,8 +1597,13 @@ function M.Cleanup()
 end
 
 M.ResetPositions = function()
-    forcePositionReset = true;
-    hasAppliedSavedPosition = false;
+    local defX, defY = defaultPositions.GetTreasurePoolPosition();
+    if gConfig.windowPositions then
+        gConfig.windowPositions['TreasurePool'] = { x = defX, y = defY };
+    end
+    if gConfig.appliedPositions then
+        gConfig.appliedPositions['TreasurePool'] = nil;
+    end
 end
 
 return M;

@@ -16,11 +16,6 @@ local defaultPositions = require('libs.defaultpositions');
 
 local M = {};
 
--- Position save/restore state
-local hasAppliedSavedPosition = false;
-local forcePositionReset = false;
-local lastSavedPosX, lastSavedPosY = nil, nil;
-
 -- Global slot counter for notification rendering
 -- Reset at start of DrawWindow, incremented for each notification drawn
 local currentSlot = 0;
@@ -626,7 +621,7 @@ local function drawNotificationWindow(windowName, notifications, settings, split
     -- Apply saved window position (if any) from profile
     -- This runs once per profile load/reset to restore position
     -- For "Stack Up" mode, this sets the initial position which anchors are derived from
-    ApplyWindowPosition(windowName);
+    local positionJustApplied = ApplyWindowPosition(windowName);
 
     -- Helper to calculate notification height
     local function getNotificationHeight(notification)
@@ -682,54 +677,34 @@ local function drawNotificationWindow(windowName, notifications, settings, split
     end
 
     -- Handle bottom-anchoring for "stack up" mode
-    ApplyWindowPosition(windowName);
     if stackUp then
-        -- Get or initialize bottom anchor for this window
-        local anchorKey = 'bottomAnchor_' .. windowName;
-        local bottomAnchor = notificationData.windowAnchors[anchorKey];
-        local isDragging = notificationData.windowAnchors[anchorKey .. '_dragging'];
+        if positionJustApplied then
+            -- Position was just force-applied; clear stale anchor
+            local anchorKey = 'bottomAnchor_' .. windowName;
+            notificationData.windowAnchors[anchorKey] = nil;
+            notificationData.windowAnchors[anchorKey .. '_x'] = nil;
+            notificationData.windowAnchors[anchorKey .. '_dragging'] = nil;
+        else
+            -- Get or initialize bottom anchor for this window
+            local anchorKey = 'bottomAnchor_' .. windowName;
+            local bottomAnchor = notificationData.windowAnchors[anchorKey];
+            local isDragging = notificationData.windowAnchors[anchorKey .. '_dragging'];
 
-        if bottomAnchor and not isDragging then
-            -- Position window so bottom edge stays at anchor (only when not dragging)
-            local newY = bottomAnchor - totalHeight;
-            imgui.SetNextWindowPos({notificationData.windowAnchors[anchorKey .. '_x'] or 0, newY});
-        end
-    end
-
-    -- Handle position reset or restore (main notifications window only)
-    if splitKey == nil then
-        if forcePositionReset then
-            local defX, defY = defaultPositions.GetNotificationsPosition();
-            imgui.SetNextWindowPos({defX, defY}, ImGuiCond_Always);
-            forcePositionReset = false;
-            hasAppliedSavedPosition = true;
-            lastSavedPosX, lastSavedPosY = defX, defY;
-        elseif not hasAppliedSavedPosition and gConfig.notificationsWindowPosX ~= nil then
-            imgui.SetNextWindowPos({gConfig.notificationsWindowPosX, gConfig.notificationsWindowPosY}, ImGuiCond_Once);
-            hasAppliedSavedPosition = true;
-            lastSavedPosX = gConfig.notificationsWindowPosX;
-            lastSavedPosY = gConfig.notificationsWindowPosY;
+            if bottomAnchor and not isDragging then
+                -- Position window so bottom edge stays at anchor (only when not dragging)
+                local newY = bottomAnchor - totalHeight;
+                imgui.SetNextWindowPos({notificationData.windowAnchors[anchorKey .. '_x'] or 0, newY});
+            end
         end
     end
 
     -- Create ImGui window
     if imgui.Begin(windowName, true, windowFlags) then
+        SaveWindowPosition(windowName);
         -- Wrap rendering in pcall to ensure End() is always called even if an error occurs
         local renderSuccess, renderErr = pcall(function()
             local windowPosX, windowPosY = imgui.GetWindowPos();
             local drawList = imgui.GetWindowDrawList();
-
-            -- Save position if moved (main notifications window only, with change detection to avoid spam)
-            if splitKey == nil and not gConfig.lockPositions then
-                if lastSavedPosX == nil or
-                   math.abs(windowPosX - lastSavedPosX) > 1 or
-                   math.abs(windowPosY - lastSavedPosY) > 1 then
-                    gConfig.notificationsWindowPosX = windowPosX;
-                    gConfig.notificationsWindowPosY = windowPosY;
-                    lastSavedPosX = windowPosX;
-                    lastSavedPosY = windowPosY;
-                end
-            end
 
             -- Set window size
             imgui.Dummy({notificationWidth, totalHeight});
@@ -1338,14 +1313,19 @@ local function drawGroupWindow(groupNum, settings)
     end
 
     -- Handle bottom-anchoring for "stack up" mode
-    ApplyWindowPosition(windowName);
+    local positionJustApplied = ApplyWindowPosition(windowName);
     if stackUp then
-        local anchor = notificationData.groupWindowAnchors[groupNum];
-        local isDragging = anchor and anchor.dragging;
+        if positionJustApplied then
+            -- Position was just force-applied (e.g., Restore UI Positions); clear stale anchor
+            notificationData.groupWindowAnchors[groupNum] = nil;
+        else
+            local anchor = notificationData.groupWindowAnchors[groupNum];
+            local isDragging = anchor and anchor.dragging;
 
-        if anchor and anchor.y and not isDragging then
-            local newY = anchor.y - totalHeight;
-            imgui.SetNextWindowPos({anchor.x or 0, newY});
+            if anchor and anchor.y and not isDragging then
+                local newY = anchor.y - totalHeight;
+                imgui.SetNextWindowPos({anchor.x or 0, newY});
+            end
         end
     end
 
@@ -1537,10 +1517,6 @@ M.ResetPositions = function()
         -- Clear bottom anchor for stack-up mode
         notificationData.groupWindowAnchors[groupNum] = nil;
     end
-
-    -- Legacy: also reset old main window flags
-    forcePositionReset = true;
-    hasAppliedSavedPosition = false;
 end
 
 return M;

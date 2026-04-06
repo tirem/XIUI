@@ -21,12 +21,6 @@ local data = require('modules.partylist.data');
 
 local display = {};
 
--- Position save/restore state (per-party)
-local hasAppliedSavedPosition = { false, false, false };
-local forcePositionReset = { false, false, false };
-local lastSavedPosX = { nil, nil, nil };
-local lastSavedPosY = { nil, nil, nil };
-
 -- Helper: Set font text only if changed (avoids texture regeneration)
 local function setCachedText(memIdx, fontKey, font, text)
     if not data.memberTextCache[memIdx] then
@@ -1238,7 +1232,7 @@ function display.DrawPartyWindow(settings, party, partyIndex)
     imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {0,0});
     imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, { settings.barSpacing * scale.x, 0 });
     
-    ApplyWindowPosition(windowName);
+    local positionJustApplied = ApplyWindowPosition(windowName);
     
     if (imgui.Begin(windowName, true, windowFlags)) then
         SaveWindowPosition(windowName);
@@ -1337,28 +1331,6 @@ function display.DrawPartyWindow(settings, party, partyIndex)
         );
     end
 
-    -- Save position if moved (with change detection to avoid spam) - all party windows
-    local winPosX, winPosY = imgui.GetWindowPos();
-    if not gConfig.lockPositions then
-        if lastSavedPosX[partyIndex] == nil or
-           math.abs(winPosX - lastSavedPosX[partyIndex]) > 1 or
-           math.abs(winPosY - lastSavedPosY[partyIndex]) > 1 then
-            if partyIndex == 1 then
-                gConfig.partyListWindowPosX = winPosX;
-                gConfig.partyListWindowPosY = winPosY;
-            elseif partyIndex == 2 then
-                gConfig.partyList2WindowPosX = winPosX;
-                gConfig.partyList2WindowPosY = winPosY;
-            else
-                gConfig.partyList3WindowPosX = winPosX;
-                gConfig.partyList3WindowPosY = winPosY;
-            end
-            lastSavedPosX[partyIndex] = winPosX;
-            lastSavedPosY[partyIndex] = winPosY;
-            -- Position will be persisted on addon unload
-        end
-    end
-
     imgui.End();
     imgui.PopStyleVar(2);
 
@@ -1377,25 +1349,37 @@ function display.DrawPartyWindow(settings, party, partyIndex)
 
         local partyListState = gConfig.partyListState[partyIndex];
 
-        if (partyListState ~= nil) then
-            if (menuHeight ~= partyListState.height) then
-                local newPosY = partyListState.y + partyListState.height - menuHeight;
-                imguiPosY = newPosY;
-                imgui.SetWindowPos(windowName, { imguiPosX, imguiPosY });
-            end
-        end
+        -- Detect external position change (forced reset, user drag, etc.)
+        -- Note: We don't use positionJustApplied here because partyListState is persisted
+        -- in the profile and should be preserved on normal login (when positions are applied
+        -- from saved data). RecoverAllPositions explicitly clears partyListState for resets.
+        local positionChanged = partyListState ~= nil and partyListState.y ~= nil and partyListState.y ~= imguiPosY;
 
-        if (partyListState == nil or
-                imguiPosX ~= partyListState.x or imguiPosY ~= partyListState.y or
-                menuWidth ~= partyListState.width or menuHeight ~= partyListState.height) then
-            gConfig.partyListState[partyIndex] = {
-                x = imguiPosX,
-                y = imguiPosY,
-                width = menuWidth,
-                height = menuHeight,
-            };
-            data.lastSettingsSaveTime = os.clock();
-            data.pendingSettingsSave = true;
+        if positionChanged then
+            -- Position was externally moved; clear tracking so height adjustment
+            -- doesn't fire until state is re-established on the next frame
+            gConfig.partyListState[partyIndex] = nil;
+        else
+            if (partyListState ~= nil) then
+                if (menuHeight ~= partyListState.height) then
+                    local newPosY = partyListState.y + partyListState.height - menuHeight;
+                    imguiPosY = newPosY;
+                    imgui.SetWindowPos(windowName, { imguiPosX, imguiPosY });
+                end
+            end
+
+            if (partyListState == nil or
+                    imguiPosX ~= partyListState.x or imguiPosY ~= partyListState.y or
+                    menuWidth ~= partyListState.width or menuHeight ~= partyListState.height) then
+                gConfig.partyListState[partyIndex] = {
+                    x = imguiPosX,
+                    y = imguiPosY,
+                    width = menuWidth,
+                    height = menuHeight,
+                };
+                data.lastSettingsSaveTime = os.clock();
+                data.pendingSettingsSave = true;
+            end
         end
     end
 end
@@ -1485,9 +1469,20 @@ function display.DrawWindow(settings)
 end
 
 display.ResetPositions = function()
+    local positionGetters = {
+        defaultPositions.GetPartyListPosition,
+        defaultPositions.GetPartyList2Position,
+        defaultPositions.GetPartyList3Position,
+    };
+    local windowNames = { 'PartyList', 'PartyList2', 'PartyList3' };
     for i = 1, 3 do
-        forcePositionReset[i] = true;
-        hasAppliedSavedPosition[i] = false;
+        local defX, defY = positionGetters[i]();
+        if gConfig.windowPositions then
+            gConfig.windowPositions[windowNames[i]] = { x = defX, y = defY };
+        end
+        if gConfig.appliedPositions then
+            gConfig.appliedPositions[windowNames[i]] = nil;
+        end
     end
 end
 

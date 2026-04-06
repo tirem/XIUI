@@ -89,11 +89,6 @@ function M.Initialize(settings)
     if gConfig then
         gConfig.hotbarPreview = false;
         if gConfig.hotbarEnabled == nil then gConfig.hotbarEnabled = true; end
-
-        -- Per-bar position defaults
-        if gConfig.hotbarBarPositions == nil then
-            gConfig.hotbarBarPositions = {};
-        end
     end
 
     -- Initialize data module (sets player job)
