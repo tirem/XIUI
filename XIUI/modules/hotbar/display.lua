@@ -790,6 +790,8 @@ function M.ClearIconCacheForSlot(barIndex, slotIndex)
 end
 
 -- Reset all bar positions to defaults (called when settings are reset)
+-- Note: Hotbar uses forcePositionReset + nil positions instead of explicit defaults
+-- because it has its own position pipeline with per-bar default calculation at render time.
 function M.ResetPositions()
     forcePositionReset = true;
     if gConfig.windowPositions and gConfig.appliedPositions then

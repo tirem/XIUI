@@ -481,6 +481,49 @@ end
 
 gConfig.appliedPositions = {};
 
+-- Forward-declare GetDefaultWindowPositions so it can be used at load time
+local function GetDefaultWindowPositions()
+    local defPos = require('libs.defaultpositions');
+    local px, py = defPos.GetPlayerBarPosition();
+    local tx, ty = defPos.GetTargetBarPosition();
+    local pl1x, pl1y = defPos.GetPartyListPosition();
+    local pl2x, pl2y = defPos.GetPartyList2Position();
+    local pl3x, pl3y = defPos.GetPartyList3Position();
+    local cx, cy = defPos.GetCastBarPosition();
+    local nx, ny = defPos.GetNotificationsPosition();
+    local tpx, tpy = defPos.GetTreasurePoolPosition();
+    local petx, pety = defPos.GetPetBarPosition();
+    local ex, ey = defPos.GetExpBarPosition();
+    local gx, gy = defPos.GetGilTrackerPosition();
+    local ix, iy = defPos.GetInventoryPosition();
+    local elx, ely = defPos.GetEnemyListPosition();
+    local ccx, ccy = defPos.GetCastCostPosition();
+
+    local staggerY = 35;
+    return {
+        PlayerBar = { x = px, y = py },
+        TargetBar = { x = tx, y = ty },
+        PartyList = { x = pl1x, y = pl1y },
+        PartyList2 = { x = pl2x, y = pl2y },
+        PartyList3 = { x = pl3x, y = pl3y },
+        CastBar = { x = cx, y = cy },
+        Notifications_Group1 = { x = nx, y = ny },
+        Notifications_Group2 = { x = nx, y = ny + 180 },
+        TreasurePool = { x = tpx, y = tpy },
+        PetBar = { x = petx, y = pety },
+        ExpBar = { x = ex, y = ey },
+        GilTracker = { x = gx, y = gy },
+        EnemyList = { x = elx, y = ely },
+        CastCost = { x = ccx, y = ccy },
+        InventoryTracker = { x = ix, y = iy },
+        SatchelTracker = { x = ix, y = iy + staggerY },
+        SafeTracker = { x = ix, y = iy + staggerY * 2 },
+        StorageTracker = { x = ix, y = iy + staggerY * 3 },
+        LockerTracker = { x = ix, y = iy + staggerY * 4 },
+        WardrobeTracker = { x = ix, y = iy + staggerY * 5 },
+    };
+end
+
 -- Inject default positions if profile has none (brand new profile)
 if (not gConfig.windowPositions or next(gConfig.windowPositions) == nil) then
     gConfig.windowPositions = GetDefaultWindowPositions();
@@ -526,48 +569,6 @@ end
 function GetLayoutTemplate(partyIndex)
     local party = GetPartySettings(partyIndex);
     return party.layout == 1 and gConfig.layoutCompact or gConfig.layoutHorizontal;
-end
-
-local function GetDefaultWindowPositions()
-    local defPos = require('libs.defaultpositions');
-    local px, py = defPos.GetPlayerBarPosition();
-    local tx, ty = defPos.GetTargetBarPosition();
-    local pl1x, pl1y = defPos.GetPartyListPosition();
-    local pl2x, pl2y = defPos.GetPartyList2Position();
-    local pl3x, pl3y = defPos.GetPartyList3Position();
-    local cx, cy = defPos.GetCastBarPosition();
-    local nx, ny = defPos.GetNotificationsPosition();
-    local tpx, tpy = defPos.GetTreasurePoolPosition();
-    local petx, pety = defPos.GetPetBarPosition();
-    local ex, ey = defPos.GetExpBarPosition();
-    local gx, gy = defPos.GetGilTrackerPosition();
-    local ix, iy = defPos.GetInventoryPosition();
-    local elx, ely = defPos.GetEnemyListPosition();
-    local ccx, ccy = defPos.GetCastCostPosition();
-
-    local staggerY = 35;
-    return {
-        PlayerBar = { x = px, y = py },
-        TargetBar = { x = tx, y = ty },
-        PartyList = { x = pl1x, y = pl1y },
-        PartyList2 = { x = pl2x, y = pl2y },
-        PartyList3 = { x = pl3x, y = pl3y },
-        CastBar = { x = cx, y = cy },
-        Notifications_Group1 = { x = nx, y = ny },
-        Notifications_Group2 = { x = nx, y = ny + 180 },
-        TreasurePool = { x = tpx, y = tpy },
-        PetBar = { x = petx, y = pety },
-        ExpBar = { x = ex, y = ey },
-        GilTracker = { x = gx, y = gy },
-        EnemyList = { x = elx, y = ely },
-        CastCost = { x = ccx, y = ccy },
-        InventoryTracker = { x = ix, y = iy },
-        SatchelTracker = { x = ix, y = iy + staggerY },
-        SafeTracker = { x = ix, y = iy + staggerY * 2 },
-        StorageTracker = { x = ix, y = iy + staggerY * 3 },
-        LockerTracker = { x = ix, y = iy + staggerY * 4 },
-        WardrobeTracker = { x = ix, y = iy + staggerY * 5 },
-    };
 end
 
 function CreateProfile(name)

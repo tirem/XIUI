@@ -646,9 +646,9 @@ config.DrawWindow = function(us)
 
     -- Constrain config window to never exceed the game's render resolution.
     -- Prevents the window from being larger than the screen or lost off-screen on small resolutions.
-    local io = imgui.GetIO();
-    local sw = io.DisplaySize.x;
-    local sh = io.DisplaySize.y;
+    local ioData = imgui.GetIO();
+    local sw = ioData.DisplaySize.x;
+    local sh = ioData.DisplaySize.y;
     if not sw or sw < 1 then return; end
     if not sh or sh < 1 then return; end
 
