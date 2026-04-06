@@ -480,6 +480,12 @@ else
 end
 
 gConfig.appliedPositions = {};
+
+-- Inject default positions if profile has none (brand new profile)
+if (not gConfig.windowPositions or next(gConfig.windowPositions) == nil) then
+    gConfig.windowPositions = GetDefaultWindowPositions();
+end
+
 gConfigVersion = 0;
 settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
 
@@ -536,7 +542,10 @@ local function GetDefaultWindowPositions()
     local ex, ey = defPos.GetExpBarPosition();
     local gx, gy = defPos.GetGilTrackerPosition();
     local ix, iy = defPos.GetInventoryPosition();
+    local elx, ely = defPos.GetEnemyListPosition();
+    local ccx, ccy = defPos.GetCastCostPosition();
 
+    local staggerY = 35;
     return {
         PlayerBar = { x = px, y = py },
         TargetBar = { x = tx, y = ty },
@@ -550,7 +559,14 @@ local function GetDefaultWindowPositions()
         PetBar = { x = petx, y = pety },
         ExpBar = { x = ex, y = ey },
         GilTracker = { x = gx, y = gy },
+        EnemyList = { x = elx, y = ely },
+        CastCost = { x = ccx, y = ccy },
         InventoryTracker = { x = ix, y = iy },
+        SatchelTracker = { x = ix, y = iy + staggerY },
+        SafeTracker = { x = ix, y = iy + staggerY * 2 },
+        StorageTracker = { x = ix, y = iy + staggerY * 3 },
+        LockerTracker = { x = ix, y = iy + staggerY * 4 },
+        WardrobeTracker = { x = ix, y = iy + staggerY * 5 },
     };
 end
 

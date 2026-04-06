@@ -1350,9 +1350,12 @@ function display.DrawPartyWindow(settings, party, partyIndex)
         local partyListState = gConfig.partyListState[partyIndex];
 
         -- Detect external position change (forced reset, user drag, etc.)
+        -- Note: We don't use positionJustApplied here because partyListState is persisted
+        -- in the profile and should be preserved on normal login (when positions are applied
+        -- from saved data). RecoverAllPositions explicitly clears partyListState for resets.
         local positionChanged = partyListState ~= nil and partyListState.y ~= nil and partyListState.y ~= imguiPosY;
 
-        if positionJustApplied or positionChanged then
+        if positionChanged then
             -- Position was externally moved; clear tracking so height adjustment
             -- doesn't fire until state is re-established on the next frame
             gConfig.partyListState[partyIndex] = nil;
