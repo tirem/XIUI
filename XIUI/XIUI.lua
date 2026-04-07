@@ -79,6 +79,7 @@ local hotbar = uiMods.hotbar;
 local macropalette = require('modules.hotbar.macropalette');
 local palette = require('modules.hotbar.palette');
 local skillchainModule = require('modules.hotbar.skillchain');
+local slotrenderer = require('modules.hotbar.slotrenderer');
 local configMenu = require('config');
 local debuffHandler = require('handlers.debuffhandler');
 local petBuffHandler = require('handlers.petbuffhandler');
@@ -978,6 +979,9 @@ ashita.events.register('d3d_present', 'present_cb', function ()
             end
 
             configMenu.DrawWindow();
+
+            -- Render deferred hotbar tooltip after all modules (correct z-order)
+            slotrenderer.FlushTooltip();
         else
             uiModules.HideAll();
         end

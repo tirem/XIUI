@@ -17,6 +17,9 @@ local skillchain = require('modules.hotbar.skillchain');
 local statusHandler = require('handlers.statushandler');
 local imtext = require('libs.imtext');
 
+-- Deferred tooltip: stored during render, drawn after all windows to ensure z-order
+local pendingTooltipBind = nil;
+
 -- Cache for MP cost lookups (keyed by action key string)
 local mpCostCache = {};
 
@@ -1009,45 +1012,28 @@ function M.DrawSlot(resources, params)
     end
 
     -- ========================================
-    -- 16. Tooltip
+    -- 16. Tooltip (deferred to render after all windows for correct z-order)
     -- ========================================
     local showTooltip = params.showTooltip ~= false;
     if showTooltip and isHovered and bind and not dragdrop.IsDragging() and animOpacity > 0.5 then
-        M.DrawTooltip(bind);
+        pendingTooltipBind = bind;
     end
 
     return result;
 end
 
 --[[
-    Draw tooltip for an action.
-    Should be called inside ImGui context.
-    Matches the XIUI macro palette tooltip style.
+    Draw tooltip for an action on the foreground draw list.
+    Renders on top of all ImGui windows and draw list content.
 ]]--
 function M.DrawTooltip(bind)
     if not bind then return; end
 
-    -- XIUI Color Scheme (matching macro palette)
-    local COLORS = {
-        gold = {0.957, 0.855, 0.592, 1.0},
-        bgDark = {0.067, 0.063, 0.055, 0.95},
-        border = {0.3, 0.28, 0.24, 0.8},
-        textDim = {0.6, 0.6, 0.6, 1.0},
-        red = {1.0, 0.3, 0.3, 1.0},
-    };
-
-    -- Action type labels (matching macro palette)
     local ACTION_TYPE_LABELS = {
-        ma = 'Spell (ma)',
-        ja = 'Ability (ja)',
-        ws = 'Weaponskill (ws)',
-        item = 'Item',
-        equip = 'Equip',
-        macro = 'Macro',
-        pet = 'Pet Command',
+        ma = 'Spell (ma)', ja = 'Ability (ja)', ws = 'Weaponskill (ws)',
+        item = 'Item', equip = 'Equip', macro = 'Macro', pet = 'Pet Command',
     };
 
-    -- Helper to format target (strips existing brackets, adds fresh ones)
     local function formatTarget(target)
         if not target then return nil; end
         local cleaned = target:gsub('[<>]', '');
@@ -1055,7 +1041,6 @@ function M.DrawTooltip(bind)
         return '<' .. cleaned .. '>';
     end
 
-    -- Check if action is unavailable for current job/subjob (cached lookup)
     local isUnavailable = false;
     if bind.actionType == 'ma' or bind.actionType == 'ja' or bind.actionType == 'ws' then
         local bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
@@ -1063,60 +1048,82 @@ function M.DrawTooltip(bind)
         local jobId = player and player:GetMainJob() or 0;
         local subjobId = player and player:GetSubJob() or 0;
         local availKey = bindKey .. ':' .. jobId .. ':' .. subjobId;
-
         local cached = availabilityCache[availKey];
         if cached then
             isUnavailable = not cached.isAvailable;
         else
-            -- Not cached yet, do a quick check
             local available, reason = actions.IsActionAvailable(bind);
-            if reason ~= "pending" then
+            if reason ~= 'pending' then
                 isUnavailable = not available;
             end
         end
     end
 
-    -- Style the tooltip
-    imgui.PushStyleColor(ImGuiCol_PopupBg, COLORS.bgDark);
-    imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
-    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {8, 6});
+    -- ABGR colors for foreground draw list
+    local COL_GOLD   = 0xF297DAF4;
+    local COL_DIM    = 0xFF999999;
+    local COL_RED    = 0xFF4D4DFF;
+    local COL_BG     = 0xF2110F0E;
+    local COL_BORDER = 0xCC3E4748;
 
-    imgui.BeginTooltip();
-
-    -- Action name (gold)
+    local lines = {};
     local displayName = bind.displayName or bind.action or 'Unknown';
-    imgui.TextColored(COLORS.gold, displayName);
+    lines[#lines+1] = { displayName, COL_GOLD };
 
-    imgui.Spacing();
-
-    -- Action type
     local typeLabel = ACTION_TYPE_LABELS[bind.actionType] or bind.actionType or '?';
-    imgui.TextColored(COLORS.textDim, 'Type: ' .. typeLabel);
+    lines[#lines+1] = { 'Type: ' .. typeLabel, COL_DIM };
 
-    -- Target (not shown for macro type since targets are embedded in macro text)
     if bind.actionType ~= 'macro' and bind.target and bind.target ~= '' then
-        local formattedTarget = formatTarget(bind.target);
-        if formattedTarget then
-            imgui.TextColored(COLORS.textDim, 'Target: ' .. formattedTarget);
-        end
+        local ft = formatTarget(bind.target);
+        if ft then lines[#lines+1] = { 'Target: ' .. ft, COL_DIM }; end
     end
 
-    -- Macro text preview (if macro type)
     if bind.actionType == 'macro' and bind.macroText then
-        imgui.Spacing();
-        imgui.TextColored(COLORS.textDim, bind.macroText);
+        lines[#lines+1] = { bind.macroText, COL_DIM };
     end
 
-    -- Unavailable warning (red text)
     if isUnavailable then
-        imgui.Spacing();
-        imgui.TextColored(COLORS.red, 'Action not available');
+        lines[#lines+1] = { 'Action not available', COL_RED };
     end
 
-    imgui.EndTooltip();
+    local padX, padY = 8, 6;
+    local lineH = imgui.GetTextLineHeightWithSpacing();
+    local maxW = 0;
+    for _, line in ipairs(lines) do
+        local w = imgui.CalcTextSize(line[1]);
+        if w > maxW then maxW = w; end
+    end
 
-    imgui.PopStyleVar();
-    imgui.PopStyleColor(2);
+    local tooltipW = maxW + padX * 2;
+    local tooltipH = #lines * lineH + padY * 2;
+
+    local mx, my = imgui.GetMousePos();
+    local tx = mx + 16;
+    local ty = my + 8;
+
+    local fgList = imgui.GetForegroundDrawList();
+    fgList:AddRectFilled({tx, ty}, {tx + tooltipW, ty + tooltipH}, COL_BG, 4);
+    fgList:AddRect({tx, ty}, {tx + tooltipW, ty + tooltipH}, COL_BORDER, 4, 0, 1);
+
+    local textY = ty + padY;
+    for _, line in ipairs(lines) do
+        fgList:AddText({tx + padX, textY}, line[2], line[1]);
+        textY = textY + lineH;
+    end
+end
+
+
+-- Call at the start of each frame to reset deferred tooltip state
+function M.BeginFrame()
+    pendingTooltipBind = nil;
+end
+
+-- Call after all hotbar/crossbar windows are done to render the tooltip on top
+function M.FlushTooltip()
+    if pendingTooltipBind then
+        M.DrawTooltip(pendingTooltipBind);
+        pendingTooltipBind = nil;
+    end
 end
 
 return M;

@@ -314,6 +314,9 @@ function M.DrawWindow(settings)
 
     imtext.SetConfigFromSettings(settings and settings.font_settings);
 
+    -- Reset deferred tooltip state for this frame
+    slotrenderer.BeginFrame();
+
     -- Update drag/drop state (must be called every frame, before drop zones)
     dragdrop.Update();
 
