@@ -40,6 +40,11 @@ local DEFAULT_BORDER_SCALE = 1.0;
 -- Internal Helpers
 -- ============================================
 
+-- Cache-guarded primitive property set: only writes to prim when value changes
+local function set(c, prim, ckey, prop, val)
+    if c[ckey] ~= val then prim[prop] = val; c[ckey] = val; end
+end
+
 -- Check if theme is a Window theme (has borders)
 local function IsWindowTheme(themeName)
     if themeName == nil then return false; end
@@ -218,15 +223,14 @@ function M.updateBackground(bgHandle, x, y, width, height, options)
     local c = bgHandle._cache;
     if not c then c = {}; bgHandle._cache = c; end
 
-    if c.bg_px ~= posX then bgPrim.position_x = posX; c.bg_px = posX; end
-    if c.bg_py ~= posY then bgPrim.position_y = posY; c.bg_py = posY; end
-    if c.bg_w ~= w then bgPrim.width = w; c.bg_w = w; end
-    if c.bg_h ~= h then bgPrim.height = h; c.bg_h = h; end
-    if c.bg_sx ~= bgScale then bgPrim.scale_x = bgScale; c.bg_sx = bgScale; end
-    if c.bg_sy ~= bgScale then bgPrim.scale_y = bgScale; c.bg_sy = bgScale; end
-    if c.bg_color ~= finalColor then bgPrim.color = finalColor; c.bg_color = finalColor; end
-    local vis = bgPrim.exists;
-    if c.bg_vis ~= vis then bgPrim.visible = vis; c.bg_vis = vis; end
+    set(c, bgPrim, 'bg_px', 'position_x', posX);
+    set(c, bgPrim, 'bg_py', 'position_y', posY);
+    set(c, bgPrim, 'bg_w', 'width', w);
+    set(c, bgPrim, 'bg_h', 'height', h);
+    set(c, bgPrim, 'bg_sx', 'scale_x', bgScale);
+    set(c, bgPrim, 'bg_sy', 'scale_y', bgScale);
+    set(c, bgPrim, 'bg_color', 'color', finalColor);
+    set(c, bgPrim, 'bg_vis', 'visible', bgPrim.exists);
 end
 
 --[[
@@ -262,16 +266,7 @@ function M.updateBorders(borderHandle, x, y, width, height, options)
 
     -- Hide borders for non-Window themes
     if not isWindowTheme then
-        for _, k in ipairs(M.BORDER_KEYS) do
-            if borderHandle[k] then
-                local ckey = k .. '_vis';
-                local c = borderHandle._cache;
-                if not c or c[ckey] ~= false then
-                    borderHandle[k].visible = false;
-                    if c then c[ckey] = false; end
-                end
-            end
-        end
+        M.hideBorders(borderHandle);
         return;
     end
 
@@ -297,61 +292,57 @@ function M.updateBorders(borderHandle, x, y, width, height, options)
     local br = borderHandle.br;
     local brPosX = bgX + bgWidth - math.floor((borderSize * borderScale) - (bgOffset * borderScale));
     local brPosY = bgY + bgHeight - math.floor((borderSize * borderScale) - (bgOffset * borderScale));
-    if c.br_px ~= brPosX then br.position_x = brPosX; c.br_px = brPosX; end
-    if c.br_py ~= brPosY then br.position_y = brPosY; c.br_py = brPosY; end
-    if c.br_w ~= borderSize then br.width = borderSize; c.br_w = borderSize; end
-    if c.br_h ~= borderSize then br.height = borderSize; c.br_h = borderSize; end
-    if c.br_color ~= finalColor then br.color = finalColor; c.br_color = finalColor; end
-    if c.br_sx ~= borderScale then br.scale_x = borderScale; c.br_sx = borderScale; end
-    if c.br_sy ~= borderScale then br.scale_y = borderScale; c.br_sy = borderScale; end
+    set(c, br, 'br_px', 'position_x', brPosX);
+    set(c, br, 'br_py', 'position_y', brPosY);
+    set(c, br, 'br_w', 'width', borderSize);
+    set(c, br, 'br_h', 'height', borderSize);
+    set(c, br, 'br_color', 'color', finalColor);
+    set(c, br, 'br_sx', 'scale_x', borderScale);
+    set(c, br, 'br_sy', 'scale_y', borderScale);
 
     -- Top-right edge (L-shaped from top to br)
     local tr = borderHandle.tr;
     local trPosX = brPosX;
     local trPosY = bgY - (bgOffset * borderScale);
     local trH = math.ceil((brPosY - trPosY) / borderScale);
-    if c.tr_px ~= trPosX then tr.position_x = trPosX; c.tr_px = trPosX; end
-    if c.tr_py ~= trPosY then tr.position_y = trPosY; c.tr_py = trPosY; end
-    if c.tr_w ~= borderSize then tr.width = borderSize; c.tr_w = borderSize; end
-    if c.tr_h ~= trH then tr.height = trH; c.tr_h = trH; end
-    if c.tr_color ~= finalColor then tr.color = finalColor; c.tr_color = finalColor; end
-    if c.tr_sx ~= borderScale then tr.scale_x = borderScale; c.tr_sx = borderScale; end
-    if c.tr_sy ~= borderScale then tr.scale_y = borderScale; c.tr_sy = borderScale; end
+    set(c, tr, 'tr_px', 'position_x', trPosX);
+    set(c, tr, 'tr_py', 'position_y', trPosY);
+    set(c, tr, 'tr_w', 'width', borderSize);
+    set(c, tr, 'tr_h', 'height', trH);
+    set(c, tr, 'tr_color', 'color', finalColor);
+    set(c, tr, 'tr_sx', 'scale_x', borderScale);
+    set(c, tr, 'tr_sy', 'scale_y', borderScale);
 
     -- Top-left (L-shaped: top and left edges)
     local tl = borderHandle.tl;
     local tlPosX = bgX - (bgOffset * borderScale);
     local tlPosY = bgY - (bgOffset * borderScale);
     local tlW = math.ceil((trPosX - tlPosX) / borderScale);
-    if c.tl_px ~= tlPosX then tl.position_x = tlPosX; c.tl_px = tlPosX; end
-    if c.tl_py ~= tlPosY then tl.position_y = tlPosY; c.tl_py = tlPosY; end
-    if c.tl_w ~= tlW then tl.width = tlW; c.tl_w = tlW; end
-    if c.tl_h ~= trH then tl.height = trH; c.tl_h = trH; end
-    if c.tl_color ~= finalColor then tl.color = finalColor; c.tl_color = finalColor; end
-    if c.tl_sx ~= borderScale then tl.scale_x = borderScale; c.tl_sx = borderScale; end
-    if c.tl_sy ~= borderScale then tl.scale_y = borderScale; c.tl_sy = borderScale; end
+    set(c, tl, 'tl_px', 'position_x', tlPosX);
+    set(c, tl, 'tl_py', 'position_y', tlPosY);
+    set(c, tl, 'tl_w', 'width', tlW);
+    set(c, tl, 'tl_h', 'height', trH);
+    set(c, tl, 'tl_color', 'color', finalColor);
+    set(c, tl, 'tl_sx', 'scale_x', borderScale);
+    set(c, tl, 'tl_sy', 'scale_y', borderScale);
 
     -- Bottom-left edge (L-shaped from left to br)
     local bl = borderHandle.bl;
     local blPosX = tlPosX;
     local blPosY = brPosY;
-    if c.bl_px ~= blPosX then bl.position_x = blPosX; c.bl_px = blPosX; end
-    if c.bl_py ~= blPosY then bl.position_y = blPosY; c.bl_py = blPosY; end
-    if c.bl_w ~= tlW then bl.width = tlW; c.bl_w = tlW; end
-    if c.bl_h ~= borderSize then bl.height = borderSize; c.bl_h = borderSize; end
-    if c.bl_color ~= finalColor then bl.color = finalColor; c.bl_color = finalColor; end
-    if c.bl_sx ~= borderScale then bl.scale_x = borderScale; c.bl_sx = borderScale; end
-    if c.bl_sy ~= borderScale then bl.scale_y = borderScale; c.bl_sy = borderScale; end
+    set(c, bl, 'bl_px', 'position_x', blPosX);
+    set(c, bl, 'bl_py', 'position_y', blPosY);
+    set(c, bl, 'bl_w', 'width', tlW);
+    set(c, bl, 'bl_h', 'height', borderSize);
+    set(c, bl, 'bl_color', 'color', finalColor);
+    set(c, bl, 'bl_sx', 'scale_x', borderScale);
+    set(c, bl, 'bl_sy', 'scale_y', borderScale);
 
     -- Set visibility last for all borders
-    local brVis = br.exists;
-    if c.br_vis ~= brVis then br.visible = brVis; c.br_vis = brVis; end
-    local trVis = tr.exists;
-    if c.tr_vis ~= trVis then tr.visible = trVis; c.tr_vis = trVis; end
-    local tlVis = tl.exists;
-    if c.tl_vis ~= tlVis then tl.visible = tlVis; c.tl_vis = tlVis; end
-    local blVis = bl.exists;
-    if c.bl_vis ~= blVis then bl.visible = blVis; c.bl_vis = blVis; end
+    set(c, br, 'br_vis', 'visible', br.exists);
+    set(c, tr, 'tr_vis', 'visible', tr.exists);
+    set(c, tl, 'tl_vis', 'visible', tl.exists);
+    set(c, bl, 'bl_vis', 'visible', bl.exists);
 end
 
 --[[
@@ -390,17 +381,13 @@ end
     @param borderHandle table: Border handle
 ]]--
 function M.hideBorders(borderHandle)
-    if borderHandle then
-        for _, k in ipairs(M.BORDER_KEYS) do
-            if borderHandle[k] then
-                borderHandle[k].visible = false;
-            end
+    if not borderHandle then return; end
+    local cache = borderHandle._cache;
+    for _, k in ipairs(M.BORDER_KEYS) do
+        if borderHandle[k] then
+            borderHandle[k].visible = false;
         end
-        if borderHandle._cache then
-            for _, k in ipairs(M.BORDER_KEYS) do
-                borderHandle._cache[k .. '_vis'] = false;
-            end
-        end
+        if cache then cache[k .. '_vis'] = false; end
     end
 end
 
