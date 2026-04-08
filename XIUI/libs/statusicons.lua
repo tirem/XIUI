@@ -212,6 +212,8 @@ end
 local debuff_font_settings = T{
     font_height = 14,
     font_color = 0xFFFFFFFF,
+    font_flags = 1,
+    outline_width = 2,
 };
 
 -- ========================================
@@ -262,6 +264,7 @@ function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOf
                 imgui.Image(icon, { iconSize, iconSize }, { 0, 0 }, { 1, 1 });
                 if buffTimes ~= nil and buffTimes[i] ~= nil then
                     local font_base = settings or debuff_font_settings;
+                    imtext.SetConfig(gConfig.fontFamily, bit.band(font_base.font_flags or 0, 1) ~= 0, font_base.outline_width or 2);
                     local textPosX = iconPosX + iconSize / 2;
                     local textPosY = iconPosY + iconSize;
                     local timerText = tostring(buffTimes[i]);
