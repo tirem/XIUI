@@ -7,6 +7,7 @@ local ffi = require('ffi');
 local d3d8 = require('d3d8');
 local data = require('modules.hotbar.data');
 local horizonSpells = require('modules.hotbar.database.horizonspells');
+local petregistry = require('modules.hotbar.petregistry');
 local textures = require('modules.hotbar.textures');
 local macrosLib = require('libs.ffxi.macros');
 local palette = require('modules.hotbar.palette');
@@ -377,12 +378,226 @@ end
 ---@return number|nil mpCost The MP cost, or nil if not applicable
 function M.GetMPCost(bind)
     if not bind then return nil; end
-    if bind.actionType ~= 'ma' then return nil; end
 
-    local spell = GetSpellByName(bind.action);
-    if spell and spell.mp_cost and spell.mp_cost > 0 then
-        return spell.mp_cost;
+    -- Helper: safe trimmed string
+    local function trim(s)
+        if not s then return nil; end
+        s = tostring(s);
+        s = s:gsub('^%s+', ''):gsub('%s+$', '');
+        return (s ~= '' and s) or nil;
     end
+
+    -- Helper: current player main job level (for formula MP costs)
+    local function getPlayerLevel()
+        local player = AshitaCore:GetMemoryManager():GetPlayer();
+        return (player and player:GetMainJobLevel()) or 0;
+    end
+
+    -- Helper: extract a quoted or unquoted name from a macro line after a command token
+    -- e.g. /ma "Fire II" <t>   -> "Fire II"
+    --      /pet Fire II <me>   -> "Fire II"
+    local function extractNameAfterCommand(line, commandToken)
+        if not line or not commandToken then return nil; end
+        -- Quoted form first
+        local quoted = line:match('^' .. commandToken .. '%s+"([^"]+)"');
+        if quoted then return trim(quoted); end
+        -- Unquoted: capture until a target token or end-of-line
+        local unquoted = line:match('^' .. commandToken .. '%s+([^<\r\n]+)');
+        if unquoted then
+            unquoted = unquoted:gsub('%s+<.*$', ''); -- strip trailing target if included
+            return trim(unquoted);
+        end
+        return nil;
+    end
+
+    -- Helper: SMN level used for Blood Pact eligibility (main SMN, else sub SMN)
+    local function getSmnLevelForPacts()
+        local player = AshitaCore:GetMemoryManager():GetPlayer();
+        if not player then return nil; end
+        local JOB_SMN = petregistry.JOB_SMN or 15;
+        if player:GetMainJob() == JOB_SMN then
+            return player:GetMainJobLevel();
+        elseif player:GetSubJob() == JOB_SMN then
+            return player:GetSubJobLevel();
+        end
+        return nil;
+    end
+
+    -- Helper: resolve MP cost from pet registry for a pact name
+    local function getBloodPactMpCost(pactName)
+        pactName = trim(pactName);
+        if not pactName then return nil; end
+
+        local pact = petregistry.GetBloodPactByName and petregistry.GetBloodPactByName(pactName) or nil;
+        if not pact then return nil; end
+
+        -- Do not show MP when SMN level is below pact learn level (UI shows Lvl.n instead)
+        if pact.level and pact.level > 0 then
+            local smnLv = getSmnLevelForPacts();
+            if not smnLv or smnLv < pact.level then
+                return nil;
+            end
+        end
+
+        local mp = pact.mp;
+        if not mp or mp == 0 then return nil; end
+        if mp == -1 then
+            local lvl = getPlayerLevel();
+            return (lvl > 0) and (lvl * 2) or nil;
+        end
+        return mp;
+    end
+
+    -- Helper: sniff an action from macro text.
+    -- Returns: actionType ('ma'|'pet') and actionName, or nil.
+    -- Rules:
+    -- - If macro line uses /ma or /magic, treat as spell (ma).
+    -- - If macro line uses /pet, treat as pet.
+    -- - If macro line uses /ja, treat as pet ONLY if the name exists in the Blood Pact registry
+    --   (prevents misclassifying normal job abilities).
+    local function sniffActionFromMacroText(macroText)
+        macroText = trim(macroText);
+        if not macroText then return nil; end
+
+        -- Only examine the first few lines (macros are tiny, but keep it bounded)
+        local inspectedLines = 0;
+        for line in macroText:gmatch('[^\r\n]+') do
+            inspectedLines = inspectedLines + 1;
+            if inspectedLines > 6 then break; end
+
+            local l = trim(line);
+            if l then
+                -- Spells first: /ma or /magic
+                local spellName = extractNameAfterCommand(l, '/ma') or extractNameAfterCommand(l, '/magic');
+                if spellName then
+                    return 'ma', spellName;
+                end
+
+                -- Pet commands: /pet
+                local petName = extractNameAfterCommand(l, '/pet');
+                if petName then
+                    return 'pet', petName;
+                end
+
+                -- Pet pacts often appear as /ja "Name" <t> (especially when created via UI dropdowns)
+                local jaName = extractNameAfterCommand(l, '/ja');
+                if jaName then
+                    -- Only treat /ja as a pact if it exists in the pact registry.
+                    if petregistry.GetBloodPactByName and petregistry.GetBloodPactByName(jaName) then
+                        return 'pet', jaName;
+                    end
+                end
+            end
+        end
+
+        return nil;
+    end
+
+    -- Magic spells: use horizon spell DB
+    if bind.actionType == 'ma' then
+        local spell = GetSpellByName(bind.action);
+        if spell and spell.mp_cost and spell.mp_cost > 0 then
+            return spell.mp_cost;
+        end
+        return nil;
+    end
+
+    -- Pet commands: Blood Pacts and other pet abilities (only Blood Pacts have MP)
+    if bind.actionType == 'pet' then
+        return getBloodPactMpCost(bind.action);
+    end
+
+    -- Macro slots: optionally derive MP cost from recastSourceType, otherwise sniff /pet lines
+    if bind.actionType == 'macro' then
+        -- Prefer explicit recastSourceType if present (matches how cooldowns are overridden)
+        if bind.recastSourceType == 'ma' and bind.recastSourceAction then
+            return M.GetMPCost({ actionType = 'ma', action = bind.recastSourceAction });
+        end
+        if bind.recastSourceType == 'pet' and bind.recastSourceAction then
+            return getBloodPactMpCost(bind.recastSourceAction);
+        end
+
+        -- Sniff macro text (supports /ma, /magic, /pet, and /ja pacts)
+        local sniffType, sniffName = sniffActionFromMacroText(bind.macroText);
+        if sniffType == 'ma' and sniffName then
+            return M.GetMPCost({ actionType = 'ma', action = sniffName });
+        elseif sniffType == 'pet' and sniffName then
+            return getBloodPactMpCost(sniffName);
+        end
+        return nil;
+    end
+
+    return nil;
+end
+
+-- Resolve a Blood Pact record (Rage or Ward) for a bind.
+-- Supports:
+-- - actionType='pet' (direct pact name in bind.action)
+-- - actionType='macro' (recastSource pet, /pet, or /ja lines)
+-- Returns: pact table from petregistry (or nil)
+function M.GetResolvedBloodPact(bind)
+    if not bind or not petregistry or not petregistry.GetBloodPactByName then
+        return nil;
+    end
+
+    local function trim(s)
+        if not s then return nil; end
+        s = tostring(s);
+        s = s:gsub('^%s+', ''):gsub('%s+$', '');
+        return (s ~= '' and s) or nil;
+    end
+
+    local function extractNameAfterCommand(line, commandToken)
+        if not line or not commandToken then return nil; end
+        -- Quoted
+        local quoted = line:match('^' .. commandToken .. '%s+"([^"]+)"');
+        if quoted then return trim(quoted); end
+        -- Unquoted
+        local unquoted = line:match('^' .. commandToken .. '%s+([^<\r\n]+)');
+        if unquoted then
+            unquoted = unquoted:gsub('%s+<.*$', '');
+            return trim(unquoted);
+        end
+        return nil;
+    end
+
+    -- Direct pet bind
+    if bind.actionType == 'pet' and bind.action then
+        return petregistry.GetBloodPactByName(bind.action);
+    end
+
+    -- Macro bind: prefer explicit recast source if it's pet
+    if bind.actionType == 'macro' then
+        if bind.recastSourceType == 'pet' and bind.recastSourceAction then
+            return petregistry.GetBloodPactByName(bind.recastSourceAction);
+        end
+
+        local macroText = trim(bind.macroText);
+        if not macroText then return nil; end
+
+        -- Scan up to 8 lines (max macro lines)
+        local inspected = 0;
+        for line in macroText:gmatch('[^\r\n]+') do
+            inspected = inspected + 1;
+            if inspected > 8 then break; end
+
+            local l = trim(line);
+            if l then
+                local petName = extractNameAfterCommand(l, '/pet');
+                if petName then
+                    local pact = petregistry.GetBloodPactByName(petName);
+                    if pact then return pact; end
+                end
+
+                local jaName = extractNameAfterCommand(l, '/ja');
+                if jaName then
+                    local pact = petregistry.GetBloodPactByName(jaName);
+                    if pact then return pact; end
+                end
+            end
+        end
+    end
+
     return nil;
 end
 
@@ -406,6 +621,138 @@ function M.IsActionAvailable(bind)
     -- Don't cache this result - return nil as reason to signal "don't cache"
     if mainJobId == 0 or mainJobLevel == 0 then
         return true, "pending";  -- "pending" signals not to cache this result
+    end
+
+    -- Helper: check if player currently has a given buff id
+    local function HasBuffId(buffId)
+        if not buffId then return false; end
+        local buffs = player:GetBuffs();
+        if not buffs then return false; end
+        for i = 1, 32 do
+            if buffs[i] == buffId then
+                return true;
+            end
+        end
+        return false;
+    end
+
+    -- Helper: extract pact name from /pet or /ja line (quoted or unquoted)
+    local function ExtractNameAfterCommand(line, commandToken)
+        if not line or not commandToken then return nil; end
+        line = tostring(line);
+        -- Quoted
+        local quoted = line:match('^' .. commandToken .. '%s+"([^"]+)"');
+        if quoted and quoted ~= '' then return quoted; end
+        -- Unquoted (until target or EOL)
+        local unquoted = line:match('^' .. commandToken .. '%s+([^<\r\n]+)');
+        if unquoted and unquoted ~= '' then
+            unquoted = unquoted:gsub('%s+<.*$', '');
+            unquoted = unquoted:gsub('^%s+', ''):gsub('%s+$', '');
+            return (unquoted ~= '' and unquoted) or nil;
+        end
+        return nil;
+    end
+
+    -- Helper: resolve a blood pact record by name (if any)
+    local function GetBloodPactByName(name)
+        if not name or name == '' then return nil; end
+        if petregistry and petregistry.GetBloodPactByName then
+            return petregistry.GetBloodPactByName(name);
+        end
+        return nil;
+    end
+
+    local JOB_SMN = petregistry.JOB_SMN or 15;
+
+    -- Effective SMN level: main job SMN uses main level; otherwise sub SMN uses sub level
+    local function GetSmnLevelForBloodPacts()
+        if mainJobId == JOB_SMN then
+            return mainJobLevel;
+        elseif subJobId == JOB_SMN then
+            return subJobLevel;
+        end
+        return nil;
+    end
+
+    -- Blood Pact level gate (Horizon/registry `level` field)
+    local function CheckBloodPactLevelRequirement(pact)
+        if not pact or not pact.level or pact.level <= 0 then
+            return true, nil;
+        end
+        local smnLv = GetSmnLevelForBloodPacts();
+        if smnLv == nil then
+            return false, 'Job';
+        end
+        if smnLv < pact.level then
+            return false, string.format('Lvl.%d', pact.level);
+        end
+        return true, nil;
+    end
+
+    -- Pet actions: Astral Flow + Blood Pact level
+    if bind.actionType == 'pet' and bind.action then
+        local pact = GetBloodPactByName(bind.action);
+        if pact and pact.requiresFlow then
+            -- Astral Flow buff id is 55 (see bufftable.lua mapping)
+            if not HasBuffId(55) then
+                -- Don't cache this: buff state changes frequently
+                return false, "pending";
+            end
+        end
+        if pact then
+            local ok, lvlReason = CheckBloodPactLevelRequirement(pact);
+            if not ok then
+                return false, lvlReason;
+            end
+        end
+        return true, nil;
+    end
+
+    -- Macro actions: if macro resolves to a blood pact requiring Astral Flow, mark unavailable when Flow is down
+    if bind.actionType == 'macro' then
+        local pactName = nil;
+
+        -- Prefer explicit recast source override when set to pet
+        if bind.recastSourceType == 'pet' and bind.recastSourceAction then
+            pactName = bind.recastSourceAction;
+        end
+
+        -- Otherwise sniff first few lines for /pet or /ja pact names
+        if not pactName and bind.macroText then
+            local inspectedLines = 0;
+            for line in tostring(bind.macroText):gmatch('[^\r\n]+') do
+                inspectedLines = inspectedLines + 1;
+                if inspectedLines > 6 then break; end
+
+                local l = line:gsub('^%s+', ''):gsub('%s+$', '');
+                if l ~= '' then
+                    local petName = ExtractNameAfterCommand(l, '/pet');
+                    if petName then
+                        pactName = petName;
+                        break;
+                    end
+                    local jaName = ExtractNameAfterCommand(l, '/ja');
+                    if jaName and GetBloodPactByName(jaName) then
+                        pactName = jaName;
+                        break;
+                    end
+                end
+            end
+        end
+
+        if pactName then
+            local pact = GetBloodPactByName(pactName);
+            if pact and pact.requiresFlow and not HasBuffId(55) then
+                return false, "pending";
+            end
+            if pact then
+                local ok, lvlReason = CheckBloodPactLevelRequirement(pact);
+                if not ok then
+                    return false, lvlReason;
+                end
+            end
+        end
+        -- Otherwise: fall through to existing checks below (or assume available)
     end
 
     -- Handle magic spells
@@ -437,10 +784,10 @@ function M.IsActionAvailable(bind)
         -- Spell exists but can't be cast
         if mainReqLevel then
             -- Has the job but not the level
-            return false, string.format("Lv%d", mainReqLevel);
+            return false, string.format("Lvl.%d", mainReqLevel);
         elseif subReqLevel then
             -- Subjob has it but not the level
-            return false, string.format("Lv%d", subReqLevel);
+            return false, string.format("Lvl.%d", subReqLevel);
         else
             -- Job can't cast this spell at all
             return false, "Job";
