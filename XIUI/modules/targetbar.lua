@@ -604,6 +604,11 @@ targetbar.DrawWindow = function(settings)
 		elseif (isMonster) then
 			buffIds, buffTimes = debuffHandler.GetActiveDebuffs(targetEntity.ServerId);
 		end
+		-- Preview: inject dummy debuffs with timers when config is open
+		if showConfig[1] then
+			buffIds = {2, 3, 4, 5, 6};
+			buffTimes = {45, 120, 8, 210, 30};
+		end
 		imgui.NewLine();
 		-- Apply buffs offset Y
 		if settings.buffsOffsetY ~= 0 then
