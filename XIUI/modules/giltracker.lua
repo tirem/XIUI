@@ -234,6 +234,7 @@ giltracker.DrawWindow = function(settings)
 
 		imtext.SetConfigFromSettings(settings.font_settings);
 		local fontSize = settings.font_settings.font_height;
+		local rightAlign = settings.rightAlign;
 
 		-- Get offset settings from adjusted settings (same pattern as targetbar)
 		local textOffsetX = settings.textOffsetX or 0;
@@ -295,12 +296,14 @@ giltracker.DrawWindow = function(settings)
 					{iconX + iconSize, iconY + iconSize});
 
 				-- Position gil amount text
-				gilDrawX = cursorX + textOffsetX;
+				local textBaseX = cursorX + textOffsetX;
+				if rightAlign then textBaseX = textBaseX + textBlockWidth - textWidth; end
+				gilDrawX = textBaseX;
 				gilDrawY = textBlockStartY + textOffsetY;
 
 				-- Position gil/hr text below gil amount (right-aligned to match gil text's right edge)
 				if showGilPerHour then
-					gphDrawX = cursorX + textWidth + gphOffsetX - gphWidth;
+					gphDrawX = textBaseX + textWidth + gphOffsetX - gphWidth;
 					gphDrawY = textBlockStartY + textHeight + textSpacing + gphOffsetY;
 				end
 			else
@@ -323,12 +326,14 @@ giltracker.DrawWindow = function(settings)
 					{cursorX + iconSize, iconY + iconSize});
 
 				-- Position gil amount text after icon
-				gilDrawX = cursorX + iconSize + textPadding + textOffsetX;
+				local textBaseX = cursorX + iconSize + textPadding + textOffsetX;
+				if rightAlign then textBaseX = textBaseX + textBlockWidth - textWidth; end
+				gilDrawX = textBaseX;
 				gilDrawY = textBlockStartY + textOffsetY;
 
 				-- Position gil/hr text below gil amount (right-aligned to match gil text's right edge)
 				if showGilPerHour then
-					gphDrawX = cursorX + iconSize + textPadding + textWidth + gphOffsetX - gphWidth;
+					gphDrawX = textBaseX + textWidth + gphOffsetX - gphWidth;
 					gphDrawY = textBlockStartY + textHeight + textSpacing + gphOffsetY;
 				end
 			end
@@ -345,12 +350,14 @@ giltracker.DrawWindow = function(settings)
 			end
 
 			-- Position gil amount text at top
-			gilDrawX = cursorX + textOffsetX;
+			local textBaseX = cursorX + textOffsetX;
+			if rightAlign then textBaseX = textBaseX + dummyWidth - textWidth; end
+			gilDrawX = textBaseX;
 			gilDrawY = cursorY + textOffsetY;
 
 			-- Position gil/hr text below gil amount (right-aligned to match gil text's right edge)
 			if showGilPerHour then
-				gphDrawX = cursorX + textWidth + gphOffsetX - gphWidth;
+				gphDrawX = textBaseX + textWidth + gphOffsetX - gphWidth;
 				gphDrawY = cursorY + textHeight + textSpacing + gphOffsetY;
 			end
 		end
