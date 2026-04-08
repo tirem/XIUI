@@ -71,6 +71,7 @@ local function loadFont(fontFamily, isBold)
 
     -- Not cached — try loading from disk (only attempted once per key)
     if fontCache[fontKey] == false then
+        activeFont = nil;
         activeFontKey = fontKey;
         return;
     end
@@ -85,6 +86,7 @@ local function loadFont(fontFamily, isBold)
         activeFontKey = fontKey;
     else
         fontCache[fontKey] = false;
+        activeFont = nil;
         activeFontKey = fontKey;
         print(string.format('[XIUI] Failed to load font: %s (%s)', fontKey, path));
     end

@@ -315,10 +315,6 @@ local function BuildImmunityIcons(mobInfo)
     return immunityIcons;
 end
 
--- No-op: imtext is stateless, no fonts to hide
-local function HideAllFonts()
-end
-
 -- Calculate width of icons with modifiers (for positioning)
 local function CalculateIconsWidth(icons, iconSize, spacing, fontHeight)
     local totalWidth = 0;

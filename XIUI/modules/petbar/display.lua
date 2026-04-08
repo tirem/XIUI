@@ -395,7 +395,7 @@ end
 
 -- ============================================
 -- Draw Recast - Full Display Mode
--- Shows name and recast timer with progress bar using GdiFonts
+-- Shows name and recast timer with progress bar
 -- fontIndex: 1-based index for which font slot to use
 -- ============================================
 local function DrawRecastFull(drawList, x, y, timerInfo, colorConfig, fullSettings, fontIndex)
@@ -414,7 +414,6 @@ local function DrawRecastFull(drawList, x, y, timerInfo, colorConfig, fullSettin
     local readyGradient, recastGradient = GetTimerGradients(timerInfo.name, colorConfig);
     local barGradient = timerInfo.isReady and readyGradient or recastGradient;
 
-    -- Get text color from gradient start (convert hex to ARGB for GdiFonts)
     local textColorHex = color.GetGradientTextColor(barGradient[1]);
 
     -- Prepare text content
@@ -511,7 +510,6 @@ local function DrawRecastFullCharged(drawList, x, y, timerInfo, colorConfig, ful
     -- Determine text color based on charge state
     local barGradient = (charges > 0) and readyGradient or recastGradient;
 
-    -- Get text color from gradient start (convert hex to ARGB for GdiFonts)
     local textColorHex = color.GetGradientTextColor(barGradient[1]);
 
     -- Prepare text content

@@ -84,7 +84,7 @@ function M.DestroyAllPrims()
 end
 
 --[[
-    Draw a primitive-based button (background renders behind GDI fonts)
+    Draw a primitive-based button with ImGui text overlay
 
     @param id string: Unique button identifier
     @param x number: X position
@@ -598,7 +598,7 @@ end
     @param y number: Y position
     @param text string: Button label text
     @param options table: Button options plus:
-        - font: GDI font object for text rendering
+        - font: Font family name for text rendering
         - fontSize: Font size (default 10)
         - textColor: Text color ARGB (default white)
         - textHoverColor: Text color on hover (default textColor)
