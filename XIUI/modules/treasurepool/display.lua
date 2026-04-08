@@ -1,5 +1,4 @@
 --[[
--- test
 * XIUI Treasure Pool - Display Module
 * Handles rendering of the treasure pool window
 * Supports collapsed (compact) and expanded (detailed) views
@@ -19,7 +18,7 @@
 *   - Individual lot/pass buttons
 ]]--
 
-require('common'); -- test
+require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
 local windowBg = require('libs.windowbackground');

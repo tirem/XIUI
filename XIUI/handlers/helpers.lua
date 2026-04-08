@@ -214,10 +214,6 @@ function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffs
     return statusIconsLib.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset, buffTimes, settings, statusHandler, buffTable);
 end
 
-ClearDebuffFontCache = statusIconsLib.ClearDebuffFontCache;
-
--- Legacy debuffTable global (for backwards compatibility)
-debuffTable = statusIconsLib.GetDebuffTable();
 
 -- Window Background Utilities (from windowbackground.lua)
 WindowBackground = windowBackgroundLib;

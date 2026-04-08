@@ -141,16 +141,19 @@ expbar.DrawWindow = function(settings)
     local actualTextWidth = 0;
     if inlineMode then
         if jobString then
+            imtext.SetConfigFromSettings(settings.job_font_settings);
             local jobWidth = imtext.Measure(jobString, settings.job_font_settings.font_height);
             actualTextWidth = actualTextWidth + jobWidth;
         end
 
         if expString then
+            imtext.SetConfigFromSettings(settings.exp_font_settings);
             local expWidth = imtext.Measure(expString, settings.exp_font_settings.font_height);
             actualTextWidth = actualTextWidth + expWidth + expBarTextMargin;
         end
 
         if percentString then
+            imtext.SetConfigFromSettings(settings.percent_font_settings);
             local percentWidth = imtext.Measure(percentString, settings.percent_font_settings.font_height);
             -- Add spacing between exp text and percent text
             actualTextWidth = actualTextWidth + percentWidth + expBarTextMargin;
@@ -244,6 +247,7 @@ expbar.DrawWindow = function(settings)
         -- Pre-calculate percent text width for layout purposes (needed before expText positioning)
         local percentTextWidth = 0;
         if percentString then
+            imtext.SetConfigFromSettings(settings.percent_font_settings);
             percentTextWidth = imtext.Measure(percentString, settings.percent_font_settings.font_height);
         end
 
@@ -261,12 +265,14 @@ expbar.DrawWindow = function(settings)
 
         if jobString then
             -- Job Text (left-aligned)
+            imtext.SetConfigFromSettings(settings.job_font_settings);
             textWidth, textHeight = imtext.Measure(jobString, settings.job_font_settings.font_height);
             local jobBaseX = leftTextX;
             local jobBaseY = inlineMode and textY + (settings.barHeight - textHeight) / 2 - 1 or textY;
             imtext.Draw(drawList, jobString, jobBaseX + jobOffsetX, jobBaseY + jobOffsetY, gConfig.colorCustomization.expBar.jobTextColor, settings.job_font_settings.font_height);
 
             -- Exp Text (right-aligned: position is right edge, draw at rightEdge - width)
+            imtext.SetConfigFromSettings(settings.exp_font_settings);
             expTextWidth, expTextHeight = imtext.Measure(expString, settings.exp_font_settings.font_height);
 
             -- Position exp text after job text in inline mode, or at right edge in non-inline mode
@@ -289,6 +295,7 @@ expbar.DrawWindow = function(settings)
 
         -- Percent Text
         if percentString then
+            imtext.SetConfigFromSettings(settings.percent_font_settings);
             -- percentString and percentTextWidth already calculated above for layout purposes
             local _, percentTextHeight = imtext.Measure(percentString, settings.percent_font_settings.font_height);
 

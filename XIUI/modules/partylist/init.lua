@@ -60,12 +60,6 @@ partyList.Initialize = function(settings)
         );
     end
 
-    -- Calculate initial reference heights
-    for partyIndex = 1, 3 do
-        data.calculateRefHeights(partyIndex);
-    end
-    data.partyRefHeightsValid = true;
-
     -- Load cursor textures (via TextureManager)
     for partyIndex = 1, 3 do
         local cache = data.partyConfigCache[partyIndex];
@@ -94,8 +88,6 @@ partyList.UpdateVisuals = function(settings)
     -- Update cached font sizes
     for partyIndex = 1, 3 do
         data.cachedFontSizes[partyIndex] = settings.fontSizes[partyIndex];
-        -- Recalculate reference heights for this party
-        data.calculateRefHeights(partyIndex);
     end
     data.cachedFontFamily = settings.name_font_settings.font_family or '';
     data.cachedFontFlags = settings.name_font_settings.font_flags or 0;

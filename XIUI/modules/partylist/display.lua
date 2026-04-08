@@ -1177,7 +1177,7 @@ function display.DrawPartyWindow(settings, party, partyIndex)
         SaveWindowPosition(windowName);
         imguiPosX, imguiPosY = imgui.GetWindowPos();
 
-        local nameRefHeight = data.partyRefHeights[partyIndex].nameRefHeight;
+        local nameRefHeight = cache.fontSizes.name;
         local offsetSize = nameRefHeight > iconSize and nameRefHeight or iconSize;
         imgui.Dummy({0, settings.nameTextOffsetY + offsetSize});
 

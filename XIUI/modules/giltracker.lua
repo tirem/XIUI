@@ -230,7 +230,7 @@ giltracker.DrawWindow = function(settings)
     if (imgui.Begin('GilTracker', true, windowFlags)) then
 		SaveWindowPosition('GilTracker');
 		local cursorX, cursorY = imgui.GetCursorScreenPos();
-		local drawList = imgui.GetWindowDrawList();
+		local drawList = GetUIDrawList();
 
 		imtext.SetConfigFromSettings(settings.font_settings);
 		local fontSize = settings.font_settings.font_height;

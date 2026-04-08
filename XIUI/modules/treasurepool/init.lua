@@ -102,8 +102,6 @@ function M.UpdateVisuals(settings)
     if not M.initialized then return; end
 
     imtext.Reset();
-    -- Clear color cache
-    data.ClearColorCache();
     -- Update display layer
     display.UpdateVisuals(settings);
 end

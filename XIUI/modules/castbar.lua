@@ -118,6 +118,7 @@ castbar.DrawWindow = function(settings)
 			local progressBarWidth = settings.barWidth - imgui.GetStyle().FramePadding.x * 2;
 			local rightTextX = startX + progressBarWidth - bookendWidth - textPadding;
 			local percentTextStr = showConfig[1] and '50%' or math.floor(percent * 100) .. '%';
+			imtext.SetConfigFromSettings(settings.percent_font_settings);
 			local percentWidth = imtext.Measure(percentTextStr, settings.percent_font_settings.font_height);
 			imtext.Draw(drawList, percentTextStr, rightTextX - percentWidth, startY + settings.barHeight + settings.percentOffsetY, gConfig.colorCustomization.castBar.percentTextColor, settings.percent_font_settings.font_height);
 

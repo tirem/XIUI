@@ -49,8 +49,6 @@ notifications.Initialize = function(settings)
             local groupBgScale = groupSettings and groupSettings.bgScale or 1.0;
             local groupBorderScale = groupSettings and groupSettings.borderScale or 1.0;
 
-            data.groupTitleFonts[groupNum] = {};
-            data.groupSubtitleFonts[groupNum] = {};
             data.groupBgPrims[groupNum] = {};
             data.groupLoadedBgThemes[groupNum] = groupBgTheme;
 
@@ -90,12 +88,6 @@ notifications.UpdateVisuals = function(settings)
         local groupBorderScale = groupSettings and groupSettings.borderScale or 1.0;
 
         -- Initialize group tables if needed (for newly added groups)
-        if not data.groupTitleFonts[groupNum] then
-            data.groupTitleFonts[groupNum] = {};
-        end
-        if not data.groupSubtitleFonts[groupNum] then
-            data.groupSubtitleFonts[groupNum] = {};
-        end
         if not data.groupBgPrims[groupNum] then
             data.groupBgPrims[groupNum] = {};
         end

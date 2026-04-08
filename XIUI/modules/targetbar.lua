@@ -459,6 +459,7 @@ targetbar.DrawWindow = function(settings)
 
 		-- === POSITION HP% TEXT ===
 		if (showHpPercent) then
+			imtext.SetConfigFromSettings(settings.percent_font_settings);
 			local percentFontSize = settings.percent_font_settings.font_height;
 			local percentWidth, percentHeight = imtext.Measure(targetHpPercent, percentFontSize);
 			local percentOffsetX = settings.percentOffsetX or 0;
@@ -486,6 +487,7 @@ targetbar.DrawWindow = function(settings)
 
 		-- === POSITION DISTANCE TEXT ===
 		if (showDistance) then
+			imtext.SetConfigFromSettings(settings.distance_font_settings);
 			local distFontSize = settings.distance_font_settings.font_height;
 			local distString = tostring(dist);
 			local distWidth, distHeight = imtext.Measure(distString, distFontSize);
@@ -497,6 +499,7 @@ targetbar.DrawWindow = function(settings)
 				-- When above, stack to the left of HP% if both are above
 				local stackOffset = 0;
 				if showHpPercent and hpPos == POS_ABOVE then
+					imtext.SetConfigFromSettings(settings.percent_font_settings);
 					local percentWidth, _ = imtext.Measure(targetHpPercent, settings.percent_font_settings.font_height);
 					stackOffset = percentWidth + 8;
 				end
@@ -506,6 +509,7 @@ targetbar.DrawWindow = function(settings)
 				-- When below, stack to the left of HP% if both are below
 				local stackOffset = 0;
 				if showHpPercent and hpPos == POS_BELOW then
+					imtext.SetConfigFromSettings(settings.percent_font_settings);
 					local percentWidth, _ = imtext.Measure(targetHpPercent, settings.percent_font_settings.font_height);
 					stackOffset = percentWidth + 8;
 				end
@@ -516,6 +520,7 @@ targetbar.DrawWindow = function(settings)
 				-- When left, stack above HP% if both are left
 				local stackOffset = 0;
 				if showHpPercent and hpPos == POS_LEFT then
+					imtext.SetConfigFromSettings(settings.percent_font_settings);
 					local _, percentHeight = imtext.Measure(targetHpPercent, settings.percent_font_settings.font_height);
 					stackOffset = percentHeight + 2;
 				end
@@ -525,6 +530,7 @@ targetbar.DrawWindow = function(settings)
 				-- When right, stack above HP% if both are right
 				local stackOffset = 0;
 				if showHpPercent and hpPos == POS_RIGHT then
+					imtext.SetConfigFromSettings(settings.percent_font_settings);
 					local _, percentHeight = imtext.Measure(targetHpPercent, settings.percent_font_settings.font_height);
 					stackOffset = percentHeight + 2;
 				end
@@ -532,6 +538,7 @@ targetbar.DrawWindow = function(settings)
 				distY = sideTextY - (distHeight / 2) - stackOffset + distanceOffsetY;
 			end
 
+			imtext.SetConfigFromSettings(settings.distance_font_settings);
 			local desiredDistColor = gConfig.colorCustomization.targetBar.distanceTextColor;
 			imtext.Draw(drawList, distString, distX, distY, desiredDistColor, distFontSize);
 		end
@@ -574,6 +581,7 @@ targetbar.DrawWindow = function(settings)
 			);
 
 			-- Draw cast text below the cast bar (centered on cast bar)
+			imtext.SetConfigFromSettings(settings.cast_font_settings);
 			local castFontSize = settings.cast_font_settings.font_height;
 			local castDisplayText = inConfigMode and "Fire III (Demo)" or castData.spellName;
 			local castWidth, _ = imtext.Measure(castDisplayText, castFontSize);
@@ -667,6 +675,7 @@ targetbar.DrawWindow = function(settings)
 
 				-- Left-aligned text position (ToT name) - 8px from left edge (after bookend)
 				local totLeftTextX = totStartX + totBookendWidth + totTextPadding;
+				imtext.SetConfigFromSettings(settings.totName_font_settings);
 				local totFontSize = settings.totName_font_settings.font_height;
 				local totName = IsPet(totIndex, playerEnt) and (totEntity.Name .. ' (Pet)') or totEntity.Name;
 				imtext.Draw(drawList, totName, totLeftTextX, totStartY - totFontSize - 4, totColor, totFontSize);
@@ -742,11 +751,13 @@ targetbar.DrawWindow = function(settings)
 					end
 
 					-- Draw name text above bar (left-aligned, X = left edge)
+					imtext.SetConfigFromSettings(settings.subtargetName_font_settings);
 					local stNameFontSize = settings.subtargetName_font_settings.font_height;
 					imtext.Draw(drawList, stNameDisplay, stStartX + stBookendWidth + stTextPadding, stStartY - stNameFontSize - 4, subtargetColor, stNameFontSize);
 
 					-- Calculate right-side text positions (distance and HP%)
 					local stRightEdge = stStartX + settings.subtargetBarWidth - stBookendWidth - stTextPadding;
+					imtext.SetConfigFromSettings(settings.subtargetPercent_font_settings);
 					local stPercentFontSize = settings.subtargetPercent_font_settings.font_height;
 					local stTextY = stStartY - stPercentFontSize - 4;
 
@@ -843,6 +854,7 @@ targetbar.DrawWindow = function(settings)
 
 				-- Left-aligned text position (ToT name) - 8px from left edge (after bookend)
 				local totLeftTextXSplit = totStartX + totBookendWidthSplit + totTextPaddingSplit;
+				imtext.SetConfigFromSettings(settings.totName_font_settings_split);
 				local totFontSizeSplit = settings.totName_font_settings_split.font_height;
 				local pEnt = GetPlayerEntity();
 				local totName = IsPet(totIndex, pEnt) and (totEntity.Name .. ' (Pet)') or totEntity.Name;

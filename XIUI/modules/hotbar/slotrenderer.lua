@@ -18,8 +18,21 @@ local statusHandler = require('handlers.statushandler');
 local imtext = require('libs.imtext');
 
 -- Deferred tooltip: stored during render, drawn after all windows to ensure z-order
--- test
 local pendingTooltipBind = nil;
+local tooltipFontSettings = nil;
+
+-- Tooltip constants (ARGB for text colors used with imtext, ABGR/U32 for rect colors)
+local TOOLTIP_FONT_SIZE = 12;
+local TOOLTIP_COL_GOLD   = 0xF2F4DA97;
+local TOOLTIP_COL_DIM    = 0xFF999999;
+local TOOLTIP_COL_RED    = 0xFFFF4D4D;
+local TOOLTIP_COL_BG     = 0xF2110F0E;
+local TOOLTIP_COL_BORDER = 0xCC3E4748;
+
+local ACTION_TYPE_LABELS = {
+    ma = 'Spell (ma)', ja = 'Ability (ja)', ws = 'Weaponskill (ws)',
+    item = 'Item', equip = 'Equip', macro = 'Macro', pet = 'Pet Command',
+};
 
 -- Cache for MP cost lookups (keyed by action key string)
 local mpCostCache = {};
@@ -307,7 +320,7 @@ local assetsPath = nil;
 
 -- Reusable result table for DrawSlot to avoid GC pressure
 -- (Creating tables per-slot per-frame causes ~7200 allocations/sec)
-local drawSlotResult = { isHovered = false, command = nil };
+local drawSlotResult = { isHovered = false };
 
 -- Reusable position/UV tables for AddImage (avoids per-call table allocations)
 local imgP1 = {0, 0};
@@ -337,9 +350,6 @@ local function GetCachedTexturePtr(filePath)
     return nil;
 end
 
--- No-op: slot invalidation was used for D3D primitive caching, ImGui draws are stateless
-function M.InvalidateSlotByKey(key) end
-
 -- Clear all cached state
 function M.ClearAllCache()
     availabilityCache = {};
@@ -351,7 +361,7 @@ function M.ClearAllCache()
     texturePtrCache = {};
 end
 
--- Clear only slot rendering cache (icons, positions, colors)
+-- Clear slot texture pointer cache
 -- Does NOT clear availability, MP cost, or item quantity caches
 -- OPTIMIZED: Use this for palette changes to avoid unnecessary recalculation cascade
 function M.ClearSlotRenderingCache()
@@ -373,6 +383,14 @@ local function GetAssetsPath()
         assetsPath = string.format('%saddons\\XIUI\\assets\\hotbar\\', AshitaCore:GetInstallPath());
     end
     return assetsPath;
+end
+
+local cachedSlotTexPath = nil;
+local function GetSlotTexPath()
+    if not cachedSlotTexPath then
+        cachedSlotTexPath = GetAssetsPath() .. 'slot.png';
+    end
+    return cachedSlotTexPath;
 end
 
 -- Calculate position based on anchor point within a slot
@@ -546,11 +564,10 @@ end
     All rendering uses ImGui draw lists (AddImage for textures, imtext for text).
     MUST be called inside an ImGui window context for interactions to work.
 
-    @param resources: Unused (kept for API compatibility)
     @param params: Rendering and interaction parameters (position, bind, icon, visual settings, callbacks)
-    @return table: { isHovered, command } (reused - read values immediately, do NOT cache)
+    @return table: { isHovered } (reused - read values immediately, do NOT cache)
 ]]--
-function M.DrawSlot(resources, params)
+function M.DrawSlot(params)
     local x = params.x;
     local y = params.y;
     local size = params.size;
@@ -564,7 +581,6 @@ function M.DrawSlot(resources, params)
     -- Reuse result table to avoid GC pressure
     -- NOTE: Caller must read values immediately, do not cache the return value
     drawSlotResult.isHovered = false;
-    drawSlotResult.command = nil;
     local result = drawSlotResult;
 
     -- Skip rendering if fully transparent
@@ -583,7 +599,7 @@ function M.DrawSlot(resources, params)
     -- ========================================
     local drawList = GetUIDrawList();
     do
-        local slotTexPtr = GetCachedTexturePtr(GetAssetsPath() .. 'slot.png');
+        local slotTexPtr = GetCachedTexturePtr(GetSlotTexPath());
         if slotTexPtr and drawList then
             -- Calculate final color with hover darkening and dim factor
             local finalColor = slotBgColor;
@@ -1052,14 +1068,8 @@ end
 function M.DrawTooltip(bind)
     if not bind then return; end
 
-    -- Action type labels
-    local ACTION_TYPE_LABELS = {
-        ma = 'Spell (ma)', ja = 'Ability (ja)', ws = 'Weaponskill (ws)',
-        item = 'Item', equip = 'Equip', macro = 'Macro', pet = 'Pet Command',
-    };
-
-    local function formatTarget(target)
     -- Helper to format target (strips existing brackets, adds fresh ones)
+    local function formatTarget(target)
         if not target then return nil; end
         local cleaned = target:gsub('[<>]', '');
         if cleaned == '' then return nil; end
@@ -1078,7 +1088,6 @@ function M.DrawTooltip(bind)
         if cached then
             isUnavailable = not cached.isAvailable;
         else
-            -- Not cached yet, do a quick check
             local available, reason = actions.IsActionAvailable(bind);
             if reason ~= 'pending' then
                 isUnavailable = not available;
@@ -1086,43 +1095,37 @@ function M.DrawTooltip(bind)
         end
     end
 
-    -- ABGR colors for foreground draw list
-    local COL_GOLD   = 0xF297DAF4;
-    local COL_DIM    = 0xFF999999;
-    local COL_RED    = 0xFF4D4DFF;
-    local COL_BG     = 0xF2110F0E;
-    local COL_BORDER = 0xCC3E4748;
+    -- Ensure custom font is configured for measuring/drawing
+    if tooltipFontSettings then
+        imtext.SetConfigFromSettings(tooltipFontSettings);
+    end
 
     local lines = {};
-    -- Action name (gold)
     local displayName = bind.displayName or bind.action or 'Unknown';
-    lines[#lines+1] = { displayName, COL_GOLD };
+    lines[#lines+1] = { displayName, TOOLTIP_COL_GOLD };
 
-    -- Action type
     local typeLabel = ACTION_TYPE_LABELS[bind.actionType] or bind.actionType or '?';
-    lines[#lines+1] = { 'Type: ' .. typeLabel, COL_DIM };
+    lines[#lines+1] = { 'Type: ' .. typeLabel, TOOLTIP_COL_DIM };
 
-    -- Target (not shown for macro type since targets are embedded in macro text)
     if bind.actionType ~= 'macro' and bind.target and bind.target ~= '' then
         local ft = formatTarget(bind.target);
-        if ft then lines[#lines+1] = { 'Target: ' .. ft, COL_DIM }; end
+        if ft then lines[#lines+1] = { 'Target: ' .. ft, TOOLTIP_COL_DIM }; end
     end
 
-    -- Macro text preview (if macro type)
     if bind.actionType == 'macro' and bind.macroText then
-        lines[#lines+1] = { bind.macroText, COL_DIM };
+        lines[#lines+1] = { bind.macroText, TOOLTIP_COL_DIM };
     end
 
-    -- Unavailable warning (red text)
     if isUnavailable then
-        lines[#lines+1] = { 'Action not available', COL_RED };
+        lines[#lines+1] = { 'Action not available', TOOLTIP_COL_RED };
     end
 
     local padX, padY = 8, 6;
-    local lineH = imgui.GetTextLineHeightWithSpacing();
+    local _, sampleH = imtext.Measure("Ag", TOOLTIP_FONT_SIZE);
+    local lineH = sampleH + 2;
     local maxW = 0;
     for _, line in ipairs(lines) do
-        local w = imgui.CalcTextSize(line[1]);
+        local w = imtext.Measure(line[1], TOOLTIP_FONT_SIZE);
         if w > maxW then maxW = w; end
     end
 
@@ -1134,20 +1137,21 @@ function M.DrawTooltip(bind)
     local ty = my + 8;
 
     local fgList = imgui.GetForegroundDrawList();
-    fgList:AddRectFilled({tx, ty}, {tx + tooltipW, ty + tooltipH}, COL_BG, 4);
-    fgList:AddRect({tx, ty}, {tx + tooltipW, ty + tooltipH}, COL_BORDER, 4, 0, 1);
+    fgList:AddRectFilled({tx, ty}, {tx + tooltipW, ty + tooltipH}, TOOLTIP_COL_BG, 4);
+    fgList:AddRect({tx, ty}, {tx + tooltipW, ty + tooltipH}, TOOLTIP_COL_BORDER, 4, 0, 1);
 
     local textY = ty + padY;
     for _, line in ipairs(lines) do
-        fgList:AddText({tx + padX, textY}, line[2], line[1]);
+        imtext.DrawSimple(fgList, line[1], tx + padX, textY, line[2], TOOLTIP_FONT_SIZE);
         textY = textY + lineH;
     end
 end
 
 
 -- Call at the start of each frame to reset deferred tooltip state
-function M.BeginFrame()
+function M.BeginFrame(fontSettings)
     pendingTooltipBind = nil;
+    tooltipFontSettings = fontSettings;
 end
 
 -- Call after all hotbar/crossbar windows are done to render the tooltip on top
@@ -1158,5 +1162,5 @@ function M.FlushTooltip()
     end
 end
 
-return M; -- end
+return M;
 

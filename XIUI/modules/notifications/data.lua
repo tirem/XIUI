@@ -110,25 +110,8 @@ M.nextId = 1;
 M.settings = nil;
 
 -- ============================================
--- Font Objects (following petbar pattern)
--- ============================================
-
--- Font arrays indexed by slot (1 to MAX_ACTIVE_NOTIFICATIONS)
-M.titleFonts = {};
-M.subtitleFonts = {};
-M.allFonts = {};
-
--- Split window placeholder fonts (DEPRECATED - indexed by split key)
-M.splitTitleFonts = {};     -- splitKey -> font
-M.splitSubtitleFonts = {};  -- splitKey -> font
-
--- ============================================
 -- Per-Group Resource Storage
 -- ============================================
-
--- Per-group font pools (indexed by group number, then slot)
-M.groupTitleFonts = {};      -- groupTitleFonts[groupNum][slot]
-M.groupSubtitleFonts = {};   -- groupSubtitleFonts[groupNum][slot]
 
 -- Per-group background primitives
 M.groupBgPrims = {};         -- groupBgPrims[groupNum][slot]
@@ -136,19 +119,9 @@ M.groupBgPrims = {};         -- groupBgPrims[groupNum][slot]
 -- Per-group window anchors (for bottom-anchoring in "stack up" mode)
 M.groupWindowAnchors = {};   -- groupWindowAnchors[groupNum] = {y, x, dragging}
 
--- Per-group color caches
-M.groupTitleColors = {};     -- groupTitleColors[groupNum][slot]
-M.groupSubtitleColors = {};  -- groupSubtitleColors[groupNum][slot]
-
--- Per-group bar color caches
-M.groupBarColors = {};       -- groupBarColors[groupNum][colorKey]
 
 -- Per-group loaded background themes (to detect when theme changes)
 M.groupLoadedBgThemes = {};  -- groupLoadedBgThemes[groupNum] = themeName
-
--- Cached colors to avoid expensive set_font_color calls
-M.lastTitleColors = {};
-M.lastSubtitleColors = {};
 
 -- Pre-cached U32 colors for progress bars (avoid hex parsing every frame)
 M.cachedBarColors = {};
@@ -175,10 +148,6 @@ M.loadedBgTheme = nil;
 -- Font/Primitive Helpers
 -- ============================================
 
--- Set all fonts visible/hidden (no-op: fonts migrated to imtext)
-function M.SetAllFontsVisible(visible)
-end
-
 -- Hide all background primitives
 function M.HideAllBackgrounds()
     -- Hide notification backgrounds
@@ -197,10 +166,6 @@ function M.HideAllBackgrounds()
             end
         end
     end
-end
-
--- Hide split window placeholder fonts (no-op: fonts migrated to imtext)
-function M.HideSplitFonts()
 end
 
 -- Check if background theme changed and reload textures if needed
@@ -241,8 +206,6 @@ end
 
 -- Clear cached colors
 function M.ClearColorCache()
-    M.lastTitleColors = {};
-    M.lastSubtitleColors = {};
     M.cachedBarColors = {};
 end
 
@@ -521,10 +484,6 @@ end
 function M.Initialize(settings)
     M.settings = settings;
     M.activeNotifications = {};
-    -- Note: Font/primitive objects are created in init.lua, not here
-    -- We just reset the tables that init.lua will populate
-    M.splitTitleFonts = {};
-    M.splitSubtitleFonts = {};
     M.splitBgPrims = {};
     M.pinnedNotifications = {};
     M.pendingQueue = {};
@@ -534,13 +493,8 @@ function M.Initialize(settings)
     M.nextId = 1;
 
     -- Initialize per-group storage
-    M.groupTitleFonts = {};
-    M.groupSubtitleFonts = {};
     M.groupBgPrims = {};
     M.groupWindowAnchors = {};
-    M.groupTitleColors = {};
-    M.groupSubtitleColors = {};
-    M.groupBarColors = {};
     M.groupLoadedBgThemes = {};
 end
 
@@ -753,20 +707,11 @@ function M.Cleanup()
     M.treasurePool = {};
     M.awardedHistory = {};
     M.settings = nil;
-    -- Note: Font/primitive objects are destroyed in init.lua Cleanup
-    -- We just clear the references here
-    M.splitTitleFonts = {};
-    M.splitSubtitleFonts = {};
     M.splitBgPrims = {};
 
     -- Clear per-group storage
-    M.groupTitleFonts = {};
-    M.groupSubtitleFonts = {};
     M.groupBgPrims = {};
     M.groupWindowAnchors = {};
-    M.groupTitleColors = {};
-    M.groupSubtitleColors = {};
-    M.groupBarColors = {};
     M.groupLoadedBgThemes = {};
 end
 
@@ -1405,9 +1350,6 @@ end
 
 -- Clear per-group color caches
 function M.ClearGroupColorCaches()
-    M.groupTitleColors = {};
-    M.groupSubtitleColors = {};
-    M.groupBarColors = {};
 end
 
 -- Get notification types assigned to a specific group

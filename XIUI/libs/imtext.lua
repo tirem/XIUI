@@ -6,7 +6,7 @@
 
     Usage:
         local imtext = require('libs.imtext');
-        imtext.SetConfig('Tahoma', true, 2);
+        imtext.SetConfigFromSettings(settings.font_settings);
         local w, h = imtext.Measure('Hello', 14);
         imtext.Draw(drawList, 'Hello', x, y, 0xFFFFFFFF, 14);
 ]]
@@ -16,19 +16,22 @@ local imgui = require('imgui');
 
 local M = {};
 
-local loadedFont = nil;
-local loadAttempted = false;
-local outlineWidth = 2;
-
+-- GDI visual parity offsets (ImGui fonts render smaller than GDI at same size)
 local GDI_SIZE_OFFSET = 2;
 local GDI_OUTLINE_OFFSET = -1;
-local currentFontKey = '';
+
+-- Font cache: fontKey -> font handle (loaded once, reused across modules)
+local fontCache = {};
+local activeFont = nil;
+local activeFontKey = '';
+local outlineWidth = 2;
 
 local cachedLineHeight = 0;
 local lineHeightFrame = -1;
 local cachedOutlineCol = nil;
-local lastArgb = nil;
-local lastColU32 = nil;
+
+-- Multi-entry color cache keyed by ARGB integer
+local colorCache = {};
 
 local pos = {0, 0};
 
@@ -56,16 +59,34 @@ end
 
 local function loadFont(fontFamily, isBold)
     local fontKey = (fontFamily or 'Tahoma') .. (isBold and ':bold' or ':regular');
-    if loadAttempted and fontKey == currentFontKey then return; end
+    if fontKey == activeFontKey then return; end
+
+    -- Check cache first (font already loaded in a previous call)
+    local cached = fontCache[fontKey];
+    if cached then
+        activeFont = cached;
+        activeFontKey = fontKey;
+        return;
+    end
+
+    -- Not cached — try loading from disk (only attempted once per key)
+    if fontCache[fontKey] == false then
+        activeFontKey = fontKey;
+        return;
+    end
 
     local path = resolveFontPath(fontFamily or 'Tahoma', isBold);
     local ok, result = pcall(function()
         return imgui.AddFontFromFileTTF(path, 20.0);
     end);
     if ok and result then
-        loadedFont = result;
-        loadAttempted = true;
-        currentFontKey = fontKey;
+        fontCache[fontKey] = result;
+        activeFont = result;
+        activeFontKey = fontKey;
+    else
+        fontCache[fontKey] = false;
+        activeFontKey = fontKey;
+        print(string.format('[XIUI] Failed to load font: %s (%s)', fontKey, path));
     end
 end
 
@@ -84,14 +105,16 @@ local function getOutlineCol()
 end
 
 local function argbToU32(argb)
-    if argb == lastArgb then return lastColU32; end
-    lastArgb = argb;
-    lastColU32 = imgui.GetColorU32(ARGBToImGui(argb));
-    return lastColU32;
+    if not argb then return 0xFFFFFFFF; end
+    local cached = colorCache[argb];
+    if cached then return cached; end
+    cached = imgui.GetColorU32(ARGBToImGui(argb));
+    colorCache[argb] = cached;
+    return cached;
 end
 
 function M.GetFont()
-    return loadedFont or imgui.GetFont();
+    return activeFont or imgui.GetFont();
 end
 
 --- Configure the text renderer from individual parameters.
@@ -114,19 +137,17 @@ function M.SetConfigFromSettings(fontSettings)
     M.SetConfig(family, isBold, ow);
 end
 
---- Reset font state so it reloads on next SetConfig call.
+--- Reset font state (call on settings change to force font reload).
 function M.Reset()
-    loadAttempted = false;
-    loadedFont = nil;
-    currentFontKey = '';
+    fontCache = {};
+    activeFont = nil;
+    activeFontKey = '';
     cachedOutlineCol = nil;
     lineHeightFrame = -1;
-    lastArgb = nil;
-    lastColU32 = nil;
+    colorCache = {};
 end
 
 --- Measure text width and height at the given font size.
---- Uses PushFont to measure with the loaded custom font for accurate centering.
 --- @param text string
 --- @param fontSize number|nil Pixel size (nil uses ImGui default)
 --- @return number width, number height
@@ -134,7 +155,7 @@ function M.Measure(text, fontSize)
     if not text or text == '' then return 0, 0; end
     if fontSize then fontSize = fontSize + GDI_SIZE_OFFSET; end
 
-    local font = loadedFont;
+    local font = activeFont;
     if font and fontSize then
         local pushOk = pcall(imgui.PushFont, font);
         if pushOk then

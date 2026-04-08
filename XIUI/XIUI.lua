@@ -1041,7 +1041,6 @@ ashita.events.register('unload', 'unload_cb', function ()
     statusHandler.clear_cache();
     progressbar.Cleanup();
     TextureManager.clear();
-    if ClearDebuffFontCache then ClearDebuffFontCache(); end
 
     uiModules.CleanupAll();
 

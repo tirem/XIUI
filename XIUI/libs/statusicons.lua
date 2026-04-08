@@ -208,10 +208,6 @@ function M.ReorderBuffsClosest(statusIds, buffTableLib, statusSide, statusTimes)
     return reorderedStatusesBuffs;
 end
 
--- ========================================
--- Debuff Font Cache
--- ========================================
-local debuffTable = T{};
 
 local debuff_font_settings = T{
     font_height = 14,
@@ -295,21 +291,6 @@ function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOf
             end
         end
     end
-end
-
--- ========================================
--- Font Cache Management
--- ========================================
-
-function M.ClearDebuffFontCache()
-    for key in pairs(debuffTable) do
-        debuffTable[key] = nil;
-    end
-end
-
--- Get the debuff table (for external access if needed)
-function M.GetDebuffTable()
-    return debuffTable;
 end
 
 return M;

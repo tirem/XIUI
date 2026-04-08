@@ -815,43 +815,6 @@ function M.ClearWonHistory()
     M.wonHistory = {};
 end
 
--- ============================================
--- Font Storage (created by init.lua, used by display.lua)
--- ============================================
-
-M.headerFont = nil;
-M.itemNameFonts = {};   -- slot -> font
-M.timerFonts = {};      -- slot -> font
-M.lotFonts = {};        -- slot -> font
-
--- Expanded view fonts (per slot)
-M.lottersFonts = {};    -- slot -> font (for "Lotters: ..." line)
-M.passersFonts = {};    -- slot -> font (for "Passed: ..." line)
-M.pendingFonts = {};    -- slot -> font (for "Pending: ..." line)
-
--- Expanded member fonts: 18 members per slot (3 columns x 6 rows for alliance)
--- Structure: memberFonts[slot][memberIdx] where memberIdx = 0-17
-M.MAX_MEMBERS_PER_ITEM = 18;
-M.memberFonts = {};     -- slot -> { [0] = font, [1] = font, ... [17] = font }
-
--- Button label fonts
-M.lotAllFont = nil;     -- "Lot" button label
-M.passAllFont = nil;    -- "Pass" button label
-M.lotItemFonts = {};    -- slot -> font ("L" button per item)
-M.passItemFonts = {};   -- slot -> font ("P" button per item)
-M.toggleFont = nil;     -- [v]/[^] toggle icon
-
--- Tab fonts
-M.tabPoolFont = nil;    -- "Pool" tab label
-M.tabHistoryFont = nil; -- "History" tab label
-
--- History fonts (for recent history tab)
--- Each history entry needs: item name, winner name + lot
-M.historyItemFonts = {};    -- index -> font (item name)
-M.historyWinnerFonts = {};  -- index -> font (winner: lot)
-
-M.allFonts = nil;
-
 -- Error message state (for displaying validation errors)
 M.lastErrorMessage = nil;        -- Last error message to display
 M.lastErrorSlot = nil;           -- Slot the error is for
@@ -885,54 +848,6 @@ function M.ClearError()
     M.lastErrorMessage = nil;
     M.lastErrorSlot = nil;
     M.lastErrorTime = 0;
-end
-
--- Color cache (to avoid expensive set_font_color calls)
-M.lastColors = {
-    header = nil,
-    itemNames = {},
-    timers = {},
-    lots = {},
-    lotters = {},
-    passers = {},
-    pending = {},
-    lotAll = nil,
-    passAll = nil,
-    lotItems = {},
-    passItems = {},
-    toggle = nil,
-    members = {},  -- [slot][memberIdx] = color
-    tabPool = nil,
-    tabHistory = nil,
-    historyItems = {},   -- [index] = color
-    historyWinners = {}, -- [index] = color
-};
-
--- Helper to set all fonts visible/hidden
-function M.SetAllFontsVisible(visible)
-end
-
--- Clear color cache
-function M.ClearColorCache()
-    M.lastColors = {
-        header = nil,
-        itemNames = {},
-        timers = {},
-        lots = {},
-        lotters = {},
-        passers = {},
-        pending = {},
-        lotAll = nil,
-        passAll = nil,
-        lotItems = {},
-        passItems = {},
-        toggle = nil,
-        members = {},
-        tabPool = nil,
-        tabHistory = nil,
-        historyItems = {},
-        historyWinners = {},
-    };
 end
 
 -- ============================================

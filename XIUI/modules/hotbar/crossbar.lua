@@ -612,8 +612,7 @@ end
 -- Rendering
 -- ============================================
 
--- Pre-allocated reusable tables for DrawSlot
-local cbResources = {};
+-- Pre-allocated reusable table for DrawSlot
 local cbParams = {};
 local CB_DROP_ACCEPTS = {'macro', 'crossbar_slot', 'slot'};
 
@@ -647,11 +646,9 @@ local function GetCbInteraction(comboMode, slotIndex)
                 end
                 -- Clear icon cache for affected slots
                 ClearCrossbarIconCacheForSlot(comboMode, slotIndex);
-                slotrenderer.InvalidateSlotByKey(comboMode .. ':' .. slotIndex);
                 -- For crossbar slot swaps, also clear the source slot
                 if payload.type == 'crossbar_slot' then
                     ClearCrossbarIconCacheForSlot(payload.comboMode, payload.slotIndex);
-                    slotrenderer.InvalidateSlotByKey(payload.comboMode .. ':' .. payload.slotIndex);
                 end
             end,
             getDragData = function()
@@ -669,7 +666,6 @@ local function GetCbInteraction(comboMode, slotIndex)
                 data.ClearCrossbarSlotData(comboMode, slotIndex);
                 -- Clear icon cache for this slot
                 ClearCrossbarIconCacheForSlot(comboMode, slotIndex);
-                slotrenderer.InvalidateSlotByKey(comboMode .. ':' .. slotIndex);
             end,
         };
     end
@@ -752,7 +748,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
     p.skillchainColor = gConfig.hotbarGlobal.skillchainHighlightColor or 0xFFD4AA44;
 
     -- Render slot using shared renderer (handles ALL rendering and interactions)
-    slotrenderer.DrawSlot(cbResources, p);
+    slotrenderer.DrawSlot(p);
 end
 
 -- Note: HandleSlotInteraction removed - now handled by slotrenderer.DrawSlot

@@ -39,12 +39,6 @@ local function getCachedInterpColors()
 	return cachedInterpColors;
 end
 
--- Note: getBaseWindowFlags moved to handlers/helpers.lua as GetBaseWindowFlags()
--- This local caching is no longer needed but kept for backwards compatibility
-local function getBaseWindowFlags()
-	return GetBaseWindowFlags(false);
-end
-
 local _XIUI_DEV_DEBUG_INTERPOLATION = false;
 local _XIUI_DEV_DEBUG_INTERPOLATION_DELAY, _XIUI_DEV_DEBUG_INTERPOLATION_NEXT_TIME;
 

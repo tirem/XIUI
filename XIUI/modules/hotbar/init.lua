@@ -316,7 +316,7 @@ function M.DrawWindow(settings)
     imtext.SetConfigFromSettings(settings and settings.font_settings);
 
     -- Reset deferred tooltip state for this frame
-    slotrenderer.BeginFrame();
+    slotrenderer.BeginFrame(settings and settings.font_settings);
 
     -- Update drag/drop state (must be called every frame, before drop zones)
     dragdrop.Update();
@@ -374,7 +374,6 @@ function M.DrawWindow(settings)
                 -- Clear icon cache for this slot (targeted - fast)
                 if crossbarInitialized then
                     crossbar.ClearIconCacheForSlot(lastPayload.comboMode, lastPayload.slotIndex);
-                    slotrenderer.InvalidateSlotByKey(lastPayload.comboMode .. ':' .. lastPayload.slotIndex);
                 end
             end
         end

@@ -467,21 +467,6 @@ end
 -- State Variables
 -- ============================================
 
--- Font objects (main pet bar)
-data.nameText = nil;
-data.distanceText = nil;
-data.hpText = nil;
-data.mpText = nil;
-data.tpText = nil;
-data.allFonts = nil;
-
--- Cached colors
-data.lastNameColor = nil;
-data.lastDistanceColor = nil;
-data.lastHpColor = nil;
-data.lastMpColor = nil;
-data.lastTpColor = nil;
-
 -- Pet target tracking (from packet data)
 data.petTargetServerId = nil;
 
@@ -1319,26 +1304,6 @@ function data.UpdateBackground(x, y, width, height, settings)
 end
 
 -- ============================================
--- Font Visibility Helper
--- ============================================
-
-function data.SetAllFontsVisible(visible)
-end
-
--- ============================================
--- Clear Cached Colors
--- ============================================
-
-function data.ClearColorCache()
-    data.lastNameColor = nil;
-    data.lastDistanceColor = nil;
-    data.lastHpColor = nil;
-    data.lastMpColor = nil;
-    data.lastTpColor = nil;
-    data.lastBstTimerColor = nil;
-end
-
--- ============================================
 -- Preview Mock Data
 -- ============================================
 
@@ -1426,12 +1391,6 @@ end
 -- ============================================
 
 function data.Reset()
-    data.nameText = nil;
-    data.distanceText = nil;
-    data.hpText = nil;
-    data.mpText = nil;
-    data.tpText = nil;
-    data.allFonts = nil;
     data.backgroundPrim = {};
     data.petImagePrim = nil;
     data.petImageTextures = {};
@@ -1447,7 +1406,6 @@ function data.Reset()
     data.lastTrackedPetName = nil;
     data.charmStartTime = nil;
     data.charmExpireTime = nil;
-    data.ClearColorCache();
 end
 
 -- ============================================

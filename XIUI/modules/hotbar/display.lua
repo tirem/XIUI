@@ -218,8 +218,7 @@ local function GetAssetsPath()
     return assetsPath;
 end
 
--- Pre-allocated reusable tables for DrawSlot
-local slotResources = {};
+-- Pre-allocated reusable table for DrawSlot
 local slotParams = {};
 local HOTBAR_DROP_ACCEPTS = {'macro', 'slot', 'crossbar_slot'};
 
@@ -324,7 +323,7 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     p.skillchainColor = gConfig.hotbarGlobal.skillchainHighlightColor or 0xFFD4AA44;
 
     -- Render slot using shared renderer (handles ALL rendering and interactions)
-    local result = slotrenderer.DrawSlot(slotResources, p);
+    local result = slotrenderer.DrawSlot(p);
     return result.isHovered;
 end
 

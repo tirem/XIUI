@@ -157,8 +157,6 @@ end
 petbar.UpdateVisuals = function(settings)
     imtext.Reset();
 
-    -- Clear cached colors
-    data.ClearColorCache();
 
     -- Background theme changes are now handled dynamically in data.UpdateBackground()
     -- based on per-pet-type settings

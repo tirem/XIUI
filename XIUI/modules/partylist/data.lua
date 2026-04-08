@@ -110,14 +110,6 @@ data.partyConfigCache = {
 data.partyConfigCacheValid = false;
 data.partyConfigCacheVersion = -1; -- Tracks which gConfigVersion we built from
 
--- Pre-calculated reference heights per party
-data.partyRefHeights = {
-    [1] = { hpRefHeight = 0, mpRefHeight = 0, tpRefHeight = 0, nameRefHeight = 0 },
-    [2] = { hpRefHeight = 0, mpRefHeight = 0, tpRefHeight = 0, nameRefHeight = 0 },
-    [3] = { hpRefHeight = 0, mpRefHeight = 0, tpRefHeight = 0, nameRefHeight = 0 },
-};
-data.partyRefHeightsValid = false;
-
 -- ============================================
 -- Config Helper Functions
 -- ============================================
@@ -632,19 +624,6 @@ function data.UpdateTextVisibility(visible, partyIndex)
 end
 
 -- ============================================
--- Reference Height Calculation
--- ============================================
-
-function data.calculateRefHeights(partyIndex)
-    local fontSizes = data.getFontSizes(partyIndex);
-    local refHeights = data.partyRefHeights[partyIndex];
-    refHeights.hpRefHeight = fontSizes.hp;
-    refHeights.mpRefHeight = fontSizes.mp;
-    refHeights.tpRefHeight = fontSizes.tp;
-    refHeights.nameRefHeight = fontSizes.name;
-end
-
--- ============================================
 -- State Reset
 -- ============================================
 
@@ -660,7 +639,6 @@ function data.Reset()
     data.loadedBg = {};
     data.partyConfigCacheValid = false;
     data.partyConfigCacheVersion = -1;
-    data.partyRefHeightsValid = false;
 end
 
 return data;

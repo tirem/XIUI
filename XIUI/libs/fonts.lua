@@ -3,6 +3,8 @@
 * Provides font weight flag conversion for settings
 ]]--
 
+local fontconst = require('libs.fontconst');
+
 local M = {};
 
 -- ========================================
@@ -11,9 +13,9 @@ local M = {};
 -- Converts fontWeight string setting to font flags
 function M.GetFontWeightFlags(fontWeight)
     if fontWeight == 'Bold' then
-        return 1; -- Bold flag
+        return fontconst.FLAG_BOLD;
     else
-        return 0; -- None
+        return fontconst.FLAG_NONE;
     end
 end
 
