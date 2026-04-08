@@ -6,6 +6,8 @@ local progressbar = require('libs.progressbar');
 local drawing = require('libs.drawing');
 local defaultPositions = require('libs.defaultpositions');
 
+-- Thank you @onimitch for the help with tons of the EXPbar module!
+
 -- Position save/restore state
 local hasAppliedSavedPosition = false;
 local forcePositionReset = false;
@@ -150,6 +152,7 @@ expbar.DrawWindow = function(settings)
 
         if percentString then
             local percentWidth = imtext.Measure(percentString, settings.percent_font_settings.font_height);
+            -- Add spacing between exp text and percent text
             actualTextWidth = actualTextWidth + percentWidth + expBarTextMargin;
         end
 
@@ -221,16 +224,20 @@ expbar.DrawWindow = function(settings)
         -- Left-aligned text position (job text)
         local leftTextX;
         if inlineMode then
+            -- In inline mode, text is in the left column area, 8px from left edge
             leftTextX = startX + textPadding;
         else
+            -- In non-inline mode, text is on the bar, 8px from left edge (after bookend)
             leftTextX = startX + bookendWidth + textPadding;
         end
 
         -- Right-aligned text position (exp text)
         local rightTextX;
         if inlineMode then
+            -- In inline mode, text is in the left column area, 8px from right edge of text column
             rightTextX = barStartX - textPadding;
         else
+            -- In non-inline mode, text is on the bar, 8px from right edge (before bookend)
             rightTextX = startX + progressBarWidth - bookendWidth - textPadding;
         end
 
@@ -262,10 +269,14 @@ expbar.DrawWindow = function(settings)
             -- Exp Text (right-aligned: position is right edge, draw at rightEdge - width)
             expTextWidth, expTextHeight = imtext.Measure(expString, settings.exp_font_settings.font_height);
 
+            -- Position exp text after job text in inline mode, or at right edge in non-inline mode
             local expBaseX;
             if inlineMode then
+                -- Exp text is right-aligned, so X position is the RIGHT edge
+                -- Position it so the right edge is at: leftTextX + jobWidth + expWidth
                 expBaseX = leftTextX + textWidth + expTextWidth + expBarTextMargin;
             else
+                -- In non-inline mode, if percent is shown, leave room for it on the right
                 if gConfig.expBarShowPercent then
                     expBaseX = rightTextX - percentTextWidth;
                 else
@@ -278,21 +289,29 @@ expbar.DrawWindow = function(settings)
 
         -- Percent Text
         if percentString then
+            -- percentString and percentTextWidth already calculated above for layout purposes
             local _, percentTextHeight = imtext.Measure(percentString, settings.percent_font_settings.font_height);
 
+            -- Position percent text
             local percentTextX, percentTextY;
             if inlineMode then
+                -- In inline mode, position after exp text on the same line (with spacing)
                 if gConfig.expBarShowText then
+                    -- Percent text is right-aligned, so X position is the RIGHT edge
+                    -- Add expBarTextMargin spacing between exp text and percent text
                     percentTextX = leftTextX + textWidth + expTextWidth + expBarTextMargin + percentTextWidth + expBarTextMargin;
                 else
                     percentTextX = leftTextX + percentTextWidth;
                 end
                 percentTextY = textY + (settings.barHeight - percentTextHeight) / 2 - 1;
             else
+                -- In non-inline mode
                 if gConfig.expBarShowText then
+                    -- Position on the same line as exp text (below bar), to the right
                     percentTextX = rightTextX;
                     percentTextY = textY;
                 else
+                    -- No text shown, position above the bar like before
                     percentTextX = barStartX + progressBarWidth - bookendWidth - textPadding;
                     percentTextY = startY - percentTextHeight - settings.textOffsetY;
                 end

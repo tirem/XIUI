@@ -55,6 +55,7 @@ notifications.Initialize = function(settings)
             data.groupLoadedBgThemes[groupNum] = groupBgTheme;
 
             for slot = 1, data.MAX_NOTIFICATIONS_PER_GROUP do
+                -- Background primitive for this group/slot
                 data.groupBgPrims[groupNum][slot] = windowBg.create(prim_data, groupBgTheme, groupBgScale, groupBorderScale);
             end
         end

@@ -18,6 +18,7 @@ local statusHandler = require('handlers.statushandler');
 local imtext = require('libs.imtext');
 
 -- Deferred tooltip: stored during render, drawn after all windows to ensure z-order
+-- test
 local pendingTooltipBind = nil;
 
 -- Cache for MP cost lookups (keyed by action key string)
@@ -305,6 +306,7 @@ end
 local assetsPath = nil;
 
 -- Reusable result table for DrawSlot to avoid GC pressure
+-- (Creating tables per-slot per-frame causes ~7200 allocations/sec)
 local drawSlotResult = { isHovered = false, command = nil };
 
 -- Reusable position/UV tables for AddImage (avoids per-call table allocations)
@@ -338,6 +340,7 @@ end
 -- No-op: slot invalidation was used for D3D primitive caching, ImGui draws are stateless
 function M.InvalidateSlotByKey(key) end
 
+-- Clear all cached state
 function M.ClearAllCache()
     availabilityCache = {};
     mpCostCache = {};
@@ -348,6 +351,9 @@ function M.ClearAllCache()
     texturePtrCache = {};
 end
 
+-- Clear only slot rendering cache (icons, positions, colors)
+-- Does NOT clear availability, MP cost, or item quantity caches
+-- OPTIMIZED: Use this for palette changes to avoid unnecessary recalculation cascade
 function M.ClearSlotRenderingCache()
     texturePtrCache = {};
 end
@@ -579,6 +585,7 @@ function M.DrawSlot(resources, params)
     do
         local slotTexPtr = GetCachedTexturePtr(GetAssetsPath() .. 'slot.png');
         if slotTexPtr and drawList then
+            -- Calculate final color with hover darkening and dim factor
             local finalColor = slotBgColor;
             local hoverDim = (isHovered and not dragdrop.IsDragging()) and 0.8 or 1.0;
             local totalDim = dimFactor * hoverDim;
@@ -591,12 +598,14 @@ function M.DrawSlot(resources, params)
                 finalColor = bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
             end
 
+            -- Apply slot opacity setting (before animation opacity)
             local slotOpacity = params.slotOpacity or 1.0;
             if slotOpacity < 1.0 then
                 local a = math.floor(bit.rshift(bit.band(finalColor, 0xFF000000), 24) * slotOpacity);
                 finalColor = bit.bor(bit.lshift(a, 24), bit.band(finalColor, 0x00FFFFFF));
             end
 
+            -- Apply animation opacity to alpha channel
             if animOpacity < 1.0 then
                 local a = math.floor(bit.rshift(bit.band(finalColor, 0xFF000000), 24) * animOpacity);
                 finalColor = bit.bor(bit.lshift(a, 24), bit.band(finalColor, 0x00FFFFFF));
@@ -677,35 +686,40 @@ function M.DrawSlot(resources, params)
             local texWidth = icon.width or 40;
             local texHeight = icon.height or 40;
 
+            -- Calculate scale to fit icon within slot with padding
             local scale = targetIconSize / math.max(texWidth, texHeight);
             local renderedWidth = texWidth * scale;
             local renderedHeight = texHeight * scale;
 
+            -- Center the icon within the slot
             local iconX = x + (size - renderedWidth) / 2;
             local iconY = y + (size - renderedHeight) / 2;
 
+            -- Calculate color: unavailable/cooldown/noMP darkening + dim factor + animation opacity
             local colorMult = 1.0;
             local applyGreyTint = false;
             if isUnavailable then
-                colorMult = 0.35;
-                applyGreyTint = true;
+                colorMult = 0.35;  -- Significantly dimmed when unavailable
+                applyGreyTint = true;  -- Apply grey/desaturated tint
             elseif isOnCooldown then
                 colorMult = 0.4;
             elseif notEnoughMp then
-                colorMult = 0.6;
+                colorMult = 0.6;  -- Slightly dimmed when not enough MP
             end
             colorMult = colorMult * dimFactor;
 
+            -- Calculate RGB values
             local r, g, b;
+            -- Grey tint for unavailable actions (desaturated)
             if applyGreyTint then
-                local grey = math.floor(180 * colorMult);
+                local grey = math.floor(180 * colorMult);  -- Lighter grey base
                 r, g, b = grey, grey, grey;
             else
                 local rgb = math.floor(255 * colorMult);
                 r, g, b = rgb, rgb, rgb;
             end
 
-            local alpha = math.floor(255 * animOpacity * (isUnavailable and 0.7 or 1.0));
+            local alpha = math.floor(255 * animOpacity * (isUnavailable and 0.7 or 1.0));  -- Lower opacity when unavailable
             local tintColor = bit.bor(
                 bit.lshift(alpha, 24),
                 bit.lshift(r, 16),
@@ -753,11 +767,13 @@ function M.DrawSlot(resources, params)
         if isUnavailable then colorMult = 0.35;
         elseif notEnoughMp then colorMult = 0.6; end
         colorMult = colorMult * dimFactor;
+        -- Gold base: R=244, G=218, B=151 (0xF4DA97)
         local r = math.floor(244 * colorMult);
         local g = math.floor(218 * colorMult);
         local b = math.floor(151 * colorMult);
         local a = math.floor(animOpacity * 255);
         local abbrColor = bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
+        -- Center position
         local abbrW = imtext.Measure(abbr, 12);
         local abbrX = x + (size - abbrW) / 2;
         local abbrY = y + size / 2 - 6;
@@ -806,6 +822,7 @@ function M.DrawSlot(resources, params)
     if params.showLabel and params.labelText and params.labelText ~= '' and animOpacity > 0.5 and drawList then
         local lblFontSize = params.labelFontSize or 10;
         local labelColor = params.labelFontColor or 0xFFFFFFFF;
+        -- Priority: Unavailable (grey) > Cooldown (grey) > Not enough MP (red) > Normal
         if isUnavailable then
             labelColor = 0xFF888888;
         elseif isOnCooldown then
@@ -830,6 +847,7 @@ function M.DrawSlot(resources, params)
             local mpFontSize = params.mpCostFontSize or 10;
             local mpX, mpY = GetAnchoredPosition(x, y, size, mpAnchor, params.mpCostOffsetX, params.mpCostOffsetY);
 
+            -- If action is unavailable, show "X" instead of MP cost
             if isUnavailable then
                 local xText = "X";
                 local xColor = 0xFFFF4444;
@@ -871,12 +889,14 @@ function M.DrawSlot(resources, params)
 
         if showQuantity and bind and animOpacity > 0.5 then
             if bind.actionType == 'item' then
+                -- Skip quantity display for equipment items (armor, weapons, accessories)
                 local isEquipment = bind.itemId and IsEquipmentItem(bind.itemId) or nil;
                 if isEquipment ~= true then
                     quantity = M.GetItemQuantity(bind.itemId, bind.action) or 0;
                     shouldShowQty = true;
                 end
             elseif bind.actionType == 'ma' then
+                -- Check if this is a ninjutsu spell that requires a tool
                 local toolQty = M.GetNinjutsuToolQuantity(bind.action);
                 if toolQty ~= nil then
                     quantity = toolQty;
@@ -927,6 +947,7 @@ function M.DrawSlot(resources, params)
     -- 13. Hover/Pressed Visual Effects
     -- ========================================
     if drawList and animOpacity > 0.5 then
+        -- Pressed effect - red if on cooldown, white otherwise
         if isPressed then
             local pressedTintColor, pressedBorderColor;
             if isOnCooldown then
@@ -938,6 +959,7 @@ function M.DrawSlot(resources, params)
             end
             drawList:AddRectFilled({x, y}, {x + size, y + size}, pressedTintColor, 4);
             drawList:AddRect({x, y}, {x + size, y + size}, pressedBorderColor, 4, 0, 2);
+        -- Hover effect (mouse)
         elseif isHovered and not dragdrop.IsDragging() then
             local hoverTintColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.15 * animOpacity});
             local hoverBorderColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.10 * animOpacity});
@@ -945,6 +967,7 @@ function M.DrawSlot(resources, params)
             drawList:AddRect({x, y}, {x + size, y + size}, hoverBorderColor, 2, 0, 1);
         end
 
+        -- Skillchain highlight (animated dotted border + icon)
         if params.skillchainName then
             local scColor = params.skillchainColor or 0xFFD4AA44;
             DrawSkillchainHighlight(drawList, x, y, size, params.skillchainName, scColor, animOpacity);
@@ -1029,18 +1052,21 @@ end
 function M.DrawTooltip(bind)
     if not bind then return; end
 
+    -- Action type labels
     local ACTION_TYPE_LABELS = {
         ma = 'Spell (ma)', ja = 'Ability (ja)', ws = 'Weaponskill (ws)',
         item = 'Item', equip = 'Equip', macro = 'Macro', pet = 'Pet Command',
     };
 
     local function formatTarget(target)
+    -- Helper to format target (strips existing brackets, adds fresh ones)
         if not target then return nil; end
         local cleaned = target:gsub('[<>]', '');
         if cleaned == '' then return nil; end
         return '<' .. cleaned .. '>';
     end
 
+    -- Check if action is unavailable for current job/subjob (cached lookup)
     local isUnavailable = false;
     if bind.actionType == 'ma' or bind.actionType == 'ja' or bind.actionType == 'ws' then
         local bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
@@ -1052,6 +1078,7 @@ function M.DrawTooltip(bind)
         if cached then
             isUnavailable = not cached.isAvailable;
         else
+            -- Not cached yet, do a quick check
             local available, reason = actions.IsActionAvailable(bind);
             if reason ~= 'pending' then
                 isUnavailable = not available;
@@ -1067,21 +1094,26 @@ function M.DrawTooltip(bind)
     local COL_BORDER = 0xCC3E4748;
 
     local lines = {};
+    -- Action name (gold)
     local displayName = bind.displayName or bind.action or 'Unknown';
     lines[#lines+1] = { displayName, COL_GOLD };
 
+    -- Action type
     local typeLabel = ACTION_TYPE_LABELS[bind.actionType] or bind.actionType or '?';
     lines[#lines+1] = { 'Type: ' .. typeLabel, COL_DIM };
 
+    -- Target (not shown for macro type since targets are embedded in macro text)
     if bind.actionType ~= 'macro' and bind.target and bind.target ~= '' then
         local ft = formatTarget(bind.target);
         if ft then lines[#lines+1] = { 'Target: ' .. ft, COL_DIM }; end
     end
 
+    -- Macro text preview (if macro type)
     if bind.actionType == 'macro' and bind.macroText then
         lines[#lines+1] = { bind.macroText, COL_DIM };
     end
 
+    -- Unavailable warning (red text)
     if isUnavailable then
         lines[#lines+1] = { 'Action not available', COL_RED };
     end
@@ -1126,4 +1158,5 @@ function M.FlushTooltip()
     end
 end
 
-return M;
+return M; -- end
+

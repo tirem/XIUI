@@ -37,10 +37,13 @@ local truncatedTextCache = {};
 
 -- Truncates text to fit within maxWidth using binary search with imtext.Measure
 local function TruncateTextToFit(text, maxWidth, fontSize)
+    -- First check if text fits without truncation
     local width, _ = imtext.Measure(text, fontSize);
     if width <= maxWidth then return text; end
 
+    -- Text is too long, use binary search to find optimal truncation point
     local ellipsis = "...";
+    -- Binary search for the longest substring that fits with ellipsis
     local left, right = 1, #text;
     local bestLength = 0;
 
@@ -49,14 +52,17 @@ local function TruncateTextToFit(text, maxWidth, fontSize)
         local truncated = text:sub(1, mid) .. ellipsis;
         width, _ = imtext.Measure(truncated, fontSize);
         if width <= maxWidth then
+            -- This length fits, try a longer one
             bestLength = mid;
             left = mid + 1;
         else
+            -- This length is too long, try a shorter one
             right = mid - 1;
         end
     end
 
     if bestLength > 0 then return text:sub(1, bestLength) .. ellipsis; end
+    -- Fallback: just ellipsis
     return ellipsis;
 end
 
@@ -64,9 +70,11 @@ end
 local function GetTruncatedText(text, maxWidth, fontSize, cacheKey)
     local cached = truncatedTextCache[cacheKey];
     if cached and cached.text == text and cached.maxWidth == maxWidth and cached.fontHeight == fontSize then
+        -- Cache hit - reuse truncated text
         return cached.truncated;
     end
 
+    -- Cache miss - compute and store
     local truncated = TruncateTextToFit(text, maxWidth, fontSize);
     truncatedTextCache[cacheKey] = {
         text = text,
@@ -337,6 +345,7 @@ local function drawNotification(slot, notification, x, y, width, height, setting
     local fadedSubtitleColor = bit.bor(bit.lshift(alphaByte, 24), bit.band(baseSubtitleColor, 0x00FFFFFF));
 
     if isMinified then
+        -- Minified mode: only show player name (no title)
         local playerName = notification.data.playerName or 'Unknown';
         local subtitleCacheKey = notification.id .. "_minified";
         local displayName = GetTruncatedText(playerName, maxTextWidth, subtitleFontHeight, subtitleCacheKey);
@@ -344,9 +353,11 @@ local function drawNotification(slot, notification, x, y, width, height, setting
             imtext.Draw(drawList, displayName, textX, textY, fadedSubtitleColor, subtitleFontHeight);
         end
     elseif isMinifying then
+        -- Minifying animation: fade out title, move subtitle up
         local title = getNotificationTitle(notification);
         local playerName = notification.data.playerName or 'Unknown';
 
+        -- Title fades out during minify (separate alpha from base animation)
         local titleAlpha = 1.0 - minifyProgress;
         local titleAlphaByte = math.floor(titleAlpha * 255);
         local minifyTitleColor = bit.bor(bit.lshift(titleAlphaByte, 24), bit.band(baseTitleColor, 0x00FFFFFF));
@@ -357,25 +368,31 @@ local function drawNotification(slot, notification, x, y, width, height, setting
             imtext.Draw(drawList, displayTitle, textX, textY, minifyTitleColor, titleFontHeight);
         end
 
-        local normalSubtitleY = textY + titleFontHeight + 2;
+        -- Subtitle moves from normal position to centered position
+        local normalSubtitleY = textY + titleFontHeight + 2;  -- Small gap between title and subtitle
         local minifiedSubtitleY = y + math.floor((scaledHeight - subtitleFontHeight) / 2);
         local interpolatedSubtitleY = normalSubtitleY + (minifyProgress * (minifiedSubtitleY - normalSubtitleY));
 
+        -- Subtitle stays fully visible during minify (alpha = 1.0)
+        -- Use player name during minify animation
         local subtitleCacheKey = notification.id .. "_minifying";
         local displayName = GetTruncatedText(playerName, maxTextWidth, subtitleFontHeight, subtitleCacheKey);
         if drawList then
             imtext.Draw(drawList, displayName, textX, interpolatedSubtitleY, baseSubtitleColor, subtitleFontHeight);
         end
     else
+        -- Normal mode: show title and subtitle
         local title = getNotificationTitle(notification);
         local subtitle = getNotificationSubtitle(notification);
 
+        -- Truncate title if needed (use notification id for cache key)
         local titleCacheKey = notification.id .. "_title";
         local displayTitle = GetTruncatedText(title, maxTextWidth, titleFontHeight, titleCacheKey);
         if drawList and alpha > 0.01 then
             imtext.Draw(drawList, displayTitle, textX, textY, fadedTitleColor, titleFontHeight);
         end
 
+        -- Truncate subtitle if needed (use notification id for cache key)
         local subtitleCacheKey = notification.id .. "_subtitle";
         local displaySubtitle = GetTruncatedText(subtitle, maxTextWidth, subtitleFontHeight, subtitleCacheKey);
         if drawList and alpha > 0.01 then
@@ -771,7 +788,10 @@ local function drawNotificationWindow(windowName, notifications, settings, split
                 -- Get background primitive based on window type
                 local bgPrim;
                 if splitKey == nil then
+                    -- Only show if no other notifications are using slot 1 (currentSlot == 0)
                     if currentSlot > 0 then
+                        -- Skip placeholder - slot 1 is in use by split window notifications
+                        -- Note: return from pcall, End() will be called below
                         return;
                     end
                     bgPrim = notificationData.bgPrims and notificationData.bgPrims[1];
@@ -787,6 +807,7 @@ local function drawNotificationWindow(windowName, notifications, settings, split
                     local configBgOpacity = gConfig.notificationsBgOpacity or 0.87;
                     local configBorderOpacity = gConfig.notificationsBorderOpacity or 1.0;
 
+                    -- Placeholder uses reduced opacity (approximately 30% of normal)
                     local placeholderOpacity = 0.3;
                     windowBg.update(bgPrim, windowPosX, windowPosY, notificationWidth, normalHeight, {
                         theme = bgTheme,
@@ -1022,6 +1043,7 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
             imtext.Draw(drawList, displayName, textX, currentSubtitleY, fadedSubtitleColor, subtitleFontHeight);
         end
     else
+        -- Normal mode
         local title = getNotificationTitle(notification);
         local subtitle = getNotificationSubtitle(notification);
 

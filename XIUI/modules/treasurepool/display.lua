@@ -1,4 +1,5 @@
 --[[
+-- test
 * XIUI Treasure Pool - Display Module
 * Handles rendering of the treasure pool window
 * Supports collapsed (compact) and expanded (detailed) views
@@ -18,7 +19,7 @@
 *   - Individual lot/pass buttons
 ]]--
 
-require('common');
+require('common'); -- test
 require('handlers.helpers');
 local imgui = require('imgui');
 local windowBg = require('libs.windowbackground');
@@ -51,7 +52,7 @@ end
 -- ============================================
 
 local ICON_SIZE = 24;
-local ROW_HEIGHT = 32;
+local ROW_HEIGHT = 32;  -- Icon (24) + top offset (2) + gap (4) + bar (3) - 1
 local PADDING = 8;
 local ICON_TEXT_GAP = 6;
 local ROW_SPACING = 4;
@@ -61,18 +62,24 @@ local BAR_HEIGHT = 3;
 -- State
 -- ============================================
 
+-- Background primitive handle
 local bgPrimHandle = nil;
+
+-- Theme tracking (for detecting changes like petbar)
 local loadedBgTheme = nil;
+
+-- Tab state: 1 = Pool view, 2 = History view
 local selectedTab = 1;
 
 -- ============================================
 -- Helper Functions
 -- ============================================
 
+-- Timer gradient colors based on remaining time
 local TIMER_GRADIENTS = {
-    critical = { '#ff4444', '#ff6666' },
-    warning = { '#ffaa44', '#ffcc66' },
-    normal = { '#4488ff', '#66aaff' },
+    critical = { '#ff4444', '#ff6666' },  -- < 60s - red
+    warning = { '#ffaa44', '#ffcc66' },   -- < 120s - orange/yellow
+    normal = { '#4488ff', '#66aaff' },    -- >= 120s - blue
 };
 
 local function getTimerGradient(remaining)
@@ -97,8 +104,8 @@ end
 -- History View Constants
 -- ============================================
 
-local HISTORY_ROW_HEIGHT = 24;
-local HISTORY_MAX_VISIBLE = 10;
+local HISTORY_ROW_HEIGHT = 24;  -- Height per history item row
+local HISTORY_MAX_VISIBLE = 10; -- Max visible history items before scrolling
 local historyScrollOffset = 0;
 local historyMaxScrollOffset = 0;
 
@@ -106,15 +113,18 @@ local historyMaxScrollOffset = 0;
 -- Treasure Pool Window
 -- ============================================
 
-local EXPANDED_ITEM_HEADER_HEIGHT = 20;
-local EXPANDED_MEMBER_ROW_HEIGHT = 12;
+-- Constants for expanded view
+local EXPANDED_ITEM_HEADER_HEIGHT = 20;  -- Item name + timer row
+local EXPANDED_MEMBER_ROW_HEIGHT = 12;   -- Height per member row
 local EXPANDED_DETAIL_FONT_SIZE = 9;
-local EXPANDED_ITEM_PADDING = 8;
-local EXPANDED_MAX_VISIBLE_ITEMS = 3;
+local EXPANDED_ITEM_PADDING = 8;         -- Internal padding for expanded items
+local EXPANDED_MAX_VISIBLE_ITEMS = 3;    -- Max items visible before scrolling
 
+-- Scroll state for expanded view
 local scrollOffset = 0;
 local maxScrollOffset = 0;
 
+-- Helper to build a comma-separated list of names with lots
 local function formatLottersList(lotters, maxChars)
     if #lotters == 0 then return '(none)'; end
     local parts = {};
@@ -126,11 +136,12 @@ local function formatLottersList(lotters, maxChars)
             break;
         end
         table.insert(parts, entry);
-        totalLen = totalLen + #entry + 2;
+        totalLen = totalLen + #entry + 2;  -- +2 for ", "
     end
     return table.concat(parts, ', ');
 end
 
+-- Helper to build a comma-separated list of names
 local function formatNamesList(list, maxChars)
     if #list == 0 then return '(none)'; end
     local parts = {};
@@ -151,9 +162,11 @@ function M.DrawWindow(settings)
     local poolItems = data.GetSortedPoolItems();
     local historyItems = data.GetWonHistory();
 
+    -- Show window if either pool has items OR history has items (depending on tab)
     local hasPoolItems = #poolItems > 0;
     local hasHistoryItems = #historyItems > 0;
 
+    -- Debug: Log state (throttled)
     local stateKey = string.format('%d_%s_%s_%d_%d', selectedTab, tostring(hasPoolItems), tostring(hasHistoryItems), #poolItems, #historyItems);
     if M._lastDisplayState ~= stateKey then
         debugLog('DrawWindow: tab=%d hasPool=%s hasHistory=%s poolCount=%d historyCount=%d',
@@ -161,11 +174,19 @@ function M.DrawWindow(settings)
         M._lastDisplayState = stateKey;
     end
 
+    -- Note: Visibility is controlled by init.lua (checks forceShow, preview, content)
+    -- If we're here, init.lua decided to show the window, so render empty states if needed
+
+    -- Reset hidden flag since we're showing content
     if M._wasHidden then
         debugLog('DrawWindow: Window becoming visible');
         M._wasHidden = false;
     end
 
+    -- Don't auto-switch tabs - let users control which tab they're viewing
+    -- Each tab will show an appropriate empty state message if it has no content
+
+    -- Get settings with validation
     local scaleX = gConfig.treasurePoolScaleX;
     if scaleX == nil or scaleX < 0.5 then scaleX = 1.0; end
 
@@ -175,10 +196,11 @@ function M.DrawWindow(settings)
     local fontSize = gConfig.treasurePoolFontSize;
     if fontSize == nil or fontSize < 8 then fontSize = 10; end
 
-    local showTitle = true;
+    local showTitle = true;  -- Always show title
     local showTimerBar = gConfig.treasurePoolShowTimerBar ~= false;
     local showTimerText = gConfig.treasurePoolShowTimerText ~= false;
     local showLots = gConfig.treasurePoolShowLots ~= false;
+    -- Split background/border settings
     local bgScale = gConfig.treasurePoolBgScale or 1.0;
     local borderScale = gConfig.treasurePoolBorderScale or 1.0;
     local bgOpacity = gConfig.treasurePoolBackgroundOpacity or 0.87;
@@ -187,43 +209,53 @@ function M.DrawWindow(settings)
     local isExpanded = gConfig.treasurePoolExpanded == true;
     local isMinimized = gConfig.treasurePoolMinimized == true;
 
+    -- Calculate dimensions (different for expanded vs collapsed)
     local iconSize = math.floor(ICON_SIZE * scaleY);
     local padding = PADDING;
     local iconTextGap = math.floor(ICON_TEXT_GAP * scaleX);
     local rowSpacing = math.floor(ROW_SPACING * scaleY);
     local barHeight = math.floor(BAR_HEIGHT * scaleY);
 
+    -- Fixed width for both expanded and collapsed views
     local contentBaseWidth = math.floor(320 * scaleX);
     local windowWidth = contentBaseWidth + (padding * 2);
 
+    -- Pre-calculate row heights and member data for expanded view (always needed for Pool tab)
     local itemRowHeights = {};
-    local itemMemberData = {};
+    local itemMemberData = {};  -- Cache member data to avoid recalculating
     local totalContentHeight = 0;
     local visibleContentHeight = 0;
     local needsScroll = false;
 
+    -- Always calculate pool item heights (needed when switching back to Pool tab)
     if hasPoolItems then
         for i, item in ipairs(poolItems) do
             local slot = item.slot;
             if isExpanded then
+                -- Get party members organized by party (A, B, C columns)
                 local partyData = data.GetMembersByParty(slot);
+                -- Cache max member count for rendering
                 partyData.maxMemberRows = data.GetMaxMemberCount(partyData);
                 itemMemberData[slot] = partyData;
 
+                -- Count active parties to determine column count
                 local numParties = 0;
                 if data.PartyHasMembers(partyData.partyA) then numParties = numParties + 1; end
                 if data.PartyHasMembers(partyData.partyB) then numParties = numParties + 1; end
                 if data.PartyHasMembers(partyData.partyC) then numParties = numParties + 1; end
                 if numParties < 1 then numParties = 1; end
 
+                -- Dynamic row count based on max members across all parties
                 local memberRows = data.GetMaxMemberCount(partyData);
-                if memberRows < 1 then memberRows = 1; end
+                if memberRows < 1 then memberRows = 1; end  -- Minimum 1 row
 
+                -- Height = header + member rows + padding + progress bar
                 local memberRowHeight = math.floor(EXPANDED_MEMBER_ROW_HEIGHT * scaleY);
                 local itemPadding = math.floor(EXPANDED_ITEM_PADDING * scaleY);
                 local headerRowHeight = math.floor(EXPANDED_ITEM_HEADER_HEIGHT * scaleY);
+                -- Content row must fit icon (24px) + small offset, use max of header or icon height
                 local contentRowHeight = math.max(headerRowHeight, iconSize + 4);
-                local memberBarGap = 4;
+                local memberBarGap = 4;  -- Gap between member list and progress bar
 
                 itemRowHeights[i] = itemPadding + contentRowHeight + (memberRows * memberRowHeight) + memberBarGap + itemPadding + barHeight;
             else
@@ -233,7 +265,9 @@ function M.DrawWindow(settings)
     end
 
     if selectedTab == 1 then
+        -- Pool tab: calculate content height based on pool items
         if #poolItems == 0 then
+            -- "No items in pool" message height
             totalContentHeight = fontSize + 4;
             visibleContentHeight = fontSize + 4;
             scrollOffset = 0;
@@ -246,9 +280,11 @@ function M.DrawWindow(settings)
                 end
             end
 
+            -- Calculate visible content height (limited in expanded view)
             visibleContentHeight = totalContentHeight;
 
             if isExpanded and #poolItems > EXPANDED_MAX_VISIBLE_ITEMS then
+                -- Calculate height for first N items only
                 visibleContentHeight = 0;
                 for i = 1, EXPANDED_MAX_VISIBLE_ITEMS do
                     visibleContentHeight = visibleContentHeight + itemRowHeights[i];
@@ -264,10 +300,12 @@ function M.DrawWindow(settings)
             end
         end
     else
+        -- History tab: calculate based on history items
         local historyRowHeight = math.floor(HISTORY_ROW_HEIGHT * scaleY);
         local historyCount = #historyItems;
 
         if historyCount == 0 then
+            -- "No recent winners" message height
             totalContentHeight = fontSize + 4;
             visibleContentHeight = fontSize + 4;
             historyScrollOffset = 0;
@@ -276,9 +314,11 @@ function M.DrawWindow(settings)
             totalContentHeight = (historyCount * historyRowHeight) + ((historyCount - 1) * rowSpacing);
 
             if historyCount > HISTORY_MAX_VISIBLE then
+                -- Limit visible height to max visible items
                 visibleContentHeight = (HISTORY_MAX_VISIBLE * historyRowHeight) + ((HISTORY_MAX_VISIBLE - 1) * rowSpacing);
                 needsScroll = true;
                 historyMaxScrollOffset = totalContentHeight - visibleContentHeight;
+                -- Clamp scroll offset
                 if historyScrollOffset > historyMaxScrollOffset then
                     historyScrollOffset = historyMaxScrollOffset;
                 end
@@ -298,7 +338,8 @@ function M.DrawWindow(settings)
         headerHeight = fontSize + math.floor(6 * scaleY);
     end
 
-    local headerItemGap = showTitle and 4 or 0;
+    local headerItemGap = showTitle and 4 or 0;  -- Gap between header and items
+    -- When minimized, only show header bar
     local totalHeight;
     if isMinimized then
         totalHeight = padding + headerHeight + padding;
@@ -306,6 +347,7 @@ function M.DrawWindow(settings)
         totalHeight = padding + headerHeight + headerItemGap + visibleContentHeight + padding;
     end
 
+    -- Build window flags
     local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
 
     imgui.SetNextWindowSize({-1, -1}, ImGuiCond_Always);
@@ -317,6 +359,7 @@ function M.DrawWindow(settings)
         local drawList = imgui.GetBackgroundDrawList();
         local uiDrawList = GetUIDrawList();
 
+        -- Safety check for draw lists
         if not drawList or not uiDrawList then
             imgui.End();
             return;
@@ -326,6 +369,7 @@ function M.DrawWindow(settings)
 
         imgui.Dummy({windowWidth, totalHeight});
 
+        -- Save position if moved (with change detection to avoid spam)
         local winPosX, winPosY = imgui.GetWindowPos();
         if not gConfig.lockPositions then
             if lastSavedPosX == nil or
@@ -338,16 +382,19 @@ function M.DrawWindow(settings)
             end
         end
 
+        -- Handle scroll input when hovering over window
         if needsScroll and imgui.IsWindowHovered() then
             local wheel = imgui.GetIO().MouseWheel;
             if wheel ~= 0 then
-                local scrollSpeed = 30;
+                local scrollSpeed = 30;  -- Pixels per scroll tick
                 scrollOffset = scrollOffset - (wheel * scrollSpeed);
+                -- Clamp scroll offset
                 if scrollOffset < 0 then scrollOffset = 0; end
                 if scrollOffset > maxScrollOffset then scrollOffset = maxScrollOffset; end
             end
         end
 
+        -- Calculate content area
         local contentWidth = windowWidth - (padding * 2);
         local contentHeightTotal;
         if isMinimized then
@@ -356,7 +403,9 @@ function M.DrawWindow(settings)
             contentHeightTotal = headerHeight + headerItemGap + visibleContentHeight;
         end
 
+        -- Update background (with safety checks)
         if bgPrimHandle then
+            -- Check if theme changed
             if loadedBgTheme ~= bgTheme then
                 loadedBgTheme = bgTheme;
                 pcall(function()
@@ -365,9 +414,11 @@ function M.DrawWindow(settings)
             end
 
             pcall(function()
-                local bgColor = 0xFFFFFFFF;
+                -- For themed backgrounds (Window1-8), use white so texture shows through
+                -- For Plain backgrounds, use dark color with opacity
+                local bgColor = 0xFFFFFFFF;  -- White (no tint) for themed backgrounds
                 if bgTheme == 'Plain' then
-                    bgColor = 0xFF1A1A1A;
+                    bgColor = 0xFF1A1A1A;  -- Dark gray for plain background
                 end
 
                 windowBg.update(bgPrimHandle, startX + padding, startY + padding, contentWidth, contentHeightTotal, {
@@ -386,13 +437,15 @@ function M.DrawWindow(settings)
 
         -- Draw header with tabs and action buttons
         if showTitle then
+            -- Button sizing (uses fontSize from config)
             local btnHeight = fontSize + 6;
             local btnY = y - 1;
             local btnSpacing = 4;
-            local tabBtnWidth = fontSize * 4;
-            local textBtnWidth = fontSize * 4;
-            local toggleSize = btnHeight;
+            local tabBtnWidth = fontSize * 4;  -- Tab button width
+            local textBtnWidth = fontSize * 4;  -- Wider for "Lot All" / "Pass All" text
+            local toggleSize = btnHeight;  -- Square for arrow
 
+            -- Tab colors
             local TAB_COLORS_SELECTED = {
                 normal = 0xDD4a6a8a,
                 hovered = 0xDD5a7a9a,
@@ -446,6 +499,7 @@ function M.DrawWindow(settings)
 
             -- Pool tab: show Lot All, Pass All, Minimize, Toggle buttons
             if selectedTab == 1 then
+                -- Position: [Pool] [History] [Lot All] [Pass All] ... [Minimize] [Toggle]
                 local afterTabsX = historyTabX + tabBtnWidth + btnSpacing;
                 local lotAllX = afterTabsX;
                 local passAllX = lotAllX + textBtnWidth + btnSpacing;
@@ -471,14 +525,16 @@ function M.DrawWindow(settings)
                         or (isExpanded and 'Collapse' or 'Expand'),
                 }, GetUIDrawList());
                 if toggleClicked then
+                    -- If minimized, maximize first then apply expand/collapse
                     if isMinimized then
                         gConfig.treasurePoolMinimized = false;
                     end
                     gConfig.treasurePoolExpanded = not gConfig.treasurePoolExpanded;
-                    scrollOffset = 0;
+                    scrollOffset = 0;  -- Reset scroll when toggling
                     SaveSettingsToDisk();
                 end
 
+                -- Only show Lot All / Pass All buttons if there are pool items
                 if hasPoolItems then
                     -- Draw Pass All button
                     local passAllClicked = button.DrawPrim('tpPassAll', passAllX, btnY, textBtnWidth, btnHeight, {
@@ -495,6 +551,7 @@ function M.DrawWindow(settings)
                     passTextH = passTextH or fontSize;
                     imtext.Draw(uiDrawList, 'Pass All', passAllX + (textBtnWidth - passTextW) / 2, btnY + (btnHeight - passTextH) / 2, 0xFFFFFFFF, fontSize);
 
+                    -- Draw Lot All button (disabled in HzLimitedMode)
                     if (not HzLimitedMode) then
                         -- Draw Lot All button (positive/green)
                         local lotAllClicked = button.DrawPrim('tpLotAll', lotAllX, btnY, textBtnWidth, btnHeight, {
@@ -511,9 +568,11 @@ function M.DrawWindow(settings)
                         lotTextH = lotTextH or fontSize;
                         imtext.Draw(uiDrawList, 'Lot All', lotAllX + (textBtnWidth - lotTextW) / 2, btnY + (btnHeight - lotTextH) / 2, 0xFFFFFFFF, fontSize);
                     else
+                        -- Hide Lot All in HzLimitedMode
                         button.HidePrim('tpLotAll');
                     end
                 else
+                    -- No pool items - hide Lot All / Pass All buttons
                     button.HidePrim('tpLotAll');
                     button.HidePrim('tpPassAll');
                 end
@@ -523,6 +582,7 @@ function M.DrawWindow(settings)
                 button.HidePrim('tpLotAll');
                 button.HidePrim('tpPassAll');
 
+                -- Position buttons (right-aligned)
                 local toggleX = startX + windowWidth - padding - toggleSize;
                 local minimizeX = toggleX - toggleSize - btnSpacing;
 
@@ -545,6 +605,7 @@ function M.DrawWindow(settings)
                         or (isExpanded and 'Collapse' or 'Expand'),
                 }, GetUIDrawList());
                 if toggleClicked then
+                    -- If minimized, maximize first then apply expand/collapse
                     if isMinimized then
                         gConfig.treasurePoolMinimized = false;
                     end
@@ -553,7 +614,7 @@ function M.DrawWindow(settings)
                 end
             end
 
-            y = y + headerHeight + 4;
+            y = y + headerHeight + 4;  -- Add padding between header and items
         else
             button.HidePrim('tpTabPool');
             button.HidePrim('tpTabHistory');
@@ -573,6 +634,7 @@ function M.DrawWindow(settings)
             -- POOL TAB: Show treasure pool items
             -- ============================================
 
+            -- Show empty state if no pool items
             if not hasPoolItems then
                 -- Show "No items" message
                 imtext.SetConfigFromSettings(settings.title_font_settings);
@@ -586,8 +648,11 @@ function M.DrawWindow(settings)
             else
 
             local usedSlots = {};
-            local currentY = y;
+            local currentY = y;  -- Track cumulative Y position (before scroll)
 
+            -- Calculate visible region for clipping (in expanded scroll mode)
+            -- clipTop starts exactly where items begin (after header)
+            -- clipBottom is exactly the height of visible items below clipTop
             local itemAreaTop = y;
             local itemAreaBottom = y + visibleContentHeight;
 
@@ -619,11 +684,13 @@ function M.DrawWindow(settings)
 
                 local rowHeight = itemRowHeights[i];
 
+                -- Apply scroll offset in expanded mode
                 local rowY = currentY;
                 if needsScroll then
                     rowY = currentY - scrollOffset;
                 end
 
+                -- Check if item overlaps visible region at all
                 local itemTop = rowY;
                 local itemBottom = rowY + rowHeight;
                 local hasAnyOverlap = not needsScroll or (itemBottom > itemAreaTop and itemTop < itemAreaBottom);
@@ -631,14 +698,18 @@ function M.DrawWindow(settings)
                 local remaining = data.GetTimeRemaining(slot);
                 local progress = remaining / data.POOL_TIMEOUT_SECONDS;
 
+                -- Update currentY for next item (before any visibility checks)
                 currentY = currentY + rowHeight + rowSpacing;
 
+                -- Skip rendering if item has no overlap with visible region at all
                 if not hasAnyOverlap then
                     button.HidePrim(string.format('tpLotItem%d', slot));
                     button.HidePrim(string.format('tpPassItem%d', slot));
                 else
+                    -- Item has some overlap with visible region, render it
+
                     -- Draw border around item row in expanded view
-                    local itemPadding = 0;
+                    local itemPadding = 0;  -- Internal padding for content within border
                     if isExpanded then
                         itemPadding = math.floor(EXPANDED_ITEM_PADDING * scaleY);
                         local borderX1 = startX + padding;
@@ -653,7 +724,7 @@ function M.DrawWindow(settings)
                     local iconTexture = TextureManager.getItemIcon(item.itemId);
                     local iconPtr = TextureManager.getTexturePtr(iconTexture);
                     local iconX = startX + padding + itemPadding;
-                    local iconY = rowY + 2 + itemPadding;
+                    local iconY = rowY + 2 + itemPadding;  -- Align to top of row with padding
 
                     if iconPtr then
                         drawList:AddImage(iconPtr, {iconX, iconY}, {iconX + iconSize, iconY + iconSize});
@@ -662,15 +733,17 @@ function M.DrawWindow(settings)
                     local textStartX = iconX + iconSize + iconTextGap;
                     local textY = rowY + 2 + itemPadding;
 
-                    -- 2. Draw item name
+                    -- 2. Draw item name (with validation status indicator)
                     local itemCanLot, itemValidationError = data.ValidateLotItem(slot);
                     local itemStatus = data.GetPlayerLotStatus(slot);
                     local hasValidationIssue = (not itemCanLot and itemStatus ~= 'lotted' and itemStatus ~= 'passed');
 
                     local displayName = item.itemName or 'Unknown';
                     if hasValidationIssue then
+                    -- Add warning indicator to name if validation fails
                         displayName = '[!] ' .. displayName;
                     end
+                    -- Color: orange/yellow if validation issue, white otherwise
                     local nameColor = hasValidationIssue and 0xFFFFAA44 or 0xFFFFFFFF;
                     imtext.Draw(uiDrawList, displayName, textStartX, textY, nameColor, fontSize);
 
@@ -679,6 +752,7 @@ function M.DrawWindow(settings)
                         local nameWidth, nameHeight = imtext.Measure(displayName, fontSize);
                         nameWidth = nameWidth or 100;
                         nameHeight = nameHeight or fontSize;
+                        -- Check if mouse is hovering over item name area
                         local mouseX, mouseY = imgui.GetMousePos();
                         if mouseX >= textStartX and mouseX <= textStartX + nameWidth and
                            mouseY >= textY and mouseY <= textY + nameHeight then
@@ -703,8 +777,10 @@ function M.DrawWindow(settings)
                         local itemBtnSpacing = 4;
                         local itemBtnY = textY - 1;
 
+                        -- Check if button area is visible
                         local btnVisible = isAreaVisible(itemBtnY, itemBtnHeight);
 
+                        -- Position buttons to the left of the timer
                         local timerWidth = 0;
                         if showTimerText then
                             timerWidth, _ = imtext.Measure(timerText, fontSize);
@@ -714,22 +790,28 @@ function M.DrawWindow(settings)
                         local passBtnX = startX + windowWidth - padding - itemPadding - timerWidth - itemBtnSpacing - itemBtnWidth;
                         local lotBtnX = passBtnX - itemBtnSpacing - itemBtnWidth;
 
+                        -- Get player's lot status for this item
                         local playerStatus = data.GetPlayerLotStatus(slot);
+                        -- Check validation status for Lot button
                         local canLot, validationError = data.ValidateLotItem(slot);
+                        -- Lot button disabled if already lotted, passed, or validation fails
                         local lotDisabled = (playerStatus == 'lotted' or playerStatus == 'passed' or not canLot);
+                        -- Pass button disabled only if already passed
                         local passDisabled = (playerStatus == 'passed');
 
+                        -- Colors for disabled state
                         local COLOR_DISABLED_TEXT = 0xFF666666;
                         local COLOR_ENABLED_TEXT = 0xFFFFFFFF;
 
                         if btnVisible then
+                            -- Determine Lot button tooltip based on status and validation
                             local lotTooltip = 'Lot on this item';
                             if playerStatus == 'lotted' then
                                 lotTooltip = 'Already lotted';
                             elseif playerStatus == 'passed' then
                                 lotTooltip = 'Already passed';
                             elseif validationError then
-                                lotTooltip = validationError;
+                                lotTooltip = validationError; -- Show validation error (e.g., "Already have X (Rare)")
                             end
 
                             -- Draw Lot button
@@ -750,6 +832,7 @@ function M.DrawWindow(settings)
                             local lotTextColor = lotDisabled and COLOR_DISABLED_TEXT or COLOR_ENABLED_TEXT;
                             imtext.Draw(uiDrawList, 'Lot', lotBtnX + (itemBtnWidth - lotTextW) / 2, itemBtnY + (itemBtnHeight - lotTextH) / 2, lotTextColor, fontSize - 1);
 
+                            -- Determine Pass button tooltip based on status
                             local passTooltip = 'Pass on this item';
                             if playerStatus == 'passed' then
                                 passTooltip = 'Already passed';
@@ -774,10 +857,12 @@ function M.DrawWindow(settings)
                             passTextH = passTextH or fontSize;
                             local passTextColor = passDisabled and COLOR_DISABLED_TEXT or COLOR_ENABLED_TEXT;
                             imtext.Draw(uiDrawList, 'Pass', passBtnX + (itemBtnWidth - passTextW) / 2, itemBtnY + (itemBtnHeight - passTextH) / 2, passTextColor, fontSize - 1);
+                            -- Hide buttons when outside visible area
                         else
                             button.HidePrim(string.format('tpLotItem%d', slot));
                             button.HidePrim(string.format('tpPassItem%d', slot));
                         end
+                        -- Hide per-item button primitives when not showing buttons
                     else
                         button.HidePrim(string.format('tpLotItem%d', slot));
                         button.HidePrim(string.format('tpPassItem%d', slot));
@@ -785,6 +870,7 @@ function M.DrawWindow(settings)
 
                     -- 5. Draw lot info (collapsed: inline; expanded: member list)
                     if not isExpanded then
+                        -- Collapsed view: show winning lot inline with name
                         if showLots and item.winningLot and item.winningLot > 0 then
                             local lotterName = item.winningLotterName or '?';
                             if #lotterName > 10 then
@@ -799,38 +885,48 @@ function M.DrawWindow(settings)
                         end
                     else
                         -- Expanded view: show member list with lot status
+                        -- Use cached party data (organized by party A/B/C)
                         local partyData = itemMemberData[slot] or { partyA = {}, partyB = {}, partyC = {} };
 
+                        -- Determine which parties have members
                         local activeParties = {};
                         if data.PartyHasMembers(partyData.partyA) then table.insert(activeParties, partyData.partyA); end
                         if data.PartyHasMembers(partyData.partyB) then table.insert(activeParties, partyData.partyB); end
                         if data.PartyHasMembers(partyData.partyC) then table.insert(activeParties, partyData.partyC); end
 
+                        -- Draw members: each party is a column, rows = max members across parties
                         local memberFontSize = fontSize - 2;
                         local numCols = #activeParties;
                         if numCols < 1 then numCols = 1; end
                         local colWidth = math.floor((windowWidth - padding * 2 - itemPadding * 2) / numCols);
                         local memberRowHeightPx = math.floor(EXPANDED_MEMBER_ROW_HEIGHT * scaleY);
                         local headerRowHeight = math.floor(EXPANDED_ITEM_HEADER_HEIGHT * scaleY);
+                        -- Content row must fit icon + small offset, use max of header or icon height
                         local contentRowHeight = math.max(headerRowHeight, iconSize + 4);
                         local memberStartY = rowY + itemPadding + contentRowHeight;
                         local memberStartX = startX + padding + itemPadding;
+                        -- Get dynamic row count from cached data
                         local maxMemberRows = partyData.maxMemberRows or 6;
                         if maxMemberRows < 1 then maxMemberRows = 1; end
 
+                        -- Animate pending dots (cycles every 0.5s)
                         local dotCycle = math.floor(os.clock() * 2) % 3;
                         local pendingDots = string.rep('.', dotCycle + 1);
 
-                        local COLOR_WINNER = 0xFF88FF88;
-                        local COLOR_LOTTED = 0xFFFFFFFF;
-                        local COLOR_PENDING = 0xFFFFFF88;
-                        local COLOR_PASSED = 0xFFAAAAAA;
+                        -- Status colors
+                        local COLOR_WINNER = 0xFF88FF88;   -- Green for winner (highest lot)
+                        local COLOR_LOTTED = 0xFFFFFFFF;   -- White for other lotters
+                        local COLOR_PENDING = 0xFFFFFF88;  -- Yellow for pending
+                        local COLOR_PASSED = 0xFFAAAAAA;   -- Grey for passed
 
+                        -- Get winning lot for this item to identify winner
                         local winningLot = item.winningLot or 0;
 
+                        -- Draw each party as a column
                         for col, partyMembers in ipairs(activeParties) do
                             local colX = memberStartX + (col - 1) * colWidth;
 
+                            -- Draw rows based on max members across parties
                             for row = 1, maxMemberRows do
                                 local member = partyMembers[row];
                                 local memberY = memberStartY + (row - 1) * memberRowHeightPx;
@@ -841,6 +937,7 @@ function M.DrawWindow(settings)
 
                                     if member.status == 'lotted' and member.lot then
                                         memberDisplayText = string.format('%s: %d', member.name, member.lot);
+                                        -- Only winner gets green, others get white
                                         if member.lot == winningLot and winningLot > 0 then
                                             displayColor = COLOR_WINNER;
                                         else
@@ -849,7 +946,7 @@ function M.DrawWindow(settings)
                                     elseif member.status == 'pending' then
                                         memberDisplayText = member.name .. pendingDots;
                                         displayColor = COLOR_PENDING;
-                                    else
+                                    else -- passed
                                         memberDisplayText = member.name .. ': Passed';
                                         displayColor = COLOR_PASSED;
                                     end
@@ -885,7 +982,7 @@ function M.DrawWindow(settings)
                 drawList:PopClipRect();
                 uiDrawList:PopClipRect();
 
-                -- Draw scroll indicator
+                -- Draw scroll indicator (shows position in list)
                 local scrollBarWidth = 4;
                 local scrollBarX = startX + windowWidth - padding - scrollBarWidth;
                 local scrollBarHeight = visibleContentHeight;
@@ -895,9 +992,11 @@ function M.DrawWindow(settings)
                     scrollThumbY = itemAreaTop + (scrollOffset / maxScrollOffset) * (scrollBarHeight - scrollThumbHeight);
                 end
 
+                -- Draw scroll track (dark)
                 local trackColor = imgui.GetColorU32({0.2, 0.2, 0.2, 0.5});
                 drawList:AddRectFilled({scrollBarX, itemAreaTop}, {scrollBarX + scrollBarWidth, itemAreaBottom}, trackColor, 2.0);
 
+                -- Draw scroll thumb (light)
                 local thumbColor = imgui.GetColorU32({0.6, 0.6, 0.6, 0.8});
                 drawList:AddRectFilled({scrollBarX, scrollThumbY}, {scrollBarX + scrollBarWidth, scrollThumbY + scrollThumbHeight}, thumbColor, 2.0);
             end
@@ -923,6 +1022,7 @@ function M.DrawWindow(settings)
                 button.HidePrim(string.format('tpPassItem%d', slot));
             end
 
+            -- Get history items
             local historyItems = data.GetWonHistory();
             local historyCount = #historyItems;
 
@@ -932,23 +1032,27 @@ function M.DrawWindow(settings)
                 imtext.Draw(uiDrawList, 'No recent winners', startX + padding, y, 0xFF888888, fontSize);
                 imtext.SetConfigFromSettings(settings.font_settings);
             else
+                -- Scale history row height
                 local historyRowHeight = math.floor(HISTORY_ROW_HEIGHT * scaleY);
                 local historyIconSize = math.floor(ICON_SIZE * scaleY);
 
+                -- Calculate visible region for clipping
                 local historyAreaTop = y;
                 local historyAreaBottom = y + visibleContentHeight;
 
-                -- Handle scroll input
+                -- Handle scroll input (mouse wheel) when hovering over window
                 if imgui.IsWindowHovered() and historyMaxScrollOffset > 0 then
                     local wheelY = imgui.GetIO().MouseWheel;
                     if wheelY ~= 0 then
                         local scrollSpeed = historyRowHeight * 2;
                         historyScrollOffset = historyScrollOffset - (wheelY * scrollSpeed);
+                        -- Clamp scroll offset
                         if historyScrollOffset < 0 then historyScrollOffset = 0; end
                         if historyScrollOffset > historyMaxScrollOffset then historyScrollOffset = historyMaxScrollOffset; end
                     end
                 end
 
+                -- Push clip rect for scrollable area
                 local historyNeedsScroll = historyCount > HISTORY_MAX_VISIBLE;
                 if historyNeedsScroll then
                     drawList:PushClipRect(
@@ -963,19 +1067,23 @@ function M.DrawWindow(settings)
                     );
                 end
 
+                -- Render each history item
                 local currentY = y;
                 for i, histItem in ipairs(historyItems) do
                     if i > data.MAX_HISTORY_ITEMS then break; end
 
+                    -- Apply scroll offset
                     local rowY = currentY;
                     if historyNeedsScroll then
                         rowY = currentY - historyScrollOffset;
                     end
 
+                    -- Check if item is visible
                     local itemTop = rowY;
                     local itemBottom = rowY + historyRowHeight;
                     local isVisible = not historyNeedsScroll or (itemBottom > historyAreaTop and itemTop < historyAreaBottom);
 
+                    -- Update currentY for next item
                     currentY = currentY + historyRowHeight + rowSpacing;
 
                     if isVisible then
@@ -995,21 +1103,25 @@ function M.DrawWindow(settings)
 
                         imtext.Draw(uiDrawList, histItem.itemName or 'Unknown', textX, textY, 0xFFFFFFFF, fontSize);
 
-                        -- Draw winner info (right-aligned)
+                        -- Draw winner info (right-aligned, with scrollbar accommodation)
                         local winnerText = string.format('%s: %d', histItem.winnerName or '?', histItem.winnerLot or 0);
                         local winnerW, _ = imtext.Measure(winnerText, fontSize);
                         winnerW = winnerW or (fontSize * 6);
+                        -- Add extra padding when scrollbar is visible (scrollbar width + gap)
                         local scrollbarPadding = historyNeedsScroll and 10 or 0;
                         imtext.Draw(uiDrawList, winnerText, startX + windowWidth - padding - winnerW - scrollbarPadding, textY, 0xFF88FF88, fontSize);
                     end
                 end
 
+                -- Pop clip rect if needed
                 if historyNeedsScroll then
                     drawList:PopClipRect();
                     uiDrawList:PopClipRect();
 
+                    -- Calculate total history content height
                     local historyTotalContentHeight = (historyCount * historyRowHeight) + ((historyCount - 1) * rowSpacing);
 
+                    -- Draw scroll bar (matches Pool tab style)
                     local scrollBarWidth = 4;
                     local scrollBarX = startX + windowWidth - padding - scrollBarWidth;
                     local scrollBarHeight = visibleContentHeight;
@@ -1019,9 +1131,11 @@ function M.DrawWindow(settings)
                         scrollThumbY = historyAreaTop + (historyScrollOffset / historyMaxScrollOffset) * (scrollBarHeight - scrollThumbHeight);
                     end
 
+                    -- Draw scroll track (dark)
                     local trackColor = imgui.GetColorU32({0.2, 0.2, 0.2, 0.5});
                     drawList:AddRectFilled({scrollBarX, historyAreaTop}, {scrollBarX + scrollBarWidth, historyAreaBottom}, trackColor, 2.0);
 
+                    -- Draw scroll thumb (light)
                     local thumbColor = imgui.GetColorU32({0.6, 0.6, 0.6, 0.8});
                     drawList:AddRectFilled({scrollBarX, scrollThumbY}, {scrollBarX + scrollBarWidth, scrollThumbY + scrollThumbHeight}, thumbColor, 2.0);
                 end
@@ -1032,6 +1146,7 @@ function M.DrawWindow(settings)
 end
 
 function M.HideWindow()
+    -- Throttle log to avoid spam (only log once when transitioning to hidden)
     if not M._wasHidden then
         debugLog('HideWindow called (transitioning to hidden)');
         M._wasHidden = true;
@@ -1045,6 +1160,7 @@ function M.HideWindow()
     button.HidePrim('tpTabPool');
     button.HidePrim('tpTabHistory');
 
+    -- Hide per-item button primitives
     for slot = 0, data.MAX_POOL_SLOTS - 1 do
         button.HidePrim(string.format('tpLotItem%d', slot));
         button.HidePrim(string.format('tpPassItem%d', slot));
@@ -1060,11 +1176,13 @@ end
 -- ============================================
 
 function M.Initialize(settings)
+    -- Get background theme and scales from config (with defaults)
     local bgTheme = gConfig.treasurePoolBackgroundTheme or 'Plain';
     local bgScale = gConfig.treasurePoolBgScale or 1.0;
     local borderScale = gConfig.treasurePoolBorderScale or 1.0;
     loadedBgTheme = bgTheme;
 
+    -- Create background primitive
     local primData = {
         visible = false,
         can_focus = false,
@@ -1076,6 +1194,7 @@ function M.Initialize(settings)
 end
 
 function M.UpdateVisuals(settings)
+    -- Check if theme changed
     local bgTheme = gConfig.treasurePoolBackgroundTheme or 'Plain';
     local bgScale = gConfig.treasurePoolBgScale or 1.0;
     local borderScale = gConfig.treasurePoolBorderScale or 1.0;
@@ -1097,6 +1216,7 @@ function M.Cleanup()
         bgPrimHandle = nil;
     end
 
+    -- Destroy primitive buttons
     button.DestroyPrim('tpToggle');
     button.DestroyPrim('tpMinimize');
     button.DestroyPrim('tpLotAll');
@@ -1104,12 +1224,14 @@ function M.Cleanup()
     button.DestroyPrim('tpTabPool');
     button.DestroyPrim('tpTabHistory');
 
+    -- Destroy per-item button primitives
     for slot = 0, data.MAX_POOL_SLOTS - 1 do
         button.DestroyPrim(string.format('tpLotItem%d', slot));
         button.DestroyPrim(string.format('tpPassItem%d', slot));
     end
 
     loadedBgTheme = nil;
+    -- Icon cache handled by TextureManager
 end
 
 M.ResetPositions = function()

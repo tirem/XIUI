@@ -100,9 +100,12 @@ end
 
 -- Truncates text to fit within maxWidth using binary search for optimal performance
 local function TruncateTextToFit(text, maxWidth, fontSize)
+	-- First check if text fits without truncation
 	local width, _ = imtext.Measure(text, fontSize);
 	if width <= maxWidth then return text; end
+	-- Text is too long, use binary search to find optimal truncation point
 	local ellipsis = "...";
+	-- Binary search for the longest substring that fits with ellipsis
 	local left, right = 1, #text;
 	local bestLength = 0;
 	while left <= right do
@@ -110,13 +113,16 @@ local function TruncateTextToFit(text, maxWidth, fontSize)
 		local truncated = text:sub(1, mid) .. ellipsis;
 		width, _ = imtext.Measure(truncated, fontSize);
 		if width <= maxWidth then
+			-- This length fits, try a longer one
 			bestLength = mid;
 			left = mid + 1;
 		else
+			-- This length is too long, try a shorter one
 			right = mid - 1;
 		end
 	end
 	if bestLength > 0 then return text:sub(1, bestLength) .. ellipsis; end
+	-- Fallback: just ellipsis
 	return ellipsis;
 end
 
@@ -343,6 +349,7 @@ enemylist.DrawWindow = function(settings)
 
 				if (enemyBackgrounds[k] ~= nil) then
 					local bg = enemyBackgrounds[k];
+					-- Set background position and size
 					bg.position_x = entryStartX;
 					bg.position_y = entryStartY;
 					bg.width = entryWidth;
@@ -370,8 +377,10 @@ enemylist.DrawWindow = function(settings)
 				local nameCache = truncatedNameCache[k];
 				local displayName;
 				if nameCache and nameCache.name == ent.Name and nameCache.maxWidth == maxNameWidth and nameCache.fontHeight == fontHeight then
+					-- Cache hit - reuse truncated name
 					displayName = nameCache.truncated;
 				else
+					-- Cache miss - compute and store (font height affects text width measurement)
 					displayName = TruncateTextToFit(ent.Name, maxNameWidth, fontHeight);
 					truncatedNameCache[k] = {name = ent.Name, maxWidth = maxNameWidth, fontHeight = fontHeight, truncated = displayName};
 				end
@@ -505,13 +514,16 @@ enemylist.DrawWindow = function(settings)
 
 						-- Target name text
 						local targetTextColor = gConfig.colorCustomization.enemyList.targetNameTextColor or 0xFFFFAA00;
+						-- Truncate name to fit (use cache to avoid per-frame binary search)
 						local maxTargetNameWidth = targetWidth - (targetPadding * 2);
 						local targetFontHeight = settings.target_font_settings.font_height;
 						local targetNameCache = truncatedTargetNameCache[k];
 						local displayTargetName;
 						if targetNameCache and targetNameCache.name == targetName and targetNameCache.maxWidth == maxTargetNameWidth and targetNameCache.fontHeight == targetFontHeight then
+							-- Cache hit - reuse truncated name
 							displayTargetName = targetNameCache.truncated;
 						else
+							-- Cache miss - compute and store (font height affects text width measurement)
 							displayTargetName = TruncateTextToFit(targetName, maxTargetNameWidth, targetFontHeight);
 							truncatedTargetNameCache[k] = {name = targetName, maxWidth = maxTargetNameWidth, fontHeight = targetFontHeight, truncated = displayTargetName};
 						end
@@ -557,8 +569,10 @@ enemylist.DrawWindow = function(settings)
 		end
 
 		-- Hide backgrounds for enemies that were active last frame but not this frame
+		-- Only iterate over previously active indices (avoids iterating all backgrounds)
 		for enemyIndex in pairs(previousActiveIndices) do
 			if not activeEnemyIndices[enemyIndex] then
+				-- This enemy was visible last frame but not this frame - hide its backgrounds
 				if enemyBackgrounds[enemyIndex] then
 					enemyBackgrounds[enemyIndex].visible = false;
 				end
@@ -658,6 +672,7 @@ enemylist.HandleZonePacket = function(e)
 end
 
 enemylist.Initialize = function(settings)
+	-- Initialization is handled dynamically in DrawWindow
 end
 
 enemylist.UpdateVisuals = function(settings)

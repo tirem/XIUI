@@ -173,9 +173,11 @@ function pettarget.DrawWindow(settings)
         local nameW, nameH = imtext.Measure(targetName, targetNameFontSize);
         local nameDrawX, nameDrawY;
         if nameAbsolute then
+            -- Absolute positioning: relative to window top-left
             nameDrawX = targetWinPosX + nameOffsetX;
             nameDrawY = targetWinPosY + nameOffsetY;
         else
+            -- Inline positioning: in layout flow with offsets
             nameDrawX = targetStartX + nameOffsetX;
             nameDrawY = targetStartY + nameOffsetY;
         end
@@ -187,9 +189,11 @@ function pettarget.DrawWindow(settings)
         local hpW, hpH = imtext.Measure(hpStr, targetHpFontSize);
         local hpDrawX, hpDrawY;
         if hpAbsolute then
+            -- Absolute positioning: relative to window top-left
             hpDrawX = targetWinPosX + hpOffsetX - hpW;
             hpDrawY = targetWinPosY + hpOffsetY;
         else
+            -- Inline positioning: right side of bar row with offsets
             hpDrawX = targetStartX + barWidth + hpOffsetX - hpW;
             hpDrawY = targetStartY + (targetNameFontSize - targetHpFontSize) / 2 + hpOffsetY;
         end
@@ -212,12 +216,15 @@ function pettarget.DrawWindow(settings)
         local distStr = string.format('%.1f', targetDistance);
         local distDrawX, distDrawY;
         if distanceAbsolute then
+            -- Absolute positioning: relative to window top-left
             distDrawX = targetWinPosX + distanceOffsetX;
             distDrawY = targetWinPosY + distanceOffsetY;
         else
+            -- Inline positioning: below HP bar in layout flow
             local distanceY = targetStartY + targetNameFontSize + 4 + barHeight + 2;
             distDrawX = targetStartX + distanceOffsetX;
             distDrawY = distanceY + distanceOffsetY;
+            -- Add dummy for inline layout
             imgui.Dummy({totalRowWidth, targetDistanceFontSize + 2});
         end
         imtext.Draw(drawList, distStr, distDrawX, distDrawY, distanceColor, targetDistanceFontSize);

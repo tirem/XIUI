@@ -898,6 +898,7 @@ function display.DrawWindow(settings)
 
             -- MP text (independent of TP bar visibility)
             if displayMpBar then
+                -- Right-align MP text under MP bar
                 local mpStr = tostring(petMpPercent) .. '%';
                 local mpColor = colorConfig.mpTextColor or 0xFFFFFFFF;
                 local mpW = imtext.Measure(mpStr, mpFontSize);
@@ -906,6 +907,7 @@ function display.DrawWindow(settings)
 
             -- TP text (independent of MP bar visibility)
             if displayTpBar then
+                -- Right-align TP text under TP bar
                 local tpStr = tostring(petTp);
                 local tpColor = colorConfig.tpTextColor or 0xFFFFFFFF;
                 local tpW = imtext.Measure(tpStr, tpFontSize);
@@ -993,9 +995,12 @@ function display.DrawWindow(settings)
                 local iconX, iconY;
 
                 if iconsAbsolute then
+                    -- Absolute positioning: relative to window top-left
                     iconX = windowPosX + iconOffsetX;
                     iconY = windowPosY + iconOffsetY;
                 else
+                    -- Anchored: flow within the pet bar container
+                    -- Use recastTopSpacing for vertical offset, no X offset in anchored mode
                     local topSpacing = typeSettings.recastTopSpacing or 2;
                     iconX, iconY = imgui.GetCursorScreenPos();
                     iconY = iconY + topSpacing;

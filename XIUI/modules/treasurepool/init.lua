@@ -35,18 +35,22 @@ end
 
 M.initialized = false;
 M.visible = true;
-M.forceShow = false;
+M.forceShow = false;  -- When true, show window even if no content
 
 -- ============================================
 -- Module Lifecycle
 -- ============================================
 
+-- Initialize the treasure pool module
 function M.Initialize(settings)
     if M.initialized then return; end
 
+    -- Ensure treasure pool settings have defaults
     if gConfig then
+        -- Clear any stale preview state
         gConfig.treasurePoolPreview = false;
 
+        -- Set defaults for new settings
         if gConfig.treasurePoolEnabled == nil then gConfig.treasurePoolEnabled = true; end
         if gConfig.treasurePoolShowTimerBar == nil then gConfig.treasurePoolShowTimerBar = true; end
         if gConfig.treasurePoolShowTimerText == nil then gConfig.treasurePoolShowTimerText = true; end
@@ -60,16 +64,18 @@ function M.Initialize(settings)
         if gConfig.treasurePoolScaleY == nil or gConfig.treasurePoolScaleY < 0.5 then
             gConfig.treasurePoolScaleY = 1.0;
         end
+        -- Split background/border settings (like petbar)
         if gConfig.treasurePoolBgScale == nil or gConfig.treasurePoolBgScale < 0.1 then
             gConfig.treasurePoolBgScale = 1.0;
         end
         if gConfig.treasurePoolBorderScale == nil or gConfig.treasurePoolBorderScale < 0.1 then
             gConfig.treasurePoolBorderScale = 1.0;
         end
+        -- Migrate old treasurePoolOpacity to new split settings
         if gConfig.treasurePoolBackgroundOpacity == nil then
             if gConfig.treasurePoolOpacity ~= nil then
                 gConfig.treasurePoolBackgroundOpacity = gConfig.treasurePoolOpacity;
-                gConfig.treasurePoolOpacity = nil;
+                gConfig.treasurePoolOpacity = nil;  -- Clean up old setting
             else
                 gConfig.treasurePoolBackgroundOpacity = 0.87;
             end
@@ -82,43 +88,55 @@ function M.Initialize(settings)
         if gConfig.treasurePoolAutoHideWhenEmpty == nil then gConfig.treasurePoolAutoHideWhenEmpty = true; end
     end
 
+    -- Initialize data layer first
     data.Initialize();
 
+    -- Initialize display layer (creates background primitive)
     display.Initialize(settings);
 
     M.initialized = true;
 end
 
+-- Update visual elements when settings change
 function M.UpdateVisuals(settings)
     if not M.initialized then return; end
 
     imtext.Reset();
+    -- Clear color cache
     data.ClearColorCache();
+    -- Update display layer
     display.UpdateVisuals(settings);
 end
 
+-- Main render function - called every frame
 function M.DrawWindow(settings)
     if not M.initialized then return; end
     if not M.visible then return; end
 
+    -- Read pool state from memory (skip in preview mode)
     if not data.IsPreviewActive() then
         data.ReadFromMemory();
     end
 
+    -- Check for real items (from memory, not preview) or history items
     local hasRealItems = data.HasRealItems();
     local hasHistory = data.HasWonHistory();
     local historyCount = data.GetWonHistoryCount();
     local poolCount = data.GetPoolCount();
 
+    -- Draw treasure pool if enabled and has content to show
     local enabled = gConfig.treasurePoolEnabled;
-    local autoHide = gConfig.treasurePoolAutoHideWhenEmpty ~= false;
+    local autoHide = gConfig.treasurePoolAutoHideWhenEmpty ~= false;  -- Default to true if not set
     local showWindow;
     if autoHide then
+        -- Auto-hide enabled: only show if pool has items (or preview/force show)
         showWindow = (hasRealItems or data.previewEnabled or M.forceShow) and enabled;
     else
+        -- Auto-hide disabled: show if pool has items OR has history
         showWindow = (hasRealItems or hasHistory or data.previewEnabled or M.forceShow) and enabled;
     end
 
+    -- Debug: Log state changes (throttled to avoid spam)
     local stateKey = string.format('%s_%s_%s_%s_%d_%d',
         tostring(hasRealItems), tostring(hasHistory), tostring(showWindow), tostring(M.forceShow), poolCount, historyCount);
     if M._lastStateKey ~= stateKey then
@@ -135,14 +153,17 @@ function M.DrawWindow(settings)
     end
 end
 
+-- Set module visibility
 function M.SetHidden(hidden)
     M.visible = not hidden;
     display.SetHidden(hidden);
 end
 
+-- Cleanup on addon unload
 function M.Cleanup()
     if not M.initialized then return; end
 
+    -- Cleanup display and data layers
     display.Cleanup();
     data.Cleanup();
 
@@ -161,6 +182,7 @@ end
 -- Packet Handler
 -- ============================================
 
+-- Handle 0x00D3 lot packet (called from XIUI.lua)
 function M.HandleLotPacket(slot, entryServerId, entryName, entryFlg, entryLot,
                            winnerServerId, winnerName, winnerLot, judgeFlg)
     data.HandleLotPacket(slot, entryServerId, entryName, entryFlg, entryLot,
@@ -227,6 +249,7 @@ function M.ResetPositions()
     display.ResetPositions();
 end
 
+-- Force show the window (even if empty)
 function M.ToggleForceShow()
     M.forceShow = not M.forceShow;
     local state = M.forceShow and 'shown' or 'hidden';

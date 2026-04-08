@@ -631,19 +631,24 @@ local function GetCbInteraction(comboMode, slotIndex)
             pressKey = comboMode .. '_' .. slotIndex,
             onDrop = function(payload)
                 if payload.type == 'macro' then
+                    -- Ensure stored slot has a macroPaletteKey (fallback to current job if missing)
                     if payload.data then payload.data.macroPaletteKey = payload.data.macroPaletteKey or data.jobId; end
                     data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
                 elseif payload.type == 'crossbar_slot' then
+                    -- Swap crossbar slots
                     local targetData = data.GetCrossbarSlotData(comboMode, slotIndex);
                     data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
                     data.SetCrossbarSlotData(payload.comboMode, payload.slotIndex, targetData);
                 elseif payload.type == 'slot' then
+                    -- Copy from hotbar slot to crossbar (one-way copy, doesn't clear source)
                     if payload.data then
                         data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
                     end
                 end
+                -- Clear icon cache for affected slots
                 ClearCrossbarIconCacheForSlot(comboMode, slotIndex);
                 slotrenderer.InvalidateSlotByKey(comboMode .. ':' .. slotIndex);
+                -- For crossbar slot swaps, also clear the source slot
                 if payload.type == 'crossbar_slot' then
                     ClearCrossbarIconCacheForSlot(payload.comboMode, payload.slotIndex);
                     slotrenderer.InvalidateSlotByKey(payload.comboMode .. ':' .. payload.slotIndex);
@@ -662,6 +667,7 @@ local function GetCbInteraction(comboMode, slotIndex)
             end,
             onRightClick = function()
                 data.ClearCrossbarSlotData(comboMode, slotIndex);
+                -- Clear icon cache for this slot
                 ClearCrossbarIconCacheForSlot(comboMode, slotIndex);
                 slotrenderer.InvalidateSlotByKey(comboMode .. ':' .. slotIndex);
             end,
@@ -741,6 +747,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
     p.getDragData = interaction.getDragData;
     p.onRightClick = interaction.onRightClick;
     p.showTooltip = true;
+    -- Skillchain highlight
     p.skillchainName = skillchainName;
     p.skillchainColor = gConfig.hotbarGlobal.skillchainHighlightColor or 0xFFD4AA44;
 
@@ -886,8 +893,10 @@ local function DrawComboText(activeCombo, centerX, topY, settings)
     -- Determine combo text based on active combo
     local comboText = nil;
     if activeCombo == COMBO_MODES.L2_THEN_R2 then
+        -- Show "Shared" when shared expanded bar is enabled
         comboText = settings.useSharedExpandedBar and 'Shared' or 'L2+R2';
     elseif activeCombo == COMBO_MODES.R2_THEN_L2 then
+        -- Show "Shared" when shared expanded bar is enabled
         comboText = settings.useSharedExpandedBar and 'Shared' or 'R2+L2';
     elseif activeCombo == 'Shared' then
         comboText = 'Shared';
@@ -908,6 +917,7 @@ local function DrawComboText(activeCombo, centerX, topY, settings)
 
     if not comboText then return; end
 
+    -- Get font size and offsets from settings
     local fontSize = settings.comboTextFontSize or 10;
     local offsetX = settings.comboTextOffsetX or 0;
     local offsetY = settings.comboTextOffsetY or 0;
@@ -915,6 +925,7 @@ local function DrawComboText(activeCombo, centerX, topY, settings)
     -- Draw centered text via imtext
     local drawList = GetUIDrawList();
     if drawList then
+        -- Yellow warning color in edit mode, white otherwise
         local fontColor = settings.editMode and 0xFFFFFF00 or 0xFFFFFFFF;
         local textW = imtext.Measure(comboText, fontSize);
         local drawX = centerX + offsetX - (textW / 2);

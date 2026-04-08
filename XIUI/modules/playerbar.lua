@@ -531,15 +531,17 @@ playerbar.DrawWindow = function(settings)
 			hpDisplayText = tostring(SelfHP);
 		end
 		local hpTextW, _ = imtext.Measure(hpDisplayText, fontSize);
+		-- Calculate position based on alignment
 		local hpTextX;
 		local hpAlignment = gConfig.playerBarHpTextAlignment or 'right';
 		if hpAlignment == 'left' then
 			hpTextX = hpBarStartX + bookendWidth + textPadding;
 		elseif hpAlignment == 'center' then
 			hpTextX = hpBarStartX + (barSize / 2) - hpTextW / 2;
-		else
+		else -- right alignment (default)
 			hpTextX = hpBarStartX + barSize - bookendWidth - textPadding - hpTextW;
 		end
+		-- Apply user offset
 		hpTextX = hpTextX + (gConfig.playerBarHpTextOffsetX or 0);
 		local hpTextY = hpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarHpTextOffsetY or 0);
 		imtext.Draw(drawList, hpDisplayText, hpTextX, hpTextY, gConfig.colorCustomization.playerBar.hpTextColor, fontSize);
@@ -562,15 +564,17 @@ playerbar.DrawWindow = function(settings)
 				mpDisplayText = tostring(SelfMP);
 			end
 			local mpTextW, _ = imtext.Measure(mpDisplayText, fontSize);
+			-- Calculate position based on alignment
 			local mpTextX;
 			local mpAlignment = gConfig.playerBarMpTextAlignment or 'right';
 			if mpAlignment == 'left' then
 				mpTextX = mpBarStartX + bookendWidth + textPadding;
 			elseif mpAlignment == 'center' then
 				mpTextX = mpBarStartX + (barSize / 2) - mpTextW / 2;
-			else
+			else -- right alignment (default)
 				mpTextX = mpBarStartX + barSize - bookendWidth - textPadding - mpTextW;
 			end
+			-- Apply user offset
 			mpTextX = mpTextX + (gConfig.playerBarMpTextOffsetX or 0);
 			local mpTextY = mpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarMpTextOffsetY or 0);
 			imtext.Draw(drawList, mpDisplayText, mpTextX, mpTextY, gConfig.colorCustomization.playerBar.mpTextColor, fontSize);
@@ -579,15 +583,17 @@ playerbar.DrawWindow = function(settings)
 		-- Draw TP text
 		local tpDisplayText = tostring(SelfTP);
 		local tpTextW, _ = imtext.Measure(tpDisplayText, fontSize);
+		-- Calculate position based on alignment
 		local tpTextX;
 		local tpAlignment = gConfig.playerBarTpTextAlignment or 'right';
 		if tpAlignment == 'left' then
 			tpTextX = tpBarStartX + bookendWidth + textPadding;
 		elseif tpAlignment == 'center' then
 			tpTextX = tpBarStartX + (barSize / 2) - tpTextW / 2;
-		else
+		else -- right alignment (default)
 			tpTextX = tpBarStartX + barSize - bookendWidth - textPadding - tpTextW;
 		end
+		-- Apply user offset
 		tpTextX = tpTextX + (gConfig.playerBarTpTextOffsetX or 0);
 		local tpTextY = tpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarTpTextOffsetY or 0);
 		local tpTextColor = (SelfTP >= 1000) and gConfig.colorCustomization.playerBar.tpFullTextColor or gConfig.colorCustomization.playerBar.tpEmptyTextColor;
@@ -615,6 +621,7 @@ end
 
 playerbar.UpdateVisuals = function(settings)
 	imtext.Reset();
+	-- Invalidate interpolation color cache (config may have changed)
 	cachedInterpColors = nil;
 	lastInterpColorConfig = nil;
 end

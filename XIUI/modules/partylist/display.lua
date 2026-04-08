@@ -647,6 +647,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         end
         if (distance ~= nil and distance > 0 and distance <= 50) then
             distanceText = ('%.1f'):fmt(distance);
+            -- Position distance relative to HP bar right edge (stable anchor)
             local distancePosX = hpStartX + hpBarWidth;
             distTextX = distancePosX + textOffsets.distanceX;
             distTextY = hpStartY - nameRefHeight + nameBaselineOffset + textOffsets.distanceY;
@@ -712,6 +713,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
             -- TP text (or spell name if casting with 'tp' style)
             if showingCastInTpSlot then
+                -- Show spell name instead of TP when casting with 'tp' style
                 local castTextColor = cache.colors.castTextColor or 0xFFFFCC44;
                 tpText = castData.spellName;
                 tpColor = castTextColor;
@@ -761,6 +763,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 if showingCastInMpSlot then
                     local castGradient = GetCustomGradient(cache.colors, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
                     progressbar.ProgressBar({{castProgress, castGradient}}, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+                    -- Set MP text to spell name with cast text color
                     mpDisplayText = castData.spellName;
                     mpColor = cache.colors.castTextColor or 0xFFFFCC44;
                 else
@@ -839,6 +842,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 if showingCastInMpSlot then
                     local castGradient = GetCustomGradient(cache.colors, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
                     progressbar.ProgressBar({{castProgress, castGradient}}, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+                    -- Set MP text to spell name with cast text color
                     mpDisplayText = castData.spellName;
                     mpColor = cache.colors.castTextColor or 0xFFFFCC44;
                 else
@@ -898,6 +902,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                     mpColor = cache.colors.mpTextColor;
                 end
 
+                -- Recalculate mp text width in case it changed to spell name
                 local currentMpTextWidth = showingCastInMpSlot and imtext.Measure(mpDisplayText, fontSizes.mp) or mpTextWidth;
                 local mpBaselineOffset = mpRefHeight - mpHeight;
                 local mpTextX = mpStartX + mpBarWidth - currentMpTextWidth + textOffsets.mpX;
@@ -917,6 +922,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                     -- Render cast bar in TP slot
                     local castGradient = GetCustomGradient(cache.colors, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
                     progressbar.ProgressBar({{castProgress, castGradient}}, {tpBarWidth, tpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+                    -- Set TP text to spell name with cast text color
                     local castTextColor = cache.colors.castTextColor or 0xFFFFCC44;
                     tpText = castData.spellName;
                     tpColor = castTextColor;
@@ -946,6 +952,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                     tpColor = desiredTpColor;
                 end
 
+                -- Recalculate tp text width in case it changed to spell name
                 local currentTpTextWidth = showingCastInTpSlot and imtext.Measure(tpText, fontSizes.tp) or tpTextWidth;
                 local tpBaselineOffset = tpRefHeight - tpHeight;
                 local tpTextX = tpStartX + tpBarWidth - currentTpTextWidth + textOffsets.tpX;

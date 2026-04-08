@@ -139,6 +139,7 @@ function M.Initialize(settings)
     };
 
     for barIndex = 1, data.NUM_BARS do
+        -- Get per-bar settings
         local barSettings = data.GetBarSettings(barIndex);
         local bgTheme = barSettings.backgroundTheme or '-None-';
         local bgScale = barSettings.bgScale or 1.0;
@@ -404,6 +405,7 @@ function M.Cleanup()
     macropalette.FlushPendingSave();
 
     for barIndex = 1, data.NUM_BARS do
+        -- Destroy background
         if data.bgHandles[barIndex] then
             windowBg.destroy(data.bgHandles[barIndex]);
         end

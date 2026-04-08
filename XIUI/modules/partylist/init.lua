@@ -94,6 +94,7 @@ partyList.UpdateVisuals = function(settings)
     -- Update cached font sizes
     for partyIndex = 1, 3 do
         data.cachedFontSizes[partyIndex] = settings.fontSizes[partyIndex];
+        -- Recalculate reference heights for this party
         data.calculateRefHeights(partyIndex);
     end
     data.cachedFontFamily = settings.name_font_settings.font_family or '';

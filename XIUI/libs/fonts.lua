@@ -5,6 +5,9 @@
 
 local M = {};
 
+-- ========================================
+-- Font Weight Helper
+-- ========================================
 -- Converts fontWeight string setting to font flags
 function M.GetFontWeightFlags(fontWeight)
     if fontWeight == 'Bold' then

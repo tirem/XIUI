@@ -240,7 +240,7 @@ local function GetSlotInteraction(barIndex, slotIndex)
             getDragData = function()
                 local b = data.GetKeybindForSlot(barIndex, slotIndex);
                 macropalette.StartDragSlot(barIndex, slotIndex, b);
-                return nil;
+                return nil;  -- StartDragSlot handles the drag itself
             end,
             onRightClick = function()
                 macropalette.ClearSlot(barIndex, slotIndex);
@@ -264,11 +264,14 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
 
     -- Update reusable params table in-place
     local p = slotParams;
+    -- Position/Size
     p.x = x;
     p.y = y;
     p.size = buttonSize;
+    -- Action Data
     p.bind = bind;
     p.icon = icon;
+    -- Visual Settings
     p.slotBgColor = barSettings and barSettings.slotBackgroundColor or 0xFFFFFFFF;
     p.slotOpacity = barSettings and barSettings.slotOpacity or 1.0;
     p.keybindText = (barSettings and barSettings.showKeybinds ~= false) and data.GetKeybindDisplay(barIndex, slotIndex) or nil;
@@ -305,6 +308,7 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     p.quantityAnchor = barSettings and barSettings.quantityAnchor or 'bottomRight';
     p.quantityOffsetX = barSettings and barSettings.quantityOffsetX or 0;
     p.quantityOffsetY = barSettings and barSettings.quantityOffsetY or 0;
+    -- Interaction Config
     p.buttonId = interaction.buttonId;
     p.dropZoneId = interaction.dropZoneId;
     p.dropAccepts = HOTBAR_DROP_ACCEPTS;
@@ -313,7 +317,9 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     p.getDragData = interaction.getDragData;
     p.onRightClick = interaction.onRightClick;
     p.showTooltip = true;
+    -- Animation
     p.animOpacity = animOpacity or 1.0;
+    -- Skillchain highlight
     p.skillchainName = skillchainName;
     p.skillchainColor = gConfig.hotbarGlobal.skillchainHighlightColor or 0xFFD4AA44;
 
@@ -420,6 +426,7 @@ local function DrawBarWindow(barIndex, settings)
         local showNumber = barSettings.showHotbarNumber;
         if showNumber == nil then showNumber = true; end
         if showNumber then
+            -- Position to the left of the bar with optional offsets
             local hbnOffsetX = barSettings.hotbarNumberOffsetX or 0;
             local hbnOffsetY = barSettings.hotbarNumberOffsetY or 0;
             local hbnText = tostring(barIndex);
@@ -469,6 +476,7 @@ local function DrawBarWindow(barIndex, settings)
 
                     local bind = data.GetKeybindForSlot(barIndex, slotIndex);
 
+                    -- Hide empty slots if setting enabled and not editing/dragging
                     if hideEmptySlots and not paletteOpen and not keybindEditorOpen and not isDragging and not bind then
                         -- Empty slot: skip rendering (ImGui draws are stateless, nothing to hide)
                     else
@@ -600,6 +608,7 @@ function M.DrawWindow(settings)
 end
 
 function M.HideWindow()
+    -- Hide all backgrounds
     for barIndex = 1, data.NUM_BARS do
         if data.bgHandles[barIndex] then
             windowBg.hide(data.bgHandles[barIndex]);

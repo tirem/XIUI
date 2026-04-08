@@ -142,6 +142,7 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
             DrawContainerDots(locX, locY + dotsOffsetY, framePaddingX, usedSlots, maxSlots, settings, colorConfig, threshold1, threshold2);
 
             if showText then
+                -- Position text above the dots, right-aligned to the actual dots edge
                 -- Right-aligned: left edge = right edge - textWidth
                 local dotsWidth = (groupOffsetX * totalGroups) - settings.groupSpacing + settings.dotRadius;
                 local textX = locX + framePaddingX + dotsWidth - textWidth;
@@ -165,6 +166,7 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
                 debugDrawList:AddRect({cursorX, cursorY}, {cursorX + textWidth, cursorY + textHeight}, 0xFF0000FF, 0, 0, 2);
             end
 
+            -- Position text at cursor position (over the dummy area)
             -- Left edge is cursorX (right-aligned equivalent: cursorX + textWidth - textWidth)
             local textColor = GetTextColor(usedSlots, colorConfig, threshold1, threshold2, textUseThresholdColor);
             imtext.Draw(drawList, displayText, cursorX, cursorY, textColor, fontSize);
@@ -253,6 +255,7 @@ function BaseTracker.Create(config)
             end
         else
             -- Combined mode: single window with all containers combined
+            -- Use first label if showLabels is enabled (for single-container trackers or combined multi-container)
             local label = (showLabels and config.containerLabels) and config.containerLabels[1] or nil;
             DrawSingleContainerWindow(
                 config.windowName,

@@ -401,6 +401,7 @@ targetbar.DrawWindow = function(settings)
 			local lockX = startX + bookendWidth + textPadding;
 			local lockY = startY - settings.topTextYOffset - lockHeight + 2;
 
+			-- Draw using UI draw list (doesn't affect ImGui cursor)
 			drawList:AddImage(
 				tonumber(ffi.cast("uint32_t", lockTexture.image)),
 				{lockX, lockY},
@@ -427,7 +428,7 @@ targetbar.DrawWindow = function(settings)
 		local distPos = gConfig.targetDistancePosition or POS_ABOVE;
 		local hpPos = gConfig.targetHpPercentPosition or POS_ABOVE;
 
-		-- === POSITION NAME TEXT === (Left-aligned in GDI, X = left edge)
+		-- === POSITION NAME TEXT ===
 		local nameFontSize = settings.name_font_settings.font_height;
 		local nameWidth, nameHeight = imtext.Measure(targetNameText, nameFontSize);
 
@@ -439,6 +440,7 @@ targetbar.DrawWindow = function(settings)
 			nameX = leftTextX;
 			nameY = bottomTextY;
 		elseif namePos == POS_LEFT then
+			-- Right-align: position is right edge minus text width so text grows left
 			nameX = startX - textPadding - nameWidth;
 			nameY = sideTextY - (nameHeight / 2);
 		else -- POS_RIGHT
@@ -455,7 +457,7 @@ targetbar.DrawWindow = function(settings)
 		targetbar.nameTextInfo.y = nameY;
 		targetbar.nameTextInfo.visible = true;
 
-		-- === POSITION HP% TEXT === (Right-aligned in GDI, X = right edge)
+		-- === POSITION HP% TEXT ===
 		if (showHpPercent) then
 			local percentFontSize = settings.percent_font_settings.font_height;
 			local percentWidth, percentHeight = imtext.Measure(targetHpPercent, percentFontSize);
@@ -470,6 +472,7 @@ targetbar.DrawWindow = function(settings)
 				percentX = rightTextX + percentOffsetX - percentWidth;
 				percentY = bottomTextY + percentOffsetY;
 			elseif hpPos == POS_LEFT then
+				-- Right-align: position is right edge minus text width so text grows left
 				percentX = startX - textPadding - percentWidth + percentOffsetX;
 				percentY = sideTextY - (percentHeight / 2) + percentOffsetY;
 			else -- POS_RIGHT
@@ -481,7 +484,7 @@ targetbar.DrawWindow = function(settings)
 			imtext.Draw(drawList, targetHpPercent, percentX, percentY, desiredPercentColor, percentFontSize);
 		end
 
-		-- === POSITION DISTANCE TEXT === (Right-aligned in GDI, X = right edge)
+		-- === POSITION DISTANCE TEXT ===
 		if (showDistance) then
 			local distFontSize = settings.distance_font_settings.font_height;
 			local distString = tostring(dist);
@@ -509,6 +512,7 @@ targetbar.DrawWindow = function(settings)
 				distX = rightTextX - stackOffset + distanceOffsetX - distWidth;
 				distY = bottomTextY + distanceOffsetY;
 			elseif distPos == POS_LEFT then
+				-- Right-align: position is right edge minus text width so text grows left
 				-- When left, stack above HP% if both are left
 				local stackOffset = 0;
 				if showHpPercent and hpPos == POS_LEFT then
@@ -753,6 +757,7 @@ targetbar.DrawWindow = function(settings)
 						local stHpText = subtargetEntity.HPPercent .. '%';
 						stPercentWidth, _ = imtext.Measure(stHpText, stPercentFontSize);
 						local stPercentColor, _ = GetHpColors(subtargetEntity.HPPercent / 100);
+						-- Right-align: position is right edge minus text width
 						imtext.Draw(drawList, stHpText, stRightEdge - stPercentWidth, stTextY, stPercentColor, stPercentFontSize);
 					end
 
@@ -762,6 +767,7 @@ targetbar.DrawWindow = function(settings)
 						local stDistWidth, _ = imtext.Measure(stDist, stPercentFontSize);
 						local stDistX;
 						if stShowHpPercent then
+							-- Position to the left of HP% with 8px gap
 							stDistX = stRightEdge - stPercentWidth - 8 - stDistWidth;
 						else
 							stDistX = stRightEdge - stDistWidth;
