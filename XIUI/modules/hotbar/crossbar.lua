@@ -652,11 +652,8 @@ end
 function M.Initialize(settings, moduleSettings)
     if state.initialized then return; end
 
-    -- Initial position - use saved position or default
-    local savedPos = gConfig and gConfig.hotbarCrossbarPosition;
-    if not savedPos and gConfig.crossbarWindowPosX and gConfig.crossbarWindowPosY then
-        savedPos = { x = gConfig.crossbarWindowPosX, y = gConfig.crossbarWindowPosY };
-    end
+    -- Initial position - use saved position from profile or default
+    local savedPos = gConfig and gConfig.windowPositions and gConfig.windowPositions['Crossbar'];
 
     local defaultX, defaultY = GetDefaultPosition(settings);
     state.windowX = savedPos and savedPos.x or defaultX;
@@ -805,6 +802,12 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         dimFactor = settings.inactiveSlotDim or 0.5;
     end
 
+    -- Crossbar layout: slotIndex maps to a position within the diamond:
+    -- 1=Top, 2=Right, 3=Bottom, 4=Left (same mapping for face slots 5-8 via -4).
+    -- Top-slot labels placed below can overlap the bottom slot's MP cost, so render them above.
+    local posIndex = (slotIndex <= 4) and slotIndex or (slotIndex - 4);
+    local labelAboveSlot = (posIndex == 1);
+
     -- Gather resources for this slot
     local resources = {
         slotPrim = state.slotPrims[comboMode] and state.slotPrims[comboMode][slotIndex],
@@ -852,6 +855,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         labelText = slotData and (slotData.displayName or slotData.action or '') or '',
         labelOffsetX = settings.actionLabelOffsetX or 0,
         labelOffsetY = (settings.actionLabelOffsetY or 0) + 2,
+        labelAboveSlot = labelAboveSlot,
         labelFontSize = settings.labelFontSize or 10,
         recastTimerFontSize = settings.recastTimerFontSize or 11,
         recastTimerFontColor = settings.recastTimerFontColor or 0xFFFFFFFF,
@@ -1255,20 +1259,6 @@ function M.DrawWindow(settings, moduleSettings)
     else
         -- Apply saved position (once) or default
         local hasSaved = gConfig.windowPositions and gConfig.windowPositions[windowName];
-        
-        -- Migration: Check for legacy position if not found in standard system
-        if not hasSaved then
-            local legPos = gConfig.hotbarCrossbarPosition;
-            if not legPos and gConfig.crossbarWindowPosX and gConfig.crossbarWindowPosY then
-                legPos = { x = gConfig.crossbarWindowPosX, y = gConfig.crossbarWindowPosY };
-            end
-            
-            if legPos then
-                if not gConfig.windowPositions then gConfig.windowPositions = {}; end
-                gConfig.windowPositions[windowName] = { x = legPos.x, y = legPos.y };
-                hasSaved = true;
-            end
-        end
 
         if hasSaved then
             ApplyWindowPosition(windowName);
@@ -1907,6 +1897,12 @@ function M.ResetPositions()
     local defaultX, defaultY = GetDefaultPosition(settings);
     state.windowX = defaultX;
     state.windowY = defaultY;
+    if gConfig.windowPositions then
+        gConfig.windowPositions['Crossbar'] = { x = defaultX, y = defaultY };
+    end
+    if gConfig.appliedPositions then
+        gConfig.appliedPositions['Crossbar'] = nil;
+    end
 end
 
 return M;

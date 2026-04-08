@@ -128,6 +128,25 @@ local AMMO_STATUS_EFFECTS_BY_NAME = {
     ['Spartan Bullet']  = 10,   -- Stun
 };
 
+-- Common debuff IDs (used for overlay icons)
+-- Matches existing conventions in XIUI (see modules/enemylist.lua and handlers/debuffhandler.lua).
+local STATUS_ID_BY_LABEL = {
+    ['Sleep'] = 2,
+    ['Poison'] = 3,
+    ['Paralyze'] = 4,
+    ['Blind'] = 5,
+    ['Silence'] = 6,
+    ['Stun'] = 10,
+    ['Bind'] = 11,
+    ['Weight'] = 12,
+    ['Slow'] = 13,
+    ['Attack Down'] = 147,
+    ['Accuracy Down'] = 146,
+    ['Lower Def'] = 149,     -- Defense Down
+    ['Defense Down'] = 149,
+    ['Evasion Down'] = 148,
+};
+
 -- Runtime cache: itemId -> statusId (populated on first lookup)
 local ammoStatusCache = {};
 
@@ -719,10 +738,30 @@ function M.DrawSlot(resources, params)
     local isOnCooldown = cooldown.isOnCooldown;
     local recastText = cooldown.recastText;
 
-    -- Check if player has enough MP for spells
+    -- Check if player has enough MP for actions with MP costs (spells + pet pacts via registry)
     local notEnoughMp = false;
-    local bindKey = bind and ((bind.actionType or '') .. ':' .. (bind.action or '')) or '';
-    if bind and bind.actionType == 'ma' then
+    local bindKey = '';
+    if bind then
+        if bind.actionType == 'macro' then
+            -- Macros can vary by text and recast override; include these to prevent incorrect cache reuse.
+            -- Keep it string-only and bounded (macroText is small).
+            bindKey = 'macro:' ..
+                (bind.recastSourceType or '') .. ':' ..
+                (bind.recastSourceAction or '') .. ':' ..
+                (bind.recastSourceItemId or '') .. ':' ..
+                (bind.action or '') .. ':' ..
+                (bind.macroText or '');
+        else
+            bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
+        end
+    end
+
+    -- Player levels (used for availability cache invalidation on level sync)
+    local playerForAvail = AshitaCore:GetMemoryManager():GetPlayer();
+    local mainJobLevelForAvail = playerForAvail and playerForAvail:GetMainJobLevel() or 0;
+    local subJobLevelForAvail = playerForAvail and playerForAvail:GetSubJobLevel() or 0;
+
+    if bind then
         local mpCost = mpCostCache[bindKey];
         if mpCost == nil then
             mpCost = actions.GetMPCost(bind) or false;
@@ -738,12 +777,12 @@ function M.DrawSlot(resources, params)
     -- Check if action is available (job/level requirements)
     local isUnavailable = false;
     local unavailableReason = nil;
-    if bind and (bind.actionType == 'ma' or bind.actionType == 'ja' or bind.actionType == 'ws') then
-        -- Include job/subjob in cache key so cache invalidates on job change
-        local player = AshitaCore:GetMemoryManager():GetPlayer();
+    if bind and (bind.actionType == 'ma' or bind.actionType == 'ja' or bind.actionType == 'ws' or bind.actionType == 'pet' or bind.actionType == 'macro') then
+        -- Include job/subjob AND effective levels so cache invalidates on level sync
+        local player = playerForAvail;
         local jobId = player and player:GetMainJob() or 0;
         local subjobId = player and player:GetSubJob() or 0;
-        local availKey = bindKey .. ':' .. jobId .. ':' .. subjobId;
+        local availKey = bindKey .. ':' .. jobId .. ':' .. subjobId .. ':' .. mainJobLevelForAvail .. ':' .. subJobLevelForAvail;
 
         local cached = availabilityCache[availKey];
         if cached == nil then
@@ -1063,7 +1102,8 @@ function M.DrawSlot(resources, params)
     end
 
     -- ========================================
-    -- 7. Label Font (GDI - action name below slot)
+    -- 7. Label Font (GDI - action name)
+    -- Default: below slot. Crossbar can request above-slot labels to avoid overlap.
     -- ========================================
     if resources.labelFont then
         if params.showLabel and params.labelText and params.labelText ~= '' then
@@ -1079,7 +1119,27 @@ function M.DrawSlot(resources, params)
             end
             -- Only update position if changed
             local labelX = x + size / 2 + (params.labelOffsetX or 0);
-            local labelY = y + size + 2 + (params.labelOffsetY or 0);
+
+            local labelY;
+            if params.labelAboveSlot then
+                -- Place label above the slot (used by crossbar top slots to avoid overlapping lower slots).
+                local fontH = params.labelFontSize or 10;
+                local baseLabelY = y - fontH - 4;
+                labelY = baseLabelY + (params.labelOffsetY or 0);
+                -- Clamp so it can't drift down into the slot area.
+                if labelY > baseLabelY then
+                    labelY = baseLabelY;
+                end
+            else
+                -- Default: below slot.
+                -- Prevent label from being moved into the slot (which can overlap MP cost, keybinds, etc.)
+                -- Users can still move it further down with positive offsets.
+                local baseLabelY = y + size + 2;
+                labelY = baseLabelY + (params.labelOffsetY or 0);
+                if labelY < baseLabelY then
+                    labelY = baseLabelY;
+                end
+            end
             if cache and (cache.labelX ~= labelX or cache.labelY ~= labelY) then
                 resources.labelFont:set_position_x(labelX);
                 resources.labelFont:set_position_y(labelY);
@@ -1116,7 +1176,7 @@ function M.DrawSlot(resources, params)
 
     -- ========================================
     -- 8. MP Cost Font (GDI - anchored position)
-    -- Shows "X" when action is unavailable, otherwise shows MP cost
+    -- Shows level requirement (e.g. Lvl.65) when gated by level, else "X" for other unavailable, else MP cost
     -- ========================================
     if resources.mpCostFont then
         local showMpCost = params.showMpCost ~= false;
@@ -1124,12 +1184,22 @@ function M.DrawSlot(resources, params)
             -- Calculate position using anchor
             local mpX, mpY = GetAnchoredPosition(x, y, size, params.mpCostAnchor, params.mpCostOffsetX, params.mpCostOffsetY);
             
-            -- If action is unavailable, show "X" instead of MP cost
+            -- If action is unavailable, show level text when IsActionAvailable returned Lvl.n (or legacy Lv#)
             if isUnavailable then
-                local xText = "X";
-                if cache and cache.mpCostText ~= xText then
-                    resources.mpCostFont:set_text(xText);
-                    cache.mpCostText = xText;
+                local unavailText = 'X';
+                if unavailableReason then
+                    if unavailableReason:match('^Lvl%.%d+$') then
+                        unavailText = unavailableReason;
+                    else
+                        local legacyLv = unavailableReason:match('^Lv(%d+)$');
+                        if legacyLv then
+                            unavailText = 'Lvl.' .. legacyLv;
+                        end
+                    end
+                end
+                if cache and cache.mpCostText ~= unavailText then
+                    resources.mpCostFont:set_text(unavailText);
+                    cache.mpCostText = unavailText;
                 end
                 if cache and (cache.mpCostX ~= mpX or cache.mpCostY ~= mpY) then
                     resources.mpCostFont:set_position_x(mpX);
@@ -1141,7 +1211,7 @@ function M.DrawSlot(resources, params)
                     resources.mpCostFont:set_font_height(params.mpCostFontSize);
                     cache.mpCostFontSize = params.mpCostFontSize;
                 end
-                -- Red color for unavailable "X"
+                -- Red for level/job gate; keep red for generic unavailable
                 local xColor = 0xFFFF4444;
                 if cache and cache.mpCostFontColor ~= xColor then
                     resources.mpCostFont:set_font_color(xColor);
@@ -1149,7 +1219,7 @@ function M.DrawSlot(resources, params)
                 end
                 resources.mpCostFont:set_visible(true);
             else
-                -- Normal MP cost display
+                -- Normal MP cost display (spells + pet pacts via registry + macro-derived)
                 local mpCost = mpCostCache[bindKey];
                 if mpCost == nil then
                     mpCost = actions.GetMPCost(bind) or false;  -- false = no MP cost
@@ -1285,6 +1355,41 @@ function M.DrawSlot(resources, params)
                     local padding = 2;
                     local iconX = x + size - iconSize - padding;
                     local iconY = y + padding;
+
+                    -- Apply animation opacity
+                    local iconAlpha = math.floor(255 * animOpacity);
+                    local iconTint = bit.bor(bit.lshift(iconAlpha, 24), 0x00FFFFFF);
+
+                    drawList:AddImage(
+                        statusIconPtr,
+                        {iconX, iconY},
+                        {iconX + iconSize, iconY + iconSize},
+                        {0, 0}, {1, 1},
+                        iconTint
+                    );
+                end
+            end
+        end
+    end
+
+    -- ========================================
+    -- 9c. Pet Pact Status Effect Icon (bottom-left corner)
+    -- Shows status effect icon for Blood Pacts that apply a status (from petregistry)
+    -- ========================================
+    if bind and animOpacity > 0.5 then
+        -- Resolve pact data for pet binds and macro binds that execute pacts
+        local pact = actions.GetResolvedBloodPact and actions.GetResolvedBloodPact(bind) or nil;
+        local statusLabel = pact and pact.status or nil;
+        local statusId = statusLabel and STATUS_ID_BY_LABEL[statusLabel] or nil;
+        if statusId then
+            local statusIconPtr = statusHandler.get_icon_from_theme(gConfig.statusIconTheme, statusId);
+            if statusIconPtr then
+                local drawList = imgui.GetWindowDrawList();
+                if drawList then
+                    local iconSize = size * 0.35;
+                    local padding = 2;
+                    local iconX = x + padding;
+                    local iconY = y + size - iconSize - padding;
 
                     -- Apply animation opacity
                     local iconAlpha = math.floor(255 * animOpacity);
