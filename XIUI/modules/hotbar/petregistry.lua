@@ -368,7 +368,7 @@ M.bloodPactsRage = {
     { name = 'Chaotic Strike', level = 70, mp = 164, avatars = {'Ramuh'}, status = 'Stun' },
     { name = 'Thunderstorm', level = 75, mp = 182, avatars = {'Ramuh'} },
     { name = 'Volt Strike', level = 0, mp = 0, avatars = {'Ramuh'} }, -- Not on Wiki
-    { name = 'Judgement Bolt', level = 1, mp = -1, avatars = {'Ramuh'}, requiresFlow = true },
+    { name = 'Judgment Bolt', level = 1, mp = -1, avatars = {'Ramuh'}, requiresFlow = true },
     -- Leviathan
     { name = 'Barracuda Dive', level = 1, mp = 8, avatars = {'Leviathan'} },
     { name = 'Water II', level = 10, mp = 24, avatars = {'Leviathan'} },
