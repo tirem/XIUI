@@ -324,14 +324,16 @@ local function drawNotification(slot, notification, x, y, width, height, setting
     end
     local textY = baseTextY + textOffsetY;
 
-    -- Draw icon if we have one and have a draw list
-    if icon and icon.image and drawList then
+    -- Draw icons on the background draw list to avoid window clip rect issues
+    -- when multiple notifications are stacked in the same ImGui window.
+    local iconDrawList = imgui.GetBackgroundDrawList();
+    if icon and icon.image and iconDrawList then
         -- Convert alpha to icon color with alpha
         local iconAlphaByte = math.floor(alpha * 255);
         local iconColor = bit.bor(bit.lshift(iconAlphaByte, 24), 0x00FFFFFF);  -- White with alpha
 
         pcall(function()
-            drawList:AddImage(
+            iconDrawList:AddImage(
                 tonumber(ffi.cast("uint32_t", icon.image)),
                 {iconX, iconY},
                 {iconX + iconSize, iconY + iconSize},
@@ -1079,13 +1081,13 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
     end
     local textY = baseTextY + textOffsetY;
 
-    -- Draw icon
-    if icon and icon.image and drawList then
+    local iconDrawList = imgui.GetBackgroundDrawList();
+    if icon and icon.image and iconDrawList then
         local iconAlphaByte = math.floor(alpha * 255);
         local iconColor = bit.bor(bit.lshift(iconAlphaByte, 24), 0x00FFFFFF);
 
         pcall(function()
-            drawList:AddImage(
+            iconDrawList:AddImage(
                 tonumber(ffi.cast("uint32_t", icon.image)),
                 {iconX, iconY},
                 {iconX + iconSize, iconY + iconSize},
