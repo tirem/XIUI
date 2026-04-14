@@ -420,6 +420,45 @@ local function GetCrossbarDimensions(settings)
     return width, height, groupWidth, groupHeight;
 end
 
+-- Extra height at the top of the Crossbar ImGui window so palette scope / L2 / R2 / refresh draw inside the
+-- window draw list (correct stacking vs other addons). Profile `windowPositions.Crossbar.y` stays the slot
+-- grid top (unchanged from before this padding existed).
+local CROSSBAR_WINDOW_TOP_DECOR_PAD = 80;
+
+local function ApplyCrossbarWindowPositionOnce()
+    if not gConfig or not gConfig.windowPositions or not gConfig.windowPositions['Crossbar'] then
+        return false;
+    end
+    if not gConfig.appliedPositions then
+        gConfig.appliedPositions = {};
+    end
+    if gConfig.appliedPositions['Crossbar'] then
+        return false;
+    end
+    local pos = gConfig.windowPositions['Crossbar'];
+    imgui.SetNextWindowPos({ pos.x, pos.y - CROSSBAR_WINDOW_TOP_DECOR_PAD }, ImGuiCond_Always);
+    gConfig.appliedPositions['Crossbar'] = true;
+    return true;
+end
+
+local function SaveCrossbarWindowSlotTopPosition()
+    if not gConfig then
+        return;
+    end
+    local wx, wy = imgui.GetWindowPos();
+    if not gConfig.windowPositions then
+        gConfig.windowPositions = {};
+    end
+    local slotTopY = wy + CROSSBAR_WINDOW_TOP_DECOR_PAD;
+    local saved = gConfig.windowPositions['Crossbar'];
+    if not saved then
+        gConfig.windowPositions['Crossbar'] = { x = wx, y = slotTopY };
+    elseif saved.x ~= wx or saved.y ~= slotTopY then
+        saved.x = wx;
+        saved.y = slotTopY;
+    end
+end
+
 -- Get default window position (centered at bottom of screen)
 local function GetDefaultPosition(settings)
     local screenWidth = imgui.GetIO().DisplaySize.x or 1920;
@@ -1549,27 +1588,29 @@ function M.DrawWindow(settings, moduleSettings)
     local anchorDragging = drawing.IsAnchorDragging(windowName);
 
     if anchorDragging then
-        -- Use state position directly during drag for immediate response
-        imgui.SetNextWindowPos({state.windowX, state.windowY}, ImGuiCond_Always);
+        -- Use state position directly during drag for immediate response (state Y = slot grid top).
+        imgui.SetNextWindowPos({ state.windowX, state.windowY - CROSSBAR_WINDOW_TOP_DECOR_PAD }, ImGuiCond_Always);
     elseif hideRightForSharedCenter then
         -- Single centered strip: align window to horizontal screen center (Y from saved / last wide bar)
         local io = imgui.GetIO();
         local screenW = (io and io.DisplaySize and io.DisplaySize.x) or 1920;
-        imgui.SetNextWindowPos({ (screenW - width) * 0.5, storedCrossbarPosY() }, ImGuiCond_Always);
+        local slotY = storedCrossbarPosY();
+        imgui.SetNextWindowPos({ (screenW - width) * 0.5, slotY - CROSSBAR_WINDOW_TOP_DECOR_PAD }, ImGuiCond_Always);
     elseif exitingChordCenter and state.lastWideCrossbarWindowX ~= nil then
-        imgui.SetNextWindowPos({ state.lastWideCrossbarWindowX, storedCrossbarPosY() }, ImGuiCond_Always);
+        local slotY = storedCrossbarPosY();
+        imgui.SetNextWindowPos({ state.lastWideCrossbarWindowX, slotY - CROSSBAR_WINDOW_TOP_DECOR_PAD }, ImGuiCond_Always);
     else
-        -- Apply saved position (once) or default
+        -- Apply saved position (once) or default; saved Y is slot-grid top (see SaveCrossbarWindowSlotTopPosition).
         local hasSaved = gConfig.windowPositions and gConfig.windowPositions[windowName];
 
         if hasSaved then
-            ApplyWindowPosition(windowName);
+            ApplyCrossbarWindowPositionOnce();
         else
-            imgui.SetNextWindowPos({defaultX, defaultY}, ImGuiCond_FirstUseEver);
+            imgui.SetNextWindowPos({ defaultX, defaultY - CROSSBAR_WINDOW_TOP_DECOR_PAD }, ImGuiCond_FirstUseEver);
         end
     end
 
-    imgui.SetNextWindowSize({width, height}, ImGuiCond_Always);
+    imgui.SetNextWindowSize({ width, height + CROSSBAR_WINDOW_TOP_DECOR_PAD }, ImGuiCond_Always);
 
     -- Check if animations are disabled - if so, force complete any in-progress animation
     if settings.enableTransitionAnimations == false and state.animation.active then
@@ -1642,9 +1683,6 @@ function M.DrawWindow(settings, moduleSettings)
     local leftShowPressed = leftActive and activeCombo ~= COMBO_MODES.NONE;
     local rightShowPressed = rightActive and activeCombo ~= COMBO_MODES.NONE;
 
-    -- Get draw list for ImGui-based rendering (behind config when open)
-    local drawList = GetUIDrawList();
-
     -- Get target server ID for skillchain prediction (cached for all slots)
     local targetServerId = nil;
     local skillchainEnabled = gConfig.hotbarGlobal.skillchainHighlightEnabled ~= false;
@@ -1689,20 +1727,24 @@ function M.DrawWindow(settings, moduleSettings)
         -- screen-centered each frame — only persist Y so wide-bar X isn't overwritten by the narrow window.
         if hideRightForSharedCenter then
             if gConfig.windowPositions and gConfig.windowPositions[windowName] then
-                local _, wy = imgui.GetWindowPos();
+                local wx, wy = imgui.GetWindowPos();
                 local s = gConfig.windowPositions[windowName];
-                if s.y ~= wy then
-                    s.y = wy;
+                local slotTopY = wy + CROSSBAR_WINDOW_TOP_DECOR_PAD;
+                if s.y ~= slotTopY then
+                    s.y = slotTopY;
+                end
+                if s.x ~= wx then
+                    s.x = wx;
                 end
             end
         else
-            SaveWindowPosition('Crossbar');
+            SaveCrossbarWindowSlotTopPosition();
         end
         windowPosX, windowPosY = imgui.GetWindowPos();
 
-        -- Update stored position for primitives
+        -- Slot grid top (logical position); ImGui window top is `windowPosY` (higher on screen).
         state.windowX = windowPosX;
-        state.windowY = windowPosY;
+        state.windowY = windowPosY + CROSSBAR_WINDOW_TOP_DECOR_PAD;
         if not hideRightForSharedCenter then
             state.lastWideCrossbarWindowX = windowPosX;
         end
@@ -1712,6 +1754,10 @@ function M.DrawWindow(settings, moduleSettings)
         leftGroupY = state.windowY;
         rightGroupX = state.windowX + groupWidth + groupSpacing;
         rightGroupY = state.windowY;
+
+        -- Window draw list: keeps L2/R2, divider, palette scope, diamond center icons, and slot overlays
+        -- in the Crossbar window layer (below other ImGui addon windows). Foreground was drawing on top of everything.
+        local winDrawList = imgui.GetWindowDrawList();
 
         -- Draw bar sets based on animation state and display mode
         -- NOTE: DrawSlot calls must be inside imgui.Begin/End for interactions to work
@@ -1735,15 +1781,15 @@ function M.DrawWindow(settings, moduleSettings)
                 if state.animation.leftChanged then
                     if outOpacity > 0.01 then
                         DrawSide('L2', state.animation.fromLeftMode, leftGroupX, leftGroupY, slotSize, settings,
-                            fromLeftActive, pressedSlot, false, outOpacity, drawList, outYOffset, targetServerId, skillchainEnabled, activeCombo);
+                            fromLeftActive, pressedSlot, false, outOpacity, winDrawList, outYOffset, targetServerId, skillchainEnabled, activeCombo);
                     end
                     if inOpacity > 0.01 then
                         DrawSide('L2', state.animation.toLeftMode, leftGroupX, leftGroupY, slotSize, settings,
-                            leftActive, pressedSlot, leftShowPressed, inOpacity, drawList, inYOffset, targetServerId, skillchainEnabled, activeCombo);
+                            leftActive, pressedSlot, leftShowPressed, inOpacity, winDrawList, inYOffset, targetServerId, skillchainEnabled, activeCombo);
                     end
                 else
                     DrawSide('L2', state.animation.toLeftMode, leftGroupX, leftGroupY, slotSize, settings,
-                        leftActive, pressedSlot, leftShowPressed, visibilityOpacity, drawList, 0, targetServerId, skillchainEnabled, activeCombo);
+                        leftActive, pressedSlot, leftShowPressed, visibilityOpacity, winDrawList, 0, targetServerId, skillchainEnabled, activeCombo);
                 end
             end
 
@@ -1751,30 +1797,30 @@ function M.DrawWindow(settings, moduleSettings)
                 if state.animation.rightChanged then
                     if outOpacity > 0.01 then
                         DrawSide('R2', state.animation.fromRightMode, rightGroupX, rightGroupY, slotSize, settings,
-                            fromRightActive, pressedSlot, false, outOpacity, drawList, outYOffset, targetServerId, skillchainEnabled, activeCombo);
+                            fromRightActive, pressedSlot, false, outOpacity, winDrawList, outYOffset, targetServerId, skillchainEnabled, activeCombo);
                     end
                     if inOpacity > 0.01 then
                         DrawSide('R2', state.animation.toRightMode, rightGroupX, rightGroupY, slotSize, settings,
-                            rightActive, pressedSlot, rightShowPressed, inOpacity, drawList, inYOffset, targetServerId, skillchainEnabled, activeCombo);
+                            rightActive, pressedSlot, rightShowPressed, inOpacity, winDrawList, inYOffset, targetServerId, skillchainEnabled, activeCombo);
                     end
                 else
                     DrawSide('R2', state.animation.toRightMode, rightGroupX, rightGroupY, slotSize, settings,
-                        rightActive, pressedSlot, rightShowPressed, visibilityOpacity, drawList, 0, targetServerId, skillchainEnabled, activeCombo);
+                        rightActive, pressedSlot, rightShowPressed, visibilityOpacity, winDrawList, 0, targetServerId, skillchainEnabled, activeCombo);
                 end
             end
         else
             if isActiveOnlyMode then
                 if leftVisible then
                     DrawSide('L2', state.currentLeftMode, leftGroupX, leftGroupY, slotSize, settings,
-                        leftActive, pressedSlot, leftShowPressed, visibilityOpacity, drawList, 0, targetServerId, skillchainEnabled, activeCombo);
+                        leftActive, pressedSlot, leftShowPressed, visibilityOpacity, winDrawList, 0, targetServerId, skillchainEnabled, activeCombo);
                 end
                 if (not hideRightForSharedCenter) and rightVisible then
                     DrawSide('R2', state.currentRightMode, rightGroupX, rightGroupY, slotSize, settings,
-                        rightActive, pressedSlot, rightShowPressed, visibilityOpacity, drawList, 0, targetServerId, skillchainEnabled, activeCombo);
+                        rightActive, pressedSlot, rightShowPressed, visibilityOpacity, winDrawList, 0, targetServerId, skillchainEnabled, activeCombo);
                 end
             elseif hideRightForSharedCenter then
                 DrawSide('L2', state.currentLeftMode, leftGroupX, leftGroupY, slotSize, settings,
-                    leftActive, pressedSlot, leftShowPressed, 1.0, drawList, 0, targetServerId, skillchainEnabled, activeCombo);
+                    leftActive, pressedSlot, leftShowPressed, 1.0, winDrawList, 0, targetServerId, skillchainEnabled, activeCombo);
             else
                 -- Normal mode: draw both sides at full opacity
                 DrawBarSet(
@@ -1783,8 +1829,61 @@ function M.DrawWindow(settings, moduleSettings)
                     slotSize, settings,
                     leftActive, rightActive,
                     pressedSlot, leftShowPressed, rightShowPressed,
-                    1.0, drawList, 0, targetServerId, skillchainEnabled, activeCombo
+                    1.0, winDrawList, 0, targetServerId, skillchainEnabled, activeCombo
                 );
+            end
+        end
+
+        -- Center divider + palette scope + L2/R2 + refresh: window draw list (below other addon windows).
+        -- CROSSBAR_WINDOW_TOP_DECOR_PAD expands the window upward so art above the slot grid is not clipped.
+        local showCenterDecor = settings.displayMode ~= 'activeOnly';
+        local centerXDecor = state.windowX + width * 0.5;
+        local dividerTopYDecor = state.windowY + 10;
+        if settings.showDivider and winDrawList and showCenterDecor and (not hideRightForSharedCenter) then
+            local dividerY2 = state.windowY + height - 10;
+            winDrawList:AddLine(
+                { centerXDecor, dividerTopYDecor },
+                { centerXDecor, dividerY2 },
+                imgui.GetColorU32({ 1, 1, 1, 0.3 }),
+                2
+            );
+        end
+        if showCenterDecor and winDrawList then
+            DrawPaletteScopeIconAboveDivider(centerXDecor, dividerTopYDecor, settings, winDrawList);
+        end
+        local topYDecor = state.windowY - 4;
+        if showCenterDecor then
+            DrawComboText(activeCombo, centerXDecor, topYDecor, settings);
+        end
+        local bottomYDecor = state.windowY + height + 4;
+        if showCenterDecor then
+            DrawPaletteName(centerXDecor, bottomYDecor, settings);
+        end
+        if winDrawList and showCenterDecor then
+            if hideRightForSharedCenter then
+                DrawTriggerIconsSharedExpandedCenter(activeCombo, leftGroupX, leftGroupY, groupWidth, settings, winDrawList);
+            else
+                DrawTriggerIcons(activeCombo, leftGroupX, rightGroupX, leftGroupY, groupWidth, settings, winDrawList);
+            end
+        end
+        if state.windowX and actions.IsPaletteModifierHeld() then
+            local refreshTexture = textures:Get('ui_refresh');
+            if refreshTexture and refreshTexture.image and winDrawList then
+                local iconSize = 18;
+                local iconX = centerXDecor - (iconSize / 2);
+                local iconY = state.windowY - 24;
+                local pulseAlpha = 0.7 + 0.3 * math.sin(os.clock() * 6);
+                local iconColor = imgui.GetColorU32({ 1.0, 1.0, 1.0, pulseAlpha });
+                local iconPtr = tonumber(ffi.cast('uint32_t', refreshTexture.image));
+                if iconPtr then
+                    winDrawList:AddImage(
+                        iconPtr,
+                        { iconX, iconY },
+                        { iconX + iconSize, iconY + iconSize },
+                        { 0, 0 }, { 1, 1 },
+                        iconColor
+                    );
+                end
             end
         end
 
@@ -1807,9 +1906,7 @@ function M.DrawWindow(settings, moduleSettings)
         end
     end
 
-    -- Determine if we should show center elements (hidden in activeOnly mode)
     local isActiveOnlyMode = settings.displayMode == 'activeOnly';
-    local showCenterElements = not isActiveOnlyMode;
 
     -- Update window background (can happen after window closes)
     -- In activeOnly mode, apply visibility opacity to background
@@ -1829,75 +1926,6 @@ function M.DrawWindow(settings, moduleSettings)
             bgColor = settings.bgColor,
             borderColor = settings.borderColor,
         });
-    end
-
-    -- Horizontal center: midpoint of window (single group when shared expanded bar is centered)
-    local centerX = state.windowX + width * 0.5;
-    local dividerTopY = state.windowY + 10;
-
-    -- Draw center divider (optional, hidden in activeOnly mode; no bar between L/R when using one centered strip)
-    if settings.showDivider and drawList and showCenterElements and (not hideRightForSharedCenter) then
-        local dividerY2 = state.windowY + height - 10;
-
-        drawList:AddLine(
-            { centerX, dividerTopY },
-            { centerX, dividerY2 },
-            imgui.GetColorU32({ 1, 1, 1, 0.3 }),
-            2
-        );
-    end
-
-    -- Palette scope icon (Global infinity or main job) — above the divider, same X as the line
-    if showCenterElements and drawList then
-        DrawPaletteScopeIconAboveDivider(centerX, dividerTopY, settings, drawList);
-    end
-
-    -- Draw combo text in center for complex combos (hidden in activeOnly mode)
-    local topY = state.windowY - 4;  -- Above the window
-    if showCenterElements then
-        DrawComboText(activeCombo, centerX, topY, settings);
-    end
-
-    -- Draw palette name below the crossbar
-    local bottomY = state.windowY + height + 4;
-    if showCenterElements then
-        DrawPaletteName(centerX, bottomY, settings);
-    end
-
-    -- Draw L2/R2 trigger icons above the groups (hidden in activeOnly mode)
-    if drawList and showCenterElements then
-        if hideRightForSharedCenter then
-            DrawTriggerIconsSharedExpandedCenter(activeCombo, leftGroupX, leftGroupY, groupWidth, settings, drawList);
-        else
-            DrawTriggerIcons(activeCombo, leftGroupX, rightGroupX, leftGroupY, groupWidth, settings, drawList);
-        end
-    end
-
-    -- Draw palette modifier indicator (refresh icon when modifier key is held)
-    if state.windowX and actions.IsPaletteModifierHeld() then
-        local refreshTexture = textures:Get('ui_refresh');
-        if refreshTexture and refreshTexture.image then
-            local iconSize = 18;
-            -- Position centered above the crossbar
-            local iconX = centerX - (iconSize / 2);
-            local iconY = state.windowY - 24;
-            local fgDrawList = GetUIDrawList();
-
-            -- Draw with a pulsing effect for visibility
-            local pulseAlpha = 0.7 + 0.3 * math.sin(os.clock() * 6);
-            local iconColor = imgui.GetColorU32({1.0, 1.0, 1.0, pulseAlpha});
-            local iconPtr = tonumber(ffi.cast("uint32_t", refreshTexture.image));
-
-            if iconPtr then
-                fgDrawList:AddImage(
-                    iconPtr,
-                    {iconX, iconY},
-                    {iconX + iconSize, iconY + iconSize},
-                    {0, 0}, {1, 1},
-                    iconColor
-                );
-            end
-        end
     end
 
     state.wasSharedCenterChordLayout = hideRightForSharedCenter;
