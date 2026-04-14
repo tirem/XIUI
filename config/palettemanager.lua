@@ -146,6 +146,11 @@ function M.DeferConfigCloseIfEditFullPaletteOpen()
     if not embedCrossbarComboWinOpen[1] then
         return false;
     end
+    -- No unsaved crossbar draft: close the editor and allow config to close without a modal.
+    if not data.IsDraftDirty() then
+        ForceCloseEditFullPaletteWindow();
+        return false;
+    end
     openCloseConfigConfirmPopup = true;
     return true;
 end
@@ -158,7 +163,8 @@ local function BuildEditFullPaletteViewSettings(cross)
     local scale = 0.80;
     v.slotSize = math.max(26, math.floor(((cross and cross.slotSize) or 48) * scale + 0.5));
     v.buttonIconSize = math.max(12, math.floor(((cross and cross.buttonIconSize) or 24) * scale + 0.5));
-    v.labelFontSize = math.max(9, math.floor(((cross and cross.labelFontSize) or 10) + 0.5));
+    -- Edit Full Palette: slightly larger than gameplay labels; drawn as overlay on slot icons.
+    v.labelFontSize = math.max(11, math.floor(((cross and cross.labelFontSize) or 10) + 2.5));
     v.recastTimerFontSize = math.max(8, math.floor(((cross and cross.recastTimerFontSize) or 11) * scale + 0.5));
     v.mpCostFontSize = math.max(8, math.floor(((cross and cross.mpCostFontSize) or 10) * scale + 0.5));
     v.quantityFontSize = math.max(8, math.floor(((cross and cross.quantityFontSize) or 10) * scale + 0.5));
@@ -286,39 +292,6 @@ local function IntersectRect(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2)
         return nil;
     end
     return x1, y1, x2, y2;
-end
-
-local function CountEditorLabelLines(text)
-    if not text or text == '' then
-        return 1;
-    end
-    local trimmed = text:gsub('^%s+', ''):gsub('%s+$', '');
-    if trimmed == '' then
-        return 1;
-    end
-    -- Matches slotrenderer EditorLabelWrapNearSlot: at most one line break when words are split.
-    if trimmed:find('%s') then
-        return 2;
-    end
-    return 1;
-end
-
-local function GetEditorRowLabelLineExtents(storageKey, modes)
-    local maxTopLines = 1;
-    local maxBottomLines = 1;
-    for _, mode in ipairs(modes or {}) do
-        for _, topSlot in ipairs({ 1, 5 }) do
-            local topData = data.GetDraftSlotData(mode, topSlot);
-            local topName = topData and (topData.displayName or topData.action) or nil;
-            maxTopLines = math.max(maxTopLines, CountEditorLabelLines(topName));
-        end
-        for _, bottomSlot in ipairs({ 3, 7 }) do
-            local botData = data.GetDraftSlotData(mode, bottomSlot);
-            local botName = botData and (botData.displayName or botData.action) or nil;
-            maxBottomLines = math.max(maxBottomLines, CountEditorLabelLines(botName));
-        end
-    end
-    return maxTopLines, maxBottomLines;
 end
 
 -- Pet Palette toggle per combo-mode segment (Edit Full Palette). Optional gold label (opts.showGoldLabel = false to omit).
@@ -562,10 +535,9 @@ end
 local function DrawFullPaletteCrossbarPair(storageKey, modeLeft, modeRight, idFix, cs, parentClipX1, parentClipY1, parentClipX2, parentClipY2, drawPetFooters, cross, named, segmentOverrideJobId)
     local w, h, gw, ghgt = crossbar.GetEditorCrossbarRowDimensions(cs);
     local gs = w - 2 * gw;
-    local labelLineH = (cs.labelFontSize or 10) + 2;
-    local topLines, bottomLines = GetEditorRowLabelLineExtents(storageKey, { modeLeft, modeRight });
-    local rowPadTop = (cs.labelFontSize or 10) + 10 + math.max(0, topLines - 1) * labelLineH;
-    local rowPadBottom = (cs.labelFontSize or 10) + 12 + math.max(0, bottomLines - 1) * labelLineH;
+    -- Action names render on top of slot icons (not above/below the grid); keep row padding compact.
+    local rowPadTop = 14;
+    local rowPadBottom = 14;
     local rowPadH = (cs.labelFontSize or 10) + 22;
     local rowPadLeft = rowPadH;
     local rowPadRight = rowPadH + 16;
@@ -669,10 +641,8 @@ end
 -- Single 8-slot group (shared chord bar): one double-diamond wide
 local function DrawFullPaletteSingleCrossbarGroup(storageKey, comboMode, idFix, cs, parentClipX1, parentClipY1, parentClipX2, parentClipY2, drawPetFooters, cross, named, segmentOverrideJobId)
     local w, h, gw, ghgt = crossbar.GetEditorCrossbarRowDimensions(cs);
-    local labelLineH = (cs.labelFontSize or 10) + 2;
-    local topLines, bottomLines = GetEditorRowLabelLineExtents(storageKey, { comboMode });
-    local rowPadTop = (cs.labelFontSize or 10) + 10 + math.max(0, topLines - 1) * labelLineH;
-    local rowPadBottom = (cs.labelFontSize or 10) + 12 + math.max(0, bottomLines - 1) * labelLineH;
+    local rowPadTop = 14;
+    local rowPadBottom = 14;
     local rowPadH = (cs.labelFontSize or 10) + 22;
     local rowPadLeft = rowPadH;
     local rowPadRight = rowPadH + 16;
@@ -2463,32 +2433,45 @@ function M.DrawEmbeddedCrossbarManage(jobId, subjobId)
     imgui.PopStyleVar();
 end
 
--- Confirm closing XIUI Config while Edit Full Palette is open (opened from config.lua via DeferConfigCloseIfEditFullPaletteOpen).
+-- Confirm closing XIUI Config while Edit Full Palette has unsaved draft changes (see DeferConfigCloseIfEditFullPaletteOpen).
 local function DrawCloseConfigWhileEditPaletteModal()
     if openCloseConfigConfirmPopup then
-        imgui.OpenPopup('Close XIUI Config?##xiuiCloseCfgEditPalModal');
+        imgui.OpenPopup('Unsaved Edit Full Palette##xiuiCloseCfgEditPalModal');
         openCloseConfigConfirmPopup = false;
     end
-    imgui.SetNextWindowSize({ 420, 0 }, ImGuiCond_Appearing);
-    if imgui.BeginPopupModal('Close XIUI Config?##xiuiCloseCfgEditPalModal', nil, ImGuiWindowFlags_AlwaysAutoResize) then
+    imgui.SetNextWindowSize({ 460, 0 }, ImGuiCond_Appearing);
+    if imgui.BeginPopupModal('Unsaved Edit Full Palette##xiuiCloseCfgEditPalModal', nil, ImGuiWindowFlags_AlwaysAutoResize) then
         if imgui.PushTextWrapPos then
-            imgui.PushTextWrapPos(390);
+            imgui.PushTextWrapPos(430);
         end
-        imgui.TextWrapped('Edit Full Palette is still open. Close it and exit XIUI Config?');
+        imgui.TextWrapped('You have unsaved changes in Edit Full Palette. What would you like to do?');
         if imgui.PopTextWrapPos then
             imgui.PopTextWrapPos();
         end
         imgui.Spacing();
-        if imgui.Button('Yes##xiuiCfgClosePalYes', { 120, 0 }) then
+        local cfg = require('config');
+        if imgui.Button('Save and Close##xiuiCfgClosePalSave', { 140, 0 }) then
+            data.ApplyDraft();
+            if SaveSettingsToDisk then
+                SaveSettingsToDisk();
+            end
             ForceCloseEditFullPaletteWindow();
-            local cfg = require('config');
             if cfg.SetWindowOpen then
                 cfg.SetWindowOpen(false);
             end
             imgui.CloseCurrentPopup();
         end
         imgui.SameLine();
-        if imgui.Button('Cancel##xiuiCfgClosePalNo', { 120, 0 }) then
+        if imgui.Button('Revert and Close##xiuiCfgClosePalRevert', { 140, 0 }) then
+            data.DiscardDraft();
+            ForceCloseEditFullPaletteWindow();
+            if cfg.SetWindowOpen then
+                cfg.SetWindowOpen(false);
+            end
+            imgui.CloseCurrentPopup();
+        end
+        imgui.SameLine();
+        if imgui.Button('Cancel##xiuiCfgClosePalCancel', { 100, 0 }) then
             imgui.CloseCurrentPopup();
         end
         imgui.EndPopup();
