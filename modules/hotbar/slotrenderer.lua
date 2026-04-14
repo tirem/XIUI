@@ -794,6 +794,30 @@ local function AddSoftEllipticalBackdrop(drawList, px, py, tw, th, aChannel)
     end
 end
 
+-- Edit Full Palette labels: flatter, wider falloff (pill / cylinder feel) and lighter than MP/Qty scrim.
+local function AddSoftEditorLabelBackdrop(drawList, px, py, tw, th, aChannel)
+    if tw <= 0 or th <= 0 then return; end
+    local padX, padY = 5, 2;
+    local baseRx = (tw + padX * 2) * 0.5;
+    local baseRy = (th + padY * 2) * 0.5;
+    -- Stretch horizontally, compress vertically so the silhouette reads like a horizontal cylinder / capsule.
+    baseRx = baseRx * 1.22;
+    baseRy = baseRy * 0.76;
+    local cx = px + tw * 0.5;
+    local cy = py + th * 0.5;
+    local baseAlpha = 0.28 * (aChannel / 255);
+    local layers = 6;
+    for li = 1, layers do
+        local p = (li - 1) / math.max(1, layers - 1);
+        local scale = 1.52 - 0.52 * p;
+        local rx = baseRx * scale;
+        local ry = baseRy * scale;
+        local alpha = baseAlpha * (0.06 + 0.94 * p * p);
+        local col = imgui.GetColorU32({ 0, 0, 0, alpha });
+        FillEllipseConvex(drawList, cx, cy, rx, ry, col);
+    end
+end
+
 local function AddOutlinedForegroundText(drawList, px, py, argbColor, text)
     if not drawList or not text or text == '' then return; end
     local mainU32 = ArgbToImguiU32(argbColor);
@@ -826,6 +850,51 @@ local function AddOutlinedForegroundText(drawList, px, py, argbColor, text)
     drawList:AddText({ px, py }, mainU32, text);
 end
 
+-- Same layering as AddOutlinedForegroundText (MP / Qty on crossbar), with explicit font size for Edit Full Palette.
+local function AddEditorOutlinedForegroundTextLikeMp(drawList, px, py, argbColor, text, font, fontSizePx)
+    if not drawList or not text or text == '' then return; end
+    local mainU32 = ArgbToImguiU32(argbColor);
+    local a = bit.rshift(bit.band(argbColor, 0xFF000000), 24);
+    local tw, th = MeasureEditorLabelTextSize(text, font, fontSizePx);
+    if (not tw or tw <= 0) then
+        tw = math.max(1, #text * fontSizePx * 0.45);
+    end
+    if (not th or th <= 0) then
+        th = fontSizePx;
+    end
+    if tw > 0 and th > 0 then
+        AddSoftEditorLabelBackdrop(drawList, px, py, tw, th, a);
+    end
+    local shadowA = math.floor(a * 0.88);
+    local shadowU32 = ArgbToImguiU32(bit.bor(bit.lshift(shadowA, 24), 0x000000));
+    local function drawAt(x, y, col)
+        if font and fontSizePx and fontSizePx > 0 then
+            local ok = pcall(function()
+                drawList:AddText(font, fontSizePx, { x, y }, col, text);
+            end);
+            if ok then return; end
+        end
+        drawList:AddText({ x, y }, col, text);
+    end
+    for i = 1, #DROP_SHADOW_OFFSETS do
+        local dx, dy = DROP_SHADOW_OFFSETS[i][1], DROP_SHADOW_OFFSETS[i][2];
+        drawAt(px + dx, py + dy, shadowU32);
+    end
+    local halo2Argb = bit.bor(bit.lshift(math.floor(a * 0.52), 24), 0x000000);
+    local halo2U32 = ArgbToImguiU32(halo2Argb);
+    for i = 1, #OUTLINE_OFFSETS_2 do
+        local dx, dy = OUTLINE_OFFSETS_2[i][1], OUTLINE_OFFSETS_2[i][2];
+        drawAt(px + dx, py + dy, halo2U32);
+    end
+    local outlineArgb = bit.bor(bit.lshift(math.floor(a * 0.97), 24), 0x000000);
+    local outlineU32 = ArgbToImguiU32(outlineArgb);
+    for i = 1, #OUTLINE_OFFSETS_1 do
+        local dx, dy = OUTLINE_OFFSETS_1[i][1], OUTLINE_OFFSETS_1[i][2];
+        drawAt(px + dx, py + dy, outlineU32);
+    end
+    drawAt(px, py, mainU32);
+end
+
 local function AddSimpleOutlinedForegroundText(drawList, px, py, argbColor, text, font, fontSizePx)
     if not drawList or not text or text == '' then return; end
     local mainU32 = ArgbToImguiU32(argbColor);
@@ -845,6 +914,21 @@ local function AddSimpleOutlinedForegroundText(drawList, px, py, argbColor, text
         drawAt(px + dx, py + dy, outlineU32);
     end
     drawAt(px, py, mainU32);
+end
+
+-- Edit Full Palette (idle): first four characters of the trimmed display name (paired with slot; full name on hover).
+local function EditorIdleAbbrev4(fullName)
+    if not fullName or fullName == '' then
+        return '';
+    end
+    local t = fullName:gsub('^%s+', ''):gsub('%s+$', '');
+    if t == '' then
+        return '';
+    end
+    if #t <= 4 then
+        return t;
+    end
+    return t:sub(1, 4);
 end
 
 -- Edit Full Palette: at most one line break, with the line nearest the slot holding a single word.
@@ -905,6 +989,40 @@ local function AddEditorMultilineCenteredOutlined(dl, cx, topY, argbColor, multi
             local px = EditorLabelSnappedCenterX(cx, line, font, fontSizePx);
             AddSimpleOutlinedForegroundText(dl, px, py, argbColor, line, font, fontSizePx);
         end
+        py = py + lineStep;
+    end
+end
+
+-- Edit Full Palette: labels centered on slot; same soft scrim + stroke stack as MP/Qty (AddOutlinedForegroundText).
+local function AddEditorMultilineCenteredOnSlotLikeCorner(dl, slotX, slotY, slotSize, argbColor, multilineText, font, fontSizePx)
+    if not dl or not multilineText or multilineText == '' or not slotSize or slotSize <= 0 then return; end
+    local raw = SplitNewlines(multilineText);
+    local lines = {};
+    for i = 1, #raw do
+        if raw[i] ~= '' then
+            table.insert(lines, raw[i]);
+        end
+    end
+    if #lines == 0 then return; end
+    local lineStep = fontSizePx + 2;
+    if font and imgui.PushFont and imgui.PopFont then
+        pcall(function()
+            imgui.PushFont(font, fontSizePx);
+            if imgui.GetTextLineHeight then
+                lineStep = imgui.GetTextLineHeight() + 1;
+            end
+            imgui.PopFont();
+        end);
+    end
+    local cx = slotX + slotSize * 0.5;
+    local cy = slotY + slotSize * 0.5;
+    local totalH = #lines * lineStep;
+    local topY = math.floor(cy - totalH * 0.5 + 0.5);
+    local py = topY;
+    for i = 1, #lines do
+        local line = lines[i];
+        local px = EditorLabelSnappedCenterX(cx, line, font, fontSizePx);
+        AddEditorOutlinedForegroundTextLikeMp(dl, px, py, argbColor, line, font, fontSizePx);
         py = py + lineStep;
     end
 end
@@ -989,7 +1107,7 @@ end
         - onRightClick: Callback() when slot is right-clicked (clear slot)
         - onDoubleClick: Callback() when slot is double-clicked
         - showTooltip: Whether to show tooltip on hover (default true)
-        - drawCornerTextForeground: If true, MP/Lv/Qty corner strings use ImGui foreground (crossbar) so they render above D3D icons
+        - drawCornerTextForeground: If true, MP/Lv/Qty corner strings use ImGui overlay draw list (crossbar: window DL; else foreground) so they render above D3D icons
         - editorClipRect: Optional { minX, minY, maxX, maxY } screen-space rect; hides D3D/GDI when the slot (+labels) is outside (ImGui layers should use PushClipRect separately).
         - editorStrictContain: Optional bool. When true and editorClipRect is set, slot content must be fully inside clip rect (prevents edge leaking while scrolling).
         - performanceLiteChecks: Optional bool. When true, skip heavy recast/MP/availability checks (useful for edit-only views).
@@ -1019,6 +1137,18 @@ function M.DrawSlot(resources, params)
     local fgCornerMp, fgCornerQty;
     local fgLabel;
 
+    -- Crossbar: use the current window draw list so MP/timer/hover overlays stack with other ImGui windows
+    -- (GetForegroundDrawList always paints above every window). Hotbar and editors keep GetUIDrawList behavior.
+    local function slotOverlayDrawList()
+        if params.windowName == 'Crossbar' then
+            local wdl = imgui.GetWindowDrawList();
+            if wdl then
+                return wdl;
+            end
+        end
+        return GetUIDrawList();
+    end
+
     -- Reuse result table to avoid GC pressure
     -- NOTE: Caller must read values immediately, do not cache the return value
     drawSlotResult.isHovered = false;
@@ -1040,15 +1170,20 @@ function M.DrawSlot(resources, params)
             local padTop = 4;
             local padBot = 4;
             if params.showLabel and params.labelText and params.labelText ~= '' then
-                local extraLinePad = 0;
-                if minimalEditorView and params.labelText and params.labelText:find('%s') then
-                    -- At most one extra line (wrap splits last or first word only).
-                    extraLinePad = math.floor(fs * 1.05 + 0.5);
-                end
-                if params.labelAboveSlot then
-                    padTop = fs + 14 + extraLinePad;
+                if not minimalEditorView then
+                    local extraLinePad = 0;
+                    if params.labelText and params.labelText:find('%s') then
+                        extraLinePad = math.floor(fs * 1.05 + 0.5);
+                    end
+                    if params.labelAboveSlot then
+                        padTop = fs + 14 + extraLinePad;
+                    else
+                        padBot = fs + 14 + extraLinePad;
+                    end
                 else
-                    padBot = fs + 14 + extraLinePad;
+                    -- Labels draw on the slot; bounds match the diamond cell.
+                    padTop = 4;
+                    padBot = 4;
                 end
             end
             local sx1 = x;
@@ -1309,7 +1444,7 @@ function M.DrawSlot(resources, params)
     local overlayApplyGrey = false;
     if isUnavailable then
         overlayColorMult = 0.35;
-        overlayApplyGrey = true;
+        overlayApplyGrey = false;
     elseif isOnCooldown then
         overlayColorMult = 0.4;
     elseif notEnoughMp then
@@ -1320,6 +1455,10 @@ function M.DrawSlot(resources, params)
     if overlayApplyGrey then
         local grey = math.floor(180 * overlayColorMult);
         oR, oG, oB = grey, grey, grey;
+    elseif isUnavailable then
+        oR = math.floor(120 * overlayColorMult);
+        oG = math.floor(25 * overlayColorMult);
+        oB = math.floor(28 * overlayColorMult);
     else
         local rgb = math.floor(255 * overlayColorMult);
         oR, oG, oB = rgb, rgb, rgb;
@@ -1393,7 +1532,7 @@ function M.DrawSlot(resources, params)
             local applyGreyTint = false;
             if isUnavailable then
                 colorMult = 0.35;  -- Significantly dimmed when unavailable
-                applyGreyTint = true;  -- Apply grey/desaturated tint
+                applyGreyTint = false;
             elseif isOnCooldown then
                 colorMult = 0.4;
             elseif notEnoughMp then
@@ -1403,9 +1542,12 @@ function M.DrawSlot(resources, params)
 
             -- Calculate RGB values
             local r, g, b;
-            if applyGreyTint then
-                -- Grey tint for unavailable actions (desaturated)
-                local grey = math.floor(180 * colorMult);  -- Lighter grey base
+            if isUnavailable then
+                r = math.floor(120 * colorMult);
+                g = math.floor(25 * colorMult);
+                b = math.floor(28 * colorMult);
+            elseif applyGreyTint then
+                local grey = math.floor(180 * colorMult);
                 r, g, b = grey, grey, grey;
             else
                 local rgb = math.floor(255 * colorMult);
@@ -1460,8 +1602,8 @@ function M.DrawSlot(resources, params)
                 local colorMult = 1.0;
                 local applyGreyTint = false;
                 if isUnavailable then
-                    colorMult = 0.35;  -- Significantly dimmed when unavailable
-                    applyGreyTint = true;
+                    colorMult = 0.35;
+                    applyGreyTint = false;
                 elseif isOnCooldown then
                     colorMult = 0.4;
                 elseif notEnoughMp then
@@ -1471,7 +1613,11 @@ function M.DrawSlot(resources, params)
 
                 -- Calculate RGB values
                 local r, g, b;
-                if applyGreyTint then
+                if isUnavailable then
+                    r = math.floor(120 * colorMult);
+                    g = math.floor(25 * colorMult);
+                    b = math.floor(28 * colorMult);
+                elseif applyGreyTint then
                     local grey = math.floor(180 * colorMult);
                     r, g, b = grey, grey, grey;
                 else
@@ -1578,19 +1724,6 @@ function M.DrawSlot(resources, params)
                         end
                     end
                 end
-            end
-        end
-        -- 4c-4. Invalid / unavailable action: red X across slot (grey icon + MP-corner "X" already applied above)
-        if isUnavailable then
-            local dl = imgui.GetWindowDrawList();
-            if dl then
-                local pad = math.max(2, size * 0.08);
-                local x0, y0 = x + pad, y + pad;
-                local x1, y1 = x + size - pad, y + size - pad;
-                local col = imgui.GetColorU32({ 0.95, 0.18, 0.12, 0.88 });
-                local th = math.max(1.5, size * 0.055);
-                dl:AddLine({ x0, y0 }, { x1, y1 }, col, th);
-                dl:AddLine({ x1, y0 }, { x0, y1 }, col, th);
             end
         end
     end
@@ -1767,41 +1900,29 @@ function M.DrawSlot(resources, params)
     end
 
     if useFgLabel and params.showLabel and params.labelText and params.labelText ~= '' and animOpacity > 0.5 then
-        local labelText = minimalEditorView and EditorLabelWrapNearSlot(params.labelText, params.labelAboveSlot) or params.labelText;
-        local labelX = x + size / 2 + (params.labelOffsetX or 0);
-        local labelY;
-        if params.labelAboveSlot then
-            local fontH = params.labelFontSize or 10;
-            local baseLabelY = y - fontH - 4;
-            labelY = baseLabelY + (params.labelOffsetY or 0);
-            if labelY > baseLabelY then labelY = baseLabelY; end
-        else
-            local baseLabelY = y + size + 2;
-            labelY = baseLabelY + (params.labelOffsetY or 0);
-            if labelY < baseLabelY then labelY = baseLabelY; end
-        end
-
-        -- Above-slot: stack extra lines upward so they do not cover the diamond.
-        if minimalEditorView and labelText:find('\n', 1, true) and params.labelAboveSlot then
-            local nLines = 1 + select(2, labelText:gsub('\n', ''));
-            if nLines > 1 then
-                local lineStep = (params.labelFontSize or 10) + 2;
-                labelY = labelY - (nLines - 1) * lineStep;
+        local fullText = minimalEditorView and EditorLabelWrapNearSlot(params.labelText, params.labelAboveSlot) or params.labelText;
+        local labelText = fullText;
+        if minimalEditorView then
+            if isHovered then
+                labelText = fullText;
+            else
+                labelText = EditorIdleAbbrev4(params.labelText);
             end
         end
-
-        local labelColor = params.labelFontColor or 0xFFFFFFFF;
-        if isUnavailable then
-            labelColor = 0xFF888888;
-        elseif isOnCooldown then
-            labelColor = params.labelCooldownColor or 0xFF888888;
-        elseif notEnoughMp then
-            labelColor = params.labelNoMpColor or 0xFFFF4444;
+        if labelText and labelText ~= '' then
+            local labelColor = params.labelFontColor or 0xFFFFFFFF;
+            if isUnavailable then
+                labelColor = 0xFF888888;
+            elseif isOnCooldown then
+                labelColor = params.labelCooldownColor or 0xFF888888;
+            elseif notEnoughMp then
+                labelColor = params.labelNoMpColor or 0xFFFF4444;
+            end
+            if minimalEditorView and isHovered and not dragdrop.IsDragging() then
+                labelColor = LerpArgbTowardWhite(labelColor, 0.38);
+            end
+            fgLabel = { text = labelText, color = labelColor };
         end
-        if minimalEditorView and isHovered and not dragdrop.IsDragging() then
-            labelColor = LerpArgbTowardWhite(labelColor, 0.38);
-        end
-        fgLabel = { text = labelText, color = labelColor, x = labelX, y = labelY };
     end
 
     -- ========================================
@@ -2083,7 +2204,7 @@ function M.DrawSlot(resources, params)
     -- 11. ImGui: Hover/Pressed Visual Effects
     -- Use appropriate draw list (behind config when open)
     -- ========================================
-    local fgDrawList = GetUIDrawList();
+    local fgDrawList = slotOverlayDrawList();
     if fgDrawList and animOpacity > 0.5 then
         -- Foreground hover/press sits above ImGui; in Edit Full Palette it was the only thing making empty D3D slots visible.
         -- Editor uses window-DL chrome + labels; skip FG overlays here to avoid wrong stacking.
@@ -2121,7 +2242,7 @@ function M.DrawSlot(resources, params)
     -- Drawn after §11 so they sit above hover tint and, critically, above D3D icon primitives.
     -- ========================================
     if useFgCornerText and not minimalEditorView and animOpacity > 0.5 then
-        local topDl = imgui.GetForegroundDrawList();
+        local topDl = slotOverlayDrawList();
         if topDl then
             if fgCornerMp and fgCornerMp.text and fgCornerMp.text ~= '' then
                 AddOutlinedForegroundText(topDl, fgCornerMp.x, fgCornerMp.y, fgCornerMp.color, fgCornerMp.text);
@@ -2148,7 +2269,7 @@ function M.DrawSlot(resources, params)
             timerColor = bit.bor(bit.lshift(alpha, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
         end
 
-        local topDl = imgui.GetForegroundDrawList();
+        local topDl = slotOverlayDrawList();
         if topDl then
             local usedGdi = resources.timerFont and DrawGdiTimerCooldownForeground(
                 topDl, resources.timerFont, recastText, timerColor, x, y, size, animOpacity, params, cache
@@ -2235,7 +2356,23 @@ function M.DrawSlot(resources, params)
             end
             local fs = (params.labelFontSize or 10);
             local fnt = imgui.GetFont and imgui.GetFont() or nil;
-            AddEditorMultilineCenteredOutlined(dl, fgLabel.x, fgLabel.y, fgLabel.color, fgLabel.text, fnt, fs);
+            if minimalEditorView then
+                AddEditorMultilineCenteredOnSlotLikeCorner(dl, x, y, size, fgLabel.color, fgLabel.text, fnt, fs);
+            else
+                local labelX = x + size / 2 + (params.labelOffsetX or 0);
+                local labelY;
+                if params.labelAboveSlot then
+                    local fontH = fs;
+                    local baseLabelY = y - fontH - 4;
+                    labelY = baseLabelY + (params.labelOffsetY or 0);
+                    if labelY > baseLabelY then labelY = baseLabelY; end
+                else
+                    local baseLabelY = y + size + 2;
+                    labelY = baseLabelY + (params.labelOffsetY or 0);
+                    if labelY < baseLabelY then labelY = baseLabelY; end
+                end
+                AddEditorMultilineCenteredOutlined(dl, labelX, labelY, fgLabel.color, fgLabel.text, fnt, fs);
+            end
             if pushedClip and dl.PopClipRect then
                 dl:PopClipRect();
             end
