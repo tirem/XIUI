@@ -1288,15 +1288,6 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
-        -- Job-tier Default crossbar palette wipe (keeps WHM/BLM/THF/NIN/SMN; does not touch Global [G])
-        if (command_args[2] == 'crossbar' or command_args[2] == 'xb') and command_args[3] == 'resetdefault' then
-            local keep = { 3, 4, 6, 13, 15 }; -- WHM, BLM, THF, NIN, SMN
-            local n = palette.ResetCrossbarDefaultJobTierContentsExcept(keep);
-            SaveSettingsToDisk();
-            print(string.format('[XIUI] Cleared Job-tier Default crossbar slot data for %d jobs (kept WHM/BLM/THF/NIN/SMN). Global [G] untouched.', n));
-            return;
-        end
-
         -- Toggle Edit Full Palette for the currently active crossbar palette (silent): /xiui cpaledit
         if (command_args[2] == 'cpaledit') then
             paletteManager.ToggleEditFullPaletteForCurrent();

@@ -2242,37 +2242,6 @@ local function MaybeSeedBlankCrossbarDefaultPalettesForAllJobs()
     end
 end
 
--- Clear Job [J] tier "Default" crossbar slot data for jobs not in keepJobIds (palette row remains; contents empty).
--- Does not modify Global [G] keys (global:palette:*), other palette names, or subjob-tier storage (subjob ~= 0).
--- Returns number of storage keys cleared.
-function M.ResetCrossbarDefaultJobTierContentsExcept(keepJobIds)
-    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
-    if not crossbarSettings or not crossbarSettings.slotActions then
-        return 0;
-    end
-    local keep = {};
-    if keepJobIds then
-        for _, id in ipairs(keepJobIds) do
-            keep[tonumber(id) or id] = true;
-        end
-    end
-    local count = 0;
-    for jid = 1, CROSSBAR_JOB_SEED_MAX do
-        if not keep[jid] then
-            local key = M.BuildPaletteStorageKey(jid, 0, M.DEFAULT_PALETTE_NAME);
-            if crossbarSettings.slotActions[key] ~= nil then
-                crossbarSettings.slotActions[key] = {};
-                count = count + 1;
-            end
-        end
-    end
-    if count > 0 then
-        InvalidatePaletteListCache();
-        InvalidateAllVisualCachesAfterPaletteListMutation();
-    end
-    return count;
-end
-
 -- Delete a crossbar palette
 -- Uses NEW FORMAT: '{jobId}:{subjobId}:palette:{name}'
 -- Returns true on success, false with error message on failure
