@@ -645,6 +645,9 @@ function M.BuildJobSegmentSharedStorageKey(jobId, effectiveComboMode)
     return string.format('jobsegment:%d:%s', j, m);
 end
 
+-- FFXI main jobs 1..22 — segment override rows are keyed per job; Global [G] redirects must resolve for the *current* job id in-game.
+local SEGMENT_OVERRIDE_FALLBACK_JOB_MAX = 22;
+
 local function GetSegmentOverrideEntry(jobId, comboMode)
     local cross = gConfig and gConfig.hotbarCrossbar;
     if not cross or not cross.segmentOverrides then
@@ -654,11 +657,32 @@ local function GetSegmentOverrideEntry(jobId, comboMode)
     if eff == 'L2' or eff == 'R2' then
         return nil;
     end
-    local ent = cross.segmentOverrides[tostring(normalizeJobId(jobId))];
-    if not ent then
-        return nil;
+    local jidStr = tostring(normalizeJobId(jobId));
+    local modes = cross.segmentOverrides[jidStr];
+    local seg = modes and modes[eff];
+    if seg and seg.scope == 'jobShared' then
+        return seg, eff;
     end
-    return ent[eff], eff;
+    if seg and seg.scope == 'global' and type(seg.globalPalette) == 'string' and seg.globalPalette ~= '' then
+        return seg, eff;
+    end
+    -- Legacy / partial saves: Global was only stored on the job row open in Edit Full Palette; other job ids had no entry.
+    if not seg or not seg.scope then
+        local anyJobShared = false;
+        local globalPaletteName;
+        for j = 1, SEGMENT_OVERRIDE_FALLBACK_JOB_MAX do
+            local candidate = cross.segmentOverrides[tostring(j)] and cross.segmentOverrides[tostring(j)][eff];
+            if candidate and candidate.scope == 'jobShared' then
+                anyJobShared = true;
+            elseif candidate and candidate.scope == 'global' and type(candidate.globalPalette) == 'string' and candidate.globalPalette ~= '' then
+                globalPaletteName = candidate.globalPalette;
+            end
+        end
+        if not anyJobShared and globalPaletteName then
+            return { scope = 'global', globalPalette = globalPaletteName }, eff;
+        end
+    end
+    return nil;
 end
 
 -- Resolved slotActions key when a Job-Shared / Global segment override is active (nil if none).

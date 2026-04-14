@@ -334,6 +334,103 @@ end
 
 -- Job [J] Edit Full Palette: segment override (Job-shared storage or Global [G] source). Primary L2/R2 omit via caller.
 local SEGMENT_OVERRIDE_COMBO_W = 220;
+-- Segment overrides are keyed per job in settings, but gameplay resolves using the *current* job id.
+-- Global [G] redirects must therefore exist for every job id, or only the row you edited would work in-game.
+local SEGMENT_OVERRIDE_JOB_MAX = 22;
+
+local function ClearSegmentOverrideModeForAllJobs(cross, eff)
+    if not cross or not cross.segmentOverrides or not eff then
+        return;
+    end
+    for jid = 1, SEGMENT_OVERRIDE_JOB_MAX do
+        local jks = tostring(jid);
+        local modes = cross.segmentOverrides[jks];
+        if modes and modes[eff] then
+            modes[eff] = nil;
+            if next(modes) == nil then
+                cross.segmentOverrides[jks] = nil;
+            end
+        end
+    end
+    if cross.segmentOverrides and next(cross.segmentOverrides) == nil then
+        cross.segmentOverrides = nil;
+    end
+end
+
+-- One shared table for all jobs so palette name edits stay in sync in the UI.
+local function ReplicateGlobalSegmentOverrideToAllJobs(cross, eff, globalPaletteName)
+    if not cross then
+        return;
+    end
+    if not cross.segmentOverrides then
+        cross.segmentOverrides = {};
+    end
+    local gp = (type(globalPaletteName) == 'string' and globalPaletteName ~= '') and globalPaletteName or nil;
+    local ent = { scope = 'global', globalPalette = gp };
+    for jid = 1, SEGMENT_OVERRIDE_JOB_MAX do
+        local jks = tostring(jid);
+        if not cross.segmentOverrides[jks] then
+            cross.segmentOverrides[jks] = {};
+        end
+        cross.segmentOverrides[jks][eff] = ent;
+    end
+end
+
+-- Switching one job from Global to Job-shared must not mutate the shared global table (same ref on all jobs).
+local function SplitGlobalSegmentToJobSharedForOneJob(cross, eff, editedJkStr, globalPaletteName)
+    if not cross then
+        return;
+    end
+    if not cross.segmentOverrides then
+        cross.segmentOverrides = {};
+    end
+    local gp = (type(globalPaletteName) == 'string' and globalPaletteName ~= '') and globalPaletteName or nil;
+    for jid = 1, SEGMENT_OVERRIDE_JOB_MAX do
+        local jks = tostring(jid);
+        if not cross.segmentOverrides[jks] then
+            cross.segmentOverrides[jks] = {};
+        end
+        if jks == editedJkStr then
+            cross.segmentOverrides[jks][eff] = { scope = 'jobShared' };
+        else
+            cross.segmentOverrides[jks][eff] = { scope = 'global', globalPalette = gp };
+        end
+    end
+end
+
+-- Persist full job rows for legacy configs that only stored Global on one job id.
+-- Do not run when any job uses Job-shared for this segment (valid per-job mix with others on Global).
+local function ReconcileGlobalSegmentOverrideRows(cross, eff)
+    if not cross or not eff then
+        return;
+    end
+    if not cross.segmentOverrides then
+        return;
+    end
+    local gp;
+    local anyJobShared = false;
+    for jid = 1, SEGMENT_OVERRIDE_JOB_MAX do
+        local s = cross.segmentOverrides[tostring(jid)] and cross.segmentOverrides[tostring(jid)][eff];
+        if s and s.scope == 'jobShared' then
+            anyJobShared = true;
+        elseif s and s.scope == 'global' and type(s.globalPalette) == 'string' and s.globalPalette ~= '' then
+            gp = s.globalPalette;
+        end
+    end
+    if anyJobShared or not gp then
+        return;
+    end
+    for jid = 1, SEGMENT_OVERRIDE_JOB_MAX do
+        local s = cross.segmentOverrides[tostring(jid)] and cross.segmentOverrides[tostring(jid)][eff];
+        if not s or s.scope ~= 'global' or s.globalPalette ~= gp then
+            ReplicateGlobalSegmentOverrideToAllJobs(cross, eff, gp);
+            if SaveSettingsOnly then
+                SaveSettingsOnly();
+            end
+            return;
+        end
+    end
+end
 
 local function DrawJobSegmentOverrideCheckboxRow(jobId, comboMode, cross, idSuffix, _columnMaxW)
     if not jobId or not cross then
@@ -359,12 +456,16 @@ local function DrawJobSegmentOverrideCheckboxRow(jobId, comboMode, cross, idSuff
         if ovBuf[1] then
             cross.segmentOverrides[jk][eff] = { scope = 'jobShared' };
         else
-            cross.segmentOverrides[jk][eff] = nil;
-            if next(cross.segmentOverrides[jk]) == nil then
-                cross.segmentOverrides[jk] = nil;
-            end
-            if next(cross.segmentOverrides) == nil then
-                cross.segmentOverrides = nil;
+            if ent and ent.scope == 'global' then
+                ClearSegmentOverrideModeForAllJobs(cross, eff);
+            else
+                cross.segmentOverrides[jk][eff] = nil;
+                if next(cross.segmentOverrides[jk]) == nil then
+                    cross.segmentOverrides[jk] = nil;
+                end
+                if next(cross.segmentOverrides) == nil then
+                    cross.segmentOverrides = nil;
+                end
             end
         end
         if SaveSettingsOnly then
@@ -377,7 +478,7 @@ local function DrawJobSegmentOverrideCheckboxRow(jobId, comboMode, cross, idSuff
     end
     imgui.SameLine();
     imgui.ShowHelp(
-        'Override: use one shared bar for this trigger segment across palettes (job-wide), or bind to a Global [G] palette so the same slots appear on every job. Does not duplicate palette data; it redirects where slots load and save.'
+        'Override: use one shared bar for this trigger segment across palettes (job-wide), or bind to a Global [G] palette so the same slots appear on every job. Global [G] applies to all jobs in-game (same redirect for every job id). Does not duplicate palette data; it redirects where slots load and save.'
     );
     imgui.PopID();
 end
@@ -403,8 +504,17 @@ local function DrawJobSegmentOverrideDetailBlock(jobId, comboMode, cross, idSuff
     imgui.PushID('segdet_' .. (idSuffix or 'm') .. '_' .. eff);
     imgui.Dummy({ 0, 2 });
     if imgui.RadioButton('Job-shared##rj_' .. eff, ent.scope == 'jobShared') then
-        ent.scope = 'jobShared';
-        ent.globalPalette = nil;
+        if ent.scope == 'global' then
+            local gp = (type(ent.globalPalette) == 'string' and ent.globalPalette ~= '') and ent.globalPalette or nil;
+            local names = palette.GetUniversalCrossbarPaletteNamesOrdered and palette.GetUniversalCrossbarPaletteNamesOrdered() or {};
+            if (not gp or gp == '') and names[1] then
+                gp = names[1];
+            end
+            SplitGlobalSegmentToJobSharedForOneJob(cross, eff, jk, gp);
+        else
+            ent.scope = 'jobShared';
+            ent.globalPalette = nil;
+        end
         if SaveSettingsOnly then
             SaveSettingsOnly();
         end
@@ -415,11 +525,12 @@ local function DrawJobSegmentOverrideDetailBlock(jobId, comboMode, cross, idSuff
     end
     imgui.SameLine(0, 12);
     if imgui.RadioButton('Global [G]##rg_' .. eff, ent.scope == 'global') then
-        ent.scope = 'global';
         local names = palette.GetUniversalCrossbarPaletteNamesOrdered and palette.GetUniversalCrossbarPaletteNamesOrdered() or {};
-        if (not ent.globalPalette or ent.globalPalette == '') and names[1] then
-            ent.globalPalette = names[1];
+        local gp = (type(ent.globalPalette) == 'string' and ent.globalPalette ~= '') and ent.globalPalette or nil;
+        if (not gp or gp == '') and names[1] then
+            gp = names[1];
         end
+        ReplicateGlobalSegmentOverrideToAllJobs(cross, eff, gp);
         if SaveSettingsOnly then
             SaveSettingsOnly();
         end
@@ -437,7 +548,7 @@ local function DrawJobSegmentOverrideDetailBlock(jobId, comboMode, cross, idSuff
         if imgui.BeginCombo('Palette##gp_' .. eff, preview, 0) then
             for _, nm in ipairs(names) do
                 if imgui.Selectable(nm, nm == ent.globalPalette) then
-                    ent.globalPalette = nm;
+                    ReplicateGlobalSegmentOverrideToAllJobs(cross, eff, nm);
                     if SaveSettingsOnly then
                         SaveSettingsOnly();
                     end
@@ -505,6 +616,12 @@ local function DrawJobSegmentFooterOverrideAndPet(storageKey, mode, cross, named
     end
 
     imgui.PushID('ovpetblk_' .. idTag);
+    if showOverride and jobId then
+        local eff = data.GetEffectiveComboModeForStorage(mode);
+        if eff ~= 'L2' and eff ~= 'R2' then
+            ReconcileGlobalSegmentOverrideRows(cross, eff);
+        end
+    end
     -- Override | Pet on one row. Do not use imgui.Columns here (breaks the outer L2/R2 pair Columns).
     -- Height must NOT be 0: in ImGui, BeginChild(..., { w, 0 }) uses remaining vertical space and stretches
     -- the row to the bottom of the parent, leaving a huge empty band before Job/Global below.
