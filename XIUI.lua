@@ -654,6 +654,7 @@ function ResetSettings()
     gConfig = deep_copy_table(defaultUserSettings);
     gConfig.windowPositions = GetDefaultWindowPositions();
     gConfig.appliedPositions = {};
+    configMenu.ResetConfigWindowPosition();
     profileManager.SaveProfileSettings(config.currentProfile, gConfig);
     UpdateSettings();
     bInternalSave = true;
@@ -676,19 +677,24 @@ function ResetSettings()
     hotbar.ResetPositions();
 end
 
-function RecoverAllPositions()
+function CenterAllPositions()
+    local defPos = require('libs.defaultpositions');
+    local sw, sh = defPos.GetScreenSize();
+    local cx = sw / 2;
+    local cy = sh / 2;
+
     if not gConfig.windowPositions then gConfig.windowPositions = {}; end
 
-    -- Move every known window position to top-left corner
+    -- Center every known window position
     for windowName, _ in pairs(gConfig.windowPositions) do
-        gConfig.windowPositions[windowName] = { x = 20, y = 20 };
+        gConfig.windowPositions[windowName] = { x = cx, y = cy };
     end
 
     -- Force re-apply on next frame
     gConfig.appliedPositions = {};
 
-    -- Clear persisted alignment state so alignBottom doesn't override the restored positions
-    gConfig.partyListState = {};
+    -- Reset the config window position too
+    configMenu.ResetConfigWindowPosition();
 
     -- Save
     profileManager.SaveProfileSettings(config.currentProfile, gConfig);
@@ -1464,8 +1470,8 @@ ashita.events.register('command', 'command_cb', function (e)
         if (command_args[2] == 'profile') then
             -- /xiui profile reset positions
             if (command_args[3] == 'reset' and command_args[4] == 'positions') then
-                RecoverAllPositions();
-                print(chat.header(addon.name):append(chat.message('All UI positions recovered to top-left.')));
+                CenterAllPositions();
+                print(chat.header(addon.name):append(chat.message('All UI positions reset to center.')));
                 return;
             end
 

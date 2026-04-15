@@ -46,11 +46,11 @@ function M.DrawSettings()
         components.DrawCheckbox('Hide During Events', 'hideDuringEvents');
 
         imgui.Spacing();
-        if imgui.Button('Recover UI Positions') then
+        if imgui.Button('Center UI') then
             showCenterUIConfirm = true;
         end
         imgui.SameLine();
-        imgui.ShowHelp('Move all UI elements to the top-left corner so they are visible at any resolution.');
+        imgui.ShowHelp('Move all UI elements to the center of the screen.');
 
         -- Center UI confirmation popup
         if showCenterUIConfirm then
@@ -59,12 +59,12 @@ function M.DrawSettings()
         end
 
         if (imgui.BeginPopupModal("Confirm Center UI", true, ImGuiWindowFlags_AlwaysAutoResize)) then
-            imgui.Text("Move all UI elements to the top-left corner?");
+            imgui.Text("Move all UI elements to the center of the screen?");
             imgui.Text("This only affects positions, not your other settings.");
             imgui.NewLine();
 
             if (imgui.Button("Confirm", { 120, 0 })) then
-                RecoverAllPositions();
+                CenterAllPositions();
                 imgui.CloseCurrentPopup();
             end
             imgui.SameLine();

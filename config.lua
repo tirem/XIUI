@@ -100,6 +100,7 @@ end
 
 -- State for confirmation dialogs
 local showRestoreDefaultsConfirm = false;
+local pendingResetConfigWindow = false;
 
 -- Social icon textures
 local discordTexture = nil;
@@ -696,6 +697,10 @@ config.DrawWindow = function(us)
     -- Push theme styles AFTER validating DisplaySize to avoid leaking
     -- style/var pushes on early returns (which corrupt ImGui state).
     PushThemeStyles();
+    if pendingResetConfigWindow then
+        imgui.SetNextWindowPos({ 50, 50 }, ImGuiCond_Always);
+        pendingResetConfigWindow = false;
+    end
     local maxW = math.min(900, sw - 40);
     local maxH = math.min(650, sh - 40);
     imgui.SetNextWindowSizeConstraints({ 400, 300 }, { sw, sh });
@@ -1085,6 +1090,10 @@ function config.ToggleCrossbarManagePalettes()
         return nil;
     end
     return 'opened';
+end
+
+function config.ResetConfigWindowPosition()
+    pendingResetConfigWindow = true;
 end
 
 return config;
