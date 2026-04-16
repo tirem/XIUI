@@ -78,6 +78,7 @@ local castCost = uiMods.castcost;
 local notifications = uiMods.notifications;
 local treasurePool = uiMods.treasurepool;
 local hotbar = uiMods.hotbar;
+local readyCheck = uiMods.readycheck;
 local macropalette = require('modules.hotbar.macropalette');
 local palette = require('modules.hotbar.palette');
 local skillchainModule = require('modules.hotbar.skillchain');
@@ -282,6 +283,12 @@ uiModules.Register('hotbar', {
     configKey = 'showhotbar',
     hideOnEventKey = 'hotbarHideDuringEvents',
     hideOnMenuFocusKey = 'hotbarHideOnMenuFocus',
+    hasSetHidden = true,
+});
+uiModules.Register('readyCheck', {
+    module = readyCheck,
+    settingsKey = nil,
+    configKey = 'showReadyCheck',
     hasSetHidden = true,
 });
 
@@ -1483,6 +1490,18 @@ ashita.events.register('command', 'command_cb', function (e)
             print(chat.header(addon.name):append(chat.message('Settings saved.')));
             return;
         end
+    end
+
+    -- Forward /readycheck commands to the ReadyCheck module
+    if readyCheck.HandleCommand(e) then
+        e.blocked = true;
+        return;
+    end
+end);
+
+ashita.events.register('text_in', 'readycheck_text_in_cb', function (e)
+    if bInitialized then
+        readyCheck.HandleTextIn(e);
     end
 end);
 
