@@ -46,6 +46,12 @@ MP.searchFilter = { '' };
 MP.macroPaletteSearchName = { '' };
 MP._macroSearchPaletteKey = nil;
 MP._lastMacroPaletteSearch = nil;
+MP.showAllMode = false;
+MP.showAllPetMode = false;
+MP.wsWeaponFilter = 'All';
+MP.spellTypeFilter = 'All';
+MP.abilityJobFilter = 0;
+MP.petTypeOverride = 0;
 MP.iconPickerTargetIsJaBadge = false;
 MP.iconPickerOpen = false;
 MP.iconPickerFilter = { '' };
@@ -55,6 +61,7 @@ MP.iconPickerLastFilter = { '', '', '' };
 MP.iconPickerSpellType = 'All';
 MP.iconPickerItemType = 0;
 MP.editorImplicitActionIconDone = false;
+MP.editorIconManuallySet = false;
 MP.editorIconPrefsHydrated = false;
 
 
@@ -1251,10 +1258,51 @@ local function PopComboStyle()
     imgui.PopStyleColor(11);
 end
 
+-- Status tier colors for "Show All" mode
+local STATUS_COLORS = {
+    ['have']        = { 0.35, 0.85, 0.35, 1.0 },
+    ['learnable']   = { 0.95, 0.78, 0.25, 1.0 },
+    ['unavailable'] = { 0.75, 0.30, 0.30, 1.0 },
+};
+
+-- Base colors per magic type (full brightness = STATUS_HAVE)
+local SPELL_TYPE_COLORS = {
+    WhiteMagic   = { 0.96, 0.92, 0.78, 1.0 },  -- eggshell/holy white
+    BlackMagic   = { 0.75, 0.50, 0.90, 1.0 },  -- purple
+    BardSong     = { 0.50, 0.80, 1.00, 1.0 },  -- light blue
+    Ninjutsu     = { 0.78, 0.60, 0.38, 1.0 },  -- scroll brown
+    SummonerPact = { 0.50, 0.75, 0.38, 1.0 },  -- moss green
+    BlueMagic    = { 0.30, 0.70, 0.95, 1.0 },  -- steel blue
+    Geomancy     = { 0.60, 0.85, 0.45, 1.0 },  -- earthy green
+    Trust        = { 0.80, 0.80, 0.80, 1.0 },  -- silver
+};
+
+-- Human-readable headers for each spell type
+local SPELL_TYPE_HEADERS = {
+    WhiteMagic   = 'White Magic',
+    BlackMagic   = 'Black Magic',
+    BardSong     = 'Songs',
+    Ninjutsu     = 'Ninjutsu',
+    SummonerPact = 'Summoning',
+    BlueMagic    = 'Blue Magic',
+    Geomancy     = 'Geomancy',
+    Trust        = 'Trust',
+};
+
+-- Canonical type display order
+local SPELL_TYPE_ORDER = {
+    'WhiteMagic', 'BlackMagic', 'BardSong', 'Ninjutsu',
+    'SummonerPact', 'BlueMagic', 'Geomancy', 'Trust',
+};
+local SPELL_TYPE_RANK = {};
+for i, t in ipairs(SPELL_TYPE_ORDER) do SPELL_TYPE_RANK[t] = i; end
+
+
 -- Draw a searchable dropdown combo box with XIUI styling
 -- showIcons: if true, will attempt to load and display item icons
 -- equipSlotFilter: if provided, only show items that can be equipped in this slot (e.g., 'main', 'head')
-local function DrawSearchableCombo(label, items, currentValue, onSelect, showIcons, equipSlotFilter, itemWidth)
+-- useStatusColors: if true, color text by item.status (have/learnable/unavailable)
+local function DrawSearchableCombo(label, items, currentValue, onSelect, showIcons, equipSlotFilter, itemWidth, useStatusColors)
     local displayText = currentValue ~= '' and currentValue or 'Select...';
 
     -- Get the slot mask for filtering if provided
@@ -1289,6 +1337,8 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
         local filter = MP.searchFilter[1];
         local matchCount = 0;
         local iconSize = 16;
+        local lastType = nil;
+        local isSearching = filter ~= '';
 
         for _, item in ipairs(items) do
             local itemName = item.name or '';
@@ -1301,46 +1351,95 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
 
             if passesSlotFilter and iconPickerNameMatchesFilter(itemName, filter) then
                 matchCount = matchCount + 1;
+
+                -- Insert type group header when type changes (only when not searching)
+                if not isSearching and item.type and item.type ~= lastType then
+                    if lastType ~= nil then
+                        imgui.Separator();
+                    end
+                    local headerLabel = SPELL_TYPE_HEADERS[item.type] or item.type;
+                    local headerColor = SPELL_TYPE_COLORS[item.type] or COLORS.textDim;
+                    imgui.TextColored(headerColor, headerLabel);
+                    lastType = item.type;
+                end
+
                 local isSelected = currentValue == itemName;
+                local uid = item.id or matchCount;
+                local isSpellWithType = item.type and SPELL_TYPE_COLORS[item.type] ~= nil;
 
-                -- Determine text color: gold if selected, blue if usable, default otherwise
-                local textColor = nil;
-                if isSelected then
-                    textColor = COLORS.gold;
-                elseif item.usable then
-                    textColor = COLORS.usable;
-                end
+                if isSpellWithType and not isSelected then
+                    -- ── Two-color spell rendering ──────────────────────────
+                    -- [level] → magic type color (full brightness, always)
+                    -- name   → status color (green / yellow / red)
+                    local levelColor = SPELL_TYPE_COLORS[item.type];
+                    local nameColor = (item.status and STATUS_COLORS[item.status]) or COLORS.text;
 
-                if textColor then
-                    imgui.PushStyleColor(ImGuiCol_Text, textColor);
-                end
+                    -- Invisible selectable for hover/click, then overlay colored text
+                    local cx, cy = imgui.GetCursorPos();
+                    local clicked = imgui.Selectable('##item' .. uid, false);
+                    local nx, ny = imgui.GetCursorPos();
+                    imgui.SetCursorPos({cx, cy});
 
-                -- Show icon if enabled and item has an id
-                if showIcons and item.id then
-                    -- Use memory-only loading (no PNG creation) for browsing
-                    local icon = actions.GetItemIconForBrowsing(item.id);
-                    if icon and icon.image then
-                        local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
-                        if iconPtr then
-                            imgui.Image(iconPtr, {iconSize, iconSize});
-                            imgui.SameLine();
+                    if item.level then
+                        imgui.PushStyleColor(ImGuiCol_Text, levelColor);
+                        imgui.Text('[' .. tostring(item.level) .. '] ');
+                        imgui.PopStyleColor();
+                        imgui.SameLine(0, 0);
+                    end
+                    imgui.PushStyleColor(ImGuiCol_Text, nameColor);
+                    imgui.Text(itemName);
+                    imgui.PopStyleColor();
+
+                    imgui.SetCursorPos({nx, ny});
+
+                    if clicked then
+                        onSelect(item);
+                        MP.searchFilter[1] = '';
+                        imgui.CloseCurrentPopup();
+                    end
+                else
+                    -- ── Standard single-color rendering ────────────────────
+                    local textColor = nil;
+                    if isSelected then
+                        textColor = COLORS.gold;
+                    elseif useStatusColors and item.status and STATUS_COLORS[item.status] then
+                        textColor = STATUS_COLORS[item.status];
+                    elseif item.usable then
+                        textColor = COLORS.usable;
+                    end
+
+                    if textColor then imgui.PushStyleColor(ImGuiCol_Text, textColor); end
+
+                    -- Show icon if enabled and item has an id
+                    if showIcons and item.id then
+                        local icon = actions.GetItemIconForBrowsing(item.id);
+                        if icon and icon.image then
+                            local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
+                            if iconPtr then
+                                imgui.Image(iconPtr, {iconSize, iconSize});
+                                imgui.SameLine();
+                            end
                         end
                     end
-                end
 
-                local itemLabel = item.level and string.format('[%d] %s', item.level, itemName) or itemName;
-                -- Add quantity for items with count > 1
-                if item.count and item.count > 1 then
-                    itemLabel = itemLabel .. ' x' .. item.count;
-                end
-                if imgui.Selectable(itemLabel .. '##item' .. (item.id or matchCount), isSelected) then
-                    onSelect(item);
-                    MP.searchFilter[1] = '';
-                    imgui.CloseCurrentPopup();
-                end
+                    local itemLabel;
+                    if item.level then
+                        itemLabel = string.format('[%d] %s', item.level, itemName);
+                    elseif item.reqStr then
+                        itemLabel = string.format('%s  (%s)', itemName, item.reqStr);
+                    else
+                        itemLabel = itemName;
+                    end
+                    if item.count and item.count > 1 then
+                        itemLabel = itemLabel .. ' x' .. item.count;
+                    end
+                    if imgui.Selectable(itemLabel .. '##item' .. uid, isSelected) then
+                        onSelect(item);
+                        MP.searchFilter[1] = '';
+                        imgui.CloseCurrentPopup();
+                    end
 
-                if textColor then
-                    imgui.PopStyleColor();
+                    if textColor then imgui.PopStyleColor(); end
                 end
             end
         end
@@ -1699,6 +1798,12 @@ function M.OpenEditorForSlotData(slotData)
     ClearEditorPreviewIconCache();
     MP.editorDidInitialIconPick = false;
     MP.editorImplicitActionIconDone = false;
+    MP.editorIconManuallySet = false;
+    MP.showAllMode = false;
+    MP.showAllPetMode = false;
+    MP.spellTypeFilter = 'All';
+    MP.abilityJobFilter = 0;
+    MP.petTypeOverride = 0;
     MP.editorIconPrefsHydrated = false;
 
     if slotData and slotData.macroRef then
@@ -1982,6 +2087,7 @@ function M.ClosePalette()
     end
     MP._lastMacroPaletteSearch = nil;
     MP.editorDidInitialIconPick = false;
+    MP.editorIconManuallySet = false;
     ClearEditorPreviewIconCache();
     paletteMainIconCache = {};
     paletteJaBadgeIconCache = {};
@@ -2696,6 +2802,12 @@ function M.DrawPalette()
             MP.editorAutoIconKey = 'xiui_default::ma';
             MP.editorDidInitialIconPick = false;
             MP.editorImplicitActionIconDone = false;
+            MP.editorIconManuallySet = false;
+            MP.showAllMode = false;
+            MP.showAllPetMode = false;
+            MP.spellTypeFilter = 'All';
+            MP.abilityJobFilter = 0;
+            MP.petTypeOverride = 0;
             MP.editorIconPrefsHydrated = false;
             selectedMacroIndex = nil;
             MP.editorPaletteKey = GetEffectivePaletteType();
@@ -2721,6 +2833,12 @@ function M.DrawPalette()
             SyncPetAvatarFilterFromSaveSubType();
             MP.editorDidInitialIconPick = false;
             MP.editorImplicitActionIconDone = false;
+            MP.editorIconManuallySet = false;
+            MP.showAllMode = false;
+            MP.showAllPetMode = false;
+            MP.spellTypeFilter = 'All';
+            MP.abilityJobFilter = 0;
+            MP.petTypeOverride = 0;
             MP.editorIconPrefsHydrated = false;
         end
 
@@ -4306,6 +4424,7 @@ do
     MP.petpalette = petpalette;
     MP.components = components;
     MP.COLORS = COLORS;
+    MP.jobs = jobs;
     MP.ACTION_TYPES = ACTION_TYPES;
     MP.ACTION_TYPE_LABELS = ACTION_TYPE_LABELS;
     MP.RECAST_SOURCE_TYPES = RECAST_SOURCE_TYPES;

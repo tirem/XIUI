@@ -356,15 +356,20 @@ return function(MP)
         end
     end
 
-    -- Same as the Sync button: refresh icon from current action (spell/JA/WS/item/pet/macro parse), even if an icon was already set.
+    -- Dropdown picks = intentional action change: icon should follow; clear manual flag.
     local function SyncEditorIconAfterListPick()
+        MP.editorIconManuallySet = false;
         AutoPickIconForSelection(true);
         RefreshEditorAutoIconKey();
     end
 
-    -- One-time implicit auto-pick when typing (manual action / macro lines) — avoids re-syncing on every keystroke after the first.
+    -- One-time implicit auto-pick when typing (manual action / macro lines).
+    -- Skipped when the user has manually chosen an icon via the Change button.
     local function TryFirstImplicitActionIconAuto()
         if MP.editorImplicitActionIconDone then
+            return;
+        end
+        if MP.editorIconManuallySet then
             return;
         end
         AutoPickIconForSelection(true);
@@ -378,13 +383,14 @@ return function(MP)
         RefreshEditorAutoIconKey();
     end
 
-    MP.imgui.SetNextWindowSize({480, 0}, ImGuiCond_FirstUseEver);
-    MP.imgui.SetNextWindowSizeConstraints({480, 100}, {700, 900});
+    -- Manual resize: do NOT use AlwaysAutoResize — it fights the resize grip every frame.
+    MP.imgui.SetNextWindowSize({520, 680}, ImGuiCond_FirstUseEver);
+    MP.imgui.SetNextWindowSizeConstraints({480, 320}, {1000, 900});
 
     -- Apply XIUI styling
     MP.PushWindowStyle();
 
-    if MP.imgui.Begin(title, isOpen, bit.bor(ImGuiWindowFlags_NoCollapse, ImGuiWindowFlags_AlwaysAutoResize)) then
+    if MP.imgui.Begin(title, isOpen, ImGuiWindowFlags_NoCollapse) then
         local avail = MP.imgui.GetContentRegionAvail();
         local contentWidth = (type(avail) == 'table' and avail[1]) or avail or 400;
         local miniToolBtn = 22;
@@ -397,14 +403,16 @@ return function(MP)
 
         -- ── Layout metrics ──
         local iconPreviewSize = 56;
+        local previewInset = 2;
         local hasJaBadge = false;
         do
             local mp = require('modules.hotbar.macroparse');
             hasJaBadge = MP.editingMacro.actionType == 'macro' and mp.MacroHasJaBadgePair(MP.editingMacro.macroText or '');
         end
-        local iconPanelW = 200;
+        local iconPanelW = 198;
         local iconPanelPad = 10;
-        local fieldW = math.min(200, math.max(120, contentWidth - iconPanelW - 24));
+        -- Wider window → wider fields (icon column stays fixed width).
+        local fieldW = math.max(120, math.min(contentWidth - iconPanelW - 24, 640));
         local changeBtnW = iconPreviewSize;
         local showFolder = (MP.editorIconAutoSource == 'custom');
 
@@ -451,22 +459,44 @@ return function(MP)
         -- Remember Y after action type so dynamic fields flow right below
         local yAfterActionType = MP.imgui.GetCursorPosY();
 
+        -- Icon panel height: Custom + JA badge stacks the left column taller than the preview column;
+        -- JA block must start below BOTH or labels overlap ("Folder" vs "JA badge").
+        local function estimateIconPanelTotalH()
+            local frameH = (MP.imgui.GetFrameHeight and MP.imgui.GetFrameHeight()) or 28;
+            local tls = (MP.imgui.GetTextLineHeightWithSpacing and MP.imgui.GetTextLineHeightWithSpacing()) or 20;
+            local tl = (MP.imgui.GetTextLineHeight and MP.imgui.GetTextLineHeight()) or 14;
+            local iconRowH = math.max(miniToolBtn, tl + 2);
+            local hLeft = iconPanelPad + iconRowH + tls + frameH + tls + frameH;
+            if showFolder then
+                hLeft = hLeft + tls + frameH + tls + tl + 6 + miniToolBtn;
+            end
+            local previewTop = iconPanelPad + previewInset;
+            local hRight = previewTop + iconPreviewSize + 4 + 20;
+            local core = math.max(hLeft, hRight);
+            if hasJaBadge then
+                -- Label + spacing + checkbox row + SameLine Change (needs extra slack; some ImGui builds clip low)
+                core = core + 8 + tl + 8 + tls + frameH + 28;
+                if showFolder then
+                    core = core + 16;
+                end
+            end
+            return core + iconPanelPad + 8;
+        end
+
         -- ── Icon sub-container (float to top-right) ──
         local iconPanelX = contentWidth - iconPanelW;
-        local iconPanelH = iconPreviewSize + 36;
-        if hasJaBadge then
-            iconPanelH = iconPanelH + 38;
-        end
-        if showFolder then
-            iconPanelH = iconPanelH + 18;
-        end
+        local iconPanelTotalH = estimateIconPanelTotalH();
 
         MP.imgui.SetCursorPos({iconPanelX, topY});
         MP.imgui.PushStyleColor(ImGuiCol_ChildBg, {0.18, 0.16, 0.11, 0.95});
 
-        local iconPanelTotalH = iconPanelH + iconPanelPad * 2;
         local iconPanelScreenPos = {MP.imgui.GetCursorScreenPos()};
-        if MP.imgui.BeginChild('##iconPanel', {iconPanelW, iconPanelTotalH}, false, ImGuiWindowFlags_NoScrollbar) then
+        -- Optional vertical scrollbar when Macro + Custom (tall stack); avoids clipped buttons if estimate is short
+        local iconChildFlags = 0;
+        if hasJaBadge and showFolder and ImGuiWindowFlags_AlwaysVerticalScrollbar ~= nil then
+            iconChildFlags = ImGuiWindowFlags_AlwaysVerticalScrollbar;
+        end
+        if MP.imgui.BeginChild('##iconPanel', {iconPanelW, iconPanelTotalH}, false, iconChildFlags) then
             local innerAvail = MP.imgui.GetContentRegionAvail();
             local innerW = (type(innerAvail) == 'table' and innerAvail[1]) or innerAvail or iconPanelW;
 
@@ -488,6 +518,7 @@ return function(MP)
             MP.imgui.SameLine(0, 2);
             if MP.DrawIconButton('##macroEditorIconSync', uiIconSync, miniToolBtn, false,
                     'Attempt Icon Sync from current selection') then
+                MP.editorIconManuallySet = false;
                 AutoPickIconForSelection(true);
                 RefreshEditorAutoIconKey();
             end
@@ -512,7 +543,7 @@ return function(MP)
             end
             MP.PopComboStyle();
 
-            -- Custom icon source: category combo then folder row
+            -- Custom icon source: category combo then folder row (finish left column before preview / JA block)
             if showFolder then
                 MP.LoadCustomIcons();
 
@@ -559,15 +590,15 @@ return function(MP)
                 end
             end
 
-            -- Preview image (top-right of panel, inset from edges)
-            local previewInset = 2;
+            local yLeftEnd = MP.imgui.GetCursorPosY();
+
+            -- Preview + main Change (right column), top-aligned with icon row
             local previewX = innerW - iconPreviewSize - iconPanelPad - previewInset;
             local previewTopY = iconPanelPad + previewInset;
             MP.imgui.SetCursorPos({previewX, previewTopY});
             local screenPos = {MP.imgui.GetCursorScreenPos()};
             MP.DrawIconPreview(MP.editingMacro, screenPos[1], screenPos[2], iconPreviewSize);
 
-            -- Change button below preview
             MP.imgui.SetCursorPos({previewX, previewTopY + iconPreviewSize + 4});
             MP.imgui.PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1);
             MP.imgui.PushStyleColor(ImGuiCol_Border, MP.COLORS.gold);
@@ -575,22 +606,26 @@ return function(MP)
                 MP.InvalidateCustomIconScanCaches();
                 MP.iconPickerTargetIsJaBadge = false;
                 MP.iconPickerOpen = true;
+                MP.editorIconManuallySet = true;
                 MP.M.ApplyIconPickerContextFromEditor(false);
             end
             MP.imgui.PopStyleColor();
             MP.imgui.PopStyleVar();
 
-            -- JA badge section (optional overlay on macro tiles; default on). Checkbox left, Change right — same row, full panel width.
+            local yRightEnd = previewTopY + iconPreviewSize + 4 + 20;
+
+            -- JA badge block starts below the taller of the left stack or the preview column (no overlap with Folder row)
             if hasJaBadge then
                 if MP.editingMacro.showJaBadgeOnMacro == nil then
                     MP.editingMacro.showJaBadgeOnMacro = true;
                 end
-                local jaBadgeY = previewTopY + iconPreviewSize + 4 + 20 + 4;
-                MP.imgui.SetCursorPos({iconPanelPad, jaBadgeY});
+                local jaY = math.max(yLeftEnd, yRightEnd) + 8;
+                MP.imgui.SetCursorPos({iconPanelPad, jaY});
                 MP.imgui.TextColored(MP.COLORS.textDim, 'JA badge');
-                MP.imgui.SetCursorPos({iconPanelPad, jaBadgeY + 14});
+                MP.imgui.Spacing();
+                MP.imgui.SetCursorPosX(iconPanelPad);
                 local showJaBadgeBuf = { MP.editingMacro.showJaBadgeOnMacro ~= false };
-                if MP.imgui.Checkbox('Show JA Badge on Macro##showJaBadgeMacro', showJaBadgeBuf) then
+                if MP.imgui.Checkbox('Use JA Badge##showJaBadgeMacro', showJaBadgeBuf) then
                     MP.editingMacro.showJaBadgeOnMacro = showJaBadgeBuf[1];
                 end
                 MP.imgui.SameLine(0, 8);
@@ -627,14 +662,61 @@ return function(MP)
         if currentType == 'ma' then
             -- Spell: Show searchable dropdown
             MP.imgui.TextColored(MP.COLORS.goldDim, 'Spell');
-            local spells = MP.GetCachedSpells();
+            MP.imgui.SameLine();
+            local showAllSpells = { MP.showAllMode };
+            if MP.imgui.Checkbox('Show All##showAllSpells', showAllSpells) then
+                MP.showAllMode = showAllSpells[1];
+                MP.playerdata.ClearExpandedCaches();
+                if MP.showAllMode and MP.spellTypeFilter == 'All' then
+                    local jobTypes = MP.playerdata.GetMagicTypesForJob();
+                    if #jobTypes > 0 then
+                        MP.spellTypeFilter = jobTypes[1].key;
+                        MP.playerdata.ClearExpandedCaches();
+                    end
+                end
+            end
+            MP.imgui.SameLine(0, 2);
+            MP.imgui.ShowHelp('Green = known, Yellow = learnable (right job/level), Red = unavailable');
+            local spells;
+            local useStatusColors = false;
+            if MP.showAllMode then
+                -- Magic Type filter dropdown
+                local filterLabel = MP.playerdata.GetMagicTypeLabel(MP.spellTypeFilter);
+                MP.PushComboStyle();
+                MP.imgui.SetNextItemWidth(fieldW);
+                if MP.imgui.BeginCombo('##spellTypeFilter', filterLabel) then
+                    local allTypes = MP.playerdata.GetAllMagicTypes();
+                    local jobTypes = MP.playerdata.GetMagicTypesForJob();
+                    local jobSet = {};
+                    for _, jt in ipairs(jobTypes) do jobSet[jt.key] = true; end
+
+                    for _, mt in ipairs(allTypes) do
+                        local isSel = (MP.spellTypeFilter == mt.key);
+                        local label = mt.label;
+                        if jobSet[mt.key] then label = label .. '  [Current]'; end
+                        if isSel then MP.imgui.PushStyleColor(ImGuiCol_Text, MP.COLORS.gold); end
+                        if MP.imgui.Selectable(label, isSel) then
+                            MP.spellTypeFilter = mt.key;
+                            MP.playerdata.ClearExpandedCaches();
+                        end
+                        if isSel then MP.imgui.PopStyleColor(); end
+                    end
+                    MP.imgui.EndCombo();
+                end
+                MP.PopComboStyle();
+
+                spells = MP.playerdata.GetAllSpellsForCurrentJob(MP.spellTypeFilter);
+                useStatusColors = true;
+            else
+                spells = MP.GetCachedSpells();
+            end
             if spells and #spells > 0 then
                 MP.DrawSearchableCombo('##spellCombo', spells, MP.editingMacro.action or '', function(spell)
                     MP.editingMacro.action = spell.name;
                     MP.editorFields.action[1] = spell.name;
                     AutoSetDisplayName(spell.name);
                     SyncEditorIconAfterListPick();
-                end, nil, nil, fieldW);
+                end, nil, nil, fieldW, useStatusColors);
             else
                 MP.imgui.TextColored(MP.COLORS.textMuted, 'No spells available for this job');
             end
@@ -661,14 +743,93 @@ return function(MP)
         elseif currentType == 'ja' then
             -- Ability: Show searchable dropdown
             MP.imgui.TextColored(MP.COLORS.goldDim, 'Ability');
-            local abilities = MP.GetCachedAbilities();
+            MP.imgui.SameLine();
+            local showAllJA = { MP.showAllMode };
+            if MP.imgui.Checkbox('Show All##showAllAbilities', showAllJA) then
+                MP.showAllMode = showAllJA[1];
+                MP.playerdata.ClearExpandedCaches();
+            end
+            MP.imgui.SameLine(0, 2);
+            MP.imgui.ShowHelp('Green = known, Yellow = learnable (right job/level), Red = unavailable.\nUse the Job filter to browse abilities for any job.');
+            local abilities;
+            local useStatusColors = false;
+            if MP.showAllMode then
+                -- Job filter dropdown (only shown when Show All is on)
+                local player = AshitaCore:GetMemoryManager():GetPlayer();
+                local mainJobId = player and player:GetMainJob() or 0;
+                local subJobId = player and player:GetSubJob() or 0;
+                local mainJobAbbr = MP.jobs[mainJobId] or '???';
+                local subJobAbbr = (subJobId and subJobId > 0) and MP.jobs[subJobId] or nil;
+
+                local filterLabel;
+                if MP.abilityJobFilter == 0 then
+                    if subJobAbbr then
+                        filterLabel = mainJobAbbr .. ' + ' .. subJobAbbr .. ' (Current)';
+                    else
+                        filterLabel = mainJobAbbr .. ' (Current)';
+                    end
+                else
+                    filterLabel = MP.jobs[MP.abilityJobFilter] or '???';
+                end
+
+                MP.imgui.TextColored(MP.COLORS.goldDim, 'Job');
+                MP.PushComboStyle();
+                MP.imgui.SetNextItemWidth(fieldW);
+                if MP.imgui.BeginCombo('##abilityJobFilter', filterLabel) then
+                    -- "Current Jobs" option (main + sub)
+                    local isAutoSelected = MP.abilityJobFilter == 0;
+                    if isAutoSelected then MP.imgui.PushStyleColor(ImGuiCol_Text, MP.COLORS.gold); end
+                    local autoLabel;
+                    if subJobAbbr then
+                        autoLabel = mainJobAbbr .. ' + ' .. subJobAbbr .. ' (Current)';
+                    else
+                        autoLabel = mainJobAbbr .. ' (Current)';
+                    end
+                    if MP.imgui.Selectable(autoLabel, isAutoSelected) then
+                        if MP.abilityJobFilter ~= 0 then
+                            MP.abilityJobFilter = 0;
+                            MP.playerdata.ClearExpandedCaches();
+                        end
+                    end
+                    if isAutoSelected then MP.imgui.PopStyleColor(); end
+
+                    MP.imgui.Separator();
+
+                    -- All 15 base jobs (HorizonXI cap)
+                    for jid = 1, 15 do
+                        local abbr = MP.jobs[jid] or '???';
+                        local label = abbr;
+                        if jid == mainJobId then
+                            label = label .. '  [Main]';
+                        elseif jid == subJobId then
+                            label = label .. '  [Sub]';
+                        end
+                        local isSelected = MP.abilityJobFilter == jid;
+                        if isSelected then MP.imgui.PushStyleColor(ImGuiCol_Text, MP.COLORS.gold); end
+                        if MP.imgui.Selectable(label, isSelected) then
+                            if MP.abilityJobFilter ~= jid then
+                                MP.abilityJobFilter = jid;
+                                MP.playerdata.ClearExpandedCaches();
+                            end
+                        end
+                        if isSelected then MP.imgui.PopStyleColor(); end
+                    end
+                    MP.imgui.EndCombo();
+                end
+                MP.PopComboStyle();
+
+                abilities = MP.playerdata.GetAllAbilitiesForCurrentJob(MP.abilityJobFilter);
+                useStatusColors = true;
+            else
+                abilities = MP.GetCachedAbilities();
+            end
             if abilities and #abilities > 0 then
                 MP.DrawSearchableCombo('##abilityCombo', abilities, MP.editingMacro.action or '', function(ability)
                     MP.editingMacro.action = ability.name;
                     MP.editorFields.action[1] = ability.name;
                     AutoSetDisplayName(ability.name);
                     SyncEditorIconAfterListPick();
-                end, nil, nil, fieldW);
+                end, nil, nil, fieldW, useStatusColors);
             else
                 MP.imgui.TextColored(MP.COLORS.textMuted, 'No abilities available');
             end
@@ -695,14 +856,76 @@ return function(MP)
         elseif currentType == 'ws' then
             -- Weaponskill: Show searchable dropdown
             MP.imgui.TextColored(MP.COLORS.goldDim, 'Weaponskill');
-            local weaponskills = MP.GetCachedWeaponskills();
+            MP.imgui.SameLine();
+            local showAllWS = { MP.showAllMode };
+            if MP.imgui.Checkbox('Show All##showAllWS', showAllWS) then
+                MP.showAllMode = showAllWS[1];
+                MP.playerdata.ClearExpandedCaches();
+                if MP.showAllMode then
+                    -- Default filter to the weapon type matching current known WS
+                    local currentWs = MP.GetCachedWeaponskills();
+                    if currentWs and #currentWs > 0 then
+                        local wsDb = require('modules.hotbar.database.ws_weapon_types');
+                        for _, ws in ipairs(currentWs) do
+                            local info = wsDb[ws.name];
+                            if info then
+                                MP.wsWeaponFilter = info.weapon;
+                                break;
+                            end
+                        end
+                    end
+                end
+            end
+            MP.imgui.SameLine(0, 2);
+            MP.imgui.ShowHelp('Green = known, Red = not yet learned. Filter by weapon type below.');
+            local weaponskills;
+            local useStatusColors = false;
+            if MP.showAllMode then
+                -- Weapon type filter dropdown
+                MP.PushComboStyle();
+                MP.imgui.SetNextItemWidth(fieldW);
+                if MP.imgui.BeginCombo('##wsWeaponFilter', MP.wsWeaponFilter) then
+                    if MP.imgui.Selectable('All', MP.wsWeaponFilter == 'All') then
+                        MP.wsWeaponFilter = 'All';
+                        MP.playerdata.ClearExpandedCaches();
+                    end
+                    local weaponTypes = MP.playerdata.GetWeaponTypes();
+                    for _, wt in ipairs(weaponTypes) do
+                        local isSel = (MP.wsWeaponFilter == wt);
+                        if isSel then MP.imgui.PushStyleColor(ImGuiCol_Text, MP.COLORS.gold); end
+                        if MP.imgui.Selectable(wt, isSel) then
+                            MP.wsWeaponFilter = wt;
+                            MP.playerdata.ClearExpandedCaches();
+                        end
+                        if isSel then MP.imgui.PopStyleColor(); end
+                    end
+                    MP.imgui.EndCombo();
+                end
+                MP.PopComboStyle();
+
+                local allWs = MP.playerdata.GetAllWeaponskillsExpanded();
+                if MP.wsWeaponFilter ~= 'All' then
+                    local filtered = {};
+                    for _, ws in ipairs(allWs) do
+                        if ws.weapon == MP.wsWeaponFilter then
+                            table.insert(filtered, ws);
+                        end
+                    end
+                    weaponskills = filtered;
+                else
+                    weaponskills = allWs;
+                end
+                useStatusColors = true;
+            else
+                weaponskills = MP.GetCachedWeaponskills();
+            end
             if weaponskills and #weaponskills > 0 then
                 MP.DrawSearchableCombo('##wsCombo', weaponskills, MP.editingMacro.action or '', function(ws)
                     MP.editingMacro.action = ws.name;
                     MP.editorFields.action[1] = ws.name;
                     AutoSetDisplayName(ws.name);
                     SyncEditorIconAfterListPick();
-                end, nil, nil, fieldW);
+                end, nil, nil, fieldW, useStatusColors);
             else
                 MP.imgui.TextColored(MP.COLORS.textMuted, 'No weaponskills available');
             end
@@ -960,28 +1183,80 @@ return function(MP)
             end
 
         elseif currentType == 'pet' then
-            -- For SMN, show avatar filter dropdown
-            local viewedJobId = GetEditorPetJobId();
-            local avatarList = MP.petregistry.GetAvatarList();
+            -- ── Pet Type selector ──────────────────────────────────
+            local PET_TYPE_OPTIONS = {
+                { id = MP.petregistry.JOB_SMN, label = 'Avatar (SMN)' },
+                { id = MP.petregistry.JOB_BST, label = 'Beast (BST)' },
+                { id = MP.petregistry.JOB_DRG, label = 'Wyvern (DRG)' },
+                { id = MP.petregistry.JOB_PUP, label = 'Automaton (PUP)' },
+            };
 
+            -- Resolve default pet type from player's current job
+            local defaultPetJobId = GetEditorPetJobId();
+            if not MP.petregistry.IsPetJob(defaultPetJobId) then
+                defaultPetJobId = MP.petregistry.JOB_SMN;
+            end
+
+            local viewedJobId;
+            if MP.petTypeOverride > 0 then
+                viewedJobId = MP.petTypeOverride;
+            else
+                viewedJobId = defaultPetJobId;
+            end
+
+            -- Find the label for the current selection
+            local petTypeLabel = '???';
+            for _, opt in ipairs(PET_TYPE_OPTIONS) do
+                if opt.id == viewedJobId then
+                    petTypeLabel = opt.label;
+                    break;
+                end
+            end
+
+            MP.imgui.TextColored(MP.COLORS.goldDim, 'Pet Type');
+            MP.PushComboStyle();
+            MP.imgui.SetNextItemWidth(fieldW);
+            if MP.imgui.BeginCombo('##petTypeSelector', petTypeLabel) then
+                for _, opt in ipairs(PET_TYPE_OPTIONS) do
+                    local isSelected = viewedJobId == opt.id;
+                    local label = opt.label;
+                    if opt.id == defaultPetJobId then
+                        label = label .. '  [Current]';
+                    end
+                    if isSelected then MP.imgui.PushStyleColor(ImGuiCol_Text, MP.COLORS.gold); end
+                    if MP.imgui.Selectable(label, isSelected) then
+                        if viewedJobId ~= opt.id then
+                            MP.petTypeOverride = opt.id;
+                            MP.cachedPetCommands = nil;
+                            MP.showAllPetMode = false;
+                            MP.petAvatarFilter = 1;
+                        end
+                    end
+                    if isSelected then MP.imgui.PopStyleColor(); end
+                end
+                MP.imgui.EndCombo();
+            end
+            MP.PopComboStyle();
+            MP.imgui.Spacing();
+
+            -- ── Avatar Filter (SMN only) ───────────────────────────
+            local avatarList = MP.petregistry.GetAvatarList();
             if viewedJobId == MP.petregistry.JOB_SMN then
-                MP.imgui.TextColored(MP.COLORS.goldDim, 'Avatar Filter');
+                MP.imgui.TextColored(MP.COLORS.goldDim, 'Avatar');
                 MP.PushComboStyle();
                 MP.imgui.SetNextItemWidth(fieldW);
                 local filterLabel = MP.petAvatarFilter == 1 and 'All Avatars' or avatarList[MP.petAvatarFilter - 1];
                 if MP.imgui.BeginCombo('##avatarFilter', filterLabel) then
-                    -- "All" option
                     local isAllSelected = MP.petAvatarFilter == 1;
                     if isAllSelected then MP.imgui.PushStyleColor(ImGuiCol_Text, MP.COLORS.gold); end
                     if MP.imgui.Selectable('All Avatars', isAllSelected) then
                         MP.petAvatarFilter = 1;
-                        MP.cachedPetCommands = nil;  -- Clear cache to rebuild
+                        MP.cachedPetCommands = nil;
                     end
                     if isAllSelected then MP.imgui.PopStyleColor(); end
 
                     MP.imgui.Separator();
 
-                    -- Individual avatars
                     for i, avatar in ipairs(avatarList) do
                         local isSelected = MP.petAvatarFilter == i + 1;
                         if isSelected then MP.imgui.PushStyleColor(ImGuiCol_Text, MP.COLORS.gold); end
@@ -997,31 +1272,89 @@ return function(MP)
                 MP.imgui.Spacing();
             end
 
-            -- Build pet commands cache if needed
-            if not MP.cachedPetCommands then
+            -- ── Show All toggle (SMN/BST only) ────────────────────
+            local supportShowAll = (viewedJobId == MP.petregistry.JOB_SMN or viewedJobId == MP.petregistry.JOB_BST);
+
+            MP.imgui.TextColored(MP.COLORS.goldDim, 'Pet Command');
+            if supportShowAll then
+                MP.imgui.SameLine();
+                local showAllPet = { MP.showAllPetMode };
+                if MP.imgui.Checkbox('Show All##showAllPet', showAllPet) then
+                    MP.showAllPetMode = showAllPet[1];
+                    MP.cachedPetCommands = nil;
+                end
+                MP.imgui.SameLine(0, 2);
+                if viewedJobId == MP.petregistry.JOB_BST then
+                    MP.imgui.ShowHelp('Green = available at your level, Red = too high level');
+                else
+                    MP.imgui.ShowHelp('Green = available at your level, Red = too high level.\nBlood pacts shown with level requirements.');
+                end
+            end
+
+            -- ── Resolve player level for the selected pet job ──────
+            local player = AshitaCore:GetMemoryManager():GetPlayer();
+            local mainJobId = player and player:GetMainJob() or 0;
+            local mainJobLevel = player and player:GetMainJobLevel() or 0;
+            local subJobId = player and player:GetSubJob() or 0;
+            local subJobLevel = player and player:GetSubJobLevel() or 0;
+
+            local petJobLevel = 0;
+            if viewedJobId == mainJobId then
+                petJobLevel = mainJobLevel;
+            elseif viewedJobId == subJobId then
+                petJobLevel = subJobLevel;
+            end
+
+            -- ── Build the command list ─────────────────────────────
+            local petCommands;
+            local useStatusColors = false;
+
+            if supportShowAll then
+                -- SMN/BST: always use expanded data so level-gating is applied
                 local avatarName = nil;
                 local activePetName = nil;
                 if viewedJobId == MP.petregistry.JOB_SMN then
                     avatarName = SmnAvatarNameFromEditorFilter(avatarList);
                 elseif viewedJobId == MP.petregistry.JOB_BST then
-                    -- Get the active pet's entity name for BST ready moves
                     activePetName = MP.petpalette.GetCurrentPetEntityName();
                 end
-                MP.cachedPetCommands = MP.GetPetCommandsForJob(viewedJobId, avatarName, activePetName);
+
+                local expandedList;
+                if viewedJobId == MP.petregistry.JOB_BST then
+                    expandedList = MP.petregistry.GetBstPetCommandsExpanded(petJobLevel, activePetName);
+                else
+                    expandedList = MP.petregistry.GetBloodPactsExpanded(avatarName, petJobLevel);
+                end
+
+                if MP.showAllPetMode then
+                    petCommands = expandedList;
+                    useStatusColors = true;
+                else
+                    petCommands = {};
+                    for _, cmd in ipairs(expandedList) do
+                        if cmd.status == MP.petregistry.STATUS_HAVE then
+                            table.insert(petCommands, cmd);
+                        end
+                    end
+                end
+            else
+                -- DRG/PUP: standard cached list
+                if not MP.cachedPetCommands then
+                    MP.cachedPetCommands = MP.GetPetCommandsForJob(viewedJobId, nil, nil);
+                end
+                petCommands = MP.cachedPetCommands;
             end
 
-            -- Pet command selector (dropdown + manual input side-by-side to reduce height)
-            MP.imgui.TextColored(MP.COLORS.goldDim, 'Pet Command');
+            -- ── Pet command selector dropdown ──────────────────────
             MP.imgui.SetNextItemWidth(fieldW);
-            if MP.cachedPetCommands and #MP.cachedPetCommands > 0 then
-                MP.DrawSearchableCombo('##petCommandCombo', MP.cachedPetCommands, MP.editingMacro.action or '', function(cmd)
+            if petCommands and #petCommands > 0 then
+                MP.DrawSearchableCombo('##petCommandCombo', petCommands, MP.editingMacro.action or '', function(cmd)
                     MP.editingMacro.action = cmd.name;
                     MP.editorFields.action[1] = cmd.name;
                     AutoSetDisplayName(cmd.name);
                     SyncEditorIconAfterListPick();
-                end, nil, nil, fieldW);
+                end, nil, nil, fieldW, useStatusColors);
             else
-                -- Keep the layout consistent even when no dropdown options
                 MP.imgui.TextColored(MP.COLORS.textMuted, 'No pet commands available');
             end
 
