@@ -24,6 +24,7 @@ local petbarModule = require('config.petbar');
 local notificationsModule = require('config.notifications');
 local treasurepoolModule = require('config.treasurepool');
 local hotbarModule = require('config.hotbar');
+local readycheckModule = require('config.readycheck');
 
 local treasurePool = require('modules.treasurepool.init');
 local macropalette = require('modules.hotbar.macropalette');
@@ -318,6 +319,7 @@ local categories = {
     { name = 'notifications', label = 'Notifications' },
     { name = 'treasurePool', label = 'Treasure Pool' },
     { name = 'hotbar', label = 'Hotbar' },
+    { name = 'readyCheck', label = 'Ready Check' },
 };
 
 
@@ -430,6 +432,10 @@ local function DrawHotbarSettings()
     applySettingsState(newState);
 end
 
+local function DrawReadyCheckSettings()
+    readycheckModule.DrawSettings();
+end
+
 -- Color settings draw functions with state handling
 local function DrawGlobalColorSettings()
     globalModule.DrawColorSettings();
@@ -492,6 +498,10 @@ local function DrawHotbarColorSettings()
     applyColorState(newState);
 end
 
+local function DrawReadyCheckColorSettings()
+    readycheckModule.DrawColorSettings();
+end
+
 -- Dispatch tables for settings and color settings
 local settingsDrawFunctions = {
     DrawGlobalSettings,
@@ -508,6 +518,7 @@ local settingsDrawFunctions = {
     DrawNotificationsSettings,
     DrawTreasurePoolSettings,
     DrawHotbarSettings,
+    DrawReadyCheckSettings,
 };
 
 local colorSettingsDrawFunctions = {
@@ -525,6 +536,7 @@ local colorSettingsDrawFunctions = {
     DrawNotificationsColorSettings,
     DrawTreasurePoolColorSettings,
     DrawHotbarColorSettings,
+    DrawReadyCheckColorSettings,
 };
 
 local function DrawProfilePopups()
