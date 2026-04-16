@@ -51,6 +51,8 @@ local modalState = {
     -- Copy: overwrite existing destination palette (same name resolution as palette.lua)
     copyOverwriteExisting = false,
     copyDestExistingIndex = 1,
+    -- Crossbar Copy To: destination is Job [J]/Subjob storage vs Global [G] (universal)
+    copyDestScope = 'job', -- 'job' | 'universal'
 };
 
 -- Embedded Crossbar Palette Manager (Manage Palettes & Crossbar tab — no floating window)
@@ -1211,6 +1213,7 @@ local function ClearCrossbarEmbedModalFields()
     modalState.crossbarCopyFromSubjob = nil;
     modalState.embedCrossbarUniversal = false;
     modalState.embedCrossbarUniversalCopy = false;
+    modalState.copyDestScope = 'job';
 end
 
 -- ImGui Selectable uses Header colors; push muted gold for unselected rows so hover is visible (font lacks em dash glyph; use ASCII in UI strings).
@@ -1303,11 +1306,14 @@ local function PopXiuiFloatingWindowTheme()
     imgui.PopStyleColor(34);
 end
 
-local function GetCopyDestinationExistingNames()
+local function GetCopyDestinationNamesForModal()
     local j = modalState.copyTargetJobId or 1;
     local s = modalState.copyTargetSubjobId or 0;
     if windowState.selectedPaletteType == 'hotbar' then
         return palette.GetAvailablePalettes(1, j, s);
+    end
+    if modalState.copyDestScope == 'universal' then
+        return palette.GetUniversalCrossbarPaletteNamesOrdered();
     end
     return palette.GetCrossbarPaletteNamesForOrderTier(j, s);
 end
@@ -1509,6 +1515,7 @@ local function DrawPaletteList()
                     modalState.crossbarCopyFromSubjob = nil;
                     modalState.copyTargetJobId = windowState.selectedJobId;
                     modalState.copyTargetSubjobId = windowState.selectedSubjobId;
+                    modalState.copyDestScope = 'job';
                     modalState.isOpen = true;
                     windowState.selectedPaletteName = paletteName;
                 end
@@ -1584,6 +1591,7 @@ local function DrawActionButtons(palettes)
         modalState.copyTargetJobId = windowState.selectedJobId;
         modalState.copyTargetSubjobId = windowState.selectedSubjobId;
         modalState.crossbarCopyFromSubjob = nil;
+        modalState.copyDestScope = 'job';
         modalState.isOpen = true;
     end
     if not hasSelection then imgui.EndDisabled(); end
@@ -1771,18 +1779,43 @@ local function DrawCopyModal()
 
     imgui.OpenPopup('Copy Palette##copyModal');
 
-    if imgui.BeginPopupModal('Copy Palette##copyModal', nil, ImGuiWindowFlags_AlwaysAutoResize) then
+    -- Non-modal popup: no fullscreen dim layer (BeginPopupModal dims; Ashita may not expose
+    -- ImGuiCol_ModalWindowDimBg for PushStyleColor, and FFXI + dim can hide the hardware cursor).
+    if imgui.BeginPopup('Copy Palette##copyModal') then
         components.PushPaletteManagerButtonStyle();
         local embedUcopy = modalState.embedCrossbarUniversalCopy == true;
         local copySourceName = windowState.selectedPaletteName;
-        if embedUcopy then
+        local isCrossbar = windowState.selectedPaletteType == 'crossbar';
+
+        if embedUcopy and modalState.copyDestScope == 'universal' then
             imgui.Text('Copy "' .. (copySourceName or '') .. '" to another Global [G] palette:');
+        elseif embedUcopy and modalState.copyDestScope == 'job' then
+            imgui.Text('Copy "' .. (copySourceName or '') .. '" to a Job [J] palette:');
+        elseif not embedUcopy and isCrossbar and modalState.copyDestScope == 'universal' then
+            imgui.Text('Copy "' .. (copySourceName or '') .. '" to a Global [G] palette:');
         else
-            imgui.Text('Copy "' .. windowState.selectedPaletteName .. '" to:');
+            imgui.Text('Copy "' .. (copySourceName or '') .. '" to:');
         end
         imgui.Spacing();
 
-        if not embedUcopy then
+        if isCrossbar then
+            imgui.Text('Destination storage:');
+            local scopeJob = modalState.copyDestScope == 'job';
+            if imgui.RadioButton('Job / Subjob [J]##palCopyDestJob', scopeJob) then
+                modalState.copyDestScope = 'job';
+            end
+            imgui.SameLine();
+            if imgui.RadioButton('Global [G]##palCopyDestG', not scopeJob) then
+                modalState.copyDestScope = 'universal';
+            end
+            imgui.ShowHelp('Job [J] copies into per-job crossbar storage (shared tier or subjob tier). Global [G] copies into all-jobs universal crossbar palettes.');
+            imgui.Spacing();
+        end
+
+        local showJobDestControls = (windowState.selectedPaletteType == 'hotbar')
+            or (isCrossbar and modalState.copyDestScope == 'job');
+
+        if showJobDestControls then
             -- Job selector
             imgui.Text('Job:');
             imgui.SameLine();
@@ -1840,7 +1873,7 @@ local function DrawCopyModal()
             end
         end
 
-        local destNames = embedUcopy and palette.GetUniversalCrossbarPaletteNamesOrdered() or GetCopyDestinationExistingNames();
+        local destNames = GetCopyDestinationNamesForModal();
         if #destNames == 0 then
             modalState.copyDestExistingIndex = 1;
         elseif modalState.copyDestExistingIndex > #destNames then
@@ -1914,11 +1947,17 @@ local function DrawCopyModal()
 
         local isCopyNoOp;
         if embedUcopy then
-            if overwrite then
-                isCopyNoOp = not destArg or destArg == '' or destArg == copySourceName;
+            if modalState.copyDestScope == 'universal' then
+                if overwrite then
+                    isCopyNoOp = not destArg or destArg == '' or destArg == copySourceName;
+                else
+                    isCopyNoOp = (not newName or newName == '') or (newName == copySourceName);
+                end
             else
-                isCopyNoOp = (not newName or newName == '') or (newName == copySourceName);
+                isCopyNoOp = false;
             end
+        elseif isCrossbar and modalState.copyDestScope == 'universal' then
+            isCopyNoOp = false;
         else
             isCopyNoOp = modalState.copyTargetJobId == windowState.selectedJobId and
                 modalState.copyTargetSubjobId == copyFromSubjob and
@@ -1927,10 +1966,14 @@ local function DrawCopyModal()
 
         local canCopy;
         if embedUcopy then
-            if overwrite then
-                canCopy = not isCopyNoOp and destArg ~= nil and destArg ~= '' and #destNames > 0;
+            if modalState.copyDestScope == 'universal' then
+                if overwrite then
+                    canCopy = not isCopyNoOp and destArg ~= nil and destArg ~= '' and #destNames > 0;
+                else
+                    canCopy = not isCopyNoOp and newName and newName ~= '';
+                end
             else
-                canCopy = not isCopyNoOp and newName and newName ~= '';
+                canCopy = not isCopyNoOp and (not overwrite or (destArg ~= nil and destArg ~= '' and #destNames > 0));
             end
         else
             canCopy = not isCopyNoOp and (not overwrite or (destArg ~= nil and destArg ~= '' and #destNames > 0));
@@ -1940,10 +1983,7 @@ local function DrawCopyModal()
         if not canCopy then imgui.BeginDisabled(); end
         if imgui.Button('Copy', { 80, 0 }) then
             local success, err;
-            if embedUcopy then
-                local destFinal = overwrite and destArg or newName;
-                success, err = palette.CopyUniversalCrossbarPalette(copySourceName, destFinal, overwrite);
-            elseif windowState.selectedPaletteType == 'hotbar' then
+            if windowState.selectedPaletteType == 'hotbar' then
                 success, err = palette.CopyPalette(
                     windowState.selectedPaletteName,
                     windowState.selectedJobId,
@@ -1951,6 +1991,29 @@ local function DrawCopyModal()
                     modalState.copyTargetJobId,
                     modalState.copyTargetSubjobId,
                     destArg,
+                    overwrite
+                );
+            elseif embedUcopy then
+                if modalState.copyDestScope == 'universal' then
+                    local destFinal = overwrite and destArg or newName;
+                    success, err = palette.CopyUniversalCrossbarPalette(copySourceName, destFinal, overwrite);
+                else
+                    local destFinal = overwrite and destArg or (newName or copySourceName);
+                    success, err = palette.CopyUniversalCrossbarPaletteToJob(
+                        copySourceName,
+                        destFinal,
+                        modalState.copyTargetJobId,
+                        modalState.copyTargetSubjobId,
+                        overwrite
+                    );
+                end
+            elseif isCrossbar and modalState.copyDestScope == 'universal' then
+                local destFinal = overwrite and destArg or (newName or windowState.selectedPaletteName);
+                success, err = palette.CopyCrossbarPaletteToUniversal(
+                    windowState.selectedPaletteName,
+                    windowState.selectedJobId,
+                    copyFromSubjob,
+                    destFinal,
                     overwrite
                 );
             else
@@ -2199,6 +2262,9 @@ function M.DrawEmbeddedCrossbarManageUniversal()
                     modalState.copyOverwriteExisting = false;
                     modalState.copyDestExistingIndex = 1;
                     modalState.embedCrossbarUniversalCopy = true;
+                    modalState.copyDestScope = 'universal';
+                    modalState.copyTargetJobId = data.jobId or 1;
+                    modalState.copyTargetSubjobId = data.subjobId or 0;
                     embedCrossbarUniversalContext.selectedPaletteName = name;
                     windowState.selectedPaletteName = name;
                     modalState.isOpen = true;
@@ -2285,6 +2351,9 @@ function M.DrawEmbeddedCrossbarManageUniversal()
         modalState.copyOverwriteExisting = false;
         modalState.copyDestExistingIndex = 1;
         modalState.embedCrossbarUniversalCopy = true;
+        modalState.copyDestScope = 'universal';
+        modalState.copyTargetJobId = data.jobId or 1;
+        modalState.copyTargetSubjobId = data.subjobId or 0;
         modalState.embedCrossbarUniversal = true;
         windowState.selectedPaletteName = selName;
         modalState.isOpen = true;
@@ -2490,6 +2559,7 @@ function M.DrawEmbeddedCrossbarManage(jobId, subjobId)
                     modalState.errorMessage = nil;
                     modalState.copyOverwriteExisting = false;
                     modalState.copyDestExistingIndex = 1;
+                    modalState.copyDestScope = 'job';
                     modalState.copyTargetJobId = jobId;
                     modalState.copyTargetSubjobId = subjobId;
                     modalState.crossbarCopyFromSubjob = row.storageSubjob;
@@ -2571,6 +2641,7 @@ function M.DrawEmbeddedCrossbarManage(jobId, subjobId)
         modalState.errorMessage = nil;
         modalState.copyOverwriteExisting = false;
         modalState.copyDestExistingIndex = 1;
+        modalState.copyDestScope = 'job';
         modalState.copyTargetJobId = jobId;
         modalState.copyTargetSubjobId = subjobId;
         modalState.crossbarCopyFromSubjob = selSt;

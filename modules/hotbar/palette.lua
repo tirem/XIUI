@@ -2941,6 +2941,153 @@ function M.CopyCrossbarPalette(paletteName, fromJobId, fromSubjobId, toJobId, to
     return true;
 end
 
+-- Copy a Job [J]/Subjob-tier crossbar palette into the Global [G] (all-jobs universal) namespace.
+function M.CopyCrossbarPaletteToUniversal(paletteName, fromJobId, fromSubjobId, destName, overwriteExisting)
+    if not paletteName then
+        return false, 'No palette specified';
+    end
+    local outName = destName or paletteName;
+    if not IsValidPaletteName(outName) then
+        return false, 'Invalid destination palette name';
+    end
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    if not crossbarSettings then
+        return false, 'Crossbar settings not found';
+    end
+    local sourceKey = FindCrossbarPaletteStorageKey(paletteName, fromJobId, fromSubjobId);
+    if not sourceKey then
+        return false, 'Source palette not found';
+    end
+    if not crossbarSettings.slotActions then
+        crossbarSettings.slotActions = {};
+    end
+    local destKey = M.BuildUniversalCrossbarStorageKey(outName);
+    if not destKey then
+        return false, 'Invalid destination key';
+    end
+    local destExists = crossbarSettings.slotActions[destKey] ~= nil;
+    overwriteExisting = overwriteExisting == true;
+    if destExists then
+        if not overwriteExisting then
+            return false, 'Palette already exists at destination';
+        end
+    elseif overwriteExisting then
+        return false, 'No palette at that destination to overwrite';
+    end
+    local sourceData = crossbarSettings.slotActions[sourceKey];
+    if sourceData then
+        local copiedData = {};
+        for comboMode, modeData in pairs(sourceData) do
+            if type(modeData) == 'table' then
+                copiedData[comboMode] = {};
+                for slotIdx, slotData in pairs(modeData) do
+                    if type(slotData) == 'table' then
+                        copiedData[comboMode][slotIdx] = {};
+                        for k, v in pairs(slotData) do
+                            copiedData[comboMode][slotIdx][k] = v;
+                        end
+                    else
+                        copiedData[comboMode][slotIdx] = slotData;
+                    end
+                end
+            else
+                copiedData[comboMode] = modeData;
+            end
+        end
+        crossbarSettings.slotActions[destKey] = copiedData;
+    else
+        crossbarSettings.slotActions[destKey] = {};
+    end
+    if not destExists then
+        if not crossbarSettings.universalCrossbarPaletteOrder then
+            crossbarSettings.universalCrossbarPaletteOrder = {};
+        end
+        table.insert(crossbarSettings.universalCrossbarPaletteOrder, outName);
+        if not crossbarSettings.crossbarUniversalPaletteMeta then
+            crossbarSettings.crossbarUniversalPaletteMeta = {};
+        end
+        if not crossbarSettings.crossbarUniversalPaletteMeta[outName] then
+            crossbarSettings.crossbarUniversalPaletteMeta[outName] = { includeInCycle = true };
+        end
+    end
+    InvalidatePaletteListCache();
+    InvalidateAllVisualCachesAfterPaletteListMutation();
+    SaveSettingsToDisk();
+    return true;
+end
+
+-- Copy a Global [G] universal crossbar palette into a Job [J]/Subjob-tier palette.
+function M.CopyUniversalCrossbarPaletteToJob(sourceName, destName, toJobId, toSubjobId, overwriteExisting)
+    if not sourceName or sourceName == '' then
+        return false, 'No palette specified';
+    end
+    local outName = destName or sourceName;
+    if not IsValidPaletteName(outName) then
+        return false, 'Invalid destination palette name';
+    end
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    if not crossbarSettings then
+        return false, 'Crossbar settings not found';
+    end
+    if not crossbarSettings.slotActions then
+        crossbarSettings.slotActions = {};
+    end
+    local sourceKey = M.BuildUniversalCrossbarStorageKey(sourceName);
+    if not crossbarSettings.slotActions[sourceKey] then
+        return false, 'Source palette not found';
+    end
+    local normalizedJobId = toJobId or 1;
+    local normalizedSubjobId = toSubjobId or 0;
+    local destKey = M.BuildPaletteStorageKey(normalizedJobId, normalizedSubjobId, outName);
+    local destExists = crossbarSettings.slotActions[destKey] ~= nil;
+    overwriteExisting = overwriteExisting == true;
+    if destExists then
+        if not overwriteExisting then
+            return false, 'Palette already exists at destination';
+        end
+    elseif overwriteExisting then
+        return false, 'No palette at that destination to overwrite';
+    end
+    local sourceData = crossbarSettings.slotActions[sourceKey];
+    if sourceData then
+        local copiedData = {};
+        for comboMode, modeData in pairs(sourceData) do
+            if type(modeData) == 'table' then
+                copiedData[comboMode] = {};
+                for slotIdx, slotData in pairs(modeData) do
+                    if type(slotData) == 'table' then
+                        copiedData[comboMode][slotIdx] = {};
+                        for k, v in pairs(slotData) do
+                            copiedData[comboMode][slotIdx][k] = v;
+                        end
+                    else
+                        copiedData[comboMode][slotIdx] = slotData;
+                    end
+                end
+            else
+                copiedData[comboMode] = modeData;
+            end
+        end
+        crossbarSettings.slotActions[destKey] = copiedData;
+    else
+        crossbarSettings.slotActions[destKey] = {};
+    end
+    if not destExists then
+        local destOrderKey = BuildJobSubjobKey(normalizedJobId, normalizedSubjobId);
+        if not crossbarSettings.crossbarPaletteOrder then
+            crossbarSettings.crossbarPaletteOrder = {};
+        end
+        if not crossbarSettings.crossbarPaletteOrder[destOrderKey] then
+            crossbarSettings.crossbarPaletteOrder[destOrderKey] = {};
+        end
+        table.insert(crossbarSettings.crossbarPaletteOrder[destOrderKey], outName);
+    end
+    InvalidatePaletteListCache();
+    InvalidateAllVisualCachesAfterPaletteListMutation();
+    SaveSettingsToDisk();
+    return true;
+end
+
 -- Get all job IDs that have palettes defined
 function M.GetJobsWithPalettes()
     local jobs = {};

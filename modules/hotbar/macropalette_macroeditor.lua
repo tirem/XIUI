@@ -280,6 +280,17 @@ return function(MP)
         end
     end
 
+    -- Clear JA badge overrides so the badge uses default resolution for the current /ja line (GetBindIcon ja).
+    local function SyncJaBadgeIconFromMacro()
+        MP.editorJaBadgeManuallySet = false;
+        MP.editingMacro.jaBadgeCustomIconType = nil;
+        MP.editingMacro.jaBadgeCustomIconId = nil;
+        MP.editingMacro.jaBadgeCustomIconPath = nil;
+        if MP.ClearPaletteJaBadgeIconCache then
+            MP.ClearPaletteJaBadgeIconCache();
+        end
+    end
+
     local function AutoPickIconForSelection(force)
         if not MP.editingMacro then return; end
         if not force and not ShouldAllowImplicitAutoIconPick() then return; end
@@ -372,7 +383,9 @@ return function(MP)
         if MP.editorIconManuallySet then
             return;
         end
-        AutoPickIconForSelection(true);
+        -- Use force=false so saved/manual icons are not overwritten when macro text changes
+        -- (AutoPickIconForSelection(true) bypasses ShouldAllowImplicitAutoIconPick).
+        AutoPickIconForSelection(false);
         MP.editorImplicitActionIconDone = true;
         RefreshEditorAutoIconKey();
     end
@@ -517,13 +530,13 @@ return function(MP)
             end
             MP.imgui.SameLine(0, 2);
             if MP.DrawIconButton('##macroEditorIconSync', uiIconSync, miniToolBtn, false,
-                    'Attempt Icon Sync from current selection') then
+                    'Sync main slot icon from current action or macro lines') then
                 MP.editorIconManuallySet = false;
                 AutoPickIconForSelection(true);
                 RefreshEditorAutoIconKey();
             end
             MP.imgui.SameLine(0, 2);
-            MP.imgui.ShowHelp('Choosing a spell/ability/WS/item/pet from the list syncs the icon. Use Sync to refresh after typing, or Change to pick manually.');
+            MP.imgui.ShowHelp('Choosing from the list syncs the main icon. For Macro type, text edits do not change the main icon after you use Change — press Sync to refresh, or Sync after typing.');
 
             -- Source combo
             MP.imgui.SetCursorPosX(iconPanelPad);
@@ -622,6 +635,13 @@ return function(MP)
                 local jaY = math.max(yLeftEnd, yRightEnd) + 8;
                 MP.imgui.SetCursorPos({iconPanelPad, jaY});
                 MP.imgui.TextColored(MP.COLORS.textDim, 'JA badge');
+                MP.imgui.SameLine(0, 4);
+                if MP.DrawIconButton('##macroEditorJaBadgeSync', uiIconSync, miniToolBtn, false,
+                        'Sync JA badge icon from the current /ja line (clears a manual badge icon)') then
+                    SyncJaBadgeIconFromMacro();
+                end
+                MP.imgui.SameLine(0, 2);
+                MP.imgui.ShowHelp('After you pick a badge icon with Change, it stays until you Sync here. Macro text edits do not override a manual badge icon.');
                 MP.imgui.Spacing();
                 MP.imgui.SetCursorPosX(iconPanelPad);
                 local showJaBadgeBuf = { MP.editingMacro.showJaBadgeOnMacro ~= false };
@@ -634,6 +654,7 @@ return function(MP)
                 if MP.imgui.Button('Change##macroJaBadgeIconChange', {changeBtnW, 20}) then
                     MP.InvalidateCustomIconScanCaches();
                     MP.iconPickerOpen = true;
+                    MP.editorJaBadgeManuallySet = true;
                     MP.M.ApplyIconPickerContextFromEditor(true);
                 end
                 MP.imgui.PopStyleColor();
@@ -1475,7 +1496,9 @@ return function(MP)
             end
 
             MP.paletteMainIconCache = {};
-            MP.paletteJaBadgeIconCache = {};
+            if MP.ClearPaletteJaBadgeIconCache then
+                MP.ClearPaletteJaBadgeIconCache();
+            end
 
             if shouldCloseEditor then
                 MP.editingMacro = nil;
@@ -1485,6 +1508,7 @@ return function(MP)
                 MP.iconPickerFilter[1] = '';
                 MP.editorPaletteKey = nil;
                 MP.editorDidInitialIconPick = false;
+                MP.editorJaBadgeManuallySet = false;
                 MP.ClearEditorPreviewIconCache();
             end
         end
@@ -1517,6 +1541,7 @@ return function(MP)
             MP.iconPickerFilter[1] = '';
             MP.editorPaletteKey = nil;
             MP.editorDidInitialIconPick = false;
+            MP.editorJaBadgeManuallySet = false;
             MP.ClearEditorPreviewIconCache();
         end
     end
@@ -1531,6 +1556,7 @@ return function(MP)
         MP.iconPickerOpen = false;
         MP.iconPickerFilter[1] = '';
         MP.editorPaletteKey = nil;
+        MP.editorJaBadgeManuallySet = false;
         MP.ClearEditorPreviewIconCache();
     end
 

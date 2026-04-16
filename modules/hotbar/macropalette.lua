@@ -62,6 +62,8 @@ MP.iconPickerSpellType = 'All';
 MP.iconPickerItemType = 0;
 MP.editorImplicitActionIconDone = false;
 MP.editorIconManuallySet = false;
+-- When true, JA badge icon is not replaced by implicit /ja resolution; use "Sync JA badge" to refresh.
+MP.editorJaBadgeManuallySet = false;
 MP.editorIconPrefsHydrated = false;
 
 
@@ -81,6 +83,12 @@ local editorPreviewCachedIcon = nil;
 local function ClearEditorPreviewIconCache()
     editorPreviewIconKey = nil;
     editorPreviewCachedIcon = nil;
+end
+
+local function ClearPaletteJaBadgeIconCache()
+    for k in pairs(paletteJaBadgeIconCache) do
+        paletteJaBadgeIconCache[k] = nil;
+    end
 end
 
 local function BuildMacroMainIconCacheKey(macro)
@@ -1812,6 +1820,7 @@ function M.OpenEditorForSlotData(slotData)
     MP.editorDidInitialIconPick = false;
     MP.editorImplicitActionIconDone = false;
     MP.editorIconManuallySet = false;
+    MP.editorJaBadgeManuallySet = false;
     MP.showAllMode = false;
     MP.showAllPetMode = false;
     MP.spellTypeFilter = 'All';
@@ -2101,9 +2110,10 @@ function M.ClosePalette()
     MP._lastMacroPaletteSearch = nil;
     MP.editorDidInitialIconPick = false;
     MP.editorIconManuallySet = false;
+    MP.editorJaBadgeManuallySet = false;
     ClearEditorPreviewIconCache();
     paletteMainIconCache = {};
-    paletteJaBadgeIconCache = {};
+    ClearPaletteJaBadgeIconCache();
     paletteIconCacheDbKey = nil;
 end
 
@@ -2794,6 +2804,8 @@ function M.DrawPalette()
 
         imgui.Spacing();
 
+        local hasSelection = selectedMacroIndex and db[selectedMacroIndex];
+
         -- Button row with XIUI button styling
         imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
         imgui.PushStyleColor(ImGuiCol_ButtonHovered, COLORS.bgLighter);
@@ -2816,6 +2828,7 @@ function M.DrawPalette()
             MP.editorDidInitialIconPick = false;
             MP.editorImplicitActionIconDone = false;
             MP.editorIconManuallySet = false;
+            MP.editorJaBadgeManuallySet = false;
             MP.showAllMode = false;
             MP.showAllPetMode = false;
             MP.spellTypeFilter = 'All';
@@ -2827,14 +2840,39 @@ function M.DrawPalette()
             SyncPetAvatarFilterFromSaveSubType();
         end
 
+        imgui.SameLine();
+
+        if not hasSelection then
+            imgui.PushStyleVar(ImGuiStyleVar_Alpha, 0.4);
+        end
+        if imgui.Button('Copy', {60, 26}) and hasSelection then
+            MP.editingMacro = deep_copy_table(db[selectedMacroIndex]);
+            MP.editingMacro.id = nil;
+            MP.isCreatingNew = true;
+            MP.editorPaletteKey = GetEffectivePaletteType();
+            SyncPetAvatarFilterFromSaveSubType();
+            MP.editorDidInitialIconPick = false;
+            MP.editorImplicitActionIconDone = false;
+            MP.editorIconManuallySet = false;
+            MP.editorJaBadgeManuallySet = false;
+            MP.showAllMode = false;
+            MP.showAllPetMode = false;
+            MP.spellTypeFilter = 'All';
+            MP.abilityJobFilter = 0;
+            MP.petTypeOverride = 0;
+            MP.editorIconPrefsHydrated = false;
+            ClearEditorPreviewIconCache();
+        end
+        if not hasSelection then
+            imgui.PopStyleVar();
+        end
+
         imgui.PopStyleColor(5);
         imgui.PopStyleVar();
 
         imgui.SameLine();
 
         -- Edit/Delete buttons (always visible, disabled when no selection)
-        local hasSelection = selectedMacroIndex and db[selectedMacroIndex];
-
         if not hasSelection then
             imgui.PushStyleVar(ImGuiStyleVar_Alpha, 0.4);
         end
@@ -2847,6 +2885,7 @@ function M.DrawPalette()
             MP.editorDidInitialIconPick = false;
             MP.editorImplicitActionIconDone = false;
             MP.editorIconManuallySet = false;
+            MP.editorJaBadgeManuallySet = false;
             MP.showAllMode = false;
             MP.showAllPetMode = false;
             MP.spellTypeFilter = 'All';
@@ -3265,6 +3304,7 @@ local function DrawIconPicker()
                 MP.editingMacro.jaBadgeCustomIconType = nil;
                 MP.editingMacro.jaBadgeCustomIconId = nil;
                 MP.editingMacro.jaBadgeCustomIconPath = nil;
+                MP.editorJaBadgeManuallySet = false;
             else
                 MP.editingMacro.customIconType = nil;
                 MP.editingMacro.customIconId = nil;
@@ -3800,6 +3840,7 @@ local function DrawIconPicker()
                                     MP.editingMacro.jaBadgeCustomIconType = 'spell';
                                     MP.editingMacro.jaBadgeCustomIconId = spell.id;
                                     MP.editingMacro.jaBadgeCustomIconPath = nil;
+                                    MP.editorJaBadgeManuallySet = true;
                                 else
                                     MP.editingMacro.customIconType = 'spell';
                                     MP.editingMacro.customIconId = spell.id;
@@ -3898,6 +3939,7 @@ local function DrawIconPicker()
                                 MP.editingMacro.jaBadgeCustomIconType = 'item';
                                 MP.editingMacro.jaBadgeCustomIconId = item.id;
                                 MP.editingMacro.jaBadgeCustomIconPath = nil;
+                                MP.editorJaBadgeManuallySet = true;
                             else
                                 MP.editingMacro.customIconType = 'item';
                                 MP.editingMacro.customIconId = item.id;
@@ -4024,6 +4066,7 @@ local function DrawIconPicker()
                                 MP.editingMacro.jaBadgeCustomIconType = 'custom';
                                 MP.editingMacro.jaBadgeCustomIconPath = customIcon.path;
                                 MP.editingMacro.jaBadgeCustomIconId = nil;
+                                MP.editorJaBadgeManuallySet = true;
                             else
                                 MP.editingMacro.customIconType = 'custom';
                                 MP.editingMacro.customIconPath = customIcon.path;
@@ -4477,6 +4520,7 @@ do
     MP.SyncSaveSubTypeFromPetAvatarFilter = SyncSaveSubTypeFromPetAvatarFilter;
     MP.SyncPetAvatarFilterFromSaveSubType = SyncPetAvatarFilterFromSaveSubType;
     MP.ClearEditorPreviewIconCache = ClearEditorPreviewIconCache;
+    MP.ClearPaletteJaBadgeIconCache = ClearPaletteJaBadgeIconCache;
     MP.HydrateMacroEditorIconPrefs = HydrateMacroEditorIconPrefs;
     MP.ValidateEditorCustomIconCategoryAgainstScan = ValidateEditorCustomIconCategoryAgainstScan;
     MP.PersistMacroEditorIconPrefs = PersistMacroEditorIconPrefs;
