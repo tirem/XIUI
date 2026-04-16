@@ -40,6 +40,11 @@ local DEFAULT_BORDER_SCALE = 1.0;
 -- Internal Helpers
 -- ============================================
 
+-- Cache-guarded primitive property set: only writes to prim when value changes
+local function set(c, prim, ckey, prop, val)
+    if c[ckey] ~= val then prim[prop] = val; c[ckey] = val; end
+end
+
 -- Check if theme is a Window theme (has borders)
 local function IsWindowTheme(themeName)
     if themeName == nil then return false; end
@@ -191,7 +196,10 @@ function M.updateBackground(bgHandle, x, y, width, height, options)
 
     -- Handle '-None-' theme
     if theme == '-None-' then
-        bgPrim.visible = false;
+        if bgHandle._cache and bgHandle._cache.bg_vis ~= false then
+            bgPrim.visible = false;
+        end
+        if bgHandle._cache then bgHandle._cache.bg_vis = false; end
         return;
     end
 
@@ -199,24 +207,30 @@ function M.updateBackground(bgHandle, x, y, width, height, options)
     local bgWidth = width + (padding * 2);
     local bgHeight = height + (paddingY * 2);
 
-    -- Update background - set position and size BEFORE visibility
-    -- to avoid a frame where primitive is visible at old position
-    bgPrim.position_x = x - padding;
-    bgPrim.position_y = y - paddingY;
-    bgPrim.width = math.ceil(bgWidth / bgScale);
-    bgPrim.height = math.ceil(bgHeight / bgScale);
-    bgPrim.scale_x = bgScale;
-    bgPrim.scale_y = bgScale;
+    local posX = x - padding;
+    local posY = y - paddingY;
+    local w = math.ceil(bgWidth / bgScale);
+    local h = math.ceil(bgHeight / bgScale);
 
-    -- Apply color (with optional separate opacity)
+    local finalColor;
     if options.bgOpacity ~= nil then
-        bgPrim.color = ApplyOpacityToColor(bgColor, options.bgOpacity);
+        finalColor = ApplyOpacityToColor(bgColor, options.bgOpacity);
     else
-        bgPrim.color = bgColor;
+        finalColor = bgColor;
     end
 
-    -- Set visibility last, after all other properties are set
-    bgPrim.visible = bgPrim.exists;
+    -- Cache-guarded property sets
+    local c = bgHandle._cache;
+    if not c then c = {}; bgHandle._cache = c; end
+
+    set(c, bgPrim, 'bg_px', 'position_x', posX);
+    set(c, bgPrim, 'bg_py', 'position_y', posY);
+    set(c, bgPrim, 'bg_w', 'width', w);
+    set(c, bgPrim, 'bg_h', 'height', h);
+    set(c, bgPrim, 'bg_sx', 'scale_x', bgScale);
+    set(c, bgPrim, 'bg_sy', 'scale_y', bgScale);
+    set(c, bgPrim, 'bg_color', 'color', finalColor);
+    set(c, bgPrim, 'bg_vis', 'visible', bgPrim.exists);
 end
 
 --[[
@@ -252,11 +266,7 @@ function M.updateBorders(borderHandle, x, y, width, height, options)
 
     -- Hide borders for non-Window themes
     if not isWindowTheme then
-        for _, k in ipairs(M.BORDER_KEYS) do
-            if borderHandle[k] then
-                borderHandle[k].visible = false;
-            end
-        end
+        M.hideBorders(borderHandle);
         return;
     end
 
@@ -274,51 +284,65 @@ function M.updateBorders(borderHandle, x, y, width, height, options)
         finalColor = borderColor;
     end
 
-    -- Bottom-right corner - set properties before visibility
+    -- Cache-guarded property sets
+    local c = borderHandle._cache;
+    if not c then c = {}; borderHandle._cache = c; end
+
+    -- Bottom-right corner
     local br = borderHandle.br;
-    br.position_x = bgX + bgWidth - math.floor((borderSize * borderScale) - (bgOffset * borderScale));
-    br.position_y = bgY + bgHeight - math.floor((borderSize * borderScale) - (bgOffset * borderScale));
-    br.width = borderSize;
-    br.height = borderSize;
-    br.color = finalColor;
-    br.scale_x = borderScale;
-    br.scale_y = borderScale;
+    local brPosX = bgX + bgWidth - math.floor((borderSize * borderScale) - (bgOffset * borderScale));
+    local brPosY = bgY + bgHeight - math.floor((borderSize * borderScale) - (bgOffset * borderScale));
+    set(c, br, 'br_px', 'position_x', brPosX);
+    set(c, br, 'br_py', 'position_y', brPosY);
+    set(c, br, 'br_w', 'width', borderSize);
+    set(c, br, 'br_h', 'height', borderSize);
+    set(c, br, 'br_color', 'color', finalColor);
+    set(c, br, 'br_sx', 'scale_x', borderScale);
+    set(c, br, 'br_sy', 'scale_y', borderScale);
 
-    -- Top-right edge (L-shaped from top to br) - set properties before visibility
+    -- Top-right edge (L-shaped from top to br)
     local tr = borderHandle.tr;
-    tr.position_x = br.position_x;
-    tr.position_y = bgY - (bgOffset * borderScale);
-    tr.width = borderSize;
-    tr.height = math.ceil((br.position_y - tr.position_y) / borderScale);
-    tr.color = finalColor;
-    tr.scale_x = borderScale;
-    tr.scale_y = borderScale;
+    local trPosX = brPosX;
+    local trPosY = bgY - (bgOffset * borderScale);
+    local trH = math.ceil((brPosY - trPosY) / borderScale);
+    set(c, tr, 'tr_px', 'position_x', trPosX);
+    set(c, tr, 'tr_py', 'position_y', trPosY);
+    set(c, tr, 'tr_w', 'width', borderSize);
+    set(c, tr, 'tr_h', 'height', trH);
+    set(c, tr, 'tr_color', 'color', finalColor);
+    set(c, tr, 'tr_sx', 'scale_x', borderScale);
+    set(c, tr, 'tr_sy', 'scale_y', borderScale);
 
-    -- Top-left (L-shaped: top and left edges) - set properties before visibility
+    -- Top-left (L-shaped: top and left edges)
     local tl = borderHandle.tl;
-    tl.position_x = bgX - (bgOffset * borderScale);
-    tl.position_y = bgY - (bgOffset * borderScale);
-    tl.width = math.ceil((tr.position_x - tl.position_x) / borderScale);
-    tl.height =  tr.height;
-    tl.color = finalColor;
-    tl.scale_x = borderScale;
-    tl.scale_y = borderScale;
+    local tlPosX = bgX - (bgOffset * borderScale);
+    local tlPosY = bgY - (bgOffset * borderScale);
+    local tlW = math.ceil((trPosX - tlPosX) / borderScale);
+    set(c, tl, 'tl_px', 'position_x', tlPosX);
+    set(c, tl, 'tl_py', 'position_y', tlPosY);
+    set(c, tl, 'tl_w', 'width', tlW);
+    set(c, tl, 'tl_h', 'height', trH);
+    set(c, tl, 'tl_color', 'color', finalColor);
+    set(c, tl, 'tl_sx', 'scale_x', borderScale);
+    set(c, tl, 'tl_sy', 'scale_y', borderScale);
 
-    -- Bottom-left edge (L-shaped from left to br) - set properties before visibility
+    -- Bottom-left edge (L-shaped from left to br)
     local bl = borderHandle.bl;
-    bl.position_x = tl.position_x;
-    bl.position_y = br.position_y;
-    bl.width = tl.width;
-    bl.height = br.height;
-    bl.color = finalColor;
-    bl.scale_x = borderScale;
-    bl.scale_y = borderScale;
+    local blPosX = tlPosX;
+    local blPosY = brPosY;
+    set(c, bl, 'bl_px', 'position_x', blPosX);
+    set(c, bl, 'bl_py', 'position_y', blPosY);
+    set(c, bl, 'bl_w', 'width', tlW);
+    set(c, bl, 'bl_h', 'height', borderSize);
+    set(c, bl, 'bl_color', 'color', finalColor);
+    set(c, bl, 'bl_sx', 'scale_x', borderScale);
+    set(c, bl, 'bl_sy', 'scale_y', borderScale);
 
-    -- Set visibility last for all borders, after all properties are set
-    br.visible = br.exists;
-    tr.visible = tr.exists;
-    tl.visible = tl.exists;
-    bl.visible = bl.exists;
+    -- Set visibility last for all borders
+    set(c, br, 'br_vis', 'visible', br.exists);
+    set(c, tr, 'tr_vis', 'visible', tr.exists);
+    set(c, tl, 'tl_vis', 'visible', tl.exists);
+    set(c, bl, 'bl_vis', 'visible', bl.exists);
 end
 
 --[[
@@ -348,6 +372,7 @@ end
 function M.hideBackground(bgHandle)
     if bgHandle and bgHandle.bg then
         bgHandle.bg.visible = false;
+        if bgHandle._cache then bgHandle._cache.bg_vis = false; end
     end
 end
 
@@ -356,12 +381,13 @@ end
     @param borderHandle table: Border handle
 ]]--
 function M.hideBorders(borderHandle)
-    if borderHandle then
-        for _, k in ipairs(M.BORDER_KEYS) do
-            if borderHandle[k] then
-                borderHandle[k].visible = false;
-            end
+    if not borderHandle then return; end
+    local cache = borderHandle._cache;
+    for _, k in ipairs(M.BORDER_KEYS) do
+        if borderHandle[k] then
+            borderHandle[k].visible = false;
         end
+        if cache then cache[k .. '_vis'] = false; end
     end
 end
 
@@ -386,6 +412,7 @@ end
 ]]--
 function M.setBackgroundTheme(bgHandle, themeName, bgScale)
     if not bgHandle or not bgHandle.bg then return; end
+    bgHandle._cache = nil;
 
     -- Always update scale if provided (lightweight operation)
     if bgScale then
@@ -417,6 +444,7 @@ end
 ]]--
 function M.setBordersTheme(borderHandle, themeName, borderScale)
     if not borderHandle then return; end
+    borderHandle._cache = nil;
 
     -- Always update scale if provided (lightweight operation)
     if borderScale then
@@ -460,6 +488,7 @@ end
     @param borderScale number: Optional new border scale
 ]]--
 function M.setTheme(handle, themeName, bgScale, borderScale)
+    handle._cache = nil;
     -- Save old themeName before sub-functions modify it
     -- (setBackgroundTheme updates handle.themeName, which would cause
     -- setBordersTheme's change detection to fail)

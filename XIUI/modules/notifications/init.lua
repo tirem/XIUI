@@ -6,7 +6,7 @@
 
 require('common');
 require('handlers.helpers');
-local gdi = require('submodules.gdifonts.include');
+local imtext = require('libs.imtext');
 local primitives = require('primitives');
 local windowBg = require('libs.windowbackground');
 
@@ -31,10 +31,6 @@ notifications.Initialize = function(settings)
         -- Initialize data module (clears any leftover state)
         data.Initialize(settings);
 
-        -- Get font settings
-        local titleFontSettings = settings.title_font_settings or {};
-        local fontSettings = settings.font_settings or {};
-
         -- Base primitive data for backgrounds
         local prim_data = {
             visible = false,
@@ -44,8 +40,7 @@ notifications.Initialize = function(settings)
             height = 80,
         };
 
-        -- Create per-group fonts and primitives
-        data.allFonts = {};
+        -- Create per-group backgrounds
         local maxGroups = gConfig.notificationGroupCount or 2;
 
         for groupNum = 1, maxGroups do
@@ -53,39 +48,11 @@ notifications.Initialize = function(settings)
             local groupBgTheme = groupSettings and groupSettings.backgroundTheme or 'Plain';
             local groupBgScale = groupSettings and groupSettings.bgScale or 1.0;
             local groupBorderScale = groupSettings and groupSettings.borderScale or 1.0;
-            local groupTitleFontSize = groupSettings and groupSettings.titleFontSize or 14;
-            local groupSubtitleFontSize = groupSettings and groupSettings.subtitleFontSize or 12;
 
-            data.groupTitleFonts[groupNum] = {};
-            data.groupSubtitleFonts[groupNum] = {};
             data.groupBgPrims[groupNum] = {};
             data.groupLoadedBgThemes[groupNum] = groupBgTheme;
 
             for slot = 1, data.MAX_NOTIFICATIONS_PER_GROUP do
-                -- Title font for this group/slot
-                data.groupTitleFonts[groupNum][slot] = FontManager.create({
-                    font_alignment = titleFontSettings.font_alignment or gdi.Alignment.Left,
-                    font_family = titleFontSettings.font_family or 'Consolas',
-                    font_height = groupTitleFontSize,
-                    font_color = titleFontSettings.font_color or 0xFFFFFFFF,
-                    font_flags = titleFontSettings.font_flags or gdi.FontFlags.Bold,
-                    outline_color = titleFontSettings.outline_color or 0xFF000000,
-                    outline_width = titleFontSettings.outline_width or 2,
-                });
-                table.insert(data.allFonts, data.groupTitleFonts[groupNum][slot]);
-
-                -- Subtitle font for this group/slot
-                data.groupSubtitleFonts[groupNum][slot] = FontManager.create({
-                    font_alignment = fontSettings.font_alignment or gdi.Alignment.Left,
-                    font_family = fontSettings.font_family or 'Consolas',
-                    font_height = groupSubtitleFontSize,
-                    font_color = fontSettings.font_color or 0xFFCCCCCC,
-                    font_flags = fontSettings.font_flags or gdi.FontFlags.None,
-                    outline_color = fontSettings.outline_color or 0xFF000000,
-                    outline_width = fontSettings.outline_width or 2,
-                });
-                table.insert(data.allFonts, data.groupSubtitleFonts[groupNum][slot]);
-
                 -- Background primitive for this group/slot
                 data.groupBgPrims[groupNum][slot] = windowBg.create(prim_data, groupBgTheme, groupBgScale, groupBorderScale);
             end
@@ -107,86 +74,25 @@ end
 -- UpdateVisuals
 -- ============================================
 notifications.UpdateVisuals = function(settings)
-    -- Get font settings
-    local titleFontSettings = settings.title_font_settings or {};
-    local fontSettings = settings.font_settings or {};
-
-    -- Rebuild allFonts list
-    data.allFonts = {};
+    imtext.Reset();
 
     -- Clear cached colors
     data.ClearGroupColorCaches();
 
-    -- Update per-group fonts and backgrounds
+    -- Update per-group backgrounds
     local maxGroups = gConfig.notificationGroupCount or 2;
     for groupNum = 1, maxGroups do
         local groupSettings = data.GetGroupSettings(groupNum);
         local groupBgTheme = groupSettings and groupSettings.backgroundTheme or 'Plain';
         local groupBgScale = groupSettings and groupSettings.bgScale or 1.0;
         local groupBorderScale = groupSettings and groupSettings.borderScale or 1.0;
-        local groupTitleFontSize = groupSettings and groupSettings.titleFontSize or 14;
-        local groupSubtitleFontSize = groupSettings and groupSettings.subtitleFontSize or 12;
 
         -- Initialize group tables if needed (for newly added groups)
-        if not data.groupTitleFonts[groupNum] then
-            data.groupTitleFonts[groupNum] = {};
-        end
-        if not data.groupSubtitleFonts[groupNum] then
-            data.groupSubtitleFonts[groupNum] = {};
-        end
         if not data.groupBgPrims[groupNum] then
             data.groupBgPrims[groupNum] = {};
         end
 
         for slot = 1, data.MAX_NOTIFICATIONS_PER_GROUP do
-            -- Recreate or create title font
-            if data.groupTitleFonts[groupNum][slot] then
-                data.groupTitleFonts[groupNum][slot] = FontManager.recreate(data.groupTitleFonts[groupNum][slot], {
-                    font_alignment = titleFontSettings.font_alignment or gdi.Alignment.Left,
-                    font_family = titleFontSettings.font_family or 'Consolas',
-                    font_height = groupTitleFontSize,
-                    font_color = titleFontSettings.font_color or 0xFFFFFFFF,
-                    font_flags = titleFontSettings.font_flags or gdi.FontFlags.Bold,
-                    outline_color = titleFontSettings.outline_color or 0xFF000000,
-                    outline_width = titleFontSettings.outline_width or 2,
-                });
-            else
-                data.groupTitleFonts[groupNum][slot] = FontManager.create({
-                    font_alignment = titleFontSettings.font_alignment or gdi.Alignment.Left,
-                    font_family = titleFontSettings.font_family or 'Consolas',
-                    font_height = groupTitleFontSize,
-                    font_color = titleFontSettings.font_color or 0xFFFFFFFF,
-                    font_flags = titleFontSettings.font_flags or gdi.FontFlags.Bold,
-                    outline_color = titleFontSettings.outline_color or 0xFF000000,
-                    outline_width = titleFontSettings.outline_width or 2,
-                });
-            end
-            table.insert(data.allFonts, data.groupTitleFonts[groupNum][slot]);
-
-            -- Recreate or create subtitle font
-            if data.groupSubtitleFonts[groupNum][slot] then
-                data.groupSubtitleFonts[groupNum][slot] = FontManager.recreate(data.groupSubtitleFonts[groupNum][slot], {
-                    font_alignment = fontSettings.font_alignment or gdi.Alignment.Left,
-                    font_family = fontSettings.font_family or 'Consolas',
-                    font_height = groupSubtitleFontSize,
-                    font_color = fontSettings.font_color or 0xFFCCCCCC,
-                    font_flags = fontSettings.font_flags or gdi.FontFlags.None,
-                    outline_color = fontSettings.outline_color or 0xFF000000,
-                    outline_width = fontSettings.outline_width or 2,
-                });
-            else
-                data.groupSubtitleFonts[groupNum][slot] = FontManager.create({
-                    font_alignment = fontSettings.font_alignment or gdi.Alignment.Left,
-                    font_family = fontSettings.font_family or 'Consolas',
-                    font_height = groupSubtitleFontSize,
-                    font_color = fontSettings.font_color or 0xFFCCCCCC,
-                    font_flags = fontSettings.font_flags or gdi.FontFlags.None,
-                    outline_color = fontSettings.outline_color or 0xFF000000,
-                    outline_width = fontSettings.outline_width or 2,
-                });
-            end
-            table.insert(data.allFonts, data.groupSubtitleFonts[groupNum][slot]);
-
             -- Create or update background primitive
             if data.groupBgPrims[groupNum][slot] then
                 windowBg.setTheme(data.groupBgPrims[groupNum][slot], groupBgTheme, groupBgScale, groupBorderScale);
@@ -234,33 +140,6 @@ end
 -- Cleanup
 -- ============================================
 notifications.Cleanup = function()
-    -- Cleanup per-group fonts
-    if data.groupTitleFonts then
-        for groupNum, fonts in pairs(data.groupTitleFonts) do
-            if fonts then
-                for slot, font in pairs(fonts) do
-                    if font then
-                        FontManager.destroy(font);
-                    end
-                end
-            end
-        end
-        data.groupTitleFonts = {};
-    end
-
-    if data.groupSubtitleFonts then
-        for groupNum, fonts in pairs(data.groupSubtitleFonts) do
-            if fonts then
-                for slot, font in pairs(fonts) do
-                    if font then
-                        FontManager.destroy(font);
-                    end
-                end
-            end
-        end
-        data.groupSubtitleFonts = {};
-    end
-
     -- Cleanup per-group background primitives
     if data.groupBgPrims then
         for groupNum, prims in pairs(data.groupBgPrims) do
@@ -274,9 +153,6 @@ notifications.Cleanup = function()
         end
         data.groupBgPrims = {};
     end
-
-    -- Clear font tracking list
-    data.allFonts = {};
 
     -- Clear per-group caches
     data.groupWindowAnchors = {};

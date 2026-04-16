@@ -84,7 +84,7 @@ function M.DestroyAllPrims()
 end
 
 --[[
-    Draw a primitive-based button (background renders behind GDI fonts)
+    Draw a primitive-based button with ImGui text overlay
 
     @param id string: Unique button identifier
     @param x number: X position
@@ -590,65 +590,7 @@ function M.DrawArrow(id, x, y, size, direction, options)
     return clicked, hovered;
 end
 
---[[
-    Draw a text button (button with text label)
 
-    @param id string: Unique button identifier
-    @param x number: X position
-    @param y number: Y position
-    @param text string: Button label text
-    @param options table: Button options plus:
-        - font: GDI font object for text rendering
-        - fontSize: Font size (default 10)
-        - textColor: Text color ARGB (default white)
-        - textHoverColor: Text color on hover (default textColor)
-        - padding: {horizontal, vertical} padding around text
-    @return boolean: True if clicked
-    @return boolean: True if hovered
-]]--
-function M.DrawText(id, x, y, text, options)
-    options = options or {};
-
-    local font = options.font;
-    local fontSize = options.fontSize or 10;
-    local padding = options.padding or {8, 4};
-    local textColor = options.textColor or 0xFFFFFFFF;
-    local textHoverColor = options.textHoverColor or textColor;
-
-    -- Calculate button size based on text if font provided
-    local textWidth = 0;
-    local textHeight = fontSize;
-
-    if font then
-        font:set_font_height(fontSize);
-        font:set_text(text);
-        textWidth, textHeight = font:get_text_size();
-        textWidth = textWidth or (fontSize * #text * 0.6);  -- Fallback estimate
-        textHeight = textHeight or fontSize;
-    else
-        -- Estimate text size without font
-        textWidth = fontSize * #text * 0.6;
-    end
-
-    local width = options.width or (textWidth + padding[1] * 2);
-    local height = options.height or (textHeight + padding[2] * 2);
-
-    -- Draw button background
-    local clicked, hovered = M.Draw(id, x, y, width, height, options);
-
-    -- Position and show text if font provided
-    if font then
-        local textX = x + (width - textWidth) / 2;
-        local textY = y + (height - textHeight) / 2;
-
-        font:set_position_x(textX);
-        font:set_position_y(textY);
-        font:set_font_color(hovered and textHoverColor or textColor);
-        font:set_visible(true);
-    end
-
-    return clicked, hovered, width, height;
-end
 
 --[[
     Draw a primitive-based minimize/maximize button

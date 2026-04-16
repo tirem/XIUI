@@ -1,0 +1,8 @@
+local M = {};
+M.ALIGN_LEFT = 0;
+M.ALIGN_CENTER = 1;
+M.ALIGN_RIGHT = 2;
+M.FLAG_NONE = 0;
+M.FLAG_BOLD = 1;
+M.FLAG_ITALIC = 2;
+return M;
