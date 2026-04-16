@@ -1377,6 +1377,7 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
                     -- Invisible selectable for hover/click, then overlay colored text
                     local cx, cy = imgui.GetCursorPos();
                     local clicked = imgui.Selectable('##item' .. uid, false);
+                    local hovered = imgui.IsItemHovered();
                     local nx, ny = imgui.GetCursorPos();
                     imgui.SetCursorPos({cx, cy});
 
@@ -1391,6 +1392,12 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
                     imgui.PopStyleColor();
 
                     imgui.SetCursorPos({nx, ny});
+
+                    if hovered and item.reason then
+                        imgui.BeginTooltip();
+                        imgui.TextUnformatted(item.reason);
+                        imgui.EndTooltip();
+                    end
 
                     if clicked then
                         onSelect(item);
@@ -1437,6 +1444,12 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
                         onSelect(item);
                         MP.searchFilter[1] = '';
                         imgui.CloseCurrentPopup();
+                    end
+
+                    if item.reason and imgui.IsItemHovered() then
+                        imgui.BeginTooltip();
+                        imgui.TextUnformatted(item.reason);
+                        imgui.EndTooltip();
                     end
 
                     if textColor then imgui.PopStyleColor(); end

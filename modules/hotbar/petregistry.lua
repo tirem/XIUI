@@ -997,6 +997,7 @@ function M.GetBstPetCommandsExpanded(bstLevel, activePetName)
             level = info.level,
             status = status,
             reqStr = 'Lv.' .. tostring(info.level),
+            reason = status == STATUS_UNAVAILABLE and ('Requires BST Lv. ' .. tostring(info.level)) or nil,
         });
         ::continue::
     end
@@ -1083,6 +1084,7 @@ function M.GetBloodPactsExpanded(avatarName, smnLevel)
             mp = mp,
             status = status,
             reqStr = reqStr,
+            reason = (status == STATUS_UNAVAILABLE and level > 0) and ('Requires SMN Lv. ' .. tostring(level)) or nil,
         });
     end
 
@@ -1096,6 +1098,7 @@ function M.GetBloodPactsExpanded(avatarName, smnLevel)
             mp = 0,
             status = status,
             reqStr = 'Lv.' .. tostring(cmd.level),
+            reason = status == STATUS_UNAVAILABLE and ('Requires SMN Lv. ' .. tostring(cmd.level)) or nil,
         });
     end
 
