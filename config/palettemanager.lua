@@ -14,6 +14,8 @@ local jobs = require('libs.jobs');
 local TextureManager = require('libs.texturemanager');
 local palette = require('modules.hotbar.palette');
 local data = require('modules.hotbar.data');
+local json = require('libs.json');
+local paletteJson = require('modules.hotbar.palette_json');
 local crossbar = require('modules.hotbar.crossbar');
 local macropalette = require('modules.hotbar.macropalette');
 local dragdrop = require('libs.dragdrop');
@@ -90,6 +92,27 @@ local EDIT_FULL_PALETTE_WIN_LOCK_HEIGHT = false;
 -- Vertical slice reserved for the gap after the scroll child + Undo/Apply/Close row (must stay fixed frame-to-frame).
 local EDIT_FULL_PALETTE_FOOTER_BLOCK_H = 44;
 
+-- Palette JSON export/import (file + paste)
+local palJsonWinOpen = { false };
+local palJsonMode = 'export'; -- 'export' | 'import'
+local palJsonBuf = { '' };
+local palJsonErr = nil;
+local palJsonLastPath = nil;
+--- Import: delete macro rows referenced only by this palette before applying JSON (optional).
+local palJsonPurgeFirst = { false };
+local palJsonQueueDestructiveConfirm = false;
+local palJsonExportPart = { 'full' }; -- 'full' | 'slots_only' | 'macros_only' (see paletteJson.EXPORT_PART_*)
+local palJsonImportSlots = { true };
+local palJsonImportMacros = { true };
+--- target: crossbar_job | crossbar_univ | hotbar
+local palJsonCtx = {
+    target = 'crossbar_job',
+    jobId = nil,
+    subjobId = nil,
+    storageSubjob = nil,
+    paletteName = nil,
+};
+
 -- User closed XIUI Config while Edit Full Palette was open: show confirm on next palette draw.
 local openCloseConfigConfirmPopup = false;
 local openUnsavedChangesPopup = false;
@@ -126,12 +149,12 @@ local function GetContentRegionAvailHeight()
     return math.floor(h + 0.5);
 end
 
--- Two button rows + imgui.Spacing between them (must match layout below).
+-- Three button rows + spacing (New/Rename/…, Move/Enable/Edit, Export/Import JSON).
 local function GetEmbedCrossbarPalMgrActionBlockH()
     local lineH = imgui.GetTextLineHeightWithSpacing();
     local frameH = (imgui.GetFrameHeight and imgui.GetFrameHeight()) or (lineH * 1.45);
     local gap = GetItemSpacingY();
-    return math.ceil(frameH * 2 + gap);
+    return math.ceil(frameH * 3 + gap * 2);
 end
 
 local function ForceCloseEditFullPaletteWindow()
@@ -1354,6 +1377,233 @@ local function DrawStatusMessage()
     end
 end
 
+local function SnapshotPalJsonCtx(target, jobId, subjobId, storageSubjob, paletteName)
+    palJsonCtx.target = target;
+    palJsonCtx.jobId = jobId;
+    palJsonCtx.subjobId = subjobId;
+    palJsonCtx.storageSubjob = storageSubjob;
+    palJsonCtx.paletteName = paletteName;
+end
+
+local function ComputePalJsonDestStorageKey()
+    local c = palJsonCtx;
+    if c.target == 'crossbar_job' then
+        return paletteJson.ResolveCrossbarJobStorageKey(c.jobId, c.storageSubjob, c.paletteName);
+    elseif c.target == 'crossbar_univ' then
+        return palette.BuildUniversalCrossbarStorageKey(c.paletteName);
+    end
+    return palette.BuildPaletteStorageKey(c.jobId or 1, c.subjobId or 0, c.paletteName);
+end
+
+local function RunPaletteJsonExport()
+    local text, err;
+    local c = palJsonCtx;
+    local part = palJsonExportPart[1] or paletteJson.EXPORT_PART_FULL;
+    if c.target == 'crossbar_job' then
+        text, err = paletteJson.ExportCrossbarJobPalette(c.jobId, c.storageSubjob, c.paletteName, part);
+    elseif c.target == 'crossbar_univ' then
+        text, err = paletteJson.ExportCrossbarUniversalPalette(c.paletteName, part);
+    else
+        text, err = paletteJson.ExportHotbarPalette(c.jobId, c.subjobId, c.paletteName, part);
+    end
+    if err then
+        SetStatusMessage(err);
+        return;
+    end
+    palJsonBuf[1] = text or '';
+    palJsonErr = nil;
+    palJsonLastPath = nil;
+    palJsonMode = 'export';
+    palJsonWinOpen[1] = true;
+end
+
+local function OpenPaletteJsonImport()
+    palJsonBuf[1] = '';
+    palJsonErr = nil;
+    palJsonLastPath = nil;
+    palJsonPurgeFirst[1] = false;
+    palJsonImportSlots[1] = true;
+    palJsonImportMacros[1] = true;
+    palJsonMode = 'import';
+    palJsonWinOpen[1] = true;
+end
+
+--- Returns true if import succeeded (caller may close the window).
+local function ExecutePaletteJsonImport(purgeExclusiveMacrosFirst)
+    palJsonErr = nil;
+    palJsonLastPath = nil;
+    local destKey = ComputePalJsonDestStorageKey();
+    if not destKey then
+        palJsonErr = 'Could not resolve destination storage key';
+        return false;
+    end
+    local okDec, dec = pcall(json.decode, palJsonBuf[1]);
+    if not okDec then
+        palJsonErr = 'Invalid JSON';
+        return false;
+    end
+    local okImp, errImp;
+    if dec.kind == paletteJson.KIND_HOTBAR then
+        okImp, errImp = paletteJson.ImportHotbarPalette(palJsonBuf[1], {
+            destStorageKey = destKey,
+            purgeExclusiveMacrosFirst = purgeExclusiveMacrosFirst == true,
+            importSlots = palJsonImportSlots[1],
+            importMacros = palJsonImportMacros[1],
+        });
+    else
+        okImp, errImp = paletteJson.ImportCrossbarPalette(palJsonBuf[1], {
+            destStorageKey = destKey,
+            purgeExclusiveMacrosFirst = purgeExclusiveMacrosFirst == true,
+            importSlots = palJsonImportSlots[1],
+            importMacros = palJsonImportMacros[1],
+        });
+    end
+    if okImp then
+        SetStatusMessage('Import applied');
+        return true;
+    end
+    palJsonErr = errImp or 'Import failed';
+    return false;
+end
+
+local function DrawPaletteJsonModal()
+    if not palJsonWinOpen[1] then
+        return;
+    end
+    imgui.SetNextWindowSize({ 720, palJsonMode == 'import' and 600 or 520 }, ImGuiCond_FirstUseEver);
+    if imgui.Begin('Palette JSON##xiuiPalJson', palJsonWinOpen) then
+        imgui.TextWrapped(
+            'Export or import palette data for the selected palette. Create the destination palette before importing. Choose what to include on export and what to apply on import.'
+        );
+        if palJsonErr then
+            imgui.TextColored({ 1.0, 0.3, 0.3, 1.0 }, palJsonErr);
+        end
+        if palJsonLastPath then
+            imgui.TextColored({ 0.65, 0.65, 0.7, 1.0 }, palJsonLastPath);
+        end
+        imgui.Separator();
+
+        if palJsonMode == 'export' then
+            imgui.Text('Include in file:');
+            imgui.SameLine();
+            if imgui.RadioButton('Full (slots + macros)##pjExFull', palJsonExportPart[1] == paletteJson.EXPORT_PART_FULL) then
+                palJsonExportPart[1] = paletteJson.EXPORT_PART_FULL;
+            end
+            imgui.SameLine();
+            if imgui.RadioButton('Slot bindings only##pjExSlots', palJsonExportPart[1] == paletteJson.EXPORT_PART_SLOTS_ONLY) then
+                palJsonExportPart[1] = paletteJson.EXPORT_PART_SLOTS_ONLY;
+            end
+            imgui.SameLine();
+            if imgui.RadioButton('Macros only##pjExMacros', palJsonExportPart[1] == paletteJson.EXPORT_PART_MACROS_ONLY) then
+                palJsonExportPart[1] = paletteJson.EXPORT_PART_MACROS_ONLY;
+            end
+            imgui.ShowHelp(
+                'Full: bindings and macro rows used by this palette. Slots only: smaller file; import needs matching macros already in this profile. Macros only: macro library rows without changing slot layout.'
+            );
+            if imgui.Button('Regenerate##pjRegen') then
+                RunPaletteJsonExport();
+            end
+            imgui.SameLine();
+            imgui.TextColored({ 0.6, 0.6, 0.65, 1.0 }, 'Refresh JSON after changing options above.');
+            imgui.Spacing();
+        end
+
+        if palJsonMode == 'import' then
+            if imgui.Checkbox('Import slot bindings (crossbar combos / hotbar bars)##pjImpSlots', palJsonImportSlots) then
+            end
+            imgui.SameLine();
+            imgui.ShowHelp('Replace stored actions for this palette. Uncheck to only merge macro rows from the file.');
+            if imgui.Checkbox('Import macros##pjImpMacros', palJsonImportMacros) then
+            end
+            imgui.SameLine();
+            imgui.ShowHelp(
+                'Append macro definitions to the destination macro bucket and remap IDs when combined with slot import. Uncheck for slots-only import: the file must reference macros that already exist here.'
+            );
+            if not palJsonImportSlots[1] then
+                imgui.BeginDisabled();
+            end
+            if imgui.Checkbox('Remove macros only used by this palette before slot import##pjPurge', palJsonPurgeFirst) then
+            end
+            if not palJsonImportSlots[1] then
+                imgui.EndDisabled();
+            end
+            imgui.ShowHelp(
+                'Only applies when importing slot bindings. Deletes macro database rows referenced only by this palette. Shared macros are kept.'
+            );
+            if palJsonPurgeFirst[1] and palJsonImportSlots[1] then
+                imgui.Spacing();
+                imgui.PushStyleColor(ImGuiCol_Text, { 1.0, 0.22, 0.22, 1.0 });
+                if imgui.TextWrapped then
+                    imgui.TextWrapped(
+                        'WARNING: This cannot be undone. Macros used exclusively by this palette will be permanently removed before slot import. Macros shared with other palettes are kept.'
+                    );
+                else
+                    imgui.Text(
+                        'WARNING: This cannot be undone. Exclusive macros will be removed before slot import.'
+                    );
+                end
+                imgui.PopStyleColor();
+            end
+            imgui.Spacing();
+        end
+
+        imgui.InputTextMultiline('##palJsonBuf', palJsonBuf, 8000, { -1, palJsonMode == 'import' and 180 or 220 });
+        if palJsonMode == 'export' then
+            if imgui.Button('Save to file##pjSave') then
+                local ok, path = paletteJson.SaveTextFile(palJsonCtx.paletteName or 'palette', palJsonBuf[1]);
+                if ok then
+                    palJsonLastPath = path;
+                    SetStatusMessage('Saved JSON file');
+                else
+                    palJsonErr = tostring(path);
+                end
+            end
+        else
+            if imgui.Button('Apply import##pjApply') then
+                if not palJsonImportSlots[1] and not palJsonImportMacros[1] then
+                    palJsonErr = 'Select at least one: Import slot bindings or Import macros.';
+                elseif palJsonPurgeFirst[1] and palJsonImportSlots[1] then
+                    palJsonQueueDestructiveConfirm = true;
+                else
+                    if ExecutePaletteJsonImport(false) then
+                        palJsonWinOpen[1] = false;
+                    end
+                end
+            end
+        end
+
+        if palJsonQueueDestructiveConfirm then
+            imgui.OpenPopup('Confirm destructive palette import##xiuiPalJsonDest');
+            palJsonQueueDestructiveConfirm = false;
+        end
+        imgui.SetNextWindowSize({ 460, 0 }, ImGuiCond_Appearing);
+        if imgui.BeginPopupModal('Confirm destructive palette import##xiuiPalJsonDest', nil, ImGuiWindowFlags_AlwaysAutoResize) then
+            imgui.TextColored({ 1.0, 0.2, 0.2, 1.0 }, 'This cannot be undone.');
+            imgui.Spacing();
+            if imgui.TextWrapped then
+                imgui.TextWrapped(
+                    'Macros referenced only by this palette will be permanently deleted, then the import will run. Macros shared with other palettes are not removed. Continue?'
+                );
+            else
+                imgui.Text('Macros referenced only by this palette will be deleted, then import runs.');
+            end
+            imgui.Spacing();
+            if imgui.Button('Cancel##pjDestCancel', { 120, 0 }) then
+                imgui.CloseCurrentPopup();
+            end
+            imgui.SameLine();
+            if imgui.Button('Delete exclusive macros and import##pjDestOk', { 260, 0 }) then
+                if ExecutePaletteJsonImport(true) then
+                    imgui.CloseCurrentPopup();
+                    palJsonWinOpen[1] = false;
+                end
+            end
+            imgui.EndPopup();
+        end
+    end
+    imgui.End();
+end
+
 -- Open the floating Palette Manager (keyboard hotbar palettes only; crossbar uses config /xiui cpalette)
 function M.Open()
     windowState.isOpen = true;
@@ -1636,6 +1886,21 @@ local function DrawActionButtons(palettes)
         palette.SetHotbarPaletteInRbCycle(windowState.selectedJobId, windowState.selectedSubjobId, windowState.selectedPaletteName, not inRbCycle);
     end
     if not hasSelection then imgui.EndDisabled(); end
+
+    imgui.Spacing();
+    if not hasSelection then imgui.BeginDisabled(); end
+    if imgui.Button('Export JSON##hbPalJsonEx') and hasSelection then
+        SnapshotPalJsonCtx('hotbar', windowState.selectedJobId, windowState.selectedSubjobId, nil, windowState.selectedPaletteName);
+        RunPaletteJsonExport();
+    end
+    imgui.SameLine();
+    if imgui.Button('Import JSON##hbPalJsonIm') and hasSelection then
+        SnapshotPalJsonCtx('hotbar', windowState.selectedJobId, windowState.selectedSubjobId, nil, windowState.selectedPaletteName);
+        OpenPaletteJsonImport();
+    end
+    if not hasSelection then imgui.EndDisabled(); end
+    imgui.SameLine();
+    imgui.ShowHelp('Export or import keyboard hotbar palettes (all six bars) as JSON, including macros referenced by slots.');
 
     DrawStatusMessage();
 end
@@ -2436,6 +2701,25 @@ function M.DrawEmbeddedCrossbarManageUniversal()
         'Tip: put /xiui cpaledit in a macro to toggle this editor for your currently active crossbar palette (same as this button).'
     );
 
+    imgui.Spacing();
+    if not hasSel then
+        imgui.BeginDisabled();
+    end
+    if imgui.Button('Export JSON##xbemuJsonEx') and hasSel then
+        SnapshotPalJsonCtx('crossbar_univ', nil, nil, nil, selName);
+        RunPaletteJsonExport();
+    end
+    imgui.SameLine();
+    if imgui.Button('Import JSON##xbemuJsonIm') and hasSel then
+        SnapshotPalJsonCtx('crossbar_univ', nil, nil, nil, selName);
+        OpenPaletteJsonImport();
+    end
+    if not hasSel then
+        imgui.EndDisabled();
+    end
+    imgui.SameLine();
+    imgui.ShowHelp('Export or import this Global [G] palette as JSON (bindings and referenced macros).');
+
     components.PopPaletteManagerButtonStyle();
     DrawStatusMessage();
 
@@ -2718,6 +3002,21 @@ function M.DrawEmbeddedCrossbarManage(jobId, subjobId)
         'Tip: put /xiui cpaledit in a macro to toggle this editor for your currently active crossbar palette (same as this button).'
     );
 
+    imgui.Spacing();
+    if not hasSel then imgui.BeginDisabled(); end
+    if imgui.Button('Export JSON##xbemJsonEx') and hasSel then
+        SnapshotPalJsonCtx('crossbar_job', jobId, subjobId, selSt, selName);
+        RunPaletteJsonExport();
+    end
+    imgui.SameLine();
+    if imgui.Button('Import JSON##xbemJsonIm') and hasSel then
+        SnapshotPalJsonCtx('crossbar_job', jobId, subjobId, selSt, selName);
+        OpenPaletteJsonImport();
+    end
+    if not hasSel then imgui.EndDisabled(); end
+    imgui.SameLine();
+    imgui.ShowHelp('Export or import this palette as JSON (bindings and referenced macros).');
+
     components.PopPaletteManagerButtonStyle();
     DrawStatusMessage();
 
@@ -2779,12 +3078,13 @@ local function DrawPaletteManagerModals()
     DrawDeleteConfirmModal();
     DrawUseSharedModal();
     DrawEmbeddedCrossbarComboModesPopup();
+    DrawPaletteJsonModal();
 end
 
 -- Draw the main palette manager window
 function M.Draw()
     -- Theme applies to the floating window, modals, and the large Crossbar "Edit Full Palette" window
-    local applyTheme = windowState.isOpen or modalState.isOpen or (embedCrossbarComboCtx ~= nil);
+    local applyTheme = windowState.isOpen or modalState.isOpen or (embedCrossbarComboCtx ~= nil) or palJsonWinOpen[1];
     if applyTheme then
         PushXiuiFloatingWindowTheme();
     end

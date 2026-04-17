@@ -207,7 +207,7 @@ local function DrawProfilesWindow()
 
     PushThemeStyles();
 
-    imgui.SetNextWindowSize({ 350, 145 }, ImGuiCond_Always);
+    imgui.SetNextWindowSize({ 350, 168 }, ImGuiCond_Always);
     -- Using + for flags as they are typically integers
     if (imgui.Begin("Profiles", showProfilesWindow, ImGuiWindowFlags_NoCollapse + ImGuiWindowFlags_NoResize)) then
 
@@ -229,6 +229,15 @@ local function DrawProfilesWindow()
                 end
             end
             imgui.EndCombo();
+        end
+
+        if imgui.TextWrapped then
+            imgui.Spacing();
+            imgui.PushStyleColor(ImGuiCol_Text, { 0.55, 0.55, 0.62, 1.0 });
+            imgui.TextWrapped(
+                'Every character that uses this profile name shares the same XIUI data (palettes, macros, layout).'
+            );
+            imgui.PopStyleColor();
         end
 
         imgui.Spacing();

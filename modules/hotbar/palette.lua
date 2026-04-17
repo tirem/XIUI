@@ -1282,6 +1282,12 @@ local function InvalidateAllVisualCachesAfterPaletteListMutation()
     end);
 end
 
+--- Called after tools import or replace slot data outside normal palette APIs (e.g. JSON import).
+function M.InvalidateCachesAfterExternalSlotMutation()
+    InvalidatePaletteListCache();
+    InvalidateAllVisualCachesAfterPaletteListMutation();
+end
+
 -- ============================================
 -- Crossbar Palette Management
 -- ============================================
