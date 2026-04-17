@@ -533,15 +533,10 @@ function M.DrawWindow(settings)
         texturesInitialized = true;
     end
 
-    if gConfig and gConfig.hotbarEnabled == false then
-        display.HideWindow();
-        if crossbarInitialized then
-            crossbar.SetHidden(true);
-        end
-        return;
-    end
-
-    local showHotbar = gConfig and gConfig.hotbarShowKeyboardBars ~= false;
+    -- Hotbar and crossbar are independent; either, both, or neither can be on.
+    local showHotbar = gConfig
+        and gConfig.hotbarEnabled ~= false
+        and gConfig.hotbarShowKeyboardBars ~= false;
     local showCrossbar = gConfig and gConfig.crossbarEnabled ~= false;
 
     -- Draw keyboard hotbars when enabled
@@ -834,7 +829,6 @@ end
 
 function M.HandleXInputState(e)
     if not crossbarInitialized then return; end
-    if gConfig and gConfig.hotbarEnabled == false then return; end
     controller.HandleXInputState(e);
 end
 
@@ -842,7 +836,6 @@ end
 -- Returns true if the button should be blocked
 function M.HandleXInputButton(e)
     if not crossbarInitialized then return false; end
-    if gConfig and gConfig.hotbarEnabled == false then return false; end
     return controller.HandleXInputButton(e);
 end
 
@@ -850,14 +843,12 @@ end
 -- Returns true if the button should be blocked
 function M.HandleDInputButton(e)
     if not crossbarInitialized then return false; end
-    if gConfig and gConfig.hotbarEnabled == false then return false; end
     return controller.HandleDInputButton(e);
 end
 
 -- Handle DirectInput state event (for D-pad POV)
 function M.HandleDInputState(e)
     if not crossbarInitialized then return; end
-    if gConfig and gConfig.hotbarEnabled == false then return; end
     controller.HandleDInputState(e);
 end
 

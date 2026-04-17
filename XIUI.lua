@@ -1636,8 +1636,8 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         petBar.HandlePacket(e);
     end
 
-    -- Hotbar pet palette sync (0x0068 Pet Sync)
-    if e.id == 0x0068 and gConfig.hotbarEnabled then
+    -- Hotbar pet palette sync (0x0068 Pet Sync) - also updates crossbar pet palettes
+    if e.id == 0x0068 and (gConfig.hotbarEnabled or gConfig.crossbarEnabled) then
         hotbar.HandlePetSyncPacket();
     end
 
@@ -1655,7 +1655,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
             actionTracker.HandleActionPacket(actionPacket);
             if gConfig.showNotifications then notifications.HandleActionPacket(actionPacket); end
             -- Skillchain tracking for hotbar/crossbar WS highlighting
-            if gConfig.hotbarEnabled then
+            if gConfig.hotbarEnabled or gConfig.crossbarEnabled then
                 skillchainModule.HandleActionPacket(actionPacket);
             end
         end
@@ -1680,8 +1680,8 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         ClearEntityCache();
         ResetD3D8Device();
         bLoggedIn = true;
-        -- Initialize hotbar job on zone-in (handles initial login and job change during zone)
-        if gConfig.hotbarEnabled then
+        -- Initialize hotbar/crossbar job on zone-in (handles initial login and job change during zone)
+        if gConfig.hotbarEnabled or gConfig.crossbarEnabled then
             hotbar.HandleJobChangePacket(e);
         end
     elseif (e.id == 0x0029) then
@@ -1728,14 +1728,14 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         TextureManager.clearOnZone();
         ResetD3D8Device();
         bLoggedIn = false;
-        -- Also notify hotbar of zone (clears state)
-        if gConfig.hotbarEnabled then
+        -- Also notify hotbar/crossbar of zone (clears state)
+        if gConfig.hotbarEnabled or gConfig.crossbarEnabled then
             hotbar.HandleZonePacket();
             skillchainModule.ClearState();  -- Clear skillchain tracking on zone
         end
     elseif (e.id == 0x001B) then
-        -- Job change packet - update hotbar to show new job's actions
-        if gConfig.hotbarEnabled then
+        -- Job change packet - update hotbar/crossbar to show new job's actions
+        if gConfig.hotbarEnabled or gConfig.crossbarEnabled then
             hotbar.HandleJobChangePacket(e);
         end
     elseif (e.id == 0x076) then
