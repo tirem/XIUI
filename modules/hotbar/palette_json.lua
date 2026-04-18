@@ -69,6 +69,9 @@ local function formatMacroBucketLabel(ks)
     if ks == 'global' then
         return 'Global macros (all jobs)';
     end
+    if ks == 'items' then
+        return 'Macros — Items (gear / consumables, all jobs)';
+    end
     local n = tonumber(ks);
     if n then
         return string.format('Macros — %s (job id %d)', jobAbbr(n), n);
@@ -121,6 +124,9 @@ local function macroKeyFromString(s)
     end
     if s == 'global' then
         return 'global';
+    end
+    if s == 'items' then
+        return 'items';
     end
     local n = tonumber(s);
     if n then
@@ -261,7 +267,7 @@ local function encodeAllMacros()
     end
     if next(labels) ~= nil then
         out._labels = labels;
-        out._readme = 'Bucket keys: "global" = shared across jobs; a plain number = that job id (1=WAR, 2=MNK, ...); "<jobId>:avatar:<id>" or "<jobId>:spirit:<id>" = pet-specific overlays. See _labels for human-readable names. To remove a macro bucket from this import, delete its key (and the matching _labels entry).';
+        out._readme = 'Bucket keys: "global" = shared across jobs; "items" = item/gear macros (all jobs); a plain number = that job id (1=WAR, 2=MNK, ...); "<jobId>:avatar:<id>" or "<jobId>:spirit:<id>" = pet-specific overlays. See _labels for human-readable names. To remove a macro bucket from this import, delete its key (and the matching _labels entry).';
     end
     return out;
 end

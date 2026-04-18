@@ -358,6 +358,8 @@ local GLOBAL_SLOT_KEY = 'global';
 
 -- Special key for global macros (shared across all jobs)
 local GLOBAL_MACRO_KEY = 'global';
+-- Item-focused macros (gear swaps, consumables, etc.) — separate from job buckets
+local ITEMS_MACRO_KEY = 'items';
 
 -- Helper to deep copy a table (for migrating slot data)
 local function deepCopyTable(tbl)
@@ -1483,12 +1485,15 @@ end
 -- ============================================
 
 -- Get current effective type for the palette (selected type or player's current job)
--- Returns GLOBAL_MACRO_KEY for global macros, a job ID, or a composite key like "15:avatar:ifrit"
+-- Returns GLOBAL_MACRO_KEY, ITEMS_MACRO_KEY, a job ID, or a composite key like "15:avatar:ifrit"
 local function GetEffectivePaletteType()
     if MP.selectedPaletteType then
         -- If Global is selected, return the global key
         if MP.selectedPaletteType == GLOBAL_MACRO_KEY then
             return GLOBAL_MACRO_KEY;
+        end
+        if MP.selectedPaletteType == ITEMS_MACRO_KEY then
+            return ITEMS_MACRO_KEY;
         end
         -- If a valid job ID is selected
         if type(MP.selectedPaletteType) == 'number' and MP.selectedPaletteType > 0 then
@@ -1510,6 +1515,9 @@ end
 local function GetPaletteDisplayName(typeKey)
     if typeKey == GLOBAL_MACRO_KEY then
         return 'Global';
+    end
+    if typeKey == ITEMS_MACRO_KEY then
+        return 'Items';
     end
     if type(typeKey) == 'number' then
         return jobs[typeKey] or 'Unknown';
@@ -1538,7 +1546,7 @@ end
 
 --- Numeric job id from a save key (Global → nil; composite SMN avatar keys → job id).
 local function EditorSaveKeyToJobId(saveKey)
-    if saveKey == GLOBAL_MACRO_KEY then
+    if saveKey == GLOBAL_MACRO_KEY or saveKey == ITEMS_MACRO_KEY then
         return nil;
     end
     if type(saveKey) == 'number' then
@@ -1609,8 +1617,8 @@ end
 
 -- Sync palette to current player job (call on job change)
 function M.SyncToCurrentJob()
-    -- Only sync if not viewing Global - preserve Global selection across job changes
-    if MP.selectedPaletteType ~= GLOBAL_MACRO_KEY then
+    -- Only sync if not viewing Global or Items — preserve those selections across job changes
+    if MP.selectedPaletteType ~= GLOBAL_MACRO_KEY and MP.selectedPaletteType ~= ITEMS_MACRO_KEY then
         MP.selectedPaletteType = data.jobId or 1;
     end
     -- Clear spell/ability/item caches so they rebuild for new job
@@ -2084,8 +2092,8 @@ function M.OpenPalette()
     MP.isCreatingNew = false;
     ClearEditorPreviewIconCache();
 
-    -- Sync to current player job when opening (unless Global was selected)
-    if MP.selectedPaletteType ~= GLOBAL_MACRO_KEY then
+    -- Sync to current player job when opening (unless Global or Items was selected)
+    if MP.selectedPaletteType ~= GLOBAL_MACRO_KEY and MP.selectedPaletteType ~= ITEMS_MACRO_KEY then
         MP.selectedPaletteType = data.jobId or 1;
     end
 
@@ -2380,11 +2388,12 @@ function M.DrawPalette()
         paletteIconCacheDbKey = typeKey;
     end
     local isGlobal = (typeKey == GLOBAL_MACRO_KEY);
+    local isItems = (typeKey == ITEMS_MACRO_KEY);
     local typeName = GetPaletteDisplayName(typeKey);
     local currentPlayerJob = data.jobId or 1;
     -- For SMN with avatar selected, check base job ID
     local baseJobId = type(typeKey) == 'number' and typeKey or tonumber(tostring(typeKey):match('^(%d+)'));
-    local isViewingCurrentJob = (not isGlobal and baseJobId == currentPlayerJob);
+    local isViewingCurrentJob = (not isGlobal and not isItems and baseJobId == currentPlayerJob);
 
     -- Name filter (substring match on display name or action name; case-insensitive)
     local needleRaw = (MP.macroPaletteSearchName[1] or ''):match('^%s*(.-)%s*$') or '';
@@ -2515,12 +2524,43 @@ function M.DrawPalette()
                 imgui.SetItemDefaultFocus();
             end
 
-            -- Separator between Global and jobs
+            -- Items bucket (gear / consumables — not tied to a job)
+            local itemsSelected = isItems;
+            local itemsMacroCount = getMacroCount(ITEMS_MACRO_KEY);
+            local itemsLabel = 'Items';
+            if itemsMacroCount > 0 then
+                itemsLabel = string.format('Items (%d)', itemsMacroCount);
+            end
+
+            if itemsMacroCount > 0 and not itemsSelected then
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+            elseif itemsSelected then
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+            else
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+            end
+
+            if imgui.Selectable(itemsLabel, itemsSelected) then
+                MP.selectedPaletteType = ITEMS_MACRO_KEY;
+                MP.selectedAvatarPalette = nil;
+                selectedMacroIndex = nil;
+                MP.currentPalettePage = 1;
+                playerdata.ClearCache();
+                MP.cachedPetCommands = nil;
+                MP.petAvatarFilter = 1;
+            end
+            imgui.PopStyleColor();
+
+            if itemsSelected then
+                imgui.SetItemDefaultFocus();
+            end
+
+            -- Separator between non-job buckets and jobs
             imgui.Separator();
 
             -- Job options
             for i, job in ipairs(JOB_LIST) do
-                local isSelected = (not isGlobal and job.id == typeKey);
+                local isSelected = (not isGlobal and not isItems and job.id == typeKey);
                 local jobMacroCount = getMacroCount(job.id);
 
                 -- Build label with indicators
@@ -4346,6 +4386,9 @@ function M.DrawMacroEditorSaveToSection(creatingNew, contentWidth)
     local gCount = mc(GLOBAL_MACRO_KEY);
     local gLabel = gCount > 0 and string.format('Global (%d)', gCount) or 'Global';
     maxOptW = math.max(maxOptW, labelTextWidth(gLabel));
+    local iCount = mc(ITEMS_MACRO_KEY);
+    local iLabel = iCount > 0 and string.format('Items (%d)', iCount) or 'Items';
+    maxOptW = math.max(maxOptW, labelTextWidth(iLabel));
     for _, job in ipairs(JOB_LIST) do
         local jCount = mc(job.id);
         local label = job.name;
@@ -4381,6 +4424,19 @@ function M.DrawMacroEditorSaveToSection(creatingNew, contentWidth)
         end
         imgui.PopStyleColor();
 
+        local itemsSel = (saveKey == ITEMS_MACRO_KEY);
+        if itemsSel then
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+        elseif iCount > 0 then
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+        else
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+        end
+        if imgui.Selectable(iLabel, itemsSel) then
+            applyEditorSaveKey(ITEMS_MACRO_KEY);
+        end
+        imgui.PopStyleColor();
+
         imgui.Separator();
 
         for _, job in ipairs(JOB_LIST) do
@@ -4413,7 +4469,7 @@ function M.DrawMacroEditorSaveToSection(creatingNew, contentWidth)
     PopComboStyle();
 
     -- SMN sub-type combo on the same line
-    if saveKey ~= GLOBAL_MACRO_KEY and EditorSaveKeyToJobId(saveKey) == petregistry.JOB_SMN then
+    if saveKey ~= GLOBAL_MACRO_KEY and saveKey ~= ITEMS_MACRO_KEY and EditorSaveKeyToJobId(saveKey) == petregistry.JOB_SMN then
         imgui.SameLine(0, 10);
         imgui.TextColored(COLORS.textDim, '/');
         imgui.SameLine(0, 10);
@@ -4516,6 +4572,7 @@ do
     MP.GetCachedItems = GetCachedItems;
     MP.GetPetCommandsForJob = GetPetCommandsForJob;
     MP.EditorSaveKeyToJobId = EditorSaveKeyToJobId;
+    MP.ITEMS_MACRO_KEY = ITEMS_MACRO_KEY;
     MP.ResolveBestCustomIconMatchForActionName = ResolveBestCustomIconMatchForActionName;
     MP.SyncSaveSubTypeFromPetAvatarFilter = SyncSaveSubTypeFromPetAvatarFilter;
     MP.SyncPetAvatarFilterFromSaveSubType = SyncPetAvatarFilterFromSaveSubType;
