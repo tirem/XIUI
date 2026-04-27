@@ -7,6 +7,7 @@ require('common');
 
 local gameState = require('core.gamestate');
 local petregistry = require('modules.hotbar.petregistry');
+local petAllowlist = require('modules.hotbar.pet_palette_allowlist');
 
 local M = {};
 
@@ -64,23 +65,111 @@ local function getPalette()
 end
 
 -- ============================================
+-- Macro palette DB: many buckets, one profile (gConfig.macroDB)
+-- ============================================
+-- Each key is a separate palette: global, items, equipment, xiui, custom:*, job id
+-- (4 = BLM), SMN composite "15:avatar:ifrit", etc. Rows in different buckets are
+-- independent: same displayName, same numeric id, or same macro text in two jobs
+-- are all valid. Hotbar/crossbar slots disambiguate with macroRef + macroPaletteKey.
+--
+-- Coherence (EnsureMacroDatabaseCoherence) only: (1) merge accidental duplicate
+-- *job* storage keys "4" and 4 for the *same* job, never other key shapes; (2) fix
+-- duplicate macro.id *within* one bucket. It does not merge distinct palettes.
+
+-- ============================================
 -- Performance: Macro ID Lookup Cache
 -- ============================================
 -- O(1) lookup instead of O(n) linear search per GetMacroById call
 -- With 197 macros and 72 slots, this reduces from ~14,184 iterations/frame to 72 lookups
+-- macroIdLookup[paletteKey] is a separate id map per bucket (see design note above)
 
 local macroIdLookup = {};  -- macroIdLookup[paletteKey][macroId] = macro
 local macroIdLookupDirty = true;
 
+-- Per gConfig in-memory: avoid re-running and avoid persisting a sentinel in profile files
+local macroDbCoherenceIdentity = nil;
+
+-- One-time (per gConfig object) repair for macroDB (see "Macro palette DB" note above):
+-- - Coalesce string job keys (JSON "4") with numeric (4) so buckets are not split.
+-- - Deduplicate macro.id within each bucket (first row keeps id) so GetMacroById matches palette grid order.
+function M.EnsureMacroDatabaseCoherence(cfg)
+    local c = cfg or gConfig;
+    if not c or macroDbCoherenceIdentity == c then
+        return;
+    end
+    macroDbCoherenceIdentity = c;
+    if not c.macroDB or type(c.macroDB) ~= 'table' then
+        return;
+    end
+    local mdb = c.macroDB;
+    -- Collect first: do not modify mdb while iterating with pairs().
+
+    -- 1) Merge "4" and 4 (pure numeric string keys only; not composite "15:avatar:ifrit")
+    local stringNumberKeys = {};
+    for k, v in pairs(mdb) do
+        if type(k) == 'string' and k:match('^%d+$') and not k:find(':') and type(v) == 'table' then
+            stringNumberKeys[k] = v;
+        end
+    end
+    for k, v in pairs(stringNumberKeys) do
+        local n = tonumber(k);
+        if n and n > 0 then
+            if mdb[n] and type(mdb[n]) == 'table' then
+                for _, m in ipairs(v) do
+                    table.insert(mdb[n], m);
+                end
+            else
+                mdb[n] = v;
+            end
+            mdb[k] = nil;
+        end
+    end
+    -- 2) Deduplicate ids per bucket (stable: first row wins, later duplicates renumbered)
+    for _, macros in pairs(mdb) do
+        if type(macros) == 'table' then
+            local seen = {};
+            local maxId = 0;
+            for _, m in ipairs(macros) do
+                if m and m.id and type(m.id) == 'number' and m.id > maxId then
+                    maxId = m.id;
+                end
+            end
+            for _, m in ipairs(macros) do
+                if m then
+                    if not m.id or type(m.id) ~= 'number' then
+                        maxId = maxId + 1;
+                        m.id = maxId;
+                        seen[m.id] = true;
+                    elseif seen[m.id] then
+                        repeat
+                            maxId = maxId + 1;
+                        until not seen[maxId];
+                        m.id = maxId;
+                        seen[m.id] = true;
+                    else
+                        seen[m.id] = true;
+                    end
+                end
+            end
+        end
+    end
+end
+
 local function RebuildMacroLookup()
+    if gConfig then
+        M.EnsureMacroDatabaseCoherence(gConfig);
+    end
     macroIdLookup = {};
     if gConfig and gConfig.macroDB then
         for paletteKey, macros in pairs(gConfig.macroDB) do
             macroIdLookup[paletteKey] = {};
             if type(macros) == 'table' then
                 for _, macro in ipairs(macros) do
-                    if macro.id then
-                        macroIdLookup[paletteKey][macro.id] = macro;
+                    if macro and macro.id then
+                        -- First wins: matches ipairs order in macropalette M.GetMacroById
+                        if not macroIdLookup[paletteKey][macro.id] then
+                            macroIdLookup[paletteKey][macro.id] = macro;
+                        end
                     end
                 end
             end
@@ -93,9 +182,31 @@ local function GetMacroFromLookup(macroId, paletteKey)
     if macroIdLookupDirty then
         RebuildMacroLookup();
     end
-    local paletteLookup = macroIdLookup[paletteKey];
-    if paletteLookup then
-        return paletteLookup[macroId];
+    local function try(pk)
+        local t = macroIdLookup[pk];
+        if t then
+            return t[macroId];
+        end
+        return nil;
+    end
+    local m = try(paletteKey);
+    if m then
+        return m;
+    end
+    if type(paletteKey) == 'number' and paletteKey > 0 then
+        m = try(tostring(paletteKey));
+        if m then
+            return m;
+        end
+    end
+    if type(paletteKey) == 'string' and paletteKey:match('^%d+$') then
+        local n = tonumber(paletteKey);
+        if n and n > 0 then
+            m = try(n);
+            if m then
+                return m;
+            end
+        end
     end
     return nil;
 end
@@ -240,6 +351,8 @@ local function deepCopyTable(tbl)
     return copy;
 end
 
+M.CopyTable = deepCopyTable;
+
 -- Shared helper: copy the canonical set of fields from one slot data table to another.
 -- Avoids repeating the field list in every Get/Set path.
 local SLOT_DATA_FIELDS = {
@@ -247,7 +360,13 @@ local SLOT_DATA_FIELDS = {
     'macroText', 'itemId', 'customIconType', 'customIconId', 'customIconPath',
     'recastSourceType', 'recastSourceAction', 'recastSourceItemId',
     'showJaBadgeOnMacro',
+    'macroRef', 'macroPaletteKey', 'macroSourceStore',
 };
+-- Dual library placement: per-slot profile vs shared binding (independent of which macro file is "live").
+M.MACRO_BIND_PROFILE_KEY = 'macroBindProfile';
+M.MACRO_BIND_SHARED_KEY = 'macroBindShared';
+local K_BIND_P = M.MACRO_BIND_PROFILE_KEY;
+local K_BIND_S = M.MACRO_BIND_SHARED_KEY;
 local function copySlotFields(src)
     local out = {};
     for _, k in ipairs(SLOT_DATA_FIELDS) do
@@ -256,30 +375,436 @@ local function copySlotFields(src)
     return out;
 end
 
+
+--- true when slot uses per-library macroBindProfile / macroBindShared (post-migration).
+local function isDualMacroSlotTable(slotAction)
+    return slotAction and type(slotAction) == 'table'
+        and (slotAction[K_BIND_P] ~= nil or slotAction[K_BIND_S] ~= nil);
+end
+
+--- The active library's subtable for a macro row (or legacy flat macro slot). Returns: arm, isMacro.
+local function getActiveMacroBindingFromSlot(slotAction)
+    if not slotAction or type(slotAction) ~= 'table' or slotAction.cleared then
+        return nil, false;
+    end
+    if isDualMacroSlotTable(slotAction) then
+        local sh = gConfig and (gConfig.macroStorageScope or 'profile') == 'shared';
+        if sh then
+            return slotAction[K_BIND_S], true;
+        end
+        return slotAction[K_BIND_P], true;
+    end
+    if slotAction.macroRef and slotAction.actionType == 'macro' then
+        return slotAction, true;
+    end
+    if slotAction.macroRef then
+        return slotAction, true;
+    end
+    return nil, false;
+end
+
+M._GetActiveMacroBindingFromSlot = getActiveMacroBindingFromSlot;
+M.IsMacroSlotDualLayout = isDualMacroSlotTable;
+
 -- Shared helper: build a write-ready slot table from incoming slotData (Set operations).
--- Adds macroRef and macroPaletteKey on top of the canonical fields.
+-- Adds macroRef, macroPaletteKey, macroSourceStore on top of the canonical fields.
 local function buildSlotRecord(slotData)
     local rec = copySlotFields(slotData);
     rec.macroRef = slotData.macroRef or slotData.id;
     rec.macroPaletteKey = slotData.macroPaletteKey;
+    rec.macroSourceStore = slotData.macroSourceStore;
     return rec;
 end
 
+--- Build a parent macro slot with one arm set from a palette drop, preserving the other arm from existing.
+function M.BuildMacroSlotAfterDrop(armData, sourceStore, existingParentSlot)
+    -- sourceStore: 'profile' | 'shared' (GetMacroSourceTagForDrops)
+    local sh = (sourceStore or 'profile') == 'shared';
+    local arm = buildSlotRecord(armData);
+    if not sh and arm.macroSourceStore == nil then
+        arm.macroSourceStore = 'profile';
+    end
+    if sh and arm.macroSourceStore == nil then
+        arm.macroSourceStore = 'shared';
+    end
+    local out = { actionType = 'macro' };
+    if existingParentSlot and isDualMacroSlotTable(existingParentSlot) then
+        out[K_BIND_P] = existingParentSlot[K_BIND_P] and deepCopyTable(existingParentSlot[K_BIND_P]);
+        out[K_BIND_S] = existingParentSlot[K_BIND_S] and deepCopyTable(existingParentSlot[K_BIND_S]);
+    elseif existingParentSlot and existingParentSlot.macroRef and not isDualMacroSlotTable(existingParentSlot) then
+        -- migrate-on-write: one legacy binding → the appropriate arm
+        local leg = buildSlotRecord(existingParentSlot);
+        if (existingParentSlot.macroSourceStore or 'profile') == 'shared' then
+            out[K_BIND_S] = leg;
+        else
+            out[K_BIND_P] = leg;
+        end
+    else
+        out[K_BIND_P] = nil;
+        out[K_BIND_S] = nil;
+    end
+    if sh then
+        out[K_BIND_S] = arm;
+    else
+        out[K_BIND_P] = arm;
+    end
+    if out[K_BIND_P] and out[K_BIND_S] and out[K_BIND_P] == out[K_BIND_S] then
+        out[K_BIND_S] = deepCopyTable(out[K_BIND_S]);
+    end
+    return out;
+end
+
 -- Shared helper: resolve a slot's macroRef to live macro data if available.
--- Returns a fresh table with canonical fields + macroRef/macroPaletteKey, or the original slotAction.
+-- Returns a fresh table with canonical fields, the original non-macro slotAction, or nil if the
+-- slot should not display (e.g. Shared scope with no match in the shared library).
+-- macroSourceStore disambiguates profile vs global shared; in Shared scope, profile-tagged keys do not show.
 local function resolveSlotMacro(slotAction)
-    if not slotAction or not slotAction.macroRef then
+    if not slotAction then
+        return nil;
+    end
+    if slotAction.cleared then
+        return nil;
+    end
+
+    local arm, isMacro = getActiveMacroBindingFromSlot(slotAction);
+    if not isMacro then
         return slotAction;
     end
-    local paletteKey = slotAction.macroPaletteKey or (M.jobId or 1);
-    local liveMacro = M.GetMacroById and M.GetMacroById(slotAction.macroRef, paletteKey);
+    if not arm or not arm.macroRef then
+        if isDualMacroSlotTable(slotAction) then
+            return nil;
+        end
+        return slotAction;
+    end
+
+    local paletteKey = arm.macroPaletteKey or (M.jobId or 1);
+    local gcfg = gConfig;
+    local scopeShared = gcfg and (gcfg.macroStorageScope or 'profile') == 'shared';
+    local mss = arm.macroSourceStore;
+    if not mss and isDualMacroSlotTable(slotAction) then
+        if scopeShared and arm == slotAction[K_BIND_S] then
+            mss = 'shared';
+        elseif not scopeShared and arm == slotAction[K_BIND_P] then
+            mss = 'profile';
+        end
+    end
+    if not mss and arm == slotAction then
+        -- Unscoped legacy hotbar/crossbar macro slots behave as profile library binds; hidden in shared scope.
+        mss = slotAction.macroSourceStore or 'profile';
+    end
+    local liveMacro;
+    if mss == 'shared' and not scopeShared then
+        local ok, sms = pcall(require, 'core.shared_macro_store');
+        if ok and sms and sms.LookupInDiskSharedFile then
+            liveMacro = sms.LookupInDiskSharedFile(arm.macroRef, paletteKey);
+        end
+    elseif mss == 'profile' and scopeShared then
+        -- Shared mode: do not show profile library binding — empty until re-drag from shared.
+        liveMacro = nil;
+    else
+        liveMacro = M.GetMacroById and M.GetMacroById(arm.macroRef, paletteKey);
+    end
     if not liveMacro then
+        if scopeShared then
+            return nil;
+        end
         return slotAction;
     end
     local out = copySlotFields(liveMacro);
-    out.macroRef = slotAction.macroRef;
-    out.macroPaletteKey = slotAction.macroPaletteKey;
+    out.macroRef = arm.macroRef;
+    out.macroPaletteKey = arm.macroPaletteKey;
+    out.macroSourceStore = mss;
     return out;
+end
+
+--- In-place: legacy single macro binding -> macroBindProfile or macroBindShared.
+local function migrateOneSlotToDualMacroBindings(slot)
+    if not slot or type(slot) ~= 'table' or slot.cleared then
+        return false;
+    end
+    if isDualMacroSlotTable(slot) then
+        return false;
+    end
+    if not slot.macroRef then
+        return false;
+    end
+    if slot.actionType and slot.actionType ~= 'macro' then
+        return false;
+    end
+    local arm = copySlotFields(slot);
+    arm.macroRef = slot.macroRef or slot.id;
+    arm.macroPaletteKey = slot.macroPaletteKey;
+    arm.macroSourceStore = slot.macroSourceStore;
+    for _, k in ipairs(SLOT_DATA_FIELDS) do
+        slot[k] = nil;
+    end
+    slot.actionType = 'macro';
+    if (arm.macroSourceStore or 'profile') == 'shared' then
+        slot[K_BIND_S] = arm;
+        slot[K_BIND_P] = nil;
+    else
+        slot[K_BIND_P] = arm;
+        slot[K_BIND_S] = nil;
+    end
+    return true;
+end
+
+local function migrateHotbarSlotActionsTable(slotActions)
+    if not slotActions or type(slotActions) ~= 'table' then
+        return;
+    end
+    for _, jobSlotActions in pairs(slotActions) do
+        if type(jobSlotActions) == 'table' then
+            for _, slot in pairs(jobSlotActions) do
+                if type(slot) == 'table' then
+                    migrateOneSlotToDualMacroBindings(slot);
+                end
+            end
+        end
+    end
+end
+
+local function migrateCrossbarSlotActionsTable(slotActions)
+    if not slotActions or type(slotActions) ~= 'table' then
+        return;
+    end
+    local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2' };
+    for _, jobSlotActions in pairs(slotActions) do
+        if type(jobSlotActions) == 'table' then
+            for _, comboMode in ipairs(comboModes) do
+                local comboSlots = jobSlotActions[comboMode];
+                if type(comboSlots) == 'table' then
+                    for _, slot in pairs(comboSlots) do
+                        if type(slot) == 'table' then
+                            migrateOneSlotToDualMacroBindings(slot);
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+--- One-time per-load migration: split macro hotbar/crossbar refs into profile vs shared arms.
+function M.MigrateSlotDualMacroBindings(gConfig)
+    if not gConfig then
+        return;
+    end
+    for bar = 1, 6 do
+        local configKey = 'hotbarBar' .. bar;
+        local barSettings = gConfig[configKey];
+        if barSettings and barSettings.slotActions then
+            migrateHotbarSlotActionsTable(barSettings.slotActions);
+        end
+    end
+    if gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.slotActions then
+        migrateCrossbarSlotActionsTable(gConfig.hotbarCrossbar.slotActions);
+    end
+end
+
+--- Unresolved slot as stored in config (for dual-arm swap / drop merge).
+function M.GetRawHotbarSlotAction(barIndex, slotIndex)
+    if not gConfig then
+        return nil;
+    end
+    local configKey = 'hotbarBar' .. barIndex;
+    local barSettings = gConfig[configKey];
+    if not barSettings or not barSettings.slotActions then
+        return nil;
+    end
+    local storageKey = M.GetStorageKeyForBar(barIndex);
+    local jobSlotActions = getSlotActionsForKey(barSettings.slotActions, storageKey);
+    if not jobSlotActions then
+        return nil;
+    end
+    local n = tonumber(slotIndex) or slotIndex;
+    return jobSlotActions[n] or jobSlotActions[tostring(n)];
+end
+
+function M.GetRawCrossbarSlotAction(comboMode, slotIndex)
+    if not gConfig or not gConfig.hotbarCrossbar or not gConfig.hotbarCrossbar.slotActions then
+        return nil;
+    end
+    -- M.*: local GetEffectiveComboModeForStorage is defined later; bare name would read as a nil global here.
+    local effectiveComboMode = M.GetEffectiveComboModeForStorage(comboMode);
+    local storageKey = M.GetCrossbarStorageKeyForCombo(effectiveComboMode);
+    local jobSlotActions = getSlotActionsForKey(gConfig.hotbarCrossbar.slotActions, storageKey);
+    if not jobSlotActions or not jobSlotActions[effectiveComboMode] then
+        return nil;
+    end
+    return jobSlotActions[effectiveComboMode][slotIndex];
+end
+
+--- Convert legacy layout to dual for swap / merge logic. nil or cleared => empty macro slot (no arms yet).
+function M.DualizeRawMacroSlotForMerge(raw)
+    if not raw or type(raw) ~= 'table' or raw.cleared then
+        return { actionType = 'macro' };
+    end
+    if isDualMacroSlotTable(raw) then
+        return deepCopyTable(raw);
+    end
+    if not raw.macroRef then
+        return deepCopyTable(raw);
+    end
+    if raw.actionType and raw.actionType ~= 'macro' then
+        return deepCopyTable(raw);
+    end
+    local arm = copySlotFields(raw);
+    arm.macroRef = raw.macroRef or raw.id;
+    arm.macroPaletteKey = raw.macroPaletteKey;
+    arm.macroSourceStore = raw.macroSourceStore;
+    local out = { actionType = 'macro' };
+    if (raw.macroSourceStore or 'profile') == 'shared' then
+        out[K_BIND_S] = arm;
+    else
+        out[K_BIND_P] = arm;
+    end
+    return out;
+end
+
+function M.FinalizeHotbarRawSlotForStorage(s)
+    if s == nil then
+        return { cleared = true };
+    end
+    if type(s) ~= 'table' then
+        return s;
+    end
+    if s.cleared then
+        return s;
+    end
+    if s.actionType == 'macro' and not s[K_BIND_P] and not s[K_BIND_S] and not s.macroRef then
+        return { cleared = true };
+    end
+    return s;
+end
+
+-- Crossbar empty slots are nil (not { cleared = true }).
+function M.FinalizeCrossbarRawSlotForStorage(s)
+    if not s or type(s) ~= 'table' then
+        return s;
+    end
+    if s.cleared then
+        return nil;
+    end
+    if s.actionType == 'macro' and not s[K_BIND_P] and not s[K_BIND_S] and not s.macroRef then
+        return nil;
+    end
+    return s;
+end
+
+local function macroPaletteKeysEqualData(a, b)
+    if a == b then
+        return true;
+    end
+    if a == nil or b == nil then
+        return false;
+    end
+    local na, nb = tonumber(a), tonumber(b);
+    if na ~= nil and nb ~= nil then
+        return na == nb;
+    end
+    return false;
+end
+
+local function macroArmMatchesDelete(arm, macroId, deletedTypeKey, onlyBucketForThisId, deleteKind)
+    if not arm or type(arm) ~= 'table' or arm.macroRef ~= macroId then
+        return false;
+    end
+    deleteKind = deleteKind or 'profile';
+    local mss = arm.macroSourceStore;
+    if deleteKind == 'shared' then
+        if mss == 'profile' then
+            return false;
+        end
+    else
+        if mss == 'shared' then
+            return false;
+        end
+    end
+    local spk = arm.macroPaletteKey;
+    if spk ~= nil then
+        return macroPaletteKeysEqualData(spk, deletedTypeKey);
+    end
+    return onlyBucketForThisId;
+end
+
+-- Clear macro arms that refer to a deleted macro row. emptyWhenGone: hotbar { cleared = true } or crossbar nil.
+function M.ApplyMacroDeleteToSlotAction(slotAction, macroId, deletedTypeKey, onlyBucketForThisId, deleteKind, emptyWhenGone)
+    if not slotAction or type(slotAction) ~= 'table' or slotAction.cleared then
+        return nil, false;
+    end
+    if isDualMacroSlotTable(slotAction) then
+        local out = deepCopyTable(slotAction);
+        local chg = false;
+        if macroArmMatchesDelete(out[K_BIND_P], macroId, deletedTypeKey, onlyBucketForThisId, deleteKind) then
+            out[K_BIND_P] = nil;
+            chg = true;
+        end
+        if macroArmMatchesDelete(out[K_BIND_S], macroId, deletedTypeKey, onlyBucketForThisId, deleteKind) then
+            out[K_BIND_S] = nil;
+            chg = true;
+        end
+        if not chg then
+            return nil, false;
+        end
+        if not out[K_BIND_P] and not out[K_BIND_S] then
+            return emptyWhenGone, true;
+        end
+        out.actionType = 'macro';
+        return out, true;
+    end
+    if not slotAction.macroRef or slotAction.macroRef ~= macroId then
+        return nil, false;
+    end
+    if not macroArmMatchesDelete(slotAction, macroId, deletedTypeKey, onlyBucketForThisId, deleteKind) then
+        return nil, false;
+    end
+    return emptyWhenGone, true;
+end
+
+local function isLibraryMacroSlotForSwap(s)
+    if not s or type(s) ~= 'table' or s.cleared then
+        return false;
+    end
+    if s[K_BIND_P] ~= nil or s[K_BIND_S] ~= nil then
+        return true;
+    end
+    if s.macroRef and (not s.actionType or s.actionType == 'macro') then
+        return true;
+    end
+    return false;
+end
+
+-- If profile and shared arm tables are the same reference (data corruption or legacy bug), the active-arm
+-- swap can move a profile binding into the wrong key or "clone" the same row — split into two tables.
+local function disambiguateDualMacroArms(t)
+    if not t or type(t) ~= 'table' then
+        return;
+    end
+    if t[K_BIND_P] ~= nil and t[K_BIND_S] ~= nil and t[K_BIND_P] == t[K_BIND_S] then
+        t[K_BIND_S] = deepCopyTable(t[K_BIND_S]);
+    end
+end
+
+--- Exchange only the active library's arm when both slots are palette macro bindings; else swap whole slot tables.
+-- rawA = source slot (dragged from), rawB = target slot (dropped onto).
+-- Returns (value for target index, value for source index) for callers that assign:
+--   job[target] = first; job[source] = second
+function M.SwapActiveMacroArmsInPlace(rawA, rawB)
+    if isLibraryMacroSlotForSwap(rawA) and isLibraryMacroSlotForSwap(rawB) then
+        local a = M.DualizeRawMacroSlotForMerge(rawA);
+        local b = M.DualizeRawMacroSlotForMerge(rawB);
+        disambiguateDualMacroArms(a);
+        disambiguateDualMacroArms(b);
+        local sh = (gConfig and (gConfig.macroStorageScope or 'profile') == 'shared');
+        local k = sh and K_BIND_S or K_BIND_P;
+        local t = a[k];
+        a[k] = b[k];
+        b[k] = t;
+        -- Deep copy so we never return tables that still alias nested refs from the other cell or from gConfig.
+        return deepCopyTable(b), deepCopyTable(a);
+    end
+    return deepCopyTable(rawA), deepCopyTable(rawB);
 end
 
 -- Merge slot maps when migrating legacy job:subjob:petKey -> petpalette:petKey (fill empty slots only)
@@ -453,6 +978,7 @@ local PER_BAR_ONLY_KEYS = {
     jobSpecific = true,
     petAware = true,
     showPetIndicator = true,
+    petPalettePetKeys = true,
 };
 
 -- ============================================
@@ -499,6 +1025,9 @@ function M.GetStorageKeyForBar(barIndex)
             if pp then
                 -- Check for manual override or auto-detected pet
                 petKey = pp.GetEffectivePetKey(barIndex);
+                if petKey and not petAllowlist.Allows(barSettings, petKey) then
+                    petKey = nil;
+                end
             end
         end
 
@@ -559,7 +1088,9 @@ function M.GetAvailablePalettes(barIndex)
         if pp then
             local petPalettes = pp.GetAvailablePalettes(barIndex, jobId, subjobId);
             for _, p in ipairs(petPalettes) do
-                table.insert(palettes, p);
+                if p.key == nil or petAllowlist.Allows(barSettings, p.key) then
+                    table.insert(palettes, p);
+                end
             end
         end
     end
@@ -592,9 +1123,12 @@ function M.GetCurrentPaletteDisplayName(barIndex)
     if barSettings and barSettings.petAware then
         local pp = getPetPalette();
         if pp then
-            local petDisplayName = pp.GetPaletteDisplayName(barIndex, jobId);
-            if petDisplayName and petDisplayName ~= 'Base' then
-                return petDisplayName;
+            local ek = pp.GetEffectivePetKey(barIndex);
+            if ek and petAllowlist.Allows(barSettings, ek) then
+                local petDisplayName = pp.GetPaletteDisplayName(barIndex, jobId);
+                if petDisplayName and petDisplayName ~= 'Base' then
+                    return petDisplayName;
+                end
             end
         end
     end
@@ -727,6 +1261,7 @@ local function GetMergedCrossbarComboModeSettings(comboMode)
     local merged = {
         petAware = base.petAware == true,
         universalOverridePalette = base.universalOverridePalette,
+        petPalettePetKeys = base.petPalettePetKeys,
     };
     local p = getPalette();
     if not crossbarSettings or not p or not crossbarSettings.namedPaletteComboModeSettings then
@@ -757,6 +1292,9 @@ local function GetMergedCrossbarComboModeSettings(comboMode)
     if ovr.universalOverridePalette ~= nil then
         local u = ovr.universalOverridePalette;
         merged.universalOverridePalette = (type(u) == 'string' and u ~= '') and u or nil;
+    end
+    if ovr.petPalettePetKeys ~= nil then
+        merged.petPalettePetKeys = ovr.petPalettePetKeys;
     end
     return merged;
 end
@@ -801,7 +1339,7 @@ function M.GetCrossbarStorageKeyForCombo(comboMode)
         local pp = getPetPalette();
         if pp then
             local effectivePetKey = pp.GetEffectivePetKeyForCombo(comboMode);
-            if effectivePetKey then
+            if effectivePetKey and petAllowlist.Allows(modeSettings, effectivePetKey) then
                 return PETPALETTE_STORAGE_PREFIX .. effectivePetKey;
             end
         end
@@ -856,9 +1394,12 @@ function M.GetCrossbarPaletteDisplayName(comboMode)
     if modeSettings and modeSettings.petAware then
         local pp = getPetPalette();
         if pp then
-            local petDisplayName = pp.GetCrossbarPaletteDisplayName(comboMode, jobId);
-            if petDisplayName and petDisplayName ~= 'Base' then
-                return petDisplayName;
+            local ek = pp.GetEffectivePetKeyForCombo(comboMode);
+            if ek and petAllowlist.Allows(modeSettings, ek) then
+                local petDisplayName = pp.GetCrossbarPaletteDisplayName(comboMode, jobId);
+                if petDisplayName and petDisplayName ~= 'Base' then
+                    return petDisplayName;
+                end
             end
         end
     end
@@ -1036,9 +1577,9 @@ function M.GetKeybindDisplay(barIndex, slotIndex)
     return '';
 end
 
--- Helper to look up a macro from macroDB by id
--- paletteKey can be a job ID (number) or composite key (string like "15:avatar:ifrit")
--- OPTIMIZED: Uses O(1) lookup map instead of linear search
+-- Look up a macro row: macroId is unique only within the given paletteKey bucket
+-- (not across jobs or global). paletteKey: job id, global/items/equipment/xiui/custom:*, or
+-- composite (e.g. "15:avatar:ifrit"). OPTIMIZED: O(1) via lookup + string/number key alias.
 local function GetMacroById(macroId, paletteKey)
     if not gConfig or not gConfig.macroDB then return nil; end
 
@@ -1087,6 +1628,9 @@ function M.GetKeybindForSlot(barIndex, slotIndex)
                 end
 
                 local resolved = resolveSlotMacro(slotAction);
+                if not resolved then
+                    return nil;
+                end
                 local out = copySlotFields(resolved);
                 out.context = 'battle';
                 out.hotbar = barIndex;
@@ -1151,7 +1695,11 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
     local storageKey = M.GetCrossbarStorageKeyForCombo(effectiveComboMode);
     local comboSlots = ensureSlotActionsStructure(gConfig.hotbarCrossbar, storageKey, effectiveComboMode);
 
-    comboSlots[slotIndex] = buildSlotRecord(slotData);
+    if isDualMacroSlotTable(slotData) then
+        comboSlots[slotIndex] = slotData;
+    else
+        comboSlots[slotIndex] = buildSlotRecord(slotData);
+    end
     NotifySlotDataChanged();
 end
 
@@ -1170,7 +1718,22 @@ function M.ClearCrossbarSlotData(comboMode, slotIndex)
     if not jobSlotActions then return; end
     if not jobSlotActions[effectiveComboMode] then return; end
 
-    jobSlotActions[effectiveComboMode][slotIndex] = nil;
+    local raw = jobSlotActions[effectiveComboMode][slotIndex];
+    if isDualMacroSlotTable(raw) then
+        local sh = (gConfig.macroStorageScope or 'profile') == 'shared';
+        if sh then
+            raw[K_BIND_S] = nil;
+        else
+            raw[K_BIND_P] = nil;
+        end
+        if not raw[K_BIND_P] and not raw[K_BIND_S] then
+            jobSlotActions[effectiveComboMode][slotIndex] = nil;
+        else
+            raw.actionType = 'macro';
+        end
+    else
+        jobSlotActions[effectiveComboMode][slotIndex] = nil;
+    end
     NotifySlotDataChanged();
 end
 
@@ -1198,7 +1761,11 @@ function M.SetCrossbarSlotDataForStorageKey(storageKey, comboMode, slotIndex, sl
     end
     local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
     local comboSlots = ensureSlotActionsStructure(gConfig.hotbarCrossbar, storageKey, effectiveComboMode);
-    comboSlots[slotIndex] = buildSlotRecord(slotData);
+    if isDualMacroSlotTable(slotData) then
+        comboSlots[slotIndex] = slotData;
+    else
+        comboSlots[slotIndex] = buildSlotRecord(slotData);
+    end
     NotifySlotDataChanged();
 end
 
@@ -1322,6 +1889,17 @@ function M.GetDraftSlotData(comboMode, slotIndex)
     return resolveSlotMacro(bucket[effectiveComboMode][slotIndex]);
 end
 
+function M.GetDraftRawSlotData(comboMode, slotIndex)
+    if not draftByKey then return nil; end
+    local rk = resolveDraftStorageKeyForCombo(comboMode);
+    if not rk then return nil; end
+    local bucket = ensureDraftBucket(rk);
+    if not bucket then return nil; end
+    local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
+    if not bucket[effectiveComboMode] then return nil; end
+    return bucket[effectiveComboMode][slotIndex];
+end
+
 function M.SetDraftSlotData(comboMode, slotIndex, slotData)
     if not draftByKey then return; end
     if not slotData then
@@ -1338,7 +1916,11 @@ function M.SetDraftSlotData(comboMode, slotIndex, slotData)
     if not bucket[effectiveComboMode] then
         bucket[effectiveComboMode] = {};
     end
-    bucket[effectiveComboMode][slotIndex] = buildSlotRecord(slotData);
+    if isDualMacroSlotTable(slotData) then
+        bucket[effectiveComboMode][slotIndex] = slotData;
+    else
+        bucket[effectiveComboMode][slotIndex] = buildSlotRecord(slotData);
+    end
     draftDirty = true;
 end
 
@@ -1352,7 +1934,22 @@ function M.ClearDraftSlotData(comboMode, slotIndex)
     draftTouchedKeys[rk] = true;
     local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
     if not bucket[effectiveComboMode] then return; end
-    bucket[effectiveComboMode][slotIndex] = nil;
+    local raw = bucket[effectiveComboMode][slotIndex];
+    if isDualMacroSlotTable(raw) then
+        local sh = gConfig and (gConfig.macroStorageScope or 'profile') == 'shared';
+        if sh then
+            raw[K_BIND_S] = nil;
+        else
+            raw[K_BIND_P] = nil;
+        end
+        if not raw[K_BIND_P] and not raw[K_BIND_S] then
+            bucket[effectiveComboMode][slotIndex] = nil;
+        else
+            raw.actionType = 'macro';
+        end
+    else
+        bucket[effectiveComboMode][slotIndex] = nil;
+    end
     draftDirty = true;
 end
 
@@ -1448,7 +2045,11 @@ function M.SetSlotData(barIndex, slotIndex, slotData)
     local jobSlotActions = ensureSlotActionsStructure(barSettings, storageKey);
 
     if slotData then
-        jobSlotActions[slotIndex] = buildSlotRecord(slotData);
+        if isDualMacroSlotTable(slotData) then
+            jobSlotActions[slotIndex] = slotData;
+        else
+            jobSlotActions[slotIndex] = buildSlotRecord(slotData);
+        end
     else
         jobSlotActions[slotIndex] = { cleared = true };
     end
@@ -1466,8 +2067,30 @@ function M.ClearSlotData(barIndex, slotIndex)
     local jobSlotActions = getSlotActionsForKey(barSettings.slotActions, storageKey);
 
     if jobSlotActions then
-        -- Mark as explicitly cleared
-        jobSlotActions[slotIndex] = { cleared = true };
+        local num = tonumber(slotIndex) or slotIndex;
+        local raw = jobSlotActions[num] or jobSlotActions[tostring(num)];
+        if isDualMacroSlotTable(raw) then
+            local sh = (gConfig.macroStorageScope or 'profile') == 'shared';
+            if sh then
+                raw[K_BIND_S] = nil;
+            else
+                raw[K_BIND_P] = nil;
+            end
+            if not raw[K_BIND_P] and not raw[K_BIND_S] then
+                jobSlotActions[num] = { cleared = true };
+                if jobSlotActions[tostring(num)] then
+                    jobSlotActions[tostring(num)] = { cleared = true };
+                end
+            else
+                raw.actionType = 'macro';
+                jobSlotActions[num] = raw;
+            end
+        else
+            jobSlotActions[num] = { cleared = true };
+            if jobSlotActions[tostring(num)] then
+                jobSlotActions[tostring(num)] = { cleared = true };
+            end
+        end
         NotifySlotDataChanged();
     end
 end
@@ -1490,6 +2113,15 @@ end
 function M.InvalidateStorageKeyCache()
     storageKeyCacheDirty = true;
     storageKeyCache = {};
+end
+
+-- Call whenever the global gConfig table is replaced (profile switch, settings reload, reset).
+-- macroIdLookup holds references into gConfig.macroDB; if gConfig is swapped without invalidating,
+-- lookups can return macro rows from the previous profile in memory (wrong name/icon for macroRef).
+function M.InvalidateConfigDerivedCaches()
+    macroIdLookupDirty = true;
+    macroDbCoherenceIdentity = nil;
+    M.InvalidateStorageKeyCache();
 end
 
 -- ============================================
@@ -1613,6 +2245,57 @@ function M.ClearPreview()
 end
 
 function M.ClearError()
+end
+
+-- ============================================
+-- Profile duplicate (no macro library): strip bar binds to palette macros
+-- ============================================
+
+-- Clears actionType == 'macro' slots in settings (in-memory copy) so a duplicated profile
+-- that dropped the macro library does not show ghost bindings to missing macroRef rows.
+function M.StripPaletteMacroBindsFromSettings(settings)
+    if not settings or type(settings) ~= 'table' then
+        return;
+    end
+    local function isPaletteMacro(slot)
+        if not slot or type(slot) ~= 'table' or slot.cleared then
+            return false;
+        end
+        if isDualMacroSlotTable(slot) then
+            return slot.actionType == 'macro' or slot[K_BIND_P] ~= nil or slot[K_BIND_S] ~= nil;
+        end
+        return slot.actionType == 'macro';
+    end
+    for bar = 1, 6 do
+        local configKey = 'hotbarBar' .. bar;
+        local barSettings = settings[configKey];
+        if barSettings and type(barSettings.slotActions) == 'table' then
+            for _, jobSlotActions in pairs(barSettings.slotActions) do
+                if type(jobSlotActions) == 'table' then
+                    for si, slot in pairs(jobSlotActions) do
+                        if isPaletteMacro(slot) then
+                            jobSlotActions[si] = { cleared = true };
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if settings.hotbarCrossbar and type(settings.hotbarCrossbar.slotActions) == 'table' then
+        for _, jobSlotActions in pairs(settings.hotbarCrossbar.slotActions) do
+            if type(jobSlotActions) == 'table' then
+                for _, comboSlots in pairs(jobSlotActions) do
+                    if type(comboSlots) == 'table' then
+                        for si, slot in pairs(comboSlots) do
+                            if isPaletteMacro(slot) then
+                                comboSlots[si] = nil;
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
 end
 
 -- ============================================

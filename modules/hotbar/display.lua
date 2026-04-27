@@ -22,6 +22,7 @@ local hotbarConfig = require('config.hotbar');
 local petpalette = require('modules.hotbar.petpalette');
 local palette = require('modules.hotbar.palette');
 local skillchain = require('modules.hotbar.skillchain');
+local macroparse = require('modules.hotbar.macroparse');
 local targetLib = require('libs.target');
 
 local M = {};
@@ -555,11 +556,21 @@ local function DrawBarWindow(barIndex, settings)
                             data.abbreviationFonts[barIndex][slotIndex]:set_visible(false);
                         end
                     else
-                        -- Check for skillchain prediction on weapon skill slots
+                        -- Skillchain prediction: WS, Blood Pact, macros whose primary is /ws or /pet
                         local slotSkillchainName = nil;
-                        if skillchainEnabled and bind and bind.actionType == 'ws' and bind.action then
-                            -- Pass WS name directly - skillchain module handles name->ID conversion
-                            slotSkillchainName = skillchain.GetSkillchainForSlot(targetServerId, bind.action);
+                        if skillchainEnabled and bind then
+                            if bind.actionType == 'ws' and bind.action then
+                                slotSkillchainName = skillchain.GetSkillchainForSlot(targetServerId, bind.action);
+                            elseif bind.actionType == 'pet' and bind.action then
+                                slotSkillchainName = skillchain.GetSkillchainForBloodPact(targetServerId, bind.action);
+                            elseif bind.actionType == 'macro' and bind.macroText then
+                                local primaryType, primaryName = macroparse.GetMacroPrimaryAndJaBadge(bind.macroText);
+                                if primaryType == 'ws' and primaryName then
+                                    slotSkillchainName = skillchain.GetSkillchainForSlot(targetServerId, primaryName);
+                                elseif primaryType == 'pet' and primaryName then
+                                    slotSkillchainName = skillchain.GetSkillchainForBloodPact(targetServerId, primaryName);
+                                end
+                            end
                         end
                         DrawSlot(barIndex, slotIndex, slotX, slotY, buttonSize, bind, barSettings, animOpacity, slotSkillchainName);
                     end

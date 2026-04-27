@@ -18,6 +18,7 @@ local crossbar = require('modules.hotbar.crossbar');
 local macropalette = require('modules.hotbar.macropalette');
 local dragdrop = require('libs.dragdrop');
 local components = require('config.components');
+local petAllowlist = require('modules.hotbar.pet_palette_allowlist');
 
 local M = {};
 
@@ -301,10 +302,57 @@ local function IntersectRect(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2)
     return x1, y1, x2, y2;
 end
 
+-- Transient state for crossbar pet-allowlist popup (work copy reconciled into named overrides).
+local petAllowPopupWork = {};
+
+local function copyAllowlistTbl(v)
+    if v == nil then return nil; end
+    local c = {};
+    for i = 1, #v do
+        c[i] = v[i];
+    end
+    return c;
+end
+
+local function petAllowlistSig(lst)
+    if lst == nil then return '@all'; end
+    if type(lst) ~= 'table' then return '@all'; end
+    if #lst == 0 then return '@none'; end
+    local s = {};
+    for i = 1, #lst do
+        s[i] = lst[i];
+    end
+    table.sort(s);
+    return table.concat(s, '\1');
+end
+
+local function reconcileCrossbarPetAllowlist(storageKey, mode, cross, named, newList)
+    if not cross or not cross.comboModeSettings then
+        return;
+    end
+    local base = cross.comboModeSettings[mode] or {};
+    local baseList = base.petPalettePetKeys;
+    if petAllowlistSig(newList) == petAllowlistSig(baseList) then
+        if named[storageKey] and named[storageKey][mode] then
+            named[storageKey][mode].petPalettePetKeys = nil;
+        end
+    else
+        if not named[storageKey] then
+            named[storageKey] = {};
+        end
+        if not named[storageKey][mode] then
+            named[storageKey][mode] = {};
+        end
+        named[storageKey][mode].petPalettePetKeys = copyAllowlistTbl(newList);
+    end
+end
+
 -- Pet Palette toggle per combo-mode segment (Edit Full Palette). Optional gold label (opts.showGoldLabel = false to omit).
+-- opts.jobId: main job id for listing pet types in the allowlist popup (defaults to data.jobId).
 local function DrawJobSegmentPetGlobalControls(storageKey, mode, label, cross, named, opts)
     opts = opts or {};
     local showGoldLabel = opts.showGoldLabel ~= false;
+    local editJobId = opts.jobId or data.jobId or 1;
     local base = cross.comboModeSettings and cross.comboModeSettings[mode];
     if not base then
         base = { petAware = false, universalOverridePalette = nil };
@@ -333,10 +381,50 @@ local function DrawJobSegmentPetGlobalControls(storageKey, mode, label, cross, n
             if not named[storageKey][mode] then named[storageKey][mode] = {}; end
             named[storageKey][mode].petAware = newV;
         end
+        if not newV and named[storageKey][mode] then
+            named[storageKey][mode].petPalettePetKeys = nil;
+        end
         if SaveSettingsOnly then SaveSettingsOnly(); end
+        if data.InvalidateStorageKeyCache then data.InvalidateStorageKeyCache(); end
+        if data.InvalidateCrossbarDraftLayout then data.InvalidateCrossbarDraftLayout(); end
         if DeferredUpdateVisuals then DeferredUpdateVisuals(); end
     end
     imgui.ShowHelp('When enabled, this 8-slot group uses pet/avatar storage while a pet is active.');
+
+    if effPet then
+        local sanKey = (storageKey or ''):gsub('%W', '_');
+        local popupId = 'petallow_xb_' .. sanKey .. '_' .. mode;
+        if imgui.SmallButton('Pets…##' .. popupId) then
+            imgui.OpenPopup(popupId);
+        end
+        imgui.ShowHelp('Limit pet palette to specific summons, beasts, wyvern, or puppet (optional).');
+        if imgui.BeginPopup(popupId) then
+            local baseM = cross.comboModeSettings and cross.comboModeSettings[mode];
+            local baseList = baseM and baseM.petPalettePetKeys;
+            local ovrM = named[storageKey] and named[storageKey][mode];
+            local effList = (ovrM and ovrM.petPalettePetKeys ~= nil) and ovrM.petPalettePetKeys or baseList;
+            if imgui.IsWindowAppearing() then
+                petAllowPopupWork[popupId] = { petPalettePetKeys = petAllowlist.CopyAllowlistForEditor(effList) };
+            end
+            local work = petAllowPopupWork[popupId];
+            if work then
+                local function onSave()
+                    if SaveSettingsOnly then SaveSettingsOnly(); end
+                end
+                local function onInv()
+                    if data.InvalidateStorageKeyCache then data.InvalidateStorageKeyCache(); end
+                    if data.InvalidateCrossbarDraftLayout then data.InvalidateCrossbarDraftLayout(); end
+                    if DeferredUpdateVisuals then DeferredUpdateVisuals(); end
+                end
+                petAllowlist.DrawEditorInPopup(work, editJobId, onSave, onInv, function(w)
+                    reconcileCrossbarPetAllowlist(storageKey, mode, cross, named, w.petPalettePetKeys);
+                end);
+            end
+            imgui.EndPopup();
+        else
+            petAllowPopupWork[popupId] = nil;
+        end
+    end
 end
 
 -- Job [J] Edit Full Palette: segment override (Job-shared storage or Global [G] source). Primary L2/R2 omit via caller.
@@ -618,7 +706,7 @@ end
 local function DrawJobSegmentFooterOverrideAndPet(storageKey, mode, cross, named, jobId, showOverride, idTag, maxWidth)
     maxWidth = maxWidth or 400;
     if not showOverride or not jobId then
-        DrawJobSegmentPetGlobalControls(storageKey, mode, '', cross, named, { showGoldLabel = false });
+        DrawJobSegmentPetGlobalControls(storageKey, mode, '', cross, named, { showGoldLabel = false, jobId = jobId or data.jobId or 1 });
         return;
     end
 
@@ -638,14 +726,15 @@ local function DrawJobSegmentFooterOverrideAndPet(storageKey, mode, cross, named
     local fh = (imgui.GetFrameHeightWithSpacing and imgui.GetFrameHeightWithSpacing())
         or ((imgui.GetFrameHeight and imgui.GetFrameHeight()) + GetItemSpacingY())
         or 26;
-    local row1H = math.ceil(math.max(44, fh + 6));
+    -- Right column stacks Pet Palette checkbox + Pets… button (two lines).
+    local row1H = math.ceil(math.max(52, fh * 2 + 10));
 
     imgui.BeginChild('##ovpetL_' .. idTag, { half, row1H }, false);
     DrawJobSegmentOverrideCheckboxRow(jobId, mode, cross, idTag, half);
     imgui.EndChild();
     imgui.SameLine(0, gap);
     imgui.BeginChild('##ovpetR_' .. idTag, { wRight, row1H }, false);
-    DrawJobSegmentPetGlobalControls(storageKey, mode, '', cross, named, { showGoldLabel = false });
+    DrawJobSegmentPetGlobalControls(storageKey, mode, '', cross, named, { showGoldLabel = false, jobId = jobId });
     imgui.EndChild();
 
     DrawJobSegmentOverrideDetailBlock(jobId, mode, cross, idTag, maxWidth);

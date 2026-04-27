@@ -77,6 +77,15 @@ function M.createUserSettingsDefaults()
             customIconFolder = 'all', -- 'all' or a top-level folder name under assets/hotbar/custom/
         },
 
+        -- Macro palette: custom dropdown categories (keys "custom:N" under macroDB)
+        macroCustomCategories = T{},
+        macroCustomNextSeq = 1,
+        -- When false, empty "xiui" macro bucket gets default /xiui slash shortcuts once (see macro_xiui_defaults.lua)
+        macroXiuiDefaultsSeeded = false,
+
+        -- "profile" = macros in this profile's lua only; "shared" = one global library (SharedMacros.lua) for all characters using Shared.
+        macroStorageScope = 'profile',
+
         -- Global hotbar visual settings (used when bar's useGlobalSettings = true)
         hotbarGlobal = factories.createHotbarGlobalDefaults(),
 

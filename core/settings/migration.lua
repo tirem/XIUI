@@ -5,6 +5,7 @@
 
 local M = {};
 local profileManager = require('core.profile_manager');
+local macroXiuiDefaults = require('modules.hotbar.macro_xiui_defaults');
 
 -- Migrate settings from HXUI to XIUI (one-time migration for users upgrading from HXUI)
 -- IMPORTANT: This must be called BEFORE settings.load() so that copied files are picked up
@@ -988,9 +989,35 @@ function M.MigrateHotbarCrossbarLayoutFlags(gConfig)
     end
 end
 
+function M.MigrateMacroXiuiDefaults(gConfig)
+    if not gConfig then
+        return;
+    end
+    local inserted = macroXiuiDefaults.SeedIfNeeded(gConfig);
+    if inserted then
+        local ok, hotbarData = pcall(require, 'modules.hotbar.data');
+        if ok and hotbarData and hotbarData.MarkMacroLookupDirty then
+            hotbarData.MarkMacroLookupDirty();
+        end
+    end
+end
+
 function M.RunStructureMigrations(gConfig, defaults)
+    -- Run before anything touches macroDB: coalesce "4" vs 4 and dedupe macro ids (fixes wrong macro on hotbar / drag)
+    if gConfig then
+        local ok, data = pcall(require, 'modules.hotbar.data');
+        if ok and data and data.EnsureMacroDatabaseCoherence then
+            data.EnsureMacroDatabaseCoherence(gConfig);
+        end
+    end
     M.MigrateCrossbarModuleFlags(gConfig);
     M.MigrateHotbarCrossbarLayoutFlags(gConfig);
+    if gConfig then
+        local ok, hbData = pcall(require, 'modules.hotbar.data');
+        if ok and hbData and hbData.MigrateSlotDualMacroBindings then
+            hbData.MigrateSlotDualMacroBindings(gConfig);
+        end
+    end
     M.MigratePartyListLayoutSettings(gConfig, defaults);
     M.MigratePerPartySettings(gConfig, defaults);
     M.MigratePerPetTypeSettings(gConfig, defaults);
@@ -1003,6 +1030,7 @@ function M.RunStructureMigrations(gConfig, defaults)
     M.MigrateNotificationGroups(gConfig, defaults);
     M.MigrateCrossbarComboModeSettings(gConfig, defaults);
     M.MigrateLegacyPositionFields(gConfig);
+    M.MigrateMacroXiuiDefaults(gConfig);
 end
 
 -- Legacy function for backward compatibility (if any external code calls it)

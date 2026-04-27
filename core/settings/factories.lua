@@ -374,6 +374,8 @@ function M.createHotbarBarDefaults(overrides)
         -- Pet-aware toggle (when true, hotbar can have different palettes per pet for SMN/BST/DRG/PUP)
         petAware = false,
         showPetIndicator = true,  -- Show indicator dot when petAware is enabled
+        -- When set: array of type tokens 'summons'|'beasts'|'wyvern'|'puppet'; only those use pet storage. nil = all.
+        petPalettePetKeys = nil,
 
         -- Layout settings (always per-bar)
         enabled = true,
@@ -486,12 +488,12 @@ function M.createCrossbarDefaults()
 
         -- Per-combo-mode settings (pet-aware is per-combo; universalOverridePalette = all-jobs palette name)
         comboModeSettings = {
-            L2 = { petAware = false, universalOverridePalette = nil },
-            R2 = { petAware = false, universalOverridePalette = nil },
-            L2R2 = { petAware = false, universalOverridePalette = nil },
-            R2L2 = { petAware = false, universalOverridePalette = nil },
-            L2x2 = { petAware = false, universalOverridePalette = nil },
-            R2x2 = { petAware = false, universalOverridePalette = nil },
+            L2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
+            R2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
+            L2R2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
+            R2L2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
+            L2x2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
+            R2x2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
         },
         -- Optional per named [J] palette: comboMode -> { petAware?, universalOverridePalette? } (nil field = inherit Crossbar defaults)
         namedPaletteComboModeSettings = {},

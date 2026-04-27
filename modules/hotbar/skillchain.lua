@@ -438,6 +438,27 @@ local function tableContains(tbl, val)
     return false;
 end
 
+-- Blood Pact / avatar physical pacts: English ability name (as in /pet "Name") → Level-1 attributes.
+-- Horizon: omit Level 70 pacts with no SC properties (unmapped here — no false resonance).
+local bloodPactResonationMap = {
+    ['Claw'] = { Resonation.Detonation },
+    ['Rock Throw'] = { Resonation.Scission },
+    ['Axe Kick'] = { Resonation.Induration },
+    ['Punch'] = { Resonation.Liquefaction },
+    ['Shock Strike'] = { Resonation.Impaction },
+    ['Barracuda Dive'] = { Resonation.Reverberation },
+    ['Camisado'] = { Resonation.Compression },
+    ['Poison Nails'] = { Resonation.Transfixion },
+    ['Moonlit Charge'] = { Resonation.Compression },
+    ['Crescent Fang'] = { Resonation.Transfixion },
+    ['Rock Buster'] = { Resonation.Reverberation },
+    ['Burning Strike'] = { Resonation.Impaction },
+    ['Tail Whip'] = { Resonation.Detonation },
+    ['Double Punch'] = { Resonation.Compression },
+    ['Megalith Throw'] = { Resonation.Induration },
+    ['Double Slap'] = { Resonation.Scission },
+};
+
 -- Convert server ID to entity index
 local function GetIndexFromId(id)
     local entMgr = AshitaCore:GetMemoryManager():GetEntity();
@@ -463,33 +484,17 @@ local function GetIndexFromId(id)
     return 0;
 end
 
--- Get skillchain result for a WS against current target state
--- targetServerId: server ID of the target
--- wsIdOrName: weapon skill ID (number) or name (string)
--- Returns skillchain name or nil
-function M.GetSkillchainForSlot(targetServerId, wsIdOrName)
-    if not wsIdOrName then return nil; end
+-- Shared prediction: closing ability attributes vs per-target resonation window.
+local function GetSkillchainFromClosingAttributes(targetServerId, closingAttributes)
+    if not closingAttributes or #closingAttributes == 0 then return nil; end
 
-    -- Convert name to ID if needed
-    local wsId = wsIdOrName;
-    if type(wsIdOrName) == 'string' then
-        wsId = GetWSIdFromName(wsIdOrName);
-        if not wsId then return nil; end
-    end
-
-    -- Get WS attributes early (needed for all checks)
-    local wsAttributes = weaponskillResonationMap[wsId];
-    if not wsAttributes then return nil; end
-
-    -- Convert server ID to entity index if provided
     local targetIndex = nil;
     if targetServerId and targetServerId > 0x8FF then
         targetIndex = GetIndexFromId(targetServerId);
     elseif targetServerId and targetServerId > 0 and targetServerId <= 0x8FF then
-        targetIndex = targetServerId;  -- Already an entity index
+        targetIndex = targetServerId;
     end
 
-    -- Only check the player's current target
     if not targetIndex or targetIndex == 0 then
         return nil;
     end
@@ -501,22 +506,19 @@ function M.GetSkillchainForSlot(targetServerId, wsIdOrName)
 
     local now = os.clock();
 
-    -- Check if window expired
     if now > resonation.WindowClose then
         resonationMap[targetIndex] = nil;
         return nil;
     end
 
-    -- Check if window is open
     if now < resonation.WindowOpen then
         return nil;
     end
 
-    -- Check for skillchain match
     for _, sc in ipairs(possibleSkillchains) do
         local result, opening, closing = sc[1], sc[2], sc[3];
         if tableContains(resonation.Attributes, opening) then
-            if tableContains(wsAttributes, closing) then
+            if tableContains(closingAttributes, closing) then
                 return resonationNames[result];
             end
         end
@@ -525,43 +527,72 @@ function M.GetSkillchainForSlot(targetServerId, wsIdOrName)
     return nil;
 end
 
+-- Get skillchain result for a WS against current target state
+-- targetServerId: server ID of the target
+-- wsIdOrName: weapon skill ID (number) or name (string)
+-- Returns skillchain name or nil
+function M.GetSkillchainForSlot(targetServerId, wsIdOrName)
+    if not wsIdOrName then return nil; end
+
+    local wsId = wsIdOrName;
+    if type(wsIdOrName) == 'string' then
+        wsId = GetWSIdFromName(wsIdOrName);
+        if not wsId then return nil; end
+    end
+
+    local wsAttributes = weaponskillResonationMap[wsId];
+    if not wsAttributes then return nil; end
+
+    return GetSkillchainFromClosingAttributes(targetServerId, wsAttributes);
+end
+
+--- @param pactName string English pact name (e.g. /pet "Shock Strike")
+function M.GetSkillchainForBloodPact(targetServerId, pactName)
+    if not pactName then return nil; end
+    local attrs = bloodPactResonationMap[pactName];
+    return GetSkillchainFromClosingAttributes(targetServerId, attrs);
+end
+
 -- Handle action packet (0x0028)
--- XIUI's ParseActionPacket stores WS ID in .Param (not .Id like tHotBar)
+-- Type 3: weapon skill — Param is WS id. Type 13: pet/Blood Pact — Param is ability id; map name → attributes.
 function M.HandleActionPacket(actionPacket)
     if not actionPacket then return; end
 
-    -- Only process weapon skill actions (Type 3)
-    if actionPacket.Type ~= 3 then return; end
+    local actionType = actionPacket.Type;
+    if actionType ~= 3 and actionType ~= 13 then return; end
 
-    -- WS ID is stored in Param field by XIUI's packet parser
-    local wsId = actionPacket.Param;
-    if not wsId or wsId == 0 then return; end
+    local param = actionPacket.Param;
+    if not param or param == 0 then return; end
 
-    -- Process each target
+    local pactAttributes = nil;
+    if actionType == 13 then
+        local resMgr = AshitaCore:GetResourceManager();
+        local ability = resMgr and resMgr:GetAbilityById(param);
+        local pactName = ability and ability.Name and ability.Name[1];
+        if pactName then
+            pactAttributes = bloodPactResonationMap[pactName];
+        end
+    end
+
     for _, target in ipairs(actionPacket.Targets or {}) do
         local targetIndex = GetIndexFromId(target.Id);
         if targetIndex ~= 0 then
             for _, action in ipairs(target.Actions or {}) do
-                -- Check for skillchain message
                 local skillchain = nil;
                 if action.AdditionalEffect then
                     skillchain = skillchainMessageIds[action.AdditionalEffect.Message];
                 end
 
                 if skillchain == Resonation.None then
-                    -- Skillchain interrupted
                     resonationMap[targetIndex] = nil;
 
                 elseif skillchain then
-                    -- Skillchain occurred - update state
                     local resonation = resonationMap[targetIndex];
                     local now = os.clock();
 
                     if resonation and (now + 1) > resonation.WindowOpen and (now - 1) < resonation.WindowClose then
-                        -- Continuing existing chain
                         resonation.Depth = resonation.Depth + 1;
 
-                        -- Handle Light/Darkness level escalation
                         if skillchain == Resonation.Light and tableContains(resonation.Attributes, Resonation.Light) then
                             resonation.Attributes = { Resonation.Light2 };
                         elseif skillchain == Resonation.Darkness and tableContains(resonation.Attributes, Resonation.Darkness) then
@@ -573,7 +604,6 @@ function M.HandleActionPacket(actionPacket)
                         resonation.WindowOpen = now + 3.5;
                         resonation.WindowClose = now + (9.8 - resonation.Depth);
                     else
-                        -- New chain from skillchain
                         resonation = {
                             Depth = 1,
                             Attributes = { skillchain },
@@ -584,15 +614,17 @@ function M.HandleActionPacket(actionPacket)
                     end
 
                 elseif weaponskillMessageIds[action.Message] then
-                    -- WS hit without skillchain - set up new resonation
-                    local attributes = weaponskillResonationMap[wsId];
-                    if attributes then
+                    local attributes = nil;
+                    if actionType == 3 then
+                        attributes = weaponskillResonationMap[param];
+                    else
+                        attributes = pactAttributes;
+                    end
+                    if attributes and #attributes > 0 then
                         local now = os.clock();
                         resonationMap[targetIndex] = {
                             Depth = 0,
                             Attributes = attributes,
-                            -- For UI prediction, show immediately (window opens now)
-                            -- Actual skillchain can land ~3-10 seconds after opener
                             WindowOpen = now,
                             WindowClose = now + 10.0,
                         };

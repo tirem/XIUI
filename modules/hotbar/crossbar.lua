@@ -16,6 +16,7 @@ local FontManager = fonts.FontManager;
 local dragdrop = require('libs.dragdrop');
 
 local data = require('modules.hotbar.data');
+local macropalette = require('modules.hotbar.macropalette');
 local playerdata = require('modules.hotbar.playerdata');
 local actions = require('modules.hotbar.actions');
 local textures = require('modules.hotbar.textures');
@@ -24,6 +25,7 @@ local recast = require('modules.hotbar.recast');
 local slotrenderer = require('modules.hotbar.slotrenderer');
 local animation = require('libs.animation');
 local skillchain = require('modules.hotbar.skillchain');
+local macroparse = require('modules.hotbar.macroparse');
 local targetLib = require('libs.target');
 local palette = require('modules.hotbar.palette');
 local TextureManager = require('libs.texturemanager');
@@ -984,38 +986,56 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         dropAccepts = {'macro', 'crossbar_slot', 'slot'},
         onDrop = function(payload)
             if payload.type == 'macro' then
-                if payload.data then payload.data.macroPaletteKey = payload.data.macroPaletteKey or data.jobId; end
+                -- Must match macropalette.HandleDropOnSlot: defaulting to data.jobId breaks Global/Items/Equipment/XIUI
+                -- and custom bucket macros (same macroRef would resolve in the current job's macroDB).
+                if payload.data and payload.data.macroPaletteKey == nil then
+                    if macropalette.GetEffectivePaletteType then
+                        payload.data.macroPaletteKey = macropalette.GetEffectivePaletteType();
+                    else
+                        payload.data.macroPaletteKey = data.jobId or 1;
+                    end
+                end
+                if payload.data and macropalette.GetMacroSourceTagForDrops and payload.data.macroSourceStore == nil then
+                    payload.data.macroSourceStore = macropalette.GetMacroSourceTagForDrops();
+                end
+                local m = payload.data;
+                local arm = {};
+                for k, v in pairs(m) do arm[k] = v; end
+                if arm.macroRef == nil and m.id then
+                    arm.macroRef = m.id;
+                end
+                local ex = palSk and data.GetDraftRawSlotData(comboMode, slotIndex) or data.GetRawCrossbarSlotAction(comboMode, slotIndex);
+                local store = m.macroSourceStore or (macropalette.GetMacroSourceTagForDrops and macropalette.GetMacroSourceTagForDrops()) or 'profile';
+                local built = data.BuildMacroSlotAfterDrop(arm, store, ex);
                 if palSk then
-                    data.SetDraftSlotData(comboMode, slotIndex, payload.data);
+                    data.SetDraftSlotData(comboMode, slotIndex, built);
                 else
-                    data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
+                    data.SetCrossbarSlotData(comboMode, slotIndex, built);
                 end
             elseif payload.type == 'crossbar_slot' then
                 if palSk then data.BeginDraftUndoGroup(); end
-                local targetData;
+                local tgtRaw = palSk and data.GetDraftRawSlotData(comboMode, slotIndex) or data.GetRawCrossbarSlotAction(comboMode, slotIndex);
+                local newTgt, newSrc = data.SwapActiveMacroArmsInPlace(payload.data, tgtRaw);
+                local fT = data.FinalizeCrossbarRawSlotForStorage(newTgt);
+                local fS = data.FinalizeCrossbarRawSlotForStorage(newSrc);
                 if palSk then
-                    targetData = data.GetDraftSlotData(comboMode, slotIndex);
+                    if fT == nil then data.ClearDraftSlotData(comboMode, slotIndex) else data.SetDraftSlotData(comboMode, slotIndex, fT) end
                 else
-                    targetData = data.GetCrossbarSlotData(comboMode, slotIndex);
+                    data.SetCrossbarSlotData(comboMode, slotIndex, fT);
                 end
-                local srcKey = payload.paletteEditStorageKey;
-                if srcKey then
-                    data.SetDraftSlotData(payload.comboMode, payload.slotIndex, targetData);
+                if payload.paletteEditStorageKey then
+                    if fS == nil then data.ClearDraftSlotData(payload.comboMode, payload.slotIndex) else data.SetDraftSlotData(payload.comboMode, payload.slotIndex, fS) end
                 else
-                    data.SetCrossbarSlotData(payload.comboMode, payload.slotIndex, targetData);
-                end
-                if palSk then
-                    data.SetDraftSlotData(comboMode, slotIndex, payload.data);
-                else
-                    data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
+                    data.SetCrossbarSlotData(payload.comboMode, payload.slotIndex, fS);
                 end
                 if palSk then data.EndDraftUndoGroup(); end
             elseif payload.type == 'slot' then
                 if payload.data then
+                    local c = data.FinalizeCrossbarRawSlotForStorage(data.CopyTable(payload.data));
                     if palSk then
-                        data.SetDraftSlotData(comboMode, slotIndex, payload.data);
+                        if c == nil then data.ClearDraftSlotData(comboMode, slotIndex) else data.SetDraftSlotData(comboMode, slotIndex, c) end
                     else
-                        data.SetCrossbarSlotData(comboMode, slotIndex, payload.data);
+                        data.SetCrossbarSlotData(comboMode, slotIndex, c);
                     end
                 end
             end
@@ -1030,10 +1050,11 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         end,
         dragType = 'crossbar_slot',
         getDragData = function()
+            local raw = palSk and data.GetDraftRawSlotData(comboMode, slotIndex) or data.GetRawCrossbarSlotAction(comboMode, slotIndex);
             return {
                 comboMode = comboMode,
                 slotIndex = slotIndex,
-                data = slotData,
+                data = raw,
                 icon = icon,
                 label = slotData and (slotData.displayName or slotData.action) or ('Slot ' .. slotIndex),
                 paletteEditStorageKey = palSk,
@@ -1488,8 +1509,19 @@ local function DrawSide(side, mode, groupX, groupY, slotSize, settings, isActive
         local slotSkillchainName = nil;
         if skillchainEnabled then
             local slotData = data.GetCrossbarSlotData(mode, slotIndex);
-            if slotData and slotData.actionType == 'ws' and slotData.action then
-                slotSkillchainName = skillchain.GetSkillchainForSlot(targetServerId, slotData.action);
+            if slotData then
+                if slotData.actionType == 'ws' and slotData.action then
+                    slotSkillchainName = skillchain.GetSkillchainForSlot(targetServerId, slotData.action);
+                elseif slotData.actionType == 'pet' and slotData.action then
+                    slotSkillchainName = skillchain.GetSkillchainForBloodPact(targetServerId, slotData.action);
+                elseif slotData.actionType == 'macro' and slotData.macroText then
+                    local primaryType, primaryName = macroparse.GetMacroPrimaryAndJaBadge(slotData.macroText);
+                    if primaryType == 'ws' and primaryName then
+                        slotSkillchainName = skillchain.GetSkillchainForSlot(targetServerId, primaryName);
+                    elseif primaryType == 'pet' and primaryName then
+                        slotSkillchainName = skillchain.GetSkillchainForBloodPact(targetServerId, primaryName);
+                    end
+                end
             end
         end
         DrawSlot(mode, slotIndex, slotX, slotY, slotSize, settings, isActive, isPressed, animOpacity, yOffset, slotSkillchainName, activeCombo);

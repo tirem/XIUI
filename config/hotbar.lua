@@ -21,6 +21,7 @@ local macrosLib = require('libs.ffxi.macros');
 local palette = require('modules.hotbar.palette');
 local migrationWizard = require('config.migration');
 local paletteManager = require('config.palettemanager');
+local petAllowlist = require('modules.hotbar.pet_palette_allowlist');
 
 local M = {};
 
@@ -1611,21 +1612,34 @@ local function DrawBarVisualSettings(configKey, barLabel)
         end
         if imgui.Button(petAware and 'Enabled##pet' .. configKey or 'Disabled##pet' .. configKey, {100, 0}) then
             barSettings.petAware = not petAware;
+            if not barSettings.petAware then
+                barSettings.petPalettePetKeys = nil;
+            end
             SaveSettingsOnly();
         end
         imgui.PopStyleColor(3);
         imgui.ShowHelp('Pet Palettes: Each summoned pet can have its own hotbar configuration.\nSMN: Per-avatar palettes (Ifrit, Shiva, etc.)\nDRG: Wyvern palette\nBST: Jug pet / Charm palettes\nPUP: Automaton palette\n\nClick to toggle.');
 
-        -- Show indicator checkbox (only visible when petAware is enabled)
+        -- Show indicator + pet allowlist (only when petAware is enabled)
         if petAware then
-            imgui.SameLine();
-            imgui.SetCursorPosX(imgui.GetCursorPosX() + 10);
+            imgui.Dummy({ 0, 4 });
             local showIndicator = { barSettings.showPetIndicator ~= false };
             if imgui.Checkbox('Show Indicator##' .. configKey, showIndicator) then
                 barSettings.showPetIndicator = showIndicator[1];
                 SaveSettingsOnly();
             end
             imgui.ShowHelp('Show a small dot indicator next to the bar number when pet palettes are active.');
+            local popupId = 'petallow_hb_' .. configKey;
+            if imgui.SmallButton('Pets…##' .. popupId) then
+                imgui.OpenPopup(popupId);
+            end
+            imgui.ShowHelp('Optional: limit which pet types use a separate layout (Summons, Beasts, Wyvern, Puppet). Others use your normal job bar.');
+            if imgui.BeginPopup(popupId) then
+                petAllowlist.DrawEditorInPopup(barSettings, data.jobId or 1, SaveSettingsOnly, function()
+                    data.InvalidateStorageKeyCache();
+                end);
+                imgui.EndPopup();
+            end
         end
     end
 

@@ -19,6 +19,16 @@ local cachedItems = nil;
 local cacheJobId = nil;
 local cacheSubJobId = nil;
 
+-- Full invalidation signature (job/level/equip/level sync) + periodic WS-count poll
+local cacheFullSignature = nil;
+local lastWsCountPollClock = 0;
+local lastCachedWsAbilityCount = -1;
+local WS_ABILITY_COUNT_POLL_INTERVAL = 0.75;
+local lastEquipSignaturePollClock = 0;
+local EQUIP_SIGNATURE_POLL_INTERVAL = 0.6;
+
+local equipmentWs = require('modules.hotbar.equipment_ws');
+
 -- ============================================
 -- Container Definitions
 -- ============================================
@@ -324,6 +334,23 @@ function M.GetPlayerWeaponskills()
     return weaponskills;
 end
 
+--- Count type-3 abilities the player has (cheap drift detector for new WS without job change).
+local function countLearnedWeaponSkillAbilities(player)
+    if not player then return 0; end
+    local resMgr = AshitaCore:GetResourceManager();
+    if not resMgr then return 0; end
+    local c = 0;
+    for abilityId = 1, 1024 do
+        if player:HasAbility(abilityId) then
+            local ability = resMgr:GetAbilityById(abilityId);
+            if ability and ability.Type and bit.band(ability.Type, 7) == ABILITY_TYPE_WEAPON_SKILL then
+                c = c + 1;
+            end
+        end
+    end
+    return c;
+end
+
 --- Get items from all player storage containers
 ---@return table Array of {id, name, container, count, slots, usable}
 function M.GetPlayerItems()
@@ -401,18 +428,43 @@ function M.RefreshCachedLists(dataModule)
     local dataJobId = dataModule and dataModule.jobId or currentJobId;
     local dataSubjobId = dataModule and dataModule.subjobId or currentSubJobId;
 
-    -- Refresh if main job, sub job changed, or cache is empty
-    -- Also refresh if data.jobId differs from cache (pending job change)
-    local jobChanged = cacheJobId ~= currentJobId or cacheSubJobId ~= currentSubJobId;
-    local pendingChange = cacheJobId ~= nil and (cacheJobId ~= dataJobId or cacheSubJobId ~= dataSubjobId);
+    local equipSig = equipmentWs.GetPlayerWeaponskillCacheSignature(player);
+    local fullSig = equipSig .. '|' .. tostring(dataJobId) .. '|' .. tostring(dataSubjobId);
 
-    if jobChanged or pendingChange or not cachedSpells then
+    local nowClock = os.clock();
+    local pendingChange = cacheJobId ~= nil and (cacheJobId ~= dataJobId or cacheSubJobId ~= dataSubjobId);
+    local needRefresh = (fullSig ~= cacheFullSignature)
+        or pendingChange
+        or (not cachedSpells);
+
+    if (not needRefresh) and (nowClock - lastWsCountPollClock >= WS_ABILITY_COUNT_POLL_INTERVAL) then
+        lastWsCountPollClock = nowClock;
+        local wsCountNow = countLearnedWeaponSkillAbilities(player);
+        if wsCountNow ~= lastCachedWsAbilityCount then
+            needRefresh = true;
+        end
+    end
+
+    -- Throttled equip/sync signature poll: catches rare drift if memory state updates without a frame-tied signature change
+    if (not needRefresh) and cacheFullSignature and (nowClock - lastEquipSignaturePollClock >= EQUIP_SIGNATURE_POLL_INTERVAL) then
+        lastEquipSignaturePollClock = nowClock;
+        local equipSigPoll = equipmentWs.GetPlayerWeaponskillCacheSignature(player);
+        local fullSigPoll = equipSigPoll .. '|' .. tostring(dataJobId) .. '|' .. tostring(dataSubjobId);
+        if fullSigPoll ~= cacheFullSignature then
+            needRefresh = true;
+        end
+    end
+
+    if needRefresh then
         cachedSpells = M.GetPlayerSpells();
         cachedAbilities = M.GetPlayerAbilities();
+        -- WS list: trust client HasAbility only; gear/job/sync in signature refreshes cache.
         cachedWeaponskills = M.GetPlayerWeaponskills();
         cachedItems = nil;  -- Clear items cache to refresh on next access
         cacheJobId = currentJobId;
         cacheSubJobId = currentSubJobId;
+        cacheFullSignature = fullSig;
+        lastCachedWsAbilityCount = countLearnedWeaponSkillAbilities(player);
 
         -- Clear expanded caches on job change so they rebuild with fresh data
         expandedSpellsCache = nil;
@@ -422,6 +474,11 @@ function M.RefreshCachedLists(dataModule)
         -- Discover any newly learned WS and persist to charSettings
         if M.DiscoverNewWeaponskills() and SaveCharacterSettingsInternal then
             SaveCharacterSettingsInternal();
+        end
+
+        local okSr, slotrenderer = pcall(require, 'modules.hotbar.slotrenderer');
+        if okSr and slotrenderer and slotrenderer.ClearAvailabilityCache then
+            slotrenderer.ClearAvailabilityCache();
         end
     end
 
@@ -463,6 +520,8 @@ function M.ClearCache()
     cachedItems = nil;
     cacheJobId = nil;
     cacheSubJobId = nil;
+    cacheFullSignature = nil;
+    lastCachedWsAbilityCount = -1;
     expandedSpellsCache = nil;
     expandedAbilitiesCache = nil;
     expandedWsCache = nil;

@@ -10,6 +10,7 @@ local json = require('libs.json');
 local jobs = require('libs.jobs');
 local palette = require('modules.hotbar.palette');
 local data = require('modules.hotbar.data');
+local sharedMacroStore = require('core.shared_macro_store');
 
 local M = {};
 
@@ -72,6 +73,19 @@ local function formatMacroBucketLabel(ks)
     if ks == 'items' then
         return 'Macros — Items (gear / consumables, all jobs)';
     end
+    if ks == 'equipment' then
+        return 'Macros — Equipment (all jobs)';
+    end
+    if ks == 'xiui' then
+        return 'Macros — XIUI Commands (slash shortcuts, all jobs)';
+    end
+    if type(ks) == 'string' and ks:sub(1, 8) == 'custom:' and gConfig and gConfig.macroCustomCategories then
+        for _, e in ipairs(gConfig.macroCustomCategories) do
+            if e.key == ks then
+                return string.format('Macros — %s (custom category)', e.label or ks);
+            end
+        end
+    end
     local n = tonumber(ks);
     if n then
         return string.format('Macros — %s (job id %d)', jobAbbr(n), n);
@@ -127,6 +141,12 @@ local function macroKeyFromString(s)
     end
     if s == 'items' then
         return 'items';
+    end
+    if s == 'equipment' then
+        return 'equipment';
+    end
+    if s == 'xiui' then
+        return 'xiui';
     end
     local n = tonumber(s);
     if n then
@@ -267,7 +287,7 @@ local function encodeAllMacros()
     end
     if next(labels) ~= nil then
         out._labels = labels;
-        out._readme = 'Bucket keys: "global" = shared across jobs; "items" = item/gear macros (all jobs); a plain number = that job id (1=WAR, 2=MNK, ...); "<jobId>:avatar:<id>" or "<jobId>:spirit:<id>" = pet-specific overlays. See _labels for human-readable names. To remove a macro bucket from this import, delete its key (and the matching _labels entry).';
+        out._readme = 'Bucket keys: "global" = shared across jobs; "items" / "equipment" = all-jobs buckets; "xiui" = XIUI slash shortcuts; "custom:N" = user-defined categories; a plain number = that job id (1=WAR, 2=MNK, ...); "<jobId>:avatar:<id>" or "<jobId>:spirit:<id>" = pet-specific overlays. See _labels for human-readable names. To remove a macro bucket from this import, delete its key (and the matching _labels entry).';
     end
     return out;
 end
@@ -425,6 +445,15 @@ function M.ExportProfile(exportPart)
 
     if exportPart ~= M.EXPORT_PART_PALETTES_ONLY then
         payload.macros = encodeAllMacros();
+        if gConfig.macroCustomCategories and next(gConfig.macroCustomCategories) ~= nil then
+            payload.macroCustomCategories = deepCopy(gConfig.macroCustomCategories);
+        end
+        if gConfig.macroCustomNextSeq and gConfig.macroCustomNextSeq > 1 then
+            payload.macroCustomNextSeq = gConfig.macroCustomNextSeq;
+        end
+        if gConfig.macroXiuiDefaultsSeeded ~= nil then
+            payload.macroXiuiDefaultsSeeded = gConfig.macroXiuiDefaultsSeeded;
+        end
     end
 
     local ok, result = pcall(prettyEncode, payload);
@@ -476,6 +505,12 @@ local function importMacrosAppend(macrosObj)
                     destBucket = gConfig.macroDB[destKey];
                 end
                 local maxId = nextMacroIdInBucket(destBucket);
+                if (gConfig.macroStorageScope or 'profile') == 'shared' and sharedMacroStore.GetMaxMacroIdInFrozenProfileBucket then
+                    local fmax = sharedMacroStore.GetMaxMacroIdInFrozenProfileBucket(destKey);
+                    if fmax > maxId then
+                        maxId = fmax;
+                    end
+                end
                 idMaps[srcKs] = idMaps[srcKs] or {};
                 for _, m in ipairs(list) do
                     if type(m) == 'table' and m.id then
@@ -546,18 +581,30 @@ local function macroExistsInBucket(bucketKey, macroId)
     return false;
 end
 
+local K_MACRO_BIND_P = 'macroBindProfile';
+local K_MACRO_BIND_S = 'macroBindShared';
+
 --- Validate that every macroRef in the imported palettes already resolves in the destination's macroDB.
 --- Used when palette import is requested without macro import.
 local function validatePaletteMacroRefs(hotbarPalettesTbl, crossbarPalettesTbl)
-    local function check(slot, defMk, where)
-        if type(slot) ~= 'table' or not slot.macroRef then return nil; end
-        local mpk = slot.macroPaletteKey or defMk;
-        if not macroExistsInBucket(mpk, slot.macroRef) then
+    local function checkArm(arm, defMk, where)
+        if type(arm) ~= 'table' or not arm.macroRef then return nil; end
+        local mpk = arm.macroPaletteKey or defMk;
+        if not macroExistsInBucket(mpk, arm.macroRef) then
             return string.format(
                 'Destination is missing macro id %s (bucket %s) referenced by %s. Import macros too, or choose a full export.',
-                tostring(slot.macroRef), macroKeyToString(mpk), where);
+                tostring(arm.macroRef), macroKeyToString(mpk), where);
         end
         return nil;
+    end
+
+    local function check(slot, defMk, where)
+        if type(slot) ~= 'table' then return nil; end
+        local e = checkArm(slot[K_MACRO_BIND_P], defMk, where);
+        if e then return e; end
+        e = checkArm(slot[K_MACRO_BIND_S], defMk, where);
+        if e then return e; end
+        return checkArm(slot, defMk, where);
     end
 
     if type(hotbarPalettesTbl) == 'table' then
@@ -601,17 +648,25 @@ local function validatePaletteMacroRefs(hotbarPalettesTbl, crossbarPalettesTbl)
     return true;
 end
 
-local function remapSlotMacroRefs(slot, defMk, idMaps)
-    if type(slot) ~= 'table' or not slot.macroRef then return; end
-    local srcKs = macroKeyToString(slot.macroPaletteKey);
+local function remapMacroArm(arm, defMk, idMaps)
+    if type(arm) ~= 'table' or not arm.macroRef then return; end
+    local srcKs = macroKeyToString(arm.macroPaletteKey);
     if srcKs == '' then
         srcKs = macroKeyToString(defMk);
     end
     local map = idMaps and idMaps[srcKs];
-    if map and map[slot.macroRef] then
-        slot.macroRef = map[slot.macroRef];
-        slot.macroPaletteKey = defMk;
+    if map and map[arm.macroRef] then
+        arm.macroRef = map[arm.macroRef];
+        arm.macroPaletteKey = defMk;
     end
+end
+
+local function remapSlotMacroRefs(slot, defMk, idMaps)
+    if type(slot) ~= 'table' then return; end
+    remapMacroArm(slot[K_MACRO_BIND_P], defMk, idMaps);
+    remapMacroArm(slot[K_MACRO_BIND_S], defMk, idMaps);
+    if slot[K_MACRO_BIND_P] or slot[K_MACRO_BIND_S] then return; end
+    remapMacroArm(slot, defMk, idMaps);
 end
 
 --- Write imported hotbar palettes into gConfig.hotbarBar1..6.slotActions by storage key.
@@ -842,6 +897,43 @@ function M.ImportProfile(jsonStr, opts)
             end
             idMaps = maps;
         end
+        if replace then
+            if type(decoded.macroCustomCategories) == 'table' then
+                gConfig.macroCustomCategories = deepCopy(decoded.macroCustomCategories);
+            else
+                gConfig.macroCustomCategories = {};
+            end
+        elseif type(decoded.macroCustomCategories) == 'table' then
+            gConfig.macroCustomCategories = gConfig.macroCustomCategories or {};
+            local have = {};
+            for _, e in ipairs(gConfig.macroCustomCategories) do
+                if e and e.key then
+                    have[e.key] = true;
+                end
+            end
+            for _, e in ipairs(decoded.macroCustomCategories) do
+                if type(e) == 'table' and e.key and not have[e.key] then
+                    table.insert(gConfig.macroCustomCategories, deepCopy(e));
+                    have[e.key] = true;
+                end
+            end
+        end
+        if decoded.macroCustomNextSeq and type(decoded.macroCustomNextSeq) == 'number' then
+            if replace then
+                gConfig.macroCustomNextSeq = decoded.macroCustomNextSeq;
+            else
+                gConfig.macroCustomNextSeq = math.max(tonumber(gConfig.macroCustomNextSeq) or 1, decoded.macroCustomNextSeq);
+            end
+        elseif replace then
+            gConfig.macroCustomNextSeq = 1;
+        end
+        if replace then
+            if decoded.macroXiuiDefaultsSeeded ~= nil then
+                gConfig.macroXiuiDefaultsSeeded = decoded.macroXiuiDefaultsSeeded;
+            else
+                gConfig.macroXiuiDefaultsSeeded = false;
+            end
+        end
     end
 
     if importPalettes then
@@ -875,6 +967,9 @@ function M.ImportProfile(jsonStr, opts)
 
     data.MarkMacroLookupDirty();
     palette.InvalidateCachesAfterExternalSlotMutation();
+    if importMacros and gConfig and (gConfig.macroStorageScope or 'profile') == 'shared' then
+        sharedMacroStore.MarkSharedLibraryDirty();
+    end
     if SaveSettingsToDisk then
         SaveSettingsToDisk();
     end

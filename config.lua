@@ -125,6 +125,9 @@ local showNewProfilePopup = false;
 local triggerNewProfilePopup = false;
 local triggerDeleteProfilePopup = false;
 local triggerRenameProfilePopup = false;
+local triggerCopyProfilePopup = false;
+-- [1] = include full macroDB when using Copy (DuplicateProfile)
+local copyProfileIncludeMacros = { true };
 
 -- Profile JSON export/import (whole-profile: all palettes + all macros)
 local profileJsonWinOpen = { false };
@@ -513,7 +516,9 @@ local function DrawProfilesWindow()
             imgui.Spacing();
             imgui.PushStyleColor(ImGuiCol_Text, { 0.55, 0.55, 0.62, 1.0 });
             imgui.TextWrapped(
-                'Every character that uses this profile name shares the same XIUI data (palettes, macros, layout).'
+                'Every character that uses this profile name shares the same XIUI data (palettes, macros, layout). '
+                .. 'Use Copy to duplicate the active profile: you can include the full macro library or only layout/appearance. '
+                .. 'To move specific macros, use Export/Import JSON. Empty palette buckets (e.g. Items) are not stored on disk until you add something there.'
             );
             imgui.PopStyleColor();
         end
@@ -531,7 +536,8 @@ local function DrawProfilesWindow()
         imgui.SameLine();
 
         if (imgui.Button("Copy")) then
-            DuplicateProfile(currentProfile);
+            copyProfileIncludeMacros[1] = true;
+            triggerCopyProfilePopup = true;
         end
 
         imgui.SameLine();
@@ -884,6 +890,10 @@ local function DrawProfilePopups()
         imgui.OpenPopup("Delete Profile");
         triggerDeleteProfilePopup = false;
     end
+    if (triggerCopyProfilePopup) then
+        imgui.OpenPopup("Copy Profile");
+        triggerCopyProfilePopup = false;
+    end
 
     -- New Profile Popup
     if (imgui.BeginPopupModal("New Profile", true, ImGuiWindowFlags_AlwaysAutoResize)) then
@@ -949,7 +959,41 @@ local function DrawProfilePopups()
         end
         imgui.EndPopup();
     end
-    
+
+    -- Copy Profile: optional macro library (full clone vs layout-only for another character)
+    if (imgui.BeginPopupModal("Copy Profile", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+        isModalOpen = true;
+        local src = (GetCurrentProfileName and GetCurrentProfileName()) or '';
+        imgui.Text("Create a new profile from:");
+        imgui.TextColored(gold, src);
+        imgui.Spacing();
+        imgui.TextWrapped(
+            'Copy is a full snapshot of the selected profile on disk, except you can start without a macro library. '
+            .. 'Buckets that were never used (e.g. Items / Equipment) are not in the file — that is why a clone can show Global/job rows but no separate items bucket until you add some.'
+        );
+        imgui.Spacing();
+        imgui.Checkbox("Include full macro library##copyInclMacros", copyProfileIncludeMacros);
+        if (imgui.ShowHelp) then
+            imgui.SameLine();
+            imgui.ShowHelp(
+                "When checked: all macro palette buckets in this profile (same as a full file copy). When unchecked: empty macro list and custom categories reset; keyboard/crossbar slots that used palette macros are cleared. Spells, abilities, and items on bars are kept. Use Profile → Export/Import JSON to move chosen macros between profiles."
+            );
+        end
+        imgui.Spacing();
+        if (imgui.Button("Create copy##CopyProfileGo", { 120, 0 })) then
+            if (DuplicateProfile and GetCurrentProfileName) then
+                if (DuplicateProfile(GetCurrentProfileName(), { includeMacroLibrary = (copyProfileIncludeMacros[1] == true) })) then
+                    imgui.CloseCurrentPopup();
+                end
+            end
+        end
+        imgui.SameLine();
+        if (imgui.Button("Cancel##CopyProfile", { 120, 0 })) then
+            imgui.CloseCurrentPopup();
+        end
+        imgui.EndPopup();
+    end
+
     return isModalOpen;
 end
 

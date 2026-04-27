@@ -11,6 +11,7 @@ local ffi = require('ffi');
 local imgui = require('imgui');
 local recast = require('modules.hotbar.recast');
 local actions = require('modules.hotbar.actions');
+local macroparse = require('modules.hotbar.macroparse');
 local dragdrop = require('libs.dragdrop');
 local textures = require('modules.hotbar.textures');
 local skillchain = require('modules.hotbar.skillchain');
@@ -1377,10 +1378,19 @@ function M.DrawSlot(resources, params)
         end
     end
 
-    -- Player levels (used for availability cache invalidation on level sync)
-    local playerForAvail = AshitaCore:GetMemoryManager():GetPlayer();
+    -- Player + party slot 0 levels: under level sync the effective cap can change when the sync target
+    -- levels up (buff 269 unchanged). Party levels may update before Player API; include both in key.
+    local memForAvail = AshitaCore:GetMemoryManager();
+    local playerForAvail = memForAvail and memForAvail:GetPlayer();
     local mainJobLevelForAvail = playerForAvail and playerForAvail:GetMainJobLevel() or 0;
     local subJobLevelForAvail = playerForAvail and playerForAvail:GetSubJobLevel() or 0;
+    local partyMainLvAvail = 0;
+    local partySubLvAvail = 0;
+    local partyForAvail = memForAvail and memForAvail:GetParty();
+    if partyForAvail and partyForAvail.GetMemberIsActive and partyForAvail:GetMemberIsActive(0) == 1 then
+        partyMainLvAvail = partyForAvail:GetMemberMainJobLevel(0) or 0;
+        partySubLvAvail = partyForAvail:GetMemberSubJobLevel(0) or 0;
+    end
 
     if bind and not isLiteChecks then
         local mpCost = mpCostCache[bindKey];
@@ -1395,6 +1405,25 @@ function M.DrawSlot(resources, params)
         end
     end
 
+    -- Weapon skills (and macros whose primary line is /ws) need 1000 TP for UI grey state
+    local notEnoughTp = false;
+    if bind and not isLiteChecks then
+        local needsWsTp = false;
+        if bind.actionType == 'ws' then
+            needsWsTp = true;
+        elseif bind.actionType == 'macro' and bind.macroText then
+            local primaryType = select(1, macroparse.GetMacroPrimaryAndJaBadge(bind.macroText));
+            if primaryType == 'ws' then
+                needsWsTp = true;
+            end
+        end
+        if needsWsTp then
+            local partyTp = AshitaCore:GetMemoryManager():GetParty();
+            local playerTp = partyTp and partyTp:GetMemberTP(0) or 0;
+            notEnoughTp = playerTp < 1000;
+        end
+    end
+
     -- Check if action is available (job/level requirements)
     local isUnavailable = false;
     local unavailableReason = nil;
@@ -1403,7 +1432,8 @@ function M.DrawSlot(resources, params)
         local player = playerForAvail;
         local jobId = player and player:GetMainJob() or 0;
         local subjobId = player and player:GetSubJob() or 0;
-        local availKey = bindKey .. ':' .. jobId .. ':' .. subjobId .. ':' .. mainJobLevelForAvail .. ':' .. subJobLevelForAvail;
+        local availKey = bindKey .. ':' .. jobId .. ':' .. subjobId .. ':' .. mainJobLevelForAvail .. ':' .. subJobLevelForAvail
+            .. ':' .. partyMainLvAvail .. ':' .. partySubLvAvail;
 
         local cached = availabilityCache[availKey];
         if cached == nil then
@@ -1430,6 +1460,8 @@ function M.DrawSlot(resources, params)
         overlayApplyGrey = false;
     elseif isOnCooldown then
         overlayColorMult = 0.4;
+    elseif notEnoughTp then
+        overlayColorMult = 0.6;
     elseif notEnoughMp then
         overlayColorMult = 0.6;
     end
@@ -1518,6 +1550,8 @@ function M.DrawSlot(resources, params)
                 applyGreyTint = false;
             elseif isOnCooldown then
                 colorMult = 0.4;
+            elseif notEnoughTp then
+                colorMult = 0.6;
             elseif notEnoughMp then
                 colorMult = 0.6;  -- Slightly dimmed when not enough MP
             end
@@ -1589,6 +1623,8 @@ function M.DrawSlot(resources, params)
                     applyGreyTint = false;
                 elseif isOnCooldown then
                     colorMult = 0.4;
+                elseif notEnoughTp then
+                    colorMult = 0.6;
                 elseif notEnoughMp then
                     colorMult = 0.6;  -- Slightly dimmed when not enough MP
                 end
@@ -1725,9 +1761,11 @@ function M.DrawSlot(resources, params)
                 cache.abbreviation = abbr;
             end
 
-            -- Compute color with dimming for unavailable/low MP
+            -- Compute color with dimming (same priority as main icon)
             local colorMult = 1.0;
             if isUnavailable then colorMult = 0.35;
+            elseif isOnCooldown then colorMult = 0.4;
+            elseif notEnoughTp then colorMult = 0.6;
             elseif notEnoughMp then colorMult = 0.6; end
             colorMult = colorMult * dimFactor;
 
@@ -1854,12 +1892,14 @@ function M.DrawSlot(resources, params)
             end
 
             -- Determine label color based on state
-            -- Priority: Unavailable (grey) > Cooldown (grey) > Not enough MP (red) > Normal
+            -- Priority: Unavailable (grey) > Cooldown (grey) > Low TP (grey) > Not enough MP (red) > Normal
             local labelColor = params.labelFontColor or 0xFFFFFFFF;
 
             if isUnavailable then
                 labelColor = 0xFF888888;
             elseif isOnCooldown then
+                labelColor = params.labelCooldownColor or 0xFF888888;
+            elseif notEnoughTp then
                 labelColor = params.labelCooldownColor or 0xFF888888;
             elseif notEnoughMp then
                 labelColor = params.labelNoMpColor or 0xFFFF4444;
@@ -1895,6 +1935,8 @@ function M.DrawSlot(resources, params)
             if isUnavailable then
                 labelColor = 0xFF888888;
             elseif isOnCooldown then
+                labelColor = params.labelCooldownColor or 0xFF888888;
+            elseif notEnoughTp then
                 labelColor = params.labelCooldownColor or 0xFF888888;
             elseif notEnoughMp then
                 labelColor = params.labelNoMpColor or 0xFFFF4444;
@@ -2219,10 +2261,20 @@ function M.DrawSlot(resources, params)
             end
         end
 
-        -- Skillchain highlight (animated dotted border + icon)
+        -- Skillchain highlight (animated dotted border + icon) — opacity follows slot dim state
         if params.skillchainName then
             local scColor = params.skillchainColor or 0xFFD4AA44;  -- Default gold
-            DrawSkillchainHighlight(fgDrawList, x, y, size, params.skillchainName, scColor, animOpacity);
+            local scHighlightOpacity = animOpacity * dimFactor;
+            if isUnavailable then
+                scHighlightOpacity = scHighlightOpacity * 0.35 * 0.7;
+            elseif isOnCooldown then
+                scHighlightOpacity = scHighlightOpacity * 0.4;
+            elseif notEnoughTp then
+                scHighlightOpacity = scHighlightOpacity * 0.6;
+            elseif notEnoughMp then
+                scHighlightOpacity = scHighlightOpacity * 0.6;
+            end
+            DrawSkillchainHighlight(fgDrawList, x, y, size, params.skillchainName, scColor, scHighlightOpacity);
         end
     end
 

@@ -57,6 +57,15 @@ local settingsUpdater = require('core.settings.updater');
 local gameState = require('core.gamestate');
 local uiModules = require('core.moduleregistry');
 local profileManager = require('core.profile_manager');
+local sharedMacroStore = require('core.shared_macro_store');
+
+-- When gConfig is replaced, hotbar data caches must be invalidated (macroIdLookup points into macroDB)
+local function xiuiInvalidateHotbarDataCaches()
+    local ok, d = pcall(require, 'modules.hotbar.data');
+    if (ok and d and d.InvalidateConfigDerivedCaches) then
+        d.InvalidateConfigDerivedCaches();
+    end
+end
 
 -- UI modules
 local uiMods = require('modules.init');
@@ -492,6 +501,8 @@ end
 gConfig.appliedPositions = {};
 gConfigVersion = 0;
 settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
+sharedMacroStore.ApplyAfterProfileLoad(gConfig);
+xiuiInvalidateHotbarDataCaches();
 
 -- Show migration message
 
@@ -580,7 +591,12 @@ function CreateProfile(name)
     return true;
 end
 
-function DuplicateProfile(name)
+-- options.includeMacroLibrary: default true (full file clone). When false, macroDB is reset and
+-- palette-macro bar slots are cleared; use for a new character that should keep layout but not
+-- the source macro library. Use Profile → Export/Import JSON to move a chosen macro set.
+function DuplicateProfile(name, options)
+    options = options or {};
+    local includeMacroLibrary = (options.includeMacroLibrary ~= false);
     local baseName = name;
     -- If duplicating Default, we might want to name it "Profile (1)" or just "Default (1)"
 
@@ -596,6 +612,16 @@ function DuplicateProfile(name)
     if (currentSettings == nil) then return false; end
 
     local newSettings = deep_copy_table(currentSettings);
+    if (not includeMacroLibrary) then
+        newSettings.macroDB = {};
+        newSettings.macroCustomCategories = deep_copy_table(defaultUserSettings.macroCustomCategories or T{});
+        newSettings.macroCustomNextSeq = defaultUserSettings.macroCustomNextSeq or 1;
+        newSettings.macroXiuiDefaultsSeeded = false;
+        local ok, hotbarData = pcall(require, 'modules.hotbar.data');
+        if (ok and hotbarData and hotbarData.StripPaletteMacroBindsFromSettings) then
+            hotbarData.StripPaletteMacroBindsFromSettings(newSettings);
+        end
+    end
     profileManager.SaveProfileSettings(newName, newSettings);
 
     local globalProfiles = profileManager.GetGlobalProfiles();
@@ -607,13 +633,25 @@ function DuplicateProfile(name)
     return true;
 end
 
-
+-- Writes profiles/<name>.lua. When macroStorageScope is shared, the profile file keeps the frozen
+-- macroDB snapshot; the live global library is saved to SharedMacros.lua.
+function SaveCurrentProfileFileToDisk()
+    if sharedMacroStore.IsSharedScope(gConfig) then
+        local oldM = gConfig.macroDB;
+        gConfig.macroDB = sharedMacroStore.GetProfileMacroDbForSave(gConfig);
+        profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+        gConfig.macroDB = oldM;
+        sharedMacroStore.PersistSharedLibraryIfNeeded(gConfig);
+    else
+        profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    end
+end
 
 function ChangeProfile(name)
     if (not profileManager.ProfileExists(name)) then return false; end
 
     -- Always save current profile before switching (positions, etc.)
-    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    SaveCurrentProfileFileToDisk();
 
     config.currentProfile = name;
     bInternalSave = true;
@@ -635,6 +673,8 @@ function ChangeProfile(name)
     end
 
     settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
+    sharedMacroStore.ApplyAfterProfileLoad(gConfig);
+    xiuiInvalidateHotbarDataCaches();
     UpdateSettings();
     return true;
 end
@@ -663,8 +703,11 @@ function ResetSettings()
     gConfig = deep_copy_table(defaultUserSettings);
     gConfig.windowPositions = GetDefaultWindowPositions();
     gConfig.appliedPositions = {};
+    settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
+    sharedMacroStore.ApplyAfterProfileLoad(gConfig);
+    xiuiInvalidateHotbarDataCaches();
     configMenu.ResetConfigWindowPosition();
-    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    SaveCurrentProfileFileToDisk();
     UpdateSettings();
     bInternalSave = true;
     settings.save();
@@ -706,7 +749,7 @@ function CenterAllPositions()
     configMenu.ResetConfigWindowPosition();
 
     -- Save
-    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    SaveCurrentProfileFileToDisk();
     bInternalSave = true;
     settings.save();
     if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
@@ -731,7 +774,7 @@ function SaveSettingsToDisk()
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
-    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    SaveCurrentProfileFileToDisk();
     bInternalSave = true;
     settings.save();
     if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
@@ -742,7 +785,7 @@ function SaveSettingsOnly()
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
-    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    SaveCurrentProfileFileToDisk();
     bInternalSave = true;
     settings.save();
     if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
@@ -926,6 +969,8 @@ settings.register('settings', 'settings_update', function (s)
 
         -- Run migrations
         settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
+        sharedMacroStore.ApplyAfterProfileLoad(gConfig);
+        xiuiInvalidateHotbarDataCaches();
 
         -- Update visuals
         UpdateSettings();
