@@ -762,6 +762,63 @@ function M.ApplyMacroDeleteToSlotAction(slotAction, macroId, deletedTypeKey, onl
     return emptyWhenGone, true;
 end
 
+--- True when a macro arm should be cleared because its entire palette bucket was removed.
+local function macroArmMatchesBucketRemove(arm, removedBucketKey, deleteKind)
+    if not arm or type(arm) ~= 'table' or not arm.macroRef then
+        return false;
+    end
+    deleteKind = deleteKind or 'profile';
+    local mss = arm.macroSourceStore;
+    if deleteKind == 'shared' then
+        if mss == 'profile' then
+            return false;
+        end
+    else
+        if mss == 'shared' then
+            return false;
+        end
+    end
+    if arm.macroPaletteKey == nil then
+        return false;
+    end
+    return macroPaletteKeysEqualData(arm.macroPaletteKey, removedBucketKey);
+end
+
+-- After removing an entire custom:* (or any) macro palette bucket: clear all bindings to that key.
+-- deleteKind: 'profile' = profile-library arms, 'shared' = shared-library arms. emptyWhenGone: hotbar {cleared} / cross nil.
+function M.ApplyMacroPaletteBucketRemovedToSlotAction(slotAction, removedBucketKey, deleteKind, emptyWhenGone)
+    if not slotAction or type(slotAction) ~= 'table' or slotAction.cleared then
+        return nil, false;
+    end
+    if isDualMacroSlotTable(slotAction) then
+        local out = deepCopyTable(slotAction);
+        local chg = false;
+        if macroArmMatchesBucketRemove(out[K_BIND_P], removedBucketKey, deleteKind) then
+            out[K_BIND_P] = nil;
+            chg = true;
+        end
+        if macroArmMatchesBucketRemove(out[K_BIND_S], removedBucketKey, deleteKind) then
+            out[K_BIND_S] = nil;
+            chg = true;
+        end
+        if not chg then
+            return nil, false;
+        end
+        if not out[K_BIND_P] and not out[K_BIND_S] then
+            return emptyWhenGone, true;
+        end
+        out.actionType = 'macro';
+        return out, true;
+    end
+    if not slotAction.macroRef then
+        return nil, false;
+    end
+    if not macroArmMatchesBucketRemove(slotAction, removedBucketKey, deleteKind) then
+        return nil, false;
+    end
+    return emptyWhenGone, true;
+end
+
 local function isLibraryMacroSlotForSwap(s)
     if not s or type(s) ~= 'table' or s.cleared then
         return false;
@@ -1251,6 +1308,22 @@ end
 -- Crossbar Storage Key Resolution (GLOBAL Palette)
 -- ============================================
 
+-- Per combo *segment* (L2, R2, …) pet type filter: comboModeSettings[mode].petPalettePetKeys, or fallback
+-- hotbarCrossbar.petPalettePetKeys, or nil = all. Not per named [J] palette.
+local function getCrossbarPetTypeKeysForMode(crossbarSettings, mode)
+    if not crossbarSettings or not mode then
+        return nil;
+    end
+    local cm = crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[mode];
+    if cm and cm.petPalettePetKeys ~= nil then
+        return cm.petPalettePetKeys;
+    end
+    if crossbarSettings.petPalettePetKeys ~= nil then
+        return crossbarSettings.petPalettePetKeys;
+    end
+    return nil;
+end
+
 -- Merge Crossbar defaults with optional per-named-palette overrides (Job [J] scope only)
 local function GetMergedCrossbarComboModeSettings(comboMode)
     local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
@@ -1261,7 +1334,7 @@ local function GetMergedCrossbarComboModeSettings(comboMode)
     local merged = {
         petAware = base.petAware == true,
         universalOverridePalette = base.universalOverridePalette,
-        petPalettePetKeys = base.petPalettePetKeys,
+        petPalettePetKeys = getCrossbarPetTypeKeysForMode(crossbarSettings, comboMode),
     };
     local p = getPalette();
     if not crossbarSettings or not p or not crossbarSettings.namedPaletteComboModeSettings then
@@ -1286,15 +1359,10 @@ local function GetMergedCrossbarComboModeSettings(comboMode)
     if not ovr then
         return merged;
     end
-    if ovr.petAware ~= nil then
-        merged.petAware = ovr.petAware == true;
-    end
+    -- Pet palette on/off and pet-type allowlist are job-wide, not per named palette.
     if ovr.universalOverridePalette ~= nil then
         local u = ovr.universalOverridePalette;
         merged.universalOverridePalette = (type(u) == 'string' and u ~= '') and u or nil;
-    end
-    if ovr.petPalettePetKeys ~= nil then
-        merged.petPalettePetKeys = ovr.petPalettePetKeys;
     end
     return merged;
 end

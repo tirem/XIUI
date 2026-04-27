@@ -374,7 +374,7 @@ function M.createHotbarBarDefaults(overrides)
         -- Pet-aware toggle (when true, hotbar can have different palettes per pet for SMN/BST/DRG/PUP)
         petAware = false,
         showPetIndicator = true,  -- Show indicator dot when petAware is enabled
-        -- When set: array of type tokens 'summons'|'beasts'|'wyvern'|'puppet'; only those use pet storage. nil = all.
+        -- When set: array of type tokens 'avatars'|'elementals'|'beasts'|'wyvern'|'puppet' (legacy 'summons' = avatars+elementals). nil = all.
         petPalettePetKeys = nil,
 
         -- Layout settings (always per-bar)
@@ -486,7 +486,7 @@ function M.createCrossbarDefaults()
         crossbarUniversalPaletteMeta = {},
         universalCrossbarPaletteOrder = {},
 
-        -- Per-combo-mode settings (pet-aware is per-combo; universalOverridePalette = all-jobs palette name)
+        -- Per-segment: petAware, optional per-segment petPalettePetKeys, universalOverridePalette = all-jobs palette name. Default pet types: petPalettePetKeys on parent.
         comboModeSettings = {
             L2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
             R2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
@@ -497,6 +497,9 @@ function M.createCrossbarDefaults()
         },
         -- Optional per named [J] palette: comboMode -> { petAware?, universalOverridePalette? } (nil field = inherit Crossbar defaults)
         namedPaletteComboModeSettings = {},
+
+        -- Crossbar [J] only: which pet families (avatars/elementals/beasts/wyvern/puppet) use pet hotbar storage; nil = all. Not per named palette.
+        petPalettePetKeys = nil,
 
         -- Per main job id (string key): effective combo mode -> { scope = 'jobShared' | 'global', globalPalette = name? }
         -- Primary L2/R2 are not used. Resolves slot data to jobsegment:{jobId}:{mode} or global:palette:{name}.

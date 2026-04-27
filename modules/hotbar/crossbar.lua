@@ -2253,20 +2253,25 @@ end
 -- Edit Full Palette (same DrawSlot path as gameplay; requires data.BeginCrossbarPaletteEditSession)
 -- ============================================
 
--- Shared palette-editor slot row. When modeRight is non-nil, draws both L2 and R2 groups (pair).
--- When modeRight is nil, draws only the L2 group for the given modeLeft (single strip).
+-- Shared palette-editor slot row. Either or both of modeLeft (L2 group) and modeRight (R2 group) may be set.
+-- When only one is set, the other trigger half is omitted (Pets tab filter).
 local function DrawPaletteEditorRow(screenOriginX, screenOriginY, settings, modeLeft, modeRight, clipMinX, clipMinY, clipMaxX, clipMaxY)
     if not state.initialized then return; end
+    if not modeLeft and not modeRight then
+        return;
+    end
     local editorClipRect;
     if clipMinX and clipMinY and clipMaxX and clipMaxY then
         editorClipRect = { clipMinX, clipMinY, clipMaxX, clipMaxY };
     end
     local slotSize = settings.slotSize or 48;
     for slotIndex = 1, SLOTS_PER_SIDE do
-        local sx, sy = GetSlotPositionInWindow('L2', slotIndex, screenOriginX, screenOriginY, settings);
-        DrawSlot(modeLeft, slotIndex, sx, sy, slotSize, settings, true, false, 1.0, 0, nil, COMBO_MODES.NONE, editorClipRect);
+        if modeLeft then
+            local sx, sy = GetSlotPositionInWindow('L2', slotIndex, screenOriginX, screenOriginY, settings);
+            DrawSlot(modeLeft, slotIndex, sx, sy, slotSize, settings, true, false, 1.0, 0, nil, COMBO_MODES.NONE, editorClipRect);
+        end
         if modeRight then
-            sx, sy = GetSlotPositionInWindow('R2', slotIndex, screenOriginX, screenOriginY, settings);
+            local sx, sy = GetSlotPositionInWindow('R2', slotIndex, screenOriginX, screenOriginY, settings);
             DrawSlot(modeRight, slotIndex, sx, sy, slotSize, settings, true, false, 1.0, 0, nil, COMBO_MODES.NONE, editorClipRect);
         end
     end
@@ -2284,10 +2289,13 @@ end
 --   'primary'    — L2 | R2 (one glyph per side, gap between d-pad and face).
 --   'doubleTap'  — L2 + "×2", R2 + "×2".
 --   'chordCombo' — Left: L2 + R2, Right: R2 + L2 (images with + between).
-function M.DrawPaletteEditorL2R2TriggerGlyphs(screenOriginX, screenOriginY, settings, glyphMode)
+-- Optional 5th: sides = { l = bool, r = bool } (default both true) — hide L2 and/or R2 trigger art when the row is one-sided.
+function M.DrawPaletteEditorL2R2TriggerGlyphs(screenOriginX, screenOriginY, settings, glyphMode, sides)
     local dl = imgui.GetWindowDrawList();
     if not dl then return; end
     glyphMode = glyphMode or 'primary';
+    local sl = (not sides or sides.l ~= false);
+    local sr = (not sides or sides.r ~= false);
     local totalW, _, groupW, ghgt = GetCrossbarDimensions(settings);
     local gs = totalW - 2 * groupW;
     local slotSize = settings.slotSize or 48;
@@ -2344,13 +2352,17 @@ function M.DrawPaletteEditorL2R2TriggerGlyphs(screenOriginX, screenOriginY, sett
     if glyphMode == 'chordCombo' then
         local l2cx = screenOriginX + groupW * 0.5;
         local r2cx = screenOriginX + groupW + gs + groupW * 0.5;
-        drawComboAtCenter(l2cx, 'L2', 'R2');
-        drawComboAtCenter(r2cx, 'R2', 'L2');
+        if sl then
+            drawComboAtCenter(l2cx, 'L2', 'R2');
+        end
+        if sr then
+            drawComboAtCenter(r2cx, 'R2', 'L2');
+        end
         return;
     end
 
     if glyphMode == 'doubleTap' then
-        local x2Str = '×2';
+        local x2Str = 'x2';
         local tw, th = 18, 16;
         if imgui.CalcTextSize then
             local ts = imgui.CalcTextSize(x2Str);
@@ -2359,27 +2371,31 @@ function M.DrawPaletteEditorL2R2TriggerGlyphs(screenOriginX, screenOriginY, sett
                 th = ts[2] or ts.y or th;
             end
         end
-        -- Center the trigger image on the gap; ×2 follows to the right (do not center icon+text as one unit).
+        -- Center the trigger image on the gap; x2 follows to the right (do not center icon+text as one unit).
         local l2cx = screenOriginX + groupW * 0.5;
         local r2cx = screenOriginX + groupW + gs + groupW * 0.5;
-        local l2Tex = textures:GetControllerIcon('L2');
-        if l2Tex and l2Tex.image then
-            local p = tonumber(ffi.cast('uint32_t', l2Tex.image));
-            if p and p ~= 0 then
-                local ix = l2cx - iw * 0.5;
-                local iy = cy - ih * 0.5;
-                dl:AddImage(p, { ix, iy }, { ix + iw, iy + ih }, { 0, 0 }, { 1, 1 }, tint);
-                dl:AddText({ ix + iw + doubleTapImgGap, cy - th * 0.5 }, textCol, x2Str);
+        if sl then
+            local l2Tex = textures:GetControllerIcon('L2');
+            if l2Tex and l2Tex.image then
+                local p = tonumber(ffi.cast('uint32_t', l2Tex.image));
+                if p and p ~= 0 then
+                    local ix = l2cx - iw * 0.5;
+                    local iy = cy - ih * 0.5;
+                    dl:AddImage(p, { ix, iy }, { ix + iw, iy + ih }, { 0, 0 }, { 1, 1 }, tint);
+                    dl:AddText({ ix + iw + doubleTapImgGap, cy - th * 0.5 }, textCol, x2Str);
+                end
             end
         end
-        local r2Tex = textures:GetControllerIcon('R2');
-        if r2Tex and r2Tex.image then
-            local p = tonumber(ffi.cast('uint32_t', r2Tex.image));
-            if p and p ~= 0 then
-                local ix = r2cx - iw * 0.5;
-                local iy = cy - ih * 0.5;
-                dl:AddImage(p, { ix, iy }, { ix + iw, iy + ih }, { 0, 0 }, { 1, 1 }, tint);
-                dl:AddText({ ix + iw + doubleTapImgGap, cy - th * 0.5 }, textCol, x2Str);
+        if sr then
+            local r2Tex = textures:GetControllerIcon('R2');
+            if r2Tex and r2Tex.image then
+                local p = tonumber(ffi.cast('uint32_t', r2Tex.image));
+                if p and p ~= 0 then
+                    local ix = r2cx - iw * 0.5;
+                    local iy = cy - ih * 0.5;
+                    dl:AddImage(p, { ix, iy }, { ix + iw, iy + ih }, { 0, 0 }, { 1, 1 }, tint);
+                    dl:AddText({ ix + iw + doubleTapImgGap, cy - th * 0.5 }, textCol, x2Str);
+                end
             end
         end
         return;
@@ -2388,8 +2404,12 @@ function M.DrawPaletteEditorL2R2TriggerGlyphs(screenOriginX, screenOriginY, sett
     -- primary
     local l2cx = screenOriginX + groupW * 0.5;
     local r2cx = screenOriginX + groupW + gs + groupW * 0.5;
-    drawImage('L2', l2cx - iw * 0.5, cy - ih * 0.5);
-    drawImage('R2', r2cx - iw * 0.5, cy - ih * 0.5);
+    if sl then
+        drawImage('L2', l2cx - iw * 0.5, cy - ih * 0.5);
+    end
+    if sr then
+        drawImage('R2', r2cx - iw * 0.5, cy - ih * 0.5);
+    end
 end
 
 -- Shared expanded bar row: delegates to the main glyph function with 'sharedChord' mode.

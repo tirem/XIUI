@@ -1618,7 +1618,7 @@ local function DrawBarVisualSettings(configKey, barLabel)
             SaveSettingsOnly();
         end
         imgui.PopStyleColor(3);
-        imgui.ShowHelp('Pet Palettes: Each summoned pet can have its own hotbar configuration.\nSMN: Per-avatar palettes (Ifrit, Shiva, etc.)\nDRG: Wyvern palette\nBST: Jug pet / Charm palettes\nPUP: Automaton palette\n\nClick to toggle.');
+        imgui.ShowHelp('Pet Palettes: Each pet can have its own hotbar configuration.\nSMN: Per-avatar and per-elemental (spirit) palettes (Ifrit, Fire Spirit, etc.)\nDRG: Wyvern palette\nBST: Jug pet / Charm palettes\nPUP: Automaton palette\n\nClick to toggle.');
 
         -- Show indicator + pet allowlist (only when petAware is enabled)
         if petAware then
@@ -1633,7 +1633,7 @@ local function DrawBarVisualSettings(configKey, barLabel)
             if imgui.SmallButton('Pets…##' .. popupId) then
                 imgui.OpenPopup(popupId);
             end
-            imgui.ShowHelp('Optional: limit which pet types use a separate layout (Summons, Beasts, Wyvern, Puppet). Others use your normal job bar.');
+            imgui.ShowHelp('Optional: limit which pet types use a separate layout (Avatars, Elementals, Beasts, Wyvern, Puppet). Others use your normal job bar.');
             if imgui.BeginPopup(popupId) then
                 petAllowlist.DrawEditorInPopup(barSettings, data.jobId or 1, SaveSettingsOnly, function()
                     data.InvalidateStorageKeyCache();

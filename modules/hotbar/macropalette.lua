@@ -50,6 +50,11 @@ MP.searchFilter = { '' };
 -- Macro Palette window: filter tiles by display/action name (not icon-picker search).
 MP.macroPaletteSearchName = { '' };
 MP.macroNewCategoryBuf = { '' };
+MP.macroCustomRenameBuf = { '' };
+MP.macroCustomRenameTargetKey = nil; -- 'custom:N' for MacroCustomRename modal
+MP.macroCustomDeleteKey = nil; -- pending delete: confirm modal
+MP.macroCustomDeleteLabel = nil;
+MP.macroCustomDeleteN = 0;
 MP._macroSearchPaletteKey = nil;
 MP._lastMacroPaletteSearch = nil;
 -- Which scope switch confirmation is open (single non-modal BeginPopup, no full-screen dim).
@@ -1931,6 +1936,144 @@ local function ClearMacroSlotsInConfigTable(cfg, macroId, deletedTypeKey, onlyBu
     return changed;
 end
 
+-- Clear every slot that references a removed macroDB bucket (entire key deleted).
+local function ClearMacroSlotsInConfigForRemovedPaletteBucket(cfg, removedBucketKey, deleteKind)
+    if not cfg or removedBucketKey == nil then
+        return false;
+    end
+    local changed = false;
+    for barIndex = 1, 6 do
+        local configKey = 'hotbarBar' .. barIndex;
+        if cfg[configKey] and cfg[configKey].slotActions then
+            local barSettings = cfg[configKey];
+            for storageKey, jobSlotActions in pairs(barSettings.slotActions) do
+                if jobSlotActions then
+                    for slotIndex, slotAction in pairs(jobSlotActions) do
+                        local newSlot, chg = data.ApplyMacroPaletteBucketRemovedToSlotAction(
+                            slotAction, removedBucketKey, deleteKind, { cleared = true });
+                        if chg then
+                            jobSlotActions[slotIndex] = newSlot;
+                            changed = true;
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if cfg.hotbarCrossbar and cfg.hotbarCrossbar.slotActions then
+        local crossbarSettings = cfg.hotbarCrossbar;
+        local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2' };
+        for storageKey, jobSlotActions in pairs(crossbarSettings.slotActions) do
+            if jobSlotActions then
+                for _, comboMode in ipairs(comboModes) do
+                    local comboSlots = jobSlotActions[comboMode];
+                    if comboSlots then
+                        for slotIndex, slotAction in pairs(comboSlots) do
+                            local newSlot, chg = data.ApplyMacroPaletteBucketRemovedToSlotAction(
+                                slotAction, removedBucketKey, deleteKind, nil);
+                            if chg then
+                                comboSlots[slotIndex] = newSlot;
+                                changed = true;
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return changed;
+end
+
+local function RemoveCustomCategoryFromProfileMeta(cfg, remKey)
+    if not cfg or not cfg.macroCustomCategories or not remKey then
+        return false;
+    end
+    for i, e in ipairs(cfg.macroCustomCategories) do
+        if e.key == remKey then
+            table.remove(cfg.macroCustomCategories, i);
+            return true;
+        end
+    end
+    return false;
+end
+
+-- Shared library: the bucket is global; other profiles' layouts may still list it or have slots. Sync metadata and slots.
+local function SweepOtherProfilesForSharedCustomCategoryDelete(remKey, currentName)
+    currentName = currentName or (config and config.currentProfile) or 'Default';
+    local globalProfiles = profileManager.GetGlobalProfiles();
+    if not globalProfiles or not globalProfiles.names then
+        return;
+    end
+    for _, name in ipairs(globalProfiles.names) do
+        if name and name ~= currentName then
+            local cfg = profileManager.GetProfileSettings(name);
+            if cfg then
+                local chg = ClearMacroSlotsInConfigForRemovedPaletteBucket(cfg, remKey, 'profile');
+                if ClearMacroSlotsInConfigForRemovedPaletteBucket(cfg, remKey, 'shared') then
+                    chg = true;
+                end
+                if RemoveCustomCategoryFromProfileMeta(cfg, remKey) then
+                    chg = true;
+                end
+                if chg then
+                    profileManager.SaveProfileSettings(name, cfg);
+                end
+            end
+        end
+    end
+    sharedMacroStore.InvalidateDiskSharedCache();
+end
+
+-- Display label only; storage key stays 'custom:N' (macro data and hotbar macroPaletteKey refs unchanged).
+local function ApplyRenameMacroCustomCategory(catKey, newLabel)
+    if not catKey or not macroBuckets.isCustomCategoryKey(catKey) then
+        return false;
+    end
+    local label = tostring(newLabel or ''):match('^%s*(.-)%s*$') or '';
+    if label == '' then
+        return false;
+    end
+    EnsureMacroCustomCategoriesList();
+    for _, e in ipairs(gConfig.macroCustomCategories) do
+        if e.key == catKey then
+            e.label = label;
+            return true;
+        end
+    end
+    return false;
+end
+
+-- Remove a custom bucket: clear all hotbar/crossbar slot refs, delete macro rows, and sync other profiles in shared mode.
+local function DeleteMacroCustomCategoryCompletely(remKey)
+    if not remKey or not macroBuckets.isCustomCategoryKey(remKey) then
+        return false;
+    end
+    local inShared = (gConfig.macroStorageScope or 'profile') == 'shared';
+    -- Custom buckets use one palette key, but a slot may have profile+shared library arms; clear both.
+    ClearMacroSlotsInConfigForRemovedPaletteBucket(gConfig, remKey, 'profile');
+    ClearMacroSlotsInConfigForRemovedPaletteBucket(gConfig, remKey, 'shared');
+    RemoveMacroCustomCategory(remKey);
+    if inShared and config and config.currentProfile then
+        SweepOtherProfilesForSharedCustomCategoryDelete(remKey, config.currentProfile);
+    end
+    markSharedMacroLibraryDirtyIfNeeded();
+    if MP.selectedPaletteType == remKey then
+        MP.selectedPaletteType = GLOBAL_MACRO_KEY;
+    end
+    MP.smnShowAllAvatarSubsets = false;
+    selectedMacroIndex = nil;
+    MP.currentPalettePage = 1;
+    MP.macroCustomRenameTargetKey = nil;
+    playerdata.ClearCache();
+    MP.cachedPetCommands = nil;
+    MP.petAvatarFilter = 1;
+    SaveSettingsToDisk();
+    ClearAllIconCaches();
+    data.InvalidateConfigDerivedCaches();
+    data.MarkMacroLookupDirty();
+    return true;
+end
+
 -- After deleting a global shared macro: clear that ref on all other profile files (current gConfig was already cleared + saved)
 local function SweepOtherProfilesForSharedMacroDelete(macroId, typeKey, onlyBucket, currentName)
     currentName = currentName or (config and config.currentProfile) or 'Default';
@@ -2612,7 +2755,7 @@ function M.DrawPalette()
         -- Header: instruction (left) + macro source toggle (right, S = Shared, P = Profile)
         do
             local scopeShared = (gConfig.macroStorageScope or 'profile') == 'shared';
-            local scopeBtnSize = 30;
+            local scopeBtnSize = 22;
             imgui.TextColored(COLORS.gold, 'Drag macros to your hotbar slots');
             imgui.SameLine();
             -- GetContentRegionAvail: use (w,h) or table [1]/[2]; do not use .x — sugar Vector can error (see palettemanager GetContentRegionAvailHeight).
@@ -2763,7 +2906,7 @@ function M.DrawPalette()
             imgui.PopStyleColor(9);
         end
 
-        imgui.Spacing();
+        imgui.Dummy({ 0, 4 });
 
         -- Type selector row
         imgui.TextColored(COLORS.textDim, 'Type:');
@@ -3010,6 +3153,140 @@ function M.DrawPalette()
         imgui.PopItemWidth();
         PopComboStyle();
 
+        local catAddBtnSize = (imgui.GetFrameHeight and imgui.GetFrameHeight()) or 24;
+        imgui.SameLine(0, 6);
+        if imgui.Button('+##macroCatAddBtn', { catAddBtnSize, catAddBtnSize }) then
+            imgui.OpenPopup('MacroAddCustomCategory##xiui');
+        end
+        if imgui.IsItemHovered() then
+            imgui.BeginTooltip();
+            imgui.Text('Add a custom type.');
+            imgui.EndTooltip();
+        end
+
+        if isCustomMacroBucket and typeKey then
+            imgui.SameLine(0, 8);
+            imgui.PushStyleColor(ImGuiCol_Button, { 0.62, 0.12, 0.1, 1.0 });
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, { 0.78, 0.2, 0.16, 1.0 });
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, { 0.7, 0.16, 0.12, 1.0 });
+            if imgui.Button('-##macroCatDelToolbar', { catAddBtnSize, catAddBtnSize }) then
+                MP.macroCustomDeleteKey = typeKey;
+                MP.macroCustomDeleteLabel = GetPaletteDisplayName(typeKey);
+                MP.macroCustomDeleteN = CountMacrosInPalette(typeKey);
+                imgui.OpenPopup('MacroCustomCatDelete##xiui');
+            end
+            imgui.PopStyleColor(3);
+            if imgui.IsItemHovered() then
+                imgui.BeginTooltip();
+                imgui.Text('Delete this custom type. Macros in the group are removed; any hotbar or crossbar slot that holds one of those macros reverts to an empty slot. Other slots are unchanged.');
+                imgui.EndTooltip();
+            end
+            imgui.SameLine(0, 8);
+            if imgui.SmallButton('Rename##macroCatRenToolbar') then
+                MP.macroCustomRenameTargetKey = typeKey;
+                MP.macroCustomRenameBuf[1] = GetPaletteDisplayName(typeKey);
+                imgui.OpenPopup('MacroCustomRename##xiui');
+            end
+        end
+
+        imgui.PushStyleColor(ImGuiCol_PopupBg, COLORS.bgDark);
+        imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+        imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+        if imgui.BeginPopup('MacroAddCustomCategory##xiui') then
+            imgui.TextColored(COLORS.textDim, 'New category name');
+            imgui.SetNextItemWidth(240);
+            imgui.InputText('##macroNewCatPopup', MP.macroNewCategoryBuf, INPUT_BUFFER_SIZE);
+            imgui.Spacing();
+            if imgui.Button('Add##macroCatAddPopup', { 100, 24 }) then
+                local nk = AddMacroCustomCategory(MP.macroNewCategoryBuf[1]);
+                if nk then
+                    MP.selectedPaletteType = nk;
+                    MP.smnShowAllAvatarSubsets = false;
+                    MP.macroNewCategoryBuf[1] = '';
+                    selectedMacroIndex = nil;
+                    MP.currentPalettePage = 1;
+                    playerdata.ClearCache();
+                    MP.cachedPetCommands = nil;
+                    MP.petAvatarFilter = 1;
+                    markSharedMacroLibraryDirtyIfNeeded();
+                    SaveSettingsToDisk();
+                    data.MarkMacroLookupDirty();
+                    imgui.CloseCurrentPopup();
+                end
+            end
+            imgui.EndPopup();
+        end
+        imgui.PopStyleColor(3);
+
+        -- Rename custom type (modal; opened from toolbar)
+        imgui.PushStyleColor(ImGuiCol_PopupBg, COLORS.bgDark);
+        imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+        imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+        if imgui.BeginPopupModal('MacroCustomRename##xiui', nil, ImGuiWindowFlags_AlwaysAutoResize) then
+            local rk = MP.macroCustomRenameTargetKey;
+            if rk and macroBuckets.isCustomCategoryKey(rk) then
+                imgui.TextColored(COLORS.textDim, 'Display name (macros and slot data keep the same type key).');
+                imgui.SetNextItemWidth(300);
+                imgui.InputText('##mcrenfield', MP.macroCustomRenameBuf, INPUT_BUFFER_SIZE);
+                imgui.Spacing();
+                if imgui.Button('Apply##mcrenconf', { 100, 24 }) then
+                    if ApplyRenameMacroCustomCategory(rk, MP.macroCustomRenameBuf[1]) then
+                        markSharedMacroLibraryDirtyIfNeeded();
+                        SaveSettingsToDisk();
+                        MP.macroCustomRenameTargetKey = nil;
+                        imgui.CloseCurrentPopup();
+                    end
+                end
+                imgui.SameLine(0, 8);
+                if imgui.Button('Cancel##mcrencan', { 100, 24 }) then
+                    MP.macroCustomRenameTargetKey = nil;
+                    imgui.CloseCurrentPopup();
+                end
+            else
+                MP.macroCustomRenameTargetKey = nil;
+                imgui.CloseCurrentPopup();
+            end
+            imgui.EndPopup();
+        end
+        imgui.PopStyleColor(3);
+
+        -- Confirm delete for a custom type (modal; opened from red - button)
+        imgui.PushStyleColor(ImGuiCol_PopupBg, COLORS.bgDark);
+        imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+        imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+        if imgui.BeginPopupModal('MacroCustomCatDelete##xiui', nil, ImGuiWindowFlags_AlwaysAutoResize) then
+            local dk = MP.macroCustomDeleteKey;
+            if dk and macroBuckets.isCustomCategoryKey(dk) then
+                local n = tonumber(MP.macroCustomDeleteN) or 0;
+                local lab = tostring(MP.macroCustomDeleteLabel or dk);
+                imgui.TextColored(COLORS.gold, 'Delete this custom type?');
+                imgui.PushTextWrapPos(440);
+                local macroW = n == 1 and '1 macro' or (string.format('%d macros', n));
+                imgui.TextWrapped(string.format('This permanently removes %s saved under "%s" (macro text, icons, and palette data for that type).', macroW, lab));
+                imgui.TextWrapped('On every hotbar and crossbar, any slot that contains a macro from this type reverts to an empty slot. All other slots are unchanged.');
+                if (gConfig and (gConfig.macroStorageScope or 'profile') == 'shared') then
+                    imgui.TextWrapped('Shared macro mode: the type is removed from the shared library, and other XIUI profiles get the same per-slot updates anywhere their bars referenced these macros.');
+                end
+                imgui.PopTextWrapPos();
+                imgui.Spacing();
+                if imgui.Button('Delete##mcdelconf', { 100, 24 }) then
+                    DeleteMacroCustomCategoryCompletely(dk);
+                    MP.macroCustomDeleteKey = nil;
+                    imgui.CloseCurrentPopup();
+                end
+                imgui.SameLine(0, 8);
+                if imgui.Button('Cancel##mcdelcan', { 100, 24 }) then
+                    MP.macroCustomDeleteKey = nil;
+                    imgui.CloseCurrentPopup();
+                end
+            else
+                MP.macroCustomDeleteKey = nil;
+                imgui.CloseCurrentPopup();
+            end
+            imgui.EndPopup();
+        end
+        imgui.PopStyleColor(3);
+
         -- SMN: base / all avatars merged / single avatar (own row so the window stays narrow)
         if not isSharedMacroPalette and MP.selectedPaletteType == petregistry.JOB_SMN then
             imgui.Spacing();
@@ -3125,44 +3402,6 @@ function M.DrawPalette()
             PopComboStyle();
         end
 
-        imgui.Spacing();
-        imgui.TextColored(COLORS.textDim, 'Custom category:');
-        imgui.SameLine();
-        imgui.SetNextItemWidth(160);
-        imgui.InputText('##macroNewCat', MP.macroNewCategoryBuf, INPUT_BUFFER_SIZE);
-        imgui.SameLine();
-        if imgui.Button('Add##macroCatAdd', { 0, 0 }) then
-            local nk = AddMacroCustomCategory(MP.macroNewCategoryBuf[1]);
-            if nk then
-                MP.selectedPaletteType = nk;
-                MP.smnShowAllAvatarSubsets = false;
-                MP.macroNewCategoryBuf[1] = '';
-                selectedMacroIndex = nil;
-                MP.currentPalettePage = 1;
-                playerdata.ClearCache();
-                MP.cachedPetCommands = nil;
-                MP.petAvatarFilter = 1;
-                markSharedMacroLibraryDirtyIfNeeded();
-                SaveSettingsToDisk();
-                data.MarkMacroLookupDirty();
-            end
-        end
-        if isCustomMacroBucket then
-            imgui.SameLine();
-            if imgui.Button('Remove##macroCatRm', { 0, 0 }) then
-                RemoveMacroCustomCategory(typeKey);
-                MP.selectedPaletteType = GLOBAL_MACRO_KEY;
-                MP.smnShowAllAvatarSubsets = false;
-                selectedMacroIndex = nil;
-                MP.currentPalettePage = 1;
-                markSharedMacroLibraryDirtyIfNeeded();
-                SaveSettingsToDisk();
-                data.MarkMacroLookupDirty();
-            end
-            imgui.SameLine();
-            imgui.TextColored(COLORS.textMuted, 'Removes this category and its macros.');
-        end
-
         -- Pet Palette section (only show if selected palette type is a pet job AND any bar has petAware enabled)
         local isPetJob = false;
         if MP.selectedPaletteType and type(MP.selectedPaletteType) == 'number' then
@@ -3267,8 +3506,8 @@ function M.DrawPalette()
 
                         imgui.Separator();
 
-                        -- Spirits section
-                        imgui.TextColored(COLORS.textDim, 'Spirits');
+                        -- Elementals (SMN spirit pets)
+                        imgui.TextColored(COLORS.textDim, 'Elementals');
                         for _, summon in ipairs(allSummons) do
                             if summon.category == 'spirit' then
                                 local petKey = petregistry.GetPetKeyForSummon(summon.name);

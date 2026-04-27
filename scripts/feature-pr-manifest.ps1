@@ -227,23 +227,47 @@ Why
                 'core/shared_macro_store.lua',
                 'core/settings/migration.lua',
                 'core/settings/user.lua',
-                'config/hotbar.lua',
                 'handlers/statushandler.lua',
                 'modules/hotbar/skillchain.lua',
                 'modules/hotbar/equipment_ws.lua',
                 'modules/hotbar/macro_palette_buckets.lua',
-                'modules/hotbar/macro_xiui_defaults.lua',
-                'modules/hotbar/pet_palette_allowlist.lua'
+                'modules/hotbar/macro_xiui_defaults.lua'
             )
             Subject = 'Shared macro file, profile scope, and dual profile/shared per-slot bar bindings'
             Body    = @'
 What changed
 - shared_macro_store.lua: SharedMacros.lua load/save, frozen profile macroDB in shared mode, id separation vs profile hotbar, disk lookup for cross-scope resolution.
-- migration.lua, user settings, config/hotbar: macroStorageScope default; run MigrateSlotDualMacroBindings; settings hooks.
-- statushandler, skillchain, equipment_ws, macro_palette_buckets, macro_xiui_defaults, pet_palette_allowlist: integration and allowlists for macro/hotbar behavior.
+- migration.lua, user settings: macroStorageScope default; run MigrateSlotDualMacroBindings; settings hooks.
+- statushandler, skillchain, equipment_ws, macro_palette_buckets, macro_xiui_defaults: integration for macro/hotbar behavior.
 
 Why
 - One global shared macro library vs per-profile gConfig.macroDB; each physical hotbar/crossbar slot can hold independent macroBindProfile and macroBindShared (active arm follows scope). Deletes, DnD, JSON import, and Edit Full Palette use the same data paths.
+'@
+        },
+        @{
+            Branch  = 'pr/15-pet-palette-avatars-elementals-macro-custom-types'
+            Files   = @(
+                'config/efp_pets_tab.lua',
+                'config/hotbar.lua',
+                'config/palettemanager.lua',
+                'core/settings/factories.lua',
+                'modules/hotbar/crossbar.lua',
+                'modules/hotbar/data.lua',
+                'modules/hotbar/macropalette.lua',
+                'modules/hotbar/pet_palette_allowlist.lua',
+                'modules/hotbar/petregistry.lua'
+            )
+            Subject = 'Pet palette: Avatars and Elementals; EFP pet tabs; custom macro type rename, delete, and slot cleanup'
+            Body    = @'
+What changed
+- pet_palette_allowlist.lua: type tokens avatars, elementals, beasts, wyvern, puppet; legacy "summons" still matches avatars+elementals and upgrades in the editor. Slot Configure and Pet Palette use the same names.
+- config/efp_pets_tab.lua, palettemanager.lua, crossbar.lua, petregistry.lua: Edit Full Palette pet family tabs (Avatars, Elementals, Beasts, Wyvern, Puppet); avatars vs spirit elementals; SMN sort and pet-bar omit rules.
+- config/hotbar.lua, core/settings/factories.lua: help text and defaults for crossbar hotbar parent petPalettePetKeys; comments for the new type tokens.
+- macropalette.lua: add custom type (+) only in popup; for the selected custom type, red remove and Rename on the type row; delete confirms macro count; rename modal; delete and rename save paths; custom grid section header uses Elementals for spirit pets.
+- data.lua: ApplyMacroPaletteBucketRemovedToSlotAction clears all macro arms bound to a removed custom bucket (profile+shared sweeps) when a custom type is deleted.
+
+Why
+- SMN "summons" split into avatars vs elementals for configuration and EFP; macro custom categories can be managed from the type row, with full cleanup of that palette bucket and only affected hotbar/crossbar slots reverted to empty. Slot bindings keep stable storage keys (custom:N) on rename; delete removes the bucket and clears references.
 '@
         }
     )

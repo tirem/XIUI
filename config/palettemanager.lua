@@ -19,6 +19,7 @@ local macropalette = require('modules.hotbar.macropalette');
 local dragdrop = require('libs.dragdrop');
 local components = require('config.components');
 local petAllowlist = require('modules.hotbar.pet_palette_allowlist');
+local efpPets = require('config.efp_pets_tab');
 
 local M = {};
 
@@ -90,12 +91,17 @@ local EDIT_FULL_PALETTE_WIN_H_MAX = 1150;
 local EDIT_FULL_PALETTE_WIN_LOCK_HEIGHT = false;
 -- Vertical slice reserved for the gap after the scroll child + Undo/Apply/Close row (must stay fixed frame-to-frame).
 local EDIT_FULL_PALETTE_FOOTER_BLOCK_H = 44;
+-- Per-segment work copies for inline pet type editor (Edit Full Palette); reset when embedded window reopens
+local petEfpModeWork = nil;
 
 -- User closed XIUI Config while Edit Full Palette was open: show confirm on next palette draw.
 local openCloseConfigConfirmPopup = false;
 local openUnsavedChangesPopup = false;
 -- Pending palette switch: when the user picks a different palette from the dropdown but has unsaved changes.
 local pendingPaletteSwitchName = nil;
+-- Edit Full Palette: Slots (0) vs Pets (1) for job palettes; set when a tab change needs Apply/Discard.
+local embedEfpSubTab = 0;
+local pendingEfpSubTab = nil;
 
 -- Embedded Palette Manager (Crossbar tab): fixed list viewport = column headers + N rows, then scroll.
 local EMBED_CROSSBAR_PAL_LIST_VISIBLE_ROWS = 3;
@@ -302,9 +308,6 @@ local function IntersectRect(ax1, ay1, ax2, ay2, bx1, by1, bx2, by2)
     return x1, y1, x2, y2;
 end
 
--- Transient state for crossbar pet-allowlist popup (work copy reconciled into named overrides).
-local petAllowPopupWork = {};
-
 local function copyAllowlistTbl(v)
     if v == nil then return nil; end
     local c = {};
@@ -314,117 +317,168 @@ local function copyAllowlistTbl(v)
     return c;
 end
 
-local function petAllowlistSig(lst)
-    if lst == nil then return '@all'; end
-    if type(lst) ~= 'table' then return '@all'; end
-    if #lst == 0 then return '@none'; end
-    local s = {};
-    for i = 1, #lst do
-        s[i] = lst[i];
+-- Resolve pet type list for a segment: per-mode, else default on crossbar, else all (nil).
+local function getEffectiveSegPetKeys(cross, mode)
+    if not cross or not mode then
+        return nil;
     end
-    table.sort(s);
-    return table.concat(s, '\1');
+    local cm = cross.comboModeSettings and cross.comboModeSettings[mode];
+    if cm and cm.petPalettePetKeys ~= nil then
+        return cm.petPalettePetKeys;
+    end
+    if cross.petPalettePetKeys ~= nil then
+        return cross.petPalettePetKeys;
+    end
+    return nil;
 end
 
-local function reconcileCrossbarPetAllowlist(storageKey, mode, cross, named, newList)
+-- Edit Full Palette Pets tab: which segments map to the chosen pet and Pet Palette / allowlist (Slots tab).
+local function petEfpSegmentRowVisible(cross, mode, petKey)
+    if not cross or not mode or not petKey or petKey == '' then
+        return false;
+    end
+    local m = cross.comboModeSettings and cross.comboModeSettings[mode];
+    if not m or m.petAware ~= true then
+        return false;
+    end
+    return petAllowlist.Allows({ petPalettePetKeys = getEffectiveSegPetKeys(cross, mode) }, petKey);
+end
+
+local function stripNamedPalettePetFields(cross)
+    if not cross or not cross.namedPaletteComboModeSettings then
+        return;
+    end
+    for sk, row in pairs(cross.namedPaletteComboModeSettings) do
+        if type(row) == 'table' then
+            for _, m in ipairs({ 'L2', 'R2', 'L2x2', 'R2x2', 'L2R2', 'R2L2' }) do
+                local c = row[m];
+                if c and type(c) == 'table' then
+                    c.petPalettePetKeys = nil;
+                    c.petAware = nil;
+                    if next(c) == nil then
+                        row[m] = nil;
+                    end
+                end
+            end
+            if next(row) == nil then
+                cross.namedPaletteComboModeSettings[sk] = nil;
+            end
+        end
+    end
+end
+
+local function applySegmentPetTypeKeys(cross, mode, newList)
+    if not cross or not mode then
+        return;
+    end
+    if not cross.comboModeSettings then
+        cross.comboModeSettings = {};
+    end
+    if not cross.comboModeSettings[mode] then
+        cross.comboModeSettings[mode] = {};
+    end
+    if petAllowlist.IsEffectivelyAllTypes(newList) then
+        cross.comboModeSettings[mode].petPalettePetKeys = nil;
+    else
+        cross.comboModeSettings[mode].petPalettePetKeys = copyAllowlistTbl(newList) or {};
+    end
+    stripNamedPalettePetFields(cross);
+    if petEfpModeWork then
+        petEfpModeWork[mode] = nil;
+    end
+end
+
+local function drawJobSegmentInlinePetTypes(cross, mode, _maxWidth, idSuffix, jobId)
+    if not cross or not mode or not jobId then
+        return;
+    end
+    local baseM = cross.comboModeSettings and cross.comboModeSettings[mode];
+    if not baseM or not baseM.petAware then
+        return;
+    end
+    if not petEfpModeWork then
+        petEfpModeWork = {};
+    end
+    if not petEfpModeWork[mode] then
+        petEfpModeWork[mode] = { petPalettePetKeys = petAllowlist.CopyAllowlistForEditor(getEffectiveSegPetKeys(cross, mode)) };
+    end
+    local wk = petEfpModeWork[mode];
+    local function onInv()
+        if data.InvalidateStorageKeyCache then
+            data.InvalidateStorageKeyCache();
+        end
+        if data.InvalidateCrossbarDraftLayout then
+            data.InvalidateCrossbarDraftLayout();
+        end
+        if DeferredUpdateVisuals then
+            DeferredUpdateVisuals();
+        end
+    end
+    local function onSave()
+        if SaveSettingsOnly then
+            SaveSettingsOnly();
+        end
+    end
+    local function onApply(w)
+        applySegmentPetTypeKeys(cross, mode, w.petPalettePetKeys);
+    end
+    -- ASCII-only labels: game fonts often render em dash / ellipsis as "?"
+    local popupId = 'pet_type_cfg_' .. (tostring(idSuffix or 'x') .. '_' .. tostring(mode)):gsub('%W', '_');
+    imgui.Dummy({ 0, 6 });
+    imgui.PushID('petinline_' .. popupId);
+    imgui.TextColored(components.TAB_STYLE.gold, 'Pet types: ' .. tostring(mode));
+    imgui.SameLine(0, 10);
+    if imgui.SmallButton('Configure##' .. popupId) then
+        if imgui.SetNextWindowSize and ImGuiCond_Appearing ~= nil then
+            imgui.SetNextWindowSize({ 400, 0 }, ImGuiCond_Appearing);
+        end
+        imgui.OpenPopup(popupId);
+    end
+    if imgui.BeginPopup(popupId) then
+        imgui.TextWrapped(
+            'Applies to this trigger segment for every [J] named palette. If you leave a segment empty here, the crossbar-wide default list is used (if you set one). L2, R2, L2x2, and chord rows can each be different.'
+        );
+        imgui.Spacing();
+        petAllowlist.DrawEditorPanel(wk, jobId, onSave, onInv, onApply);
+        imgui.EndPopup();
+    end
+    imgui.PopID();
+end
+
+-- Pet Palette toggle per combo-mode segment: stored on comboModeSettings[mode] only (job-wide, not per named palette).
+local function DrawJobSegmentPetGlobalControls(_storageKey, mode, label, cross, _named, opts)
+    opts = opts or {};
+    local showGoldLabel = opts.showGoldLabel ~= false;
     if not cross or not cross.comboModeSettings then
         return;
     end
-    local base = cross.comboModeSettings[mode] or {};
-    local baseList = base.petPalettePetKeys;
-    if petAllowlistSig(newList) == petAllowlistSig(baseList) then
-        if named[storageKey] and named[storageKey][mode] then
-            named[storageKey][mode].petPalettePetKeys = nil;
-        end
-    else
-        if not named[storageKey] then
-            named[storageKey] = {};
-        end
-        if not named[storageKey][mode] then
-            named[storageKey][mode] = {};
-        end
-        named[storageKey][mode].petPalettePetKeys = copyAllowlistTbl(newList);
+    if not cross.comboModeSettings[mode] then
+        cross.comboModeSettings[mode] = {};
     end
-end
-
--- Pet Palette toggle per combo-mode segment (Edit Full Palette). Optional gold label (opts.showGoldLabel = false to omit).
--- opts.jobId: main job id for listing pet types in the allowlist popup (defaults to data.jobId).
-local function DrawJobSegmentPetGlobalControls(storageKey, mode, label, cross, named, opts)
-    opts = opts or {};
-    local showGoldLabel = opts.showGoldLabel ~= false;
-    local editJobId = opts.jobId or data.jobId or 1;
-    local base = cross.comboModeSettings and cross.comboModeSettings[mode];
-    if not base then
-        base = { petAware = false, universalOverridePalette = nil };
+    local baseM = cross.comboModeSettings[mode];
+    if baseM.petAware == nil then
+        baseM.petAware = false;
     end
-    if not named[storageKey] then
-        named[storageKey] = {};
-    end
-    local ovr = named[storageKey][mode];
-
-    local effPet = base.petAware == true;
-    if ovr and ovr.petAware ~= nil then
-        effPet = ovr.petAware == true;
-    end
+    local effPet = baseM.petAware == true;
 
     if showGoldLabel and label and label ~= '' then
         imgui.TextColored(components.TAB_STYLE.gold, label);
     end
     local petBuf = { effPet };
     if imgui.Checkbox('Pet Palette##petxb_' .. mode, petBuf) then
-        local newV = not effPet;
-        if newV == (base.petAware == true) then
-            if named[storageKey][mode] then
-                named[storageKey][mode].petAware = nil;
-            end
-        else
-            if not named[storageKey][mode] then named[storageKey][mode] = {}; end
-            named[storageKey][mode].petAware = newV;
-        end
-        if not newV and named[storageKey][mode] then
-            named[storageKey][mode].petPalettePetKeys = nil;
+        baseM.petAware = not effPet;
+        if not baseM.petAware and petEfpModeWork then
+            petEfpModeWork[mode] = nil;
         end
         if SaveSettingsOnly then SaveSettingsOnly(); end
         if data.InvalidateStorageKeyCache then data.InvalidateStorageKeyCache(); end
         if data.InvalidateCrossbarDraftLayout then data.InvalidateCrossbarDraftLayout(); end
         if DeferredUpdateVisuals then DeferredUpdateVisuals(); end
     end
-    imgui.ShowHelp('When enabled, this 8-slot group uses pet/avatar storage while a pet is active.');
-
-    if effPet then
-        local sanKey = (storageKey or ''):gsub('%W', '_');
-        local popupId = 'petallow_xb_' .. sanKey .. '_' .. mode;
-        if imgui.SmallButton('Pets…##' .. popupId) then
-            imgui.OpenPopup(popupId);
-        end
-        imgui.ShowHelp('Limit pet palette to specific summons, beasts, wyvern, or puppet (optional).');
-        if imgui.BeginPopup(popupId) then
-            local baseM = cross.comboModeSettings and cross.comboModeSettings[mode];
-            local baseList = baseM and baseM.petPalettePetKeys;
-            local ovrM = named[storageKey] and named[storageKey][mode];
-            local effList = (ovrM and ovrM.petPalettePetKeys ~= nil) and ovrM.petPalettePetKeys or baseList;
-            if imgui.IsWindowAppearing() then
-                petAllowPopupWork[popupId] = { petPalettePetKeys = petAllowlist.CopyAllowlistForEditor(effList) };
-            end
-            local work = petAllowPopupWork[popupId];
-            if work then
-                local function onSave()
-                    if SaveSettingsOnly then SaveSettingsOnly(); end
-                end
-                local function onInv()
-                    if data.InvalidateStorageKeyCache then data.InvalidateStorageKeyCache(); end
-                    if data.InvalidateCrossbarDraftLayout then data.InvalidateCrossbarDraftLayout(); end
-                    if DeferredUpdateVisuals then DeferredUpdateVisuals(); end
-                end
-                petAllowlist.DrawEditorInPopup(work, editJobId, onSave, onInv, function(w)
-                    reconcileCrossbarPetAllowlist(storageKey, mode, cross, named, w.petPalettePetKeys);
-                end);
-            end
-            imgui.EndPopup();
-        else
-            petAllowPopupWork[popupId] = nil;
-        end
-    end
+    imgui.ShowHelp(
+        'When enabled, this 8-slot group can use pet/avatar hotbar storage while a matching pet is out. '
+            .. 'Set which pet types count per segment in the “Pet types” block below. Same for every [J] named palette, not per palette name.'
+    );
 end
 
 -- Job [J] Edit Full Palette: segment override (Job-shared storage or Global [G] source). Primary L2/R2 omit via caller.
@@ -707,6 +761,9 @@ local function DrawJobSegmentFooterOverrideAndPet(storageKey, mode, cross, named
     maxWidth = maxWidth or 400;
     if not showOverride or not jobId then
         DrawJobSegmentPetGlobalControls(storageKey, mode, '', cross, named, { showGoldLabel = false, jobId = jobId or data.jobId or 1 });
+        if jobId and cross and cross.comboModeSettings and cross.comboModeSettings[mode] and cross.comboModeSettings[mode].petAware == true then
+            drawJobSegmentInlinePetTypes(cross, mode, maxWidth, idTag or 'pet1', jobId);
+        end
         return;
     end
 
@@ -726,8 +783,8 @@ local function DrawJobSegmentFooterOverrideAndPet(storageKey, mode, cross, named
     local fh = (imgui.GetFrameHeightWithSpacing and imgui.GetFrameHeightWithSpacing())
         or ((imgui.GetFrameHeight and imgui.GetFrameHeight()) + GetItemSpacingY())
         or 26;
-    -- Right column stacks Pet Palette checkbox + Pets… button (two lines).
-    local row1H = math.ceil(math.max(52, fh * 2 + 10));
+    -- Right column: Pet Palette only (Pets… moved to Edit Full Palette Pets tab).
+    local row1H = math.ceil(math.max(24, fh + 4));
 
     imgui.BeginChild('##ovpetL_' .. idTag, { half, row1H }, false);
     DrawJobSegmentOverrideCheckboxRow(jobId, mode, cross, idTag, half);
@@ -736,6 +793,10 @@ local function DrawJobSegmentFooterOverrideAndPet(storageKey, mode, cross, named
     imgui.BeginChild('##ovpetR_' .. idTag, { wRight, row1H }, false);
     DrawJobSegmentPetGlobalControls(storageKey, mode, '', cross, named, { showGoldLabel = false, jobId = jobId });
     imgui.EndChild();
+
+    if jobId and cross and cross.comboModeSettings and cross.comboModeSettings[mode] and cross.comboModeSettings[mode].petAware == true then
+        drawJobSegmentInlinePetTypes(cross, mode, maxWidth, idTag, jobId);
+    end
 
     DrawJobSegmentOverrideDetailBlock(jobId, mode, cross, idTag, maxWidth);
 
@@ -790,17 +851,20 @@ local function DrawFullPaletteCrossbarPair(storageKey, modeLeft, modeRight, idFi
         slotGridLeftScreenX = drawOriginX;
         slotGridRightScreenX = drawOriginX + gw + gs;
         local drawOriginY = py + rowPadTop;
-        local dividerX = drawOriginX + (w / 2);
-        if dl and dl.AddLine then
-            dl:AddLine(
-                { dividerX, drawOriginY + 10 },
-                { dividerX, drawOriginY + ghgt - 10 },
-                imgui.GetColorU32({ 1, 1, 1, 0.3 }),
-                2
-            );
+        if modeLeft and modeRight then
+            local dividerX = drawOriginX + (w / 2);
+            if dl and dl.AddLine then
+                dl:AddLine(
+                    { dividerX, drawOriginY + 10 },
+                    { dividerX, drawOriginY + ghgt - 10 },
+                    imgui.GetColorU32({ 1, 1, 1, 0.3 }),
+                    2
+                );
+            end
         end
         local glyphMode = (idFix == 'dbl') and 'doubleTap' or (idFix == 'chord') and 'chordCombo' or 'primary';
-        crossbar.DrawPaletteEditorL2R2TriggerGlyphs(drawOriginX, drawOriginY, cs, glyphMode);
+        local gSides = { l = (modeLeft ~= nil), r = (modeRight ~= nil) };
+        crossbar.DrawPaletteEditorL2R2TriggerGlyphs(drawOriginX, drawOriginY, cs, glyphMode, gSides);
         crossbar.DrawPaletteEditorL2R2Row(drawOriginX, drawOriginY, cs, modeLeft, modeRight, cx1, cy1, cx2, cy2);
     end
     if pushedClip and dl and dl.PopClipRect then
@@ -811,40 +875,58 @@ local function DrawFullPaletteCrossbarPair(storageKey, modeLeft, modeRight, idFi
     if drawPetFooters and cross and named and slotGridLeftScreenX then
         imgui.Dummy({ 0, 6 });
         imgui.PushID('petfoot_' .. idFix);
-        -- Match slot row width so L2/R2 footers align with the diamonds; ImGui columns draw the vertical separator between them
-        local leftColW = rowPadLeft + (w / 2);
-        local rightColW = rowWidth - leftColW;
-        local cellPad = 10;
-        local leftInner = math.max(120, leftColW - cellPad);
-        local rightInner = math.max(120, rightColW - cellPad);
+        local haveBoth = (modeLeft ~= nil and modeRight ~= nil);
+        if haveBoth then
+            -- Match slot row width so L2/R2 footers align with the diamonds; ImGui columns draw the vertical separator between them
+            local leftColW = rowPadLeft + (w / 2);
+            local rightColW = rowWidth - leftColW;
+            local cellPad = 10;
+            local leftInner = math.max(120, leftColW - cellPad);
+            local rightInner = math.max(120, rightColW - cellPad);
 
-        -- Avoid nested BeginChild(..., height 0) inside the main scroll: auto-height stacking bugs / huge gaps on some ImGui builds.
-        imgui.Columns(2, '##pairFootCols_' .. idFix, true);
-        imgui.SetColumnWidth(0, leftColW);
-        imgui.SetColumnWidth(1, rightColW);
+            -- Avoid nested BeginChild(..., height 0) inside the main scroll: auto-height stacking bugs / huge gaps on some ImGui builds.
+            imgui.Columns(2, '##pairFootCols_' .. idFix, true);
+            imgui.SetColumnWidth(0, leftColW);
+            imgui.SetColumnWidth(1, rightColW);
 
-        DrawJobSegmentFooterOverrideAndPet(
-            storageKey,
-            modeLeft,
-            cross,
-            named,
-            segmentOverrideJobId,
-            drawPetFooters and segmentOverrideJobId and idFix ~= 'pri',
-            'L_' .. idFix,
-            leftInner
-        );
-        imgui.NextColumn();
-        DrawJobSegmentFooterOverrideAndPet(
-            storageKey,
-            modeRight,
-            cross,
-            named,
-            segmentOverrideJobId,
-            drawPetFooters and segmentOverrideJobId and idFix ~= 'pri',
-            'R_' .. idFix,
-            rightInner
-        );
-        imgui.Columns(1);
+            DrawJobSegmentFooterOverrideAndPet(
+                storageKey,
+                modeLeft,
+                cross,
+                named,
+                segmentOverrideJobId,
+                drawPetFooters and segmentOverrideJobId and idFix ~= 'pri',
+                'L_' .. idFix,
+                leftInner
+            );
+            imgui.NextColumn();
+            DrawJobSegmentFooterOverrideAndPet(
+                storageKey,
+                modeRight,
+                cross,
+                named,
+                segmentOverrideJobId,
+                drawPetFooters and segmentOverrideJobId and idFix ~= 'pri',
+                'R_' .. idFix,
+                rightInner
+            );
+            imgui.Columns(1);
+        else
+            local m = modeLeft or modeRight;
+            local tag = (modeLeft and 'L_') or 'R_';
+            if m then
+                DrawJobSegmentFooterOverrideAndPet(
+                    storageKey,
+                    m,
+                    cross,
+                    named,
+                    segmentOverrideJobId,
+                    drawPetFooters and segmentOverrideJobId and idFix ~= 'pri',
+                    tag .. idFix,
+                    math.max(160, rowWidth - 16)
+                );
+            end
+        end
 
         imgui.Dummy({ 0, 10 });
         imgui.PopID();
@@ -917,6 +999,65 @@ local function DrawFullPaletteSingleCrossbarGroup(storageKey, comboMode, idFix, 
         imgui.Dummy({ 0, 10 });
         imgui.PopID();
     end
+end
+
+-- "Not in use" warning in Edit Full Palette: larger, bright red, draw-list shadow/glow (when available).
+local function drawPaletteNotInUseWarning()
+    local text = 'This palette is not currently in use.';
+    local dl = imgui.GetWindowDrawList and imgui.GetWindowDrawList();
+    local canDl = (dl and dl.AddText and imgui.GetCursorScreenPos and imgui.GetColorU32);
+    if not canDl then
+        if imgui.SetWindowFontScale then
+            imgui.SetWindowFontScale(1.18);
+        end
+        imgui.TextColored({ 1, 0.2, 0.14, 1.0 }, text);
+        if imgui.SetWindowFontScale then
+            imgui.SetWindowFontScale(1.0);
+        end
+        return;
+    end
+    local scale = 1.2;
+    if imgui.SetWindowFontScale then
+        imgui.SetWindowFontScale(scale);
+    end
+    local tw, th;
+    if imgui.CalcTextSize then
+        local ts, t2 = imgui.CalcTextSize(text);
+        if type(ts) == 'table' then
+            tw, th = (ts[1] or ts.x or 0), (ts[2] or ts.y or 0);
+        elseif type(t2) == 'number' then
+            tw, th = ts, t2;
+        else
+            tw, th = ts, (imgui.GetTextLineHeight and imgui.GetTextLineHeight()) or 20;
+        end
+    else
+        tw, th = 300, 24;
+    end
+    if not tw or tw < 1 then
+        tw = 280;
+    end
+    if not th or th < 1 then
+        th = 22;
+    end
+    local x, y = imgui.GetCursorScreenPos();
+    local function c32(r, g, b, a)
+        return imgui.GetColorU32({ r, g, b, a or 1.0 });
+    end
+    -- Outer soft halo
+    for _, o in ipairs({ {2,0},{-2,0},{0,2},{0,-2}, {1,0},{-1,0},{0,1},{0,-1} }) do
+        dl:AddText({ x + o[1] * 2, y + o[2] * 2 }, c32(0.7, 0, 0, 0.35), text);
+    end
+    for _, o in ipairs({ {2,0},{-2,0},{0,2},{0,-2}, {2,2},{-2,2},{2,-2},{-2,-2} }) do
+        dl:AddText({ x + o[1], y + o[2] }, c32(0.85, 0.1, 0.08, 0.4), text);
+    end
+    for _, o in ipairs({ {1,0},{-1,0},{0,1},{0,-1}, {1,1},{-1,1},{1,-1},{-1,-1} }) do
+        dl:AddText({ x + o[1], y + o[2] }, c32(0.08, 0, 0, 0.92), text);
+    end
+    dl:AddText({ x, y }, c32(1, 0.2, 0.12, 1.0), text);
+    if imgui.SetWindowFontScale then
+        imgui.SetWindowFontScale(1.0);
+    end
+    imgui.Dummy({ tw, th });
 end
 
 local function DrawEmbeddedCrossbarComboModesPopup()
@@ -1000,6 +1141,12 @@ local function DrawEmbeddedCrossbarComboModesPopup()
 
     if imgui.Begin(winTitle, embedCrossbarComboWinOpen, winFlags) then
     embedCrossbarComboHasDrawn = true;
+    if embedCrossbarComboWinGraceFrames == 1 and (ctx.kind or 'job') == 'job' then
+        petEfpModeWork = nil;
+    end
+    if embedCrossbarComboWinGraceFrames == 1 then
+        embedEfpSubTab = 0;
+    end
     do
         local wx, wy = imgui.GetWindowPos();
         local ww, wh = imgui.GetWindowSize();
@@ -1008,20 +1155,13 @@ local function DrawEmbeddedCrossbarComboModesPopup()
             gConfig.windowPositions[EDIT_FULL_PALETTE_WINDOW_KEY] = { x = wx, y = wy, w = ww, h = wh };
         end
     end
-    local storageKey = GetEmbedFullPaletteStorageKey(ctx);
-    local editJobId = (kind == 'job') and (ctx.jobId or data.jobId) or nil;
-    data.BeginCrossbarPaletteEditSession(storageKey, editJobId);
-    if not embedCrossbarComboWinOpen[1] and data.IsDraftDirty() then
-        embedCrossbarComboWinOpen[1] = true;
-        openUnsavedChangesPopup = true;
-    end
-    local editCross = BuildEditFullPaletteViewSettings(cross);
-
     if not cross.namedPaletteComboModeSettings then
         cross.namedPaletteComboModeSettings = {};
     end
     local named = cross.namedPaletteComboModeSettings;
+    local editJobId = (kind == 'job') and (ctx.jobId or data.jobId) or nil;
     local segmentOverrideJobId = (kind == 'job') and (ctx.jobId or 1) or nil;
+    local editCross = BuildEditFullPaletteViewSettings(cross);
 
     -- Header row 1: Macro Manager button + description
     components.PushMacroManagerButtonStyle();
@@ -1057,12 +1197,63 @@ local function DrawEmbeddedCrossbarComboModesPopup()
         end
         if not isActive then
             imgui.SameLine(0, 16);
-            imgui.TextColored({ 0.95, 0.78, 0.25, 1.0 }, 'This palette is not currently in use.');
+            drawPaletteNotInUseWarning();
+        end
+    end
+
+    -- Job [J]: Slots = named palette storage; Pets = petpalette:* for the selected pet (see config/efp_pets_tab.lua).
+    if kind == 'job' then
+        imgui.TextColored({ 0.62, 0.6, 0.55, 1.0 }, 'View:');
+        imgui.SameLine(0, 8);
+        local jTab = tostring(ctx.jobId or 1);
+        local function tryEfpTab(which)
+            if embedEfpSubTab == which then
+                return;
+            end
+            if data.IsDraftDirty() then
+                pendingEfpSubTab = which;
+                openUnsavedChangesPopup = true;
+            else
+                embedEfpSubTab = which;
+                editFullPaletteScrollHCached = nil;
+            end
+        end
+        if components.DrawStyledTab('Slots', 'efpViewSlot' .. jTab, embedEfpSubTab == 0, nil, nil, nil, 'palette') then
+            tryEfpTab(0);
+        end
+        imgui.SameLine(0, 4);
+        if components.DrawStyledTab('Pets', 'efpViewPet' .. jTab, embedEfpSubTab == 1, nil, nil, nil, 'palette') then
+            tryEfpTab(1);
+        end
+        if embedEfpSubTab == 1 then
+            imgui.Spacing();
+            do
+                local _wrapPop = false;
+                if imgui.GetContentRegionAvail and imgui.GetCursorPosX and imgui.PushTextWrapPos then
+                    local aw, _h = imgui.GetContentRegionAvail();
+                    local wrapW = 420;
+                    if type(aw) == 'table' then
+                        wrapW = math.max(200, (aw[1] or aw.x or wrapW) - 4);
+                    elseif type(aw) == 'number' then
+                        wrapW = math.max(200, aw - 4);
+                    end
+                    local cx = imgui.GetCursorPosX and imgui.GetCursorPosX() or 0;
+                    imgui.PushTextWrapPos(cx + wrapW);
+                    _wrapPop = true;
+                end
+                efpPets.draw(cross, data.IsDraftDirty());
+                if _wrapPop and imgui.PopTextWrapPos then
+                    imgui.PopTextWrapPos();
+                end
+            end
         end
     end
 
     -- Header row 3: Quick palette switcher (selection only)
     do
+        if kind == 'job' and embedEfpSubTab ~= 0 then
+            -- Pets view edits a different storage root; avoid switching named palette here.
+        else
         local paletteNames;
         if kind == 'universal' then
             paletteNames = palette.GetUniversalCrossbarPaletteNamesOrdered and palette.GetUniversalCrossbarPaletteNamesOrdered() or {};
@@ -1105,8 +1296,21 @@ local function DrawEmbeddedCrossbarComboModesPopup()
             end
             imgui.PopStyleColor(3);
         end
+        end
     end
     imgui.Spacing();
+
+    local storageKey;
+    if kind == 'job' and embedEfpSubTab == 1 then
+        storageKey = 'petpalette:' .. efpPets.getPetKeyString();
+    else
+        storageKey = GetEmbedFullPaletteStorageKey(ctx);
+    end
+    data.BeginCrossbarPaletteEditSession(storageKey, editJobId);
+    if not embedCrossbarComboWinOpen[1] and data.IsDraftDirty() then
+        embedCrossbarComboWinOpen[1] = true;
+        openUnsavedChangesPopup = true;
+    end
 
     -- Scroll region height: cache + quantized avail (see GetContentRegionAvailHeight). Refresh when the user
     -- resizes the outer window enough; avoids 1px jitter resetting scroll.
@@ -1125,43 +1329,133 @@ local function DrawEmbeddedCrossbarComboModesPopup()
     if ImGuiWindowFlags_AlwaysVerticalScrollbar ~= nil then
         xbScrollFlags = ImGuiWindowFlags_AlwaysVerticalScrollbar;
     end
+    local isPetsEfp = (kind == 'job' and embedEfpSubTab == 1);
+    local petKeyEfp = isPetsEfp and efpPets.getPetKeyString() or nil;
+    local function efpPetsModeOrNil(mode)
+        if not isPetsEfp or not petKeyEfp then
+            return mode;
+        end
+        if not petEfpSegmentRowVisible(cross, mode, petKeyEfp) then
+            return nil;
+        end
+        return mode;
+    end
+    local drawEfpJobFoot = (kind == 'job' and not isPetsEfp);
+    local function drawEfpScrollBody()
+        local scrollX1, scrollY1, scrollX2, scrollY2 = GetCurrentWindowScreenRect();
+        -- TextColored does not wrap; these info lines are long in Pets view
+        local function efpPetsInfoWrapped(c, s)
+            if not s or s == '' then
+                return;
+            end
+            if not c then
+                c = { 0.75, 0.55, 0.4, 1.0 };
+            end
+            if imgui.PushStyleColor and ImGuiCol_Text then
+                imgui.PushStyleColor(ImGuiCol_Text, c);
+            end
+            local didWrap = false;
+            if imgui.GetCursorPosX and imgui.GetContentRegionAvail and imgui.PushTextWrapPos then
+                local aw, _h = imgui.GetContentRegionAvail();
+                local wavail = 400;
+                if type(aw) == 'table' then
+                    wavail = (aw[1] or aw.x or wavail) - 12;
+                elseif type(aw) == 'number' then
+                    wavail = aw - 12;
+                end
+                wavail = math.max(100, wavail);
+                local cx = imgui.GetCursorPosX();
+                imgui.PushTextWrapPos(cx + wavail);
+                didWrap = true;
+            end
+            if imgui.TextWrapped then
+                imgui.TextWrapped(s);
+            else
+                imgui.Text(s);
+            end
+            if didWrap and imgui.PopTextWrapPos then
+                imgui.PopTextWrapPos();
+            end
+            if imgui.PopStyleColor and ImGuiCol_Text then
+                imgui.PopStyleColor(1);
+            end
+        end
+        local function sectionHeader(text)
+            imgui.Spacing();
+            imgui.Spacing();
+            imgui.Separator();
+            imgui.Spacing();
+            imgui.TextColored(components.TAB_STYLE.gold, text);
+        end
+        sectionHeader('Primary (hold L2 / R2)');
+        do
+            local pL, pR = efpPetsModeOrNil('L2'), efpPetsModeOrNil('R2');
+            if isPetsEfp and (not pL) and (not pR) then
+                efpPetsInfoWrapped(
+                    { 0.75, 0.55, 0.4, 1.0 },
+                    'No L2/R2 pet bar for the selected pet. On the Slots view, turn on "Pet Palette" and include this pet for L2 and/or R2, or select another family/pet above.'
+                );
+            else
+                DrawFullPaletteCrossbarPair(storageKey, pL, pR, 'pri', editCross, scrollX1, scrollY1, scrollX2, scrollY2, drawEfpJobFoot, cross, named, segmentOverrideJobId);
+            end
+        end
+        sectionHeader('Double-tap (L2x2 / R2x2)');
+        if not cross.enableDoubleTap then
+            imgui.BeginDisabled();
+            imgui.TextColored({ 0.55, 0.55, 0.55, 1.0 }, 'Enable Double-Tap in Controller Settings to use these bars.');
+            imgui.EndDisabled();
+        else
+            do
+                local pL, pR = efpPetsModeOrNil('L2x2'), efpPetsModeOrNil('R2x2');
+                if isPetsEfp and (not pL) and (not pR) then
+                    efpPetsInfoWrapped(
+                        { 0.75, 0.55, 0.4, 1.0 },
+                        'No double-tap pet bars for this pet. Use the Slots view to set Pet Palette for L2x2 and/or R2x2, or select another pet above.'
+                    );
+                else
+                    DrawFullPaletteCrossbarPair(storageKey, pL, pR, 'dbl', editCross, scrollX1, scrollY1, scrollX2, scrollY2, drawEfpJobFoot, cross, named, segmentOverrideJobId);
+                end
+            end
+        end
+        sectionHeader('Chord (L2+R2 / R2+L2)');
+        if not cross.enableExpandedCrossbar then
+            imgui.BeginDisabled();
+            imgui.TextColored({ 0.55, 0.55, 0.55, 1.0 }, 'Enable L2+R2 / R2+L2 in Controller Settings to use these bars.');
+            imgui.EndDisabled();
+        elseif cross.useSharedExpandedBar then
+            efpPetsInfoWrapped(
+                { 0.7, 0.68, 0.6, 1.0 },
+                'Shared expanded bar: L2+R2 and R2+L2 use the same 8 slots.'
+            );
+            do
+                local pM = efpPetsModeOrNil('L2R2');
+                if isPetsEfp and (not pM) then
+                    efpPetsInfoWrapped(
+                        { 0.75, 0.55, 0.4, 1.0 },
+                        'No shared chord bar for this pet. On the Slots view, enable "Pet Palette" for L2+R2 / R2+L2 (shared) or change pet above.'
+                    );
+                else
+                    DrawFullPaletteSingleCrossbarGroup(storageKey, pM, 'chsh', editCross, scrollX1, scrollY1, scrollX2, scrollY2, drawEfpJobFoot, cross, named, segmentOverrideJobId);
+                end
+            end
+        else
+            do
+                local pL, pR = efpPetsModeOrNil('L2R2'), efpPetsModeOrNil('R2L2');
+                if isPetsEfp and (not pL) and (not pR) then
+                    efpPetsInfoWrapped(
+                        { 0.75, 0.55, 0.4, 1.0 },
+                        'No chord pet bars for this pet. On the Slots view, enable Pet Palette for the chord row(s) or change pet above.'
+                    );
+                else
+                    DrawFullPaletteCrossbarPair(storageKey, pL, pR, 'chord', editCross, scrollX1, scrollY1, scrollX2, scrollY2, drawEfpJobFoot, cross, named, segmentOverrideJobId);
+                end
+            end
+        end
+        imgui.Dummy({ 0, 10 });
+    end
+
     imgui.BeginChild('##xbFullPalScroll', { 0, editFullPaletteScrollHCached or 200 }, true, xbScrollFlags);
-    local scrollX1, scrollY1, scrollX2, scrollY2 = GetCurrentWindowScreenRect();
-
-    local function sectionHeader(text)
-        imgui.Spacing();
-        imgui.Spacing();
-        imgui.Separator();
-        imgui.Spacing();
-        imgui.TextColored(components.TAB_STYLE.gold, text);
-    end
-
-    sectionHeader('Primary (hold L2 / R2)');
-    DrawFullPaletteCrossbarPair(storageKey, 'L2', 'R2', 'pri', editCross, scrollX1, scrollY1, scrollX2, scrollY2, kind == 'job', cross, named, segmentOverrideJobId);
-
-    sectionHeader('Double-tap (L2x2 / R2x2)');
-    if not cross.enableDoubleTap then
-        imgui.BeginDisabled();
-        imgui.TextColored({ 0.55, 0.55, 0.55, 1.0 }, 'Enable Double-Tap in Controller Settings to use these bars.');
-        imgui.EndDisabled();
-    else
-        DrawFullPaletteCrossbarPair(storageKey, 'L2x2', 'R2x2', 'dbl', editCross, scrollX1, scrollY1, scrollX2, scrollY2, kind == 'job', cross, named, segmentOverrideJobId);
-    end
-
-    sectionHeader('Chord (L2+R2 / R2+L2)');
-    if not cross.enableExpandedCrossbar then
-        imgui.BeginDisabled();
-        imgui.TextColored({ 0.55, 0.55, 0.55, 1.0 }, 'Enable L2+R2 / R2+L2 in Controller Settings to use these bars.');
-        imgui.EndDisabled();
-    elseif cross.useSharedExpandedBar then
-        imgui.TextColored({ 0.7, 0.68, 0.6, 1.0 }, 'Shared expanded bar: L2+R2 and R2+L2 use the same 8 slots.');
-        DrawFullPaletteSingleCrossbarGroup(storageKey, 'L2R2', 'chsh', editCross, scrollX1, scrollY1, scrollX2, scrollY2, kind == 'job', cross, named, segmentOverrideJobId);
-    else
-        DrawFullPaletteCrossbarPair(storageKey, 'L2R2', 'R2L2', 'chord', editCross, scrollX1, scrollY1, scrollX2, scrollY2, kind == 'job', cross, named, segmentOverrideJobId);
-    end
-
-    -- Minimal tail for clip clearance (large Dummy = empty scroll band + jumpy thumb at max scroll).
-    imgui.Dummy({ 0, 10 });
+    drawEfpScrollBody();
     imgui.EndChild();
 
     -- After slots draw: open macro editor from double-click (same frame as SetPending)
@@ -1227,13 +1521,21 @@ local function DrawEmbeddedCrossbarComboModesPopup()
     imgui.SetNextWindowSize({ 420, 0 }, ImGuiCond_Appearing);
     if imgui.BeginPopupModal('Unsaved Changes##xbUnsavedModal', nil, ImGuiWindowFlags_AlwaysAutoResize) then
         local isSwitching = (pendingPaletteSwitchName ~= nil);
+        local isEfpTab = (pendingEfpSubTab ~= nil);
         if isSwitching then
             imgui.TextWrapped('You have unsaved changes. Apply before switching palettes?');
+        elseif isEfpTab then
+            imgui.TextWrapped('You have unsaved changes. Apply before switching between Slots and Pets?');
         else
             imgui.TextWrapped('You have unsaved changes. Apply changes before closing?');
         end
         imgui.Spacing();
-        local applyLabel = isSwitching and 'Apply & Switch' or 'Apply & Close';
+        local applyLabel = 'Apply & Close';
+        if isSwitching then
+            applyLabel = 'Apply & Switch';
+        elseif isEfpTab then
+            applyLabel = 'Apply & Continue';
+        end
         if imgui.Button(applyLabel .. '##xbUnsavedApply', { 130, 0 }) then
             data.ApplyDraft();
             if isSwitching then
@@ -1243,6 +1545,10 @@ local function DrawEmbeddedCrossbarComboModesPopup()
                 editFullPaletteScrollHCached = nil;
                 embedCrossbarComboWinGraceFrames = 0;
                 pendingPaletteSwitchName = nil;
+            elseif isEfpTab then
+                embedEfpSubTab = pendingEfpSubTab;
+                pendingEfpSubTab = nil;
+                editFullPaletteScrollHCached = nil;
             else
                 embedCrossbarComboWinOpen[1] = false;
             end
@@ -1258,6 +1564,10 @@ local function DrawEmbeddedCrossbarComboModesPopup()
                 editFullPaletteScrollHCached = nil;
                 embedCrossbarComboWinGraceFrames = 0;
                 pendingPaletteSwitchName = nil;
+            elseif isEfpTab then
+                embedEfpSubTab = pendingEfpSubTab;
+                pendingEfpSubTab = nil;
+                editFullPaletteScrollHCached = nil;
             else
                 embedCrossbarComboWinOpen[1] = false;
             end
@@ -1266,6 +1576,7 @@ local function DrawEmbeddedCrossbarComboModesPopup()
         imgui.SameLine();
         if imgui.Button('Cancel##xbUnsavedCancel', { 100, 0 }) then
             pendingPaletteSwitchName = nil;
+            pendingEfpSubTab = nil;
             imgui.CloseCurrentPopup();
         end
         imgui.EndPopup();

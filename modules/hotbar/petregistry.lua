@@ -29,6 +29,13 @@ M.PET_TYPE_AUTOMATON = 'automaton';
 M.PET_TYPE_JUG = 'jug';
 M.PET_TYPE_CHARM = 'charm';
 
+-- `petpalette:*` keys omitted from the Edit Full Palette Pets picker (no practical pet-entity hotbar to bind for these avatars in Horizon).
+M.PETBAR_EXCLUDED_STORAGE_KEYS = {
+    ['avatar:odin'] = true,
+    ['avatar:alexander'] = true,
+    ['avatar:atomos'] = true,
+};
+
 -- ============================================
 -- Avatar Mapping (petName -> storageKey)
 -- ============================================
@@ -269,12 +276,23 @@ function M.GetAvailablePetKeys(jobId)
     return keys;
 end
 
--- Get ordered list of avatar names (for dropdowns, etc.)
+-- Get ordered list of avatar names (for dropdowns, macro editor, Edit Full Palette Pets, etc.)
 function M.GetAvatarList()
     return {
-        'Carbuncle', 'Ifrit', 'Shiva', 'Garuda', 'Titan', 'Ramuh',
-        'Leviathan', 'Fenrir', 'Diabolos', 'Atomos', 'Odin', 'Alexander',
-        'Cait Sith', 'Siren',
+        'Carbuncle',
+        'Ifrit',
+        'Titan',
+        'Leviathan',
+        'Garuda',
+        'Shiva',
+        'Ramuh',
+        'Fenrir',
+        'Diabolos',
+        'Alexander',
+        'Odin',
+        'Cait Sith',
+        'Atomos',
+        'Siren',
     };
 end
 
@@ -284,6 +302,30 @@ function M.GetSpiritList()
         'Fire Spirit', 'Ice Spirit', 'Air Spirit', 'Earth Spirit',
         'Thunder Spirit', 'Water Spirit', 'Light Spirit', 'Dark Spirit',
     };
+end
+
+-- Display order for SMN pet keys (matches GetAvatarList then GetSpiritList). Used to align pickers and Edit Palette Pets.
+local smnPetKeyOrderWeight;
+function M.GetSmnPetKeyOrderWeight(petKey)
+    if not smnPetKeyOrderWeight then
+        smnPetKeyOrderWeight = {};
+        local i = 1;
+        for _, name in ipairs(M.GetAvatarList()) do
+            local id = M.avatars[name];
+            if id then
+                smnPetKeyOrderWeight[M.PET_TYPE_AVATAR .. ':' .. id] = i;
+                i = i + 1;
+            end
+        end
+        for _, name in ipairs(M.GetSpiritList()) do
+            local id = M.spirits[name];
+            if id then
+                smnPetKeyOrderWeight[M.PET_TYPE_SPIRIT .. ':' .. id] = i;
+                i = i + 1;
+            end
+        end
+    end
+    return smnPetKeyOrderWeight[petKey] or 9999;
 end
 
 -- Get combined list of all summons (avatars + spirits)
