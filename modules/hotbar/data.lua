@@ -23,12 +23,21 @@ local draftDirty = false;
 local draftUndoStack = {};
 local draftUndoGroupActive = false;
 local DRAFT_MAX_UNDO = 30;
+-- Draft slot cell == this string means "explicitly cleared in draft". String survives deepCopyTable (undo); a table
+-- sentinel would clone to a fresh {} and break equality. Missing slot index still means "inherit live" for overlay reads.
+local DRAFT_CROSSBAR_SLOT_EMPTY = '__XIUI_DRAFT_SLOT_EMPTY__';
 
 -- Draft CRUD functions are defined after helpers (deepCopyTable, buildSlotRecord, etc.)
 -- to satisfy Lua local scoping. See "Draft Layer" section below line 1112.
 
 function M.GetCrossbarPaletteEditSessionKey()
     return crossbarPaletteEditStorageKey;
+end
+
+--- True while crossbar draft buffers exist (Edit Full Palette session). Palette rows use draft when drawing with
+--- palSk; the gameplay HUD keeps live binds until Apply. Swap reads use GetCrossbarSlotRawForSwapOverlay when draft is open.
+function M.IsCrossbarDraftLayerOpen()
+    return draftForStorageKey ~= nil and draftByKey ~= nil;
 end
 
 -- Pet-aware slot layouts are shared across job:subjob pairs; keyed only by pet subtype
@@ -515,6 +524,17 @@ local function resolveSlotMacro(slotAction)
     out.macroPaletteKey = arm.macroPaletteKey;
     out.macroSourceStore = mss;
     return out;
+end
+
+--- Raw crossbar blobs still hold inactive macro arms (profile vs shared) while the HUD shows empty for the other library.
+--- Swap/drag reads use raw tables — align them with what resolveSlotMacro would display so "blank" slots behave empty.
+function M.NormalizeCrossbarSlotRawForSwap(raw)
+    if raw == nil then return nil; end
+    if type(raw) ~= 'table' or raw.cleared then return nil; end
+    if resolveSlotMacro(raw) == nil then
+        return nil;
+    end
+    return raw;
 end
 
 --- In-place: legacy single macro binding -> macroBindProfile or macroBindShared.
@@ -1768,6 +1788,7 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
     else
         comboSlots[slotIndex] = buildSlotRecord(slotData);
     end
+    M.SyncDraftSlotFromLive(comboMode, slotIndex);
     NotifySlotDataChanged();
 end
 
@@ -1802,6 +1823,7 @@ function M.ClearCrossbarSlotData(comboMode, slotIndex)
     else
         jobSlotActions[effectiveComboMode][slotIndex] = nil;
     end
+    M.SyncDraftSlotFromLive(comboMode, slotIndex);
     NotifySlotDataChanged();
 end
 
@@ -1880,6 +1902,52 @@ local function ensureDraftBucket(resolvedKey)
     return draftByKey[resolvedKey];
 end
 
+--- After live `gConfig` crossbar mutations while Edit Full Palette draft is open, copy the affected slot into the draft
+--- blob so the palette row matches HUD (HUD stays authoritative for gameplay binds during the session).
+function M.SyncDraftSlotFromLive(comboMode, slotIndex)
+    if not draftForStorageKey or not draftByKey then
+        return;
+    end
+    local rk = resolveDraftStorageKeyForCombo(comboMode);
+    if not rk then
+        return;
+    end
+    local bucket = ensureDraftBucket(rk);
+    if not bucket then
+        return;
+    end
+    local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
+    if not bucket[effectiveComboMode] then
+        bucket[effectiveComboMode] = {};
+    end
+    draftTouchedKeys[rk] = true;
+    local liveRaw = M.GetRawCrossbarSlotAction(comboMode, slotIndex);
+    if liveRaw == nil then
+        bucket[effectiveComboMode][slotIndex] = DRAFT_CROSSBAR_SLOT_EMPTY;
+    else
+        bucket[effectiveComboMode][slotIndex] = deepCopyTable(liveRaw);
+    end
+    draftDirty = true;
+end
+
+--- Dual macro slots: clearing only the active arm can leave the inactive arm in the bucket while resolveSlotMacro shows empty.
+--- Only dual-layout blobs need this — never run on freshly written single-arm macros (profile vs shared visibility differs).
+local function scrubDraftBucketSlotIfInvisible(bucket, rk, effectiveComboMode, slotIndex)
+    if not bucket or not bucket[effectiveComboMode] then
+        return false;
+    end
+    local raw = bucket[effectiveComboMode][slotIndex];
+    if raw == nil or not isDualMacroSlotTable(raw) then
+        return false;
+    end
+    if resolveSlotMacro(raw) ~= nil then
+        return false;
+    end
+    bucket[effectiveComboMode][slotIndex] = DRAFT_CROSSBAR_SLOT_EMPTY;
+    draftTouchedKeys[rk] = true;
+    return true;
+end
+
 local function pushDraftUndo()
     if draftUndoGroupActive then return; end
     if not draftByKey then return; end
@@ -1954,7 +2022,11 @@ function M.GetDraftSlotData(comboMode, slotIndex)
     if not bucket then return nil; end
     local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
     if not bucket[effectiveComboMode] then return nil; end
-    return resolveSlotMacro(bucket[effectiveComboMode][slotIndex]);
+    local cell = bucket[effectiveComboMode][slotIndex];
+    if cell == DRAFT_CROSSBAR_SLOT_EMPTY then
+        return nil;
+    end
+    return resolveSlotMacro(cell);
 end
 
 function M.GetDraftRawSlotData(comboMode, slotIndex)
@@ -1965,7 +2037,39 @@ function M.GetDraftRawSlotData(comboMode, slotIndex)
     if not bucket then return nil; end
     local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
     if not bucket[effectiveComboMode] then return nil; end
-    return bucket[effectiveComboMode][slotIndex];
+    local v = bucket[effectiveComboMode][slotIndex];
+    if v == DRAFT_CROSSBAR_SLOT_EMPTY then
+        return nil;
+    end
+    return v;
+end
+
+--- Swap/drag reads: draft cell wins when present; explicit draft empty beats live; missing cell inherits live.
+function M.GetCrossbarSlotRawForSwapOverlay(comboMode, slotIndex)
+    if not draftForStorageKey or not draftByKey then
+        return M.GetRawCrossbarSlotAction(comboMode, slotIndex);
+    end
+    local rk = resolveDraftStorageKeyForCombo(comboMode);
+    if not rk then
+        return M.GetRawCrossbarSlotAction(comboMode, slotIndex);
+    end
+    local blob = draftByKey[rk];
+    if not blob then
+        return M.GetRawCrossbarSlotAction(comboMode, slotIndex);
+    end
+    local eff = GetEffectiveComboModeForStorage(comboMode);
+    local row = blob[eff];
+    if not row then
+        return M.GetRawCrossbarSlotAction(comboMode, slotIndex);
+    end
+    local v = row[slotIndex];
+    if v == DRAFT_CROSSBAR_SLOT_EMPTY then
+        return nil;
+    end
+    if v ~= nil then
+        return v;
+    end
+    return M.GetRawCrossbarSlotAction(comboMode, slotIndex);
 end
 
 function M.SetDraftSlotData(comboMode, slotIndex, slotData)
@@ -2011,13 +2115,14 @@ function M.ClearDraftSlotData(comboMode, slotIndex)
             raw[K_BIND_P] = nil;
         end
         if not raw[K_BIND_P] and not raw[K_BIND_S] then
-            bucket[effectiveComboMode][slotIndex] = nil;
+            bucket[effectiveComboMode][slotIndex] = DRAFT_CROSSBAR_SLOT_EMPTY;
         else
             raw.actionType = 'macro';
         end
     else
-        bucket[effectiveComboMode][slotIndex] = nil;
+        bucket[effectiveComboMode][slotIndex] = DRAFT_CROSSBAR_SLOT_EMPTY;
     end
+    scrubDraftBucketSlotIfInvisible(bucket, rk, effectiveComboMode, slotIndex);
     draftDirty = true;
 end
 
@@ -2034,6 +2139,19 @@ function M.CanUndoDraft()
     return #draftUndoStack > 0;
 end
 
+local function prepareDraftBlobForApply(blob)
+    local out = {};
+    for comboMode, row in pairs(blob) do
+        out[comboMode] = {};
+        for slotIndex, cell in pairs(row) do
+            if cell ~= DRAFT_CROSSBAR_SLOT_EMPTY then
+                out[comboMode][slotIndex] = deepCopyTable(cell);
+            end
+        end
+    end
+    return out;
+end
+
 function M.ApplyDraft()
     if not draftForStorageKey or not draftByKey then return; end
     if not gConfig.hotbarCrossbar then gConfig.hotbarCrossbar = {}; end
@@ -2041,7 +2159,7 @@ function M.ApplyDraft()
     for key, _ in pairs(draftTouchedKeys or {}) do
         local blob = draftByKey[key];
         if blob then
-            gConfig.hotbarCrossbar.slotActions[key] = deepCopyTable(blob);
+            gConfig.hotbarCrossbar.slotActions[key] = prepareDraftBlobForApply(blob);
         end
     end
     draftDirty = false;

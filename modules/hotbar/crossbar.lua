@@ -30,6 +30,17 @@ local targetLib = require('libs.target');
 local palette = require('modules.hotbar.palette');
 local TextureManager = require('libs.texturemanager');
 
+local function GetCrossbarSkillchainVisualsFromGlobal()
+    local hg = gConfig.hotbarGlobal or {};
+    return {
+        enabled = hg.skillchainHighlightEnabled ~= false,
+        color = hg.skillchainHighlightColor or 0xFFD4AA44,
+        iconScale = hg.skillchainIconScale or 1.0,
+        iconOffsetX = hg.skillchainIconOffsetX or 0,
+        iconOffsetY = hg.skillchainIconOffsetY or 0,
+    };
+end
+
 local M = {};
 
 -- ============================================
@@ -212,6 +223,7 @@ local function IconCacheNs()
     if sk then
         return 'pal_' .. tostring(sk);
     end
+    -- HUD stays on live bindings during Edit Full Palette until Apply; draft edits affect palette row cache only.
     return '__live__';
 end
 
@@ -868,6 +880,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
     yOffset = yOffset or 0;
 
     local palSk = data.GetCrossbarPaletteEditSessionKey and data.GetCrossbarPaletteEditSessionKey();
+    local draftLayer = data.IsCrossbarDraftLayerOpen and data.IsCrossbarDraftLayerOpen();
     local primKey = comboMode;
     if palSk then
         EnsurePalEdPrimitivesForComboMode(comboMode, settings);
@@ -884,7 +897,14 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         iconPressScale = animation.getPressScale(pressKey, isPressed and isActive);
     end
 
-    -- Get slot data (palette editor reads from draft buffer; live crossbar reads from gConfig)
+    local function rawForSwap(cm, si)
+        if palSk then
+            return data.GetCrossbarSlotRawForSwapOverlay(cm, si);
+        end
+        return data.GetRawCrossbarSlotAction(cm, si);
+    end
+
+    -- Palette row shows draft overlay; HUD uses live data (live edits sync into draft via SyncDraftSlotFromLive).
     local slotData;
     if palSk then
         slotData = data.GetDraftSlotData(comboMode, slotIndex);
@@ -933,6 +953,8 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
     };
 
     local idPrefix = palSk and 'paled' or 'crossbar';
+
+    local scvForSlot = GetCrossbarSkillchainVisualsFromGlobal();
 
     -- Render slot using shared renderer (handles ALL rendering and interactions)
     slotrenderer.DrawSlot(resources, {
@@ -1004,7 +1026,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
                 if arm.macroRef == nil and m.id then
                     arm.macroRef = m.id;
                 end
-                local ex = palSk and data.GetDraftRawSlotData(comboMode, slotIndex) or data.GetRawCrossbarSlotAction(comboMode, slotIndex);
+                local ex = data.NormalizeCrossbarSlotRawForSwap(rawForSwap(comboMode, slotIndex));
                 local store = m.macroSourceStore or (macropalette.GetMacroSourceTagForDrops and macropalette.GetMacroSourceTagForDrops()) or 'profile';
                 local built = data.BuildMacroSlotAfterDrop(arm, store, ex);
                 if palSk then
@@ -1013,9 +1035,17 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
                     data.SetCrossbarSlotData(comboMode, slotIndex, built);
                 end
             elseif payload.type == 'crossbar_slot' then
+                -- Always read source/target from live draft/config at drop time. payload.data was captured at
+                -- drag start and can alias stale tables after earlier moves in the same session (wrong swaps).
+                local srcCombo = payload.comboMode;
+                local srcSlot = payload.slotIndex;
+                if srcCombo == comboMode and srcSlot == slotIndex then
+                    return;
+                end
                 if palSk then data.BeginDraftUndoGroup(); end
-                local tgtRaw = palSk and data.GetDraftRawSlotData(comboMode, slotIndex) or data.GetRawCrossbarSlotAction(comboMode, slotIndex);
-                local newTgt, newSrc = data.SwapActiveMacroArmsInPlace(payload.data, tgtRaw);
+                local srcRaw = data.NormalizeCrossbarSlotRawForSwap(rawForSwap(srcCombo, srcSlot));
+                local tgtRaw = data.NormalizeCrossbarSlotRawForSwap(rawForSwap(comboMode, slotIndex));
+                local newTgt, newSrc = data.SwapActiveMacroArmsInPlace(srcRaw, tgtRaw);
                 local fT = data.FinalizeCrossbarRawSlotForStorage(newTgt);
                 local fS = data.FinalizeCrossbarRawSlotForStorage(newSrc);
                 if palSk then
@@ -1023,7 +1053,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
                 else
                     data.SetCrossbarSlotData(comboMode, slotIndex, fT);
                 end
-                if payload.paletteEditStorageKey then
+                if palSk then
                     if fS == nil then data.ClearDraftSlotData(payload.comboMode, payload.slotIndex) else data.SetDraftSlotData(payload.comboMode, payload.slotIndex, fS) end
                 else
                     data.SetCrossbarSlotData(payload.comboMode, payload.slotIndex, fS);
@@ -1050,16 +1080,18 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         end,
         dragType = 'crossbar_slot',
         getDragData = function()
-            local raw = palSk and data.GetDraftRawSlotData(comboMode, slotIndex) or data.GetRawCrossbarSlotAction(comboMode, slotIndex);
+            local raw = data.NormalizeCrossbarSlotRawForSwap(rawForSwap(comboMode, slotIndex));
             return {
                 comboMode = comboMode,
                 slotIndex = slotIndex,
                 data = raw,
                 icon = icon,
                 label = slotData and (slotData.displayName or slotData.action) or ('Slot ' .. slotIndex),
-                paletteEditStorageKey = palSk,
+                paletteEditStorageKey = draftLayer or palSk,
             };
         end,
+        -- Edit Full Palette zones overlap HUD crossbar rects; FlushDeferredDrops picks highest priority first.
+        dropPriority = palSk and 100 or 0,
         onRightClick = function()
             if palSk then
                 data.ClearDraftSlotData(comboMode, slotIndex);
@@ -1080,9 +1112,12 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
         -- Edit Full Palette only: on-slot action labels via ImGui (not GDI); normal HUD uses labelFont above/below slots.
         labelForeground = palSk and true or false,
 
-        -- Skillchain highlight
+        -- Skillchain highlight (per-crossbar overrides with Hotbar Global fallback; palette editor uses helper when outside DrawWindow)
         skillchainName = skillchainName,
-        skillchainColor = gConfig.hotbarGlobal.skillchainHighlightColor or 0xFFD4AA44,
+        skillchainColor = scvForSlot.color,
+        skillchainIconScale = scvForSlot.iconScale,
+        skillchainIconOffsetX = scvForSlot.iconOffsetX,
+        skillchainIconOffsetY = scvForSlot.iconOffsetY,
 
         -- Scroll / parent clip (Edit Full Palette): hide D3D + GDI outside visible region
         editorClipRect = editorClipRect,
@@ -1715,7 +1750,8 @@ function M.DrawWindow(settings, moduleSettings)
 
     -- Get target server ID for skillchain prediction (cached for all slots)
     local targetServerId = nil;
-    local skillchainEnabled = gConfig.hotbarGlobal.skillchainHighlightEnabled ~= false;
+    local scPreview = GetCrossbarSkillchainVisualsFromGlobal();
+    local skillchainEnabled = scPreview.enabled;
     if skillchainEnabled then
         local mainTargetIdx = targetLib.GetTargets();
         if mainTargetIdx and mainTargetIdx ~= 0 then

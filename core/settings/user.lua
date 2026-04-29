@@ -62,8 +62,8 @@ function M.createUserSettingsDefaults()
         treasurePoolExpanded = false,         -- Expanded view (false = collapsed)
 
         -- Hotbar settings (global)
-        hotbarEnabled = true,                 -- Show hotbar module
-        hotbarShowKeyboardBars = true,        -- Show keyboard hotbars (bars 1–6); crossbar visibility is separate
+        hotbarEnabled = true,                 -- Show hotbar module (keyboard strips when enabled; use Crossbar category for controller UI)
+
         crossbarEnabled = true,               -- Load controller crossbar (L2/R2 UI); independent from keyboard hotbars
         -- Lock movement: when true, disables drag/drop and slot swapping for keyboard hotbars only
         hotbarLockMovement = false,

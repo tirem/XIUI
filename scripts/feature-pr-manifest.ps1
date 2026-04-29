@@ -269,6 +269,46 @@ What changed
 Why
 - SMN "summons" split into avatars vs elementals for configuration and EFP; macro custom categories can be managed from the type row, with full cleanup of that palette bucket and only affected hotbar/crossbar slots reverted to empty. Slot bindings keep stable storage keys (custom:N) on rename; delete removes the bucket and clears references.
 '@
+        },
+        @{
+            Branch  = 'pr/16-crossbar-edit-palette-draft-live-dragdrop'
+            Files   = @(
+                'XIUI.lua',
+                'config/crossbar.lua',
+                'config/crossbar_settings.lua',
+                'config/hotbar.lua',
+                'core/settings/factories.lua',
+                'core/settings/migration.lua',
+                'core/settings/user.lua',
+                'libs/dragdrop.lua',
+                'modules/hotbar/crossbar.lua',
+                'modules/hotbar/data.lua',
+                'modules/hotbar/init.lua',
+                'modules/hotbar/macropalette.lua',
+                'modules/hotbar/palette.lua',
+                'modules/hotbar/slotrenderer.lua',
+                'modules/petbar/display.lua',
+                'assets/hotbar/items/01105.png',
+                'assets/hotbar/items/03100.png',
+                'assets/hotbar/items/04270.png',
+                'assets/hotbar/items/04576.png',
+                'assets/hotbar/items/17040.png'
+            )
+            Subject = 'Crossbar Edit Full Palette: draft sentinel vs live HUD, deferred drops, and misc UX'
+            Body    = @'
+What changed
+- data.lua / crossbar.lua: Explicit draft-empty sentinel distinguishes cleared palette slots from sparse untouched slots so overlay swap reads no longer resurrect live binds incorrectly; GetCrossbarSlotRawForSwapOverlay for palette row reads; SyncDraftSlotFromLive merges live gConfig into draft after HUD edits while Edit Full Palette is open so palette stays aligned with gameplay binds.
+- crossbar.lua / slotrenderer.lua / init.lua / libs/dragdrop.lua: Palette row stays draft-first with overlapping HUD rects resolved via deferred drops + dropPriority; HUD paths keep raw reads/writes on live while palette uses overlay+draft (FlushDeferredDrops before drag renderer).
+- config/hotbar.lua, config/crossbar.lua, config/crossbar_settings.lua: Layout/help/settings tweaks bundled with this UX pass.
+- core/settings (factories, migration, user): small migrations or defaults aligned with hotbar/crossbar behavior.
+- XIUI.lua, modules/hotbar/macropalette.lua, modules/hotbar/palette.lua, modules/petbar/display.lua: Related hooks or wording/visual tweaks touched alongside palette controller separation.
+
+Assets
+- Item PNGs under assets/hotbar/items/ for hotbar/macro display ids bundled here.
+
+Why
+- Removes duplicate/wrong swap behavior when draft clears overlapped live-only slots; keeps HUD draggable during palette editing without forcing draft icons onto the on-screen bar; overlapping palette/HUD drop zones pick palette deterministically.
+'@
         }
     )
 }

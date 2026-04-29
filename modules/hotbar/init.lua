@@ -35,6 +35,7 @@
 
 require('common');
 require('handlers.helpers');
+local gameState = require('core.gamestate');
 local gdi = require('submodules.gdifonts.include');
 local primitives = require('primitives');
 local windowBg = require('libs.windowbackground');
@@ -54,6 +55,12 @@ local palette = require('modules.hotbar.palette');
 local macrosLib = require('libs.ffxi.macros');
 
 local M = {};
+
+-- Crossbar controller macro blocking uses the same flag as Hotbar → Disable XI Macros (hotbarGlobal.disableMacroBars).
+local function GetCrossbarDisableXiMacrosEffective()
+    local hg = gConfig and gConfig.hotbarGlobal;
+    return hg and hg.disableMacroBars == true;
+end
 
 -- ============================================
 -- State
@@ -107,7 +114,9 @@ function M.Initialize(settings)
         local maxAttempts = 20;
 
         if data.SetPlayerJob() then
-            palette.ValidatePalettesForJob(data.jobId, data.subjobId);
+            palette.ValidatePalettesForJob(data.jobId, data.subjobId, {
+                applyDefaultCrossbarScope = palette.ConsumePendingApplyDefaultCrossbarScopeFromProfile(),
+            });
             macropalette.SyncToCurrentJob();
             display.ClearIconCache();
             slotrenderer.ClearAllCache();
@@ -123,7 +132,9 @@ function M.Initialize(settings)
     end
 
     if data.jobId then
-        palette.ValidatePalettesForJob(data.jobId, data.subjobId);
+        palette.ValidatePalettesForJob(data.jobId, data.subjobId, {
+            applyDefaultCrossbarScope = palette.ConsumePendingApplyDefaultCrossbarScopeFromProfile(),
+        });
     else
         -- Job not ready yet, start retry loop
         ashita.tasks.once(0.3, function()
@@ -389,8 +400,8 @@ function M.Initialize(settings)
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
             crossbar.ActivateSlot(comboMode, slotIndex);
         end);
-        -- Set controller blocking enabled state (crossbar-specific)
-        controller.SetBlockingEnabled(disableMacroBars);
+        -- Set controller blocking enabled state (crossbar-specific; independent hotbar setting)
+        controller.SetBlockingEnabled(GetCrossbarDisableXiMacrosEffective());
         crossbarInitialized = true;
     end
 
@@ -498,7 +509,7 @@ function M.UpdateVisuals(settings)
             crossbar.ActivateSlot(comboMode, slotIndex);
         end);
         -- Set controller blocking enabled state (crossbar-specific)
-        controller.SetBlockingEnabled(disableMacroBars);
+        controller.SetBlockingEnabled(GetCrossbarDisableXiMacrosEffective());
         crossbarInitialized = true;
     elseif not crossbarNeeded and crossbarInitialized then
         -- Cleanup crossbar when no longer needed
@@ -520,7 +531,7 @@ function M.UpdateVisuals(settings)
         end
         controller.SetControllerScheme(gConfig.hotbarCrossbar.controllerScheme, customMapping);
         -- Update controller blocking state (crossbar-specific)
-        controller.SetBlockingEnabled(disableMacroBars);
+        controller.SetBlockingEnabled(GetCrossbarDisableXiMacrosEffective());
     end
 
     -- Update state tracking for hotbar enable/disable
@@ -542,10 +553,16 @@ function M.DrawWindow(settings)
     end
 
     -- Hotbar and crossbar are independent; either, both, or neither can be on.
+    -- Menu-hide is evaluated here (not module registry) so keyboard vs crossbar can differ.
+    local menuOpen = gameState.IsMenuOpen();
+    local hideKbOnMenu = gConfig.hotbarHideOnMenuFocus == true;
+    local hideXbOnMenu = gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.crossbarHideOnMenuFocus == true;
     local showHotbar = gConfig
         and gConfig.hotbarEnabled ~= false
-        and gConfig.hotbarShowKeyboardBars ~= false;
-    local showCrossbar = gConfig and gConfig.crossbarEnabled ~= false;
+        and not (menuOpen and hideKbOnMenu);
+    local showCrossbar = gConfig
+        and gConfig.crossbarEnabled ~= false
+        and not (menuOpen and hideXbOnMenu);
 
     -- Draw keyboard hotbars when enabled
     if showHotbar then
@@ -565,13 +582,14 @@ function M.DrawWindow(settings)
     macropalette.DrawPalette();
     hotbarConfig.DrawKeybindModal();
 
-    -- dragdrop.Render() and outside-drop handling moved to FinalizeFrame()
-    -- so palette editor drop zones (drawn later by palettemanager) are processed first.
+    -- Drop previews / deferred overlaps happen in FinalizeFrame(): FlushDeferredDrops then Render (XIUI.lua calls FinalizeFrame after palettemanager.Draw).
 end
 
 function M.FinalizeFrame()
     if not M.initialized then return; end
 
+    -- Overlapping DropZones (HUD vs Edit Full Palette): defer execution then pick highest dropPriority (libs/dragdrop.lua).
+    dragdrop.FlushDeferredDrops();
     dragdrop.Render();
 
     if dragdrop.WasDroppedOutside() then
@@ -760,7 +778,7 @@ function M.HandleJobChangePacket(e)
         if data.SetPlayerJob() then
             -- Job successfully read - proceed with refresh
             macropalette.SyncToCurrentJob();
-            palette.ValidatePalettesForJob(data.jobId, data.subjobId);
+            palette.ValidatePalettesForJob(data.jobId, data.subjobId, { applyDefaultCrossbarScope = false });
             display.ClearIconCache();
             if crossbarInitialized then
                 crossbar.ClearIconCache();

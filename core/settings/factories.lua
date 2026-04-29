@@ -274,7 +274,7 @@ end
 function M.createHotbarGlobalDefaults()
     return T{
         -- Game UI patches
-        disableMacroBars = false,  -- Disable native XI macros (macro bar display + controller macro blocking)
+        disableMacroBars = false,  -- Keyboard: hide native macro bar UI + block Ctrl/Alt+number macro keys (controller blocking is Crossbar → Disable XI Macros)
         controllerHoldToShow = true,  -- Controller triggers use hold-to-show (like macrofix addon) instead of tap-to-toggle
 
         -- Blocked game keys - array of key definitions that should be blocked from reaching the game
@@ -467,6 +467,9 @@ function M.createCrossbarDefaults()
     return T{
         -- Show controller crossbar UI (mirrors gConfig.crossbarEnabled; kept for migration)
         showCrossbar = true,
+
+        -- Hide crossbar when game menu open (independent from Hotbar → Hide When Menu Open)
+        crossbarHideOnMenuFocus = false,
 
         -- Config UI: which main section is active (1=Controller, 2=Manage palettes, 3=Global visuals)
         configUiTab = 1,

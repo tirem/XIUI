@@ -1692,39 +1692,28 @@ local function DrawBarVisualSettings(configKey, barLabel)
 end
 
 
--- Section: Hotbar Settings
-function M.DrawSettings(state)
-    local selectedBarTab = state and state.selectedHotbarTab or 1;
+-- Disable XI Macros row + diagnostics + Controller Hold-to-Show (hotbarGlobal.disableMacroBars).
+-- Shared between Hotbar and Crossbar; idSuffix keeps ImGui IDs distinct when both UIs exist.
+function M.DrawSharedDisableXiMacrosControls(idSuffix)
+    idSuffix = idSuffix or 'hb';
+    local hg = gConfig.hotbarGlobal;
+    if not hg then
+        return;
+    end
 
-    -- Basic toggles at top
-    components.DrawCheckbox('Enabled', 'hotbarEnabled');
-    -- Lock Movement disables drag/drop and slot swapping for keyboard hotbars only
-    components.DrawCheckbox('Lock Movement', 'hotbarLockMovement', function()
-        if gConfig.hotbarLockMovement then
-            for i = 1, 6 do
-                drawing.ResetAnchorState('Hotbar' .. tostring(i));
-            end
-        end
-        DeferredUpdateVisuals();
-    end);
-    imgui.ShowHelp('When enabled, prevents dragging, dropping, and swapping slots on keyboard hotbars (bars 1–6). Crossbar uses Lock Crossbar under the Crossbar category.');
-    components.DrawCheckbox('Hide When Menu Open', 'hotbarHideOnMenuFocus');
-    imgui.ShowHelp('Hide hotbars when a game menu is open (equipment, map, etc.).');
-
-    -- Disable XI macros checkbox (stored in hotbarGlobal)
-    local disableMacroBars = { gConfig.hotbarGlobal.disableMacroBars or false };
-    if imgui.Checkbox('Disable XI Macros', disableMacroBars) then
-        gConfig.hotbarGlobal.disableMacroBars = disableMacroBars[1];
+    local disableMacroBars = { hg.disableMacroBars or false };
+    if imgui.Checkbox('Disable XI Macros##disableXi_' .. idSuffix, disableMacroBars) then
+        hg.disableMacroBars = disableMacroBars[1];
         SaveSettingsOnly();
         DeferredUpdateVisuals();
     end
+    imgui.ShowHelp('Toggle macro bar behavior:\n- OFF: Built-in macros work with speed fix (macrofix)\n- ON: Macro bar hidden, XIUI hotbar/crossbar only\n\nNote: When ON, also blocks native macro commands.');
 
-    -- Controller Hold-to-Show checkbox (only shown when Disable XI Macros is OFF)
-    if not gConfig.hotbarGlobal.disableMacroBars then
+    if not hg.disableMacroBars then
         imgui.Indent(20);
-        local holdToShow = { gConfig.hotbarGlobal.controllerHoldToShow ~= false };  -- default true
-        if imgui.Checkbox('Controller Hold-to-Show', holdToShow) then
-            gConfig.hotbarGlobal.controllerHoldToShow = holdToShow[1];
+        local holdToShow = { hg.controllerHoldToShow ~= false };
+        if imgui.Checkbox('Controller Hold-to-Show##holdXi_' .. idSuffix, holdToShow) then
+            hg.controllerHoldToShow = holdToShow[1];
             SaveSettingsOnly();
             DeferredUpdateVisuals();
         end
@@ -1733,10 +1722,9 @@ function M.DrawSettings(state)
     end
 
     imgui.SameLine();
-    -- Get diagnostic info for tooltip
+    imgui.PushID('diagXi_' .. idSuffix);
     local diag = macrosLib.get_diagnostics();
 
-    -- Show warning icon if macrofix addon conflict detected
     if diag.macrofixConflict then
         imgui.TextColored({1.0, 0.4, 0.0, 1.0}, '(!)');
         if imgui.IsItemHovered() then
@@ -1755,15 +1743,13 @@ function M.DrawSettings(state)
         end
         imgui.SameLine();
     end
-    -- Show status indicator with color based on mode
     if diag.mode == 'hide' then
-        imgui.TextColored({0.5, 1.0, 0.5, 1.0}, '(hidden)');  -- Green when hidden
+        imgui.TextColored({0.5, 1.0, 0.5, 1.0}, '(hidden)');
     elseif diag.mode == 'macrofix' then
-        -- Show hold-to-show status when in macrofix mode
         local statusText = diag.controllerHoldToShow and '(macrofix, hold-to-show)' or '(macrofix)';
-        imgui.TextColored({0.5, 0.8, 1.0, 1.0}, statusText);  -- Cyan for macrofix mode
+        imgui.TextColored({0.5, 0.8, 1.0, 1.0}, statusText);
     else
-        imgui.TextColored({1.0, 0.7, 0.3, 1.0}, '(init...)');  -- Orange if still initializing
+        imgui.TextColored({1.0, 0.7, 0.3, 1.0}, '(init...)');
     end
     if imgui.IsItemHovered() then
         imgui.BeginTooltip();
@@ -1777,13 +1763,11 @@ function M.DrawSettings(state)
         end
         imgui.Text('Mode: ' .. modeStr);
 
-        -- Show controller hold-to-show status when in macrofix mode
         if diag.mode == 'macrofix' then
             local holdStatus = diag.controllerHoldToShow and 'enabled' or 'disabled';
             imgui.Text('Controller Hold-to-Show: ' .. holdStatus);
         end
 
-        -- Check if macrofix addon is loaded (safely - GetAddonManager may not exist)
         local macrofixLoaded = false;
         local ok, addonManager = pcall(function() return AshitaCore:GetAddonManager(); end);
         if ok and addonManager then
@@ -1830,24 +1814,56 @@ function M.DrawSettings(state)
         imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'active = applied, ready = available');
         imgui.EndTooltip();
     end
-    imgui.ShowHelp('Toggle macro bar behavior:\n- OFF: Built-in macros work with speed fix (macrofix)\n- ON: Macro bar hidden, XIUI hotbar/crossbar only\n\nNote: When ON, also blocks native macro commands.');
+    imgui.PopID();
+end
 
-    -- Skillchain highlight checkbox (stored in hotbarGlobal)
-    local skillchainHighlight = { gConfig.hotbarGlobal.skillchainHighlightEnabled ~= false };
-    if imgui.Checkbox('Skillchain Highlight', skillchainHighlight) then
-        gConfig.hotbarGlobal.skillchainHighlightEnabled = skillchainHighlight[1];
+-- Skillchain highlight options (hotbarGlobal); shared between Hotbar and Crossbar.
+function M.DrawSharedSkillchainHighlightControls(idSuffix)
+    idSuffix = idSuffix or 'hb';
+    local hg = gConfig.hotbarGlobal;
+    if not hg then
+        return;
+    end
+
+    local skillchainHighlight = { hg.skillchainHighlightEnabled ~= false };
+    if imgui.Checkbox('Skillchain Highlight##skillchainHl_' .. idSuffix, skillchainHighlight) then
+        hg.skillchainHighlightEnabled = skillchainHighlight[1];
         SaveSettingsOnly();
     end
-    imgui.ShowHelp('Show animated border and skillchain icon on weapon skill slots when a skillchain window is open.');
+    imgui.ShowHelp('Show animated border and skillchain icon on weapon skill slots when a skillchain window is open. Applies to keyboard hotbars and controller crossbar.');
 
-    if gConfig.hotbarGlobal.skillchainHighlightEnabled ~= false then
-        components.DrawPartySlider(gConfig.hotbarGlobal, 'Icon Scale##skillchain', 'skillchainIconScale', 0.5, 2.0, '%.1f', nil, 1.0);
+    if hg.skillchainHighlightEnabled ~= false then
+        components.DrawPartySlider(hg, 'Icon Scale##skillchainScale_' .. idSuffix, 'skillchainIconScale', 0.5, 2.0, '%.1f', nil, 1.0);
         imgui.ShowHelp('Scale of the skillchain icon (default 1.0).');
-        components.DrawPartySliderInt(gConfig.hotbarGlobal, 'Icon Offset X##skillchain', 'skillchainIconOffsetX', -50, 50, '%d', nil, 0);
+        components.DrawPartySliderInt(hg, 'Icon Offset X##skillchainOx_' .. idSuffix, 'skillchainIconOffsetX', -50, 50, '%d', nil, 0);
         imgui.ShowHelp('Horizontal offset for skillchain icon position.');
-        components.DrawPartySliderInt(gConfig.hotbarGlobal, 'Icon Offset Y##skillchain', 'skillchainIconOffsetY', -50, 50, '%d', nil, 0);
+        components.DrawPartySliderInt(hg, 'Icon Offset Y##skillchainOy_' .. idSuffix, 'skillchainIconOffsetY', -50, 50, '%d', nil, 0);
         imgui.ShowHelp('Vertical offset for skillchain icon position.');
     end
+end
+
+
+-- Section: Hotbar Settings
+function M.DrawSettings(state)
+    local selectedBarTab = state and state.selectedHotbarTab or 1;
+
+    -- Basic toggles at top
+    components.DrawCheckbox('Enabled', 'hotbarEnabled');
+    -- Lock Movement disables drag/drop and slot swapping for keyboard hotbars only
+    components.DrawCheckbox('Lock Movement', 'hotbarLockMovement', function()
+        if gConfig.hotbarLockMovement then
+            for i = 1, 6 do
+                drawing.ResetAnchorState('Hotbar' .. tostring(i));
+            end
+        end
+        DeferredUpdateVisuals();
+    end);
+    imgui.ShowHelp('When enabled, prevents dragging, dropping, and swapping slots on keyboard hotbars (bars 1–6). Crossbar uses Lock Crossbar under the Crossbar category.');
+    components.DrawCheckbox('Hide When Menu Open', 'hotbarHideOnMenuFocus');
+    imgui.ShowHelp('Hide keyboard hotbars (bars 1–6) when a game menu is open (equipment, map, etc.). Crossbar has its own Hide When Menu Open next to Lock Crossbar.');
+
+    M.DrawSharedDisableXiMacrosControls('hb');
+    M.DrawSharedSkillchainHighlightControls('hb');
 
     imgui.Spacing();
     imgui.Separator();
@@ -1888,15 +1904,7 @@ function M.DrawSettings(state)
     imgui.Separator();
     imgui.Spacing();
 
-    local showKbVal = { gConfig.hotbarShowKeyboardBars ~= false };
-    if imgui.Checkbox('Show keyboard hotbars (bars 1–6)##hotbarShowKb', showKbVal) then
-        gConfig.hotbarShowKeyboardBars = showKbVal[1];
-        SaveSettingsOnly();
-        DeferredUpdateVisuals();
-    end
-    imgui.ShowHelp('When off, keyboard hotbars are hidden. Controller crossbar is configured separately in the Crossbar category.');
-
-    if gConfig.hotbarShowKeyboardBars ~= false then
+    if gConfig.hotbarEnabled ~= false then
         local kbOptions = { 'Disabled', 'Ctrl + Up/Down', 'Alt + Up/Down', 'Shift + Up/Down', 'Up/Down' };
         local kbModifierValues = { nil, 'ctrl', 'alt', 'shift', 'none' };
         local currentKbIndex = 1;
@@ -1932,6 +1940,49 @@ function M.DrawSettings(state)
             imgui.EndCombo();
         end
         imgui.ShowHelp('Keyboard shortcut to cycle through hotbar palettes.');
+
+        imgui.Spacing();
+        imgui.Separator();
+        imgui.Spacing();
+
+        -- Per-Bar Visual Settings header
+        imgui.TextColored(components.TAB_STYLE.gold, 'Per-Bar Visual Settings');
+        imgui.ShowHelp('Configure each hotbar independently. Each bar can have its own layout, theme, and button settings.');
+        imgui.Spacing();
+
+        -- Draw Bar 1-6 tabs
+        for i, barType in ipairs(BAR_TYPES) do
+            local clicked, tabWidth = components.DrawStyledTab(
+                barType.label,
+                'hotbarBarTab' .. i,
+                selectedBarTab == i,
+                nil,
+                components.TAB_STYLE.smallHeight,
+                components.TAB_STYLE.smallPadding
+            );
+            if clicked then
+                selectedBarTab = i;
+            end
+            if i < #BAR_TYPES then
+                imgui.SameLine();
+            end
+        end
+
+        imgui.Spacing();
+        imgui.Separator();
+        imgui.Spacing();
+
+        -- Draw settings for selected bar (Global tab vs per-bar tabs)
+        local currentBar = BAR_TYPES[selectedBarTab];
+        if currentBar then
+            if currentBar.isGlobal then
+                DrawGlobalVisualSettings();
+            else
+                DrawBarVisualSettings(currentBar.configKey, currentBar.label);
+            end
+        end
+    else
+        imgui.TextColored({0.55, 0.52, 0.48, 1.0}, 'Keyboard hotbars are turned off (Hotbar → Enabled). Turn Hotbar on to configure bars 1–6, or use the Crossbar category for controller layout.');
     end
 
     M.DrawLogPaletteNameCheckbox('##hbLogPal');
@@ -2009,53 +2060,6 @@ function M.DrawSettings(state)
         imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'Tip: Assign keys via Keybind editor');
 
         imgui.EndPopup();
-    end
-
-    imgui.Spacing();
-    imgui.Separator();
-    imgui.Spacing();
-
-    if gConfig.hotbarShowKeyboardBars ~= false then
-        imgui.Spacing();
-
-        -- Per-Bar Visual Settings header
-        imgui.TextColored(components.TAB_STYLE.gold, 'Per-Bar Visual Settings');
-        imgui.ShowHelp('Configure each hotbar independently. Each bar can have its own layout, theme, and button settings.');
-        imgui.Spacing();
-
-        -- Draw Bar 1-6 tabs
-        for i, barType in ipairs(BAR_TYPES) do
-            local clicked, tabWidth = components.DrawStyledTab(
-                barType.label,
-                'hotbarBarTab' .. i,
-                selectedBarTab == i,
-                nil,
-                components.TAB_STYLE.smallHeight,
-                components.TAB_STYLE.smallPadding
-            );
-            if clicked then
-                selectedBarTab = i;
-            end
-            if i < #BAR_TYPES then
-                imgui.SameLine();
-            end
-        end
-
-        imgui.Spacing();
-        imgui.Separator();
-        imgui.Spacing();
-
-        -- Draw settings for selected bar (Global tab vs per-bar tabs)
-        local currentBar = BAR_TYPES[selectedBarTab];
-        if currentBar then
-            if currentBar.isGlobal then
-                DrawGlobalVisualSettings();
-            else
-                DrawBarVisualSettings(currentBar.configKey, currentBar.label);
-            end
-        end
-    else
-        imgui.TextColored({0.55, 0.52, 0.48, 1.0}, 'Keyboard hotbars are hidden. Enable “Show keyboard hotbars” above, or use the Crossbar category for controller layout and palettes.');
     end
 
     -- Draw confirmation popup for job-specific toggle
@@ -2208,8 +2212,8 @@ end
 function M.DrawColorSettings(state)
     local selectedBarTab = state and state.selectedHotbarTab or 1;
 
-    if gConfig.hotbarShowKeyboardBars == false then
-        imgui.TextColored({0.55, 0.52, 0.48, 1.0}, 'Keyboard hotbars are hidden. Crossbar colors are under the Crossbar category → Color settings.');
+    if gConfig.hotbarEnabled == false then
+        imgui.TextColored({0.55, 0.52, 0.48, 1.0}, 'Keyboard hotbars are turned off. Crossbar colors are under the Crossbar category → Color settings.');
         return { selectedHotbarTab = selectedBarTab };
     end
 

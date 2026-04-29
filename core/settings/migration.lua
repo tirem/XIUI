@@ -989,6 +989,31 @@ function M.MigrateHotbarCrossbarLayoutFlags(gConfig)
     end
 end
 
+-- Fold legacy hotbarShowKeyboardBars into hotbarEnabled (same intent as Hotbar → Enabled today).
+function M.MigrateHotbarShowKeyboardBarsRemoval(gConfig)
+    if not gConfig then
+        return;
+    end
+    if gConfig.hotbarShowKeyboardBars == false and gConfig.hotbarEnabled ~= false then
+        gConfig.hotbarEnabled = false;
+    end
+    gConfig.hotbarShowKeyboardBars = nil;
+end
+
+-- Drop deprecated keys from profiles saved during older builds (macros/skillchain are hotbarGlobal only now).
+function M.MigrateCrossbarRemoveDeprecatedMirroredKeys(gConfig)
+    if not gConfig or type(gConfig.hotbarCrossbar) ~= 'table' then
+        return;
+    end
+    local xb = gConfig.hotbarCrossbar;
+    xb.crossbarDisableXiMacros = nil;
+    xb.skillchainHighlightEnabled = nil;
+    xb.skillchainHighlightColor = nil;
+    xb.skillchainIconScale = nil;
+    xb.skillchainIconOffsetX = nil;
+    xb.skillchainIconOffsetY = nil;
+end
+
 function M.MigrateMacroXiuiDefaults(gConfig)
     if not gConfig then
         return;
@@ -1012,6 +1037,8 @@ function M.RunStructureMigrations(gConfig, defaults)
     end
     M.MigrateCrossbarModuleFlags(gConfig);
     M.MigrateHotbarCrossbarLayoutFlags(gConfig);
+    M.MigrateHotbarShowKeyboardBarsRemoval(gConfig);
+    M.MigrateCrossbarRemoveDeprecatedMirroredKeys(gConfig);
     if gConfig then
         local ok, hbData = pcall(require, 'modules.hotbar.data');
         if ok and hbData and hbData.MigrateSlotDualMacroBindings then

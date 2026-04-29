@@ -529,7 +529,7 @@ end
 -- @param scName: Skillchain name (e.g., 'Light', 'Darkness', 'Fusion')
 -- @param color: Highlight color (ARGB)
 -- @param opacity: Overall opacity (0-1)
-local function DrawSkillchainHighlight(drawList, x, y, size, scName, color, opacity)
+local function DrawSkillchainHighlight(drawList, x, y, size, scName, color, opacity, iconScaleOverride, iconOxOverride, iconOyOverride)
     if not drawList or not scName or opacity <= 0.01 then return; end
 
     -- Animation offset for marching ants effect
@@ -558,10 +558,10 @@ local function DrawSkillchainHighlight(drawList, x, y, size, scName, color, opac
     DrawDashedLine(drawList, x, y + size, x, y, lineColor, thickness, dashLen, gapLen, animOffset);
 
     -- Draw skillchain icon in top-right corner
-    local scale = gConfig.hotbarGlobal.skillchainIconScale or 1.0;
+    local scale = iconScaleOverride or gConfig.hotbarGlobal.skillchainIconScale or 1.0;
     local iconSize = math.floor(size * 0.35 * scale);
-    local offsetX = gConfig.hotbarGlobal.skillchainIconOffsetX or 0;
-    local offsetY = gConfig.hotbarGlobal.skillchainIconOffsetY or 0;
+    local offsetX = iconOxOverride or gConfig.hotbarGlobal.skillchainIconOffsetX or 0;
+    local offsetY = iconOyOverride or gConfig.hotbarGlobal.skillchainIconOffsetY or 0;
     local iconX = x + size - iconSize - 2 + offsetX;
     local iconY = y + 2 + offsetY;
 
@@ -2274,7 +2274,8 @@ function M.DrawSlot(resources, params)
             elseif notEnoughMp then
                 scHighlightOpacity = scHighlightOpacity * 0.6;
             end
-            DrawSkillchainHighlight(fgDrawList, x, y, size, params.skillchainName, scColor, scHighlightOpacity);
+            DrawSkillchainHighlight(fgDrawList, x, y, size, params.skillchainName, scColor, scHighlightOpacity,
+                params.skillchainIconScale, params.skillchainIconOffsetX, params.skillchainIconOffsetY);
         end
     end
 
@@ -2427,6 +2428,7 @@ function M.DrawSlot(resources, params)
         dragdrop.DropZone(params.dropZoneId, x, y, size, size, {
             accepts = params.dropAccepts or {'macro'},
             highlightColor = params.dropHighlightColor or 0xA8FFFFFF,
+            dropPriority = params.dropPriority,
             onDrop = params.onDrop,
         });
     end

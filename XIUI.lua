@@ -67,6 +67,22 @@ local function xiuiInvalidateHotbarDataCaches()
     end
 end
 
+-- Apply Crossbar "Default Palette Type" from the loaded profile only (not on zone/level/job packets).
+local function xiuiApplyDefaultCrossbarPaletteScopeAfterProfileLoad()
+    local okD, dataMod = pcall(require, 'modules.hotbar.data');
+    local okP, paletteMod = pcall(require, 'modules.hotbar.palette');
+    if not (okD and okP and dataMod and paletteMod) then
+        return;
+    end
+    if dataMod.SetPlayerJob and dataMod.SetPlayerJob() and dataMod.jobId then
+        pcall(function()
+            paletteMod.ValidatePalettesForJob(dataMod.jobId, dataMod.subjobId or 0, { applyDefaultCrossbarScope = true });
+        end);
+    else
+        paletteMod.NotifyProfileSettingsLoaded();
+    end
+end
+
 -- UI modules
 local uiMods = require('modules.init');
 local playerBar = uiMods.playerbar;
@@ -291,7 +307,6 @@ uiModules.Register('hotbar', {
     settingsKey = 'hotbarSettings',
     configKey = 'showhotbar',
     hideOnEventKey = 'hotbarHideDuringEvents',
-    hideOnMenuFocusKey = 'hotbarHideOnMenuFocus',
     hasSetHidden = true,
 });
 
@@ -503,6 +518,7 @@ gConfigVersion = 0;
 settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
 sharedMacroStore.ApplyAfterProfileLoad(gConfig);
 xiuiInvalidateHotbarDataCaches();
+xiuiApplyDefaultCrossbarPaletteScopeAfterProfileLoad();
 
 -- Show migration message
 
@@ -675,6 +691,7 @@ function ChangeProfile(name)
     settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
     sharedMacroStore.ApplyAfterProfileLoad(gConfig);
     xiuiInvalidateHotbarDataCaches();
+    xiuiApplyDefaultCrossbarPaletteScopeAfterProfileLoad();
     UpdateSettings();
     return true;
 end
@@ -706,6 +723,7 @@ function ResetSettings()
     settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
     sharedMacroStore.ApplyAfterProfileLoad(gConfig);
     xiuiInvalidateHotbarDataCaches();
+    xiuiApplyDefaultCrossbarPaletteScopeAfterProfileLoad();
     configMenu.ResetConfigWindowPosition();
     SaveCurrentProfileFileToDisk();
     UpdateSettings();
@@ -971,6 +989,7 @@ settings.register('settings', 'settings_update', function (s)
         settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
         sharedMacroStore.ApplyAfterProfileLoad(gConfig);
         xiuiInvalidateHotbarDataCaches();
+        xiuiApplyDefaultCrossbarPaletteScopeAfterProfileLoad();
 
         -- Update visuals
         UpdateSettings();

@@ -7,6 +7,8 @@
 require('handlers.helpers');
 local imgui = require('imgui');
 local drawing = require('libs.drawing');
+local components = require('config.components');
+local hotbarConfig = require('config.hotbar');
 local crossbarSettings = require('config.crossbar_settings');
 
 local M = {};
@@ -37,6 +39,13 @@ function M.DrawSettings(state)
         DeferredUpdateVisuals();
     end
     imgui.ShowHelp('When enabled, prevents dragging the crossbar window and drag/drop or slot swaps on crossbar slots. Separate from Lock Movement on the Hotbar category.');
+
+    imgui.Spacing();
+    components.DrawPartyCheckbox(cross, 'Hide When Menu Open', 'crossbarHideOnMenuFocus', DeferredUpdateVisuals);
+    imgui.ShowHelp('Hide the crossbar when a game menu is open (equipment, map, etc.). Separate from Hotbar → Hide When Menu Open (keyboard strips).');
+
+    hotbarConfig.DrawSharedDisableXiMacrosControls('xb');
+    hotbarConfig.DrawSharedSkillchainHighlightControls('xb');
 
     if gConfig.crossbarEnabled ~= false then
         imgui.Spacing();

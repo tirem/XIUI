@@ -1323,18 +1323,25 @@ function display.DrawWindow(settings)
         local windowWidth, windowHeight = imgui.GetWindowSize();
 
         -- Handle bottom alignment
+        -- AlwaysAutoResize can report +/-1px frame-to-frame; strict ~= caused Y to creep upward
+        -- when heights flickered. Only adjust when the delta is meaningful.
         if typeSettings.alignBottom then
-            if windowState.height ~= nil and windowState.height ~= windowHeight then
-                -- Height changed, adjust Y to keep bottom edge fixed
-                local newPosY = windowState.y + windowState.height - windowHeight;
-                imgui.SetWindowPos('PetBar', { windowPosX, newPosY });
-                windowPosY = newPosY;
+            if windowState.height ~= nil then
+                local dh = windowHeight - windowState.height;
+                if math.abs(dh) > 1 then
+                    local newPosY = windowState.y + windowState.height - windowHeight;
+                    imgui.SetWindowPos('PetBar', { windowPosX, newPosY });
+                    windowPosY = newPosY;
+                end
             end
 
-            -- Save current state
             windowState.x = windowPosX;
             windowState.y = windowPosY;
             windowState.height = windowHeight;
+        else
+            windowState.x = nil;
+            windowState.y = nil;
+            windowState.height = nil;
         end
 
         -- Store main window position for pet target window (top = stable anchor for snap Y offset)
@@ -1372,6 +1379,9 @@ end
 display.ResetPositions = function()
     forcePositionReset = true;
     hasAppliedSavedPosition = false;
+    windowState.x = nil;
+    windowState.y = nil;
+    windowState.height = nil;
 end
 
 return display;

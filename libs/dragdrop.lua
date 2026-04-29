@@ -18,7 +18,7 @@
 *       onDrop = function(payload, zoneId) ... end,
 *   });
 *
-*   -- Render drag preview (call at end of frame)
+*   -- After all DropZone calls for the frame (and FlushDeferredDrops if overlapping rects exist), render preview
 *   dragdrop.Render();
 ]]--
 
@@ -46,6 +46,10 @@ local state = {
     -- Track if drop was handled this frame (vs dropped outside)
     dropHandledThisFrame = false,
     lastPayload = nil,  -- Preserved after drag ends for outside drop handling
+
+    -- Overlapping rects (e.g. HUD crossbar + Edit Full Palette preview): queue candidates and run one winner in FlushDeferredDrops (priority + registration order).
+    deferredDropCandidates = nil,
+    deferredDropSeq = 0,
 
     -- Drop zone registry
     zones = {},
@@ -110,6 +114,7 @@ function dragdrop.CancelDrag()
     state.dragActivated = false;
     state.activeZoneId = nil;
     state.previousZoneId = nil;
+    state.deferredDropCandidates = nil;
     state.dragEndedThisFrame = true;
 end
 
@@ -267,17 +272,49 @@ function dragdrop.DropZone(id, x, y, width, height, options)
         state.activeZoneId = nil;
     end
 
-    -- Check for drop (mouse released while hovering valid zone)
+    -- Queue drop for end-of-frame resolution (overlapping zones: highest dropPriority wins; tie → later registration).
     local dropped = false;
     if isHovered and canAccept and imgui.IsMouseReleased(0) then
         dropped = true;
-        state.dropHandledThisFrame = true;  -- Mark that drop was handled
         if options.onDrop then
-            options.onDrop(state.payload, id);
+            if not state.deferredDropCandidates then
+                state.deferredDropCandidates = {};
+            end
+            state.deferredDropSeq = state.deferredDropSeq + 1;
+            table.insert(state.deferredDropCandidates, {
+                priority = options.dropPriority or 0,
+                seq = state.deferredDropSeq,
+                zoneId = id,
+                onDrop = options.onDrop,
+            });
         end
     end
 
     return dropped, isHovered and canAccept;
+end
+
+---Resolve overlapping drop zones for this frame. Call once after every DropZone has run (e.g. hotbar FinalizeFrame), before Render().
+function dragdrop.FlushDeferredDrops()
+    local candidates = state.deferredDropCandidates;
+    state.deferredDropCandidates = nil;
+    if not candidates or #candidates == 0 then
+        return;
+    end
+    local payload = state.payload;
+    if not payload then
+        return;
+    end
+    table.sort(candidates, function(a, b)
+        if a.priority ~= b.priority then
+            return a.priority > b.priority;
+        end
+        return a.seq > b.seq;
+    end);
+    local winner = candidates[1];
+    if winner and winner.onDrop then
+        state.dropHandledThisFrame = true;
+        winner.onDrop(payload, winner.zoneId);
+    end
 end
 
 -- ============================================
@@ -461,6 +498,8 @@ function dragdrop.Update()
     state.dragEndedThisFrame = false;
     state.dropHandledThisFrame = false;
     state.lastPayload = nil;
+    state.deferredDropCandidates = nil;
+    state.deferredDropSeq = 0;
 
     -- Clear zones from previous frame
     state.zones = {};
@@ -503,6 +542,7 @@ function dragdrop.Reset()
     state.zones = {};
     state.activeZoneId = nil;
     state.previousZoneId = nil;
+    state.deferredDropCandidates = nil;
 end
 
 return dragdrop;

@@ -2299,13 +2299,16 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
         -- Dragging from slot to slot (swap)
         local sourceBarIndex = payload.barIndex;
         local sourceSlotIndex = payload.slotIndex;
+        if sourceBarIndex == targetBarIndex and sourceSlotIndex == targetSlotIndex then
+            return false;
+        end
         local sourceConfigKey = 'hotbarBar' .. sourceBarIndex;
         if not gConfig[sourceConfigKey] then
             gConfig[sourceConfigKey] = {};
         end
         local sourceStorageKey = data.GetStorageKeyForBar(sourceBarIndex);
         local sourceJobSlotActions = ensureSlotActionsStructure(gConfig[sourceConfigKey], sourceStorageKey);
-        local sourceRaw = payload.data;
+        local sourceRaw = data.GetRawHotbarSlotAction(sourceBarIndex, sourceSlotIndex);
         local targetRaw = data.GetRawHotbarSlotAction(targetBarIndex, targetSlotIndex);
         local newTarget, newSource = data.SwapActiveMacroArmsInPlace(sourceRaw, targetRaw);
         jobSlotActions[targetSlotIndex] = data.FinalizeHotbarRawSlotForStorage(newTarget);

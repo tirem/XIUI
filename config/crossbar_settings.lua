@@ -94,7 +94,7 @@ local function DrawCrossbarUniversalTierOptions(crossbarSettings, opts)
         crossbarSettings.defaultCrossbarPaletteScope = 'job';
     end
     imgui.AlignTextToFramePadding();
-    imgui.Text('Default Palette Type on Login:');
+    imgui.Text('Default Palette Type on Profile Load:');
     imgui.SameLine();
     imgui.SetNextItemWidth(160);
     local defLabel = crossbarSettings.defaultCrossbarPaletteScope == 'universal' and 'Global [G]' or 'Job / Subjob [J]';
@@ -109,7 +109,7 @@ local function DrawCrossbarUniversalTierOptions(crossbarSettings, opts)
         end
         imgui.EndCombo();
     end
-    imgui.ShowHelp('Which palette tier is active when you log in or change jobs. Only applies when Global Crossbar Sets are enabled above.');
+    imgui.ShowHelp('Which Job vs Global [G] palette tier is applied when a profile is loaded or reloaded from disk. While playing, use L1+R1 to switch tier without changing this setting.');
 end
 
 -- Draw the global crossbar palettes management section
@@ -819,8 +819,43 @@ local function DrawCrossbarSettings(selectedCrossbarTab, menuState)
     end
     imgui.ShowHelp('Select which button mapping profile to use.\n\n- Xbox: For XInput controllers (Xbox, 8BitDo in X-mode)\n- PlayStation: For DualSense/DualShock via DirectInput\n- Switch Pro: For Nintendo Switch Pro controller\n- Generic DirectInput: For other DirectInput controllers\n\nChanging this will also update the button icon theme.');
 
-    -- Analog Trigger Threshold Settings (Xbox and PlayStation only)
     local hasAnalogTriggers = (currentScheme == 'xbox' or currentScheme == 'dualsense');
+
+    -- Display Mode (directly under Controller Profile)
+    do
+        local displayModes = { 'normal', 'activeOnly' };
+        local displayModeLabels = { 'Normal', 'Active Only' };
+        local currentDisplayMode = crossbarSettings.displayMode or 'normal';
+        local currentDisplayIndex = 1;
+        for i, mode in ipairs(displayModes) do
+            if mode == currentDisplayMode then
+                currentDisplayIndex = i;
+                break;
+            end
+        end
+
+        imgui.Spacing();
+        imgui.AlignTextToFramePadding();
+        imgui.Text('Display Mode:');
+        imgui.SameLine();
+        imgui.SetNextItemWidth(150);
+        if imgui.BeginCombo('##displayModeCrossbar', displayModeLabels[currentDisplayIndex]) then
+            for i, label in ipairs(displayModeLabels) do
+                local isSelected = (i == currentDisplayIndex);
+                if imgui.Selectable(label, isSelected) then
+                    crossbarSettings.displayMode = displayModes[i];
+                    SaveSettingsOnly();
+                end
+                if isSelected then
+                    imgui.SetItemDefaultFocus();
+                end
+            end
+            imgui.EndCombo();
+        end
+        imgui.ShowHelp('Normal: Always show both sides (inactive side dimmed).\nActive Only: Show only when trigger is held, displaying only the active side.');
+    end
+
+    -- Analog Trigger Threshold Settings (Xbox and PlayStation only)
     if hasAnalogTriggers then
         imgui.Spacing();
         imgui.Text('Analog Trigger Settings');
@@ -902,20 +937,13 @@ local function DrawCrossbarSettings(selectedCrossbarTab, menuState)
     end
 
     imgui.Spacing();
+
+    -- Enable "Global" Crossbar Sets (+ default palette tier when enabled); omit live Scope preview line here
+    DrawCrossbarUniversalTierOptions(crossbarSettings, { includeScopeLine = false });
+
     imgui.Spacing();
 
-    -- Controller Input settings (combo modes, double-tap) - directly under controller
-    components.DrawPartyCheckbox(crossbarSettings, 'Enable L2+R2 / R2+L2##crossbar', 'enableExpandedCrossbar');
-    imgui.ShowHelp('Enable L2+R2 and R2+L2 combo modes. Hold one trigger, then press the other to access expanded bars.\nOptional Global [G] palette attach per trigger group is set in Edit Full Palette when editing a Job palette; [G] sets are labeled in palette lists.');
-
-    -- Nested option: Use shared expanded bar (only visible when L2+R2/R2+L2 is enabled)
-    if crossbarSettings.enableExpandedCrossbar then
-        imgui.Indent(20);
-        components.DrawPartyCheckbox(crossbarSettings, 'Use Shared Expanded Bar##crossbar', 'useSharedExpandedBar', DeferredUpdateVisuals);
-        imgui.ShowHelp('When enabled, L2+R2 and R2+L2 will access the same shared expanded bar instead of separate bars.\nThis shared bar is completely independent from the separate L2+R2 and R2+L2 bars.');
-        imgui.Unindent(20);
-    end
-
+    -- Double-Tap (window + minimum trigger hold under it when enabled)
     components.DrawPartyCheckbox(crossbarSettings, 'Enable Double-Tap##crossbar', 'enableDoubleTap', DeferredUpdateVisuals);
     imgui.ShowHelp('Enable L2x2 and R2x2 double-tap modes. Tap a trigger twice quickly (hold on second tap) to access double-tap bars.\nPer-trigger [G] attach and pet overrides are set in Edit Full Palette (Manage Palettes & Crossbar tab).');
 
@@ -925,7 +953,6 @@ local function DrawCrossbarSettings(selectedCrossbarTab, menuState)
         end, 0.3);
         imgui.ShowHelp('Time window to register a double-tap (in seconds).');
 
-        -- Minimum Trigger Hold (only for analog controllers with double-tap enabled)
         if hasAnalogTriggers then
             components.DrawPartySlider(crossbarSettings, 'Minimum Trigger Hold##crossbar', 'minTriggerHold', 0.01, 0.15, '%.3f sec', function()
                 controller.SetMinTriggerHold(crossbarSettings.minTriggerHold);
@@ -936,38 +963,24 @@ local function DrawCrossbarSettings(selectedCrossbarTab, menuState)
 
     imgui.Spacing();
 
-    -- Display Mode dropdown
-    local displayModes = { 'normal', 'activeOnly' };
-    local displayModeLabels = { 'Normal', 'Active Only' };
-    local currentDisplayMode = crossbarSettings.displayMode or 'normal';
-    local currentDisplayIndex = 1;
-    for i, mode in ipairs(displayModes) do
-        if mode == currentDisplayMode then
-            currentDisplayIndex = i;
-            break;
-        end
+    -- Chords: L2+R2 / R2+L2 expanded bars (+ shared expanded bar when enabled)
+    components.DrawPartyCheckbox(crossbarSettings, 'Enable Chords (L2+R2 / R2+L2)', 'enableExpandedCrossbar');
+    imgui.ShowHelp('Enable L2+R2 and R2+L2 combo modes. Hold one trigger, then press the other to access expanded bars.\nOptional Global [G] palette attach per trigger group is set in Edit Full Palette when editing a Job palette; [G] sets are labeled in palette lists.');
+
+    if crossbarSettings.enableExpandedCrossbar then
+        imgui.Indent(20);
+        components.DrawPartyCheckbox(crossbarSettings, 'Use Shared Expanded Bar##crossbar', 'useSharedExpandedBar', DeferredUpdateVisuals);
+        imgui.ShowHelp('When enabled, L2+R2 and R2+L2 will access the same shared expanded bar instead of separate bars.\nThis shared bar is completely independent from the separate L2+R2 and R2+L2 bars.');
+        imgui.Unindent(20);
     end
 
-    imgui.AlignTextToFramePadding();
-    imgui.Text('Display Mode:');
-    imgui.SameLine();
-    imgui.SetNextItemWidth(150);
-    if imgui.BeginCombo('##displayModeCrossbar', displayModeLabels[currentDisplayIndex]) then
-        for i, label in ipairs(displayModeLabels) do
-            local isSelected = (i == currentDisplayIndex);
-            if imgui.Selectable(label, isSelected) then
-                crossbarSettings.displayMode = displayModes[i];
-                SaveSettingsOnly();
-            end
-            if isSelected then
-                imgui.SetItemDefaultFocus();
-            end
-        end
-        imgui.EndCombo();
-    end
-    imgui.ShowHelp('Normal: Always show both sides (inactive side dimmed).\nActive Only: Show only when trigger is held, displaying only the active side.');
+    imgui.Spacing();
 
-    DrawCrossbarGlobalPalettesSection({ includeUniversalLists = false, includeJobPalettes = false });
+    DrawCrossbarGlobalPalettesSection({
+        skipUniversalTierOptions = true,
+        includeUniversalLists = false,
+        includeJobPalettes = false,
+    });
 
     elseif uit == 2 then
         DrawCrossbarJobIconStrip(crossbarSettings, { showGlobalOptionsRow = true });

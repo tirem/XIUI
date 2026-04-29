@@ -59,8 +59,20 @@ local state = {
     onPaletteChangedCallbacks = {},
 };
 
--- Apply config defaultCrossbarPaletteScope once per addon load; do not overwrite user scope on every job change.
-local crossbarDefaultScopeAppliedOnce = false;
+-- Pending: profile/gConfig was swapped before player job was readable (addon startup). Consumed by hotbar init.
+local pendingApplyDefaultCrossbarScopeFromProfile = false;
+
+function M.NotifyProfileSettingsLoaded()
+    pendingApplyDefaultCrossbarScopeFromProfile = true;
+end
+
+function M.ConsumePendingApplyDefaultCrossbarScopeFromProfile()
+    if pendingApplyDefaultCrossbarScopeFromProfile then
+        pendingApplyDefaultCrossbarScopeFromProfile = false;
+        return true;
+    end
+    return false;
+end
 
 -- After hotbarCrossbar exists: seed one blank Job [J] Default palette per job (1–22) without touching live active palette.
 local crossbarBlankDefaultsSeeded = false;
@@ -1288,7 +1300,7 @@ function M.RefreshActivePaletteVisualsAfterExternalEdit()
     local okData, dataMod = pcall(require, 'modules.hotbar.data');
     if okData and dataMod and dataMod.jobId then
         pcall(function()
-            M.ValidatePalettesForJob(dataMod.jobId, dataMod.subjobId or 0);
+            M.ValidatePalettesForJob(dataMod.jobId, dataMod.subjobId or 0, { applyDefaultCrossbarScope = false });
         end);
     end
     local hotbarName = state.activePalette;
@@ -2590,8 +2602,9 @@ end
 
 -- Validate active palettes against current job's available palettes
 -- Ensures at least one palette exists, and auto-selects the first palette if none is active
--- Should be called on job change
-function M.ValidatePalettesForJob(jobId, subjobId)
+-- opts.applyDefaultCrossbarScope: only pass true when loading/reloading a profile (see XIUI xiuiApplyDefaultCrossbarPaletteScopeAfterProfileLoad).
+-- Zone/job packets and leveling must not flip scope — user toggles L1+R1 for that session.
+function M.ValidatePalettesForJob(jobId, subjobId, opts)
     -- Ensure gConfig.hotbar structure exists before any palette operations
     if not EnsureHotbarConfigExists() then
         print('[XIUI palette] Warning: gConfig not available, skipping palette validation');
@@ -2735,8 +2748,8 @@ function M.ValidatePalettesForJob(jobId, subjobId)
     local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
     if crossbarSettings and crossbarSettings.enableUniversalCrossbarPalettes then
         local firstUniversal = M.EnsureUniversalCrossbarDefaultExists();
-        if not crossbarDefaultScopeAppliedOnce then
-            crossbarDefaultScopeAppliedOnce = true;
+        if opts and opts.applyDefaultCrossbarScope == true then
+            pendingApplyDefaultCrossbarScopeFromProfile = false;
             if crossbarSettings.defaultCrossbarPaletteScope == 'universal' then
                 state.crossbarPaletteScope = 'universal';
             else
