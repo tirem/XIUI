@@ -651,13 +651,13 @@ function data.GetPetData()
     local party = GetPartySafe();
     local playerEnt = GetPlayerEntity();
 
-    if player == nil or party == nil or playerEnt == nil then
-        -- No pet - clear tracking
-        data.TrackPetSummon(nil, nil);
+    if player.isZoning or player:GetMainJob() == 0 then
         return nil;
     end
 
-    if player.isZoning or player:GetMainJob() == 0 then
+    if player == nil or party == nil or playerEnt == nil then
+        -- No pet - clear tracking
+        data.TrackPetSummon(nil, nil);
         return nil;
     end
 
