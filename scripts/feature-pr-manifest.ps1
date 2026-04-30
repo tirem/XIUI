@@ -334,6 +334,9 @@ What changed
 - config/hotbar.lua, config/crossbar.lua, config/crossbar_settings.lua: Layout/help/settings tweaks bundled with this UX pass.
 - core/settings (factories, migration, user): small migrations or defaults aligned with hotbar/crossbar behavior.
 - XIUI.lua, modules/hotbar/macropalette.lua, modules/hotbar/palette.lua, modules/petbar/display.lua: Related hooks or wording/visual tweaks touched alongside palette controller separation.
+- palette.lua: ValidatePalettesForJob merges factory crossbar defaults into gConfig.hotbarCrossbar before reading enableUniversal/defaultCrossbarPaletteScope; applies profile Job vs Global [G] scope before job-tier active palette reconciliation; case-insensitive universal/global preference; only forces job scope when universal sets are explicitly disabled (avoids resetting scope when nested keys were missing).
+- crossbar.lua: ImGui window gains dynamic bottom padding so below-slot action labels and corner-outline slack are not clipped by the window rect.
+- modules/hotbar/init.lua: HandleJobChangePacket consumes pending apply-default-crossbar-scope when profile reloaded before job data was readable (char select / logout).
 
 Assets
 - Item PNGs under assets/hotbar/items/ for hotbar/macro display ids bundled here.

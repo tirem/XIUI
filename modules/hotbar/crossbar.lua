@@ -439,6 +439,18 @@ end
 -- grid top (unchanged from before this padding existed).
 local CROSSBAR_WINDOW_TOP_DECOR_PAD = 80;
 
+-- Bottom slots can draw action labels below the slot rect (slotrenderer default). Without extra window height,
+-- ImGui clips the lower portion of those labels (and a little outline slack for icons / corner text).
+local function GetCrossbarWindowBottomPad(settings)
+    settings = settings or {};
+    local pad = 10;
+    if settings.showActionLabels then
+        pad = pad + (settings.labelFontSize or 10) + 6 + math.max(0, tonumber(settings.actionLabelOffsetY) or 0);
+    end
+    pad = pad + math.floor(((settings.mpCostFontSize or 10) + (settings.quantityFontSize or 10)) * 0.15 + 0.5);
+    return math.min(72, math.max(10, pad));
+end
+
 local function ApplyCrossbarWindowPositionOnce()
     if not gConfig or not gConfig.windowPositions or not gConfig.windowPositions['Crossbar'] then
         return false;
@@ -1675,7 +1687,8 @@ function M.DrawWindow(settings, moduleSettings)
         end
     end
 
-    imgui.SetNextWindowSize({ width, height + CROSSBAR_WINDOW_TOP_DECOR_PAD }, ImGuiCond_Always);
+    local bottomPad = GetCrossbarWindowBottomPad(settings);
+    imgui.SetNextWindowSize({ width, height + CROSSBAR_WINDOW_TOP_DECOR_PAD + bottomPad }, ImGuiCond_Always);
 
     -- Check if animations are disabled - if so, force complete any in-progress animation
     if settings.enableTransitionAnimations == false and state.animation.active then

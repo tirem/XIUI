@@ -2692,6 +2692,57 @@ function M.ValidatePalettesForJob(jobId, subjobId, opts)
         print('[XIUI palette] Warning: Failed to create default crossbar palette for job ' .. tostring(jobId));
     end
 
+    -- Merge factory crossbar defaults into gConfig so keys like defaultCrossbarPaletteScope and
+    -- enableUniversalCrossbarPalettes always resolve (older/partial profiles omit nested fields).
+    if not gConfig.hotbarCrossbar then
+        gConfig.hotbarCrossbar = {};
+    end
+    local factories = require('core.settings.factories');
+    DeepMergeWithDefaults(gConfig.hotbarCrossbar, factories.createCrossbarDefaults());
+
+    local function ProfileDefaultWantsUniversalCrossbar(cs)
+        local v = cs and cs.defaultCrossbarPaletteScope;
+        if type(v) ~= 'string' then
+            return false;
+        end
+        local l = (v:lower():match('^%s*(.-)%s*$')) or '';
+        return l == 'universal' or l == 'global';
+    end
+
+    local crossbarSettings = gConfig.hotbarCrossbar;
+    local firstUniversal = nil;
+    -- Apply Job vs Global [G] scope from profile before reconciling [J] tier palettes so callbacks see correct scope.
+    if crossbarSettings and crossbarSettings.enableUniversalCrossbarPalettes then
+        firstUniversal = M.EnsureUniversalCrossbarDefaultExists();
+        if opts and opts.applyDefaultCrossbarScope == true then
+            pendingApplyDefaultCrossbarScopeFromProfile = false;
+            if ProfileDefaultWantsUniversalCrossbar(crossbarSettings) then
+                state.crossbarPaletteScope = 'universal';
+            else
+                state.crossbarPaletteScope = 'job';
+            end
+        end
+        if state.crossbarActiveUniversalPalette then
+            local ulist = M.GetUniversalCrossbarPaletteNamesOrdered();
+            local ufound = false;
+            for _, n in ipairs(ulist) do
+                if n == state.crossbarActiveUniversalPalette then
+                    ufound = true;
+                    break;
+                end
+            end
+            if not ufound then
+                local cyc = M.GetUniversalCrossbarPalettesForCycle();
+                state.crossbarActiveUniversalPalette = (cyc[1] or firstUniversal);
+            end
+        elseif firstUniversal and state.crossbarPaletteScope == 'universal' then
+            state.crossbarActiveUniversalPalette = firstUniversal;
+        end
+    elseif crossbarSettings then
+        -- Feature explicitly disabled in profile — scope must be job tier only.
+        state.crossbarPaletteScope = 'job';
+    end
+
     local crossbarRowsAll = M.GetCrossbarManagePaletteRows(jobId, subjobId);
     local crossbarRowsCycle = M.GetCrossbarManagePaletteRowsInRbCycle(jobId, subjobId);
 
@@ -2742,38 +2793,6 @@ function M.ValidatePalettesForJob(jobId, subjobId, opts)
                 M.FirePaletteChangedCallbacks('crossbar:' .. mode, nil, state.crossbarActivePalette);
             end
         end
-    end
-
-    -- All-jobs universal crossbar palettes (optional feature)
-    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
-    if crossbarSettings and crossbarSettings.enableUniversalCrossbarPalettes then
-        local firstUniversal = M.EnsureUniversalCrossbarDefaultExists();
-        if opts and opts.applyDefaultCrossbarScope == true then
-            pendingApplyDefaultCrossbarScopeFromProfile = false;
-            if crossbarSettings.defaultCrossbarPaletteScope == 'universal' then
-                state.crossbarPaletteScope = 'universal';
-            else
-                state.crossbarPaletteScope = 'job';
-            end
-        end
-        if state.crossbarActiveUniversalPalette then
-            local ulist = M.GetUniversalCrossbarPaletteNamesOrdered();
-            local ufound = false;
-            for _, n in ipairs(ulist) do
-                if n == state.crossbarActiveUniversalPalette then
-                    ufound = true;
-                    break;
-                end
-            end
-            if not ufound then
-                local cyc = M.GetUniversalCrossbarPalettesForCycle();
-                state.crossbarActiveUniversalPalette = (cyc[1] or firstUniversal);
-            end
-        elseif firstUniversal and state.crossbarPaletteScope == 'universal' then
-            state.crossbarActiveUniversalPalette = firstUniversal;
-        end
-    else
-        state.crossbarPaletteScope = 'job';
     end
 end
 
