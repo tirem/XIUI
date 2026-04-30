@@ -279,8 +279,14 @@ function data.GetPetLevel(petName, playerLevel)
         return playerLevel;
     end
 
-    -- For charmed pets, we can't know the level without tracking the charm action
+    -- For charmed pets, get level from charm check packet
+    if gConfig.petBarCharmLevel then
+       return gConfig.petBarCharmLevel;
+    end
+
+    -- Fallback
     return nil;
+    
 end
 
 -- ============================================
@@ -1416,7 +1422,7 @@ function data.GetPreviewPetData(previewType)
         mockData.job = data.JOB_BST;
         mockData.showMp = false;
         mockData.isCharmed = true;
-        mockData.level = nil;  -- Unknown for charmed pets
+        mockData.level = 35;
         mockData.charmElapsed = 183;  -- ~3 minutes elapsed
         mockData.petType = 'charm';
     end
