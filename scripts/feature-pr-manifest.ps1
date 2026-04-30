@@ -75,6 +75,7 @@ Why
 What changed
 - Merge retail avatar metadata with horizon_bloodpacts stats and xiui overlays; GetBloodPactByName / RebuildBloodPactIndex for consistent blood pact rows in UI.
 - Astral Flow–gated pacts (requiresFlow): pink asterisk in picker lists with tooltip "only during Astral Flow".
+- GetBloodPactsExpanded (Show All): Astral Flow–only blood pacts sort before Commands, then BP: Rage, then BP: Ward (within each band: availability, level, name).
 
 Why
 - Single place to resolve blood pact display and gating for SMN commands.
@@ -108,7 +109,7 @@ Why
             Body    = @'
 What changed
 - Blood pact corner overlays and status icons; when Edit Full Palette sets editorClipRect, slot body respects ImGui clip (D3D slot.png does not clip by itself).
-- Universal 2 Hour: pink subtarget ring while armed / waiting on subtarget selection; glow suppressed when the ability is on cooldown; slot click notifies execution effects before firing the macro.
+- Universal 2 Hour: rainbow breathing rings plus skillchain-style marching dashed slot border while armed / waiting on subtarget; pre-subtarget arming shimmer fades via opacity scale after a delay; glow suppressed when the ability is on cooldown; slot click notifies execution effects before firing the macro.
 - Default MP cost / Lv / ninjutsu tool (x###) anchor is top-left; display.lua passes the same default when bar settings omit mpCostAnchor.
 
 Why
@@ -174,6 +175,7 @@ What changed
 - JA lists: main-job two-hour abilities sort first; pink asterisk + tooltip for Universal Global macro hint (Horizon jobs 1–20).
 - horizon_retail_only_job_abilities.lua: named job abilities that exist on retail but not on Horizon progression; HasAbility-driven lists and macro hints treat them as unavailable here.
 - Spell sort: within magic type groups, sort by level then name (availability is color-only, not a secondary sort key).
+- Weaponskills Show All: sort by weapon category A→Z, skill requirement low→high within type (non-relic before relic); known/unknown stays row coloring only, not list order.
 - Magic type helpers and omission filtering for Show All spells.
 
 Why
@@ -195,6 +197,8 @@ What changed
 - Copy: duplicate selected macro into the editor as a new macro entry.
 - Main slot icon: implicit refresh on macro text edit no longer forces overwrite; Sync refreshes main icon; tooltips updated.
 - JA badge: separate manual vs implicit sync; Sync JA badge clears manual badge overrides and resolves from /ja line; icon picker marks manual badge when Change is used.
+- Show All combo rows (two-color spells and starred abilities/items): single InvisibleButton hit target with draw-list text/icons so overlapping widgets no longer swallow clicks.
+- SaveMacro: sync dropdown/text buffers into editingMacro before validation so saves match what the UI shows.
 
 Why
 - Large lists stay navigable; Copy speeds palette workflows; icon and badge behavior matches user expectations (manual picks are not silently overwritten).
@@ -258,7 +262,7 @@ Why
 What changed
 - shared_macro_store.lua: SharedMacros.lua load/save, frozen profile macroDB in shared mode, id separation vs profile hotbar, disk lookup for cross-scope resolution.
 - migration.lua, user settings: macroStorageScope default; run MigrateSlotDualMacroBindings; settings hooks; Universal 2 Hour Global macro seed migration after XIUI defaults (Horizon icon path, ability display names, stpc/stnpc targets with RNG on stnpc).
-- universal_two_hour.lua / macro_global_defaults.lua: job→two-hour names; sentinel resolution and `/ja` bind targets; arming window (~7.5s) after execute; subtarget-glow eligibility (clears on zone/job changes via init hooks); integrates with shared macro rows.
+- universal_two_hour.lua / macro_global_defaults.lua: job→two-hour names; sentinel resolution and `/ja` bind targets; arming window (~7.5s) after execute with late-window opacity ramp for shimmer; subtarget-glow eligibility (clears on zone/job changes via init hooks); integrates with shared macro rows.
 - libs/target.lua: subtarget-active detection treats a standalone subtarget as active even when there is no primary target so two-hour targeting UX matches in-game behavior.
 - statushandler, skillchain, equipment_ws, macro_palette_buckets, macro_xiui_defaults: integration for macro/hotbar behavior.
 

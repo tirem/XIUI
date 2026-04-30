@@ -1407,27 +1407,33 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
 
                 if isSpellWithType and not isSelected then
                     -- ── Two-color spell rendering ──────────────────────────
-                    -- [level] → magic type color (full brightness, always)
-                    -- name   → status color (green / yellow / red)
+                    -- [level] → magic type color; name → status color.
+                    -- Use one hit target (InvisibleButton): overlapping Selectable + Text ate clicks.
                     local levelColor = SPELL_TYPE_COLORS[item.type];
                     local nameColor = (item.status and STATUS_COLORS[item.status]) or COLORS.text;
+                    local rowW = math.max(60, comboW - 24);
+                    local padY = 2;
+                    local lineH = imgui.GetTextLineHeight();
+                    local rowH = lineH + padY * 2;
 
-                    -- Invisible selectable for hover/click, then overlay colored text
-                    local cx, cy = imgui.GetCursorPos();
-                    local clicked = imgui.Selectable('##item' .. uid, false);
+                    imgui.InvisibleButton('##item' .. uid, {rowW, rowH});
+                    local clicked = imgui.IsItemClicked();
                     local hovered = imgui.IsItemHovered();
-                    local nx, ny = imgui.GetCursorPos();
-                    imgui.SetCursorPos({cx, cy});
 
+                    local dl = imgui.GetWindowDrawList();
+                    local rmin = {imgui.GetItemRectMin()};
+                    local tx = rmin[1] + 6;
+                    local ty = rmin[2] + padY;
+                    local curX = tx;
                     if item.level then
-                        imgui.PushStyleColor(ImGuiCol_Text, levelColor);
-                        imgui.Text('[' .. tostring(item.level) .. '] ');
-                        imgui.PopStyleColor();
-                        imgui.SameLine(0, 0);
+                        local lvlStr = '[' .. tostring(item.level) .. '] ';
+                        dl:AddText({curX, ty}, imgui.GetColorU32(levelColor), lvlStr);
+                        local lw = imgui.CalcTextSize(lvlStr);
+                        curX = curX + ((type(lw) == 'table' and (lw[1] or lw.x)) or lw);
                     end
-                    imgui.PushStyleColor(ImGuiCol_Text, nameColor);
-                    imgui.Text(itemName);
-                    imgui.PopStyleColor();
+                    dl:AddText({curX, ty}, imgui.GetColorU32(nameColor), itemName);
+                    local nw = imgui.CalcTextSize(itemName);
+                    curX = curX + ((type(nw) == 'table' and (nw[1] or nw.x)) or nw);
 
                     local starCol, starTip = nil, nil;
                     if item.pinkStarTooltip then
@@ -1438,11 +1444,8 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
                         starTip = item.familyVarianceReason;
                     end
                     if starCol then
-                        imgui.SameLine(0, 2);
-                        imgui.TextColored(starCol, '*');
+                        dl:AddText({curX + 4, ty}, imgui.GetColorU32(starCol), '*');
                     end
-
-                    imgui.SetCursorPos({nx, ny});
 
                     if hovered then
                         if starTip then
@@ -1483,19 +1486,25 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
 
                     if starCol and starTip then
                         local baseCol = isSelected and COLORS.gold or (textColor or COLORS.text);
-                        local cx, cy = imgui.GetCursorPos();
-                        local clicked = imgui.Selectable('##item' .. uid, false);
+                        local rowW = math.max(60, comboW - 24);
+                        local rowH = math.max(iconSize + 4, imgui.GetTextLineHeight() + 6);
+
+                        imgui.InvisibleButton('##item' .. uid, {rowW, rowH});
+                        local clicked = imgui.IsItemClicked();
                         local hovered = imgui.IsItemHovered();
-                        local nx, ny = imgui.GetCursorPos();
-                        imgui.SetCursorPos({cx, cy});
+
+                        local dl = imgui.GetWindowDrawList();
+                        local rmin = {imgui.GetItemRectMin()};
+                        local curX = rmin[1] + 4;
+                        local curY = rmin[2] + 2;
 
                         if showIcons and item.id then
                             local icon = actions.GetItemIconForBrowsing(item.id);
                             if icon and icon.image then
                                 local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
                                 if iconPtr then
-                                    imgui.Image(iconPtr, {iconSize, iconSize});
-                                    imgui.SameLine();
+                                    dl:AddImage(iconPtr, {curX, curY}, {curX + iconSize, curY + iconSize});
+                                    curX = curX + iconSize + 6;
                                 end
                             end
                         end
@@ -1510,14 +1519,11 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
                             labelMain = labelMain .. ' x' .. item.count;
                         end
 
-                        imgui.PushStyleColor(ImGuiCol_Text, baseCol);
-                        imgui.Text(labelMain);
-                        imgui.PopStyleColor();
-
-                        imgui.SameLine(0, 2);
-                        imgui.TextColored(starCol, '*');
-
-                        imgui.SetCursorPos({nx, ny});
+                        local ty = curY + math.max(0, (rowH - imgui.GetTextLineHeight()) / 2 - 2);
+                        dl:AddText({curX, ty}, imgui.GetColorU32(baseCol), labelMain);
+                        local lw = imgui.CalcTextSize(labelMain);
+                        curX = curX + ((type(lw) == 'table' and (lw[1] or lw.x)) or lw);
+                        dl:AddText({curX + 4, ty}, imgui.GetColorU32(starCol), '*');
 
                         if hovered then
                             imgui.BeginTooltip();

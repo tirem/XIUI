@@ -68,6 +68,8 @@ local SUBTARGET_GLOW_ARM_SECONDS = 45;
 --- After /ja queues, subtarget may open a frame later (especially with no prior target).
 local lastUniversalTwoHourNotifyClock = 0;
 local ARMING_SHIMMER_SECONDS = 7.5;
+--- During pre-subtarget arming only: full opacity until this elapsed second, then linear fade to 0 at ARMING_SHIMMER_SECONDS.
+local ARMING_OPACITY_FADE_START = 6.5;
 
 function M.GetTwoHourNameForJobId(jobId)
     if not jobId or jobId <= 0 then
@@ -128,6 +130,25 @@ function M.ResetUniversalTwoHourSubtargetGlowArm()
     subtargetGlowArmUntil = 0;
     sawSubtargetWhileArmed = false;
     lastUniversalTwoHourNotifyClock = 0;
+end
+
+--- 1 while subtarget is active or before fade window; during pre-subtarget arming after ARMING_OPACITY_FADE_START, ramps to 0 at ARMING_SHIMMER_SECONDS.
+function M.GetArmingShimmerOpacityScale()
+    if sawSubtargetWhileArmed then
+        return 1.0;
+    end
+    local elapsed = os.clock() - lastUniversalTwoHourNotifyClock;
+    if elapsed < ARMING_OPACITY_FADE_START then
+        return 1.0;
+    end
+    if elapsed >= ARMING_SHIMMER_SECONDS then
+        return 0.0;
+    end
+    local dur = ARMING_SHIMMER_SECONDS - ARMING_OPACITY_FADE_START;
+    if dur <= 0 then
+        return 1.0;
+    end
+    return 1.0 - ((elapsed - ARMING_OPACITY_FADE_START) / dur);
 end
 
 --- Hotbar/crossbar slot glow: armed after executing this bind, while game subtarget UI is active.

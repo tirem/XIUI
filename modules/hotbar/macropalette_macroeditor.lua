@@ -1597,7 +1597,34 @@ return function(MP)
         MP.imgui.Separator();
         MP.imgui.Spacing();
 
+        local function SyncMacroEditorBuffersToEditingMacro()
+            local atIdx = MP.editorFields.actionType[1];
+            if type(atIdx) == 'number' and atIdx >= 1 and atIdx <= #MP.ACTION_TYPES then
+                MP.editingMacro.actionType = MP.ACTION_TYPES[atIdx];
+            end
+            local tgIdx = MP.editorFields.target[1];
+            if type(tgIdx) == 'number' and tgIdx >= 1 and tgIdx <= #MP.TARGET_OPTIONS then
+                MP.editingMacro.target = MP.TARGET_OPTIONS[tgIdx];
+            end
+            local eqIdx = MP.editorFields.equipSlot[1];
+            if type(eqIdx) == 'number' and eqIdx >= 1 and eqIdx <= #MP.EQUIP_SLOTS then
+                MP.editingMacro.equipSlot = MP.EQUIP_SLOTS[eqIdx];
+            end
+            local rsIdx = MP.editorFields.recastSourceType[1];
+            if type(rsIdx) == 'number' and rsIdx >= 1 and rsIdx <= #MP.RECAST_SOURCE_TYPES then
+                MP.editingMacro.recastSourceType = MP.RECAST_SOURCE_TYPES[rsIdx];
+            end
+            MP.editingMacro.recastSourceAction = MP.editorFields.recastSourceAction[1] or '';
+            MP.editingMacro.macroText = MP.editorFields.macroText[1] or '';
+            local actBuf = tostring(MP.editorFields.action[1] or ''):match('^%s*(.-)%s*$') or '';
+            if MP.editingMacro.actionType ~= 'macro' then
+                MP.editingMacro.action = actBuf;
+            end
+        end
+
         local function SaveMacro(shouldCloseEditor)
+            SyncMacroEditorBuffersToEditingMacro();
+
             -- Validate before saving
             local canSave = false;
 

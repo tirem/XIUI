@@ -973,12 +973,10 @@ function M.GetAllWeaponskillsExpanded(knownWsTable)
         });
     end
 
+    -- Show All: group by weapon type A→Z, then skill requirement low→high (relic last per type), then name.
+    -- Availability color stays on rows; order does not shuffle unknown WS out of weapon clusters.
     table.sort(weaponskills, function(a, b)
-        local sa = STATUS_SORT[a.status] or 9;
-        local sb = STATUS_SORT[b.status] or 9;
-        if sa ~= sb then return sa < sb; end
         if a.weapon ~= b.weapon then return a.weapon < b.weapon; end
-        -- Relic WS sort to bottom within their weapon group
         if a.relic ~= b.relic then return not a.relic; end
         if a.skill ~= b.skill then return a.skill < b.skill; end
         return a.name < b.name;

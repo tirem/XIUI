@@ -590,47 +590,125 @@ local function DrawSkillchainHighlight(drawList, x, y, size, scName, color, opac
     end
 end
 
--- Pink rotating/pulsing ring while Universal 2 Hour waits on <stpc>/<stnpc> confirmation.
-local function DrawUniversalTwoHourSubtargetGlow(drawList, x, y, size, animOpacity, dimFactor)
+-- HSV (h in [0,1)) -> RGB for rainbow Universal 2 Hour glow.
+local function UthHsvToRgb(h, s, v)
+    h = math.fmod(h, 1.0);
+    if h < 0 then
+        h = h + 1.0;
+    end
+    local i = math.floor(h * 6);
+    local f = h * 6 - i;
+    local p = v * (1 - s);
+    local q = v * (1 - f * s);
+    local tcol = v * (1 - (1 - f) * s);
+    i = i % 6;
+    local r, g, b;
+    if i == 0 then
+        r, g, b = v, tcol, p;
+    elseif i == 1 then
+        r, g, b = q, v, p;
+    elseif i == 2 then
+        r, g, b = p, v, tcol;
+    elseif i == 3 then
+        r, g, b = p, q, v;
+    elseif i == 4 then
+        r, g, b = tcol, p, v;
+    else
+        r, g, b = v, p, q;
+    end
+    return r, g, b;
+end
+
+-- Skillchain-style marching dashed rect; rainbow hue shifts with animation offset + time.
+local function DrawUniversalTwoHourRainbowMarchingBorder(drawList, x1, y1, x2, y2, opacityMul)
+    if not drawList or opacityMul <= 0.01 then
+        return;
+    end
+    local animOffset = skillchain.GetAnimationOffset();
+    local t = os.clock();
+    local dashLen = 4;
+    local gapLen = 4;
+    local thickness = 2.5;
+    local hueBase = math.fmod(animOffset * 0.0035 + t * 0.052, 1.0);
+    local function edgeColor(edgeIdx)
+        local h = math.fmod(hueBase + edgeIdx * 0.085, 1.0);
+        local r, g, b = UthHsvToRgb(h, 0.74, 1.0);
+        return imgui.GetColorU32({ r, g, b, 0.9 * opacityMul });
+    end
+    DrawDashedLine(drawList, x1, y1, x2, y1, edgeColor(0), thickness, dashLen, gapLen, animOffset);
+    DrawDashedLine(drawList, x2, y1, x2, y2, edgeColor(1), thickness, dashLen, gapLen, animOffset);
+    DrawDashedLine(drawList, x2, y2, x1, y2, edgeColor(2), thickness, dashLen, gapLen, animOffset);
+    DrawDashedLine(drawList, x1, y2, x1, y1, edgeColor(3), thickness, dashLen, gapLen, animOffset);
+end
+
+--- Rainbow rotating rings while Universal 2 Hour waits on <stpc>/<stnpc> confirmation.
+--- Ring radii breathe (collapse / expand); dashed border stays on the slot edge. Opacity uses animOpacity * dimFactor * armFadeScale.
+local function DrawUniversalTwoHourSubtargetGlow(drawList, x, y, size, animOpacity, dimFactor, armFadeScale)
     if not drawList or animOpacity <= 0.01 then
+        return;
+    end
+    armFadeScale = armFadeScale or 1.0;
+    if armFadeScale <= 0.01 then
         return;
     end
     local cx = x + size * 0.5;
     local cy = y + size * 0.5;
     local t = os.clock();
-    local pulse = 0.45 + 0.55 * math.sin(t * 6.8);
-    local baseOp = pulse * animOpacity * dimFactor;
+    local op = math.min(1.0, animOpacity * dimFactor) * armFadeScale;
 
-    drawList:AddCircleFilled({ cx, cy }, size * 0.56,
-        imgui.GetColorU32({ 1.0, 0.42, 0.92, 0.14 * baseOp }), 40);
+    -- Collapse toward center then expand (cosine ease per cycle) — line rings only, no filled wash over the icon.
+    local breatheMin = 0.46;
+    local breathe = breatheMin + (1.0 - breatheMin) * (0.5 + 0.5 * math.cos(t * 3.05));
 
-    local spinOuter = t * 4.2;
-    local spinInner = -t * 3.1;
-    local segs = 28;
-
-    for pass = 1, 2 do
-        local spin = (pass == 1) and spinOuter or spinInner;
-        local rad = (pass == 1) and (size * 0.52) or (size * 0.46);
-        local thick = (pass == 1) and 3.2 or 2.2;
-        local segAlpha = (0.72 + pass * 0.08) * baseOp;
-        local col = imgui.GetColorU32({ 1.0, 0.32 + pass * 0.06, 0.88, segAlpha });
+    local function rainbowDashRing(spin, rad, thick, segs, hueSpin, lineAlpha, dashPred)
+        rad = rad * breathe;
         for i = 0, segs - 1 do
-            if i % 3 ~= 0 then
+            if dashPred(i) then
                 local a0 = spin + (i / segs) * math.pi * 2;
                 local a1 = spin + ((i + 1) / segs) * math.pi * 2;
+                local mid = (a0 + a1) * 0.5;
+                local hue = math.fmod(mid / (math.pi * 2) + hueSpin, 1.0);
+                local r, g, b = UthHsvToRgb(hue, 0.82, 1.0);
                 drawList:AddLine(
                     { cx + math.cos(a0) * rad, cy + math.sin(a0) * rad },
                     { cx + math.cos(a1) * rad, cy + math.sin(a1) * rad },
-                    col,
+                    imgui.GetColorU32({ r, g, b, lineAlpha * op }),
                     thick
                 );
             end
         end
     end
 
+    local spinOuter = t * 4.2;
+    local spinInner = -t * 3.1;
+    local hueTravel = t * 0.14;
+
+    rainbowDashRing(-spinOuter, size * 0.485, 2.5, 28, hueTravel + 0.08, 0.78,
+        function(i) return i % 3 ~= 2; end);
+    rainbowDashRing(spinOuter, size * 0.52, 3.2, 28, hueTravel, 0.85,
+        function(i) return i % 3 ~= 0; end);
+    rainbowDashRing(spinInner, size * 0.46, 2.2, 28, hueTravel + 0.17, 0.80,
+        function(i) return i % 3 ~= 0; end);
+
     local ringPulse = 0.55 + 0.45 * math.sin(t * 5.1);
-    drawList:AddCircle({ cx, cy }, size * 0.58 + ringPulse * 1.5,
-        imgui.GetColorU32({ 1.0, 0.55, 0.96, 0.62 * baseOp }), 48, 2.2 + ringPulse);
+    local outerRad = (size * 0.58 + ringPulse * 1.5) * breathe;
+    local outerThick = 2.2 + ringPulse * 0.35;
+    local segsO = 48;
+    for i = 0, segsO - 1 do
+        local a0 = (i / segsO) * math.pi * 2;
+        local a1 = ((i + 1) / segsO) * math.pi * 2;
+        local mid = (a0 + a1) * 0.5;
+        local hue = math.fmod(mid / (math.pi * 2) + hueTravel + 0.05, 1.0);
+        local r, g, b = UthHsvToRgb(hue, 0.75, 1.0);
+        drawList:AddLine(
+            { cx + math.cos(a0) * outerRad, cy + math.sin(a0) * outerRad },
+            { cx + math.cos(a1) * outerRad, cy + math.sin(a1) * outerRad },
+            imgui.GetColorU32({ r, g, b, 0.88 * op }),
+            outerThick
+        );
+    end
+
+    DrawUniversalTwoHourRainbowMarchingBorder(drawList, x, y, x + size, y + size, op);
 end
 
 -- Helper: determine if movement/drag-drop is locked for this slot
@@ -2322,9 +2400,10 @@ function M.DrawSlot(resources, params)
                 params.skillchainIconScale, params.skillchainIconOffsetX, params.skillchainIconOffsetY);
         end
 
-        -- Universal two-hour: rotating pink ring while confirming <stpc>/<stnpc> (or brief post-click arming shimmer).
+        -- Universal two-hour: rainbow ring stack while confirming <stpc>/<stnpc> (or brief post-click arming shimmer).
         if bind and not isOnCooldown and universalTwoHour.ShouldGlowUniversalTwoHourSlot(bind) then
-            DrawUniversalTwoHourSubtargetGlow(fgDrawList, x, y, size, animOpacity, dimFactor);
+            DrawUniversalTwoHourSubtargetGlow(fgDrawList, x, y, size, animOpacity, dimFactor,
+                universalTwoHour.GetArmingShimmerOpacityScale());
         end
     end
 

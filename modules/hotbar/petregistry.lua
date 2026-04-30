@@ -1419,7 +1419,8 @@ function M.GetBloodPactsExpanded(avatarName, smnLevel)
 
         seen[pact.name] = true;
         local mergedRow = M.GetBloodPactByName(pact.name);
-        local pinkStarTooltip = (mergedRow and mergedRow.requiresFlow) and universalTwoHour.PINK_STAR_ASTRAL_FLOW_TOOLTIP or nil;
+        local requiresAstralFlow = mergedRow and mergedRow.requiresFlow == true;
+        local pinkStarTooltip = requiresAstralFlow and universalTwoHour.PINK_STAR_ASTRAL_FLOW_TOOLTIP or nil;
         table.insert(pacts, {
             name = pact.name,
             category = cat,
@@ -1429,6 +1430,7 @@ function M.GetBloodPactsExpanded(avatarName, smnLevel)
             reqStr = reqStr,
             reason = (status == STATUS_UNAVAILABLE and level > 0) and ('Requires SMN Lv. ' .. tostring(level)) or nil,
             pinkStarTooltip = pinkStarTooltip,
+            requiresAstralFlow = requiresAstralFlow,
         });
     end
 
@@ -1443,6 +1445,7 @@ function M.GetBloodPactsExpanded(avatarName, smnLevel)
             status = status,
             reqStr = 'Lv.' .. tostring(cmd.level),
             reason = status == STATUS_UNAVAILABLE and ('Requires SMN Lv. ' .. tostring(cmd.level)) or nil,
+            requiresAstralFlow = false,
         });
     end
 
@@ -1453,9 +1456,13 @@ function M.GetBloodPactsExpanded(avatarName, smnLevel)
         addPact(pact, 'BP: Ward');
     end
 
-    -- Sort: Commands first, then BP: Rage, then BP: Ward. Within each group: status, level, name.
-    local CAT_SORT = { ['Command'] = 0, ['BP: Rage'] = 1, ['BP: Ward'] = 2 };
+    -- Sort: Astral Flow–only blood pacts first (SMN “two-hour style”), then Commands, BP: Rage, BP: Ward.
+    -- Within each band: availability, level, name.
+    local CAT_SORT = { ['Command'] = 1, ['BP: Rage'] = 2, ['BP: Ward'] = 3 };
     table.sort(pacts, function(a, b)
+        local fa = a.requiresAstralFlow and 0 or 1;
+        local fb = b.requiresAstralFlow and 0 or 1;
+        if fa ~= fb then return fa < fb; end
         local ca = CAT_SORT[a.category] or 9;
         local cb = CAT_SORT[b.category] or 9;
         if ca ~= cb then return ca < cb; end
