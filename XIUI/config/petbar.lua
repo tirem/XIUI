@@ -146,12 +146,9 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
         imgui.ShowHelp('Always show the pet bar (recast timers) even when no pet is present.');
         imgui.Spacing();
 
-        -- Charmed pets don't have levels, so hide this option for Charm
-        if configKey ~= 'petBarCharm' then
-            components.DrawPartyCheckbox(typeSettings, 'Show Pet Level##' .. configKey, 'showLevel');
-            imgui.ShowHelp('Show pet level before the name (e.g., "Lv.35 FunguarFamiliar").');
-            imgui.Spacing();
-        end
+        components.DrawPartyCheckbox(typeSettings, 'Show Pet Level##' .. configKey, 'showLevel');
+        imgui.ShowHelp('Show pet level before the name (e.g., "Lv.35 FunguarFamiliar").');
+        imgui.Spacing();
 
         components.DrawPartyCheckbox(typeSettings, 'Align Bottom##' .. configKey, 'alignBottom');
         imgui.ShowHelp('Anchor the pet bar to its bottom edge. When the window height changes, it expands upward.');

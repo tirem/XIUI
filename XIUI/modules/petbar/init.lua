@@ -387,6 +387,7 @@ petbar.HandlePacket = function(e)
 
                 -- Persist to config
                 if gConfig then
+                    gConfig.petBarCharmLevel = param1;
                     gConfig.petBarCharmExpireTime = data.charmExpireTime;
                 end
             end
