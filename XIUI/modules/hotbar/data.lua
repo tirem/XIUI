@@ -47,9 +47,17 @@ end
 
 local macroIdLookup = {};  -- macroIdLookup[paletteKey][macroId] = macro
 local macroIdLookupDirty = true;
+-- Identity reference of the macroDB the lookup was built against. If gConfig
+-- gets reassigned (profile switch / character swap), this will no longer
+-- match gConfig.macroDB and we'll rebuild automatically. This prevents the
+-- "globals from old profile" bug where switching characters left stale
+-- macros (e.g. Ramrock's macroDB[3]="Heel") in the lookup while the new
+-- profile (Mazungu) had macroDB[3]="SendPep".
+local macroIdLookupSource = nil;
 
 local function RebuildMacroLookup()
     macroIdLookup = {};
+    macroIdLookupSource = (gConfig and gConfig.macroDB) or nil;
     if gConfig and gConfig.macroDB then
         for paletteKey, macros in pairs(gConfig.macroDB) do
             macroIdLookup[paletteKey] = {};
@@ -66,7 +74,9 @@ local function RebuildMacroLookup()
 end
 
 local function GetMacroFromLookup(macroId, paletteKey)
-    if macroIdLookupDirty then
+    -- Rebuild if explicitly dirty OR if gConfig.macroDB has been reassigned
+    -- (i.e. profile switched out from under us).
+    if macroIdLookupDirty or macroIdLookupSource ~= (gConfig and gConfig.macroDB) then
         RebuildMacroLookup();
     end
     local paletteLookup = macroIdLookup[paletteKey];
@@ -83,6 +93,11 @@ end
 
 local storageKeyCache = {};  -- storageKeyCache[barIndex] = storageKey
 local storageKeyCacheDirty = true;
+-- Identity reference of the gConfig the storage key cache was built against.
+-- If gConfig is reassigned (profile switch) the cached keys could be stale
+-- (jobSpecific / petAware / palette names are profile-specific), so we
+-- detect the swap and invalidate.
+local storageKeyCacheSource = nil;
 
 -- ============================================
 -- Constants
@@ -231,6 +246,13 @@ local PER_BAR_ONLY_KEYS = {
 -- NOTE: Palettes can be subjob-specific or shared (subjob 0), with fallback to shared if no subjob-specific exist
 -- OPTIMIZED: Results are cached to avoid 72+ string allocations per frame
 function M.GetStorageKeyForBar(barIndex)
+    -- If gConfig was swapped out (profile change), invalidate.
+    if storageKeyCacheSource ~= gConfig then
+        storageKeyCache = {};
+        storageKeyCacheDirty = true;
+        storageKeyCacheSource = gConfig;
+    end
+
     -- Check cache first (major optimization for runtime rendering)
     if not storageKeyCacheDirty and storageKeyCache[barIndex] then
         return storageKeyCache[barIndex];
@@ -649,20 +671,37 @@ end
 -- Helper to look up a macro from macroDB by id
 -- paletteKey can be a job ID (number) or composite key (string like "15:avatar:ifrit")
 -- OPTIMIZED: Uses O(1) lookup map instead of linear search
+-- Falls back to scanning all palettes for legacy slots that don't have macroPaletteKey set
 local function GetMacroById(macroId, paletteKey)
     if not gConfig or not gConfig.macroDB then return nil; end
 
     -- Try the specific palette key first using O(1) lookup
-    local macro = GetMacroFromLookup(macroId, paletteKey);
-    if macro then
-        return macro;
+    if paletteKey ~= nil then
+        local macro = GetMacroFromLookup(macroId, paletteKey);
+        if macro then
+            return macro;
+        end
+
+        -- If paletteKey is a composite key and macro not found, try base job palette
+        if type(paletteKey) == 'string' then
+            local baseJobId = tonumber(paletteKey:match('^(%d+)'));
+            if baseJobId then
+                macro = GetMacroFromLookup(macroId, baseJobId);
+                if macro then
+                    return macro;
+                end
+            end
+        end
     end
 
-    -- If paletteKey is a composite key and macro not found, try base job palette
-    if type(paletteKey) == 'string' then
-        local baseJobId = tonumber(paletteKey:match('^(%d+)'));
-        if baseJobId then
-            macro = GetMacroFromLookup(macroId, baseJobId);
+    -- Fallback for legacy slots missing macroPaletteKey: scan all palettes
+    -- (rebuild lookup if dirty OR if gConfig.macroDB was swapped under us)
+    if macroIdLookupDirty or macroIdLookupSource ~= (gConfig and gConfig.macroDB) then
+        RebuildMacroLookup();
+    end
+    for key, paletteLookup in pairs(macroIdLookup) do
+        if key ~= paletteKey then
+            local macro = paletteLookup[macroId];
             if macro then
                 return macro;
             end
@@ -695,17 +734,19 @@ function M.GetKeybindForSlot(barIndex, slotIndex)
                     return nil;  -- Don't fall back to defaults
                 end
 
-                -- If this slot has a macro reference, look up the current macro data
-                -- This ensures icon changes in the palette are reflected on the hotbar
-                local macroData = slotAction;
+                -- If this slot has a macro reference, the macroDB is the single source of truth.
+                -- Old configs may have duplicated macro fields cached on the slot - we ignore them.
+                -- If the live lookup fails (orphaned macro), the slot is treated as unavailable.
+                local macroData;
                 if slotAction.macroRef then
-                    -- Use stored palette key if available, otherwise fall back to job ID
                     local paletteKey = slotAction.macroPaletteKey or M.jobId;
-                    local liveMacro = GetMacroById(slotAction.macroRef, paletteKey);
-                    if liveMacro then
-                        macroData = liveMacro;
+                    macroData = GetMacroById(slotAction.macroRef, paletteKey);
+                    if not macroData then
+                        return nil;  -- Macro reference is orphaned
                     end
-                    -- If macro was deleted, fall back to the cached slotAction data
+                else
+                    -- Custom non-macro slot - use inline fields directly
+                    macroData = slotAction;
                 end
 
                 -- Return slot action in the same format as parsed keybinds
@@ -824,37 +865,70 @@ function M.GetCrossbarSlotData(comboMode, slotIndex)
     local slotAction = jobSlotActions[effectiveComboMode][slotIndex];
     if not slotAction then return nil; end
 
-    -- If this slot has a macro reference, look up the current macro data
-    -- This ensures icon changes in the palette are reflected on the crossbar
+    -- If this slot has a macro reference, the macroDB is the single source of truth.
+    -- Old configs may have duplicated macro fields cached on the slot - we ignore them.
+    -- If the live lookup fails (orphaned macro), the slot is treated as unavailable.
     if slotAction.macroRef then
-        -- Use stored palette key if available, otherwise fall back to job ID
         local paletteKey = slotAction.macroPaletteKey or jobId;
         local liveMacro = GetMacroById(slotAction.macroRef, paletteKey);
-        if liveMacro then
-            -- Return fresh macro data (preserving any slot-specific overrides if needed)
-            return {
-                actionType = liveMacro.actionType,
-                action = liveMacro.action,
-                target = liveMacro.target,
-                displayName = liveMacro.displayName,
-                equipSlot = liveMacro.equipSlot,
-                macroText = liveMacro.macroText,
-                itemId = liveMacro.itemId,
-                customIconType = liveMacro.customIconType,
-                customIconId = liveMacro.customIconId,
-                customIconPath = liveMacro.customIconPath,
-                macroRef = slotAction.macroRef,
-                macroPaletteKey = slotAction.macroPaletteKey,
-                -- Recast source override (for macros showing cooldown from different action)
-                recastSourceType = liveMacro.recastSourceType,
-                recastSourceAction = liveMacro.recastSourceAction,
-                recastSourceItemId = liveMacro.recastSourceItemId,
-            };
+        if not liveMacro then
+            return nil;  -- Macro reference is orphaned
         end
-        -- If macro was deleted, fall back to cached slotAction data
+        return {
+            actionType = liveMacro.actionType,
+            action = liveMacro.action,
+            target = liveMacro.target,
+            displayName = liveMacro.displayName,
+            equipSlot = liveMacro.equipSlot,
+            macroText = liveMacro.macroText,
+            itemId = liveMacro.itemId,
+            customIconType = liveMacro.customIconType,
+            customIconId = liveMacro.customIconId,
+            customIconPath = liveMacro.customIconPath,
+            macroRef = slotAction.macroRef,
+            macroPaletteKey = slotAction.macroPaletteKey,
+            -- Recast source override (for macros showing cooldown from different action)
+            recastSourceType = liveMacro.recastSourceType,
+            recastSourceAction = liveMacro.recastSourceAction,
+            recastSourceItemId = liveMacro.recastSourceItemId,
+        };
     end
 
+    -- Custom non-macro slot - return inline data directly
     return slotAction;
+end
+
+-- Build the persisted form of slot data.
+-- When the slot references a macro (macroRef or id), only the reference is stored;
+-- the macroDB is the single source of truth for action/macroText/displayName/etc.
+-- When the slot has no macro reference, inline fields are stored as-is (custom slots).
+-- This is exposed on M so external writers (macropalette, migrations) can reuse it.
+function M.BuildSlotDataForWrite(slotData)
+    if not slotData then return nil; end
+
+    local macroRef = slotData.macroRef or slotData.id;
+    if macroRef then
+        return {
+            macroRef = macroRef,
+            macroPaletteKey = slotData.macroPaletteKey,
+        };
+    end
+
+    return {
+        actionType = slotData.actionType,
+        action = slotData.action,
+        target = slotData.target,
+        displayName = slotData.displayName,
+        equipSlot = slotData.equipSlot,
+        macroText = slotData.macroText,
+        itemId = slotData.itemId,
+        customIconType = slotData.customIconType,
+        customIconId = slotData.customIconId,
+        customIconPath = slotData.customIconPath,
+        recastSourceType = slotData.recastSourceType,
+        recastSourceAction = slotData.recastSourceAction,
+        recastSourceItemId = slotData.recastSourceItemId,
+    };
 end
 
 -- Set slot data for a crossbar slot
@@ -881,26 +955,7 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
     local storageKey = M.GetCrossbarStorageKeyForCombo(effectiveComboMode);
     local comboSlots = ensureCrossbarSlotActionsStructure(gConfig.hotbarCrossbar, storageKey, effectiveComboMode);
 
-    -- Store the slot data
-    -- Use macroRef if present (from slot swap), otherwise use id (from macro palette drop)
-    comboSlots[slotIndex] = {
-        actionType = slotData.actionType,
-        action = slotData.action,
-        target = slotData.target,
-        displayName = slotData.displayName,
-        equipSlot = slotData.equipSlot,
-        macroText = slotData.macroText,
-        itemId = slotData.itemId,
-        customIconType = slotData.customIconType,
-        customIconId = slotData.customIconId,
-        customIconPath = slotData.customIconPath,
-        macroRef = slotData.macroRef or slotData.id,  -- Store reference to source macro for live updates
-        macroPaletteKey = slotData.macroPaletteKey,  -- Store which palette the macro came from
-        -- Recast source override (for macros showing cooldown from different action)
-        recastSourceType = slotData.recastSourceType,
-        recastSourceAction = slotData.recastSourceAction,
-        recastSourceItemId = slotData.recastSourceItemId,
-    };
+    comboSlots[slotIndex] = M.BuildSlotDataForWrite(slotData);
 
     NotifySlotDataChanged();
 end
@@ -959,24 +1014,7 @@ function M.SetSlotData(barIndex, slotIndex, slotData)
     local jobSlotActions = ensureSlotActionsStructure(barSettings, storageKey);
 
     if slotData then
-        jobSlotActions[slotIndex] = {
-            actionType = slotData.actionType,
-            action = slotData.action,
-            target = slotData.target,
-            displayName = slotData.displayName,
-            equipSlot = slotData.equipSlot,
-            macroText = slotData.macroText,
-            itemId = slotData.itemId,
-            customIconType = slotData.customIconType,
-            customIconId = slotData.customIconId,
-            customIconPath = slotData.customIconPath,
-            macroRef = slotData.macroRef or slotData.id,
-            macroPaletteKey = slotData.macroPaletteKey,  -- Store which palette the macro came from
-            -- Recast source override (for macros showing cooldown from different action)
-            recastSourceType = slotData.recastSourceType,
-            recastSourceAction = slotData.recastSourceAction,
-            recastSourceItemId = slotData.recastSourceItemId,
-        };
+        jobSlotActions[slotIndex] = M.BuildSlotDataForWrite(slotData);
     else
         -- Mark as explicitly cleared
         jobSlotActions[slotIndex] = { cleared = true };

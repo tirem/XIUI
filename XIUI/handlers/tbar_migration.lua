@@ -1015,23 +1015,11 @@ function M.ImportHotbarBinding(barIndex, slotIndex, xiuiAction, storageKey)
         macroId = CreateMacroInPalette(xiuiAction, macroPaletteKey);
     end
 
-    -- Set the slot data with macro reference
-    local slotData = {
-        actionType = xiuiAction.actionType,
-        action = xiuiAction.action,
-        target = xiuiAction.target,
-        displayName = xiuiAction.displayName or xiuiAction.action,
-        macroText = xiuiAction.macroText,
-        itemId = xiuiAction.itemId,
-        customIconType = xiuiAction.customIconType,
-        customIconId = xiuiAction.customIconId,
-        customIconPath = xiuiAction.customIconPath,
-        -- Reference the macro in the palette
+    -- Set the slot data with macro reference (lean form - macroDB is source of truth)
+    gConfig[configKey].slotActions[storageKey][slotIndex] = {
         macroRef = macroId,
         macroPaletteKey = macroPaletteKey,
     };
-
-    gConfig[configKey].slotActions[storageKey][slotIndex] = slotData;
     return true;
 end
 
@@ -1065,23 +1053,11 @@ function M.ImportCrossbarBinding(comboMode, slotIndex, xiuiAction, storageKey)
         macroId = CreateMacroInPalette(xiuiAction, macroPaletteKey);
     end
 
-    -- Set the slot data with macro reference
-    local slotData = {
-        actionType = xiuiAction.actionType,
-        action = xiuiAction.action,
-        target = xiuiAction.target,
-        displayName = xiuiAction.displayName or xiuiAction.action,
-        macroText = xiuiAction.macroText,
-        itemId = xiuiAction.itemId,
-        customIconType = xiuiAction.customIconType,
-        customIconId = xiuiAction.customIconId,
-        customIconPath = xiuiAction.customIconPath,
-        -- Reference the macro in the palette
+    -- Set the slot data with macro reference (lean form - macroDB is source of truth)
+    gConfig.hotbarCrossbar.slotActions[storageKey][comboMode][slotIndex] = {
         macroRef = macroId,
         macroPaletteKey = macroPaletteKey,
     };
-
-    gConfig.hotbarCrossbar.slotActions[storageKey][comboMode][slotIndex] = slotData;
     return true;
 end
 

@@ -942,6 +942,116 @@ function M.MigrateLegacyPositionFields(gConfig)
     return migrated;
 end
 
+-- Migrates legacy slot data so macroDB is the single source of truth:
+--   1. Fills in missing macroPaletteKey on slots that have macroRef.
+--      Uses the macroDB to determine which palette the macro lives in.
+--      Disambiguates ambiguous matches via the slot's storage-key job context,
+--      then 'global', then leaves it for the cross-palette fallback.
+--   2. Strips the duplicated cached macro fields (action, macroText, etc.)
+--      from any slot that has a macroRef.
+-- Idempotent and cheap: safe to run on every load. Doubles as an integrity
+-- check in case external tools or future bugs re-introduce duplicate fields.
+function M.MigrateSlotMacroRefs(gConfig)
+    if not gConfig or not gConfig.macroDB then return 0, 0; end
+
+    -- Build id -> { palette_key, ... } map from macroDB
+    local idToKeys = {};
+    for paletteKey, palette in pairs(gConfig.macroDB) do
+        if type(palette) == 'table' then
+            for _, macro in ipairs(palette) do
+                if macro and macro.id then
+                    if not idToKeys[macro.id] then
+                        idToKeys[macro.id] = {};
+                    end
+                    table.insert(idToKeys[macro.id], paletteKey);
+                end
+            end
+        end
+    end
+
+    local FIELDS_TO_STRIP = {
+        'actionType', 'action', 'target', 'displayName',
+        'equipSlot', 'macroText', 'itemId',
+        'customIconType', 'customIconId', 'customIconPath',
+        'recastSourceType', 'recastSourceAction', 'recastSourceItemId',
+    };
+
+    local keysAdded = 0;
+    local fieldsStripped = 0;
+
+    local function migrateSlot(slot, contextStorageKey)
+        if type(slot) ~= 'table' then return; end
+        if not slot.macroRef then return; end
+
+        -- Fill in missing macroPaletteKey
+        if not slot.macroPaletteKey then
+            local candidates = idToKeys[slot.macroRef];
+            local chosen = nil;
+            if candidates and #candidates == 1 then
+                chosen = candidates[1];
+            elseif candidates and #candidates > 1 then
+                -- Disambiguate using storage key job context (e.g. '14:0:palette:Default')
+                local jobId = contextStorageKey
+                    and tonumber(tostring(contextStorageKey):match('^(%d+)'));
+                if jobId then
+                    for _, k in ipairs(candidates) do
+                        if k == jobId then chosen = k; break; end
+                    end
+                end
+                if not chosen then
+                    for _, k in ipairs(candidates) do
+                        if k == 'global' then chosen = k; break; end
+                    end
+                end
+                -- Else: too ambiguous, leave for runtime cross-palette fallback
+            end
+            if chosen ~= nil then
+                slot.macroPaletteKey = chosen;
+                keysAdded = keysAdded + 1;
+            end
+        end
+
+        -- Strip duplicated macro fields (macroDB is now the source of truth)
+        for _, field in ipairs(FIELDS_TO_STRIP) do
+            if slot[field] ~= nil then
+                slot[field] = nil;
+                fieldsStripped = fieldsStripped + 1;
+            end
+        end
+    end
+
+    -- Hotbar slots: gConfig.hotbarBarN.slotActions[storageKey][slotIndex]
+    for barIndex = 1, 6 do
+        local barCfg = gConfig['hotbarBar' .. barIndex];
+        if barCfg and type(barCfg.slotActions) == 'table' then
+            for storageKey, slots in pairs(barCfg.slotActions) do
+                if type(slots) == 'table' then
+                    for _, slot in pairs(slots) do
+                        migrateSlot(slot, storageKey);
+                    end
+                end
+            end
+        end
+    end
+
+    -- Crossbar slots: gConfig.hotbarCrossbar.slotActions[storageKey][comboMode][slotIndex]
+    if gConfig.hotbarCrossbar and type(gConfig.hotbarCrossbar.slotActions) == 'table' then
+        for storageKey, comboModes in pairs(gConfig.hotbarCrossbar.slotActions) do
+            if type(comboModes) == 'table' then
+                for _, slots in pairs(comboModes) do
+                    if type(slots) == 'table' then
+                        for _, slot in pairs(slots) do
+                            migrateSlot(slot, storageKey);
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return keysAdded, fieldsStripped;
+end
+
 -- Run structure migrations (called AFTER settings.load())
 -- These handle migrating old settings structures to new ones
 function M.RunStructureMigrations(gConfig, defaults)
@@ -957,6 +1067,7 @@ function M.RunStructureMigrations(gConfig, defaults)
     M.MigrateNotificationGroups(gConfig, defaults);
     M.MigrateCrossbarComboModeSettings(gConfig, defaults);
     M.MigrateLegacyPositionFields(gConfig);
+    M.MigrateSlotMacroRefs(gConfig);
 end
 
 -- Legacy function for backward compatibility (if any external code calls it)
