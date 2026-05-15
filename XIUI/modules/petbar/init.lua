@@ -7,9 +7,7 @@
 require('common');
 require('handlers.helpers');
 local imtext = require('libs.imtext');
-local primitives = require('primitives');
 local ffi = require('ffi');
-local windowBg = require('libs.windowbackground');
 local abilityRecast = require('libs.abilityrecast');
 local TextureManager = require('libs.texturemanager');
 
@@ -29,83 +27,21 @@ petbar.Initialize = function(settings)
     -- Load jug icon texture (via TextureManager)
     data.jugIconTexture = TextureManager.getFileTexture('pets/jug');
 
-    -- Initialize primitives - creation order determines render order
-    -- Order: background -> pet images -> borders
-    local prim_data = settings.prim_data or {
-        visible = false,
-        can_focus = false,
-        locked = true,
-        width = 100,
-        height = 100,
-    };
-
-    local backgroundName = gConfig.petBarBackgroundTheme or 'Window1';
-    data.loadedBgName = backgroundName;
-
-    -- 1. Create background primitive first (renders at bottom)
-    local bgHandle = windowBg.createBackground(prim_data, backgroundName, settings.bgScale);
-    data.backgroundPrim['bg'] = bgHandle.bg;
-
-    -- 2. Create pet image primitives (render in middle - petbar specific)
-    data.petImagePrims = {};
+    -- Load pet image textures + base dimensions (rendered via drawList:AddImage in data.UpdateBackground)
     data.petImageTextures = {};
+    data.petImageMeta = {};
     for _, petName in ipairs(data.allPetsWithImages) do
         local key = data.GetPetSettingsKey(petName);
-        local imagePath = data.GetPetImagePath(petName);
-        if imagePath then
-            local prim = primitives:new(prim_data);
-            prim.visible = false;
-            prim.can_focus = false;
-            prim.texture = imagePath;
-            prim.exists = ashita.fs.exists(imagePath);
-            prim.scale_x = 1.0;
-            prim.scale_y = 1.0;
-            -- Store base dimensions for clipping calculations
-            prim.baseWidth = 256;
-            prim.baseHeight = 256;
-            -- Try to get actual texture dimensions and store texture for ImGui (via TextureManager)
-            if prim.exists then
-                local texture = TextureManager.getFileTexture(string.format('pets/%s', data.petImageMap[petName]:gsub('%.png$', '')));
-                if texture and texture.image then
-                    prim.baseWidth, prim.baseHeight = GetTextureDimensions(texture, 256, 256);
-                    -- Store full texture object for ImGui rendering (keeps reference alive)
-                    data.petImageTextures[key] = texture;
-                end
-            end
-            data.petImagePrims[key] = prim;
-        end
-    end
-
-    -- 3. Create border primitives (render on top of middle layer)
-    local borderHandle = windowBg.createBorders(prim_data, backgroundName, settings.borderScale);
-    data.backgroundPrim['tl'] = borderHandle.tl;
-    data.backgroundPrim['tr'] = borderHandle.tr;
-    data.backgroundPrim['bl'] = borderHandle.bl;
-    data.backgroundPrim['br'] = borderHandle.br;
-
-    -- 4. Create pet image primitives for TOP layer (render on top of borders - for unclipped mode)
-    data.petImagePrimsTop = {};
-    for _, petName in ipairs(data.allPetsWithImages) do
-        local key = data.GetPetSettingsKey(petName);
-        local imagePath = data.GetPetImagePath(petName);
-        if imagePath then
-            local prim = primitives:new(prim_data);
-            prim.visible = false;
-            prim.can_focus = false;
-            prim.texture = imagePath;
-            prim.exists = ashita.fs.exists(imagePath);
-            prim.scale_x = 1.0;
-            prim.scale_y = 1.0;
-            -- Copy base dimensions from middle layer prim
-            local middlePrim = data.petImagePrims[key];
-            if middlePrim then
-                prim.baseWidth = middlePrim.baseWidth;
-                prim.baseHeight = middlePrim.baseHeight;
+        local imageFile = data.petImageMap[petName];
+        if imageFile then
+            local texture = TextureManager.getFileTexture(string.format('pets/%s', imageFile:gsub('%.png$', '')));
+            if texture and texture.image then
+                local baseWidth, baseHeight = GetTextureDimensions(texture, 256, 256);
+                data.petImageTextures[key] = texture;
+                data.petImageMeta[key] = { baseWidth = baseWidth, baseHeight = baseHeight, exists = true };
             else
-                prim.baseWidth = 256;
-                prim.baseHeight = 256;
+                data.petImageMeta[key] = { baseWidth = 256, baseHeight = 256, exists = false };
             end
-            data.petImagePrimsTop[key] = prim;
         end
     end
 
@@ -196,36 +132,14 @@ end
 petbar.Cleanup = function()
     data.jugIconTexture = nil;
 
-    -- Cleanup background and border primitives using windowbackground library
-    windowBg.destroy(data.backgroundPrim);
-    data.backgroundPrim = {};
-
-    -- Cleanup pet image primitives (petbar specific) - both layers
-    if data.petImagePrims then
-        for _, prim in pairs(data.petImagePrims) do
-            if prim then
-                prim:destroy();
-            end
-        end
-        data.petImagePrims = nil;
-    end
-    if data.petImagePrimsTop then
-        for _, prim in pairs(data.petImagePrimsTop) do
-            if prim then
-                prim:destroy();
-            end
-        end
-        data.petImagePrimsTop = nil;
-    end
-
     -- Clear pet image textures - gc_safe_release handles D3D Release() via FFI finalizers
-    -- Clear each reference individually to help GC run finalizers promptly
     if data.petImageTextures then
         for key, _ in pairs(data.petImageTextures) do
             data.petImageTextures[key] = nil;
         end
         data.petImageTextures = {};
     end
+    data.petImageMeta = {};
 
     -- Cleanup pet target module
     pettarget.Cleanup();

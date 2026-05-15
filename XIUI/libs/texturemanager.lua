@@ -1,7 +1,6 @@
 --[[
 * XIUI TextureManager
 * Centralized texture loading and caching with LRU eviction
-* Follows FontManager pattern for consistent API design
 *
 * Categories:
 *   - item_icons: Item icons from game resources (treasure pool, notifications)

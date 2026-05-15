@@ -6,7 +6,6 @@
 require('common');
 local ffi = require('ffi');
 local statusHandler = require('handlers.statushandler');
-local windowBg = require('libs.windowbackground');
 
 local data = {};
 
@@ -32,12 +31,6 @@ data.fullMenuWidth = {};
 data.fullMenuHeight = {};
 data.buffWindowX = {};
 data.debuffWindowX = {};
-
-data.partyWindowPrim = {
-    [1] = { background = {} },
-    [2] = { background = {} },
-    [3] = { background = {} },
-};
 
 data.cursorTextures = T{};
 data.currentCursorName = nil;
@@ -67,9 +60,6 @@ data.cachedFontSizes = {12, 12, 12};
 data.cachedFontFamily = '';
 data.cachedFontFlags = 0;
 data.cachedOutlineWidth = 2;
-
--- Track loaded backgrounds per party
-data.loadedBg = {};
 
 -- Debounce settings save
 data.lastSettingsSaveTime = 0;
@@ -608,19 +598,8 @@ function data.GetMemberInformation(memIdx)
 end
 
 function data.UpdateTextVisibility(visible, partyIndex)
-    -- Handle background visibility using windowbackground library
-    -- When visible=false, hide backgrounds; when visible=true, backgrounds
-    -- will be shown on next windowBg.update() call in DrawPartyWindow
-    if not visible then
-        for i = 1, 3 do
-            if (partyIndex == nil or i == partyIndex) then
-                local backgroundPrim = data.partyWindowPrim[i].background;
-                if backgroundPrim then
-                    windowBg.hide(backgroundPrim);
-                end
-            end
-        end
-    end
+    -- Immediate-mode rendering: backgrounds are not drawn when DrawPartyWindow isn't called.
+    -- This function is kept as a hook in case future consumers need to react to visibility changes.
 end
 
 -- ============================================
@@ -628,15 +607,9 @@ end
 -- ============================================
 
 function data.Reset()
-    data.partyWindowPrim = {
-        {background = {}},
-        {background = {}},
-        {background = {}}
-    };
     data.maxTpTextWidthCache = { [1] = nil, [2] = nil, [3] = nil };
     data.memberInterpolation = {};
     data.partyCasts = {};
-    data.loadedBg = {};
     data.partyConfigCacheValid = false;
     data.partyConfigCacheVersion = -1;
 end

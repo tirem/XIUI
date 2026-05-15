@@ -184,12 +184,6 @@ local function drawNotification(slot, notification, x, y, width, height, setting
         return;
     end
 
-    -- Get primitive for this slot
-    local bgPrim = notificationData.bgPrims[slot];
-
-    if not bgPrim then
-        return;
-    end
     local containerOffsetX = notification.containerOffsetX or 0;
     local iconOffsetX = notification.iconOffsetX or 0;
     local textOffsetY = notification.textOffsetY or 0;
@@ -213,7 +207,7 @@ local function drawNotification(slot, notification, x, y, width, height, setting
     local bgOpacity = alpha * configBgOpacity;
     local borderOpacity = alpha * configBorderOpacity;
 
-    windowBg.update(bgPrim, x, y, scaledWidth, scaledHeight, {
+    windowBg.Draw(drawList, x, y, scaledWidth, scaledHeight, {
         theme = bgTheme,
         padding = 0,
         bgScale = bgScale,
@@ -307,16 +301,15 @@ local function drawNotification(slot, notification, x, y, width, height, setting
     end
     local textY = baseTextY + textOffsetY;
 
-    -- Draw icons on the background draw list to avoid window clip rect issues
-    -- when multiple notifications are stacked in the same ImGui window.
-    local iconDrawList = imgui.GetBackgroundDrawList();
-    if icon and icon.image and iconDrawList then
-        -- Convert alpha to icon color with alpha
+    -- Draw icon on the same drawList as bg/text so call order (bg -> icon -> text)
+    -- determines z-order. Using a separate (lower) drawList would put the icon
+    -- behind the bg now that bg lives on this drawList too.
+    if icon and icon.image and drawList then
         local iconAlphaByte = math.floor(alpha * 255);
         local iconColor = bit.bor(bit.lshift(iconAlphaByte, 24), 0x00FFFFFF);  -- White with alpha
 
         pcall(function()
-            iconDrawList:AddImage(
+            drawList:AddImage(
                 tonumber(ffi.cast("uint32_t", icon.image)),
                 {iconX, iconY},
                 {iconX + iconSize, iconY + iconSize},
@@ -762,22 +755,13 @@ local function drawNotificationWindow(windowName, notifications, settings, split
                 local titleHeight = gConfig.notificationsTitleFontSize or 14;
                 local subtitleHeight = gConfig.notificationsSubtitleFontSize or 12;
 
-                -- Get background primitive based on window type
-                local bgPrim;
-                if splitKey == nil then
-                    -- Only show if no other notifications are using slot 1 (currentSlot == 0)
-                    if currentSlot > 0 then
-                        -- Skip placeholder - slot 1 is in use by split window notifications
-                        -- Note: return from pcall, End() will be called below
-                        return;
-                    end
-                    bgPrim = notificationData.bgPrims and notificationData.bgPrims[1];
-                else
-                    bgPrim = notificationData.splitBgPrims and notificationData.splitBgPrims[splitKey];
+                if splitKey == nil and currentSlot > 0 then
+                    -- Skip placeholder - slot 1 is in use by split window notifications
+                    -- Note: return from pcall, End() will be called below
+                    return;
                 end
 
-                -- Draw background using windowbackground library
-                if bgPrim then
+                do
                     local bgTheme = gConfig.notificationsBackgroundTheme or 'Plain';
                     local bgScale = gConfig.notificationsBgScale or 1.0;
                     local borderScale = gConfig.notificationsBorderScale or 1.0;
@@ -786,7 +770,7 @@ local function drawNotificationWindow(windowName, notifications, settings, split
 
                     -- Placeholder uses reduced opacity (approximately 30% of normal)
                     local placeholderOpacity = 0.3;
-                    windowBg.update(bgPrim, windowPosX, windowPosY, notificationWidth, normalHeight, {
+                    windowBg.Draw(drawList, windowPosX, windowPosY, notificationWidth, normalHeight, {
                         theme = bgTheme,
                         padding = 0,
                         bgScale = bgScale,
@@ -861,13 +845,6 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
         return;
     end
 
-    -- Get primitive for this group/slot
-    local bgPrim = notificationData.groupBgPrims[groupNum] and notificationData.groupBgPrims[groupNum][slot];
-
-    if not bgPrim then
-        return;
-    end
-
     local containerOffsetX = notification.containerOffsetX or 0;
     local iconOffsetX = notification.iconOffsetX or 0;
     local textOffsetY = notification.textOffsetY or 0;
@@ -889,7 +866,7 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
     local bgOpacity = alpha * configBgOpacity;
     local borderOpacity = alpha * configBorderOpacity;
 
-    windowBg.update(bgPrim, x, y, scaledWidth, scaledHeight, {
+    windowBg.Draw(drawList, x, y, scaledWidth, scaledHeight, {
         theme = bgTheme,
         padding = 0,
         bgScale = bgScale,
@@ -963,13 +940,13 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
     end
     local textY = baseTextY + textOffsetY;
 
-    local iconDrawList = imgui.GetBackgroundDrawList();
-    if icon and icon.image and iconDrawList then
+    -- Draw icon on the same drawList as bg/text (bg -> icon -> text via code order).
+    if icon and icon.image and drawList then
         local iconAlphaByte = math.floor(alpha * 255);
         local iconColor = bit.bor(bit.lshift(iconAlphaByte, 24), 0x00FFFFFF);
 
         pcall(function()
-            iconDrawList:AddImage(
+            drawList:AddImage(
                 tonumber(ffi.cast("uint32_t", icon.image)),
                 {iconX, iconY},
                 {iconX + iconSize, iconY + iconSize},
@@ -1250,26 +1227,22 @@ local function drawGroupWindow(groupNum, settings)
                 end
             elseif configOpen then
                 -- Draw placeholder
-                local bgPrim = notificationData.groupBgPrims[groupNum] and notificationData.groupBgPrims[groupNum][1];
+                windowBg.Draw(drawList, windowPosX, windowPosY, notificationWidth, normalHeight, {
+                    theme = groupSettings.backgroundTheme or 'Plain',
+                    padding = 0,
+                    bgScale = groupSettings.bgScale or 1.0,
+                    borderScale = groupSettings.borderScale or 1.0,
+                    bgOpacity = 0.5,
+                    borderOpacity = 0.5,
+                    bgColor = 0xFF1A1A1A,
+                    borderColor = 0xFFFFFFFF,
+                });
 
-                if bgPrim then
-                    windowBg.update(bgPrim, windowPosX, windowPosY, notificationWidth, normalHeight, {
-                        theme = groupSettings.backgroundTheme or 'Plain',
-                        padding = 0,
-                        bgScale = groupSettings.bgScale or 1.0,
-                        borderScale = groupSettings.borderScale or 1.0,
-                        bgOpacity = 0.5,
-                        borderOpacity = 0.5,
-                        bgColor = 0xFF1A1A1A,
-                        borderColor = 0xFFFFFFFF,
-                    });
-
-                    if drawList then
-                        local textX = windowPosX + contentPadding;
-                        local titleY = windowPosY + contentPadding;
-                        imtext.Draw(drawList, GROUP_TITLES[groupNum] or ('Group ' .. groupNum), textX, titleY, 0x80FFFFFF, groupSettings.titleFontSize or 14);
-                        imtext.Draw(drawList, GROUP_PLACEHOLDERS[groupNum] or 'Drag to reposition', textX, titleY + (groupSettings.titleFontSize or 14) + 2, 0x80AAAAAA, groupSettings.subtitleFontSize or 12);
-                    end
+                if drawList then
+                    local textX = windowPosX + contentPadding;
+                    local titleY = windowPosY + contentPadding;
+                    imtext.Draw(drawList, GROUP_TITLES[groupNum] or ('Group ' .. groupNum), textX, titleY, 0x80FFFFFF, groupSettings.titleFontSize or 14);
+                    imtext.Draw(drawList, GROUP_PLACEHOLDERS[groupNum] or 'Drag to reposition', textX, titleY + (groupSettings.titleFontSize or 14) + 2, 0x80AAAAAA, groupSettings.subtitleFontSize or 12);
                 end
             end
         end);
@@ -1299,20 +1272,6 @@ end
 
 -- Main draw function
 function M.DrawWindow(settings, activeNotifications, pinnedNotifications)
-    -- Safety check - ensure group resources are initialized
-    if not notificationData.groupBgPrims or not next(notificationData.groupBgPrims) then
-        return;
-    end
-
-    -- Hide all group resources initially
-    notificationData.HideAllGroupResources();
-
-    -- Check per-group themes for changes
-    local maxGroups = gConfig.notificationGroupCount or 2;
-    for groupNum = 1, maxGroups do
-        notificationData.CheckAndUpdateGroupTheme(groupNum);
-    end
-
     -- Check if player exists and is not zoning
     local player = GetPlayerSafe();
     if not player or player.isZoning then
@@ -1323,6 +1282,7 @@ function M.DrawWindow(settings, activeNotifications, pinnedNotifications)
     notificationData.UpdateTreasurePool(os.clock());
 
     -- Draw notification groups
+    local maxGroups = gConfig.notificationGroupCount or 2;
     for groupNum = 1, maxGroups do
         drawGroupWindow(groupNum, settings);
     end
@@ -1330,9 +1290,6 @@ end
 
 -- Set visibility
 function M.SetHidden(hidden)
-    if hidden then
-        notificationData.HideAllGroupResources();
-    end
 end
 
 -- Cleanup

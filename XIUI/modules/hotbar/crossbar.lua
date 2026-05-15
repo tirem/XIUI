@@ -1,7 +1,7 @@
 --[[
 * XIUI Crossbar - Display Module
 * Renders crossbar UI with controller-friendly layout
-* Uses windowBg for background, ImGui/imtext for text and icons
+* Uses windowBg.Draw (ImGui draw list) for background, ImGui/imtext for text and icons
 ]]--
 
 require('common');
@@ -9,6 +9,7 @@ require('handlers.helpers');
 local imgui = require('imgui');
 local ffi = require('ffi');
 local windowBg = require('libs.windowbackground');
+-- Note: windowBg is now an immediate-mode renderer; call windowBg.Draw() per frame.
 local drawing = require('libs.drawing');
 local imtext = require('libs.imtext');
 local dragdrop = require('libs.dragdrop');
@@ -284,15 +285,9 @@ end
 local state = {
     initialized = false,
 
-    -- Window background
-    bgHandle = nil,
-
     -- Window position (updated by ImGui window)
     windowX = 0,
     windowY = 0,
-
-    -- Loaded theme
-    loadedBgTheme = nil,
 
     -- Animation state for bar transitions
     animation = {
@@ -594,13 +589,6 @@ function M.Initialize(settings, moduleSettings)
     state.windowY = savedPos and savedPos.y or defaultY;
 
     local width, height, groupWidth, groupHeight = GetCrossbarDimensions(settings);
-
-    -- Create window background
-    local primData = moduleSettings and moduleSettings.prim_data or {};
-    state.bgHandle = windowBg.create(primData, settings.backgroundTheme, settings.bgScale, settings.borderScale);
-
-    -- Set loaded theme
-    state.loadedBgTheme = settings.backgroundTheme;
 
     state.initialized = true;
 end
@@ -1184,7 +1172,7 @@ function M.DrawWindow(settings, moduleSettings)
         SaveWindowPosition('Crossbar');
         windowPosX, windowPosY = imgui.GetWindowPos();
 
-        -- Update stored position 
+        -- Update stored position
         state.windowX = windowPosX;
         state.windowY = windowPosY;
 
@@ -1197,6 +1185,26 @@ function M.DrawWindow(settings, moduleSettings)
         -- Draw bar sets based on animation state and display mode
         -- NOTE: DrawSlot calls must be inside imgui.Begin/End for interactions to work
         local isActiveOnlyMode = settings.displayMode == 'activeOnly' and not isEditMode;
+
+        -- Draw window background FIRST so it sits beneath all slot content on the draw list.
+        -- In activeOnly mode, apply visibility opacity to background.
+        do
+            local bgOpacity = settings.backgroundOpacity;
+            local borderOpacity = settings.borderOpacity;
+            if isActiveOnlyMode then
+                bgOpacity = bgOpacity * visibilityOpacity;
+                borderOpacity = borderOpacity * visibilityOpacity;
+            end
+            windowBg.Draw(GetUIDrawList(), state.windowX, state.windowY, width, height, {
+                theme = settings.backgroundTheme,
+                bgScale = settings.bgScale,
+                borderScale = settings.borderScale,
+                bgOpacity = bgOpacity,
+                borderOpacity = borderOpacity,
+                bgColor = settings.bgColor,
+                borderColor = settings.borderColor,
+            });
+        end
 
         if state.animation.active then
             -- Get animation values for outgoing and incoming elements
@@ -1297,26 +1305,6 @@ function M.DrawWindow(settings, moduleSettings)
     local isActiveOnlyMode = settings.displayMode == 'activeOnly' and not isEditMode;
     local showCenterElements = not isActiveOnlyMode;
 
-    -- Update window background (can happen after window closes)
-    -- In activeOnly mode, apply visibility opacity to background
-    if state.bgHandle then
-        local bgOpacity = settings.backgroundOpacity;
-        local borderOpacity = settings.borderOpacity;
-        if isActiveOnlyMode then
-            bgOpacity = bgOpacity * visibilityOpacity;
-            borderOpacity = borderOpacity * visibilityOpacity;
-        end
-        windowBg.update(state.bgHandle, state.windowX, state.windowY, width, height, {
-            theme = settings.backgroundTheme,
-            bgScale = settings.bgScale,
-            borderScale = settings.borderScale,
-            bgOpacity = bgOpacity,
-            borderOpacity = borderOpacity,
-            bgColor = settings.bgColor,
-            borderColor = settings.borderColor,
-        });
-    end
-
     -- Draw center divider (optional, hidden in activeOnly mode)
     if settings.showDivider and drawList and showCenterElements then
         local dividerX = state.windowX + groupWidth + (groupSpacing / 2);
@@ -1382,13 +1370,6 @@ end
 -- ============================================
 
 function M.SetHidden(hidden)
-    -- Hide window background
-    if state.bgHandle then
-        if hidden then
-            windowBg.hide(state.bgHandle);
-        end
-        -- Note: Don't show bgHandle here - DrawWindow handles showing it after positioning
-    end
 end
 
 -- ============================================
@@ -1397,14 +1378,6 @@ end
 
 function M.UpdateVisuals(settings, moduleSettings)
     if not state.initialized then return; end
-
-    -- Update theme if changed
-    if settings.backgroundTheme ~= state.loadedBgTheme then
-        if state.bgHandle then
-            windowBg.setTheme(state.bgHandle, settings.backgroundTheme, settings.bgScale, settings.borderScale);
-        end
-        state.loadedBgTheme = settings.backgroundTheme;
-    end
 
     -- Reset imtext so it reloads fonts on next draw
     imtext.Reset();
@@ -1419,12 +1392,6 @@ end
 
 function M.Cleanup()
     if not state.initialized then return; end
-
-    -- Destroy window background
-    if state.bgHandle then
-        windowBg.destroy(state.bgHandle);
-        state.bgHandle = nil;
-    end
 
     -- Clear icon cache
     ClearCrossbarIconCache();

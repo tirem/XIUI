@@ -27,7 +27,6 @@ local fastcastLib = require('libs.fastcast');
 local formatLib = require('libs.format');
 local colorLib = require('libs.color');
 local statusIconsLib = require('libs.statusicons');
-local windowBackgroundLib = require('libs.windowbackground');
 
 -- Handler imports (still in handlers/)
 local statusHandler = require('handlers.statushandler');
@@ -216,9 +215,6 @@ function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffs
     return statusIconsLib.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset, buffTimes, settings, statusHandler, buffTable);
 end
 
-
--- Window Background Utilities (from windowbackground.lua)
-WindowBackground = windowBackgroundLib;
 
 -- ========================================
 -- Window Utilities

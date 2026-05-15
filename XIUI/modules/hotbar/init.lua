@@ -35,7 +35,6 @@
 
 require('common');
 require('handlers.helpers');
-local windowBg = require('libs.windowbackground');
 local dragdrop = require('libs.dragdrop');
 local imtext = require('libs.imtext');
 
@@ -122,25 +121,6 @@ function M.Initialize(settings)
         ashita.tasks.once(0.3, function()
             ValidatePalettesWhenReady(1);
         end);
-    end
-
-    -- Create background primitives for each bar
-    local primData = {
-        visible = false,
-        can_focus = false,
-        locked = true,
-        width = 100,
-        height = 100,
-    };
-
-    for barIndex = 1, data.NUM_BARS do
-        -- Get per-bar settings
-        local barSettings = data.GetBarSettings(barIndex);
-        local bgTheme = barSettings.backgroundTheme or '-None-';
-        local bgScale = barSettings.bgScale or 1.0;
-        local borderScale = barSettings.borderScale or 1.0;
-
-        data.bgHandles[barIndex] = windowBg.create(primData, bgTheme, bgScale, borderScale);
     end
 
     -- Initialize display layer
@@ -378,13 +358,6 @@ end
 -- Set module visibility
 function M.SetHidden(hidden)
     M.visible = not hidden;
-    if hidden then
-        for barIndex = 1, data.NUM_BARS do
-            if data.bgHandles[barIndex] then
-                windowBg.hide(data.bgHandles[barIndex]);
-            end
-        end
-    end
     display.SetHidden(hidden);
     if crossbarInitialized then
         crossbar.SetHidden(hidden);
@@ -397,13 +370,6 @@ function M.Cleanup()
 
     -- Flush any pending slot saves before cleanup
     macropalette.FlushPendingSave();
-
-    for barIndex = 1, data.NUM_BARS do
-        -- Destroy background
-        if data.bgHandles[barIndex] then
-            windowBg.destroy(data.bgHandles[barIndex]);
-        end
-    end
 
     -- Cleanup display and data layers
     display.Cleanup();

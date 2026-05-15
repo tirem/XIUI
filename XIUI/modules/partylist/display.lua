@@ -1142,8 +1142,6 @@ function display.DrawPartyWindow(settings, party, partyIndex)
         return;
     end
 
-    local backgroundPrim = data.partyWindowPrim[partyIndex].background;
-
     local titleUV;
     if (partyIndex == 1) then
         titleUV = partyMemberCount == 1 and data.titleUVs.solo or data.titleUVs.party;
@@ -1176,6 +1174,27 @@ function display.DrawPartyWindow(settings, party, partyIndex)
     if (imgui.Begin(windowName, true, windowFlags)) then
         SaveWindowPosition(windowName);
         imguiPosX, imguiPosY = imgui.GetWindowPos();
+
+        -- Draw background + borders FIRST so they sit beneath member content on the draw list.
+        -- Window size depends on content rendered later, so we use the previous frame's cached
+        -- size from data.fullMenuWidth/Height. The cache is updated at the end of this function.
+        local cachedW = data.fullMenuWidth[partyIndex];
+        local cachedH = data.fullMenuHeight[partyIndex];
+        if cachedW and cachedH and cachedW > 0 and cachedH > 0 then
+            windowBg.Draw(GetUIDrawList(), imguiPosX, imguiPosY, cachedW, cachedH, {
+                theme = cache.backgroundName,
+                padding = settings.bgPadding,
+                paddingY = settings.bgPaddingY,
+                bgScale = cache.bgScale,
+                borderScale = cache.borderScale,
+                bgOpacity = cache.backgroundOpacity,
+                bgColor = cache.colors.bgColor,
+                borderSize = settings.borderSize,
+                bgOffset = settings.bgOffset,
+                borderOpacity = cache.borderOpacity,
+                borderColor = cache.colors.borderColor,
+            });
+        end
 
         local nameRefHeight = cache.fontSizes.name;
         local offsetSize = nameRefHeight > iconSize and nameRefHeight or iconSize;
@@ -1235,22 +1254,6 @@ function display.DrawPartyWindow(settings, party, partyIndex)
 
     -- Calculate background dimensions (needed for title positioning)
     local bgWidth = data.fullMenuWidth[partyIndex] + (settings.bgPadding * 2);
-
-    -- Update background and borders using windowbackground library
-    local bgOptions = {
-        theme = cache.backgroundName,
-        padding = settings.bgPadding,
-        paddingY = settings.bgPaddingY,
-        bgScale = cache.bgScale,
-        borderScale = cache.borderScale,
-        bgOpacity = cache.backgroundOpacity,
-        bgColor = cache.colors.bgColor,
-        borderSize = settings.borderSize,
-        bgOffset = settings.bgOffset,
-        borderOpacity = cache.borderOpacity,
-        borderColor = cache.colors.borderColor,
-    };
-    windowBg.update(backgroundPrim, imguiPosX, imguiPosY, data.fullMenuWidth[partyIndex], data.fullMenuHeight[partyIndex], bgOptions);
 
     -- Draw title (skip foreground rendering when modal is open to respect dim overlay)
     if (cache.showTitle and data.partyTitlesTexture ~= nil and not _XIUI_MODAL_OPEN) then

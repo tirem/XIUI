@@ -7,8 +7,6 @@
 require('common');
 require('handlers.helpers');
 local imtext = require('libs.imtext');
-local primitives = require('primitives');
-local windowBg = require('libs.windowbackground');
 
 local data = require('modules.notifications.data');
 local display = require('modules.notifications.display');
@@ -31,33 +29,6 @@ notifications.Initialize = function(settings)
         -- Initialize data module (clears any leftover state)
         data.Initialize(settings);
 
-        -- Base primitive data for backgrounds
-        local prim_data = {
-            visible = false,
-            can_focus = false,
-            locked = true,
-            width = settings.width or 280,
-            height = 80,
-        };
-
-        -- Create per-group backgrounds
-        local maxGroups = gConfig.notificationGroupCount or 2;
-
-        for groupNum = 1, maxGroups do
-            local groupSettings = data.GetGroupSettings(groupNum);
-            local groupBgTheme = groupSettings and groupSettings.backgroundTheme or 'Plain';
-            local groupBgScale = groupSettings and groupSettings.bgScale or 1.0;
-            local groupBorderScale = groupSettings and groupSettings.borderScale or 1.0;
-
-            data.groupBgPrims[groupNum] = {};
-            data.groupLoadedBgThemes[groupNum] = groupBgTheme;
-
-            for slot = 1, data.MAX_NOTIFICATIONS_PER_GROUP do
-                -- Background primitive for this group/slot
-                data.groupBgPrims[groupNum][slot] = windowBg.create(prim_data, groupBgTheme, groupBgScale, groupBorderScale);
-            end
-        end
-
         -- Clear cached colors
         data.ClearGroupColorCaches();
 
@@ -78,38 +49,6 @@ notifications.UpdateVisuals = function(settings)
 
     -- Clear cached colors
     data.ClearGroupColorCaches();
-
-    -- Update per-group backgrounds
-    local maxGroups = gConfig.notificationGroupCount or 2;
-    for groupNum = 1, maxGroups do
-        local groupSettings = data.GetGroupSettings(groupNum);
-        local groupBgTheme = groupSettings and groupSettings.backgroundTheme or 'Plain';
-        local groupBgScale = groupSettings and groupSettings.bgScale or 1.0;
-        local groupBorderScale = groupSettings and groupSettings.borderScale or 1.0;
-
-        -- Initialize group tables if needed (for newly added groups)
-        if not data.groupBgPrims[groupNum] then
-            data.groupBgPrims[groupNum] = {};
-        end
-
-        for slot = 1, data.MAX_NOTIFICATIONS_PER_GROUP do
-            -- Create or update background primitive
-            if data.groupBgPrims[groupNum][slot] then
-                windowBg.setTheme(data.groupBgPrims[groupNum][slot], groupBgTheme, groupBgScale, groupBorderScale);
-            else
-                local prim_data = {
-                    visible = false,
-                    can_focus = false,
-                    locked = true,
-                    width = settings.width or 280,
-                    height = 80,
-                };
-                data.groupBgPrims[groupNum][slot] = windowBg.create(prim_data, groupBgTheme, groupBgScale, groupBorderScale);
-            end
-        end
-
-        data.groupLoadedBgThemes[groupNum] = groupBgTheme;
-    end
 
     -- Update display module
     display.UpdateVisuals(settings);
@@ -140,23 +79,8 @@ end
 -- Cleanup
 -- ============================================
 notifications.Cleanup = function()
-    -- Cleanup per-group background primitives
-    if data.groupBgPrims then
-        for groupNum, prims in pairs(data.groupBgPrims) do
-            if prims then
-                for slot, prim in pairs(prims) do
-                    if prim then
-                        windowBg.destroy(prim);
-                    end
-                end
-            end
-        end
-        data.groupBgPrims = {};
-    end
-
     -- Clear per-group caches
     data.groupWindowAnchors = {};
-    data.groupLoadedBgThemes = {};
 
     -- Clear cached colors
     data.ClearGroupColorCaches();

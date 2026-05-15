@@ -6,7 +6,6 @@
 require('common');
 require('handlers.helpers');
 local ffi = require('ffi');
-local windowBg = require('libs.windowbackground');
 local encoding = require('libs.encoding');
 local TextureManager = require('libs.texturemanager');
 
@@ -42,22 +41,6 @@ partyList.Initialize = function(settings)
     data.partyTitlesTexture = TextureManager.getFileTexture('PartyList-Titles');
     if (data.partyTitlesTexture ~= nil) then
         data.partyTitlesTexture.width, data.partyTitlesTexture.height = GetTextureDimensions(data.partyTitlesTexture, 64, 64);
-    end
-
-    -- Initialize background primitives using windowbackground library
-    data.loadedBg = {};
-
-    for partyIndex = 1, 3 do
-        local cache = data.partyConfigCache[partyIndex];
-        data.loadedBg[partyIndex] = cache.backgroundName;
-
-        -- Create combined background + borders using windowbackground library
-        data.partyWindowPrim[partyIndex].background = windowBg.create(
-            settings.prim_data,
-            cache.backgroundName,
-            cache.bgScale,
-            cache.borderScale
-        );
     end
 
     -- Load cursor textures (via TextureManager)
@@ -106,19 +89,6 @@ partyList.UpdateVisuals = function(settings)
         end
     end
 
-    -- Update background primitives using windowbackground library
-    for partyIndex = 1, 3 do
-        local cache = data.partyConfigCache[partyIndex];
-        local backgroundPrim = data.partyWindowPrim[partyIndex].background;
-
-        -- Track loaded backgrounds per-party
-        local bgChanged = cache.backgroundName ~= data.loadedBg[partyIndex];
-        data.loadedBg[partyIndex] = cache.backgroundName;
-
-        if bgChanged then
-            windowBg.setTheme(backgroundPrim, cache.backgroundName, cache.bgScale, cache.borderScale);
-        end
-    end
 end
 
 -- ============================================
@@ -139,15 +109,6 @@ end
 -- Cleanup
 -- ============================================
 partyList.Cleanup = function()
-    -- Destroy background primitives using windowbackground library
-    for i = 1, 3 do
-        local backgroundPrim = data.partyWindowPrim[i].background;
-        if backgroundPrim then
-            windowBg.destroy(backgroundPrim);
-            data.partyWindowPrim[i].background = nil;
-        end
-    end
-
     -- Reset state
     data.Reset();
 end

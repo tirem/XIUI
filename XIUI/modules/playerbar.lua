@@ -327,7 +327,7 @@ playerbar.DrawWindow = function(settings)
 
 		-- Capture HP bar start position
 		local hpBarStartX, hpBarStartY = imgui.GetCursorScreenPos();
-		progressbar.ProgressBar(hpPercentData, {barSize, settings.barHeight}, {decorate = gConfig.showPlayerBarBookends});
+		progressbar.ProgressBar(hpPercentData, {barSize, settings.barHeight}, {decorate = gConfig.showPlayerBarBookends, drawList = drawList});
 
 		-- Draw resting ticker shimmer if enabled and player is resting
 		if gConfig.playerBarRestingTicker and playerEnt.Status == 33 then
@@ -437,7 +437,7 @@ playerbar.DrawWindow = function(settings)
 				mpPercentData = {{SelfMPPercent / 100, mpGradient}};
 			end
 
-			progressbar.ProgressBar(mpPercentData, {barSize, settings.barHeight}, {decorate = gConfig.showPlayerBarBookends});
+			progressbar.ProgressBar(mpPercentData, {barSize, settings.barHeight}, {decorate = gConfig.showPlayerBarBookends, drawList = drawList});
 			imgui.SameLine();
 		end
 
@@ -490,7 +490,7 @@ playerbar.DrawWindow = function(settings)
 			mainPercent = SelfTP / 1000;
 		end
 
-		progressbar.ProgressBar({{mainPercent, tpGradient}}, {barSize, settings.barHeight}, {overlayBar=tpOverlay, decorate = gConfig.showPlayerBarBookends});
+		progressbar.ProgressBar({{mainPercent, tpGradient}}, {barSize, settings.barHeight}, {overlayBar=tpOverlay, decorate = gConfig.showPlayerBarBookends, drawList = drawList});
 
 		imgui.SameLine();
 

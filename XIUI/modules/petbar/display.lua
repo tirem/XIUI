@@ -20,11 +20,13 @@ local defaultPositions = require('libs.defaultpositions');
 
 local display = {};
 
--- Window state for bottom alignment
+-- Window state for bottom alignment + previous-frame size cache (used for bg layering)
 local windowState = {
     x = nil,
     y = nil,
     height = nil,
+    cachedWidth = nil,
+    cachedHeight = nil,
 };
 
 -- ============================================
@@ -626,7 +628,6 @@ function display.DrawWindow(settings)
 
     if petData == nil and not alwaysVisible then
         data.currentPetName = nil;
-        data.HideBackground();
         -- Reset window state when hidden so bottom alignment starts fresh
         windowState.x = nil;
         windowState.y = nil;
@@ -726,6 +727,12 @@ function display.DrawWindow(settings)
         SaveWindowPosition('PetBar');
         windowPosX, windowPosY = imgui.GetWindowPos();
         local startX, startY = imgui.GetCursorScreenPos();
+
+        -- Draw background + pet image + borders FIRST so they sit beneath text/icons on the draw list.
+        -- Window size only known after content; use the previous frame's cached size (updated below).
+        if windowState.cachedWidth and windowState.cachedHeight then
+            data.UpdateBackground(drawList, windowPosX, windowPosY, windowState.cachedWidth, windowState.cachedHeight, settings);
+        end
 
         if hasPet then
             -- Row 1: Pet Name (with optional level) (left) and HP% (right, same line)
@@ -1181,8 +1188,9 @@ function display.DrawWindow(settings)
         data.lastMainWindowTop = windowPosY;
         data.lastMainWindowBottom = windowPosY + windowHeight + 4;
 
-        -- Update background primitives
-        data.UpdateBackground(windowPosX, windowPosY, windowWidth, windowHeight, settings);
+        -- Cache window size for next frame's bg draw at the top of this function.
+        windowState.cachedWidth = windowWidth;
+        windowState.cachedHeight = windowHeight;
     end
     imgui.End();
 

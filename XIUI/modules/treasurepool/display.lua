@@ -56,12 +56,6 @@ local BAR_HEIGHT = 3;
 -- State
 -- ============================================
 
--- Background primitive handle
-local bgPrimHandle = nil;
-
--- Theme tracking (for detecting changes like petbar)
-local loadedBgTheme = nil;
-
 -- Tab state: 1 = Pool view, 2 = History view
 local selectedTab = 1;
 
@@ -384,35 +378,23 @@ function M.DrawWindow(settings)
             contentHeightTotal = headerHeight + headerItemGap + visibleContentHeight;
         end
 
-        -- Update background (with safety checks)
-        if bgPrimHandle then
-            -- Check if theme changed
-            if loadedBgTheme ~= bgTheme then
-                loadedBgTheme = bgTheme;
-                pcall(function()
-                    windowBg.setTheme(bgPrimHandle, bgTheme, bgScale, borderScale);
-                end);
-            end
-
-            pcall(function()
-                -- For themed backgrounds (Window1-8), use white so texture shows through
-                -- For Plain backgrounds, use dark color with opacity
-                local bgColor = 0xFFFFFFFF;  -- White (no tint) for themed backgrounds
-                if bgTheme == 'Plain' then
-                    bgColor = 0xFF1A1A1A;  -- Dark gray for plain background
-                end
-
-                windowBg.update(bgPrimHandle, startX + padding, startY + padding, contentWidth, contentHeightTotal, {
-                    theme = bgTheme,
-                    padding = padding,
-                    bgScale = bgScale,
-                    borderScale = borderScale,
-                    bgOpacity = bgOpacity,
-                    borderOpacity = borderOpacity,
-                    bgColor = bgColor,
-                });
-            end);
+        -- Draw background + borders
+        -- For themed backgrounds (Window1-8), use white so texture shows through.
+        -- For Plain backgrounds, use dark color with opacity.
+        local bgColor = 0xFFFFFFFF;
+        if bgTheme == 'Plain' then
+            bgColor = 0xFF1A1A1A;
         end
+
+        windowBg.Draw(uiDrawList, startX + padding, startY + padding, contentWidth, contentHeightTotal, {
+            theme = bgTheme,
+            padding = padding,
+            bgScale = bgScale,
+            borderScale = borderScale,
+            bgOpacity = bgOpacity,
+            borderOpacity = borderOpacity,
+            bgColor = bgColor,
+        });
 
         local y = startY + padding;
 
@@ -1146,10 +1128,6 @@ function M.HideWindow()
         button.HidePrim(string.format('tpLotItem%d', slot));
         button.HidePrim(string.format('tpPassItem%d', slot));
     end
-
-    if bgPrimHandle then
-        windowBg.hide(bgPrimHandle);
-    end
 end
 
 -- ============================================
@@ -1157,32 +1135,9 @@ end
 -- ============================================
 
 function M.Initialize(settings)
-    -- Get background theme and scales from config (with defaults)
-    local bgTheme = gConfig.treasurePoolBackgroundTheme or 'Plain';
-    local bgScale = gConfig.treasurePoolBgScale or 1.0;
-    local borderScale = gConfig.treasurePoolBorderScale or 1.0;
-    loadedBgTheme = bgTheme;
-
-    -- Create background primitive
-    local primData = {
-        visible = false,
-        can_focus = false,
-        locked = true,
-        width = 100,
-        height = 100,
-    };
-    bgPrimHandle = windowBg.create(primData, bgTheme, bgScale, borderScale);
 end
 
 function M.UpdateVisuals(settings)
-    -- Check if theme changed
-    local bgTheme = gConfig.treasurePoolBackgroundTheme or 'Plain';
-    local bgScale = gConfig.treasurePoolBgScale or 1.0;
-    local borderScale = gConfig.treasurePoolBorderScale or 1.0;
-    if loadedBgTheme ~= bgTheme and bgPrimHandle then
-        loadedBgTheme = bgTheme;
-        windowBg.setTheme(bgPrimHandle, bgTheme, bgScale, borderScale);
-    end
 end
 
 function M.SetHidden(hidden)
@@ -1192,11 +1147,6 @@ function M.SetHidden(hidden)
 end
 
 function M.Cleanup()
-    if bgPrimHandle then
-        windowBg.destroy(bgPrimHandle);
-        bgPrimHandle = nil;
-    end
-
     -- Destroy primitive buttons
     button.DestroyPrim('tpToggle');
     button.DestroyPrim('tpMinimize');
@@ -1210,8 +1160,6 @@ function M.Cleanup()
         button.DestroyPrim(string.format('tpLotItem%d', slot));
         button.DestroyPrim(string.format('tpPassItem%d', slot));
     end
-
-    loadedBgTheme = nil;
     -- Icon cache handled by TextureManager
 end
 

@@ -99,13 +99,6 @@ M.LABEL_GAP = -8;  -- Default label position offset (was 4, moved up by 12px)
 M.ROW_GAP = 6;
 
 -- ============================================
--- Per-Bar State
--- ============================================
-
--- Background primitive handles (one per bar)
-M.bgHandles = {};
-
--- ============================================
 -- Job State
 -- ============================================
 
@@ -1080,7 +1073,6 @@ end
 -- Cleanup (call on addon unload)
 function M.Cleanup()
     M.Clear();
-    M.bgHandles = {};
 end
 
 return M;

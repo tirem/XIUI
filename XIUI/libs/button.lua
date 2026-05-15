@@ -33,237 +33,33 @@
 require('common');
 local imgui = require('imgui');
 local ffi = require('ffi');
-local primitives = require('primitives');
 
 local M = {};
 
+-- Forward decls (used by *Prim aliases before non-Prim definitions appear below).
+local DrawImpl, DrawArrowImpl, ARGBToU32Local;
+
 -- ============================================
--- Primitive-based Button Management
+-- API aliases (formerly primitive-based; now route through ImGui draw list)
 -- ============================================
 
--- Store created primitive buttons for reuse
-M.primButtons = {};
-
---[[
-    Get or create a primitive button by ID
-    @param id string: Unique button identifier
-    @return table: Primitive object
-]]--
-function M.GetOrCreatePrim(id)
-    if not M.primButtons[id] then
-        M.primButtons[id] = primitives:new({
-            visible = false,
-            can_focus = false,
-            locked = true,
-        });
-    end
-    return M.primButtons[id];
-end
-
---[[
-    Destroy a primitive button by ID
-    @param id string: Button identifier
-]]--
-function M.DestroyPrim(id)
-    if M.primButtons[id] then
-        M.primButtons[id]:destroy();
-        M.primButtons[id] = nil;
-    end
-end
-
---[[
-    Destroy all primitive buttons
-]]--
-function M.DestroyAllPrims()
-    for id, prim in pairs(M.primButtons) do
-        if prim then
-            prim:destroy();
-        end
-    end
-    M.primButtons = {};
-end
-
---[[
-    Draw a primitive-based button with ImGui text overlay
-
-    @param id string: Unique button identifier
-    @param x number: X position
-    @param y number: Y position
-    @param width number: Button width
-    @param height number: Button height
-    @param options table: Button options (colors, disabled, tooltip)
-    @return boolean: True if clicked
-    @return boolean: True if hovered
-]]--
 function M.DrawPrim(id, x, y, width, height, options)
-    options = options or {};
-
-    local colors = options.colors or M.DEFAULT_COLORS;
-    local disabled = options.disabled or false;
-
-    -- Get or create the primitive
-    local prim = M.GetOrCreatePrim(id);
-
-    -- Set cursor position for invisible button (hover/click detection)
-    imgui.SetCursorScreenPos({x, y});
-
-    -- Create invisible button for interaction
-    local clicked = false;
-    local hovered = false;
-    local held = false;
-
-    if not disabled then
-        imgui.InvisibleButton(id, {width, height});
-        clicked = imgui.IsItemClicked();
-        hovered = imgui.IsItemHovered();
-        held = imgui.IsItemActive();
-    else
-        imgui.Dummy({width, height});
-    end
-
-    -- Determine current color based on state
-    local bgColor;
-    if disabled then
-        bgColor = colors.disabled or M.DEFAULT_COLORS.disabled;
-    elseif held then
-        bgColor = colors.pressed or colors.hovered or M.DEFAULT_COLORS.pressed;
-    elseif hovered then
-        bgColor = colors.hovered or M.DEFAULT_COLORS.hovered;
-    else
-        bgColor = colors.normal or M.DEFAULT_COLORS.normal;
-    end
-
-    -- Update primitive
-    prim.visible = true;
-    prim.position_x = x;
-    prim.position_y = y;
-    prim.width = width;
-    prim.height = height;
-    prim.color = bgColor;
-
-    -- Show tooltip if provided
-    if hovered and options.tooltip then
-        imgui.SetTooltip(options.tooltip);
-    end
-
-    return clicked, hovered;
+    return DrawImpl(id, x, y, width, height, options);
 end
 
---[[
-    Hide a primitive button
-    @param id string: Button identifier
-]]--
-function M.HidePrim(id)
-    if M.primButtons[id] then
-        M.primButtons[id].visible = false;
-    end
-end
-
---[[
-    Draw a primitive-based arrow button
-
-    @param id string: Unique button identifier
-    @param x number: X position
-    @param y number: Y position
-    @param size number: Button size (square)
-    @param direction string: 'up', 'down', 'left', 'right'
-    @param options table: Button options
-    @param drawList: ImGui draw list for arrow rendering
-    @return boolean: True if clicked
-    @return boolean: True if hovered
-]]--
 function M.DrawArrowPrim(id, x, y, size, direction, options, drawList)
     options = options or {};
-
-    local colors = options.colors or M.DEFAULT_COLORS;
-    local disabled = options.disabled or false;
-
-    -- Arrow colors
-    local arrowColors = options.arrowColors or M.ARROW_COLORS;
-    local arrowColor = options.arrowColor or arrowColors.normal or 0xFFCCCCCC;
-    local arrowHoverColor = options.arrowHoverColor or arrowColors.hovered or 0xFFFFFFFF;
-
-    -- Get or create the primitive for background
-    local prim = M.GetOrCreatePrim(id);
-
-    -- Set cursor position for invisible button
-    imgui.SetCursorScreenPos({x, y});
-
-    -- Create invisible button for interaction
-    local clicked = false;
-    local hovered = false;
-    local held = false;
-
-    if not disabled then
-        imgui.InvisibleButton(id, {size, size});
-        clicked = imgui.IsItemClicked();
-        hovered = imgui.IsItemHovered();
-        held = imgui.IsItemActive();
-    else
-        imgui.Dummy({size, size});
+    if drawList ~= nil then
+        -- old-style 7th-arg drawList: pipe through options for DrawArrow
+        options.drawList = drawList;
     end
-
-    -- Determine background color based on state
-    local bgColor;
-    if disabled then
-        bgColor = colors.disabled or M.DEFAULT_COLORS.disabled;
-    elseif held then
-        bgColor = colors.pressed or colors.hovered or M.DEFAULT_COLORS.pressed;
-    elseif hovered then
-        bgColor = colors.hovered or M.DEFAULT_COLORS.hovered;
-    else
-        bgColor = colors.normal or M.DEFAULT_COLORS.normal;
-    end
-
-    -- Update primitive background
-    prim.visible = true;
-    prim.position_x = x;
-    prim.position_y = y;
-    prim.width = size;
-    prim.height = size;
-    prim.color = bgColor;
-
-    -- Draw arrow using ImGui draw list (renders on top of primitive)
-    drawList = drawList or imgui.GetForegroundDrawList();
-    local currentArrowColor = (hovered or held) and arrowHoverColor or arrowColor;
-    local arrowColorU32 = ARGBToU32(currentArrowColor);
-
-    -- Calculate arrow points
-    local centerX = x + size / 2;
-    local centerY = y + size / 2;
-    local arrowSize = size * 0.35;
-
-    local p1, p2, p3;
-
-    if direction == 'up' then
-        p1 = {centerX, centerY - arrowSize};
-        p2 = {centerX - arrowSize, centerY + arrowSize * 0.6};
-        p3 = {centerX + arrowSize, centerY + arrowSize * 0.6};
-    elseif direction == 'down' then
-        p1 = {centerX, centerY + arrowSize};
-        p2 = {centerX - arrowSize, centerY - arrowSize * 0.6};
-        p3 = {centerX + arrowSize, centerY - arrowSize * 0.6};
-    elseif direction == 'left' then
-        p1 = {centerX - arrowSize, centerY};
-        p2 = {centerX + arrowSize * 0.6, centerY - arrowSize};
-        p3 = {centerX + arrowSize * 0.6, centerY + arrowSize};
-    elseif direction == 'right' then
-        p1 = {centerX + arrowSize, centerY};
-        p2 = {centerX - arrowSize * 0.6, centerY - arrowSize};
-        p3 = {centerX - arrowSize * 0.6, centerY + arrowSize};
-    end
-
-    if p1 and p2 and p3 then
-        drawList:AddTriangleFilled(p1, p2, p3, arrowColorU32);
-    end
-
-    -- Show tooltip
-    if hovered and options.tooltip then
-        imgui.SetTooltip(options.tooltip);
-    end
-
-    return clicked, hovered;
+    return DrawArrowImpl(id, x, y, size, direction, options);
 end
+
+-- No-ops kept for callsites that haven't been cleaned up yet (no persistent primitives to manage).
+function M.HidePrim(id) end
+function M.DestroyPrim(id) end
+function M.DestroyAllPrims() end
 
 -- ============================================
 -- Default Colors
@@ -391,7 +187,7 @@ end
     @return boolean: True if button was clicked
     @return boolean: True if button is hovered
 ]]--
-function M.Draw(id, x, y, width, height, options)
+function DrawImpl(id, x, y, width, height, options)
     options = options or {};
 
     local colors = options.colors or M.DEFAULT_COLORS;
@@ -490,7 +286,7 @@ end
     @return boolean: True if clicked
     @return boolean: True if hovered
 ]]--
-function M.DrawArrow(id, x, y, size, direction, options)
+function DrawArrowImpl(id, x, y, size, direction, options)
     options = options or {};
 
     local colors = options.colors or M.DEFAULT_COLORS;
@@ -593,7 +389,7 @@ end
 
 
 --[[
-    Draw a primitive-based minimize/maximize button
+    Draw a minimize/maximize button (renders bg + icon via drawList)
 
     @param id string: Unique button identifier
     @param x number: X position
@@ -601,28 +397,22 @@ end
     @param size number: Button size (square)
     @param isMinimized boolean: True shows maximize icon (□), false shows minimize icon (_)
     @param options table: Button options
-    @param drawList: ImGui draw list for icon rendering
+    @param drawList: ImGui draw list for icon rendering (default: foreground)
     @return boolean: True if clicked
     @return boolean: True if hovered
 ]]--
-function M.DrawMinimizePrim(id, x, y, size, isMinimized, options, drawList)
+function M.DrawMinimize(id, x, y, size, isMinimized, options, drawList)
     options = options or {};
 
     local colors = options.colors or M.DEFAULT_COLORS;
     local disabled = options.disabled or false;
 
-    -- Icon colors
     local iconColors = options.iconColors or M.ARROW_COLORS;
     local iconColor = options.iconColor or iconColors.normal or 0xFFCCCCCC;
     local iconHoverColor = options.iconHoverColor or iconColors.hovered or 0xFFFFFFFF;
 
-    -- Get or create the primitive for background
-    local prim = M.GetOrCreatePrim(id);
-
-    -- Set cursor position for invisible button
     imgui.SetCursorScreenPos({x, y});
 
-    -- Create invisible button for interaction
     local clicked = false;
     local hovered = false;
     local held = false;
@@ -636,7 +426,6 @@ function M.DrawMinimizePrim(id, x, y, size, isMinimized, options, drawList)
         imgui.Dummy({size, size});
     end
 
-    -- Determine background color based on state
     local bgColor;
     if disabled then
         bgColor = colors.disabled or M.DEFAULT_COLORS.disabled;
@@ -648,20 +437,15 @@ function M.DrawMinimizePrim(id, x, y, size, isMinimized, options, drawList)
         bgColor = colors.normal or M.DEFAULT_COLORS.normal;
     end
 
-    -- Update primitive background
-    prim.visible = true;
-    prim.position_x = x;
-    prim.position_y = y;
-    prim.width = size;
-    prim.height = size;
-    prim.color = bgColor;
-
-    -- Draw icon using ImGui draw list (renders on top of primitive)
     drawList = drawList or imgui.GetForegroundDrawList();
+
+    -- Background
+    drawList:AddRectFilled({x, y}, {x + size, y + size}, ARGBToU32(bgColor));
+
+    -- Icon on top
     local currentIconColor = (hovered or held) and iconHoverColor or iconColor;
     local iconColorU32 = ARGBToU32(currentIconColor);
 
-    -- Calculate icon dimensions
     local centerX = x + size / 2;
     local centerY = y + size / 2;
     local iconSize = size * 0.4;
@@ -686,12 +470,15 @@ function M.DrawMinimizePrim(id, x, y, size, isMinimized, options, drawList)
         );
     end
 
-    -- Show tooltip
     if hovered and options.tooltip then
         imgui.SetTooltip(options.tooltip);
     end
 
     return clicked, hovered;
 end
+
+M.Draw = DrawImpl;
+M.DrawArrow = DrawArrowImpl;
+M.DrawMinimizePrim = M.DrawMinimize;
 
 return M;

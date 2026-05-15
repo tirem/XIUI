@@ -37,9 +37,6 @@ local KEYBIND_OFFSET_Y = 2;
 -- State
 -- ============================================
 
--- Loaded theme tracking
-local loadedBgTheme = nil;
-
 -- Textures initialized flag
 local texturesInitialized = false;
 
@@ -334,9 +331,6 @@ local function DrawBarWindow(barIndex, settings)
 
     -- Check if bar is enabled
     if not barSettings.enabled then
-        if data.bgHandles[barIndex] then
-            windowBg.hide(data.bgHandles[barIndex]);
-        end
         return;
     end
 
@@ -407,9 +401,7 @@ local function DrawBarWindow(barIndex, settings)
             borderColor = borderColor,
         };
 
-        if data.bgHandles[barIndex] then
-            windowBg.update(data.bgHandles[barIndex], windowPosX, windowPosY, barWidth, barHeight, bgOptions);
-        end
+        windowBg.Draw(GetUIDrawList(), windowPosX, windowPosY, barWidth, barHeight, bgOptions);
 
         -- Draw hotbar number to the LEFT of the bar (outside container)
         local showNumber = barSettings.showHotbarNumber;
@@ -571,18 +563,6 @@ function M.DrawWindow(settings)
         texturesInitialized = true;
     end
 
-    -- Check if backgrounds are initialized
-    local anyInitialized = false;
-    for i = 1, data.NUM_BARS do
-        if data.bgHandles[i] then
-            anyInitialized = true;
-            break;
-        end
-    end
-    if not anyInitialized then
-        return;
-    end
-
     -- Draw each bar as its own window (per-bar themes handled in DrawBarWindow)
     for barIndex = 1, data.NUM_BARS do
         DrawBarWindow(barIndex, settings);
@@ -597,12 +577,6 @@ function M.DrawWindow(settings)
 end
 
 function M.HideWindow()
-    -- Hide all backgrounds
-    for barIndex = 1, data.NUM_BARS do
-        if data.bgHandles[barIndex] then
-            windowBg.hide(data.bgHandles[barIndex]);
-        end
-    end
 end
 
 -- ============================================
@@ -610,26 +584,11 @@ end
 -- ============================================
 
 function M.Initialize(settings)
-    local bgTheme = gConfig.hotbarBackgroundTheme or 'Plain';
-    loadedBgTheme = bgTheme;
-    -- Background primitives are now created in init.lua
-
     -- Register palette change callback for animation
     palette.OnPaletteChanged(OnPaletteChanged);
 end
 
 function M.UpdateVisuals(settings)
-    -- Update each bar's theme from per-bar settings
-    for barIndex = 1, data.NUM_BARS do
-        local barSettings = data.GetBarSettings(barIndex);
-        local bgTheme = barSettings.backgroundTheme or '-None-';
-        local bgScale = barSettings.bgScale or 1.0;
-        local borderScale = barSettings.borderScale or 1.0;
-
-        if data.bgHandles[barIndex] then
-            windowBg.setTheme(data.bgHandles[barIndex], bgTheme, bgScale, borderScale);
-        end
-    end
 end
 
 function M.SetHidden(hidden)
@@ -639,8 +598,6 @@ function M.SetHidden(hidden)
 end
 
 function M.Cleanup()
-    -- Background cleanup is handled in init.lua
-    loadedBgTheme = nil;
     texturesInitialized = false;
     -- Clear icon cache
     ClearIconCache();

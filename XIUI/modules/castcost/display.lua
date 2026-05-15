@@ -14,9 +14,6 @@ local defaultPositions = require('libs.defaultpositions');
 
 local M = {};
 
--- Background handle
-local bgHandle;
-
 -- Reference height cache keyed by fontSize to avoid re-measuring every frame
 local refHeightCache = {};
 local REF_STRING = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -42,9 +39,6 @@ local windowState = {
 -- ============================================
 
 function M.Initialize(settings)
-    -- Create window background (read scale directly from gConfig like partylist does)
-    local cc = gConfig.castCost or {};
-    bgHandle = windowBg.create(settings.prim_data, cc.backgroundTheme or 'Window1', cc.bgScale or 1.0, cc.borderScale or 1.0);
 end
 
 -- ============================================
@@ -54,12 +48,6 @@ end
 function M.UpdateVisuals(settings)
     imtext.Reset();
     refHeightCache = {};
-
-    -- Update background theme (read scale directly from gConfig like partylist does)
-    local cc = gConfig.castCost or {};
-    if bgHandle then
-        windowBg.setTheme(bgHandle, cc.backgroundTheme or 'Window1', cc.bgScale or 1.0, cc.borderScale or 1.0);
-    end
 end
 
 -- ============================================
@@ -67,9 +55,6 @@ end
 -- ============================================
 
 function M.SetHidden(hidden)
-    if bgHandle then
-        windowBg.hide(bgHandle);
-    end
     -- Reset window state when hidden so bottom alignment starts fresh
     if hidden then
         windowState.x = nil;
@@ -85,10 +70,6 @@ end
 -- ============================================
 
 function M.Cleanup()
-    if bgHandle then
-        windowBg.destroy(bgHandle);
-        bgHandle = nil;
-    end
 end
 
 -- ============================================
@@ -125,9 +106,6 @@ end
 
 function M.Render(itemInfo, itemType, settings, colors)
     if itemInfo == nil then
-        if bgHandle then
-            windowBg.hide(bgHandle);
-        end
         -- Clear shared state when no selection
         shared.Clear();
         return;
@@ -310,23 +288,21 @@ function M.Render(itemInfo, itemType, settings, colors)
         -- Create dummy for dragging
         imgui.Dummy({ contentWidth, contentHeight });
 
-        -- Update background (read scale directly from gConfig like partylist does)
+        -- Draw background + borders (read scale directly from gConfig like partylist does)
         local cc = gConfig.castCost or {};
-        if bgHandle then
-            windowBg.update(bgHandle, cursorX, cursorY, contentWidth, contentHeight, {
-                theme = cc.backgroundTheme or 'Window1',
-                padding = padding,
-                paddingY = paddingY,
-                bgScale = cc.bgScale or 1.0,
-                borderScale = cc.borderScale or 1.0,
-                bgOpacity = cc.backgroundOpacity or 1.0,
-                bgColor = colors.bgColor or 0xFFFFFFFF,
-                borderSize = settings.borderSize or 21,
-                bgOffset = settings.bgOffset or 1,
-                borderOpacity = cc.borderOpacity or 1.0,
-                borderColor = colors.borderColor or 0xFFFFFFFF,
-            });
-        end
+        windowBg.Draw(drawList, cursorX, cursorY, contentWidth, contentHeight, {
+            theme = cc.backgroundTheme or 'Window1',
+            padding = padding,
+            paddingY = paddingY,
+            bgScale = cc.bgScale or 1.0,
+            borderScale = cc.borderScale or 1.0,
+            bgOpacity = cc.backgroundOpacity or 1.0,
+            bgColor = colors.bgColor or 0xFFFFFFFF,
+            borderSize = settings.borderSize or 21,
+            bgOffset = settings.bgOffset or 1,
+            borderOpacity = cc.borderOpacity or 1.0,
+            borderColor = colors.borderColor or 0xFFFFFFFF,
+        });
 
         -- Position and render text using reference heights for consistent spacing
         local yPos = cursorY;

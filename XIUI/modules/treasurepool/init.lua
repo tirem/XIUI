@@ -12,7 +12,6 @@
 require('common');
 require('handlers.helpers');
 local imtext = require('libs.imtext');
-local windowBg = require('libs.windowbackground');
 
 local data = require('modules.treasurepool.data');
 local display = require('modules.treasurepool.display');
