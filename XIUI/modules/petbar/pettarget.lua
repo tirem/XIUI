@@ -7,7 +7,7 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
-local gdi = require('submodules.gdifonts.include');
+local imtext = require('libs.imtext');
 local windowBg = require('libs.windowbackground');
 local progressbar = require('libs.progressbar');
 
@@ -18,14 +18,6 @@ local pettarget = {};
 -- ============================================
 -- State Variables
 -- ============================================
-
--- Font objects
-local targetNameText = nil;
-local targetHpText = nil;
-local targetDistanceText = nil;
-local lastTargetColor = nil;
-local lastHpColor = nil;
-local lastDistanceColor = nil;
 
 -- Background primitives (using windowbackground library)
 local backgroundPrim = nil;
@@ -84,9 +76,6 @@ function pettarget.DrawWindow(settings)
 
     -- Only show if we have a valid pet (prevents showing when "Always Visible" is on but no pet)
     if data.GetPetData() == nil then
-        if targetNameText then targetNameText:set_visible(false); end
-        if targetHpText then targetHpText:set_visible(false); end
-        if targetDistanceText then targetDistanceText:set_visible(false); end
         HideBackground();
         return;
     end
@@ -101,15 +90,6 @@ function pettarget.DrawWindow(settings)
     else
         -- Only show if pet target tracking is enabled and we have a target
         if gConfig.petBarShowTarget == false or data.petTargetServerId == nil then
-            if targetNameText then
-                targetNameText:set_visible(false);
-            end
-            if targetHpText then
-                targetHpText:set_visible(false);
-            end
-            if targetDistanceText then
-                targetDistanceText:set_visible(false);
-            end
             HideBackground();
             return;
         end
@@ -117,30 +97,12 @@ function pettarget.DrawWindow(settings)
         -- Check if pet is targeting itself (e.g., after self-buff like Aerial Armor)
         local petEntity = data.GetPetEntity();
         if petEntity and petEntity.ServerId and data.petTargetServerId == petEntity.ServerId then
-            if targetNameText then
-                targetNameText:set_visible(false);
-            end
-            if targetHpText then
-                targetHpText:set_visible(false);
-            end
-            if targetDistanceText then
-                targetDistanceText:set_visible(false);
-            end
             HideBackground();
             return;
         end
 
         local targetEnt = data.GetEntityByServerId(data.petTargetServerId);
         if targetEnt == nil or targetEnt.ActorPointer == 0 or targetEnt.HPPercent <= 0 then
-            if targetNameText then
-                targetNameText:set_visible(false);
-            end
-            if targetHpText then
-                targetHpText:set_visible(false);
-            end
-            if targetDistanceText then
-                targetDistanceText:set_visible(false);
-            end
             HideBackground();
             data.petTargetServerId = nil;
             return;
@@ -181,6 +143,9 @@ function pettarget.DrawWindow(settings)
         SaveWindowPosition('PetBarTarget');
         local targetWinPosX, targetWinPosY = imgui.GetWindowPos();
         local targetStartX, targetStartY = imgui.GetCursorScreenPos();
+        local drawList = GetUIDrawList();
+
+        imtext.SetConfigFromSettings(settings.vitals_font_settings);
 
         local targetNameFontSize = gConfig.petBarTargetNameFontSize or gConfig.petBarTargetFontSize or settings.vitals_font_settings.font_height;
         local targetHpFontSize = gConfig.petBarTargetHpFontSize or gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
@@ -203,47 +168,36 @@ function pettarget.DrawWindow(settings)
         local distanceOffsetX = gConfig.petTargetDistanceOffsetX or 0;
         local distanceOffsetY = gConfig.petTargetDistanceOffsetY or 0;
 
-        -- Row 1: Target Name (left)
-        targetNameText:set_font_height(targetNameFontSize);
-        targetNameText:set_text(targetName);
-
+        -- Row 1: Target Name (left-aligned)
+        local targetColor = colorConfig.targetTextColor or petBarColorConfig.targetTextColor or 0xFFFFFFFF;
+        local nameW, nameH = imtext.Measure(targetName, targetNameFontSize);
+        local nameDrawX, nameDrawY;
         if nameAbsolute then
             -- Absolute positioning: relative to window top-left
-            targetNameText:set_position_x(targetWinPosX + nameOffsetX);
-            targetNameText:set_position_y(targetWinPosY + nameOffsetY);
+            nameDrawX = targetWinPosX + nameOffsetX;
+            nameDrawY = targetWinPosY + nameOffsetY;
         else
             -- Inline positioning: in layout flow with offsets
-            targetNameText:set_position_x(targetStartX + nameOffsetX);
-            targetNameText:set_position_y(targetStartY + nameOffsetY);
+            nameDrawX = targetStartX + nameOffsetX;
+            nameDrawY = targetStartY + nameOffsetY;
         end
+        imtext.Draw(drawList, targetName, nameDrawX, nameDrawY, targetColor, targetNameFontSize);
 
-        local targetColor = colorConfig.targetTextColor or petBarColorConfig.targetTextColor or 0xFFFFFFFF;
-        if lastTargetColor ~= targetColor then
-            targetNameText:set_font_color(targetColor);
-            lastTargetColor = targetColor;
-        end
-        targetNameText:set_visible(true);
-
-        -- HP% text (right-aligned by default)
-        targetHpText:set_font_height(targetHpFontSize);
-        targetHpText:set_text(tostring(targetHp) .. '%');
-
+        -- HP% text (right-aligned: subtract width to convert from right edge)
+        local hpColor = colorConfig.hpTextColor or petBarColorConfig.hpTextColor or 0xFFFFA7A7;
+        local hpStr = tostring(targetHp) .. '%';
+        local hpW, hpH = imtext.Measure(hpStr, targetHpFontSize);
+        local hpDrawX, hpDrawY;
         if hpAbsolute then
             -- Absolute positioning: relative to window top-left
-            targetHpText:set_position_x(targetWinPosX + hpOffsetX);
-            targetHpText:set_position_y(targetWinPosY + hpOffsetY);
+            hpDrawX = targetWinPosX + hpOffsetX - hpW;
+            hpDrawY = targetWinPosY + hpOffsetY;
         else
             -- Inline positioning: right side of bar row with offsets
-            targetHpText:set_position_x(targetStartX + barWidth + hpOffsetX);
-            targetHpText:set_position_y(targetStartY + (targetNameFontSize - targetHpFontSize) / 2 + hpOffsetY);
+            hpDrawX = targetStartX + barWidth + hpOffsetX - hpW;
+            hpDrawY = targetStartY + (targetNameFontSize - targetHpFontSize) / 2 + hpOffsetY;
         end
-
-        local hpColor = colorConfig.hpTextColor or petBarColorConfig.hpTextColor or 0xFFFFA7A7;
-        if lastHpColor ~= hpColor then
-            targetHpText:set_font_color(hpColor);
-            lastHpColor = hpColor;
-        end
-        targetHpText:set_visible(true);
+        imtext.Draw(drawList, hpStr, hpDrawX, hpDrawY, hpColor, targetHpFontSize);
 
         -- Only add space for name row if name or HP are inline (not absolute)
         if not nameAbsolute or not hpAbsolute then
@@ -257,29 +211,23 @@ function pettarget.DrawWindow(settings)
 
         progressbar.ProgressBar(hpPercentData, {barWidth, barHeight}, {decorate = gConfig.petTargetShowBookends or gConfig.petBarShowBookends});
 
-        -- Distance text positioning
-        targetDistanceText:set_font_height(targetDistanceFontSize);
-        targetDistanceText:set_text(string.format('%.1f', targetDistance));
-
+        -- Distance text (left-aligned)
+        local distanceColor = colorConfig.distanceTextColor or petBarColorConfig.distanceTextColor or 0xFFFFFFFF;
+        local distStr = string.format('%.1f', targetDistance);
+        local distDrawX, distDrawY;
         if distanceAbsolute then
             -- Absolute positioning: relative to window top-left
-            targetDistanceText:set_position_x(targetWinPosX + distanceOffsetX);
-            targetDistanceText:set_position_y(targetWinPosY + distanceOffsetY);
+            distDrawX = targetWinPosX + distanceOffsetX;
+            distDrawY = targetWinPosY + distanceOffsetY;
         else
             -- Inline positioning: below HP bar in layout flow
             local distanceY = targetStartY + targetNameFontSize + 4 + barHeight + 2;
-            targetDistanceText:set_position_x(targetStartX + distanceOffsetX);
-            targetDistanceText:set_position_y(distanceY + distanceOffsetY);
+            distDrawX = targetStartX + distanceOffsetX;
+            distDrawY = distanceY + distanceOffsetY;
             -- Add dummy for inline layout
             imgui.Dummy({totalRowWidth, targetDistanceFontSize + 2});
         end
-
-        local distanceColor = colorConfig.distanceTextColor or petBarColorConfig.distanceTextColor or 0xFFFFFFFF;
-        if lastDistanceColor ~= distanceColor then
-            targetDistanceText:set_font_color(distanceColor);
-            lastDistanceColor = distanceColor;
-        end
-        targetDistanceText:set_visible(true);
+        imtext.Draw(drawList, distStr, distDrawX, distDrawY, distanceColor, targetDistanceFontSize);
 
         -- Update background
         local targetWinWidth, targetWinHeight = imgui.GetWindowSize();
@@ -292,14 +240,6 @@ end
 -- Initialize
 -- ============================================
 function pettarget.Initialize(settings)
-    -- Create fonts
-    targetNameText = FontManager.create(settings.vitals_font_settings);
-
-    targetHpText = FontManager.create(settings.vitals_font_settings);
-    targetHpText:set_font_alignment(gdi.Alignment.Right);
-
-    targetDistanceText = FontManager.create(settings.distance_font_settings);
-
     -- Initialize background primitives using windowbackground library
     local prim_data = settings.prim_data or {
         visible = false,
@@ -328,18 +268,7 @@ end
 -- UpdateVisuals
 -- ============================================
 function pettarget.UpdateVisuals(settings)
-    -- Recreate fonts
-    targetNameText = FontManager.recreate(targetNameText, settings.vitals_font_settings);
-
-    targetHpText = FontManager.recreate(targetHpText, settings.vitals_font_settings);
-    targetHpText:set_font_alignment(gdi.Alignment.Right);
-
-    targetDistanceText = FontManager.recreate(targetDistanceText, settings.distance_font_settings);
-
-    -- Clear cached colors
-    lastTargetColor = nil;
-    lastHpColor = nil;
-    lastDistanceColor = nil;
+    imtext.Reset();
 
     -- Get scale from active pet type settings
     local petTypeKey = data.GetPetTypeKey();
@@ -361,15 +290,6 @@ end
 -- ============================================
 function pettarget.SetHidden(hidden)
     if hidden then
-        if targetNameText then
-            targetNameText:set_visible(false);
-        end
-        if targetHpText then
-            targetHpText:set_visible(false);
-        end
-        if targetDistanceText then
-            targetDistanceText:set_visible(false);
-        end
         HideBackground();
     end
 end
@@ -378,13 +298,6 @@ end
 -- Cleanup
 -- ============================================
 function pettarget.Cleanup()
-    targetNameText = FontManager.destroy(targetNameText);
-    targetHpText = FontManager.destroy(targetHpText);
-    targetDistanceText = FontManager.destroy(targetDistanceText);
-    lastTargetColor = nil;
-    lastHpColor = nil;
-    lastDistanceColor = nil;
-
     -- Cleanup background primitives using windowbackground library
     if backgroundPrim then
         windowBg.destroy(backgroundPrim);

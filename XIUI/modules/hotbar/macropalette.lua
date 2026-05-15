@@ -148,10 +148,6 @@ local function ClearSlotIconCache(barIndex, slotIndex)
     if display and display.ClearIconCacheForSlot then
         display.ClearIconCacheForSlot(barIndex, slotIndex);
     end
-    -- Clear slotrenderer cache for this slot
-    if slotrenderer and slotrenderer.InvalidateSlotByKey then
-        slotrenderer.InvalidateSlotByKey(barIndex .. ':' .. slotIndex);
-    end
 end
 
 -- Helper to clear icon cache for a single crossbar slot (targeted - fast)
@@ -168,10 +164,6 @@ local function ClearCrossbarSlotIconCache(comboMode, slotIndex)
     -- Clear crossbar icon cache for this slot
     if crossbar and crossbar.ClearIconCacheForSlot then
         crossbar.ClearIconCacheForSlot(comboMode, slotIndex);
-    end
-    -- Clear slotrenderer cache for this slot
-    if slotrenderer and slotrenderer.InvalidateSlotByKey then
-        slotrenderer.InvalidateSlotByKey(comboMode .. ':' .. slotIndex);
     end
 end
 

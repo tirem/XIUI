@@ -1,7 +1,7 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
-local gdi = require('submodules.gdifonts.include');
+local imtext = require('libs.imtext');
 local ffi = require("ffi");
 local defaultPositions = require('libs.defaultpositions');
 local TextureManager = require('libs.texturemanager');
@@ -13,13 +13,6 @@ local lastSavedPosX, lastSavedPosY = nil, nil;
 
 -- Gil texture (loaded via TextureManager)
 local gilTexture;
-local gilText;
-local gilPerHourText;
-local allFonts; -- Table for batch visibility operations
-
--- Cached color to avoid expensive set_font_color calls every frame
-local lastGilTextColor;
-local lastGilPerHourColor;
 
 -- Gil per hour tracking state
 local trackingStartGil = nil;      -- Gil amount when tracking started
@@ -89,14 +82,12 @@ giltracker.DrawWindow = function(settings)
     local playerEnt = GetPlayerEntity();
 
 	if (player == nil or playerEnt == nil) then
-		SetFontsVisible(allFonts,false);
 		return;
 	end
 
 	local loggedInName = GetLoggedInPlayerName();
 
 	if loggedInName == nil then
-		SetFontsVisible(allFonts,false);
 		return;
 	end
 
@@ -113,7 +104,6 @@ giltracker.DrawWindow = function(settings)
 	end
 
     if (player.isZoning) then
-		SetFontsVisible(allFonts,false);
         return;
 	end
 
@@ -122,11 +112,9 @@ giltracker.DrawWindow = function(settings)
 	if (inventory ~= nil) then
 		gilAmount = inventory:GetContainerItem(0, 0);
 		if (gilAmount == nil) then
-			SetFontsVisible(allFonts,false);
 			return;
 		end
 	else
-		SetFontsVisible(allFonts,false);
 		return;
 	end
 
@@ -135,7 +123,6 @@ giltracker.DrawWindow = function(settings)
 	-- Skip invalid reads during zoning (inventory returns 0 or garbage)
 	-- This preserves tracking state so we continue where we left off after zoning
 	if currentGil == 0 then
-		SetFontsVisible(allFonts, false);
 		return;
 	end
 
@@ -145,7 +132,6 @@ giltracker.DrawWindow = function(settings)
 		local frameDiff = math.abs(currentGil - lastKnownGil);
 		-- If changed by more than 10 million in one frame, skip (likely zone garbage)
 		if frameDiff > 10000000 then
-			SetFontsVisible(allFonts, false);
 			return;
 		end
 	end
@@ -244,6 +230,11 @@ giltracker.DrawWindow = function(settings)
     if (imgui.Begin('GilTracker', true, windowFlags)) then
 		SaveWindowPosition('GilTracker');
 		local cursorX, cursorY = imgui.GetCursorScreenPos();
+		local drawList = GetUIDrawList();
+
+		imtext.SetConfigFromSettings(settings.font_settings);
+		local fontSize = settings.font_settings.font_height;
+		local rightAlign = settings.rightAlign;
 
 		-- Get offset settings from adjusted settings (same pattern as targetbar)
 		local textOffsetX = settings.textOffsetX or 0;
@@ -251,20 +242,15 @@ giltracker.DrawWindow = function(settings)
 		local gphOffsetX = settings.gilPerHourOffsetX or 0;
 		local gphOffsetY = settings.gilPerHourOffsetY or 0;
 
-		-- Dynamically set font height based on settings (avoids expensive font recreation)
-		gilText:set_font_height(settings.font_settings.font_height);
-		gilText:set_text(FormatInt(currentGil));
-
 		-- Get text dimensions for positioning and draggable area
-		local textWidth, textHeight = gilText:get_text_size();
+		local gilStr = FormatInt(currentGil);
+		local textWidth, textHeight = imtext.Measure(gilStr, fontSize);
 		local textPadding = 5; -- Standard spacing between icon and text
 
 		-- Prepare gil per hour text dimensions if enabled
 		local gphWidth, gphHeight = 0, 0;
 		if showGilPerHour then
-			gilPerHourText:set_font_height(settings.font_settings.font_height);
-			gilPerHourText:set_text(gilPerHourText_str);
-			gphWidth, gphHeight = gilPerHourText:get_text_size();
+			gphWidth, gphHeight = imtext.Measure(gilPerHourText_str, fontSize);
 		end
 
 		-- DEBUG: Set to true to visualize draggable areas
@@ -277,16 +263,16 @@ giltracker.DrawWindow = function(settings)
 			combinedTextHeight = textHeight + textSpacing + gphHeight;
 		end
 
+		-- Computed draw positions (set in each layout branch, drawn at the end)
+		local gilDrawX, gilDrawY;
+		local gphDrawX, gphDrawY;
+
 		if showIcon then
 			-- Icon + text mode: create combined draggable area
 			local iconSize = settings.iconScale;
 			local iconRight = settings.iconRight;
-			local rightAlign = settings.rightAlign;
 
-			-- Total height is max of icon and combined text height
 			local totalHeight = math.max(iconSize, combinedTextHeight);
-
-			-- Calculate where text block starts (centered within totalHeight)
 			local textBlockStartY = cursorY + (totalHeight - combinedTextHeight) / 2;
 
 			if iconRight then
@@ -299,37 +285,26 @@ giltracker.DrawWindow = function(settings)
 
 				-- DEBUG: Draw red rectangle around draggable area
 				if DEBUG_DRAW then
-					local draw_list = imgui.GetWindowDrawList();
-					draw_list:AddRect({cursorX, cursorY}, {cursorX + totalWidth, cursorY + totalHeight}, 0xFF0000FF, 0, 0, 2);
+					drawList:AddRect({cursorX, cursorY}, {cursorX + totalWidth, cursorY + totalHeight}, 0xFF0000FF, 0, 0, 2);
 				end
 
 				-- Draw icon centered vertically, positioned after text block
-				local draw_list = imgui.GetWindowDrawList();
 				local iconX = cursorX + textBlockWidth + textPadding;
 				local iconY = cursorY + (totalHeight - iconSize) / 2;
-				draw_list:AddImage(tonumber(ffi.cast("uint32_t", gilTexture.image)),
+				drawList:AddImage(tonumber(ffi.cast("uint32_t", gilTexture.image)),
 					{iconX, iconY},
 					{iconX + iconSize, iconY + iconSize});
 
 				-- Position gil amount text
-				local gilTextX, gilTextY;
-				if rightAlign then
-					gilTextX = cursorX + textWidth + textOffsetX;
-				else
-					gilTextX = cursorX + textOffsetX;
-				end
-				gilTextY = textBlockStartY + textOffsetY;
-				gilText:set_position_x(gilTextX);
-				gilText:set_position_y(gilTextY);
+				local textBaseX = cursorX + textOffsetX;
+				if rightAlign then textBaseX = textBaseX + textBlockWidth - textWidth; end
+				gilDrawX = textBaseX;
+				gilDrawY = textBlockStartY + textOffsetY;
 
 				-- Position gil/hr text below gil amount (right-aligned to match gil text's right edge)
 				if showGilPerHour then
-					-- gilPerHourText is right-aligned, so position_x is the RIGHT edge
-					-- Align to gil amount's right edge: cursorX + textWidth
-					local gphX = cursorX + textWidth + gphOffsetX;
-					local gphY = textBlockStartY + textHeight + textSpacing + gphOffsetY;
-					gilPerHourText:set_position_x(gphX);
-					gilPerHourText:set_position_y(gphY);
+					gphDrawX = textBaseX + textWidth + gphOffsetX - gphWidth;
+					gphDrawY = textBlockStartY + textHeight + textSpacing + gphOffsetY;
 				end
 			else
 				-- Icon on left: [icon][text]
@@ -341,36 +316,25 @@ giltracker.DrawWindow = function(settings)
 
 				-- DEBUG: Draw red rectangle around draggable area
 				if DEBUG_DRAW then
-					local draw_list = imgui.GetWindowDrawList();
-					draw_list:AddRect({cursorX, cursorY}, {cursorX + totalWidth, cursorY + totalHeight}, 0xFF0000FF, 0, 0, 2);
+					drawList:AddRect({cursorX, cursorY}, {cursorX + totalWidth, cursorY + totalHeight}, 0xFF0000FF, 0, 0, 2);
 				end
 
 				-- Draw icon centered vertically, at start
-				local draw_list = imgui.GetWindowDrawList();
 				local iconY = cursorY + (totalHeight - iconSize) / 2;
-				draw_list:AddImage(tonumber(ffi.cast("uint32_t", gilTexture.image)),
+				drawList:AddImage(tonumber(ffi.cast("uint32_t", gilTexture.image)),
 					{cursorX, iconY},
 					{cursorX + iconSize, iconY + iconSize});
 
 				-- Position gil amount text after icon
-				local gilTextX, gilTextY;
-				if rightAlign then
-					gilTextX = cursorX + iconSize + textPadding + textWidth + textOffsetX;
-				else
-					gilTextX = cursorX + iconSize + textPadding + textOffsetX;
-				end
-				gilTextY = textBlockStartY + textOffsetY;
-				gilText:set_position_x(gilTextX);
-				gilText:set_position_y(gilTextY);
+				local textBaseX = cursorX + iconSize + textPadding + textOffsetX;
+				if rightAlign then textBaseX = textBaseX + textBlockWidth - textWidth; end
+				gilDrawX = textBaseX;
+				gilDrawY = textBlockStartY + textOffsetY;
 
 				-- Position gil/hr text below gil amount (right-aligned to match gil text's right edge)
 				if showGilPerHour then
-					-- gilPerHourText is right-aligned, so position_x is the RIGHT edge
-					-- Align to gil amount's right edge: cursorX + iconSize + textPadding + textWidth
-					local gphX = cursorX + iconSize + textPadding + textWidth + gphOffsetX;
-					local gphY = textBlockStartY + textHeight + textSpacing + gphOffsetY;
-					gilPerHourText:set_position_x(gphX);
-					gilPerHourText:set_position_y(gphY);
+					gphDrawX = textBaseX + textWidth + gphOffsetX - gphWidth;
+					gphDrawY = textBlockStartY + textHeight + textSpacing + gphOffsetY;
 				end
 			end
 		else
@@ -382,41 +346,28 @@ giltracker.DrawWindow = function(settings)
 
 			-- DEBUG: Draw red rectangle around draggable area
 			if DEBUG_DRAW then
-				local draw_list = imgui.GetWindowDrawList();
-				draw_list:AddRect({cursorX, cursorY}, {cursorX + dummyWidth, cursorY + dummyHeight}, 0xFF0000FF, 0, 0, 2);
+				drawList:AddRect({cursorX, cursorY}, {cursorX + dummyWidth, cursorY + dummyHeight}, 0xFF0000FF, 0, 0, 2);
 			end
 
 			-- Position gil amount text at top
-			local gilTextX, gilTextY;
-			if settings.rightAlign then
-				gilTextX = cursorX + textWidth + textOffsetX;
-			else
-				gilTextX = cursorX + textOffsetX;
-			end
-			gilTextY = cursorY + textOffsetY;
-			gilText:set_position_x(gilTextX);
-			gilText:set_position_y(gilTextY);
+			local textBaseX = cursorX + textOffsetX;
+			if rightAlign then textBaseX = textBaseX + dummyWidth - textWidth; end
+			gilDrawX = textBaseX;
+			gilDrawY = cursorY + textOffsetY;
 
 			-- Position gil/hr text below gil amount (right-aligned to match gil text's right edge)
 			if showGilPerHour then
-				-- gilPerHourText is right-aligned, so position_x is the RIGHT edge
-				-- Align to gil amount's right edge: cursorX + textWidth
-				local gphX = cursorX + textWidth + gphOffsetX;
-				local gphY = cursorY + textHeight + textSpacing + gphOffsetY;
-				gilPerHourText:set_position_x(gphX);
-				gilPerHourText:set_position_y(gphY);
+				gphDrawX = textBaseX + textWidth + gphOffsetX - gphWidth;
+				gphDrawY = cursorY + textHeight + textSpacing + gphOffsetY;
 			end
 		end
 
-		-- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
-		if (lastGilTextColor ~= gConfig.colorCustomization.gilTracker.textColor) then
-			gilText:set_font_color(gConfig.colorCustomization.gilTracker.textColor);
-			lastGilTextColor = gConfig.colorCustomization.gilTracker.textColor;
-		end
+		-- Draw gil amount text
+		local gilColor = gConfig.colorCustomization.gilTracker.textColor;
+		imtext.Draw(drawList, gilStr, gilDrawX, gilDrawY, gilColor, fontSize);
 
-		-- Set gil/hr visibility and color
+		-- Draw gil/hr or session net text
 		if showGilPerHour then
-
 			-- Set color based on positive/negative (green for positive, red for negative)
 			local gphColor;
 			if gilPerHour >= 0 then
@@ -424,20 +375,8 @@ giltracker.DrawWindow = function(settings)
 			else
 				gphColor = gConfig.colorCustomization.gilTracker.negativeColor or 0xFFFF0000; -- Red
 			end
-
-			if lastGilPerHourColor ~= gphColor then
-				gilPerHourText:set_font_color(gphColor);
-				lastGilPerHourColor = gphColor;
-			end
-
-			gilPerHourText:set_visible(true);
-		else
-			if gilPerHourText then
-				gilPerHourText:set_visible(false);
-			end
+			imtext.Draw(drawList, gilPerHourText_str, gphDrawX, gphDrawY, gphColor, fontSize);
 		end
-
-		gilText:set_visible(true);
 
 		-- Save position if moved (with change detection to avoid spam)
 		local winPosX, winPosY = imgui.GetWindowPos();
@@ -461,15 +400,6 @@ giltracker.DrawWindow = function(settings)
 end
 
 giltracker.Initialize = function(settings)
-	-- Use FontManager for cleaner font creation
-    gilText = FontManager.create(settings.font_settings);
-
-	-- Create font for gil per hour with RIGHT alignment (so it grows left, not pushing icon)
-	local gphFontSettings = deep_copy_table(settings.font_settings);
-	gphFontSettings.font_alignment = gdi.Alignment.Right;
-	gilPerHourText = FontManager.create(gphFontSettings);
-
-	allFonts = {gilText, gilPerHourText};
 	gilTexture = TextureManager.getFileTexture("gil");
 
 	-- Reset tracking state on initialize (addon load = fresh session)
@@ -485,33 +415,13 @@ giltracker.Initialize = function(settings)
 end
 
 giltracker.UpdateVisuals = function(settings)
-	-- Use FontManager for cleaner font recreation
-	gilText = FontManager.recreate(gilText, settings.font_settings);
-
-	-- Recreate gil per hour font with RIGHT alignment
-	local gphFontSettings = deep_copy_table(settings.font_settings);
-	gphFontSettings.font_alignment = gdi.Alignment.Right;
-	gilPerHourText = FontManager.recreate(gilPerHourText, gphFontSettings);
-
-	allFonts = {gilText, gilPerHourText};
-
-	-- Reset cached colors when fonts are recreated
-	lastGilTextColor = nil;
-	lastGilPerHourColor = nil;
+	imtext.Reset();
 end
 
 giltracker.SetHidden = function(hidden)
-	if (hidden == true) then
-		SetFontsVisible(allFonts, false);
-	end
 end
 
 giltracker.Cleanup = function()
-	-- Use FontManager for cleaner font destruction
-	gilText = FontManager.destroy(gilText);
-	gilPerHourText = FontManager.destroy(gilPerHourText);
-	allFonts = nil;
-
 	-- Clear tracking state
 	trackingStartGil = nil;
 	trackingStartTime = nil;

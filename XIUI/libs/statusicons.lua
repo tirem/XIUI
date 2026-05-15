@@ -5,7 +5,7 @@
 
 require('common');
 local imgui = require('imgui');
-local gdi = require('submodules.gdifonts.include');
+local imtext = require('libs.imtext');
 
 local M = {};
 
@@ -208,18 +208,11 @@ function M.ReorderBuffsClosest(statusIds, buffTableLib, statusSide, statusTimes)
     return reorderedStatusesBuffs;
 end
 
--- ========================================
--- Debuff Font Cache
--- ========================================
-local debuffTable = T{};
 
 local debuff_font_settings = T{
-    font_alignment = gdi.Alignment.Center,
-    font_family = 'Consolas',
     font_height = 14,
     font_color = 0xFFFFFFFF,
-    font_flags = gdi.FontFlags.Bold,
-    outline_color = 0xFF000000,
+    font_flags = 1,
     outline_width = 2,
 };
 
@@ -269,38 +262,17 @@ function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOf
                 -- Capture position BEFORE drawing icon to get accurate position
                 local iconPosX, iconPosY = imgui.GetCursorScreenPos();
                 imgui.Image(icon, { iconSize, iconSize }, { 0, 0 }, { 1, 1 });
-                local textObjName = "debuffText" .. tostring(i)
-                if buffTimes ~= nil then
-                    -- Calculate center of the icon for text positioning
-                    local textPosX = iconPosX + iconSize / 2
-                    local textPosY = iconPosY + iconSize  -- Move text below the icon
-
-                    local textObj = debuffTable[textObjName]
-                    -- Use passed settings if available, otherwise use default
+                if buffTimes ~= nil and buffTimes[i] ~= nil then
                     local font_base = settings or debuff_font_settings;
-                    if (textObj == nil) then
-                        local font_settings = T{
-                            font_alignment = font_base.font_alignment,
-                            font_family = gConfig.fontFamily,
-                            font_height = font_base.font_height,
-                            font_color = font_base.font_color,
-                            font_flags = font_base.font_flags,
-                            outline_color = font_base.outline_color,
-                            outline_width = font_base.outline_width,
-                        };
-                        textObj = gdi:create_object(font_settings)
-                        debuffTable[textObjName] = textObj
-                    end
+                    imtext.SetConfig(gConfig.fontFamily, bit.band(font_base.font_flags or 0, 1) ~= 0, font_base.outline_width or 2);
+                    local textPosX = iconPosX + iconSize / 2;
+                    local textPosY = iconPosY + iconSize;
+                    local timerText = tostring(buffTimes[i]);
                     local scaledFontHeight = gConfig.targetBarIconFontSize or font_base.font_height;
-                    textObj:set_font_height(scaledFontHeight)
-                    textObj:set_text('')
-                    if buffTimes[i] ~= nil then
-                        -- Text is center-aligned, so just use the calculated center position
-                        textObj:set_position_x(textPosX)
-                        textObj:set_position_y(textPosY)
-                        textObj:set_text(tostring(buffTimes[i]))
-                        textObj:set_visible(true);
-                    end
+                    local timerW, _ = imtext.Measure(timerText, scaledFontHeight);
+                    local drawList = GetUIDrawList();
+                    local timerColor = font_base.font_color or 0xFFFFFFFF;
+                    imtext.Draw(drawList, timerText, textPosX - timerW / 2, textPosY, timerColor, scaledFontHeight);
                 end
                 if (imgui.IsItemHovered()) then
                     statusHandler.render_tooltip(statusIds[i]);
@@ -322,27 +294,6 @@ function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOf
             end
         end
     end
-end
-
--- ========================================
--- Font Cache Management
--- ========================================
-
-function M.ClearDebuffFontCache()
-    -- Destroy all gdi font objects and clear entries
-    -- Important: Clear entries in-place instead of reassigning the table
-    -- to preserve the reference held by handlers/helpers.lua global export
-    for key, textObj in pairs(debuffTable) do
-        if textObj ~= nil then
-            gdi:destroy_object(textObj);
-        end
-        debuffTable[key] = nil;
-    end
-end
-
--- Get the debuff table (for external access if needed)
-function M.GetDebuffTable()
-    return debuffTable;
 end
 
 return M;

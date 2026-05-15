@@ -6,7 +6,7 @@
 
 require('common');
 require('handlers.helpers');
-local gdi = require('submodules.gdifonts.include');
+local imtext = require('libs.imtext');
 local primitives = require('primitives');
 local ffi = require('ffi');
 local windowBg = require('libs.windowbackground');
@@ -25,35 +25,6 @@ local petbar = {};
 petbar.Initialize = function(settings)
     -- Restore timers from config (session persistence)
     data.RestoreTimersFromConfig();
-
-    -- Create fonts
-    data.nameText = FontManager.create(settings.name_font_settings);
-    data.distanceText = FontManager.create(settings.distance_font_settings);
-
-    data.hpText = FontManager.create(settings.vitals_font_settings);
-    data.hpText:set_font_alignment(gdi.Alignment.Right);
-    data.mpText = FontManager.create(settings.vitals_font_settings);
-    data.mpText:set_font_alignment(gdi.Alignment.Right);
-    data.tpText = FontManager.create(settings.vitals_font_settings);
-    data.tpText:set_font_alignment(gdi.Alignment.Right);
-
-    -- BST timer fonts (jug countdown, charm elapsed)
-    data.bstTimerText = FontManager.create(settings.vitals_font_settings);
-
-    -- Full display mode fonts (recast name + timer for each slot)
-    data.recastNameFonts = {};
-    data.recastTimerFonts = {};
-    for i = 1, data.MAX_RECAST_SLOTS do
-        data.recastNameFonts[i] = FontManager.create(settings.vitals_font_settings);
-        data.recastTimerFonts[i] = FontManager.create(settings.vitals_font_settings);
-    end
-
-    data.allFonts = {data.nameText, data.distanceText, data.hpText, data.mpText, data.tpText, data.bstTimerText};
-    -- Add recast fonts to allFonts for batch visibility control
-    for i = 1, data.MAX_RECAST_SLOTS do
-        table.insert(data.allFonts, data.recastNameFonts[i]);
-        table.insert(data.allFonts, data.recastTimerFonts[i]);
-    end
 
     -- Load jug icon texture (via TextureManager)
     data.jugIconTexture = TextureManager.getFileTexture('pets/jug');
@@ -184,34 +155,8 @@ end
 -- UpdateVisuals
 -- ============================================
 petbar.UpdateVisuals = function(settings)
-    -- Recreate fonts
-    data.nameText = FontManager.recreate(data.nameText, settings.name_font_settings);
-    data.distanceText = FontManager.recreate(data.distanceText, settings.distance_font_settings);
+    imtext.Reset();
 
-    data.hpText = FontManager.recreate(data.hpText, settings.vitals_font_settings);
-    data.hpText:set_font_alignment(gdi.Alignment.Right);
-    data.mpText = FontManager.recreate(data.mpText, settings.vitals_font_settings);
-    data.mpText:set_font_alignment(gdi.Alignment.Right);
-    data.tpText = FontManager.recreate(data.tpText, settings.vitals_font_settings);
-    data.tpText:set_font_alignment(gdi.Alignment.Right);
-
-    -- BST timer fonts
-    data.bstTimerText = FontManager.recreate(data.bstTimerText, settings.vitals_font_settings);
-
-    -- Full display mode fonts
-    for i = 1, data.MAX_RECAST_SLOTS do
-        data.recastNameFonts[i] = FontManager.recreate(data.recastNameFonts[i], settings.vitals_font_settings);
-        data.recastTimerFonts[i] = FontManager.recreate(data.recastTimerFonts[i], settings.vitals_font_settings);
-    end
-
-    data.allFonts = {data.nameText, data.distanceText, data.hpText, data.mpText, data.tpText, data.bstTimerText};
-    for i = 1, data.MAX_RECAST_SLOTS do
-        table.insert(data.allFonts, data.recastNameFonts[i]);
-        table.insert(data.allFonts, data.recastTimerFonts[i]);
-    end
-
-    -- Clear cached colors
-    data.ClearColorCache();
 
     -- Background theme changes are now handled dynamically in data.UpdateBackground()
     -- based on per-pet-type settings
@@ -240,7 +185,6 @@ end
 -- ============================================
 petbar.SetHidden = function(hidden)
     if hidden then
-        data.SetAllFontsVisible(false);
         data.HideBackground();
         pettarget.SetHidden(true);
     end
@@ -250,28 +194,6 @@ end
 -- Cleanup
 -- ============================================
 petbar.Cleanup = function()
-    data.nameText = FontManager.destroy(data.nameText);
-    data.distanceText = FontManager.destroy(data.distanceText);
-    data.hpText = FontManager.destroy(data.hpText);
-    data.mpText = FontManager.destroy(data.mpText);
-    data.tpText = FontManager.destroy(data.tpText);
-    data.bstTimerText = FontManager.destroy(data.bstTimerText);
-
-    -- Cleanup full display mode fonts
-    if data.recastNameFonts then
-        for i = 1, data.MAX_RECAST_SLOTS do
-            data.recastNameFonts[i] = FontManager.destroy(data.recastNameFonts[i]);
-        end
-        data.recastNameFonts = nil;
-    end
-    if data.recastTimerFonts then
-        for i = 1, data.MAX_RECAST_SLOTS do
-            data.recastTimerFonts[i] = FontManager.destroy(data.recastTimerFonts[i]);
-        end
-        data.recastTimerFonts = nil;
-    end
-
-    data.allFonts = nil;
     data.jugIconTexture = nil;
 
     -- Cleanup background and border primitives using windowbackground library

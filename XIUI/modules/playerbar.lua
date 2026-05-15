@@ -1,30 +1,18 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
-local gdi = require('submodules.gdifonts.include');
+local imtext = require('libs.imtext');
 local progressbar = require('libs.progressbar');
 local buffTable = require('libs.bufftable');
 local castcostShared = require('modules.castcost.shared');
 local defaultPositions = require('libs.defaultpositions');
 
-local hpText;
-local mpText;
-local tpText;
-local allFonts; -- Table for batch visibility operations
 local resetPosNextFrame = false;
 
 -- Position save/restore state
 local hasAppliedSavedPosition = false;
 local forcePositionReset = false;
 local lastSavedPosX, lastSavedPosY = nil, nil;
-
--- Cache last set colors to avoid expensive SetColor() calls every frame
-local lastHpTextColor;
-local lastMpTextColor;
-local lastTpTextColor;
-
--- Reference text height for baseline alignment (prevents text jumping)
-local referenceTextHeight = 0;
 
 -- Cached interpolation colors (updated when config changes)
 local cachedInterpColors = nil;
@@ -51,12 +39,6 @@ local function getCachedInterpColors()
 	return cachedInterpColors;
 end
 
--- Note: getBaseWindowFlags moved to handlers/helpers.lua as GetBaseWindowFlags()
--- This local caching is no longer needed but kept for backwards compatibility
-local function getBaseWindowFlags()
-	return GetBaseWindowFlags(false);
-end
-
 local _XIUI_DEV_DEBUG_INTERPOLATION = false;
 local _XIUI_DEV_DEBUG_INTERPOLATION_DELAY, _XIUI_DEV_DEBUG_INTERPOLATION_NEXT_TIME;
 
@@ -72,14 +54,12 @@ playerbar.DrawWindow = function(settings)
 	local playerEnt = GetPlayerEntity();
 
 	if (party == nil or player == nil or playerEnt == nil) then
-		SetFontsVisible(allFonts, false);
 		return;
 	end
 
 	local currJob = player:GetMainJob();
 
     if (player.isZoning or currJob == 0) then
-		SetFontsVisible(allFonts, false);
         return;
 	end
 
@@ -94,7 +74,6 @@ playerbar.DrawWindow = function(settings)
 			end
 		end
 		if inParty then
-			SetFontsVisible(allFonts, false);
 			return;
 		end
 	end
@@ -282,6 +261,9 @@ playerbar.DrawWindow = function(settings)
     ApplyWindowPosition('PlayerBar');
     if (imgui.Begin('PlayerBar', true, windowFlags)) then
         SaveWindowPosition('PlayerBar');
+		local drawList = GetUIDrawList();
+		local fontSize = settings.font_settings.font_height;
+		imtext.SetConfigFromSettings(settings.font_settings);
 
 		local hpNameColor, hpGradient = GetCustomHpColors(SelfHPPercent/100, gConfig.colorCustomization.playerBar);
 
@@ -364,23 +346,23 @@ playerbar.DrawWindow = function(settings)
 		-- Draw resting ticker shimmer if enabled and player is resting
 		if gConfig.playerBarRestingTicker and playerEnt.Status == 33 then
 			local ticker = playerbar.restingTicker;
-			local currentTime = os.clock();
+			local tickerTime = os.clock();
 			
 			if not ticker.wasResting then
-				ticker.startTime = currentTime;
+				ticker.startTime = tickerTime;
 				ticker.wasResting = true;
 			end
 			
 			-- Progress: first tick 21s, then 10s cycles
-			local elapsed = currentTime - ticker.startTime;
+			local elapsed = tickerTime - ticker.startTime;
 			local progress = elapsed < 21 and (elapsed / 21) or ((elapsed - 21) % 10) / 10;
 			
 			-- Calculate shimmer position
-			local bookendWidth = gConfig.showPlayerBarBookends and (settings.barHeight / 2) or 0;
+			local shimmerBookendWidth = gConfig.showPlayerBarBookends and (settings.barHeight / 2) or 0;
 			local padding = 3.0;
-			local width = barSize - bookendWidth * 2 - (padding * 2);
+			local width = barSize - shimmerBookendWidth * 2 - (padding * 2);
 			local waveWidth = width * 0.06;
-			local x = hpBarStartX + bookendWidth + padding;
+			local x = hpBarStartX + shimmerBookendWidth + padding;
 			local y1 = hpBarStartY + padding;
 			local y2 = hpBarStartY + settings.barHeight - padding;
 			local waveLeft = x + (progress * (width - waveWidth));
@@ -498,10 +480,10 @@ playerbar.DrawWindow = function(settings)
 		local tpPulseConfig = nil;
 		if gConfig.playerBarTpFlashEnabled then
 			-- Get flash color from settings (ARGB) and convert to hex string
-			local flashColor = gConfig.colorCustomization.playerBar.tpFlashColor or 0xFF2fa9ff;
-			local r = bit.band(bit.rshift(flashColor, 16), 0xFF);
-			local g = bit.band(bit.rshift(flashColor, 8), 0xFF);
-			local b = bit.band(flashColor, 0xFF);
+			local tpFlashColor = gConfig.colorCustomization.playerBar.tpFlashColor or 0xFF2fa9ff;
+			local r = bit.band(bit.rshift(tpFlashColor, 16), 0xFF);
+			local g = bit.band(bit.rshift(tpFlashColor, 8), 0xFF);
+			local b = bit.band(tpFlashColor, 0xFF);
 			local flashHex = string.format('#%02x%02x%02x', r, g, b);
 			tpPulseConfig = {
 				flashHex, -- overlay pulse color
@@ -526,21 +508,7 @@ playerbar.DrawWindow = function(settings)
 
 		imgui.SameLine();
 
-		-- Dynamically set font heights based on settings (avoids expensive font recreation)
-		hpText:set_font_height(settings.font_settings.font_height);
-		mpText:set_font_height(settings.font_settings.font_height);
-		tpText:set_font_height(settings.font_settings.font_height);
-
-		-- Calculate reference height for baseline alignment (only once per font height change)
-		-- Include all characters used in display modes: numbers, percent, parentheses, slash, space
-		if referenceTextHeight == 0 or referenceTextHeight ~= settings.font_settings.font_height then
-			hpText:set_text("0123456789%() /");
-			local _, refHeight = hpText:get_text_size();
-			referenceTextHeight = refHeight;
-		end
-
-		-- Update our HP Text (using proper padding like exp bar)
-		-- Format HP text based on display mode setting
+		-- Draw HP text
 		local hpDisplayMode = gConfig.playerBarHpDisplayMode or 'number';
 		local hpDisplayText;
 		if hpDisplayMode == 'percent' then
@@ -556,39 +524,24 @@ playerbar.DrawWindow = function(settings)
 		else
 			hpDisplayText = tostring(SelfHP);
 		end
-		hpText:set_text(hpDisplayText);
-		-- Apply baseline offset to keep text baseline consistent
-		local _, hpTextHeight = hpText:get_text_size();
-		local hpBaselineOffset = referenceTextHeight - hpTextHeight;
+		local hpTextW, _ = imtext.Measure(hpDisplayText, fontSize);
 		-- Calculate position based on alignment
 		local hpTextX;
 		local hpAlignment = gConfig.playerBarHpTextAlignment or 'right';
 		if hpAlignment == 'left' then
 			hpTextX = hpBarStartX + bookendWidth + textPadding;
-			hpText:set_font_alignment(gdi.Alignment.Left);
 		elseif hpAlignment == 'center' then
-			hpTextX = hpBarStartX + (barSize / 2);
-			hpText:set_font_alignment(gdi.Alignment.Center);
+			hpTextX = hpBarStartX + (barSize / 2) - hpTextW / 2;
 		else -- right alignment (default)
-			hpTextX = hpBarStartX + barSize - bookendWidth - textPadding;
-			hpText:set_font_alignment(gdi.Alignment.Right);
+			hpTextX = hpBarStartX + barSize - bookendWidth - textPadding - hpTextW;
 		end
 		-- Apply user offset
 		hpTextX = hpTextX + (gConfig.playerBarHpTextOffsetX or 0);
 		local hpTextY = hpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarHpTextOffsetY or 0);
-		hpText:set_position_x(hpTextX);
-		hpText:set_position_y(hpTextY + hpBaselineOffset);
-		-- Only call set_font_color if the color has changed (expensive operation for GDI fonts)
-		if (lastHpTextColor ~= gConfig.colorCustomization.playerBar.hpTextColor) then
-			hpText:set_font_color(gConfig.colorCustomization.playerBar.hpTextColor);
-			lastHpTextColor = gConfig.colorCustomization.playerBar.hpTextColor;
-		end
-
-		hpText:set_visible(true);
+		imtext.Draw(drawList, hpDisplayText, hpTextX, hpTextY, gConfig.colorCustomization.playerBar.hpTextColor, fontSize);
 
 		if (bShowMp) then
-			-- Update our MP Text (using proper padding like exp bar)
-			-- Format MP text based on display mode setting
+			-- Draw MP text
 			local mpDisplayMode = gConfig.playerBarMpDisplayMode or 'number';
 			local mpDisplayText;
 			if mpDisplayMode == 'percent' then
@@ -604,68 +557,41 @@ playerbar.DrawWindow = function(settings)
 			else
 				mpDisplayText = tostring(SelfMP);
 			end
-			mpText:set_text(mpDisplayText);
-			-- Apply baseline offset to keep text baseline consistent
-			local _, mpTextHeight = mpText:get_text_size();
-			local mpBaselineOffset = referenceTextHeight - mpTextHeight;
+			local mpTextW, _ = imtext.Measure(mpDisplayText, fontSize);
 			-- Calculate position based on alignment
 			local mpTextX;
 			local mpAlignment = gConfig.playerBarMpTextAlignment or 'right';
 			if mpAlignment == 'left' then
 				mpTextX = mpBarStartX + bookendWidth + textPadding;
-				mpText:set_font_alignment(gdi.Alignment.Left);
 			elseif mpAlignment == 'center' then
-				mpTextX = mpBarStartX + (barSize / 2);
-				mpText:set_font_alignment(gdi.Alignment.Center);
+				mpTextX = mpBarStartX + (barSize / 2) - mpTextW / 2;
 			else -- right alignment (default)
-				mpTextX = mpBarStartX + barSize - bookendWidth - textPadding;
-				mpText:set_font_alignment(gdi.Alignment.Right);
+				mpTextX = mpBarStartX + barSize - bookendWidth - textPadding - mpTextW;
 			end
 			-- Apply user offset
 			mpTextX = mpTextX + (gConfig.playerBarMpTextOffsetX or 0);
 			local mpTextY = mpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarMpTextOffsetY or 0);
-			mpText:set_position_x(mpTextX);
-			mpText:set_position_y(mpTextY + mpBaselineOffset);
-			-- Only call set_font_color if the color has changed
-			if (lastMpTextColor ~= gConfig.colorCustomization.playerBar.mpTextColor) then
-				mpText:set_font_color(gConfig.colorCustomization.playerBar.mpTextColor);
-				lastMpTextColor = gConfig.colorCustomization.playerBar.mpTextColor;
-			end
+			imtext.Draw(drawList, mpDisplayText, mpTextX, mpTextY, gConfig.colorCustomization.playerBar.mpTextColor, fontSize);
 		end
 
-		mpText:set_visible(bShowMp);
-
-		-- Update our TP Text (using proper padding like exp bar)
-		tpText:set_text(tostring(SelfTP));
-		-- Apply baseline offset to keep text baseline consistent
-		local _, tpTextHeight = tpText:get_text_size();
-		local tpBaselineOffset = referenceTextHeight - tpTextHeight;
+		-- Draw TP text
+		local tpDisplayText = tostring(SelfTP);
+		local tpTextW, _ = imtext.Measure(tpDisplayText, fontSize);
 		-- Calculate position based on alignment
 		local tpTextX;
 		local tpAlignment = gConfig.playerBarTpTextAlignment or 'right';
 		if tpAlignment == 'left' then
 			tpTextX = tpBarStartX + bookendWidth + textPadding;
-			tpText:set_font_alignment(gdi.Alignment.Left);
 		elseif tpAlignment == 'center' then
-			tpTextX = tpBarStartX + (barSize / 2);
-			tpText:set_font_alignment(gdi.Alignment.Center);
+			tpTextX = tpBarStartX + (barSize / 2) - tpTextW / 2;
 		else -- right alignment (default)
-			tpTextX = tpBarStartX + barSize - bookendWidth - textPadding;
-			tpText:set_font_alignment(gdi.Alignment.Right);
+			tpTextX = tpBarStartX + barSize - bookendWidth - textPadding - tpTextW;
 		end
 		-- Apply user offset
 		tpTextX = tpTextX + (gConfig.playerBarTpTextOffsetX or 0);
 		local tpTextY = tpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarTpTextOffsetY or 0);
-		tpText:set_position_x(tpTextX);
-		tpText:set_position_y(tpTextY + tpBaselineOffset);
-		local desiredTpColor = (SelfTP >= 1000) and gConfig.colorCustomization.playerBar.tpFullTextColor or gConfig.colorCustomization.playerBar.tpEmptyTextColor;
-		-- Only call set_font_color if the color has changed
-		if (lastTpTextColor ~= desiredTpColor) then
-			tpText:set_font_color(desiredTpColor);
-			lastTpTextColor = desiredTpColor;
-		end
-
-		tpText:set_visible(true);
+		local tpTextColor = (SelfTP >= 1000) and gConfig.colorCustomization.playerBar.tpFullTextColor or gConfig.colorCustomization.playerBar.tpEmptyTextColor;
+		imtext.Draw(drawList, tpDisplayText, tpTextX, tpTextY, tpTextColor, fontSize);
 
 		-- Save position if moved (with change detection to avoid spam)
 		local winX, winY = imgui.GetWindowPos();
@@ -685,45 +611,19 @@ end
 
 
 playerbar.Initialize = function(settings)
-	-- Use FontManager for cleaner font creation
-    hpText = FontManager.create(settings.font_settings);
-	mpText = FontManager.create(settings.font_settings);
-	tpText = FontManager.create(settings.font_settings);
-	allFonts = {hpText, mpText, tpText};
 end
 
 playerbar.UpdateVisuals = function(settings)
-	-- Use FontManager for cleaner font recreation
-	hpText = FontManager.recreate(hpText, settings.font_settings);
-	mpText = FontManager.recreate(mpText, settings.font_settings);
-	tpText = FontManager.recreate(tpText, settings.font_settings);
-	allFonts = {hpText, mpText, tpText};
-
-	-- Reset cached colors when fonts are recreated
-	lastHpTextColor = nil;
-	lastMpTextColor = nil;
-	lastTpTextColor = nil;
-
-	-- Reset reference height so it gets recalculated with new font
-	referenceTextHeight = 0;
-
+	imtext.Reset();
 	-- Invalidate interpolation color cache (config may have changed)
 	cachedInterpColors = nil;
 	lastInterpColorConfig = nil;
 end
 
 playerbar.SetHidden = function(hidden)
-	if (hidden == true) then
-		SetFontsVisible(allFonts, false);
-	end
 end
 
 playerbar.Cleanup = function()
-	-- Use FontManager for cleaner font destruction
-	hpText = FontManager.destroy(hpText);
-	mpText = FontManager.destroy(mpText);
-	tpText = FontManager.destroy(tpText);
-	allFonts = nil;
 end
 
 playerbar.ResetPositions = function()

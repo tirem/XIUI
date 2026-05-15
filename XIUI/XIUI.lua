@@ -48,8 +48,6 @@ DEBUG_RAW_INPUT = false;
 require('common');
 local chat = require('chat');
 local settings = require('settings');
-local gdi = require('submodules.gdifonts.include');
-
 -- Core modules
 local settingsDefaults = require('core.settings.init');
 local settingsMigration = require('core.settings.migration');
@@ -81,6 +79,7 @@ local hotbar = uiMods.hotbar;
 local macropalette = require('modules.hotbar.macropalette');
 local palette = require('modules.hotbar.palette');
 local skillchainModule = require('modules.hotbar.skillchain');
+local slotrenderer = require('modules.hotbar.slotrenderer');
 local configMenu = require('config');
 local debuffHandler = require('handlers.debuffhandler');
 local petBuffHandler = require('handlers.petbuffhandler');
@@ -980,6 +979,9 @@ ashita.events.register('d3d_present', 'present_cb', function ()
             end
 
             configMenu.DrawWindow();
+
+            -- Render deferred hotbar tooltip after all modules (correct z-order)
+            slotrenderer.FlushTooltip();
         else
             uiModules.HideAll();
         end
@@ -1039,7 +1041,6 @@ ashita.events.register('unload', 'unload_cb', function ()
     statusHandler.clear_cache();
     progressbar.Cleanup();
     TextureManager.clear();
-    if ClearDebuffFontCache then ClearDebuffFontCache(); end
 
     uiModules.CleanupAll();
 
@@ -1047,7 +1048,7 @@ ashita.events.register('unload', 'unload_cb', function ()
         mobInfo.data.Cleanup();
     end
 
-    gdi:destroy_interface();
+
 end);
 
 ashita.events.register('command', 'command_cb', function (e)
