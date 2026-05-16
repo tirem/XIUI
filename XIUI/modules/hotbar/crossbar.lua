@@ -1019,9 +1019,6 @@ end
 function M.DrawWindow(settings, moduleSettings)
     if not state.initialized then return; end
 
-    -- Update recast timers once per frame
-    recast.Update();
-
     local slotSize = settings.slotSize or 48;
     local slotGapV = settings.slotGapV or 4;
     local slotGapH = settings.slotGapH or 4;

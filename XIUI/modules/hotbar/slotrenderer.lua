@@ -828,7 +828,7 @@ function M.DrawSlot(params)
         -- Center position
         local abbrX = x + (size - abbrW) / 2;
         local abbrY = y + size / 2 - 6;
-        imtext.Draw(drawList, abbr, abbrX, abbrY, abbrColor, 12);
+        imtext.DrawShadow(drawList, abbr, abbrX, abbrY, abbrColor, 12);
     end
 
     -- ========================================
@@ -849,7 +849,7 @@ function M.DrawSlot(params)
         local timerW = imtext.Measure(recastText, timerFontSize);
         local timerX = x + (size - timerW) / 2;
         local timerY = y + size / 2 - 6;
-        imtext.Draw(drawList, recastText, timerX, timerY, timerColor, timerFontSize);
+        imtext.DrawShadow(drawList, recastText, timerX, timerY, timerColor, timerFontSize);
     end
 
     -- ========================================
@@ -884,7 +884,7 @@ function M.DrawSlot(params)
         local lblW = imtext.Measure(params.labelText, lblFontSize);
         local labelX = x + (size - lblW) / 2 + (params.labelOffsetX or 0);
         local labelY = y + size + 2 + (params.labelOffsetY or 0);
-        imtext.Draw(drawList, params.labelText, labelX, labelY, labelColor, lblFontSize);
+        imtext.DrawShadow(drawList, params.labelText, labelX, labelY, labelColor, lblFontSize);
     end
 
     -- ========================================

@@ -566,9 +566,6 @@ end
 function M.DrawWindow(settings)
     -- Note: dragdrop.Update() is called from init.lua before this
 
-    -- Update recast timers once per frame
-    recast.Update();
-
     -- Initialize textures on first draw
     if not texturesInitialized then
         textures:Initialize();

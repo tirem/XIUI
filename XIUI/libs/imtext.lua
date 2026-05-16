@@ -268,4 +268,32 @@ function M.DrawSimple(drawList, text, x, y, argbColor, fontSize)
     end
 end
 
+--- Draw text with a single drop-shadow (2 AddText calls vs Draw's 5).
+--- Used by hot per-frame paths (hotbar slots) where the full 4-cardinal
+--- outline is too expensive when stacked with another addon also issuing
+--- many ImGui primitives. Visually a bottom-right shadow; legibility on
+--- bright backgrounds is close to a full outline at a fraction of the cost.
+function M.DrawShadow(drawList, text, x, y, argbColor, fontSize)
+    if not drawList or not text or text == '' then return; end
+    if fontSize then fontSize = fontSize + GDI_SIZE_OFFSET; end
+    local font = M.GetFont();
+    local col = argbToU32(argbColor);
+    local ow = outlineWidth;
+    if ow > 0 then
+        local shadowCol = getOutlineCol();
+        pos[1] = x + ow; pos[2] = y + ow;
+        if fontSize and font then
+            drawList:AddText(font, fontSize, pos, shadowCol, text);
+        else
+            drawList:AddText(pos, shadowCol, text);
+        end
+    end
+    pos[1] = x; pos[2] = y;
+    if fontSize and font then
+        drawList:AddText(font, fontSize, pos, col, text);
+    else
+        drawList:AddText(pos, col, text);
+    end
+end
+
 return M;

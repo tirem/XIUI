@@ -52,12 +52,14 @@ function M.GetPetCommandRecast(timerId)
     return abilityRecast.GetAbilityRecastSeconds(timerId);
 end
 
--- Cached spell recasts (refreshed periodically)
--- Key: spellId, Value: remaining seconds
+-- Cached spell recasts. Populated lazily by GetSpellRecast — only spell IDs
+-- actually queried during a frame get a memory hit. Previously this was a
+-- 1025-id scan every 50ms; with another action-heavy addon loaded that
+-- baseline ate frame budget that didn't need to be spent.
+-- Key: spellId, Value: remaining seconds (entry absent => 0).
 M.spellRecasts = {};
-
--- Frame tracking to prevent multiple updates per frame
-M.lastUpdateTime = 0;
+local spellRecastExpiry = {};      -- spellId -> os.clock() at which entry is stale
+local SPELL_RECAST_TTL = 0.05;     -- 20 Hz refresh, matches old prescan cadence
 
 -- Reusable result table for GetCooldownInfo to avoid GC pressure
 -- (Creating ~7200 tables/sec with 120 slots @ 60fps causes periodic GC hitches)
@@ -70,38 +72,26 @@ local cooldownResult = {
     itemId = nil,
 };
 
--- Update all spell recasts (call once per frame in DrawWindow)
-function M.Update()
-    local currentTime = os.clock();
-    -- Only update every 0.05 seconds (20 times per second)
-    if currentTime - M.lastUpdateTime < 0.05 then
-        return;
-    end
-    M.lastUpdateTime = currentTime;
-
-    -- Get spell recasts from Ashita memory
-    local recastMgr = AshitaCore:GetMemoryManager():GetRecast();
-    if not recastMgr then return; end
-
-    -- Clear table instead of replacing to avoid GC pressure
-    for k in pairs(M.spellRecasts) do
-        M.spellRecasts[k] = nil;
-    end
-
-    -- Scan spell recast timers (0-1024 covers all spells)
-    for spellId = 0, 1024 do
-        local timer = recastMgr:GetSpellTimer(spellId);
-        if timer and timer > 0 then
-            -- Timer is in 1/60th seconds, convert to seconds
-            M.spellRecasts[spellId] = timer / 60;
-        end
-    end
-end
-
--- Get spell recast by ID
--- Returns: remaining seconds, or 0 if ready
+-- Get spell recast by ID. Fetches from Ashita memory on cache miss / expiry,
+-- otherwise reuses the last value. TTL matches the old prescan interval so
+-- visible cooldown text refreshes at the same rate.
+-- Returns: remaining seconds, or 0 if ready.
 function M.GetSpellRecast(spellId)
     if not spellId then return 0; end
+    local now = os.clock();
+    local exp = spellRecastExpiry[spellId];
+    if exp and now < exp then
+        return M.spellRecasts[spellId] or 0;
+    end
+    local recastMgr = AshitaCore:GetMemoryManager():GetRecast();
+    if not recastMgr then return M.spellRecasts[spellId] or 0; end
+    local timer = recastMgr:GetSpellTimer(spellId);
+    if timer and timer > 0 then
+        M.spellRecasts[spellId] = timer / 60;
+    else
+        M.spellRecasts[spellId] = nil;
+    end
+    spellRecastExpiry[spellId] = now + SPELL_RECAST_TTL;
     return M.spellRecasts[spellId] or 0;
 end
 

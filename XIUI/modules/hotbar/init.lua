@@ -75,6 +75,28 @@ M.visible = true;
 -- Track hotbar enable/disable state for transitions
 local wasHotbarEnabled = nil;
 
+-- True if any hotbar bar or crossbar combo-mode has petAware enabled.
+-- Used to short-circuit the pet-change callback's cache wipes when no
+-- bar would actually rebind its slots in response.
+local function AnyBarIsPetAware()
+    for barIndex = 1, data.NUM_BARS do
+        local barSettings = data.GetBarSettings(barIndex);
+        if barSettings and barSettings.petAware then
+            return true;
+        end
+    end
+    local crossbarConfig = gConfig and gConfig.hotbarCrossbar;
+    local modeSettings = crossbarConfig and crossbarConfig.comboModeSettings;
+    if modeSettings then
+        for _, mode in pairs(modeSettings) do
+            if mode and mode.petAware then
+                return true;
+            end
+        end
+    end
+    return false;
+end
+
 -- ============================================
 -- Module Lifecycle
 -- ============================================
@@ -127,10 +149,23 @@ function M.Initialize(settings)
     -- Initialize display layer
     display.Initialize(settings);
 
-    -- Register pet change callback to clear slot caches
+    -- Register pet change callback to clear slot caches.
+    --
+    -- The wipes here are global (every hotbar slot, every crossbar slot,
+    -- macro palette pet commands). They're only meaningful for bars that
+    -- actually swap content on pet change — i.e. bars with petAware set.
+    -- If nothing on screen consumes pet state, summoning/releasing a pet
+    -- has no visible effect, and rebuilding every cache afterwards is pure
+    -- waste. The cost shows up most when another addon is also reacting
+    -- to combat traffic and the frame budget is tight.
     petpalette.OnPetChanged(function(oldPetKey, newPetKey)
-        -- Invalidate storage key cache (pet change affects storage keys)
+        -- Storage key cache is cheap to flip and is the only invalidation
+        -- whose absence could leave a bar showing pet-keyed slots after the
+        -- user toggled petAware off mid-pet. Always run it.
         data.InvalidateStorageKeyCache();
+
+        if not AnyBarIsPetAware() then return; end
+
         -- Clear ALL caches when pet changes to force full refresh
         slotrenderer.ClearAllCache();
         display.ClearIconCache();
