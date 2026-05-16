@@ -1147,9 +1147,10 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
-        -- Palette commands: /xiui palette <name|next|prev> [bar|all]
-        -- Switch between named palettes for hotbars
-        -- Use "all" to affect all bars at once (like tHotBar behavior)
+        -- Palette commands: /xiui palette <name|next|prev|list|first> [bar|all|crossbar]
+        -- Switch between named palettes. Hotbar palettes (bars 1-6) and the crossbar
+        -- have separate palette pools; "all" applies across both, "crossbar"/"cb"/"xb"
+        -- targets the crossbar only, a bar number targets a single hotbar.
         if (command_args[2] == 'palette' or command_args[2] == 'pal') then
             local paletteModule = require('modules.hotbar.palette');
             local hotbarData = require('modules.hotbar.data');
@@ -1157,14 +1158,15 @@ ashita.events.register('command', 'command_cb', function (e)
             local subjobId = hotbarData.subjobId or 0;
 
             if #command_args < 3 then
-                -- No argument - show current palette info and help
                 print('[XIUI] Palette commands:');
-                print('  /xiui palette <name> - Switch to a named palette');
-                print('  /xiui palette next - Cycle to next palette');
-                print('  /xiui palette prev - Cycle to previous palette');
-                print('  /xiui palette list - List available palettes');
-                print('  /xiui palette first - Switch to first palette');
+                print('  /xiui palette <name> [bar|all|crossbar] - Switch to a named palette');
+                print('  /xiui palette next [crossbar]            - Cycle to next palette');
+                print('  /xiui palette prev [crossbar]            - Cycle to previous palette');
+                print('  /xiui palette list [crossbar]            - List available palettes');
+                print('  /xiui palette first [crossbar]           - Switch to first palette');
                 print('');
+                print('Target: omit for hotbars + crossbar, "crossbar"/"cb"/"xb" for crossbar only,');
+                print('or a bar number 1-6 to target a single hotbar.');
                 print('Keybinds: Ctrl+Up/Down (configure in Hotbar > Palette Cycling)');
                 print('Controller: RB + Dpad Up/Down cycles palettes');
                 return;
@@ -1172,38 +1174,86 @@ ashita.events.register('command', 'command_cb', function (e)
 
             local action = command_args[3];
             local barArg = command_args[4];
-            local affectAll = (barArg == 'all');
-            local barIndex = affectAll and 1 or (tonumber(barArg) or 1);
 
-            -- Helper to apply action to bar(s)
-            local function applyToBar(idx)
-                return paletteModule.CyclePalette(idx, action == 'next' and 1 or -1, jobId, subjobId);
+            local function isCrossbarTarget(arg)
+                if not arg then return false; end
+                local lower = arg:lower();
+                return lower == 'crossbar' or lower == 'cb' or lower == 'xb';
             end
+
+            local affectAll = (barArg == 'all');
+            local affectCrossbar = isCrossbarTarget(barArg);
+            local barIndex = (affectAll or affectCrossbar) and 1 or (tonumber(barArg) or 1);
 
             if action == 'next' or action == 'prev' or action == 'previous' then
                 local direction = (action == 'next') and 1 or -1;
-                -- Global palette cycling - affects all bars at once
-                local result = paletteModule.CyclePalette(1, direction, jobId, subjobId);
-                if result then
-                    print('[XIUI] Palette: ' .. result);
+                local results = {};
+
+                if not affectCrossbar then
+                    -- Cycle hotbar palettes (global - bar 1 represents all hotbars)
+                    local hotbarResult = paletteModule.CyclePalette(1, direction, jobId, subjobId);
+                    if hotbarResult then
+                        table.insert(results, 'Hotbar: ' .. hotbarResult);
+                    end
+                end
+
+                -- Cycle crossbar palette (global across combo modes)
+                local crossbarResult = paletteModule.CyclePaletteForCombo(nil, direction, jobId, subjobId);
+                if crossbarResult then
+                    table.insert(results, 'Crossbar: ' .. crossbarResult);
+                end
+
+                if #results > 0 then
+                    print('[XIUI] Palette -> ' .. table.concat(results, ', '));
                 else
                     print('[XIUI] No palettes to cycle');
                 end
             elseif action == 'list' then
-                -- List available palettes
-                local palettes = paletteModule.GetAvailablePalettes(barIndex, jobId, subjobId);
-                local currentPalette = paletteModule.GetActivePaletteDisplayName(barIndex);
-                print('[XIUI] Bar ' .. barIndex .. ' palettes:');
-                for _, name in ipairs(palettes) do
-                    local marker = (name == currentPalette) and ' *' or '';
-                    print('  - ' .. name .. marker);
+                if not affectCrossbar then
+                    local palettes = paletteModule.GetAvailablePalettes(barIndex, jobId, subjobId);
+                    local currentPalette = paletteModule.GetActivePaletteDisplayName(barIndex);
+                    print('[XIUI] Bar ' .. barIndex .. ' palettes:');
+                    for _, name in ipairs(palettes) do
+                        local marker = (name == currentPalette) and ' *' or '';
+                        print('  - ' .. name .. marker);
+                    end
+                end
+
+                -- List crossbar palettes (omitted only when targeting a specific hotbar)
+                if affectCrossbar or not tonumber(barArg) then
+                    local crossbarPalettes = paletteModule.GetCrossbarAvailablePalettes(jobId, subjobId);
+                    local activeCrossbar = paletteModule.GetActivePaletteDisplayNameForCombo();
+                    print('[XIUI] Crossbar palettes:');
+                    if #crossbarPalettes == 0 then
+                        print('  (none defined)');
+                    else
+                        for _, name in ipairs(crossbarPalettes) do
+                            local marker = (name == activeCrossbar) and ' *' or '';
+                            print('  - ' .. name .. marker);
+                        end
+                    end
                 end
             elseif action == 'base' or action == 'reset' or action == 'first' then
-                -- Switch to first palette
-                local palettes = paletteModule.GetAvailablePalettes(1, jobId, subjobId);
-                if #palettes > 0 then
-                    paletteModule.SetActivePalette(1, palettes[1]);
-                    print('[XIUI] Palette: ' .. palettes[1]);
+                local firstNames = {};
+
+                if not affectCrossbar then
+                    local palettes = paletteModule.GetAvailablePalettes(1, jobId, subjobId);
+                    if #palettes > 0 then
+                        for i = 1, 6 do
+                            paletteModule.SetActivePalette(i, palettes[1]);
+                        end
+                        table.insert(firstNames, 'Hotbar: ' .. palettes[1]);
+                    end
+                end
+
+                local crossbarPalettes = paletteModule.GetCrossbarAvailablePalettes(jobId, subjobId);
+                if #crossbarPalettes > 0 then
+                    paletteModule.SetActivePaletteForCombo(nil, crossbarPalettes[1]);
+                    table.insert(firstNames, 'Crossbar: ' .. crossbarPalettes[1]);
+                end
+
+                if #firstNames > 0 then
+                    print('[XIUI] Palette -> ' .. table.concat(firstNames, ', '));
                 else
                     print('[XIUI] No palettes available');
                 end
@@ -1213,22 +1263,25 @@ ashita.events.register('command', 'command_cb', function (e)
                 local originalArgs = e.command:args();
                 local paletteName = originalArgs[3];  -- Use original case
                 local targetIsAll = false;
+                local targetIsCrossbar = false;
 
                 if #originalArgs >= 4 then
                     local lastArg = originalArgs[#originalArgs];
-                    if lastArg:lower() == 'all' then
+                    local lastLower = lastArg:lower();
+                    local isAllSuffix = (lastLower == 'all');
+                    local isCrossbarSuffix = isCrossbarTarget(lastArg);
+                    local isBarSuffix = tonumber(lastArg) ~= nil;
+
+                    if isAllSuffix then
                         targetIsAll = true;
-                        -- Palette name is everything between arg 3 and "all"
-                        if #originalArgs > 4 then
-                            local nameParts = {};
-                            for i = 3, #originalArgs - 1 do
-                                table.insert(nameParts, originalArgs[i]);
-                            end
-                            paletteName = table.concat(nameParts, ' ');
-                        end
-                    elseif tonumber(lastArg) then
+                    elseif isCrossbarSuffix then
+                        targetIsCrossbar = true;
+                    elseif isBarSuffix then
                         barIndex = tonumber(lastArg);
-                        -- Palette name is everything between arg 3 and the bar number
+                    end
+
+                    if isAllSuffix or isCrossbarSuffix or isBarSuffix then
+                        -- Palette name is everything between arg 3 and the suffix
                         if #originalArgs > 4 then
                             local nameParts = {};
                             for i = 3, #originalArgs - 1 do
@@ -1237,7 +1290,7 @@ ashita.events.register('command', 'command_cb', function (e)
                             paletteName = table.concat(nameParts, ' ');
                         end
                     else
-                        -- No bar number or "all", palette name is all remaining args
+                        -- No suffix, palette name is all remaining args
                         local nameParts = {};
                         for i = 3, #originalArgs do
                             table.insert(nameParts, originalArgs[i]);
@@ -1246,8 +1299,15 @@ ashita.events.register('command', 'command_cb', function (e)
                     end
                 end
 
-                if targetIsAll then
-                    -- Apply to all bars
+                if targetIsCrossbar then
+                    if paletteModule.CrossbarPaletteExists(paletteName, jobId, subjobId) then
+                        paletteModule.SetActivePaletteForCombo(nil, paletteName);
+                        print('[XIUI] Crossbar palette: ' .. paletteName);
+                    else
+                        print('[XIUI] Crossbar palette "' .. paletteName .. '" not found');
+                    end
+                elseif targetIsAll then
+                    -- Apply across all hotbars and the crossbar
                     local anyFound = false;
                     for i = 1, 6 do
                         if paletteModule.PaletteExists(i, paletteName, jobId, subjobId) then
@@ -1255,13 +1315,17 @@ ashita.events.register('command', 'command_cb', function (e)
                             anyFound = true;
                         end
                     end
+                    if paletteModule.CrossbarPaletteExists(paletteName, jobId, subjobId) then
+                        paletteModule.SetActivePaletteForCombo(nil, paletteName);
+                        anyFound = true;
+                    end
                     if anyFound then
                         print('[XIUI] All bars palette: ' .. paletteName);
                     else
                         print('[XIUI] Palette "' .. paletteName .. '" not found');
                     end
                 else
-                    -- Apply to single bar
+                    -- Apply to single hotbar
                     if paletteModule.PaletteExists(barIndex, paletteName, jobId, subjobId) then
                         paletteModule.SetActivePalette(barIndex, paletteName);
                         print('[XIUI] Bar ' .. barIndex .. ' palette: ' .. paletteName);
