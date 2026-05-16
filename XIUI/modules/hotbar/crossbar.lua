@@ -235,7 +235,9 @@ local function BuildCrossbarBindKey(slotData)
     return (slotData.actionType or '') .. ':' .. (slotData.action or '') .. ':' .. (slotData.target or '') .. iconPart;
 end
 
--- Get cached icon for a crossbar slot, recompute only if bind changed
+-- Get cached icon (and precomputed abbreviation, when no icon) for a crossbar slot.
+-- Returns: icon, abbr, abbrW. Mirrors display.lua's GetCachedIcon shape so DrawSlot
+-- can skip GetActionAbbreviation + imtext.Measure per frame.
 local function GetCachedCrossbarIcon(comboMode, slotIndex, slotData)
     -- Use effective combo mode for cache key (Shared when shared expanded bar is enabled)
     comboMode = data.GetEffectiveComboModeForStorage and data.GetEffectiveComboModeForStorage(comboMode) or comboMode;
@@ -249,23 +251,29 @@ local function GetCachedCrossbarIcon(comboMode, slotIndex, slotData)
     -- Check if we have a valid cache entry for this bind
     local bindKey = BuildCrossbarBindKey(slotData);
     if cached and cached.bindKey == bindKey then
-        -- Cache hit - return icon even if nil (nil = no icon exists)
-        return cached.icon;
+        return cached.icon, cached.abbr, cached.abbrW;
     end
 
-    -- Cache miss - compute icon
+    -- Cache miss - compute icon and (when no icon) the abbreviation
     local icon = nil;
     if slotData and slotData.actionType then
         icon = actions.GetBindIcon(slotData);
+    end
+
+    local abbr, abbrW = nil, nil;
+    if not icon and slotData then
+        abbr, abbrW = slotrenderer.ComputeAbbreviation(slotData);
     end
 
     -- Store in cache
     iconCache[comboMode][slotIndex] = {
         bindKey = bindKey,
         icon = icon,
+        abbr = abbr,
+        abbrW = abbrW,
     };
 
-    return icon;
+    return icon, abbr, abbrW;
 end
 
 -- Clear crossbar icon cache
@@ -680,8 +688,8 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
     -- Get slot data
     local slotData = data.GetCrossbarSlotData(comboMode, slotIndex);
 
-    -- Get icon for this action (cached - only rebuilds when bind changes)
-    local icon = GetCachedCrossbarIcon(comboMode, slotIndex, slotData);
+    -- Get icon + cached abbreviation for this action (cached - only rebuilds when bind changes)
+    local icon, cachedAbbr, cachedAbbrW = GetCachedCrossbarIcon(comboMode, slotIndex, slotData);
 
     -- Update reusable params table in-place
     local p = cbParams;
@@ -689,6 +697,8 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
     p.y = drawY;
     p.size = slotSize;
     p.windowName = 'Crossbar';
+    p.cachedAbbr = cachedAbbr;
+    p.cachedAbbrW = cachedAbbrW;
     p.bind = slotData;
     p.icon = icon;
     p.slotBgColor = settings.slotBackgroundColor or 0x55000000;
@@ -1384,6 +1394,9 @@ function M.UpdateVisuals(settings, moduleSettings)
 
     -- Clear slot cache so text re-renders with new settings
     slotrenderer.ClearAllCache();
+
+    -- Drop cached abbreviation widths (depend on the active font) so they re-measure.
+    ClearCrossbarIconCache();
 end
 
 -- ============================================

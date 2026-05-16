@@ -131,6 +131,20 @@ local function ClearAllIconCaches()
     if slotrenderer and slotrenderer.ClearSlotRenderingCache then
         slotrenderer.ClearSlotRenderingCache();
     end
+    -- Edits that change a macro's action leave the old actionType:action entry
+    -- orphaned in mpCostCache / availabilityCache. Functionally fine (the new key
+    -- naturally misses), but bounds memory across many edits.
+    if slotrenderer and slotrenderer.ClearMPCostCache then
+        slotrenderer.ClearMPCostCache();
+    end
+    if slotrenderer and slotrenderer.ClearAvailabilityCache then
+        slotrenderer.ClearAvailabilityCache();
+    end
+    -- Clear the icon-resolution negative cache so newly-added custom icons
+    -- on edited macros are picked up next frame.
+    if actions and actions.ClearNoIconCache then
+        actions.ClearNoIconCache();
+    end
 end
 
 -- Helper to clear icon cache for a single hotbar slot (targeted - fast)

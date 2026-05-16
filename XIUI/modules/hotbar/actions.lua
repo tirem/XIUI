@@ -181,6 +181,29 @@ end
 -- Cache for custom icons loaded from disk
 local customIconCache = {};
 
+-- Negative-result cache: keyed strings for which GetBindIcon already returned nil.
+-- Skips the lookup work (hashmap probes, GetSpellByName, name->id scans) on subsequent
+-- cache misses in display.iconCache. Invalidated whenever an upstream cache that affects
+-- icon resolution is wiped (job/pet/palette change, macroDB edit).
+local noIconCache = {};
+
+-- Build a key for noIconCache from the fields GetBindIcon branches on.
+-- Includes macroRef because the macro lookup at the top of GetBindIcon
+-- can change a slot's icon resolution.
+local function buildNoIconKey(bind)
+    if not bind then return nil; end
+    local key = (bind.actionType or '') .. ':' .. (bind.action or '');
+    if bind.customIconType or bind.customIconId or bind.customIconPath then
+        key = key .. ':ci:' .. (bind.customIconType or '')
+                  .. ':' .. tostring(bind.customIconId or '')
+                  .. ':' .. (bind.customIconPath or '');
+    end
+    if bind.macroRef then
+        key = key .. ':mr:' .. tostring(bind.macroRef);
+    end
+    return key;
+end
+
 -- Mapping from summoning spell names to texture cache keys
 -- Spell names (as they appear in-game) -> texture key (as loaded in textures.lua)
 local summonSpellToIconKey = {
@@ -360,16 +383,25 @@ local itemIconCache = {};
 -- Helper Functions
 -- ============================================
 
+-- O(1) lookup from English spell name -> horizonSpells entry. Built lazily on first use.
+local spellByNameLookup = nil;
+
+local function buildSpellByNameLookup()
+    spellByNameLookup = {};
+    for _, spell in pairs(horizonSpells) do
+        if spell.en then
+            spellByNameLookup[spell.en] = spell;
+        end
+    end
+end
+
 --- Find a spell by English name in horizonspells
 ---@param spellName string The English name of the spell
 ---@return table|nil The spell data table with en, icon_id, prefix, and id fields
 local function GetSpellByName(spellName)
-    for _, spell in pairs(horizonSpells) do
-        if spell.en == spellName then
-            return spell;
-        end
-    end
-    return nil;
+    if not spellName then return nil; end
+    if not spellByNameLookup then buildSpellByNameLookup(); end
+    return spellByNameLookup[spellName];
 end
 
 --- Get MP cost for an action (only applicable to magic spells)
@@ -577,6 +609,12 @@ function M.GetBindIcon(bind)
         return nil, nil;
     end
 
+    -- Negative cache: if we've already determined this bind has no icon, skip the lookups.
+    local noIconKey = buildNoIconKey(bind);
+    if noIconKey and noIconCache[noIconKey] then
+        return nil, nil;
+    end
+
     local icon = nil;
     local iconId = nil;
 
@@ -699,17 +737,7 @@ function M.GetBindIcon(bind)
             icon = textures:Get(otherIconKey);
             if icon then return icon, iconId; end
         end
-        -- Job ability - try to get from game resources
-        local resMgr = AshitaCore:GetResourceManager();
-        if resMgr then
-            for abilityId = 1, 1024 do
-                local ability = resMgr:GetAbilityById(abilityId);
-                if ability and ability.Name and ability.Name[1] == bind.action then
-                    iconId = abilityId;
-                    break;
-                end
-            end
-        end
+        -- No further icon source for generic job abilities; abbreviation fallback handles display.
     elseif bind.actionType == 'pet' then
         -- Check for pet command icons first
         local petIconKey = petCommandToIconKey[bind.action];
@@ -720,17 +748,7 @@ function M.GetBindIcon(bind)
             end
         end
     elseif bind.actionType == 'ws' then
-        -- Weaponskill - try to get from game resources
-        local resMgr = AshitaCore:GetResourceManager();
-        if resMgr then
-            for wsId = 1, 255 do
-                local ability = resMgr:GetAbilityById(wsId + 256);
-                if ability and ability.Name and ability.Name[1] == bind.action then
-                    iconId = wsId;
-                    break;
-                end
-            end
-        end
+        -- No icon source for weaponskills; abbreviation fallback handles display.
     elseif bind.actionType == 'item' or bind.actionType == 'equip' then
         -- Item or Equipment - load icon from game resources
         -- Use itemId if available (faster), otherwise fall back to name lookup
@@ -739,6 +757,12 @@ function M.GetBindIcon(bind)
         else
             icon = LoadItemIconByName(bind.action);
         end
+    end
+
+    -- Memoize negative results so future cache misses (after display.iconCache wipes)
+    -- skip the lookup work for binds that have no resolvable icon.
+    if not icon and noIconKey then
+        noIconCache[noIconKey] = true;
     end
 
     return icon, iconId;
@@ -1218,6 +1242,13 @@ end
 -- Clear the custom icon cache (call when icons may have changed)
 function M.ClearCustomIconCache()
     customIconCache = {};
+end
+
+-- Clear the negative-result cache. Must be called whenever something upstream
+-- could change icon resolution: macroDB edits, job/pet/palette changes, custom
+-- icon asset changes. Failing to clear it pins stale "no icon" decisions.
+function M.ClearNoIconCache()
+    noIconCache = {};
 end
 
 --- Set debug mode (called via /xiui debug hotbar)
