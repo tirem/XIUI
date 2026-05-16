@@ -1189,10 +1189,14 @@ function M.BeginFrame(fontSettings)
     tooltipFontSettings = fontSettings;
 end
 
--- Call after all hotbar/crossbar windows are done to render the tooltip on top
--- Also renders the drag tooltip (using the same DrawTooltip path) so dragging
--- a slot/macro shows the same styled tooltip as hovering, and lands on the
--- correct z-layer (above the hotbar windows).
+-- Size of the abbreviation "pick-up" tile that follows the cursor on icon-less drags.
+-- Matches dragdrop's default icon size so the two drag visuals have the same weight.
+local DRAG_ABBR_TILE_SIZE = 32;
+
+-- Call after all hotbar/crossbar windows are done to render the tooltip on top.
+-- Also renders the drag tooltip and (for drags with no icon) a mini "abbreviation
+-- tile" at the cursor so the user has something to carry. Everything lands on the
+-- foreground draw list, above the hotbar windows.
 function M.FlushTooltip()
     if pendingTooltipBind then
         M.DrawTooltip(pendingTooltipBind);
@@ -1202,12 +1206,38 @@ function M.FlushTooltip()
 
     -- Hover tooltip is suppressed during drag (see DrawSlot's showTooltip gate),
     -- so we never render both in the same frame.
-    if dragdrop.IsDragging() then
-        local payload = dragdrop.GetPayload();
-        if payload and payload.data and payload.data.actionType then
-            M.DrawTooltip(payload.data);
+    if not dragdrop.IsDragging() then return; end
+
+    local payload = dragdrop.GetPayload();
+    if not (payload and payload.data and payload.data.actionType) then return; end
+
+    -- When the drag payload has no icon, draw a slot-shaped tile with the
+    -- abbreviation centered on it at the cursor. Mirrors the hotbar's own
+    -- abbreviation slot look so it reads as "you picked up this slot."
+    if not (payload.icon and payload.icon.image) then
+        local fgList = imgui.GetForegroundDrawList();
+        if fgList then
+            local mx, my = imgui.GetMousePos();
+            local tileX = mx - 4;
+            local tileY = my - 4;
+
+            local slotPtr = GetCachedTexturePtr(GetSlotTexPath());
+            if slotPtr then
+                imgP1[1] = tileX;                       imgP1[2] = tileY;
+                imgP2[1] = tileX + DRAG_ABBR_TILE_SIZE; imgP2[2] = tileY + DRAG_ABBR_TILE_SIZE;
+                fgList:AddImage(slotPtr, imgP1, imgP2, UV0, UV1, 0xFFFFFFFF);
+            end
+
+            local abbr = GetActionAbbreviation(payload.data);
+            local abbrW = imtext.Measure(abbr, 12);
+            local abbrX = tileX + (DRAG_ABBR_TILE_SIZE - abbrW) / 2;
+            local abbrY = tileY + DRAG_ABBR_TILE_SIZE / 2 - 6;
+            -- Gold matches the in-slot abbreviation color (R=244, G=218, B=151)
+            imtext.Draw(fgList, abbr, abbrX, abbrY, 0xFFF4DA97, 12);
         end
     end
+
+    M.DrawTooltip(payload.data);
 end
 
 return M;
