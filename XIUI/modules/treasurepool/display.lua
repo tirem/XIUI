@@ -174,32 +174,36 @@ function M.DrawWindow(settings)
     -- Don't auto-switch tabs - let users control which tab they're viewing
     -- Each tab will show an appropriate empty state message if it has no content
 
-    -- Get settings with validation
+    -- Get settings with validation. globalScale (gs) stacks on top of per-module scales.
+    local gs = gConfig.globalScale or 1.0;
     local scaleX = gConfig.treasurePoolScaleX;
     if scaleX == nil or scaleX < 0.5 then scaleX = 1.0; end
+    scaleX = scaleX * gs;
 
     local scaleY = gConfig.treasurePoolScaleY;
     if scaleY == nil or scaleY < 0.5 then scaleY = 1.0; end
+    scaleY = scaleY * gs;
 
     local fontSize = gConfig.treasurePoolFontSize;
     if fontSize == nil or fontSize < 8 then fontSize = 10; end
+    fontSize = fontSize * gs;
 
     local showTitle = true;  -- Always show title
     local showTimerBar = gConfig.treasurePoolShowTimerBar ~= false;
     local showTimerText = gConfig.treasurePoolShowTimerText ~= false;
     local showLots = gConfig.treasurePoolShowLots ~= false;
-    -- Split background/border settings
-    local bgScale = gConfig.treasurePoolBgScale or 1.0;
-    local borderScale = gConfig.treasurePoolBorderScale or 1.0;
+    -- Split background/border settings (also scaled by gs so textures grow with rest of UI)
+    local bgScale = (gConfig.treasurePoolBgScale or 1.0) * gs;
+    local borderScale = (gConfig.treasurePoolBorderScale or 1.0) * gs;
     local bgOpacity = gConfig.treasurePoolBackgroundOpacity or 0.87;
     local borderOpacity = gConfig.treasurePoolBorderOpacity or 1.0;
     local bgTheme = gConfig.treasurePoolBackgroundTheme or 'Plain';
     local isExpanded = gConfig.treasurePoolExpanded == true;
     local isMinimized = gConfig.treasurePoolMinimized == true;
 
-    -- Calculate dimensions (different for expanded vs collapsed)
+    -- Calculate dimensions (different for expanded vs collapsed). scaleX/scaleY already include gs.
     local iconSize = math.floor(ICON_SIZE * scaleY);
-    local padding = PADDING;
+    local padding = math.floor(PADDING * gs);
     local iconTextGap = math.floor(ICON_TEXT_GAP * scaleX);
     local rowSpacing = math.floor(ROW_SPACING * scaleY);
     local barHeight = math.floor(BAR_HEIGHT * scaleY);

@@ -521,9 +521,10 @@ playerbar.DrawWindow = function(settings)
 		else -- right alignment (default)
 			hpTextX = hpBarStartX + barSize - bookendWidth - textPadding - hpTextW;
 		end
-		-- Apply user offset
-		hpTextX = hpTextX + (gConfig.playerBarHpTextOffsetX or 0);
-		local hpTextY = hpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarHpTextOffsetY or 0);
+		-- Apply user offset (scaled by global UI scale)
+		local gs = gConfig.globalScale or 1.0;
+		hpTextX = hpTextX + (gConfig.playerBarHpTextOffsetX or 0) * gs;
+		local hpTextY = hpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarHpTextOffsetY or 0) * gs;
 		imtext.Draw(drawList, hpDisplayText, hpTextX, hpTextY, gConfig.colorCustomization.playerBar.hpTextColor, fontSize);
 
 		if (bShowMp) then
@@ -554,9 +555,9 @@ playerbar.DrawWindow = function(settings)
 			else -- right alignment (default)
 				mpTextX = mpBarStartX + barSize - bookendWidth - textPadding - mpTextW;
 			end
-			-- Apply user offset
-			mpTextX = mpTextX + (gConfig.playerBarMpTextOffsetX or 0);
-			local mpTextY = mpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarMpTextOffsetY or 0);
+			-- Apply user offset (scaled by global UI scale)
+			mpTextX = mpTextX + (gConfig.playerBarMpTextOffsetX or 0) * gs;
+			local mpTextY = mpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarMpTextOffsetY or 0) * gs;
 			imtext.Draw(drawList, mpDisplayText, mpTextX, mpTextY, gConfig.colorCustomization.playerBar.mpTextColor, fontSize);
 		end
 
@@ -573,9 +574,9 @@ playerbar.DrawWindow = function(settings)
 		else -- right alignment (default)
 			tpTextX = tpBarStartX + barSize - bookendWidth - textPadding - tpTextW;
 		end
-		-- Apply user offset
-		tpTextX = tpTextX + (gConfig.playerBarTpTextOffsetX or 0);
-		local tpTextY = tpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarTpTextOffsetY or 0);
+		-- Apply user offset (scaled by global UI scale)
+		tpTextX = tpTextX + (gConfig.playerBarTpTextOffsetX or 0) * gs;
+		local tpTextY = tpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarTpTextOffsetY or 0) * gs;
 		local tpTextColor = (SelfTP >= 1000) and gConfig.colorCustomization.playerBar.tpFullTextColor or gConfig.colorCustomization.playerBar.tpEmptyTextColor;
 		imtext.Draw(drawList, tpDisplayText, tpTextX, tpTextY, tpTextColor, fontSize);
 
