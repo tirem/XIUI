@@ -35,7 +35,7 @@ local function buildJobString(player, jobLevel, masteryEnabled, mlJobLevel)
     local subJobString = AshitaCore:GetResourceManager():GetString('jobs.names_abbr', player:GetSubJob());
 
     local jobLevelString = tostring(jobLevel);
-    if masteryEnabled then
+    if masteryEnabled and mlJobLevel > 0 then
         jobLevelString = 'ML' .. mlJobLevel;
     end
 
@@ -44,7 +44,7 @@ end
 
 local function buildExpString(separator, masteryEnabled, meritMode, jobLevel, jobPoints, meritPoints, limitPoints, capPoints, expPoints, mastery)
     if masteryEnabled then
-        return separator .. 'JP (' .. jobPoints[1] .. ' / ' .. jobPoints[2] .. ')' .. '  MP (' .. meritPoints[1] .. ' / ' .. meritPoints[2] .. ')' .. '  EXP (' .. mastery[1] .. ' / ' .. mastery[2] .. ')';
+        return separator .. 'JP (' .. jobPoints[1] .. ' / ' .. jobPoints[2] .. ')' .. '  MP (' .. meritPoints[1] .. ' / ' .. meritPoints[2] .. ')' .. '  EXEMP (' .. mastery[1] .. ' / ' .. mastery[2] .. ')';
     elseif meritMode then
         if jobLevel >= 99 then
             return separator .. 'JP (' .. jobPoints[1] .. '/' .. jobPoints[2] .. ') MP (' .. meritPoints[1] .. '/' .. meritPoints[2] .. ') LP (' .. limitPoints[1] .. '/' .. limitPoints[2] .. ')';
@@ -108,8 +108,9 @@ expbar.DrawWindow = function(settings)
     local capPointsProgress = expbar.capacityPoints[1] / expbar.capacityPoints[2];
     local jobPoints = expbar.jobPoints;
 
-    local mastered = player:GetJobPointsSpent(mainJob) == 2100;
-    local masteryEnabled = jobLevel >= 99 and mastered and player:HasKeyItem(expbar.mlBreakerItemId);
+    local mastered = player:GetJobPointsSpent(mainJob) >= 2100;
+    local autoMasteryEnabled = jobLevel >= 99 and mastered and player:HasKeyItem(expbar.mlBreakerItemId);
+    local masteryEnabled = jobLevel >= 99 and (autoMasteryEnabled or gConfig.expBarMasteryMode);
     local masteryProgress = 0;
     local mlJobLevel = 0;
     if masteryEnabled then
