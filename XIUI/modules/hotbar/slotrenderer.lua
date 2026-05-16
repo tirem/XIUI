@@ -1190,10 +1190,23 @@ function M.BeginFrame(fontSettings)
 end
 
 -- Call after all hotbar/crossbar windows are done to render the tooltip on top
+-- Also renders the drag tooltip (using the same DrawTooltip path) so dragging
+-- a slot/macro shows the same styled tooltip as hovering, and lands on the
+-- correct z-layer (above the hotbar windows).
 function M.FlushTooltip()
     if pendingTooltipBind then
         M.DrawTooltip(pendingTooltipBind);
         pendingTooltipBind = nil;
+        return;
+    end
+
+    -- Hover tooltip is suppressed during drag (see DrawSlot's showTooltip gate),
+    -- so we never render both in the same frame.
+    if dragdrop.IsDragging() then
+        local payload = dragdrop.GetPayload();
+        if payload and payload.data and payload.data.actionType then
+            M.DrawTooltip(payload.data);
+        end
     end
 end
 
