@@ -1569,6 +1569,10 @@ local function DrawVisualSettingsContent(settings, configKey)
         end
         imgui.ShowHelp('Display item quantity on item slots. Choose anchor position and fine-tune with X/Y offsets.');
 
+        -- Show full-stack count above the item quantity (only counts complete stacks)
+        components.DrawPartyCheckbox(settings, 'Show Stack Quantity##' .. configKey, 'showStackQuantity');
+        imgui.ShowHelp('Show full-stack count next to the item quantity. Only complete stacks are counted (e.g. 25 of stack-12 items shows "(2)"). Shares position/font with Show Item Quantity.');
+
         -- Show Action Labels with offsets
         components.DrawPartyCheckbox(settings, 'Show Action Labels##' .. configKey, 'showActionLabels');
         if settings.showActionLabels then
@@ -2250,6 +2254,10 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
                     components.DrawInlineOffsets(crossbarSettings, 'crossbarqty', 'quantityOffsetX', 'quantityOffsetY', 35);
                 end
                 imgui.ShowHelp('Display item quantity on item slots. X/Y offsets adjust position.');
+
+                -- Show full-stack count above the item quantity (only counts complete stacks)
+                components.DrawPartyCheckbox(crossbarSettings, 'Show Stack Quantity##crossbar', 'showStackQuantity');
+                imgui.ShowHelp('Show full-stack count next to the item quantity. Only complete stacks are counted (e.g. 25 of stack-12 items shows "(2)"). Shares position/font with Show Item Quantity.');
 
                 -- Show Combo Text with X/Y offsets
                 components.DrawPartyCheckbox(crossbarSettings, 'Show Combo Text##crossbar', 'showComboText');

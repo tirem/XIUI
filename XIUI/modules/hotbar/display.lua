@@ -311,6 +311,7 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     p.mpCostOffsetX = barSettings and barSettings.mpCostOffsetX or 0;
     p.mpCostOffsetY = barSettings and barSettings.mpCostOffsetY or 0;
     p.showQuantity = barSettings and barSettings.showQuantity ~= false;
+    p.showStackQuantity = barSettings and barSettings.showStackQuantity == true;
     p.quantityFontSize = barSettings and barSettings.quantityFontSize or 10;
     p.quantityFontColor = barSettings and barSettings.quantityFontColor or 0xFFFFFFFF;
     p.quantityAnchor = barSettings and barSettings.quantityAnchor or 'bottomRight';

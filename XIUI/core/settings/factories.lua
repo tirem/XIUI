@@ -337,6 +337,7 @@ function M.createHotbarGlobalDefaults()
         mpCostOffsetX = 0,
         mpCostOffsetY = 0,
         showQuantity = true,
+        showStackQuantity = false,
         quantityAnchor = 'bottomRight',
         quantityOffsetX = 0,
         quantityOffsetY = 0,
@@ -423,6 +424,7 @@ function M.createHotbarBarDefaults(overrides)
         mpCostOffsetX = 0,
         mpCostOffsetY = 0,
         showQuantity = true,
+        showStackQuantity = false,
         quantityAnchor = 'bottomRight',
         quantityOffsetX = 0,
         quantityOffsetY = 0,
@@ -530,6 +532,7 @@ function M.createCrossbarDefaults()
 
         -- Item quantity display
         showQuantity = true,                -- Show item quantity on item slots
+        showStackQuantity = false,          -- Show full-stack count above the item quantity
         quantityFontSize = 10,              -- Font size for item quantity
         quantityFontColor = 0xFFFFFFFF,     -- Item quantity text color
         quantityOffsetX = 0,                -- X offset for quantity position

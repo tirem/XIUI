@@ -48,6 +48,11 @@ local availabilityCache = {};
 local itemQuantityCache = {};
 local ITEM_QUANTITY_CACHE_TTL = 2.0;  -- Cache for 2 seconds (inventory doesn't change that often)
 
+-- Cache for item stack size lookups (keyed by itemId).
+-- Stack size is static resource data, so cache forever for the session.
+-- Stored value: number (StackSize) or false (lookup failed / not stackable).
+local stackSizeCache = {};
+
 -- Containers to search for item quantities
 local ITEM_CONTAINERS = { 0, 8, 10, 11, 12, 13, 14, 15, 16 };  -- Inventory, wardrobes, satchel, etc.
 
@@ -299,6 +304,27 @@ function M.GetItemQuantity(itemId, itemName)
     return result;
 end
 
+-- Get the stack size of an item (max items per stack).
+-- Returns nil if the item isn't stackable (StackSize <= 1) or can't be resolved.
+function M.GetItemStackSize(itemId)
+    if not itemId then return nil; end
+    local cached = stackSizeCache[itemId];
+    if cached ~= nil then
+        return cached or nil;  -- false sentinel -> nil
+    end
+
+    local resMgr = AshitaCore:GetResourceManager();
+    if not resMgr then return nil; end
+    local itemRes = resMgr:GetItemById(itemId);
+    local stackSize = itemRes and itemRes.StackSize;
+    if stackSize and stackSize > 1 then
+        stackSizeCache[itemId] = stackSize;
+        return stackSize;
+    end
+    stackSizeCache[itemId] = false;
+    return nil;
+end
+
 -- Get the ninja tool ID required for a ninjutsu spell
 -- @param spellName: The spell name (e.g., "Utsusemi: Ni", "Katon: San")
 -- @return: Tool item ID or nil if not a ninjutsu spell
@@ -377,6 +403,7 @@ function M.ClearAllCache()
     equipmentCheckCache = {};
     ninjutsuCache = {};
     itemQuantityCache = {};
+    stackSizeCache = {};
     ammoStatusCache = {};
     texturePtrCache = {};
 end
@@ -961,12 +988,28 @@ function M.DrawSlot(params)
             local qtyFontSize = params.quantityFontSize or 10;
             local qtyColor = quantity == 0 and 0xFFFF4444 or (params.quantityFontColor or 0xFFFFFFFF);
             local qtyAnchor = params.quantityAnchor or 'bottomRight';
+            local isRight = (qtyAnchor == 'topRight' or qtyAnchor == 'bottomRight');
+            local isTop = (qtyAnchor == 'topLeft' or qtyAnchor == 'topRight');
             local qtyX, qtyY = GetAnchoredPosition(x, y, size, qtyAnchor, params.quantityOffsetX, params.quantityOffsetY);
-            if qtyAnchor == 'topRight' or qtyAnchor == 'bottomRight' then
-                local w = imtext.Measure(qtyText, qtyFontSize);
-                qtyX = qtyX - w;
-            end
+            local qtyW = imtext.Measure(qtyText, qtyFontSize);
+            if isRight then qtyX = qtyX - qtyW; end
             imtext.DrawSimple(drawList, qtyText, qtyX, qtyY, qtyColor, qtyFontSize);
+
+            -- Optional: full-stack count, drawn just above (or below for top
+            -- anchors) the quantity text. Only shown for stackable items
+            -- with at least one full stack; ninjutsu tools are excluded.
+            if params.showStackQuantity and bind.actionType == 'item' and bind.itemId then
+                local stackSize = M.GetItemStackSize(bind.itemId);
+                local stacks = stackSize and math.floor(quantity / stackSize) or 0;
+                if stacks > 0 then
+                    local stackText = '(' .. stacks .. ')';
+                    local stackY = isTop and (qtyY + qtyFontSize + 1) or (qtyY - qtyFontSize - 1);
+                    local stackX = isRight
+                        and (qtyX + qtyW - imtext.Measure(stackText, qtyFontSize))
+                        or qtyX;
+                    imtext.DrawSimple(drawList, stackText, stackX, stackY, qtyColor, qtyFontSize);
+                end
+            end
         end
     end
 

@@ -714,6 +714,7 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
     p.mpCostOffsetX = settings.mpCostOffsetX or 0;
     p.mpCostOffsetY = settings.mpCostOffsetY or 0;
     p.showQuantity = settings.showQuantity ~= false;
+    p.showStackQuantity = settings.showStackQuantity == true;
     p.quantityFontSize = settings.quantityFontSize or 10;
     p.quantityFontColor = settings.quantityFontColor or 0xFFFFFFFF;
     p.quantityOffsetX = settings.quantityOffsetX or 0;
