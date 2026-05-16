@@ -114,11 +114,10 @@ function M.DrawSettings()
             if gConfig.partyA then gConfig.partyA.showBookends = gConfig.showBookends; end
             if gConfig.partyB then gConfig.partyB.showBookends = gConfig.showBookends; end
             if gConfig.partyC then gConfig.partyC.showBookends = gConfig.showBookends; end
-            -- Update pet bar type settings
-            if gConfig.petBarTypeSettings then
-                for _, petType in pairs(gConfig.petBarTypeSettings) do
-                    if petType then petType.showBookends = gConfig.showBookends; end
-                end
+            -- Update pet bar type settings (each pet type stores its own showBookends)
+            local petTypeTables = { gConfig.petBarAvatar, gConfig.petBarCharm, gConfig.petBarJug, gConfig.petBarAutomaton, gConfig.petBarWyvern };
+            for _, petType in ipairs(petTypeTables) do
+                if petType then petType.showBookends = gConfig.showBookends; end
             end
             SaveSettingsOnly();
         end
