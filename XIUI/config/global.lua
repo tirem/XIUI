@@ -40,6 +40,9 @@ function M.DrawSettings()
         end);
         imgui.ShowHelp('The folder to pull job icons from. [XIUI\\assets\\jobs]');
 
+        components.DrawSlider('Global UI Scale', 'globalScale', 0.5, 5.0, '%.2f');
+        imgui.ShowHelp('Scales all XIUI elements proportionally. Stacks on top of individual module scale settings.');
+
         components.DrawSlider('Tooltip Scale', 'tooltipScale', 0.1, 3.0, '%.2f');
         imgui.ShowHelp('Scales the size of the tooltip. Note that text may appear blured if scaled too large.');
 

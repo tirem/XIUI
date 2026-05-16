@@ -611,6 +611,10 @@ end
 -- DrawWindow - Main Pet Bar Rendering
 -- ============================================
 function display.DrawWindow(settings)
+    -- Global UI scale multiplier. Applied to raw gConfig.petBar* fallbacks so they
+    -- match dimensions coming from gAdjustedSettings (which is already gs-scaled in updater).
+    local gs = gConfig.globalScale or 1.0;
+
     -- Get pet data from data module (handles preview internally)
     local petData = data.GetPetData();
 
@@ -736,10 +740,15 @@ function display.DrawWindow(settings)
 
         if hasPet then
             -- Row 1: Pet Name (with optional level) (left) and HP% (right, same line)
-            local nameFontSize = typeSettings.nameFontSize or gConfig.petBarNameFontSize or settings.name_font_settings.font_height;
-            local hpFontSize = typeSettings.hpFontSize or typeSettings.vitalsFontSize or gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
-            local mpFontSize = typeSettings.mpFontSize or typeSettings.vitalsFontSize or gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
-            local tpFontSize = typeSettings.tpFontSize or typeSettings.vitalsFontSize or gConfig.petBarVitalsFontSize or settings.vitals_font_settings.font_height;
+            -- First two fallbacks are raw user values (need gs); third is from adjusted settings (already scaled).
+            local rawNameFontSize = typeSettings.nameFontSize or gConfig.petBarNameFontSize;
+            local nameFontSize = rawNameFontSize and (rawNameFontSize * gs) or settings.name_font_settings.font_height;
+            local rawHpFontSize = typeSettings.hpFontSize or typeSettings.vitalsFontSize or gConfig.petBarVitalsFontSize;
+            local hpFontSize = rawHpFontSize and (rawHpFontSize * gs) or settings.vitals_font_settings.font_height;
+            local rawMpFontSize = typeSettings.mpFontSize or typeSettings.vitalsFontSize or gConfig.petBarVitalsFontSize;
+            local mpFontSize = rawMpFontSize and (rawMpFontSize * gs) or settings.vitals_font_settings.font_height;
+            local rawTpFontSize = typeSettings.tpFontSize or typeSettings.vitalsFontSize or gConfig.petBarVitalsFontSize;
+            local tpFontSize = rawTpFontSize and (rawTpFontSize * gs) or settings.vitals_font_settings.font_height;
 
             -- Format name with level if available and enabled
             local showLevel = typeSettings.showLevel;
@@ -756,9 +765,10 @@ function display.DrawWindow(settings)
             local showDistance = typeSettings.showDistance;
             if showDistance == nil then showDistance = gConfig.petBarShowDistance; end
             if showDistance then
-                local distanceFontSize = typeSettings.distanceFontSize or gConfig.petBarDistanceFontSize or settings.distance_font_settings.font_height;
-                local distanceOffsetX = typeSettings.distanceOffsetX or gConfig.petBarDistanceOffsetX or 0;
-                local distanceOffsetY = typeSettings.distanceOffsetY or gConfig.petBarDistanceOffsetY or 0;
+                local rawDistanceFontSize = typeSettings.distanceFontSize or gConfig.petBarDistanceFontSize;
+                local distanceFontSize = rawDistanceFontSize and (rawDistanceFontSize * gs) or settings.distance_font_settings.font_height;
+                local distanceOffsetX = (typeSettings.distanceOffsetX or gConfig.petBarDistanceOffsetX or 0) * gs;
+                local distanceOffsetY = (typeSettings.distanceOffsetY or gConfig.petBarDistanceOffsetY or 0) * gs;
 
                 local distStr = string.format('%.1f', petDistance);
                 local distColor = colorConfig.distanceTextColor or 0xFFFFFFFF;
@@ -924,7 +934,7 @@ function display.DrawWindow(settings)
                 end
                 if effectIds and #effectIds > 0 then
                     -- Clamp so 0/invalid from saved config doesn't hide icons (default 16)
-                    local statusIconSize = math.max(8, tonumber(gConfig.petBarStatusIconSize) or 16);
+                    local statusIconSize = math.max(8, tonumber(gConfig.petBarStatusIconSize) or 16) * gs;
 
                     -- Position icons at left side, same Y as MP/TP text
                     imgui.SetCursorScreenPos({barsStartX, textRowY});
@@ -963,14 +973,14 @@ function display.DrawWindow(settings)
             -- Get recasts from data module (handles preview internally)
             local timers = data.GetPetRecasts();
             if #timers > 0 then
-                local iconOffsetX = typeSettings.iconsOffsetX or gConfig.petBarIconsOffsetX or 0;
-                local iconOffsetY = typeSettings.iconsOffsetY or gConfig.petBarIconsOffsetY or 0;
+                local iconOffsetX = (typeSettings.iconsOffsetX or gConfig.petBarIconsOffsetX or 0) * gs;
+                local iconOffsetY = (typeSettings.iconsOffsetY or gConfig.petBarIconsOffsetY or 0) * gs;
                 local iconsAbsolute = typeSettings.iconsAbsolute;
                 if iconsAbsolute == nil then iconsAbsolute = gConfig.petBarIconsAbsolute; end
                 local fillStyle = typeSettings.timerFillStyle or 'square';
                 local displayStyle = typeSettings.recastDisplayStyle or 'compact';
-                -- Scale only applies to compact mode; full mode always uses 1.0
-                local iconScale = (displayStyle == 'full') and 1.0 or (typeSettings.iconsScale or gConfig.petBarIconsScale or 1.0);
+                -- Scale only applies to compact mode; full mode always uses 1.0. Multiplied by gs (global scale).
+                local iconScale = (displayStyle == 'full') and 1.0 or ((typeSettings.iconsScale or gConfig.petBarIconsScale or 1.0) * gs);
                 local scaledIconSize = data.RECAST_ICON_SIZE * iconScale;
                 local iconSpacing = typeSettings.recastFullSpacing or 4;
 
@@ -1081,10 +1091,10 @@ function display.DrawWindow(settings)
 
             if showJugTimer then
                 -- Jug-specific settings
-                iconSize = gConfig.petBarJugIconSize or 16;
-                local offsetX = gConfig.petBarJugOffsetX or 0;
-                local offsetY = gConfig.petBarJugOffsetY or -20;
-                timerFontSize = gConfig.petBarJugTimerFontSize or 12;
+                iconSize = (gConfig.petBarJugIconSize or 16) * gs;
+                local offsetX = (gConfig.petBarJugOffsetX or 0) * gs;
+                local offsetY = (gConfig.petBarJugOffsetY or -20) * gs;
+                timerFontSize = (gConfig.petBarJugTimerFontSize or 12) * gs;
                 timerX = windowPosX + offsetX;
                 timerY = windowPosY + offsetY;
 
@@ -1107,10 +1117,10 @@ function display.DrawWindow(settings)
                 end
             elseif showCharmTimer then
                 -- Charm-specific settings
-                iconSize = gConfig.petBarCharmIconSize or 16;
-                local offsetX = gConfig.petBarCharmOffsetX or 0;
-                local offsetY = gConfig.petBarCharmOffsetY or -20;
-                timerFontSize = gConfig.petBarCharmTimerFontSize or 12;
+                iconSize = (gConfig.petBarCharmIconSize or 16) * gs;
+                local offsetX = (gConfig.petBarCharmOffsetX or 0) * gs;
+                local offsetY = (gConfig.petBarCharmOffsetY or -20) * gs;
+                timerFontSize = (gConfig.petBarCharmTimerFontSize or 12) * gs;
                 timerX = windowPosX + offsetX;
                 timerY = windowPosY + offsetY;
 
