@@ -361,12 +361,9 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 		options.decorate = false;
 	end
 
-	-- Get custom draw list if provided, otherwise use window draw list.
-	-- Note: if your module draws text via imtext.Draw on GetUIDrawList() and the
-	-- text needs to sit on top of bars, pass `drawList = GetUIDrawList()` here too
-	-- so both render to the same list (otherwise bars render above text when the
-	-- config menu is open and imtext switches to the background drawlist).
-	local drawList = options.drawList or imgui.GetWindowDrawList();
+	-- Get draw list (defaults to GetUIDrawList() so bars share the same list
+	-- as window backgrounds and text; pass options.drawList to override).
+	local drawList = options.drawList or GetUIDrawList();
 
 	-- Get position from options or cursor
 	local positionStartX, positionStartY;

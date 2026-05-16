@@ -195,8 +195,8 @@ function DrawImpl(id, x, y, width, height, options)
     local borderThickness = options.borderThickness or 1;
     local disabled = options.disabled or false;
 
-    -- Get draw list (default to background so it renders behind other UI)
-    local drawList = options.drawList or imgui.GetBackgroundDrawList();
+    -- Get draw list
+    local drawList = options.drawList or GetUIDrawList();
 
     -- Set cursor position for invisible button
     imgui.SetCursorScreenPos({x, y});
@@ -300,7 +300,7 @@ function DrawArrowImpl(id, x, y, size, direction, options)
     local arrowHoverColor = options.arrowHoverColor or arrowColors.hovered or 0xFFFFFFFF;
 
     -- Get draw list
-    local drawList = options.drawList or imgui.GetBackgroundDrawList();
+    local drawList = options.drawList or GetUIDrawList();
 
     -- Set cursor position for invisible button
     imgui.SetCursorScreenPos({x, y});
@@ -437,7 +437,7 @@ function M.DrawMinimize(id, x, y, size, isMinimized, options, drawList)
         bgColor = colors.normal or M.DEFAULT_COLORS.normal;
     end
 
-    drawList = drawList or imgui.GetForegroundDrawList();
+    drawList = drawList or GetUIDrawList();
 
     -- Background
     drawList:AddRectFilled({x, y}, {x + size, y + size}, ARGBToU32(bgColor));

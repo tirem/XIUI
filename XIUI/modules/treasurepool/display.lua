@@ -344,11 +344,11 @@ function M.DrawWindow(settings)
     if imgui.Begin('TreasurePool', true, windowFlags) then
         SaveWindowPosition('TreasurePool');
         local startX, startY = imgui.GetCursorScreenPos();
-        local drawList = imgui.GetBackgroundDrawList();
         local uiDrawList = GetUIDrawList();
+        local drawList = uiDrawList;
 
         -- Safety check for draw lists
-        if not drawList or not uiDrawList then
+        if not uiDrawList then
             imgui.End();
             return;
         end
@@ -473,7 +473,7 @@ function M.DrawWindow(settings)
                 local minimizeClicked = button.DrawMinimizePrim('tpMinimize', minimizeX, btnY, toggleSize, isMinimized, {
                     colors = button.COLORS_NEUTRAL,
                     tooltip = isMinimized and 'Maximize window' or 'Minimize to header only',
-                }, GetUIDrawList());
+                });
                 if minimizeClicked then
                     gConfig.treasurePoolMinimized = not gConfig.treasurePoolMinimized;
                     SaveSettingsToDisk();
@@ -486,7 +486,7 @@ function M.DrawWindow(settings)
                     tooltip = isMinimized
                         and (isExpanded and 'Maximize and collapse' or 'Maximize and expand')
                         or (isExpanded and 'Collapse' or 'Expand'),
-                }, GetUIDrawList());
+                });
                 if toggleClicked then
                     -- If minimized, maximize first then apply expand/collapse
                     if isMinimized then
@@ -553,7 +553,7 @@ function M.DrawWindow(settings)
                 local minimizeClicked = button.DrawMinimizePrim('tpMinimize', minimizeX, btnY, toggleSize, isMinimized, {
                     colors = button.COLORS_NEUTRAL,
                     tooltip = isMinimized and 'Maximize window' or 'Minimize to header only',
-                }, GetUIDrawList());
+                });
                 if minimizeClicked then
                     gConfig.treasurePoolMinimized = not gConfig.treasurePoolMinimized;
                     SaveSettingsToDisk();
@@ -566,7 +566,7 @@ function M.DrawWindow(settings)
                     tooltip = isMinimized
                         and (isExpanded and 'Maximize and collapse' or 'Maximize and expand')
                         or (isExpanded and 'Collapse' or 'Expand'),
-                }, GetUIDrawList());
+                });
                 if toggleClicked then
                     -- If minimized, maximize first then apply expand/collapse
                     if isMinimized then

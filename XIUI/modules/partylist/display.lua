@@ -36,7 +36,7 @@ end
 -- DrawMember - Render a single party member
 -- ============================================
 function display.DrawMember(memIdx, settings, isLastVisibleMember)
-    local textDrawList = imgui.GetWindowDrawList();
+    local textDrawList = GetUIDrawList();
     local memInfo = data.GetMemberInformation(memIdx);
     if (memInfo == nil) then
         memInfo = {
@@ -186,7 +186,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Draw selection box
     if memInfo.targeted then
-        local drawList = imgui.GetBackgroundDrawList();
+        local drawList = textDrawList;
 
         local selectionWidth = allBarsLengths + settings.cursorPaddingX1 + settings.cursorPaddingX2;
         local selectionScaleY = cache.selectionBoxScaleY or 1;
@@ -297,9 +297,8 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         if (jobIcon ~= nil) then
             namePosX = namePosX + jobIconSize + settings.nameTextOffsetX;
             distanceBaseX = distanceBaseX + jobIconSize; -- Only add job icon width, not name offset
-            -- Use background draw list to render outside window clipping
             local jobIconPtr = tonumber(ffi.cast("uint32_t", jobIcon));
-            local draw_list = imgui.GetBackgroundDrawList();
+            local draw_list = textDrawList;
             draw_list:AddImage(
                 jobIconPtr,
                 {hpStartX, offsetStartY},
@@ -496,7 +495,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         local zoneBarStartX, zoneBarStartY = imgui.GetCursorScreenPos();
         imgui.Dummy({zoneBarWidth, zoneBarHeight});
 
-        local drawList = imgui.GetWindowDrawList();
+        local drawList = textDrawList;
         drawList:AddRect(
             {zoneBarStartX, zoneBarStartY},
             {zoneBarStartX + zoneBarWidth, zoneBarStartY + zoneBarHeight},
