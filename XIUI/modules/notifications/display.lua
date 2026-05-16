@@ -525,7 +525,7 @@ local function drawNotificationWindow(windowName, notifications, settings, split
 
     -- Build window flags
     local windowFlags = notificationData.getBaseWindowFlags();
-    if gConfig.lockPositions and not configOpen then
+    if gConfig.lockPositions then
         windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
     end
 
@@ -1106,7 +1106,7 @@ local function drawGroupWindow(groupNum, settings)
 
     -- Build window flags
     local windowFlags = notificationData.getBaseWindowFlags();
-    if gConfig.lockPositions and not configOpen then
+    if gConfig.lockPositions then
         windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
     end
 
