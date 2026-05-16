@@ -441,7 +441,7 @@ local function DrawRecastFull(drawList, x, y, timerInfo, colorConfig, fullSettin
     -- Progress bar settings (configurable)
     local barHeight = fullSettings.barHeight or 4;
     local barWidth = fullSettings.barWidth or 150;
-    local barY = textY + maxFontSize + 2;  -- Position below the text
+    local barY = textY + maxFontSize + (fullSettings.textBarGap or 2);  -- Position below the text
 
     -- Track where text/bar should start
     local barStartX = x;
@@ -530,7 +530,7 @@ local function DrawRecastFullCharged(drawList, x, y, timerInfo, colorConfig, ful
     -- Progress bar settings (configurable)
     local barHeight = fullSettings.barHeight or 4;
     local barWidth = fullSettings.barWidth or 150;
-    local barY = textY + maxFontSize + 2;  -- Position below the text
+    local barY = textY + maxFontSize + (fullSettings.textBarGap or 2);  -- Position below the text
 
     -- Track where text/bar should start
     local barStartX = x;
@@ -958,7 +958,7 @@ function display.DrawWindow(settings)
             end
             -- Add spacing for text row if any vitals text is shown
             -- recastTopSpacing controls the gap between vitals text and recast section (anchored mode)
-            local recastTopSpacing = typeSettings.recastTopSpacing or 2;
+            local recastTopSpacing = (typeSettings.recastTopSpacing or 2) * gs;
             if displayMpBar or displayTpBar then
                 local maxVitalsFontSize = math.max(displayMpBar and mpFontSize or 0, displayTpBar and tpFontSize or 0);
                 imgui.Dummy({totalRowWidth, maxVitalsFontSize + recastTopSpacing});
@@ -982,7 +982,7 @@ function display.DrawWindow(settings)
                 -- Scale only applies to compact mode; full mode always uses 1.0. Multiplied by gs (global scale).
                 local iconScale = (displayStyle == 'full') and 1.0 or ((typeSettings.iconsScale or gConfig.petBarIconsScale or 1.0) * gs);
                 local scaledIconSize = data.RECAST_ICON_SIZE * iconScale;
-                local iconSpacing = typeSettings.recastFullSpacing or 4;
+                local iconSpacing = (typeSettings.recastFullSpacing or 4) * gs;
 
                 local iconX, iconY;
 
@@ -993,7 +993,7 @@ function display.DrawWindow(settings)
                 else
                     -- Anchored: flow within the pet bar container
                     -- Use recastTopSpacing for vertical offset, no X offset in anchored mode
-                    local topSpacing = typeSettings.recastTopSpacing or 2;
+                    local topSpacing = (typeSettings.recastTopSpacing or 2) * gs;
                     iconX, iconY = imgui.GetCursorScreenPos();
                     iconY = iconY + topSpacing;
                 end
@@ -1008,8 +1008,8 @@ function display.DrawWindow(settings)
                     local fullSettings = {
                         showName = typeSettings.recastFullShowName ~= false,
                         showRecast = typeSettings.recastFullShowTimer ~= false,
-                        nameFontSize = typeSettings.recastFullNameFontSize or 10,
-                        recastFontSize = typeSettings.recastFullTimerFontSize or 10,
+                        nameFontSize = (typeSettings.recastFullNameFontSize or 10) * gs,
+                        recastFontSize = (typeSettings.recastFullTimerFontSize or 10) * gs,
                         alignment = 'left',
                         iconSize = scaledIconSize,
                         barWidth = recastBarWidth,
@@ -1017,6 +1017,7 @@ function display.DrawWindow(settings)
                         showBookends = recastShowBookends,
                         progressStyle = typeSettings.recastProgressStyle or 'Fill',
                         isJug = isJug,
+                        textBarGap = 2 * gs,
                     };
 
                     -- Calculate row height based on what's visible
@@ -1029,7 +1030,7 @@ function display.DrawWindow(settings)
                         textRowHeight = math.max(textRowHeight, fullSettings.recastFontSize);
                     end
                     -- Entry height = text row + gap + bar height
-                    local textBarGap = 2;
+                    local textBarGap = 2 * gs;
                     local contentHeight = textRowHeight + textBarGap + recastBarHeight;
                     -- If nothing visible (no text), just use bar height
                     if textRowHeight == 0 then

@@ -268,7 +268,10 @@ function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOf
                     local textPosX = iconPosX + iconSize / 2;
                     local textPosY = iconPosY + iconSize;
                     local timerText = tostring(buffTimes[i]);
-                    local scaledFontHeight = gConfig.targetBarIconFontSize or font_base.font_height;
+                    -- Raw gConfig.targetBarIconFontSize needs gs scaling; font_base.font_height is from
+                    -- gAdjustedSettings (already scaled in updater).
+                    local gs = gConfig.globalScale or 1.0;
+                    local scaledFontHeight = (gConfig.targetBarIconFontSize and gConfig.targetBarIconFontSize * gs) or font_base.font_height;
                     local timerW, _ = imtext.Measure(timerText, scaledFontHeight);
                     local drawList = GetUIDrawList();
                     local timerColor = font_base.font_color or 0xFFFFFFFF;

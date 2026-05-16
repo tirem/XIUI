@@ -184,6 +184,9 @@ local function drawNotification(slot, notification, x, y, width, height, setting
         return;
     end
 
+    -- Global UI scale (multiplied into raw gConfig.notifications* dimensional reads).
+    local gs = gConfig.globalScale or 1.0;
+
     local containerOffsetX = notification.containerOffsetX or 0;
     local iconOffsetX = notification.iconOffsetX or 0;
     local textOffsetY = notification.textOffsetY or 0;
@@ -198,8 +201,8 @@ local function drawNotification(slot, notification, x, y, width, height, setting
     -- Update background using windowbackground library
     -- Get background settings from config
     local bgTheme = gConfig.notificationsBackgroundTheme or 'Plain';
-    local bgScale = gConfig.notificationsBgScale or 1.0;
-    local borderScale = gConfig.notificationsBorderScale or 1.0;
+    local bgScale = (gConfig.notificationsBgScale or 1.0) * gs;
+    local borderScale = (gConfig.notificationsBorderScale or 1.0) * gs;
     local configBgOpacity = gConfig.notificationsBgOpacity or 0.87;
     local configBorderOpacity = gConfig.notificationsBorderOpacity or 1.0;
 
@@ -239,9 +242,9 @@ local function drawNotification(slot, notification, x, y, width, height, setting
             dotColorTable = {1.0, 0.65, 0.0, finalPulseAlpha};  -- #FFA500
         end
 
-        -- Draw pulsing dot on right side
-        local dotRadius = 4;
-        local dotX = x + scaledWidth - 10;
+        -- Draw pulsing dot on right side (scaled by gs to match scaled background)
+        local dotRadius = 4 * gs;
+        local dotX = x + scaledWidth - 10 * gs;
         local dotY = y + (scaledHeight / 2);
         local dotU32 = imgui.GetColorU32(dotColorTable);
         drawList:AddCircleFilled({dotX, dotY}, dotRadius, dotU32, 12);
@@ -253,11 +256,11 @@ local function drawNotification(slot, notification, x, y, width, height, setting
     local minifyProgress = notificationData.GetMinifyProgress(notification);
 
     -- Content padding from config (countdown bar excluded)
-    local contentPadding = gConfig.notificationsPadding or 8;
+    local contentPadding = (gConfig.notificationsPadding or 8) * gs;
 
-    -- Interpolate icon size (32px -> 16px) during minify
-    local normalIconSize = 32;
-    local minifiedIconSize = 16;
+    -- Interpolate icon size (32px -> 16px) during minify (both scaled by gs)
+    local normalIconSize = 32 * gs;
+    local minifiedIconSize = 16 * gs;
 
     local iconSize;
     if isMinifying then
@@ -278,12 +281,12 @@ local function drawNotification(slot, notification, x, y, width, height, setting
     local icon = getNotificationIcon(notification);
 
     -- Get font sizes from config (user-adjustable) with fallback to settings
-    -- No scaling - fonts fade in/out with opacity instead
-    local titleFontHeight = gConfig.notificationsTitleFontSize or (settings.title_font_settings and settings.title_font_settings.font_height) or 14;
-    local subtitleFontHeight = gConfig.notificationsSubtitleFontSize or (settings.font_settings and settings.font_settings.font_height) or 12;
+    -- All paths are raw values; multiply by gs for global scale.
+    local titleFontHeight = (gConfig.notificationsTitleFontSize or (settings.title_font_settings and settings.title_font_settings.font_height) or 14) * gs;
+    local subtitleFontHeight = (gConfig.notificationsSubtitleFontSize or (settings.font_settings and settings.font_settings.font_height) or 12) * gs;
 
     -- Calculate text position (shifts right if icon exists)
-    local iconTextGap = 6;  -- Gap between icon and text
+    local iconTextGap = 6 * gs;  -- Gap between icon and text
     local textX = x + contentPadding;
     if icon then
         textX = x + contentPadding + iconSize + iconTextGap;  -- Shift right past icon (use base x, not iconX with offset)
@@ -295,8 +298,8 @@ local function drawNotification(slot, notification, x, y, width, height, setting
         -- Minified: center single line of text (subtract 1px for visual alignment)
         baseTextY = y + math.floor((contentHeight - subtitleFontHeight) / 2) - 1;
     else
-        -- Normal: center text block (title + 2px gap + subtitle)
-        local textBlockHeight = titleFontHeight + 2 + subtitleFontHeight;
+        -- Normal: center text block (title + scaled 2px gap + subtitle)
+        local textBlockHeight = titleFontHeight + 2 * gs + subtitleFontHeight;
         baseTextY = y + math.floor((contentHeight - textBlockHeight) / 2);
     end
     local textY = baseTextY + textOffsetY;
@@ -359,7 +362,7 @@ local function drawNotification(slot, notification, x, y, width, height, setting
         end
 
         -- Subtitle moves from normal position to centered position
-        local normalSubtitleY = textY + titleFontHeight + 2;  -- Small gap between title and subtitle
+        local normalSubtitleY = textY + titleFontHeight + 2 * gs;  -- Small gap between title and subtitle
         local minifiedSubtitleY = y + math.floor((scaledHeight - subtitleFontHeight) / 2);
         local interpolatedSubtitleY = normalSubtitleY + (minifyProgress * (minifiedSubtitleY - normalSubtitleY));
 
@@ -386,7 +389,7 @@ local function drawNotification(slot, notification, x, y, width, height, setting
         local subtitleCacheKey = notification.id .. "_subtitle";
         local displaySubtitle = GetTruncatedText(subtitle, maxTextWidth, subtitleFontHeight, subtitleCacheKey);
         if drawList and alpha > 0.01 then
-            imtext.Draw(drawList, displaySubtitle, textX, textY + titleFontHeight + 2, fadedSubtitleColor, subtitleFontHeight);
+            imtext.Draw(drawList, displaySubtitle, textX, textY + titleFontHeight + 2 * gs, fadedSubtitleColor, subtitleFontHeight);
         end
     end
 
@@ -420,7 +423,7 @@ local function drawNotification(slot, notification, x, y, width, height, setting
 
         -- Progress bar settings
         -- Use direct coordinates (not bgPrim.bg) to avoid any offset from windowbackground library
-        local barScaleY = gConfig.notificationsProgressBarScaleY or 1.0;
+        local barScaleY = (gConfig.notificationsProgressBarScaleY or 1.0) * gs;
         local barHeight = math.floor(4 * barScaleY);
         local barX = x;
         local barWidth = scaledWidth;
@@ -530,15 +533,17 @@ local function drawNotificationWindow(windowName, notifications, settings, split
     end
 
     -- Calculate notification dimensions using separate X/Y scale
-    local scaleX = gConfig.notificationsScaleX or 1.0;
-    local scaleY = gConfig.notificationsScaleY or 1.0;
+    -- Global UI scale multiplied into raw gConfig.notifications* dimensions.
+    local gs = gConfig.globalScale or 1.0;
+    local scaleX = (gConfig.notificationsScaleX or 1.0) * gs;
+    local scaleY = (gConfig.notificationsScaleY or 1.0) * gs;
     local contentPadding = gConfig.notificationsPadding or 8;
     local notificationWidth = math.floor((settings.width or 280) * scaleX);
     -- Normal height: padding + icon(32) + padding + progress bar(4)
     local normalHeight = math.floor((contentPadding * 2 + 32 + 4) * scaleY);
     -- Minified height: padding + minified icon(16) + padding (no progress bar)
     local minifiedHeight = math.floor((contentPadding * 2 + 16) * scaleY);
-    local spacing = gConfig.notificationsSpacing or 8;
+    local spacing = (gConfig.notificationsSpacing or 8) * gs;
 
     -- Calculate total content height
     local totalHeight = 0;
@@ -751,9 +756,9 @@ local function drawNotificationWindow(windowName, notifications, settings, split
                 end
             elseif configOpen then
                 -- Show placeholder when config is open
-                local placeholderPadding = gConfig.notificationsPadding or 8;
-                local titleHeight = gConfig.notificationsTitleFontSize or 14;
-                local subtitleHeight = gConfig.notificationsSubtitleFontSize or 12;
+                local placeholderPadding = (gConfig.notificationsPadding or 8) * gs;
+                local titleHeight = (gConfig.notificationsTitleFontSize or 14) * gs;
+                local subtitleHeight = (gConfig.notificationsSubtitleFontSize or 12) * gs;
 
                 if splitKey == nil and currentSlot > 0 then
                     -- Skip placeholder - slot 1 is in use by split window notifications
@@ -763,8 +768,8 @@ local function drawNotificationWindow(windowName, notifications, settings, split
 
                 do
                     local bgTheme = gConfig.notificationsBackgroundTheme or 'Plain';
-                    local bgScale = gConfig.notificationsBgScale or 1.0;
-                    local borderScale = gConfig.notificationsBorderScale or 1.0;
+                    local bgScale = (gConfig.notificationsBgScale or 1.0) * gs;
+                    local borderScale = (gConfig.notificationsBorderScale or 1.0) * gs;
                     local configBgOpacity = gConfig.notificationsBgOpacity or 0.87;
                     local configBorderOpacity = gConfig.notificationsBorderOpacity or 1.0;
 
@@ -785,7 +790,7 @@ local function drawNotificationWindow(windowName, notifications, settings, split
                 -- Draw placeholder text
                 if drawList then
                     imtext.Draw(drawList, placeholderTitle or 'Notification Area', windowPosX + placeholderPadding, windowPosY + placeholderPadding, 0xFFFFFFFF, titleHeight);
-                    imtext.Draw(drawList, placeholderSubtitle or 'Drag to reposition', windowPosX + placeholderPadding, windowPosY + placeholderPadding + titleHeight + 2, 0xFFCCCCCC, subtitleHeight);
+                    imtext.Draw(drawList, placeholderSubtitle or 'Drag to reposition', windowPosX + placeholderPadding, windowPosY + placeholderPadding + titleHeight + 2 * gs, 0xFFCCCCCC, subtitleHeight);
                 end
             end
         end);
@@ -845,6 +850,9 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
         return;
     end
 
+    -- Global UI scale multiplied into raw groupSettings/gConfig dimensional reads.
+    local gs = gConfig.globalScale or 1.0;
+
     local containerOffsetX = notification.containerOffsetX or 0;
     local iconOffsetX = notification.iconOffsetX or 0;
     local textOffsetY = notification.textOffsetY or 0;
@@ -857,8 +865,8 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
 
     -- Get background settings from group settings
     local bgTheme = groupSettings.backgroundTheme or 'Plain';
-    local bgScale = groupSettings.bgScale or 1.0;
-    local borderScale = groupSettings.borderScale or 1.0;
+    local bgScale = (groupSettings.bgScale or 1.0) * gs;
+    local borderScale = (groupSettings.borderScale or 1.0) * gs;
     local configBgOpacity = groupSettings.bgOpacity or 0.87;
     local configBorderOpacity = groupSettings.borderOpacity or 1.0;
 
@@ -892,8 +900,8 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
             dotColorTable = {1.0, 0.65, 0.0, finalPulseAlpha};
         end
 
-        local dotRadius = 4;
-        local dotX = x + scaledWidth - 10;
+        local dotRadius = 4 * gs;
+        local dotX = x + scaledWidth - 10 * gs;
         local dotY = y + (scaledHeight / 2);
         local dotU32 = imgui.GetColorU32(dotColorTable);
         drawList:AddCircleFilled({dotX, dotY}, dotRadius, dotU32, 12);
@@ -903,11 +911,11 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
     local isMinifying = notificationData.IsMinifying(notification);
     local minifyProgress = notificationData.GetMinifyProgress(notification);
 
-    local contentPadding = groupSettings.padding or 8;
+    local contentPadding = (groupSettings.padding or 8) * gs;
 
-    -- Icon size interpolation
-    local normalIconSize = 32;
-    local minifiedIconSize = 16;
+    -- Icon size interpolation (both scaled by gs)
+    local normalIconSize = 32 * gs;
+    local minifiedIconSize = 16 * gs;
     local iconSize;
     if isMinifying then
         iconSize = math.floor(normalIconSize - (minifyProgress * (normalIconSize - minifiedIconSize)));
@@ -921,11 +929,11 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
 
     local icon = getNotificationIcon(notification);
 
-    local titleFontHeight = groupSettings.titleFontSize or 14;
-    local subtitleFontHeight = groupSettings.subtitleFontSize or 12;
+    local titleFontHeight = (groupSettings.titleFontSize or 14) * gs;
+    local subtitleFontHeight = (groupSettings.subtitleFontSize or 12) * gs;
 
     -- Calculate text position
-    local iconTextGap = 6;
+    local iconTextGap = 6 * gs;
     local textX = x + contentPadding;
     if icon then
         textX = x + contentPadding + iconSize + iconTextGap;
@@ -935,7 +943,7 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
     if isMinified then
         baseTextY = y + math.floor((contentHeight - subtitleFontHeight) / 2) - 1;
     else
-        local textBlockHeight = titleFontHeight + 2 + subtitleFontHeight;
+        local textBlockHeight = titleFontHeight + 2 * gs + subtitleFontHeight;
         baseTextY = y + math.floor((contentHeight - textBlockHeight) / 2);
     end
     local textY = baseTextY + textOffsetY;
@@ -987,7 +995,7 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
             imtext.Draw(drawList, displayTitle, textX, textY, minifyTitleColor, titleFontHeight);
         end
 
-        local subtitleY = textY + titleFontHeight + 2;
+        local subtitleY = textY + titleFontHeight + 2 * gs;
         local targetSubtitleY = y + math.floor((contentHeight - subtitleFontHeight) / 2) - 1;
         local currentSubtitleY = subtitleY + ((targetSubtitleY - subtitleY) * minifyProgress);
 
@@ -1010,7 +1018,7 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
         local subtitleCacheKey = 'g' .. groupNum .. '_' .. notification.id .. "_subtitle";
         local displaySubtitle = GetTruncatedText(subtitle, maxTextWidth, subtitleFontHeight, subtitleCacheKey);
         if drawList and alpha > 0.01 then
-            imtext.Draw(drawList, displaySubtitle, textX, textY + titleFontHeight + 2, fadedSubtitleColor, subtitleFontHeight);
+            imtext.Draw(drawList, displaySubtitle, textX, textY + titleFontHeight + 2 * gs, fadedSubtitleColor, subtitleFontHeight);
         end
     end
 
@@ -1018,7 +1026,7 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
     local isExiting = notification.state == notificationData.STATE.EXITING;
     local isEntering = notification.state == notificationData.STATE.ENTERING;
     if not isMinified and not isMinifying and not isExiting and drawList then
-        local progressBarHeight = math.floor(4 * (groupSettings.progressBarScaleY or 1.0));
+        local progressBarHeight = math.floor(4 * (groupSettings.progressBarScaleY or 1.0) * gs);
         local progressBarY = y + scaledHeight - progressBarHeight;
         local progressBarWidth = scaledWidth;
 
@@ -1110,14 +1118,15 @@ local function drawGroupWindow(groupNum, settings)
         windowFlags = bit.bor(windowFlags, ImGuiWindowFlags_NoMove);
     end
 
-    -- Get group-specific settings
-    local scaleX = groupSettings.scaleX or 1.0;
-    local scaleY = groupSettings.scaleY or 1.0;
+    -- Get group-specific settings (gs scales every dimension proportionally)
+    local gs = gConfig.globalScale or 1.0;
+    local scaleX = (groupSettings.scaleX or 1.0) * gs;
+    local scaleY = (groupSettings.scaleY or 1.0) * gs;
     local contentPadding = groupSettings.padding or 8;
     local notificationWidth = math.floor((settings.width or 280) * scaleX);
     local normalHeight = math.floor((contentPadding * 2 + 32 + 4) * scaleY);
     local minifiedHeight = math.floor((contentPadding * 2 + 16) * scaleY);
-    local spacing = groupSettings.spacing or 8;
+    local spacing = (groupSettings.spacing or 8) * gs;
     local maxVisible = groupSettings.maxVisible or 5;
     local stackUp = groupSettings.direction == 'up';
 
