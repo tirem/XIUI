@@ -126,6 +126,7 @@ data.jugPets = {
     {name = 'PanzerGalahad', maxLevel = 75, duration = 60},
     {name = 'ChopsueyChucky', maxLevel = 75, duration = 60},
     {name = 'AmigoSabotender', maxLevel = 75, duration = 60},
+    {name = 'ColdbloodComo', maxLevel = 75, duration = 60},
 
     -- 30 minute pets (high level)
     {name = 'CraftyClyvonne', maxLevel = 75, duration = 30},
