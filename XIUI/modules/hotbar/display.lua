@@ -116,7 +116,10 @@ local function BuildBindKey(bind)
     return (bind.actionType or '') .. ':' .. (bind.action or '') .. ':' .. (bind.target or '') .. iconPart;
 end
 
--- Get cached icon for a slot, recompute only if bind changed
+-- Get cached icon (and precomputed abbreviation) for a slot, recompute only if bind changed.
+-- Returns: icon, abbr, abbrW. When the slot has an icon, abbr/abbrW are nil.
+-- When the slot has no icon, abbr/abbrW are precomputed so DrawSlot doesn't have to
+-- run GetActionAbbreviation + imtext.Measure per frame.
 local function GetCachedIcon(barIndex, slotIndex, bind)
     if not iconCache[barIndex] then
         iconCache[barIndex] = {};
@@ -125,19 +128,23 @@ local function GetCachedIcon(barIndex, slotIndex, bind)
     local cached = iconCache[barIndex][slotIndex];
 
     -- Check if we have a valid cache entry for this bind
-    -- Compare by actionType+action+target+icon to detect actual changes
     if cached then
         local bindKey = BuildBindKey(bind);
         if cached.bindKey == bindKey then
-            -- Cache hit - return icon even if nil (nil = no icon exists)
-            return cached.icon;
+            -- Cache hit - return cached values (icon may be nil; that's a valid "no icon" memo)
+            return cached.icon, cached.abbr, cached.abbrW;
         end
     end
 
-    -- Cache miss - compute icon
+    -- Cache miss - compute icon and (if no icon) abbreviation
     local icon = nil;
     if bind then
         _, icon = actions.BuildCommand(bind);
+    end
+
+    local abbr, abbrW = nil, nil;
+    if not icon and bind then
+        abbr, abbrW = slotrenderer.ComputeAbbreviation(bind);
     end
 
     -- Store in cache
@@ -145,9 +152,11 @@ local function GetCachedIcon(barIndex, slotIndex, bind)
     iconCache[barIndex][slotIndex] = {
         bindKey = bindKey,
         icon = icon,
+        abbr = abbr,
+        abbrW = abbrW,
     };
 
-    return icon;
+    return icon, abbr, abbrW;
 end
 
 -- Clear icon cache (call when slots change)
@@ -248,8 +257,9 @@ end
 
 -- Draw a single hotbar slot using shared renderer
 local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings, animOpacity, skillchainName)
-    -- Get icon for this action (cached - only rebuilds when bind changes)
-    local icon = GetCachedIcon(barIndex, slotIndex, bind);
+    -- Get icon (and pre-resolved abbreviation, if no icon) for this slot.
+    -- All three are cached together; recomputed only when bind changes.
+    local icon, cachedAbbr, cachedAbbrW = GetCachedIcon(barIndex, slotIndex, bind);
 
     -- Check if this slot is currently pressed (keyboard)
     local pressedHotbar = actions.GetPressedHotbar();
@@ -267,6 +277,8 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     -- Action Data
     p.bind = bind;
     p.icon = icon;
+    p.cachedAbbr = cachedAbbr;
+    p.cachedAbbrW = cachedAbbrW;
     -- Visual Settings
     p.slotBgColor = barSettings and barSettings.slotBackgroundColor or 0xFFFFFFFF;
     p.slotOpacity = barSettings and barSettings.slotOpacity or 1.0;
@@ -589,6 +601,10 @@ function M.Initialize(settings)
 end
 
 function M.UpdateVisuals(settings)
+    -- Font/visual settings can change the measured width of cached abbreviations.
+    -- Drop the per-slot cache so abbreviation strings and widths get recomputed
+    -- against the new font on the next frame.
+    ClearIconCache();
 end
 
 function M.SetHidden(hidden)

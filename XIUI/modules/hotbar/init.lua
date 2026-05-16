@@ -103,6 +103,7 @@ function M.Initialize(settings)
             macropalette.SyncToCurrentJob();
             display.ClearIconCache();
             slotrenderer.ClearAllCache();
+            actions.ClearNoIconCache();
             if crossbarInitialized then
                 crossbar.ClearIconCache();
             end
@@ -133,6 +134,7 @@ function M.Initialize(settings)
         -- Clear ALL caches when pet changes to force full refresh
         slotrenderer.ClearAllCache();
         display.ClearIconCache();
+        actions.ClearNoIconCache();
         if crossbarInitialized then
             crossbar.ClearIconCache();
         end
@@ -412,6 +414,7 @@ function M.HandleJobChangePacket(e)
             macropalette.SyncToCurrentJob();
             palette.ValidatePalettesForJob(data.jobId, data.subjobId);
             display.ClearIconCache();
+            actions.ClearNoIconCache();
             if crossbarInitialized then
                 crossbar.ClearIconCache();
             end

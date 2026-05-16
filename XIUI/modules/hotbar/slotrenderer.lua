@@ -88,33 +88,53 @@ local M = {};
 -- Get abbreviated text for an action (used when no icon available)
 -- @param bind: Action bind data with displayName or action field
 -- @return: max 4 character abbreviation string
+--
+-- Allocation-free single-pass scan: avoids the per-call words = {} + table.insert
+-- pattern that previously ran per slot per frame on abbreviation-rendering slots.
 local function GetActionAbbreviation(bind)
     if not bind then return '?'; end
     local name = bind.displayName or bind.action or '';
     if name == '' then return '?'; end
 
-    -- If short enough, just use it
+    -- Short enough -> just upper-case it
     if #name <= 4 then
         return name:upper();
     end
 
-    -- Check if multi-word (contains space)
-    local words = {};
-    for word in name:gmatch('%S+') do
-        table.insert(words, word);
+    -- Walk the string once, grabbing the first letter of up to 4 whitespace-separated
+    -- words. If only one word is found, fall through to the prefix path.
+    local letters = '';
+    local wordCount = 0;
+    local inWord = false;
+    for i = 1, #name do
+        local c = name:sub(i, i);
+        if c == ' ' or c == '\t' then
+            inWord = false;
+        else
+            if not inWord then
+                wordCount = wordCount + 1;
+                if wordCount > 4 then break; end
+                letters = letters .. c:upper();
+                inWord = true;
+            end
+        end
     end
 
-    if #words > 1 then
-        -- Multi-word: take first letter of each word (up to 4)
-        local abbr = '';
-        for i = 1, math.min(#words, 4) do
-            abbr = abbr .. words[i]:sub(1, 1):upper();
-        end
-        return abbr;
-    else
-        -- Single word: take first 4 characters
-        return name:sub(1, 4):upper();
+    if wordCount > 1 then
+        return letters;
     end
+    -- Single word: take first 4 characters
+    return name:sub(1, 4):upper();
+end
+
+-- Exposed helper: compute abbreviation + its measured width for a bind.
+-- Display/crossbar call this once per bind change and stash the result on
+-- their icon-cache entry so DrawSlot doesn't recompute or re-measure per frame.
+-- Caller must have already configured imtext (font_settings) for this frame.
+function M.ComputeAbbreviation(bind)
+    local abbr = GetActionAbbreviation(bind);
+    local w = imtext.Measure(abbr, 12);
+    return abbr, w;
 end
 
 -- Cache for equipment checks (keyed by itemId)
@@ -371,6 +391,13 @@ end
 -- Clear availability cache (call on job change, level sync, etc.)
 function M.ClearAvailabilityCache()
     availabilityCache = {};
+end
+
+-- Clear MP cost cache (call when a slot's action/spell may have changed, e.g. macro edits).
+-- Without this, edited macros keep showing the old action's MP cost / no-MP indicator
+-- until the addon reloads.
+function M.ClearMPCostCache()
+    mpCostCache = {};
 end
 
 -- Clear item quantity cache (call on inventory changes)
@@ -778,7 +805,16 @@ function M.DrawSlot(params)
     -- 6. Abbreviation Text Fallback (when no icon available)
     -- ========================================
     if not iconRendered and bind and animOpacity > 0.5 and not recastText and drawList then
-        local abbr = GetActionAbbreviation(bind);
+        -- Use precomputed values from the caller's icon cache when provided
+        -- (avoids GetActionAbbreviation table walk and imtext.Measure per slot per frame).
+        -- Fall back to computing on demand for callers that don't pre-cache.
+        local abbr = params.cachedAbbr;
+        local abbrW = params.cachedAbbrW;
+        if not abbr then
+            abbr = GetActionAbbreviation(bind);
+            abbrW = imtext.Measure(abbr, 12);
+        end
+
         local colorMult = 1.0;
         if isUnavailable then colorMult = 0.35;
         elseif notEnoughMp then colorMult = 0.6; end
@@ -790,7 +826,6 @@ function M.DrawSlot(params)
         local a = math.floor(animOpacity * 255);
         local abbrColor = bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
         -- Center position
-        local abbrW = imtext.Measure(abbr, 12);
         local abbrX = x + (size - abbrW) / 2;
         local abbrY = y + size / 2 - 6;
         imtext.Draw(drawList, abbr, abbrX, abbrY, abbrColor, 12);
@@ -1154,12 +1189,55 @@ function M.BeginFrame(fontSettings)
     tooltipFontSettings = fontSettings;
 end
 
--- Call after all hotbar/crossbar windows are done to render the tooltip on top
+-- Size of the abbreviation "pick-up" tile that follows the cursor on icon-less drags.
+-- Matches dragdrop's default icon size so the two drag visuals have the same weight.
+local DRAG_ABBR_TILE_SIZE = 32;
+
+-- Call after all hotbar/crossbar windows are done to render the tooltip on top.
+-- Also renders the drag tooltip and (for drags with no icon) a mini "abbreviation
+-- tile" at the cursor so the user has something to carry. Everything lands on the
+-- foreground draw list, above the hotbar windows.
 function M.FlushTooltip()
     if pendingTooltipBind then
         M.DrawTooltip(pendingTooltipBind);
         pendingTooltipBind = nil;
+        return;
     end
+
+    -- Hover tooltip is suppressed during drag (see DrawSlot's showTooltip gate),
+    -- so we never render both in the same frame.
+    if not dragdrop.IsDragging() then return; end
+
+    local payload = dragdrop.GetPayload();
+    if not (payload and payload.data and payload.data.actionType) then return; end
+
+    -- When the drag payload has no icon, draw a slot-shaped tile with the
+    -- abbreviation centered on it at the cursor. Mirrors the hotbar's own
+    -- abbreviation slot look so it reads as "you picked up this slot."
+    if not (payload.icon and payload.icon.image) then
+        local fgList = imgui.GetForegroundDrawList();
+        if fgList then
+            local mx, my = imgui.GetMousePos();
+            local tileX = mx - 4;
+            local tileY = my - 4;
+
+            local slotPtr = GetCachedTexturePtr(GetSlotTexPath());
+            if slotPtr then
+                imgP1[1] = tileX;                       imgP1[2] = tileY;
+                imgP2[1] = tileX + DRAG_ABBR_TILE_SIZE; imgP2[2] = tileY + DRAG_ABBR_TILE_SIZE;
+                fgList:AddImage(slotPtr, imgP1, imgP2, UV0, UV1, 0xFFFFFFFF);
+            end
+
+            local abbr = GetActionAbbreviation(payload.data);
+            local abbrW = imtext.Measure(abbr, 12);
+            local abbrX = tileX + (DRAG_ABBR_TILE_SIZE - abbrW) / 2;
+            local abbrY = tileY + DRAG_ABBR_TILE_SIZE / 2 - 6;
+            -- Gold matches the in-slot abbreviation color (R=244, G=218, B=151)
+            imtext.Draw(fgList, abbr, abbrX, abbrY, 0xFFF4DA97, 12);
+        end
+    end
+
+    M.DrawTooltip(payload.data);
 end
 
 return M;
