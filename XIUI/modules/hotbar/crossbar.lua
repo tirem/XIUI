@@ -341,11 +341,12 @@ end
 
 -- Calculate crossbar window dimensions based on settings
 local function GetCrossbarDimensions(settings)
-    local slotSize = settings.slotSize or 48;
-    local slotGapV = settings.slotGapV or 4;
-    local slotGapH = settings.slotGapH or 4;
-    local diamondSpacing = settings.diamondSpacing or 20;
-    local groupSpacing = settings.groupSpacing or 40;
+    local gs = (gConfig and gConfig.globalScale) or 1.0;
+    local slotSize = (settings.slotSize or 48) * gs;
+    local slotGapV = (settings.slotGapV or 4) * gs;
+    local slotGapH = (settings.slotGapH or 4) * gs;
+    local diamondSpacing = (settings.diamondSpacing or 20) * gs;
+    local groupSpacing = (settings.groupSpacing or 40) * gs;
 
     -- Calculate group dimensions using layout functions
     local groupWidth, groupHeight = CalculateGroupDimensions(slotSize, slotGapV, slotGapH, diamondSpacing);
@@ -559,11 +560,12 @@ end
 
 -- Get slot position within the crossbar window
 local function GetSlotPositionInWindow(side, slotIndex, windowX, windowY, settings)
-    local slotSize = settings.slotSize or 48;
-    local slotGapV = settings.slotGapV or 4;
-    local slotGapH = settings.slotGapH or 4;
-    local diamondSpacing = settings.diamondSpacing or 20;
-    local groupSpacing = settings.groupSpacing or 40;
+    local gs = (gConfig and gConfig.globalScale) or 1.0;
+    local slotSize = (settings.slotSize or 48) * gs;
+    local slotGapV = (settings.slotGapV or 4) * gs;
+    local slotGapH = (settings.slotGapH or 4) * gs;
+    local diamondSpacing = (settings.diamondSpacing or 20) * gs;
+    local groupSpacing = (settings.groupSpacing or 40) * gs;
 
     -- Calculate group width for positioning
     local groupWidth = CalculateGroupDimensions(slotSize, slotGapV, slotGapH, diamondSpacing);
@@ -691,6 +693,10 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
     -- Get icon + cached abbreviation for this action (cached - only rebuilds when bind changes)
     local icon, cachedAbbr, cachedAbbrW = GetCachedCrossbarIcon(comboMode, slotIndex, slotData);
 
+    -- Global UI scale (slotSize/x/y come in already scaled; we apply gs here to
+    -- font sizes and pixel offsets that come straight from settings).
+    local gs = (gConfig and gConfig.globalScale) or 1.0;
+
     -- Update reusable params table in-place
     local p = cbParams;
     p.x = x;
@@ -708,23 +714,23 @@ local function DrawSlot(comboMode, slotIndex, x, y, slotSize, settings, isActive
     p.isPressed = isPressed and isActive;
     p.iconPressScale = iconPressScale;
     p.showMpCost = settings.showMpCost ~= false;
-    p.mpCostFontSize = settings.mpCostFontSize or 10;
+    p.mpCostFontSize = (settings.mpCostFontSize or 10) * gs;
     p.mpCostFontColor = settings.mpCostFontColor or 0xFFD4FF97;
     p.mpCostNoMpColor = settings.mpCostNoMpColor or 0xFFFF4444;
-    p.mpCostOffsetX = settings.mpCostOffsetX or 0;
-    p.mpCostOffsetY = settings.mpCostOffsetY or 0;
+    p.mpCostOffsetX = (settings.mpCostOffsetX or 0) * gs;
+    p.mpCostOffsetY = (settings.mpCostOffsetY or 0) * gs;
     p.showQuantity = settings.showQuantity ~= false;
     p.showStackQuantity = settings.showStackQuantity == true;
-    p.quantityFontSize = settings.quantityFontSize or 10;
+    p.quantityFontSize = (settings.quantityFontSize or 10) * gs;
     p.quantityFontColor = settings.quantityFontColor or 0xFFFFFFFF;
-    p.quantityOffsetX = settings.quantityOffsetX or 0;
-    p.quantityOffsetY = settings.quantityOffsetY or 0;
+    p.quantityOffsetX = (settings.quantityOffsetX or 0) * gs;
+    p.quantityOffsetY = (settings.quantityOffsetY or 0) * gs;
     p.showLabel = settings.showActionLabels or false;
     p.labelText = slotData and (slotData.displayName or slotData.action or '') or '';
-    p.labelOffsetX = settings.actionLabelOffsetX or 0;
-    p.labelOffsetY = (settings.actionLabelOffsetY or 0) + 2;
-    p.labelFontSize = settings.labelFontSize or 10;
-    p.recastTimerFontSize = settings.recastTimerFontSize or 11;
+    p.labelOffsetX = (settings.actionLabelOffsetX or 0) * gs;
+    p.labelOffsetY = ((settings.actionLabelOffsetY or 0) + 2) * gs;
+    p.labelFontSize = (settings.labelFontSize or 10) * gs;
+    p.recastTimerFontSize = (settings.recastTimerFontSize or 11) * gs;
     p.recastTimerFontColor = settings.recastTimerFontColor or 0xFFFFFFFF;
     p.flashCooldownUnder5 = settings.flashCooldownUnder5 or false;
     p.useHHMMCooldownFormat = settings.useHHMMCooldownFormat or false;
@@ -755,13 +761,14 @@ local function DrawDiamondCenterIconsImGui(diamondType, groupX, groupY, settings
     animOpacity = animOpacity or 1.0;
     if animOpacity <= 0.01 then return; end
 
-    local slotSize = settings.slotSize or 48;
-    local slotGapV = settings.slotGapV or 4;
-    local slotGapH = settings.slotGapH or 4;
-    local diamondSpacing = settings.diamondSpacing or 20;
-    local iconSize = settings.buttonIconSize or 24;
-    local iconGapH = settings.buttonIconGapH or 2;
-    local iconGapV = settings.buttonIconGapV or 2;
+    local gs = (gConfig and gConfig.globalScale) or 1.0;
+    local slotSize = (settings.slotSize or 48) * gs;
+    local slotGapV = (settings.slotGapV or 4) * gs;
+    local slotGapH = (settings.slotGapH or 4) * gs;
+    local diamondSpacing = (settings.diamondSpacing or 20) * gs;
+    local iconSize = (settings.buttonIconSize or 24) * gs;
+    local iconGapH = (settings.buttonIconGapH or 2) * gs;
+    local iconGapV = (settings.buttonIconGapV or 2) * gs;
     local controllerTheme = settings.controllerTheme or 'Xbox';
 
     -- Get diamond center position using layout calculation
@@ -909,10 +916,11 @@ local function DrawComboText(activeCombo, centerX, topY, settings)
 
     if not comboText then return; end
 
-    -- Get font size and offsets from settings
-    local fontSize = settings.comboTextFontSize or 10;
-    local offsetX = settings.comboTextOffsetX or 0;
-    local offsetY = settings.comboTextOffsetY or 0;
+    -- Get font size and offsets from settings (scaled by globalScale)
+    local gs = (gConfig and gConfig.globalScale) or 1.0;
+    local fontSize = (settings.comboTextFontSize or 10) * gs;
+    local offsetX = (settings.comboTextOffsetX or 0) * gs;
+    local offsetY = (settings.comboTextOffsetY or 0) * gs;
 
     -- Draw centered text via imtext
     local drawList = GetUIDrawList();
@@ -939,9 +947,10 @@ local function DrawPaletteName(centerX, bottomY, settings)
     local total = palette.GetCrossbarPaletteCount(jobId, subjobId) or 1;
 
     local displayText = string.format('%s (%d/%d)', paletteName, index, total);
-    local fontSize = settings.paletteNameFontSize or 10;
-    local offsetX = settings.paletteNameOffsetX or 0;
-    local offsetY = settings.paletteNameOffsetY or 0;
+    local gs = (gConfig and gConfig.globalScale) or 1.0;
+    local fontSize = (settings.paletteNameFontSize or 10) * gs;
+    local offsetX = (settings.paletteNameOffsetX or 0) * gs;
+    local offsetY = (settings.paletteNameOffsetY or 0) * gs;
 
     local drawList = GetUIDrawList();
     if drawList then
@@ -1020,11 +1029,12 @@ end
 function M.DrawWindow(settings, moduleSettings)
     if not state.initialized then return; end
 
-    local slotSize = settings.slotSize or 48;
-    local slotGapV = settings.slotGapV or 4;
-    local slotGapH = settings.slotGapH or 4;
-    local diamondSpacing = settings.diamondSpacing or 20;
-    local groupSpacing = settings.groupSpacing or 40;
+    local gs = (gConfig and gConfig.globalScale) or 1.0;
+    local slotSize = (settings.slotSize or 48) * gs;
+    local slotGapV = (settings.slotGapV or 4) * gs;
+    local slotGapH = (settings.slotGapH or 4) * gs;
+    local diamondSpacing = (settings.diamondSpacing or 20) * gs;
+    local groupSpacing = (settings.groupSpacing or 40) * gs;
 
     -- Calculate dimensions using layout functions
     local width, height, groupWidth, groupHeight = GetCrossbarDimensions(settings);

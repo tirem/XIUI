@@ -891,7 +891,7 @@ function M.DrawSlot(params)
             local kbW = imtext.Measure(params.keybindText, kbFontSize);
             kbX = kbX - kbW;
         end
-        imtext.DrawSimple(drawList, params.keybindText, kbX, kbY, kbColor, kbFontSize);
+        imtext.Draw(drawList, params.keybindText, kbX, kbY, kbColor, kbFontSize);
     end
 
     -- ========================================
@@ -911,7 +911,7 @@ function M.DrawSlot(params)
         local lblW = imtext.Measure(params.labelText, lblFontSize);
         local labelX = x + (size - lblW) / 2 + (params.labelOffsetX or 0);
         local labelY = y + size + 2 + (params.labelOffsetY or 0);
-        imtext.DrawShadow(drawList, params.labelText, labelX, labelY, labelColor, lblFontSize);
+        imtext.Draw(drawList, params.labelText, labelX, labelY, labelColor, lblFontSize);
     end
 
     -- ========================================
@@ -933,7 +933,7 @@ function M.DrawSlot(params)
                     local w = imtext.Measure(xText, mpFontSize);
                     mpX = mpX - w;
                 end
-                imtext.DrawSimple(drawList, xText, mpX, mpY, xColor, mpFontSize);
+                imtext.Draw(drawList, xText, mpX, mpY, xColor, mpFontSize);
             else
                 local mpCost = mpCostCache[bindKey];
                 if mpCost == nil then
@@ -950,7 +950,7 @@ function M.DrawSlot(params)
                         local w = imtext.Measure(mpText, mpFontSize);
                         mpX = mpX - w;
                     end
-                    imtext.DrawSimple(drawList, mpText, mpX, mpY, mpCostColor, mpFontSize);
+                    imtext.Draw(drawList, mpText, mpX, mpY, mpCostColor, mpFontSize);
                 end
             end
         end
@@ -993,7 +993,7 @@ function M.DrawSlot(params)
             local qtyX, qtyY = GetAnchoredPosition(x, y, size, qtyAnchor, params.quantityOffsetX, params.quantityOffsetY);
             local qtyW = imtext.Measure(qtyText, qtyFontSize);
             if isRight then qtyX = qtyX - qtyW; end
-            imtext.DrawSimple(drawList, qtyText, qtyX, qtyY, qtyColor, qtyFontSize);
+            imtext.Draw(drawList, qtyText, qtyX, qtyY, qtyColor, qtyFontSize);
 
             -- Optional: full-stack count, drawn just above (or below for top
             -- anchors) the quantity text. Only shown for stackable items
@@ -1007,7 +1007,7 @@ function M.DrawSlot(params)
                     local stackX = isRight
                         and (qtyX + qtyW - imtext.Measure(stackText, qtyFontSize))
                         or qtyX;
-                    imtext.DrawSimple(drawList, stackText, stackX, stackY, qtyColor, qtyFontSize);
+                    imtext.Draw(drawList, stackText, stackX, stackY, qtyColor, qtyFontSize);
                 end
             end
         end

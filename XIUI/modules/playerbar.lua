@@ -358,7 +358,7 @@ playerbar.DrawWindow = function(settings)
 			local tickerColor = gConfig.colorCustomization.playerBar.restingTickerColor or 0xFF00E6FF;
 			local tickerRGBA = ARGBToImGui(tickerColor);
 			local r, g, b, a = tickerRGBA[1], tickerRGBA[2], tickerRGBA[3], tickerRGBA[4];
-			imgui.GetWindowDrawList():AddRectFilledMultiColor(
+			drawList:AddRectFilledMultiColor(
 				{waveLeft, y1}, {waveRight, y2},
 				imgui.GetColorU32({r, g, b, 0.0}),
 				imgui.GetColorU32({r, g, b, a}),

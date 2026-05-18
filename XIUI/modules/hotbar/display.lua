@@ -199,11 +199,12 @@ end
 -- Calculate bar dimensions using per-bar settings
 local function GetBarDimensions(barIndex)
     local barSettings = data.GetBarSettings(barIndex);
-    local slotSize = barSettings.slotSize or 32;
+    local gs = (gConfig and gConfig.globalScale) or 1.0;
+    local slotSize = (barSettings.slotSize or 32) * gs;
     -- Use per-bar slot padding settings
-    local slotGap = barSettings.slotXPadding or data.BUTTON_GAP;
-    local padding = data.PADDING;
-    local rowGap = barSettings.slotYPadding or data.ROW_GAP;
+    local slotGap = (barSettings.slotXPadding or data.BUTTON_GAP) * gs;
+    local padding = data.PADDING * gs;
+    local rowGap = (barSettings.slotYPadding or data.ROW_GAP) * gs;
 
     local layout = data.GetBarLayout(barIndex);
 
@@ -268,6 +269,11 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     -- Get pre-created interaction closures and IDs
     local interaction = GetSlotInteraction(barIndex, slotIndex);
 
+    -- Global UI scale (applied to font sizes and pixel offsets that aren't
+    -- already pre-scaled via GetBarDimensions). Position/size args (x, y,
+    -- buttonSize) come in already scaled by the caller.
+    local gs = (gConfig and gConfig.globalScale) or 1.0;
+
     -- Update reusable params table in-place
     local p = slotParams;
     -- Position/Size
@@ -283,17 +289,17 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     p.slotBgColor = barSettings and barSettings.slotBackgroundColor or 0xFFFFFFFF;
     p.slotOpacity = barSettings and barSettings.slotOpacity or 1.0;
     p.keybindText = (barSettings and barSettings.showKeybinds ~= false) and data.GetKeybindDisplay(barIndex, slotIndex) or nil;
-    p.keybindFontSize = barSettings and barSettings.keybindFontSize or 10;
+    p.keybindFontSize = (barSettings and barSettings.keybindFontSize or 10) * gs;
     p.keybindFontColor = barSettings and barSettings.keybindFontColor or 0xFFFFFFFF;
     p.keybindAnchor = barSettings and barSettings.keybindAnchor or 'topLeft';
-    p.keybindOffsetX = barSettings and barSettings.keybindOffsetX or 0;
-    p.keybindOffsetY = barSettings and barSettings.keybindOffsetY or 0;
+    p.keybindOffsetX = (barSettings and barSettings.keybindOffsetX or 0) * gs;
+    p.keybindOffsetY = (barSettings and barSettings.keybindOffsetY or 0) * gs;
     p.showLabel = barSettings and barSettings.showActionLabels or false;
     p.labelText = bind and (bind.displayName or bind.action or '') or '';
-    p.labelOffsetX = barSettings and barSettings.actionLabelOffsetX or 0;
-    p.labelOffsetY = (barSettings and barSettings.actionLabelOffsetY or 0) + data.LABEL_GAP;
-    p.labelFontSize = barSettings and barSettings.labelFontSize or 10;
-    p.recastTimerFontSize = barSettings and barSettings.recastTimerFontSize or 11;
+    p.labelOffsetX = (barSettings and barSettings.actionLabelOffsetX or 0) * gs;
+    p.labelOffsetY = ((barSettings and barSettings.actionLabelOffsetY or 0) + data.LABEL_GAP) * gs;
+    p.labelFontSize = (barSettings and barSettings.labelFontSize or 10) * gs;
+    p.recastTimerFontSize = (barSettings and barSettings.recastTimerFontSize or 11) * gs;
     p.recastTimerFontColor = barSettings and barSettings.recastTimerFontColor or 0xFFFFFFFF;
     p.flashCooldownUnder5 = barSettings and barSettings.flashCooldownUnder5 or false;
     p.useHHMMCooldownFormat = barSettings and barSettings.useHHMMCooldownFormat or false;
@@ -304,19 +310,19 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     p.customFramePath = barSettings and barSettings.customFramePath or '';
     p.isPressed = (pressedHotbar == barIndex and pressedSlot == slotIndex);
     p.showMpCost = barSettings and barSettings.showMpCost ~= false;
-    p.mpCostFontSize = barSettings and barSettings.mpCostFontSize or 10;
+    p.mpCostFontSize = (barSettings and barSettings.mpCostFontSize or 10) * gs;
     p.mpCostFontColor = barSettings and barSettings.mpCostFontColor or 0xFFD4FF97;
     p.mpCostNoMpColor = barSettings and barSettings.labelNoMpColor or 0xFFFF4444;
     p.mpCostAnchor = barSettings and barSettings.mpCostAnchor or 'topRight';
-    p.mpCostOffsetX = barSettings and barSettings.mpCostOffsetX or 0;
-    p.mpCostOffsetY = barSettings and barSettings.mpCostOffsetY or 0;
+    p.mpCostOffsetX = (barSettings and barSettings.mpCostOffsetX or 0) * gs;
+    p.mpCostOffsetY = (barSettings and barSettings.mpCostOffsetY or 0) * gs;
     p.showQuantity = barSettings and barSettings.showQuantity ~= false;
     p.showStackQuantity = barSettings and barSettings.showStackQuantity == true;
-    p.quantityFontSize = barSettings and barSettings.quantityFontSize or 10;
+    p.quantityFontSize = (barSettings and barSettings.quantityFontSize or 10) * gs;
     p.quantityFontColor = barSettings and barSettings.quantityFontColor or 0xFFFFFFFF;
     p.quantityAnchor = barSettings and barSettings.quantityAnchor or 'bottomRight';
-    p.quantityOffsetX = barSettings and barSettings.quantityOffsetX or 0;
-    p.quantityOffsetY = barSettings and barSettings.quantityOffsetY or 0;
+    p.quantityOffsetX = (barSettings and barSettings.quantityOffsetX or 0) * gs;
+    p.quantityOffsetY = (barSettings and barSettings.quantityOffsetY or 0) * gs;
     -- Interaction Config
     p.buttonId = interaction.buttonId;
     p.dropZoneId = interaction.dropZoneId;
@@ -433,7 +439,8 @@ local function DrawBarWindow(barIndex, settings)
         end
 
         -- Draw slots based on layout (rows x columns)
-        local padding = data.PADDING;
+        local gs = (gConfig and gConfig.globalScale) or 1.0;
+        local padding = data.PADDING * gs;
         local slotCount = layout.slots;
         local slotIndex = 1;
 

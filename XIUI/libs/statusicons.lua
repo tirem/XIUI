@@ -264,7 +264,11 @@ function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOf
                 imgui.Image(icon, { iconSize, iconSize }, { 0, 0 }, { 1, 1 });
                 if buffTimes ~= nil and buffTimes[i] ~= nil then
                     local font_base = settings or debuff_font_settings;
-                    imtext.SetConfig(gConfig.fontFamily, bit.band(font_base.font_flags or 0, 1) ~= 0, font_base.outline_width or 2);
+                    -- When no explicit font settings are provided (target bar buffs, pet bar buffs)
+                    -- honor the global Font Outline slider so timer text matches the rest of the UI.
+                    local outlineW = (not settings and gConfig and gConfig.fontOutlineWidth)
+                        or font_base.outline_width or 2;
+                    imtext.SetConfig(gConfig.fontFamily, bit.band(font_base.font_flags or 0, 1) ~= 0, outlineW);
                     local textPosX = iconPosX + iconSize / 2;
                     local textPosY = iconPosY + iconSize;
                     local timerText = tostring(buffTimes[i]);
