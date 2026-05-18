@@ -703,10 +703,15 @@ function M.DrawSlot(params)
     local isOnCooldown = cooldown.isOnCooldown;
     local recastText = cooldown.recastText;
 
-    -- Check if player has enough MP for spells
+    -- Check if player has enough MP for spells (also includes macros whose
+    -- recast source is a spell — they show the source spell's MP cost).
     local notEnoughMp = false;
     local bindKey = bind and ((bind.actionType or '') .. ':' .. (bind.action or '')) or '';
-    if bind and bind.actionType == 'ma' then
+    local hasMpCost = bind and (
+        bind.actionType == 'ma'
+        or (bind.actionType == 'macro' and bind.recastSourceType == 'ma' and bind.recastSourceAction)
+    );
+    if hasMpCost then
         local mpCost = mpCostCache[bindKey];
         if mpCost == nil then
             mpCost = actions.GetMPCost(bind) or false;

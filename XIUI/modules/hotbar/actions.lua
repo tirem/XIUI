@@ -409,6 +409,17 @@ end
 ---@return number|nil mpCost The MP cost, or nil if not applicable
 function M.GetMPCost(bind)
     if not bind then return nil; end
+
+    -- Macros with a magic recast source surface that spell's MP cost so the
+    -- slot shows the underlying spell's mana alongside its cooldown.
+    if bind.actionType == 'macro' and bind.recastSourceType == 'ma' and bind.recastSourceAction then
+        local spell = GetSpellByName(bind.recastSourceAction);
+        if spell and spell.mp_cost and spell.mp_cost > 0 then
+            return spell.mp_cost;
+        end
+        return nil;
+    end
+
     if bind.actionType ~= 'ma' then return nil; end
 
     local spell = GetSpellByName(bind.action);
