@@ -23,8 +23,10 @@ local function DrawBackground(drawList, x, y, width, height, settings)
     local petTypeKey = data.GetPetTypeKey();
     local settingsKey = 'petBar' .. petTypeKey:gsub("^%l", string.upper);
     local typeSettings = gConfig[settingsKey] or {};
-    local bgScale = typeSettings.bgScale or 1.0;
-    local borderScale = typeSettings.borderScale or 1.0;
+    -- Prefer pet target's own scale sliders; fall back to the parent pet type
+    -- so existing users see no change until they touch the pet target sliders.
+    local bgScale = gConfig.petTargetBgScale or typeSettings.bgScale or 1.0;
+    local borderScale = gConfig.petTargetBorderScale or typeSettings.borderScale or 1.0;
 
     local bgTheme = gConfig.petTargetBackgroundTheme or gConfig.petBarBackgroundTheme or 'Window1';
     local bgOpacity = gConfig.petTargetBackgroundOpacity or gConfig.petBarBackgroundOpacity or 1.0;

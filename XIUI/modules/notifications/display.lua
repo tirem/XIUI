@@ -787,10 +787,16 @@ local function drawNotificationWindow(windowName, notifications, settings, split
                     });
                 end
 
-                -- Draw placeholder text
+                -- Draw placeholder text, truncated to fit the placeholder width
                 if drawList then
-                    imtext.Draw(drawList, placeholderTitle or 'Notification Area', windowPosX + placeholderPadding, windowPosY + placeholderPadding, 0xFFFFFFFF, titleHeight);
-                    imtext.Draw(drawList, placeholderSubtitle or 'Drag to reposition', windowPosX + placeholderPadding, windowPosY + placeholderPadding + titleHeight + 2 * gs, 0xFFCCCCCC, subtitleHeight);
+                    local placeholderMaxTextWidth = math.max(1, notificationWidth - 2 * placeholderPadding);
+                    local title = placeholderTitle or 'Notification Area';
+                    local subtitle = placeholderSubtitle or 'Drag to reposition';
+                    local placeholderKey = (splitKey or 'split') .. '_placeholder';
+                    local displayTitle = GetTruncatedText(title, placeholderMaxTextWidth, titleHeight, placeholderKey .. '_title');
+                    local displaySubtitle = GetTruncatedText(subtitle, placeholderMaxTextWidth, subtitleHeight, placeholderKey .. '_subtitle');
+                    imtext.Draw(drawList, displayTitle, windowPosX + placeholderPadding, windowPosY + placeholderPadding, 0xFFFFFFFF, titleHeight);
+                    imtext.Draw(drawList, displaySubtitle, windowPosX + placeholderPadding, windowPosY + placeholderPadding + titleHeight + 2 * gs, 0xFFCCCCCC, subtitleHeight);
                 end
             end
         end);
@@ -1250,8 +1256,16 @@ local function drawGroupWindow(groupNum, settings)
                 if drawList then
                     local textX = windowPosX + contentPadding;
                     local titleY = windowPosY + contentPadding;
-                    imtext.Draw(drawList, GROUP_TITLES[groupNum] or ('Group ' .. groupNum), textX, titleY, 0x80FFFFFF, groupSettings.titleFontSize or 14);
-                    imtext.Draw(drawList, GROUP_PLACEHOLDERS[groupNum] or 'Drag to reposition', textX, titleY + (groupSettings.titleFontSize or 14) + 2, 0x80AAAAAA, groupSettings.subtitleFontSize or 12);
+                    local titleFs = groupSettings.titleFontSize or 14;
+                    local subtitleFs = groupSettings.subtitleFontSize or 12;
+                    local placeholderMaxTextWidth = math.max(1, notificationWidth - 2 * contentPadding);
+                    local title = GROUP_TITLES[groupNum] or ('Group ' .. groupNum);
+                    local subtitle = GROUP_PLACEHOLDERS[groupNum] or 'Drag to reposition';
+                    local placeholderKey = 'group' .. groupNum .. '_placeholder';
+                    local displayTitle = GetTruncatedText(title, placeholderMaxTextWidth, titleFs, placeholderKey .. '_title');
+                    local displaySubtitle = GetTruncatedText(subtitle, placeholderMaxTextWidth, subtitleFs, placeholderKey .. '_subtitle');
+                    imtext.Draw(drawList, displayTitle, textX, titleY, 0x80FFFFFF, titleFs);
+                    imtext.Draw(drawList, displaySubtitle, textX, titleY + titleFs + 2, 0x80AAAAAA, subtitleFs);
                 end
             end
         end);

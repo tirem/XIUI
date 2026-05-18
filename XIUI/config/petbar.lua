@@ -1213,6 +1213,10 @@ local function DrawPetTargetSettingsContent()
             DeferredUpdateVisuals();
         end);
         imgui.ShowHelp('Select the background window theme for pet target. Uses Pet Bar theme by default.');
+        components.DrawSlider('Background Scale##petTargetBg', 'petTargetBgScale', 0.1, 3.0, '%.2f');
+        imgui.ShowHelp('Scale of the background texture.');
+        components.DrawSlider('Border Scale##petTargetBg', 'petTargetBorderScale', 0.1, 3.0, '%.2f');
+        imgui.ShowHelp('Scale of the window borders (Window themes only).');
         components.DrawSlider('Background Opacity##petTargetBg', 'petTargetBackgroundOpacity', 0.0, 1.0, '%.2f');
         imgui.ShowHelp('Opacity of the background. Uses Pet Bar opacity by default.');
         components.DrawSlider('Border Opacity##petTargetBg', 'petTargetBorderOpacity', 0.0, 1.0, '%.2f');

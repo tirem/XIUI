@@ -16,9 +16,10 @@ local imgui = require('imgui');
 
 local M = {};
 
--- GDI visual parity offsets (ImGui fonts render smaller than GDI at same size)
-local GDI_SIZE_OFFSET = 2;
-local GDI_OUTLINE_OFFSET = -1;
+-- ImGui fonts render visibly smaller than GDI at the same size; the +2
+-- compensates so existing font_height settings (carried over from the GDI
+-- era) keep matching their on-screen look. Outline width is taken literally.
+local SIZE_OFFSET = 2;
 
 -- Font cache: fontKey -> font handle (loaded once, reused across modules)
 local fontCache = {};
@@ -129,7 +130,7 @@ end
 --- @param ow number Outline width in pixels
 function M.SetConfig(fontFamily, isBold, ow)
     loadFont(fontFamily, isBold);
-    outlineWidth = math.max(0, (ow or 2) + GDI_OUTLINE_OFFSET);
+    outlineWidth = math.max(0, ow or 2);
 end
 
 --- Apply font settings from a font_settings table (as used by gAdjustedSettings).
@@ -181,7 +182,7 @@ end
 --- @return number width, number height
 function M.Measure(text, fontSize)
     if not text or text == '' then return 0, 0; end
-    if fontSize then fontSize = fontSize + GDI_SIZE_OFFSET; end
+    if fontSize then fontSize = fontSize + SIZE_OFFSET; end
 
     local font = activeFont;
     if font and fontSize then
@@ -214,7 +215,7 @@ end
 --- @param fontSize number|nil Pixel size (nil uses ImGui default)
 function M.Draw(drawList, text, x, y, argbColor, fontSize)
     if not drawList or not text or text == '' then return; end
-    if fontSize then fontSize = fontSize + GDI_SIZE_OFFSET; end
+    if fontSize then fontSize = fontSize + SIZE_OFFSET; end
     local font = M.GetFont();
     local col = argbToU32(argbColor);
     local ow = outlineWidth;
@@ -257,7 +258,7 @@ end
 --- @param fontSize number|nil
 function M.DrawSimple(drawList, text, x, y, argbColor, fontSize)
     if not drawList or not text or text == '' then return; end
-    if fontSize then fontSize = fontSize + GDI_SIZE_OFFSET; end
+    if fontSize then fontSize = fontSize + SIZE_OFFSET; end
     local font = M.GetFont();
     local col = argbToU32(argbColor);
     pos[1] = x; pos[2] = y;
@@ -275,7 +276,7 @@ end
 --- bright backgrounds is close to a full outline at a fraction of the cost.
 function M.DrawShadow(drawList, text, x, y, argbColor, fontSize)
     if not drawList or not text or text == '' then return; end
-    if fontSize then fontSize = fontSize + GDI_SIZE_OFFSET; end
+    if fontSize then fontSize = fontSize + SIZE_OFFSET; end
     local font = M.GetFont();
     local col = argbToU32(argbColor);
     local ow = outlineWidth;

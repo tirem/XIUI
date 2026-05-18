@@ -775,6 +775,8 @@ function M.createUserSettingsDefaults()
         petBarHpDisplayMode = 'percent', -- 'percent', 'number'
         petBarTargetFontSize = 10,
         petTargetBackgroundTheme = nil,  -- Uses petBarBackgroundTheme by default
+        petTargetBgScale = 1.0,
+        petTargetBorderScale = 1.0,
         petTargetBackgroundOpacity = 1.0,
         petTargetBorderOpacity = 1.0,
         petTargetBarScaleX = 1.0,

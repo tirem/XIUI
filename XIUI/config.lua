@@ -668,9 +668,12 @@ config.DrawWindow = function(us)
     -- Push theme styles AFTER validating DisplaySize to avoid leaking
     -- style/var pushes on early returns (which corrupt ImGui state).
     PushThemeStyles();
-    local maxW = math.min(900, sw - 40);
-    local maxH = math.min(650, sh - 40);
-    imgui.SetNextWindowSizeConstraints({ 400, 300 }, { sw, sh });
+    -- Global UI Scale extends to the config window: scale ideal/maximum size
+    -- (clamped to screen) and bump fonts via SetWindowFontScale below.
+    local configScale = math.max(0.5, gConfig.globalScale or 1.0);
+    local maxW = math.min(900 * configScale, sw - 40);
+    local maxH = math.min(650 * configScale, sh - 40);
+    imgui.SetNextWindowSizeConstraints({ 400 * configScale, 300 * configScale }, { sw, sh });
     -- On open: set ideal size for the current resolution and reset position if off-screen.
     if configJustOpened then
         if not configHasBeenOpened then
@@ -688,6 +691,9 @@ config.DrawWindow = function(us)
         end
     end
     if(imgui.Begin("XIUI Config - v" .. addon.version, showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
+        -- Per-window font scale so the config text grows with Global UI Scale
+        -- without affecting any other XIUI windows.
+        imgui.SetWindowFontScale(configScale);
         local windowWidth = imgui.GetContentRegionAvail();
         local sidebarWidth = 180;
         local contentWidth = windowWidth - sidebarWidth - 20;

@@ -32,6 +32,14 @@ local DEFAULT_PADDING = 8;
 local DEFAULT_BORDER_SIZE = 21;
 local DEFAULT_BG_OFFSET = 1;
 
+-- The tl corner image is laid out as: 21x21 native corner artwork in the
+-- top-left, then a 21px-tall top arm and 21px-wide left arm extending out to
+-- 491x491. We split rendering into three UV-sliced pieces so the corner stays
+-- pixel-correct and the arms stretch only along their long axis.
+local SOURCE_CORNER_SIZE = 21;
+local SOURCE_FULL_SIZE = 491;
+local CORNER_UV = SOURCE_CORNER_SIZE / SOURCE_FULL_SIZE;
+
 -- ============================================
 -- Internal Helpers
 -- ============================================
@@ -100,6 +108,7 @@ function M.DrawBackground(drawList, x, y, w, h, options)
     local padding  = options.padding  or DEFAULT_PADDING;
     local paddingY = options.paddingY or padding;
     local bgColor  = options.bgColor  or 0xFFFFFFFF;
+    local bgScale  = options.bgScale  or 1.0;
 
     local bgX, bgY, bgW, bgH = ComputeBgRect(x, y, w, h, padding, paddingY);
 
@@ -107,7 +116,11 @@ function M.DrawBackground(drawList, x, y, w, h, options)
     if ptr == nil then return; end
 
     local tint = TintU32(ResolveTint(bgColor, options.bgOpacity));
-    drawList:AddImage(ptr, {bgX, bgY}, {bgX + bgW, bgY + bgH}, {0, 0}, {1, 1}, tint);
+    -- bgScale > 1 zooms in (less of the texture covers the same area), matching
+    -- the old primitive scale_x/y behavior. UVs are clamped at the sampler so
+    -- bgScale < 1 just shows edge pixels past UV=1 rather than tiling.
+    local uvMax = 1.0 / bgScale;
+    drawList:AddImage(ptr, {bgX, bgY}, {bgX + bgW, bgY + bgH}, {0, 0}, {uvMax, uvMax}, tint);
 end
 
 --[[
@@ -150,13 +163,42 @@ function M.DrawBorders(drawList, x, y, w, h, options)
         drawList:AddImage(trPtr, {trX, trY}, {trX + pieceSize, trY + trH}, {0, 0}, {1, 1}, tint);
     end
 
-    -- Top-left (L-shape: spans top edge to tr, and left edge down to bl)
+    -- Top-left: rendered as three UV-sliced pieces so the 21x21 source corner
+    -- and the 21px-thick arms keep their native proportions. Stretching the
+    -- whole 491x491 tl image into a smaller-than-source area used to compress
+    -- the top and left border lines, which testers saw as "squished" edges.
     local tlX = bgX - offset;
     local tlY = bgY - offset;
     local tlW = trX - tlX;
     local tlPtr = LoadPiecePtr(theme, 'tl');
     if tlPtr ~= nil then
-        drawList:AddImage(tlPtr, {tlX, tlY}, {tlX + tlW, tlY + trH}, {0, 0}, {1, 1}, tint);
+        -- Corner (top-left 21x21 of source -> pieceSize x pieceSize)
+        drawList:AddImage(
+            tlPtr,
+            {tlX, tlY}, {tlX + pieceSize, tlY + pieceSize},
+            {0, 0}, {CORNER_UV, CORNER_UV},
+            tint
+        );
+        -- Top arm: source spans right past the corner, stretched horizontally only
+        local armW = tlW - pieceSize;
+        if armW > 0 then
+            drawList:AddImage(
+                tlPtr,
+                {tlX + pieceSize, tlY}, {tlX + tlW, tlY + pieceSize},
+                {CORNER_UV, 0}, {1, CORNER_UV},
+                tint
+            );
+        end
+        -- Left arm: source spans down past the corner, stretched vertically only
+        local armH = trH - pieceSize;
+        if armH > 0 then
+            drawList:AddImage(
+                tlPtr,
+                {tlX, tlY + pieceSize}, {tlX + pieceSize, tlY + trH},
+                {0, CORNER_UV}, {CORNER_UV, 1},
+                tint
+            );
+        end
     end
 
     -- Bottom-left (spans bottom edge to br)
@@ -180,7 +222,8 @@ end
         theme         = string   -- '-None-' | 'Plain' | 'Window1'..'Window8'
         padding       = number   -- Horizontal pad (default 8)
         paddingY      = number   -- Vertical pad (defaults to padding)
-        bgScale       = number   -- Reserved for future use (default 1.0)
+        bgScale       = number   -- Zoom factor on the bg texture (UV scaling)
+                                  -- >1 zooms in, default 1.0
         borderScale   = number   -- Scales border piece size (default 1.0)
         bgOpacity     = number   -- Optional 0..1; overrides bgColor's alpha
         bgColor       = number   -- ARGB tint (default 0xFFFFFFFF)
