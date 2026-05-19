@@ -582,13 +582,13 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 	end
 
 	-- Draw the outer border wrapping the bar. Skipped at thickness 0.
-	-- Offset by the full thickness (not half) so AA bleed from the centered
-	-- stroke lands entirely outside the bar — half-thickness offset caused
-	-- the line to read as "inside the bar" because the AA tail crossed the
-	-- bar's edge pixels.
+	-- innerOffset = thickness/2 + 0.5 places ImGui's centered, anti-aliased
+	-- stroke so its inner AA fringe lands exactly at the bar's outer edge:
+	-- no gap to the bar (which `thickness` produced) and no AA bleed onto the
+	-- fill (which `thickness/2` produced).
 	local innerBorderThickness = gConfig.barBorderThickness or 2;
 	if innerBorderThickness > 0 then
-		local innerOffset = innerBorderThickness;
+		local innerOffset = innerBorderThickness / 2 + 0.5;
 		drawList:AddRect(
 			{positionStartX - innerOffset, positionStartY - innerOffset},
 			{positionStartX + width + innerOffset, positionStartY + height + innerOffset},
@@ -612,9 +612,9 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 			local middleOffset = innerOffset + innerBorderThickness;
 			borderExtent = middleOffset + middleBorderThickness / 2;
 		elseif innerBorderThickness > 0 then
-			-- innerOffset is now the full thickness (see border draw above) plus
-			-- half-thickness for the AA tail
-			borderExtent = innerBorderThickness * 1.5;
+			-- innerOffset is thickness/2 + 0.5 (centered stroke + AA fringe),
+			-- so the total extent past the bar edge is thickness + 1
+			borderExtent = innerBorderThickness + 1;
 		end
 		-- Add border extent to width/height to prevent right/bottom clipping
 		imgui.Dummy({width + borderExtent, height + borderExtent});
