@@ -420,18 +420,15 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 	rounding = options.decorate and progressbar.backgroundRounding or gConfig.noBookendRounding;
 	progressbar.DrawBar({contentPositionStartX, contentPositionStartY}, {contentPositionStartX + contentWidth, contentPositionStartY + height}, bgGradientStart, bgGradientEnd, rounding, nil, drawList);
 	
-	-- Compute the actual progress bar's width and height.
-	-- foregroundPadding leaves a band of bg color visible around the fill so the
-	-- thickness slider's outline has something to outline. When the user sets
-	-- thickness to 0 they want zero visible frame, so collapse the inset too.
-	local fgPadding = ((gConfig.barBorderThickness or 0) > 0) and progressbar.foregroundPadding or 0;
-	local paddingHalf = fgPadding / 2;
+	-- The fill matches the bg's footprint exactly so the bar's visible edge is
+	-- the bg edge. The Bar Border Thickness slider then draws an outline strictly
+	-- outside that edge — each pixel of thickness adds 1px of wrap, with 0 truly
+	-- meaning no frame.
+	local progressPositionStartX = contentPositionStartX;
+	local progressPositionStartY = contentPositionStartY;
 
-	local progressPositionStartX = contentPositionStartX + paddingHalf;
-	local progressPositionStartY = contentPositionStartY + paddingHalf;
-
-	local progressTotalWidth = contentWidth - fgPadding;
-	local progressHeight = height - fgPadding;
+	local progressTotalWidth = contentWidth;
+	local progressHeight = height;
 	
 	-- Draw the progress bar(s)
 	local progressOffset = 0;
@@ -584,10 +581,14 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 		);
 	end
 
-	-- Draw default inner background border - always drawn for all bars (unless thickness is 0)
+	-- Draw the outer border wrapping the bar. Skipped at thickness 0.
+	-- Offset by the full thickness (not half) so AA bleed from the centered
+	-- stroke lands entirely outside the bar — half-thickness offset caused
+	-- the line to read as "inside the bar" because the AA tail crossed the
+	-- bar's edge pixels.
 	local innerBorderThickness = gConfig.barBorderThickness or 2;
 	if innerBorderThickness > 0 then
-		local innerOffset = innerBorderThickness / 2;
+		local innerOffset = innerBorderThickness;
 		drawList:AddRect(
 			{positionStartX - innerOffset, positionStartY - innerOffset},
 			{positionStartX + width + innerOffset, positionStartY + height + innerOffset},
@@ -611,7 +612,9 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 			local middleOffset = innerOffset + innerBorderThickness;
 			borderExtent = middleOffset + middleBorderThickness / 2;
 		elseif innerBorderThickness > 0 then
-			borderExtent = innerBorderThickness / 2;
+			-- innerOffset is now the full thickness (see border draw above) plus
+			-- half-thickness for the AA tail
+			borderExtent = innerBorderThickness * 1.5;
 		end
 		-- Add border extent to width/height to prevent right/bottom clipping
 		imgui.Dummy({width + borderExtent, height + borderExtent});
