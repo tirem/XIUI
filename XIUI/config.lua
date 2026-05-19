@@ -690,10 +690,14 @@ config.DrawWindow = function(us)
             imgui.SetNextWindowPos({ 20, 20 }, ImGuiCond_Always);
         end
     end
-    if(imgui.Begin("XIUI Config - v" .. addon.version, showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
-        -- Per-window font scale so the config text grows with Global UI Scale
-        -- without affecting any other XIUI windows.
-        imgui.SetWindowFontScale(configScale);
+    local configVisible = imgui.Begin("XIUI Config - v" .. addon.version, showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking));
+    if configVisible then
+        -- SetWindowFontScale isn't part of Ashita's IGuiManager binding, so
+        -- feature-detect it. Without it the window dimensions still scale,
+        -- the font just stays at the default size on this Ashita build.
+        if imgui.SetWindowFontScale ~= nil then
+            pcall(imgui.SetWindowFontScale, configScale);
+        end
         local windowWidth = imgui.GetContentRegionAvail();
         local sidebarWidth = 180;
         local contentWidth = windowWidth - sidebarWidth - 20;
