@@ -420,14 +420,18 @@ progressbar.ProgressBar  = function(percentList, dimensions, options)
 	rounding = options.decorate and progressbar.backgroundRounding or gConfig.noBookendRounding;
 	progressbar.DrawBar({contentPositionStartX, contentPositionStartY}, {contentPositionStartX + contentWidth, contentPositionStartY + height}, bgGradientStart, bgGradientEnd, rounding, nil, drawList);
 	
-	-- Compute the actual progress bar's width and height
-	local paddingHalf = progressbar.foregroundPadding / 2;
-	
+	-- Compute the actual progress bar's width and height.
+	-- foregroundPadding leaves a band of bg color visible around the fill so the
+	-- thickness slider's outline has something to outline. When the user sets
+	-- thickness to 0 they want zero visible frame, so collapse the inset too.
+	local fgPadding = ((gConfig.barBorderThickness or 0) > 0) and progressbar.foregroundPadding or 0;
+	local paddingHalf = fgPadding / 2;
+
 	local progressPositionStartX = contentPositionStartX + paddingHalf;
 	local progressPositionStartY = contentPositionStartY + paddingHalf;
-	
-	local progressTotalWidth = contentWidth - progressbar.foregroundPadding;
-	local progressHeight = height - progressbar.foregroundPadding;
+
+	local progressTotalWidth = contentWidth - fgPadding;
+	local progressHeight = height - fgPadding;
 	
 	-- Draw the progress bar(s)
 	local progressOffset = 0;
