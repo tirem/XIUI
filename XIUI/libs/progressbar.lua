@@ -16,7 +16,11 @@ local progressbar = {
 	backgroundRounding = 0,
 
 	-- Foreground
-	foregroundRounding = 3,
+	-- Rounding stays at 0 so the bookended fill's inner corners meet the
+	-- bookends' flat inner edges flush. A non-zero radius here would carve a
+	-- triangular notch out of the bar at each bookend boundary, visible as a
+	-- choppy edge once foregroundPadding stopped masking it.
+	foregroundRounding = 0,
 	foregroundPadding = 5,
 
 	-- Gradient texture cache (hash table for O(1) lookup)
