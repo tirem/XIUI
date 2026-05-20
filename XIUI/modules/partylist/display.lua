@@ -37,6 +37,12 @@ end
 -- ============================================
 function display.DrawMember(memIdx, settings, isLastVisibleMember)
     local textDrawList = GetUIDrawList();
+    -- Bar borders draw outside the requested barHeight; shift text below to clear them.
+    local barBorderExtent;
+    do
+        local t = gConfig.barBorderThickness or 1;
+        barBorderExtent = (t > 0) and (t / 2 + 0.5) or 0;
+    end
     local memInfo = data.GetMemberInformation(memIdx);
     if (memInfo == nil) then
         memInfo = {
@@ -478,18 +484,18 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         local zoneBarWidth = allBarsLengths;
         local zoneBarHeight;
         if layout == 1 then
-            zoneBarHeight = hpBarHeight + 1 + mpBarHeight;
+            zoneBarHeight = hpBarHeight + 1 + mpBarHeight + barBorderExtent;
         else
-            zoneBarHeight = hpBarHeight;
+            zoneBarHeight = hpBarHeight + barBorderExtent;
         end
         imgui.Dummy({zoneBarWidth, zoneBarHeight});
     else
         local zoneBarWidth = allBarsLengths;
         local zoneBarHeight;
         if layout == 1 then
-            zoneBarHeight = hpBarHeight + 1 + mpBarHeight;
+            zoneBarHeight = hpBarHeight + 1 + mpBarHeight + barBorderExtent;
         else
-            zoneBarHeight = hpBarHeight;
+            zoneBarHeight = hpBarHeight + barBorderExtent;
         end
 
         local zoneBarStartX, zoneBarStartY = imgui.GetCursorScreenPos();
@@ -519,7 +525,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         hpTextY = hpStartY - nameRefHeight - settings.nameTextOffsetY + hpBaselineOffset + textOffsets.hpY;
     else
         hpTextX = hpStartX + hpBarWidth - hpTextWidth + settings.hpTextOffsetX + textOffsets.hpX;
-        hpTextY = hpStartY + hpBarHeight + settings.hpTextOffsetY + hpBaselineOffset + textOffsets.hpY;
+        hpTextY = hpStartY + hpBarHeight + barBorderExtent + settings.hpTextOffsetY + hpBaselineOffset + textOffsets.hpY;
     end
     if memInfo.inzone then
         imtext.Draw(textDrawList, hpDisplayText, hpTextX, hpTextY, hpColor, fontSizes.hp);
@@ -912,7 +918,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 local currentMpTextWidth = showingCastInMpSlot and imtext.Measure(mpDisplayText, fontSizes.mp) or mpTextWidth;
                 local mpBaselineOffset = mpRefHeight - mpHeight;
                 local mpTextX = mpStartX + mpBarWidth - currentMpTextWidth + textOffsets.mpX;
-                local mpTextY = mpStartY + mpBarHeight + settings.mpTextOffsetY + mpBaselineOffset + textOffsets.mpY;
+                local mpTextY = mpStartY + mpBarHeight + barBorderExtent + settings.mpTextOffsetY + mpBaselineOffset + textOffsets.mpY;
                 if memInfo.inzone then
                     imtext.Draw(textDrawList, mpDisplayText, mpTextX, mpTextY, mpColor, fontSizes.mp);
                 end
@@ -962,7 +968,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 local currentTpTextWidth = showingCastInTpSlot and imtext.Measure(tpText, fontSizes.tp) or tpTextWidth;
                 local tpBaselineOffset = tpRefHeight - tpHeight;
                 local tpTextX = tpStartX + tpBarWidth - currentTpTextWidth + textOffsets.tpX;
-                local tpTextY = tpStartY + tpBarHeight + settings.tpTextOffsetY + tpBaselineOffset + textOffsets.tpY;
+                local tpTextY = tpStartY + tpBarHeight + barBorderExtent + settings.tpTextOffsetY + tpBaselineOffset + textOffsets.tpY;
                 if memInfo.inzone then
                     imtext.Draw(textDrawList, tpText, tpTextX, tpTextY, tpColor, fontSizes.tp);
                 end
