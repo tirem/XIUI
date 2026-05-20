@@ -248,7 +248,7 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
     gAdjustedSettings.partyListSettings.hpBarWidth = (layoutA.hpBarWidth or 150) * gs;
     gAdjustedSettings.partyListSettings.mpBarWidth = (layoutA.mpBarWidth or 100) * gs;
     gAdjustedSettings.partyListSettings.tpBarWidth = (layoutA.tpBarWidth or 100) * gs;
-    gAdjustedSettings.partyListSettings.barHeight = (layoutA.barHeight or 20) * gs;
+    gAdjustedSettings.partyListSettings.barHeight = (layoutA.barHeight or ds.partyListSettings.barHeight) * gs;
     gAdjustedSettings.partyListSettings.barSpacing = (layoutA.barSpacing or 8) * gs;
     gAdjustedSettings.partyListSettings.hpBarScaleX = us.partyA.hpBarScaleX or 1;
     gAdjustedSettings.partyListSettings.mpBarScaleX = us.partyA.mpBarScaleX or 1;
