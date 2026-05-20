@@ -488,7 +488,10 @@ function components.DrawSlider(label, configKey, min, max, format, callback)
     end
 end
 
--- Flexible integer slider for any table + key (with width constraint and auto-save)
+-- Flexible integer slider for any table + key (with width constraint and auto-save).
+-- Slider pattern: live preview via UpdateUserSettings on every tick (cheap,
+-- in-memory only), disk write only on release. SaveSettingsOnly per tick
+-- caused visible lag on drag because every tick wrote the entire profile.
 function components.SliderInt(label, parentTable, key, min, max, default)
     local currentValue = parentTable[key];
     if currentValue == nil then currentValue = default or min; end
@@ -497,14 +500,15 @@ function components.SliderInt(label, parentTable, key, min, max, default)
     imgui.SetNextItemWidth(CONTENT_MAX_WIDTH);
     if imgui.SliderInt(label, value, min, max) then
         parentTable[key] = value[1];
-        SaveSettingsOnly();
+        UpdateUserSettings();
     end
     if imgui.IsItemDeactivatedAfterEdit() then
         SaveSettingsToDisk();
     end
 end
 
--- Flexible float slider for any table + key (with width constraint and auto-save)
+-- Flexible float slider for any table + key (with width constraint and auto-save).
+-- See SliderInt for slider-pattern rationale.
 function components.SliderFloat(label, parentTable, key, min, max, format, default)
     local currentValue = parentTable[key];
     if currentValue == nil then currentValue = default or min; end
@@ -513,7 +517,7 @@ function components.SliderFloat(label, parentTable, key, min, max, format, defau
     imgui.SetNextItemWidth(CONTENT_MAX_WIDTH);
     if imgui.SliderFloat(label, value, min, max, format or '%.2f') then
         parentTable[key] = value[1];
-        SaveSettingsOnly();
+        UpdateUserSettings();
     end
     if imgui.IsItemDeactivatedAfterEdit() then
         SaveSettingsToDisk();
