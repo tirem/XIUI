@@ -836,7 +836,6 @@ config.DrawWindow = function(us)
 
             if (imgui.Button("Confirm", { 120, 0 })) then
                 ResetSettings();
-                UpdateSettings();
                 imgui.CloseCurrentPopup();
             end
             imgui.SameLine();

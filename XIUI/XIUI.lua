@@ -679,12 +679,9 @@ function ResetSettings()
     gConfig.windowPositions = GetDefaultWindowPositions();
     gConfig.appliedPositions = {};
     profileManager.SaveProfileSettings(config.currentProfile, gConfig);
-    UpdateSettings();
-    bInternalSave = true;
-    settings.save();
-    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
 
-    -- Reset all module positions to defaults
+    -- Reset all module positions to defaults BEFORE deferring visuals so the
+    -- next-frame UpdateVisualsAll picks up the corrected positions.
     uiMods.playerbar.ResetPositions();
     uiMods.targetbar.ResetPositions();
     uiMods.castbar.ResetPositions();
@@ -698,6 +695,16 @@ function ResetSettings()
     uiMods.notifications.ResetPositions();
     uiMods.treasurepool.ResetPositions();
     hotbar.ResetPositions();
+
+    -- Persist + defer the heavy visual update cascade. ResetSettings is called
+    -- from an imgui button callback inside d3d_present; running UpdateVisualsAll
+    -- inline orphans textures via the gConfig replacement above and triggers
+    -- mid-frame Lua GC that can call d3d8.gc_safe_release on textures still
+    -- queued for draw this frame (hard CTD on Ashita 4.3). The deferred block
+    -- at the top of the next d3d_present runs the same cascade outside the
+    -- active draw list. See ai/lessons.md.
+    SaveSettingsOnly();
+    DeferredUpdateVisuals();
 end
 
 function RecoverAllPositions()
