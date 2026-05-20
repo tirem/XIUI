@@ -594,7 +594,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 local spellNameWidth, _ = imtext.Measure(castData.spellName, fontSizes.name);
 
                 local castBarWidth = hpBarWidth * 0.6 * cache.castBarScaleX;
-                local castBarHeight = math.max(6, nameRefHeight * 0.8 * cache.castBarScaleY);
+                local castBarHeight = math.max(2, nameRefHeight * 0.8 * cache.castBarScaleY);
                 local castBarOffsetX = cache.castBarOffsetX or 0;
                 local castBarOffsetY = cache.castBarOffsetY or 0;
                 local castBarX;

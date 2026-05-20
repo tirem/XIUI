@@ -28,8 +28,8 @@ function M.createModuleDefaults()
 
             -- Everything else
             barWidth = 500,
-            barHeight = 18,
-            totBarHeight = 14,
+            barHeight = 13,
+            totBarHeight = 10,
             totBarOffset = -1,
             textScale = 1.2,
             cornerOffset = 5,
@@ -103,7 +103,7 @@ function M.createModuleDefaults()
             hitFlashDuration = 0.4,
             barWidth = 500,
             barSpacing = 10,
-            barHeight = 20,
+            barHeight = 14,
             textYOffset = -1,
             font_settings = T{
                 font_alignment = fontconst.ALIGN_RIGHT,
@@ -119,7 +119,7 @@ function M.createModuleDefaults()
         -- settings for enemy list
         enemyListSettings = T{
             barWidth = 125,
-            barHeight = 10,
+            barHeight = 7,
             textScale = 1,
             entrySpacing = 1,
             bgPadding = 7,
@@ -187,7 +187,7 @@ function M.createModuleDefaults()
         -- settings for the exp bar
         expBarSettings = T{
             barWidth = 550,
-            barHeight = 12,
+            barHeight = 8,
             textOffsetY = 4,
             -- Individual text offsets (applied from user settings)
             jobTextOffsetX = 0,
@@ -371,7 +371,7 @@ function M.createModuleDefaults()
             hpBarWidth = 150,
             tpBarWidth = 100,
             mpBarWidth = 100,
-            barHeight = 20,
+            barHeight = 14,
             barSpacing = 8,
 
             nameTextOffsetX = 1,
@@ -477,7 +477,7 @@ function M.createModuleDefaults()
 
         castBarSettings = T{
             barWidth = 500,
-            barHeight = 20,
+            barHeight = 14,
             spellOffsetY = 2,
             percentOffsetY = 2,
             percentOffsetX = -10,
@@ -576,7 +576,7 @@ function M.createModuleDefaults()
         -- settings for pet bar
         petBarSettings = T{
             barWidth = 150,
-            barHeight = 12,
+            barHeight = 8,
             barSpacing = 4,
             bgPadding = 8,
             bgPaddingY = 8,

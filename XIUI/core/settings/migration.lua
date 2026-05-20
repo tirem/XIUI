@@ -125,7 +125,7 @@ function M.MigratePartyListLayoutSettings(gConfig, defaults)
             hpBarWidth = 150,
             mpBarWidth = 100,
             tpBarWidth = 100,
-            barHeight = 20,
+            barHeight = 14,
             barSpacing = 8,
 
             nameTextOffsetX = 1,
@@ -1052,6 +1052,27 @@ function M.MigrateSlotMacroRefs(gConfig)
     return keysAdded, fieldsStripped;
 end
 
+-- Migrate party-list layout barHeight from the pre-#313 default of 20 to the
+-- new default of 14. Layouts customized away from 20 are left untouched.
+function M.MigrateBarHeightDefaults(gConfig, defaults)
+    if not gConfig then return; end
+
+    local OLD_DEFAULT = 20;
+    local NEW_DEFAULT = 14;
+    local targets = {
+        gConfig.layoutHorizontal,
+        gConfig.layoutCompact,
+        gConfig.partyListLayout1,
+        gConfig.partyListLayout2,
+    };
+
+    for _, tbl in ipairs(targets) do
+        if type(tbl) == 'table' and tbl.barHeight == OLD_DEFAULT then
+            tbl.barHeight = NEW_DEFAULT;
+        end
+    end
+end
+
 -- Run structure migrations (called AFTER settings.load())
 -- These handle migrating old settings structures to new ones
 function M.RunStructureMigrations(gConfig, defaults)
@@ -1068,6 +1089,7 @@ function M.RunStructureMigrations(gConfig, defaults)
     M.MigrateCrossbarComboModeSettings(gConfig, defaults);
     M.MigrateLegacyPositionFields(gConfig);
     M.MigrateSlotMacroRefs(gConfig);
+    M.MigrateBarHeightDefaults(gConfig, defaults);
 end
 
 -- Legacy function for backward compatibility (if any external code calls it)
