@@ -389,9 +389,9 @@ function M.createModuleDefaults()
             bgOffset = 1,
 
             cursorPaddingX1 = 8,
-            cursorPaddingX2 = 8,
-            cursorPaddingY1 = 7,
-            cursorPaddingY2 = 10,
+            cursorPaddingX2 = 14,
+            cursorPaddingY1 = 11,
+            cursorPaddingY2 = 20,
             dotRadius = 3,
 
             arrowSize = 1,

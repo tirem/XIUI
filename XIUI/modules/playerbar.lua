@@ -349,8 +349,8 @@ playerbar.DrawWindow = function(settings)
 			local width = barSize - shimmerBookendWidth * 2 - (padding * 2);
 			local waveWidth = width * 0.06;
 			local x = hpBarStartX + shimmerBookendWidth + padding;
-			local y1 = hpBarStartY + padding;
-			local y2 = hpBarStartY + settings.barHeight - padding;
+			local y1 = hpBarStartY;
+			local y2 = hpBarStartY + settings.barHeight;
 			local waveLeft = x + (progress * (width - waveWidth));
 			local waveRight = waveLeft + waveWidth;
 			
@@ -494,6 +494,13 @@ playerbar.DrawWindow = function(settings)
 
 		imgui.SameLine();
 
+		-- Bar borders draw outside the requested barHeight; shift text below to clear them.
+		local barBorderExtent;
+		do
+			local t = gConfig.barBorderThickness or 1;
+			barBorderExtent = (t > 0) and (t / 2 + 0.5) or 0;
+		end
+
 		-- Draw HP text
 		local hpDisplayMode = gConfig.playerBarHpDisplayMode or 'number';
 		local hpDisplayText;
@@ -524,7 +531,7 @@ playerbar.DrawWindow = function(settings)
 		-- Apply user offset (scaled by global UI scale)
 		local gs = gConfig.globalScale or 1.0;
 		hpTextX = hpTextX + (gConfig.playerBarHpTextOffsetX or 0) * gs;
-		local hpTextY = hpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarHpTextOffsetY or 0) * gs;
+		local hpTextY = hpBarStartY + settings.barHeight + barBorderExtent + settings.textYOffset + (gConfig.playerBarHpTextOffsetY or 0) * gs;
 		imtext.Draw(drawList, hpDisplayText, hpTextX, hpTextY, gConfig.colorCustomization.playerBar.hpTextColor, fontSize);
 
 		if (bShowMp) then
@@ -557,7 +564,7 @@ playerbar.DrawWindow = function(settings)
 			end
 			-- Apply user offset (scaled by global UI scale)
 			mpTextX = mpTextX + (gConfig.playerBarMpTextOffsetX or 0) * gs;
-			local mpTextY = mpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarMpTextOffsetY or 0) * gs;
+			local mpTextY = mpBarStartY + settings.barHeight + barBorderExtent + settings.textYOffset + (gConfig.playerBarMpTextOffsetY or 0) * gs;
 			imtext.Draw(drawList, mpDisplayText, mpTextX, mpTextY, gConfig.colorCustomization.playerBar.mpTextColor, fontSize);
 		end
 
@@ -576,7 +583,7 @@ playerbar.DrawWindow = function(settings)
 		end
 		-- Apply user offset (scaled by global UI scale)
 		tpTextX = tpTextX + (gConfig.playerBarTpTextOffsetX or 0) * gs;
-		local tpTextY = tpBarStartY + settings.barHeight + settings.textYOffset + (gConfig.playerBarTpTextOffsetY or 0) * gs;
+		local tpTextY = tpBarStartY + settings.barHeight + barBorderExtent + settings.textYOffset + (gConfig.playerBarTpTextOffsetY or 0) * gs;
 		local tpTextColor = (SelfTP >= 1000) and gConfig.colorCustomization.playerBar.tpFullTextColor or gConfig.colorCustomization.playerBar.tpEmptyTextColor;
 		imtext.Draw(drawList, tpDisplayText, tpTextX, tpTextY, tpTextColor, fontSize);
 
