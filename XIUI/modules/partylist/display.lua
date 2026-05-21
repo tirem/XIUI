@@ -614,7 +614,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                     -- rendered: namePosX + textOffsets.nameX, not namePosX alone).
                     castBarX = nameTextX + spellNameWidth + 4 + castBarOffsetX;
                 end
-                local castBarY = hpStartY - nameRefHeight - settings.nameTextOffsetY + (nameRefHeight - castBarHeight) / 2 + castBarOffsetY;
+                local castBarY = hpStartY - nameRefHeight - settings.nameTextOffsetY + textOffsets.nameY + (nameRefHeight - castBarHeight) / 2 + castBarOffsetY;
                 local castGradient = GetCustomGradient(cache.colors, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
                 progressbar.ProgressBar(
                     {{castProgress, castGradient}},

@@ -12,6 +12,12 @@ local statusHandler = require('handlers.statushandler')
 
 local ui = {}
 
+-- SetWindowFontScale is missing on some older Ashita builds and is being
+-- obsoleted upstream. Resolve once and fall back to a no-op so a nil lookup
+-- can't abort a render mid-window (which would leave Begin/PushStyle*
+-- unmatched and surface as "missing End()" / "missing popStyleColor()").
+local SetWindowFontScale = imgui.SetWindowFontScale or function() end
+
 -- ── Job icon loader ────────────────────────────────────────────────────────────
 -- Delegate to XIUI's statusHandler so we reuse its TextureManager cache and
 -- respect the user's chosen job icon theme (gConfig.jobIconTheme).
@@ -137,7 +143,7 @@ local function render_prompt(state, handlers)
     imgui.SetNextWindowBgAlpha(0.95)
 
     if imgui.Begin('Ready Check##prompt', state.prompt_open, PROMPT_FLAGS) then
-        imgui.SetWindowFontScale(FONT_SCALE)
+        SetWindowFontScale(FONT_SCALE)
         local sender = state.prompt_sender or 'Someone'
         imgui.Spacing()
         imgui.PushStyleColor(ImGuiCol_Text, COLOR_GOLD_BRIGHT)
@@ -198,7 +204,7 @@ local function render_tracker(state, handlers)
     imgui.SetNextWindowBgAlpha(0.90)
 
     if imgui.Begin('Ready Check##tracker', state.checker_open, TRACKER_FLAGS) then
-        imgui.SetWindowFontScale(FONT_SCALE)
+        SetWindowFontScale(FONT_SCALE)
         imgui.Text('Party / Alliance Status')
         imgui.SameLine()
         local secs_left = state.checker_deadline
@@ -318,7 +324,7 @@ local function render_config(state, handlers)
     imgui.SetNextWindowBgAlpha(0.95)
 
     if imgui.Begin('ReadyCheck Config##config', state.config_open, CONFIG_FLAGS) then
-        imgui.SetWindowFontScale(FONT_SCALE)
+        SetWindowFontScale(FONT_SCALE)
 
         imgui.PushStyleColor(ImGuiCol_Text, COLOR_GOLD_BRIGHT)
         imgui.Text('Sound Settings')
