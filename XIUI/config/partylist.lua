@@ -97,9 +97,6 @@ local function DrawPartyTabContent(party, partyName)
         components.DrawPartyCheckbox(party, 'Show Bookends', 'showBookends');
         components.DrawPartyCheckbox(party, 'Show Title', 'showTitle');
         components.DrawPartyCheckbox(party, 'Align Bottom', 'alignBottom');
-        components.DrawPartyCheckbox(party, 'Expand Height', 'expandHeight');
-        components.DrawPartyCheckbox(party, 'Expand Height In Alliance', 'expandHeightInAlliance');
-        imgui.ShowHelp('When enabled, Party A will use expanded height only while in an alliance.');
 
         -- HP Display Mode dropdown
         components.DrawDisplayModeDropdown('HP Display##party' .. partyName, party, 'hpDisplayMode',
@@ -114,7 +111,13 @@ local function DrawPartyTabContent(party, partyName)
     end
 
     if components.CollapsingSection('Scale & Spacing##party' .. partyName) then
-        components.DrawPartySlider(party, 'Min Rows', 'minRows', 1, 6);
+        components.DrawPartyCheckbox(party, 'Expand Height In Alliance', 'expandHeightInAlliance');
+        imgui.ShowHelp('When enabled, the party list expands to full height only while in an alliance.');
+        components.DrawPartyCheckbox(party, 'Expand Height', 'expandHeight');
+        imgui.ShowHelp('When enabled, the party list always shows all 6 rows. Overrides Min Rows.');
+        if not party.expandHeight then
+            components.DrawPartySlider(party, 'Min Rows', 'minRows', 1, 6);
+        end
         components.DrawPartySlider(party, 'Entry Spacing', 'entrySpacing', -50, 50);
         components.DrawPartyCheckbox(party, 'Show Selection Box', 'showSelectionBox');
         imgui.ShowHelp('When disabled, only the cursor arrow is shown without the selection box background.');
