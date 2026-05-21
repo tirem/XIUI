@@ -846,11 +846,12 @@ function display.DrawWindow(settings)
             local actualMpWidth = mpBarWidth;
             local actualTpWidth = tpBarWidth;
             if displayMpBar and not displayTpBar then
-                -- MP bar takes full width when no TP bar
-                actualMpWidth = hpBarWidth;
+                -- MP bar takes the full base row width, scaled by its own MP X
+                -- (not HP X — otherwise the HP slider would resize the lone MP bar).
+                actualMpWidth = barWidth * mpScaleX;
             elseif not displayMpBar and displayTpBar then
-                -- TP bar takes full width when no MP bar
-                actualTpWidth = hpBarWidth;
+                -- TP bar takes the full base row width, scaled by its own TP X.
+                actualTpWidth = barWidth * tpScaleX;
             end
 
             if displayMpBar then

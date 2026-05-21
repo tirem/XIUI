@@ -141,10 +141,12 @@ function pettarget.DrawWindow(settings)
         local rawTargetDistanceFontSize = gConfig.petBarTargetDistanceFontSize or gConfig.petBarDistanceFontSize;
         local targetDistanceFontSize = rawTargetDistanceFontSize and (rawTargetDistanceFontSize * gs) or settings.distance_font_settings.font_height;
 
-        -- Bar dimensions with scale settings (totalRowWidth and settings.barHeight come from updater, already gs-scaled)
+        -- Bar dimensions with scale settings (settings.barWidth/Height come from updater, already gs-scaled)
+        -- Use the un-HP-scaled base pet bar width so the target HP X slider is
+        -- independent of the pet HP X slider.
         local barScaleX = gConfig.petTargetBarScaleX or 1.0;
         local barScaleY = gConfig.petTargetBarScaleY or 1.0;
-        local barWidth = totalRowWidth * barScaleX;
+        local barWidth = (settings.barWidth or 150) * barScaleX;
         local barHeight = (settings.barHeight or 12) * barScaleY;
 
         -- Get positioning settings (offsets scale with gs)
@@ -210,8 +212,11 @@ function pettarget.DrawWindow(settings)
             distDrawX = targetWinPosX + distanceOffsetX;
             distDrawY = targetWinPosY + distanceOffsetY;
         else
-            -- Inline positioning: below HP bar in layout flow
-            local distanceY = targetStartY + targetNameFontSize + 4 + barHeight + 2;
+            -- Inline positioning: below HP bar in layout flow.
+            -- Add the bar's border extent so the text clears the additive border.
+            local borderThickness = gConfig.barBorderThickness or 1;
+            local barBorderExtent = (borderThickness > 0) and (borderThickness / 2 + 0.5) or 0;
+            local distanceY = targetStartY + targetNameFontSize + 4 + barHeight + barBorderExtent + 2;
             distDrawX = targetStartX + distanceOffsetX;
             distDrawY = distanceY + distanceOffsetY;
             -- Add dummy for inline layout
