@@ -132,9 +132,32 @@ function M.GetPlayerSpells()
     return spells;
 end
 
--- Ability Type constants (from IAbility.Type & 7)
--- Type 3: Weapon Skill
-local ABILITY_TYPE_WEAPON_SKILL = 3;
+-- Ability Type constants — IAbility.Type is a plain uint8 enum (NOT a bitfield).
+-- Authoritative source: ai/references/Ashita-v4beta/plugins/sdk/ffxi/enums.h `AbilityType`.
+local ABILITY_TYPE = {
+    General           = 0,
+    JobAbility        = 1,
+    PetCommand        = 2,
+    WeaponSkill       = 3,
+    Trait             = 4,
+    BloodPactRage     = 6,
+    CorsairRoll       = 8,
+    CorsairShot       = 9,
+    BloodPactWard     = 10,
+    DancerSamba       = 11,
+    DancerWaltz       = 12,
+    DancerStep        = 13,
+    DancerFlourish1   = 14,
+    ScholarStratagem  = 15,
+    DancerJig         = 16,
+    DancerFlourish2   = 17,
+    BeastmasterSic    = 18,
+    DancerFlourish3   = 19,
+    MonsterSkill      = 20,
+    RuneEnhancement   = 21,
+    RuneWard          = 22,
+    RuneEffusion      = 23,
+};
 
 -- Pet commands to filter out from ability list (these belong in Pet Command section)
 local PET_COMMAND_NAMES = {
@@ -148,7 +171,6 @@ local PET_COMMAND_NAMES = {
     ['Sic'] = true,
     ['Ready'] = true,
     -- SMN commands
-    ['Assault'] = true,
     ['Avatar\'s Favor'] = true,
     -- DRG commands
     ['Steady Wing'] = true,
@@ -157,6 +179,19 @@ local PET_COMMAND_NAMES = {
     ['Retrieve'] = true,
     ['Activate'] = true,
     ['Deactivate'] = true,
+};
+
+-- FFXI macro-maker subcategory headers ("Sambas", "Waltzes", etc.) are present
+-- as ability entries in the resource manager and HasAbility() returns true for
+-- them, but they aren't executable. Filter them out of the JA dropdown.
+local CATEGORY_PLACEHOLDER_NAMES = {
+    ['Sambas']         = true,
+    ['Waltzes']        = true,
+    ['Steps']          = true,
+    ['Jigs']           = true,
+    ['Flourishes I']   = true,
+    ['Flourishes II']  = true,
+    ['Flourishes III'] = true,
 };
 
 --- Get player's available job abilities (includes both main job and subjob abilities)
@@ -180,11 +215,19 @@ function M.GetPlayerAbilities()
         if player:HasAbility(abilityId) then
             local ability = resMgr:GetAbilityById(abilityId);
             if ability and ability.Name and ability.Name[1] and ability.Name[1] ~= '' then
-                local abilityType = ability.Type and bit.band(ability.Type, 7) or 0;
-
-                -- Filter out weapon skills (Type 3) and pet commands (by name)
+                local abilityType = ability.Type or 0;
                 local abilityName = ability.Name[1];
-                if abilityType ~= ABILITY_TYPE_WEAPON_SKILL and not PET_COMMAND_NAMES[abilityName] then
+
+                -- Exclude: weapon skills (separate dropdown), passive traits (not
+                -- macroable), pet commands (separate section), and subcategory
+                -- header placeholders ("Sambas", "Waltzes", etc.).
+                local isWeaponSkill = abilityType == ABILITY_TYPE.WeaponSkill;
+                local isTrait       = abilityType == ABILITY_TYPE.Trait;
+                if not isWeaponSkill
+                    and not isTrait
+                    and not PET_COMMAND_NAMES[abilityName]
+                    and not CATEGORY_PLACEHOLDER_NAMES[abilityName]
+                then
 
                     if not addedAbilities[abilityId] then
                         local source = 'main';
@@ -234,13 +277,13 @@ function M.GetPlayerWeaponskills()
     local weaponskills = {};
     local addedWeaponskills = {};  -- Track by name to avoid duplicates
 
-    -- Scan HasAbility and filter by Type 3 (weapon skills)
+    -- Scan HasAbility and filter by Type == WeaponSkill (3)
     for abilityId = 1, 1024 do
         if player:HasAbility(abilityId) then
             local ability = resMgr:GetAbilityById(abilityId);
             if ability and ability.Name and ability.Name[1] and ability.Name[1] ~= '' then
-                local abilityType = ability.Type and bit.band(ability.Type, 7) or 0;
-                if abilityType == ABILITY_TYPE_WEAPON_SKILL then
+                local abilityType = ability.Type or 0;
+                if abilityType == ABILITY_TYPE.WeaponSkill then
                     local wsName = ability.Name[1];
                     if not addedWeaponskills[wsName] then
                         table.insert(weaponskills, {
