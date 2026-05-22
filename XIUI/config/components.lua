@@ -156,6 +156,7 @@ components.available_fonts = {
     'Georgia',
     'Lucida Console',
     'Microsoft Sans Serif',
+	'Segoe UI',
     'Tahoma',
     'Times New Roman',
     'Trebuchet MS',
