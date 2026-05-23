@@ -1,10 +1,13 @@
---[[
-* XIUI Config Menu - Hotbar Settings
-* Contains settings and color settings for Hotbar with per-bar customization
+﻿--[[
+* XIUI Config Menu - Hotbar (keyboard bars) settings
+* Controller crossbar UI lives in config/crossbar_settings.lua (sibling module).
+* Contains settings and color settings for Hotbar with per-bar customization.
 ]]--
 
 require('common');
 require('handlers.helpers');
+local ffi = require('ffi');
+local TextureManager = require('libs.texturemanager');
 local components = require('config.components');
 local statusHandler = require('handlers.statushandler');
 local imgui = require('imgui');
@@ -14,13 +17,14 @@ local actions = require('modules.hotbar.actions');
 local jobs = require('libs.jobs');
 local macropalette = require('modules.hotbar.macropalette');
 local playerdata = require('modules.hotbar.playerdata');
-local controller = require('modules.hotbar.controller');
 local macrosLib = require('libs.ffxi.macros');
 local palette = require('modules.hotbar.palette');
 local migrationWizard = require('config.migration');
 local paletteManager = require('config.palettemanager');
+local petAllowlist = require('modules.hotbar.pet_palette_allowlist');
 
 local M = {};
+
 
 -- Expose migration wizard for external access (used by config.lua to draw the popup)
 M.migrationWizard = migrationWizard;
@@ -38,16 +42,37 @@ local jobSpecificConfirmState = {
     isCrossbar = false,
 };
 
--- Button detection wizard state
-local buttonDetectionState = {
-    active = false,
-    progress = 0,
-};
 
 -- ============================================
 -- Unified Palette Modal System
 -- Shared between hotbar and crossbar palettes
 -- ============================================
+
+-- Persists the last-selected crossbar create job/storageSubjob across popup opens.
+-- Resets to live job/sj only when the character's job or subjob changes.
+local xbCreatePersisted = {
+    jobId = nil,
+    storageSubjob = nil,
+    lastSeenJobId = nil,
+    lastSeenSubjobId = nil,
+};
+
+local function GetOrResetXbCreateDefaults()
+    local liveJob = data.jobId or 1;
+    local liveSj  = data.subjobId or 0;
+    if xbCreatePersisted.lastSeenJobId ~= liveJob or xbCreatePersisted.lastSeenSubjobId ~= liveSj then
+        xbCreatePersisted.jobId          = liveJob;
+        xbCreatePersisted.storageSubjob  = liveSj;
+        xbCreatePersisted.lastSeenJobId  = liveJob;
+        xbCreatePersisted.lastSeenSubjobId = liveSj;
+    end
+    return xbCreatePersisted.jobId, xbCreatePersisted.storageSubjob;
+end
+
+-- One-shot open flags (see palettemanager.lua for rationale)
+local xbHotbarCreatePopupPending = false;
+local palettePopupPendingId      = nil;
+local jobSpecificPopupPending    = false;
 
 -- Single modal state for all palette operations
 local paletteModal = {
@@ -57,6 +82,9 @@ local paletteModal = {
     paletteName = nil,    -- For rename: current name
     inputBuffer = { '' },
     errorMessage = nil,
+    -- Job crossbar create (non-modal popup): storage tier 0 = Shared [J], else Subjob [SJ] id
+    crossbarCreateJobId = nil,
+    crossbarCreateStorageSubjob = nil,
 };
 
 -- Helper: Open palette create modal
@@ -67,6 +95,14 @@ local function OpenPaletteCreateModal(paletteType)
     paletteModal.paletteName = nil;
     paletteModal.inputBuffer[1] = '';
     paletteModal.errorMessage = nil;
+    if paletteType == 'crossbar' then
+        local j, s = GetOrResetXbCreateDefaults();
+        paletteModal.crossbarCreateJobId = j;
+        paletteModal.crossbarCreateStorageSubjob = s;
+    else
+        paletteModal.crossbarCreateJobId = nil;
+        paletteModal.crossbarCreateStorageSubjob = nil;
+    end
 end
 
 -- Helper: Open palette rename modal
@@ -87,15 +123,21 @@ local function ClosePaletteModal()
     paletteModal.paletteName = nil;
     paletteModal.inputBuffer[1] = '';
     paletteModal.errorMessage = nil;
+    paletteModal.crossbarCreateJobId = nil;
+    paletteModal.crossbarCreateStorageSubjob = nil;
+    xbHotbarCreatePopupPending = false;
+    palettePopupPendingId      = nil;
 end
 
 -- Helper function to draw the job-specific confirmation popup
 local function DrawJobSpecificConfirmPopup()
-    if jobSpecificConfirmState.showPopup then
+    if jobSpecificConfirmState.showPopup and not jobSpecificPopupPending then
         imgui.OpenPopup('Confirm Action Storage Change##jobSpecificConfirm');
+        jobSpecificConfirmState.showPopup = false;
+        jobSpecificPopupPending = true;
     end
 
-    if imgui.BeginPopupModal('Confirm Action Storage Change##jobSpecificConfirm', nil, ImGuiWindowFlags_AlwaysAutoResize) then
+    if imgui.BeginPopup('Confirm Action Storage Change##jobSpecificConfirm', ImGuiWindowFlags_AlwaysAutoResize) then
         local targetName;
         if jobSpecificConfirmState.isCrossbar then
             targetName = jobSpecificConfirmState.targetBarIndex and ('Crossbar ' .. jobSpecificConfirmState.targetBarIndex) or 'Crossbar';
@@ -159,28 +201,172 @@ local function DrawJobSpecificConfirmPopup()
         end
 
         imgui.EndPopup();
+    else
+        -- Dismissed by clicking outside
+        jobSpecificPopupPending = false;
+        jobSpecificConfirmState.showPopup = false;
     end
 end
 
 -- Unified palette modal - handles create/rename for both hotbar and crossbar
 local function DrawPaletteModal()
     if not paletteModal.isOpen then
+        xbHotbarCreatePopupPending = false;
+        palettePopupPendingId      = nil;
+        return;
+    end
+
+    -- Job crossbar create: non-modal popup (same idea as Palette Manager Copy To â€” no fullscreen dim).
+    if paletteModal.mode == 'create' and paletteModal.paletteType == 'crossbar' then
+        if paletteModal.crossbarCreateJobId == nil then
+            paletteModal.crossbarCreateJobId = data.jobId or 1;
+        end
+        if paletteModal.crossbarCreateStorageSubjob == nil then
+            paletteModal.crossbarCreateStorageSubjob = data.subjobId or 0;
+        end
+        local cj = paletteModal.crossbarCreateJobId;
+        if cj < 1 then cj = 1; end
+        if cj > 22 then cj = 22; end
+        paletteModal.crossbarCreateJobId = cj;
+
+        if not xbHotbarCreatePopupPending then
+            imgui.SetNextWindowSize({ 560, 0 }, ImGuiCond_Always);
+            imgui.OpenPopup('Crossbar Create Palette##paletteModalXbJobNm');
+            xbHotbarCreatePopupPending = true;
+        end
+        if imgui.BeginPopup('Crossbar Create Palette##paletteModalXbJobNm', ImGuiWindowFlags_AlwaysAutoResize) then
+            imgui.TextWrapped('Create a new palette for Job [J] / Subjob [SJ] crossbar storage.');
+            imgui.Spacing();
+
+            local storSj = paletteModal.crossbarCreateStorageSubjob or 0;
+            if storSj ~= 0 then
+                local usingFallback = palette.IsUsingFallback(cj, storSj, 'crossbar');
+                if usingFallback then
+                    local jobName = jobs[cj] or ('Job ' .. cj);
+                    local subjobName = jobs[storSj] or ('Job ' .. storSj);
+                    imgui.TextColored({ 1.0, 0.7, 0.3, 1.0 }, 'Warning: Creating this palette will stop');
+                    imgui.TextColored({ 1.0, 0.7, 0.3, 1.0 }, 'using shared palettes for ' .. jobName .. '/' .. subjobName .. '.');
+                    imgui.Spacing();
+                end
+            end
+
+            imgui.Text('Job:');
+            imgui.SameLine();
+            imgui.PushItemWidth(120);
+            if imgui.BeginCombo('##xbCreateJobCfg', jobs[cj] or ('Job ' .. cj)) then
+                for jobId = 1, 22 do
+                    local isSelected = (jobId == cj);
+                    if imgui.Selectable((jobs[jobId] or ('Job ' .. jobId)) .. '##xbCj' .. jobId, isSelected) then
+                        paletteModal.crossbarCreateJobId = jobId;
+                    end
+                    if isSelected then
+                        imgui.SetItemDefaultFocus();
+                    end
+                end
+                imgui.EndCombo();
+            end
+            imgui.PopItemWidth();
+
+            imgui.SameLine();
+            imgui.Text('Subjob storage:');
+            imgui.SameLine();
+            imgui.PushItemWidth(120);
+            local subLabel = storSj == 0 and 'Shared' or (jobs[storSj] or ('Job ' .. storSj));
+            if imgui.BeginCombo('##xbCreateSubCfg', subLabel) then
+                local sharedSel = (storSj == 0);
+                if imgui.Selectable('Shared##xbCs0', sharedSel) then
+                    paletteModal.crossbarCreateStorageSubjob = 0;
+                end
+                if sharedSel then
+                    imgui.SetItemDefaultFocus();
+                end
+                for subjobId = 1, 22 do
+                    local isSelected = (subjobId == storSj);
+                    if imgui.Selectable((jobs[subjobId] or ('Job ' .. subjobId)) .. '##xbCs' .. subjobId, isSelected) then
+                        paletteModal.crossbarCreateStorageSubjob = subjobId;
+                    end
+                    if isSelected then
+                        imgui.SetItemDefaultFocus();
+                    end
+                end
+                imgui.EndCombo();
+            end
+            imgui.PopItemWidth();
+
+            imgui.Spacing();
+            imgui.Text('Palette name:');
+            imgui.PushItemWidth(220);
+            local enterPressed = imgui.InputText('##paletteModalXbCreateInput', paletteModal.inputBuffer, 32, ImGuiInputTextFlags_EnterReturnsTrue);
+            imgui.PopItemWidth();
+
+            if paletteModal.errorMessage then
+                imgui.Spacing();
+                imgui.TextColored({ 1.0, 0.4, 0.4, 1.0 }, paletteModal.errorMessage);
+            end
+
+            imgui.Spacing();
+            local newName = paletteModal.inputBuffer[1];
+            local canCreate = newName and newName ~= '';
+            if not canCreate then
+                imgui.BeginDisabled();
+            end
+            if imgui.Button('Create##paletteModalXbCreateOk', { 88, 0 }) or (enterPressed and canCreate) then
+                if canCreate then
+                    storSj = paletteModal.crossbarCreateStorageSubjob or 0;
+                    local createJob = paletteModal.crossbarCreateJobId;
+                    local success, err = palette.CreateCrossbarPalette(newName, createJob, storSj);
+                    if success then
+                        xbCreatePersisted.jobId         = createJob;
+                        xbCreatePersisted.storageSubjob = storSj;
+                        ClosePaletteModal();
+                        imgui.CloseCurrentPopup();
+                    else
+                        paletteModal.errorMessage = err or 'Failed to create palette';
+                    end
+                else
+                    paletteModal.errorMessage = 'Name cannot be empty';
+                end
+            end
+            if not canCreate then
+                imgui.EndDisabled();
+            end
+
+            imgui.SameLine();
+            if imgui.Button('Cancel##paletteModalXbCreateCancel', { 88, 0 }) then
+                ClosePaletteModal();
+                imgui.CloseCurrentPopup();
+            end
+
+            imgui.EndPopup();
+        else
+            xbHotbarCreatePopupPending = false;
+            ClosePaletteModal();
+        end
         return;
     end
 
     -- Determine popup title based on mode and type
-    local typeLabel = paletteModal.paletteType == 'crossbar' and 'Crossbar ' or '';
+    local typeLabel = '';
+    if paletteModal.paletteType == 'crossbar_universal' then
+        typeLabel = 'Global Crossbar ';
+    elseif paletteModal.paletteType == 'crossbar' then
+        typeLabel = 'Crossbar ';
+    end
     local popupId = paletteModal.mode == 'create'
         and (typeLabel .. 'Create Palette##paletteModal')
         or (typeLabel .. 'Rename Palette##paletteModal');
 
-    imgui.OpenPopup(popupId);
+    if palettePopupPendingId ~= popupId then
+        imgui.SetNextWindowSize({ 320, 0 }, ImGuiCond_Always);
+        imgui.OpenPopup(popupId);
+        palettePopupPendingId = popupId;
+    end
 
-    if imgui.BeginPopupModal(popupId, nil, ImGuiWindowFlags_AlwaysAutoResize) then
+    if imgui.BeginPopup(popupId, ImGuiWindowFlags_AlwaysAutoResize) then
         -- Warning when creating will break away from shared palettes
         local jobId = data.jobId or 1;
         local subjobId = data.subjobId or 0;
-        if paletteModal.mode == 'create' and subjobId ~= 0 then
+        if paletteModal.mode == 'create' and subjobId ~= 0 and paletteModal.paletteType == 'hotbar' then
             local usingFallback = palette.IsUsingFallback(jobId, subjobId, paletteModal.paletteType);
             if usingFallback then
                 local jobName = jobs[jobId] or ('Job ' .. jobId);
@@ -234,19 +420,19 @@ local function DrawPaletteModal()
 
                 if isCreateMode then
                     -- Create palette
-                    if paletteModal.paletteType == 'crossbar' then
-                        success, err = palette.CreateCrossbarPalette(newName, jobId, subjobId);
-                    else
+                    if paletteModal.paletteType == 'crossbar_universal' then
+                        success, err = palette.CreateUniversalCrossbarPalette(newName);
+                    elseif paletteModal.paletteType == 'hotbar' then
                         success, err = palette.CreatePalette(1, newName, jobId, subjobId);
-                        if success then
-                            palette.SetActivePalette(1, newName);
-                        end
                     end
                 else
                     -- Rename palette
                     local oldName = paletteModal.paletteName;
-                    if paletteModal.paletteType == 'crossbar' then
-                        success, err = palette.RenameCrossbarPalette(oldName, newName, jobId, subjobId);
+                    if paletteModal.paletteType == 'crossbar_universal' then
+                        success, err = palette.RenameUniversalCrossbarPalette(oldName, newName);
+                    elseif paletteModal.paletteType == 'crossbar' then
+                        local renameTier = palette.GetCrossbarActivePaletteStorageSubjobForResolution(jobId, subjobId);
+                        success, err = palette.RenameCrossbarPalette(oldName, newName, jobId, renameTier);
                     else
                         success, err = palette.RenamePalette(1, oldName, newName, jobId, subjobId);
                     end
@@ -275,6 +461,9 @@ local function DrawPaletteModal()
         end
 
         imgui.EndPopup();
+    else
+        -- Dismissed by clicking outside
+        ClosePaletteModal();
     end
 end
 
@@ -382,34 +571,42 @@ local function DrawGlobalPalettesSection()
     -- Ensure at least one palette exists for this job
     palette.EnsureDefaultPaletteExists(jobId, subjobId);
     local availablePalettes = palette.GetAvailablePalettes(1, jobId, subjobId);
+    local cyclePalettes = palette.GetHotbarPaletteNamesInRbCycle(1, jobId, subjobId);
     local currentPalette = palette.GetActivePalette(1);  -- Same for all bars
 
-    -- OPTIMIZED: Cache palette count and index for reuse within this frame
-    local paletteCount = #availablePalettes;
-    local currentPaletteIndex = nil;
-    if currentPalette then
-        for i, name in ipairs(availablePalettes) do
-            if name == currentPalette then
-                currentPaletteIndex = i;
-                break;
-            end
+    -- Index/total for "Active" (RB-cycle) palettes only â€” inactive palettes are omitted from numbering
+    local paletteCount = #cyclePalettes;
+    local cycleIndexByName = {};
+    for i, name in ipairs(cyclePalettes) do
+        cycleIndexByName[name] = i;
+    end
+    local currentPaletteIndex = currentPalette and cycleIndexByName[currentPalette] or nil;
+    local fullPaletteIndex = nil;
+    for i, name in ipairs(availablePalettes) do
+        if name == currentPalette then
+            fullPaletteIndex = i;
+            break;
         end
     end
+    local totalPaletteCount = #availablePalettes;
 
     -- Check if using fallback (shared library) palettes
     local usingFallback = palette.IsUsingFallback(jobId, subjobId, 'hotbar');
 
     -- Ensure active palette is set if we have palettes but none active
-    if paletteCount > 0 and not currentPalette then
-        currentPalette = availablePalettes[1];
-        currentPaletteIndex = 1;
+    if #availablePalettes > 0 and not currentPalette then
+        local pick = cyclePalettes[1] or availablePalettes[1];
+        currentPalette = pick;
+        currentPaletteIndex = cycleIndexByName[pick];
         palette.SetActivePalette(1, currentPalette);
     end
 
     imgui.TextColored(components.TAB_STYLE.gold, 'Palettes');
+    components.PushPaletteManagerButtonStyle();
     if imgui.SmallButton('Palette Manager##hotbar') then
         paletteManager.Open();
     end
+    components.PopPaletteManagerButtonStyle();
     if usingFallback then
         imgui.SameLine();
         imgui.TextColored({0.4, 0.8, 1.0, 1.0}, '(Shared Library)');
@@ -420,22 +617,24 @@ local function DrawGlobalPalettesSection()
     -- Header with count
     imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Palettes:');
     imgui.SameLine();
-    imgui.TextColored({0.5, 1.0, 0.5, 1.0}, tostring(paletteCount) .. ' palette(s)');
-    imgui.ShowHelp('Create named palettes to quickly switch between different hotbar configurations.\nPalettes are GLOBAL - switching changes all 6 hotbars at once.\nUse keybind cycling or /xiui palette <name> to switch.');
+    imgui.TextColored({0.5, 1.0, 0.5, 1.0}, tostring(paletteCount) .. ' in cycle');
+    imgui.ShowHelp('Create named palettes to quickly switch between different hotbar configurations.\nPalettes are GLOBAL - switching changes all 6 hotbars at once.\n"Inactive" in Palette Manager is excluded from RB/key cycling and from this count.\nUse keybind cycling or /xiui palette <name> to switch.');
 
     -- Current palette selector with inline buttons
     -- Get display name with number prefix for the closed dropdown
     local currentDisplayName = currentPalette or 'Select palette';
     if currentPalette and currentPaletteIndex then
         currentDisplayName = currentPaletteIndex .. '. ' .. currentPalette;
+    elseif currentPalette then
+        currentDisplayName = currentPalette .. ' (inactive)';
     end
 
     imgui.SetNextItemWidth(150);
     if imgui.BeginCombo('##globalPalette', currentDisplayName) then
         for i, paletteName in ipairs(availablePalettes) do
             local isSelected = (paletteName == currentPalette);
-            -- Show number prefix for all palettes
-            local displayName = i .. '. ' .. paletteName;
+            local cycIdx = cycleIndexByName[paletteName];
+            local displayName = (cycIdx and (cycIdx .. '. ') or 'â€“ ') .. paletteName;
             if imgui.Selectable(displayName .. '##globalPal', isSelected) then
                 palette.SetActivePalette(1, paletteName);  -- Sets global palette
             end
@@ -464,8 +663,7 @@ local function DrawGlobalPalettesSection()
     imgui.PopStyleColor(2);
 
     -- Delete button (only if more than 1 palette exists - can't delete the last one)
-    -- OPTIMIZED: Using cached paletteCount instead of calling GetPaletteCount again
-    if currentPalette and paletteCount > 1 then
+    if currentPalette and totalPaletteCount > 1 then
         imgui.SameLine();
         imgui.PushStyleColor(ImGuiCol_Button, {0.6, 0.2, 0.2, 1.0});
         imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.8, 0.3, 0.3, 1.0});
@@ -480,16 +678,15 @@ local function DrawGlobalPalettesSection()
         imgui.PopStyleColor(2);
     end
 
-    -- Arrow key reordering (for palettes with multiple items)
-    if currentPalette and paletteCount > 1 then
+    -- Arrow key reordering (full palette list order â€” not cycle-only)
+    if currentPalette and totalPaletteCount > 1 then
         imgui.SameLine();
         imgui.TextColored({0.5, 0.5, 0.5, 1.0}, '|');
         imgui.SameLine();
 
         -- Up arrow button
-        -- OPTIMIZED: Using cached currentPaletteIndex instead of calling GetPaletteIndex again
-        local canMoveUp = currentPaletteIndex and currentPaletteIndex > 1;
-        local canMoveDown = currentPaletteIndex and currentPaletteIndex < paletteCount;
+        local canMoveUp = fullPaletteIndex and fullPaletteIndex > 1;
+        local canMoveDown = fullPaletteIndex and fullPaletteIndex < totalPaletteCount;
 
         if not canMoveUp then
             imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.2, 0.2, 0.5});
@@ -540,169 +737,6 @@ local function DrawGeneralPalettesSection(configKey, barSettings, barIndex)
     imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'Manage palettes in Global tab.');
 end
 
--- ============================================
--- Crossbar Global Palettes UI Section
--- ============================================
-
--- Global crossbar palette error state
-local crossbarGlobalPaletteErrorMessage = nil;
-
--- Draw the global crossbar palettes management section
--- Crossbar palettes are GLOBAL - one palette switch changes all combo modes
-local function DrawCrossbarGlobalPalettesSection()
-    local crossbarSettings = gConfig.hotbarCrossbar;
-    if not crossbarSettings then
-        return;
-    end
-
-    local jobId = data.jobId or 1;
-    local subjobId = data.subjobId or 0;
-
-    -- Ensure at least one palette exists for this job
-    palette.EnsureCrossbarDefaultPaletteExists(jobId, subjobId);
-    local availablePalettes = palette.GetCrossbarAvailablePalettes(jobId, subjobId);
-    local currentPalette = palette.GetActivePaletteForCombo('L2');  -- Global for all combos
-
-    -- OPTIMIZED: Cache palette count and index for reuse within this frame
-    local paletteCount = #availablePalettes;
-    local currentPaletteIndex = nil;
-    if currentPalette then
-        for i, name in ipairs(availablePalettes) do
-            if name == currentPalette then
-                currentPaletteIndex = i;
-                break;
-            end
-        end
-    end
-
-    -- Check if using fallback (shared library) palettes
-    local usingFallback = palette.IsUsingFallback(jobId, subjobId, 'crossbar');
-
-    -- Ensure active palette is set if we have palettes but none active
-    if paletteCount > 0 and not currentPalette then
-        currentPalette = availablePalettes[1];
-        currentPaletteIndex = 1;
-        palette.SetActivePaletteForCombo('L2', currentPalette);
-    end
-
-    imgui.TextColored(components.TAB_STYLE.gold, 'Crossbar Palettes');
-    if imgui.SmallButton('Palette Manager##crossbar') then
-        paletteManager.Open();
-    end
-    if usingFallback then
-        imgui.SameLine();
-        imgui.TextColored({0.4, 0.8, 1.0, 1.0}, '(Shared Library)');
-        imgui.ShowHelp('These palettes are from your Shared Library.\nOpen Palette Manager to create subjob-specific palettes.');
-    end
-    imgui.Spacing();
-
-    -- Header with count
-    imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Palettes:');
-    imgui.SameLine();
-    imgui.TextColored({0.5, 1.0, 0.5, 1.0}, tostring(paletteCount) .. ' palette(s)');
-    imgui.ShowHelp('Create named palettes to quickly switch between crossbar configurations.\nPalettes are GLOBAL - switching changes all combo modes (L2, R2, L2+R2, etc.) at once.');
-
-    -- Current palette selector with inline buttons
-    -- Get display name with number prefix for the closed dropdown
-    local currentDisplayName = currentPalette or 'Select palette';
-    if currentPalette and currentPaletteIndex then
-        currentDisplayName = currentPaletteIndex .. '. ' .. currentPalette;
-    end
-
-    imgui.SetNextItemWidth(150);
-    if imgui.BeginCombo('##crossbarGlobalPalette', currentDisplayName) then
-        for i, paletteName in ipairs(availablePalettes) do
-            local isSelected = (paletteName == currentPalette);
-            -- Show number prefix for all palettes
-            local displayName = i .. '. ' .. paletteName;
-            if imgui.Selectable(displayName .. '##cbGlobalPal' .. i, isSelected) then
-                palette.SetActivePaletteForCombo('L2', paletteName);
-            end
-            if isSelected then
-                imgui.SetItemDefaultFocus();
-            end
-        end
-        imgui.EndCombo();
-    end
-
-    -- Rename button (for any palette)
-    if currentPalette then
-        imgui.SameLine();
-        if imgui.Button('Rename##cbGlobalPalette', {55, 0}) then
-            OpenPaletteRenameModal('crossbar', currentPalette);
-        end
-    end
-
-    -- New button (always visible, green)
-    imgui.SameLine();
-    imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.5, 0.2, 1.0});
-    imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.6, 0.3, 1.0});
-    if imgui.Button('New##cbGlobalPalette', {40, 0}) then
-        OpenPaletteCreateModal('crossbar');
-    end
-    imgui.PopStyleColor(2);
-
-    -- Delete button (only if more than 1 palette exists - can't delete the last one)
-    -- OPTIMIZED: Using cached paletteCount instead of calling GetCrossbarPaletteCount again
-    if currentPalette and paletteCount > 1 then
-        imgui.SameLine();
-        imgui.PushStyleColor(ImGuiCol_Button, {0.6, 0.2, 0.2, 1.0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.8, 0.3, 0.3, 1.0});
-        if imgui.Button('Delete##cbGlobalPalette', {50, 0}) then
-            local success, err = palette.DeleteCrossbarPalette(currentPalette, jobId, subjobId);
-            if not success then
-                crossbarGlobalPaletteErrorMessage = err or 'Failed to delete palette';
-            else
-                crossbarGlobalPaletteErrorMessage = nil;
-            end
-        end
-        imgui.PopStyleColor(2);
-    end
-
-    -- Arrow key reordering (for palettes with multiple items)
-    if currentPalette and paletteCount > 1 then
-        imgui.SameLine();
-        imgui.TextColored({0.5, 0.5, 0.5, 1.0}, '|');
-        imgui.SameLine();
-
-        -- OPTIMIZED: Using cached currentPaletteIndex instead of recalculating
-        local canMoveUp = currentPaletteIndex and currentPaletteIndex > 1;
-        local canMoveDown = currentPaletteIndex and currentPaletteIndex < paletteCount;
-
-        if not canMoveUp then
-            imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.2, 0.2, 0.5});
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.2, 0.2, 0.2, 0.5});
-            imgui.PushStyleColor(ImGuiCol_Text, {0.4, 0.4, 0.4, 1.0});
-        end
-        if imgui.Button('^##cbGlobalPaletteUp', {20, 0}) and canMoveUp then
-            palette.MoveCrossbarPalette(currentPalette, -1, jobId, subjobId);
-        end
-        if not canMoveUp then
-            imgui.PopStyleColor(3);
-        end
-
-        imgui.SameLine();
-
-        if not canMoveDown then
-            imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.2, 0.2, 0.5});
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.2, 0.2, 0.2, 0.5});
-            imgui.PushStyleColor(ImGuiCol_Text, {0.4, 0.4, 0.4, 1.0});
-        end
-        if imgui.Button('v##cbGlobalPaletteDown', {20, 0}) and canMoveDown then
-            palette.MoveCrossbarPalette(currentPalette, 1, jobId, subjobId);
-        end
-        if not canMoveDown then
-            imgui.PopStyleColor(3);
-        end
-    end
-
-    -- Show error message (for delete failures)
-    if crossbarGlobalPaletteErrorMessage then
-        imgui.TextColored({1.0, 0.4, 0.4, 1.0}, crossbarGlobalPaletteErrorMessage);
-    end
-
-    imgui.Spacing();
-end
 
 -- Keybind editor modal state
 local keybindModal = {
@@ -1528,11 +1562,8 @@ local function DrawVisualSettingsContent(settings, configKey)
         components.DrawPartySliderInt(settings, 'Slot X Padding##' .. configKey, 'slotXPadding', 0, 32, '%d', nil, 8);
         imgui.ShowHelp('Horizontal gap between slots.');
 
-        -- Slot Y Padding slider removed: each hotbar is now positioned
-        -- independently, so bar-to-bar spacing is handled by drag-positioning.
-        -- The setting still exists on the data side and controls the row gap
-        -- inside multi-row bars; we keep the saved value but hide the slider
-        -- to avoid misleading users.
+        components.DrawPartySliderInt(settings, 'Slot Y Padding##' .. configKey, 'slotYPadding', 0, 32, '%d', nil, 6);
+        imgui.ShowHelp('Vertical gap between rows.');
 
         -- Show Hotbar Number with inline offsets
         components.DrawPartyCheckbox(settings, 'Show Hotbar Number##' .. configKey, 'showHotbarNumber');
@@ -1572,7 +1603,7 @@ local function DrawVisualSettingsContent(settings, configKey)
         end
         imgui.ShowHelp('Display item quantity on item slots. Choose anchor position and fine-tune with X/Y offsets.');
 
-        -- Show full-stack count above the item quantity (only counts complete stacks)
+        -- 1.8.0 addition: full-stack count above the item quantity (only counts complete stacks)
         components.DrawPartyCheckbox(settings, 'Show Stack Quantity##' .. configKey, 'showStackQuantity');
         imgui.ShowHelp('Show full-stack count next to the item quantity. Only complete stacks are counted (e.g. 25 of stack-12 items shows "(2)"). Shares position/font with Show Item Quantity.');
 
@@ -1758,21 +1789,34 @@ local function DrawBarVisualSettings(configKey, barLabel)
         end
         if imgui.Button(petAware and 'Enabled##pet' .. configKey or 'Disabled##pet' .. configKey, {100, 0}) then
             barSettings.petAware = not petAware;
+            if not barSettings.petAware then
+                barSettings.petPalettePetKeys = nil;
+            end
             SaveSettingsOnly();
         end
         imgui.PopStyleColor(3);
-        imgui.ShowHelp('Pet Palettes: Each summoned pet can have its own hotbar configuration.\nSMN: Per-avatar palettes (Ifrit, Shiva, etc.)\nDRG: Wyvern palette\nBST: Jug pet / Charm palettes\nPUP: Automaton palette\n\nClick to toggle.');
+        imgui.ShowHelp('Pet Palettes: Each pet can have its own hotbar configuration.\nSMN: Per-avatar and per-elemental (spirit) palettes (Ifrit, Fire Spirit, etc.)\nDRG: Wyvern palette\nBST: Jug pet / Charm palettes\nPUP: Automaton palette\n\nClick to toggle.');
 
-        -- Show indicator checkbox (only visible when petAware is enabled)
+        -- Show indicator + pet allowlist (only when petAware is enabled)
         if petAware then
-            imgui.SameLine();
-            imgui.SetCursorPosX(imgui.GetCursorPosX() + 10);
+            imgui.Dummy({ 0, 4 });
             local showIndicator = { barSettings.showPetIndicator ~= false };
             if imgui.Checkbox('Show Indicator##' .. configKey, showIndicator) then
                 barSettings.showPetIndicator = showIndicator[1];
                 SaveSettingsOnly();
             end
             imgui.ShowHelp('Show a small dot indicator next to the bar number when pet palettes are active.');
+            local popupId = 'petallow_hb_' .. configKey;
+            if imgui.SmallButton('Petsâ€¦##' .. popupId) then
+                imgui.OpenPopup(popupId);
+            end
+            imgui.ShowHelp('Optional: limit which pet types use a separate layout (Avatars, Elementals, Beasts, Wyvern, Puppet). Others use your normal job bar.');
+            if imgui.BeginPopup(popupId, ImGuiWindowFlags_AlwaysAutoResize) then
+                petAllowlist.DrawEditorInPopup(barSettings, data.jobId or 1, SaveSettingsOnly, function()
+                    data.InvalidateStorageKeyCache();
+                end);
+                imgui.EndPopup();
+            end
         end
     end
 
@@ -1824,736 +1868,29 @@ local function DrawBarVisualSettings(configKey, barLabel)
     end
 end
 
--- ============================================
--- Crossbar Settings Functions
--- ============================================
 
--- Helper: Get or initialize per-crossbar settings
--- Helper: Get per-combo-mode settings (from comboModeSettings)
--- NOTE: Only petAware is per-combo-mode; palettes are GLOBAL (see palette.lua)
-local function GetCrossbarComboModeSettings(crossbarSettings, comboMode)
-    if not crossbarSettings.comboModeSettings then
-        crossbarSettings.comboModeSettings = {};
-    end
-    if not crossbarSettings.comboModeSettings[comboMode] then
-        crossbarSettings.comboModeSettings[comboMode] = {
-            petAware = false,
-        };
-    end
-    return crossbarSettings.comboModeSettings[comboMode];
-end
-
--- Helper: Draw per-crossbar bar settings (simplified for global palette model)
-local function DrawCrossbarBarSettings(crossbarSettings, barType, comboMode)
-    local modeSettings = GetCrossbarComboModeSettings(crossbarSettings, comboMode);
-
-    imgui.TextColored(components.TAB_STYLE.gold, 'Settings for ' .. (barType.label or comboMode));
-    imgui.Spacing();
-
-    -- Pet-Aware Palettes toggle (per-combo-mode)
-    local petAware = modeSettings.petAware == true;
-    imgui.AlignTextToFramePadding();
-    imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Pet Palettes:');
-    imgui.SameLine();
-    -- Color button based on state: cyan for enabled, grey for disabled
-    if petAware then
-        imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.5, 0.5, 1.0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.6, 0.6, 1.0});
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.4, 0.7, 0.7, 1.0});
-    else
-        imgui.PushStyleColor(ImGuiCol_Button, {0.35, 0.35, 0.35, 1.0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.45, 0.45, 0.45, 1.0});
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.55, 0.55, 0.55, 1.0});
-    end
-    if imgui.Button(petAware and 'Enabled##petcb' .. comboMode or 'Disabled##petcb' .. comboMode, {100, 0}) then
-        modeSettings.petAware = not petAware;
-        SaveSettingsOnly();
-    end
-    imgui.PopStyleColor(3);
-    imgui.ShowHelp('Pet Palettes: Each summoned pet can have its own crossbar configuration.\nSMN: Per-avatar palettes\nDRG: Wyvern palette\nBST: Jug pet / Charm palettes\nPUP: Automaton palette\n\nClick to toggle.');
-
-    imgui.Spacing();
-    imgui.Separator();
-    imgui.Spacing();
-
-    -- Crossbar Palettes - redirect to Global tab (mirrors hotbar pattern)
-    local currentPalette = palette.GetActivePaletteForCombo(comboMode);
-    if currentPalette then
-        imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Palette: ' .. currentPalette);
-    else
-        imgui.TextColored({0.6, 0.6, 0.6, 1.0}, 'Palette: (none)');
-    end
-    imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'Manage palettes in Global tab.');
-end
-
-local function DrawCrossbarSettings(selectedCrossbarTab)
-    local crossbarSettings = gConfig.hotbarCrossbar;
-    if not crossbarSettings then
-        imgui.TextColored({1.0, 0.5, 0.5, 1.0}, 'Crossbar settings not initialized.');
-        return selectedCrossbarTab;
-    end
-
-    selectedCrossbarTab = selectedCrossbarTab or 1;
-
-    -- Controller Settings section
-    imgui.TextColored(components.TAB_STYLE.gold, 'Controller Settings');
-    imgui.Spacing();
-
-    -- Controller Profile selection
-    local devices = require('modules.hotbar.devices');
-    local currentScheme = controller.GetControllerScheme();
-    local deviceSchemes = devices.GetSchemeNames();
-    local deviceDisplayNames = devices.GetSchemeDisplayNames();
-
-    -- Find current selection index
-    local currentIndex = 1;
-    for i, scheme in ipairs(deviceSchemes) do
-        if scheme == currentScheme then
-            currentIndex = i;
-            break;
-        end
-    end
-
-    -- Map profile to matching theme
-    local profileToTheme = {
-        xbox = 'Xbox',
-        dualsense = 'PlayStation',
-        switchpro = 'Nintendo',
-        dinput = 'Xbox',
-    };
-
-    imgui.AlignTextToFramePadding();
-    imgui.Text('Controller Profile:');
-    imgui.SameLine();
-    imgui.SetNextItemWidth(150);
-    if imgui.BeginCombo('##controllerSelect', deviceDisplayNames[currentScheme] or currentScheme, ImGuiComboFlags_None) then
-        for i, scheme in ipairs(deviceSchemes) do
-            local isSelected = (scheme == currentScheme);
-            if imgui.Selectable(deviceDisplayNames[scheme], isSelected) then
-                crossbarSettings.controllerScheme = scheme;
-                -- If switching to dinput, apply custom mapping if it exists
-                local customMapping = nil;
-                if scheme == 'dinput' and crossbarSettings.customControllerMappings and crossbarSettings.customControllerMappings.dinput then
-                    customMapping = crossbarSettings.customControllerMappings.dinput;
-                end
-                controller.SetControllerScheme(scheme, customMapping);
-                -- Auto-adjust theme to match profile
-                local matchingTheme = profileToTheme[scheme];
-                if matchingTheme then
-                    crossbarSettings.controllerTheme = matchingTheme;
-                end
-                SaveSettingsOnly();
-            end
-            if isSelected then
-                imgui.SetItemDefaultFocus();
-            end
-        end
-        imgui.EndCombo();
-    end
-    imgui.ShowHelp('Select which button mapping profile to use.\n\n- Xbox: For XInput controllers (Xbox, 8BitDo in X-mode)\n- PlayStation: For DualSense/DualShock via DirectInput\n- Switch Pro: For Nintendo Switch Pro controller\n- Generic DirectInput: For other DirectInput controllers\n\nChanging this will also update the button icon theme.');
-
-    -- Analog Trigger Threshold Settings (Xbox and PlayStation only)
-    local hasAnalogTriggers = (currentScheme == 'xbox' or currentScheme == 'dualsense');
-    if hasAnalogTriggers then
-        imgui.Spacing();
-        imgui.Text('Analog Trigger Settings');
-        imgui.Separator();
-
-        components.DrawPartySliderInt(crossbarSettings, 'Press Threshold##crossbar', 'triggerPressThreshold', 5, 250, '%d', function()
-            controller.SetTriggerThresholds(crossbarSettings.triggerPressThreshold, crossbarSettings.triggerReleaseThreshold);
-        end, 30);
-        imgui.ShowHelp('Analog trigger value (0-255) required to register as pressed. Higher values require a deeper press. Default: 30');
-
-        components.DrawPartySliderInt(crossbarSettings, 'Release Threshold##crossbar', 'triggerReleaseThreshold', 5, 250, '%d', function()
-            controller.SetTriggerThresholds(crossbarSettings.triggerPressThreshold, crossbarSettings.triggerReleaseThreshold);
-        end, 15);
-        imgui.ShowHelp('Analog trigger value (0-255) below which the trigger is considered released. Provides hysteresis to prevent jitter. Default: 15');
-    end
-
-    imgui.Spacing();
-
-    -- Custom DirectInput button mapping section (only for dinput scheme)
-    if currentScheme == 'dinput' then
-        imgui.Indent(20);
-
-        local hasCustomMapping = crossbarSettings.customControllerMappings and 
-                                  crossbarSettings.customControllerMappings.dinput;
-
-        -- Configure button
-        if imgui.Button('Configure Button Mapping##dinput', {0, 0}) then
-            local buttondetect = require('modules.hotbar.buttondetect');
-            buttonDetectionState.active = true;
-            buttonDetectionState.progress = 0;
-            buttondetect.StartDetection(function(results)
-                if not crossbarSettings.customControllerMappings then
-                    crossbarSettings.customControllerMappings = {};
-                end
-                crossbarSettings.customControllerMappings.dinput = results;
-                buttonDetectionState.active = false;
-                SaveSettingsOnly();
-                -- Re-initialize controller with new mapping
-                controller.SetControllerScheme('dinput', results);
-            end);
-        end
-        imgui.SameLine();
-        imgui.ShowHelp('Launch wizard to configure button layout for your controller. Custom mappings allow you to define your own button layout for DirectInput controllers.');
-
-        -- Status indicator
-        imgui.SameLine();
-        if hasCustomMapping then
-            imgui.TextColored({0, 1, 0, 1}, '(Using custom mapping)');
-        else
-            imgui.TextColored({0.7, 0.7, 0.7, 1}, '(Using default mapping)');
-        end
-
-        -- Clear custom mapping button (only show if custom mapping exists)
-        if hasCustomMapping then
-            imgui.SameLine();
-            if imgui.Button('Clear Custom Mapping##dinput', {150, 0}) then
-                crossbarSettings.customControllerMappings.dinput = nil;
-                SaveSettingsOnly();
-                -- Re-initialize controller without custom mapping
-                controller.SetControllerScheme('dinput');
-            end
-            imgui.SameLine();
-            imgui.ShowHelp('Remove custom mapping and revert to defaults.');
-        end
-
-        -- Show progress bar during detection
-        if buttonDetectionState.active then
-            local buttondetect = require('modules.hotbar.buttondetect');
-            local progress, maxProgress = buttondetect.GetProgress();
-            imgui.ProgressBar(progress / maxProgress, {-1, 20}, string.format('Button %d of %d', progress, maxProgress));
-            imgui.TextWrapped('Detecting buttons... ' .. (buttondetect.GetCurrentPrompt() or ''));
-            if imgui.Button('Cancel##buttondetect', {0, 0}) then
-                buttondetect.Cancel();
-                buttonDetectionState.active = false;
-            end
-        end
-
-        imgui.Unindent(20);
-    end
-
-    imgui.Spacing();
-    imgui.Spacing();
-
-    -- Controller Input settings (combo modes, double-tap) - directly under controller
-    components.DrawPartyCheckbox(crossbarSettings, 'Enable L2+R2 / R2+L2##crossbar', 'enableExpandedCrossbar');
-    imgui.ShowHelp('Enable L2+R2 and R2+L2 combo modes. Hold one trigger, then press the other to access expanded bars.');
-
-    -- Nested option: Use shared expanded bar (only visible when L2+R2/R2+L2 is enabled)
-    if crossbarSettings.enableExpandedCrossbar then
-        imgui.Indent(20);
-        components.DrawPartyCheckbox(crossbarSettings, 'Use Shared Expanded Bar##crossbar', 'useSharedExpandedBar', DeferredUpdateVisuals);
-        imgui.ShowHelp('When enabled, L2+R2 and R2+L2 will access the same shared expanded bar instead of separate bars.\nThis shared bar is completely independent from the separate L2+R2 and R2+L2 bars.');
-        imgui.Unindent(20);
-    end
-
-    components.DrawPartyCheckbox(crossbarSettings, 'Enable Double-Tap##crossbar', 'enableDoubleTap', DeferredUpdateVisuals);
-    imgui.ShowHelp('Enable L2x2 and R2x2 double-tap modes. Tap a trigger twice quickly (hold on second tap) to access double-tap bars.');
-
-    if crossbarSettings.enableDoubleTap then
-        components.DrawPartySlider(crossbarSettings, 'Double-Tap Window##crossbar', 'doubleTapWindow', 0.1, 0.6, '%.2f sec', function()
-            controller.SetDoubleTapWindow(crossbarSettings.doubleTapWindow);
-        end, 0.3);
-        imgui.ShowHelp('Time window to register a double-tap (in seconds).');
-
-        -- Minimum Trigger Hold (only for analog controllers with double-tap enabled)
-        if hasAnalogTriggers then
-            components.DrawPartySlider(crossbarSettings, 'Minimum Trigger Hold##crossbar', 'minTriggerHold', 0.01, 0.15, '%.3f sec', function()
-                controller.SetMinTriggerHold(crossbarSettings.minTriggerHold);
-            end, 0.05);
-            imgui.ShowHelp('Minimum time the trigger must be held before releasing for the release to count toward double-tap detection. Prevents false double-taps from analog jitter or accidental taps. Default: 0.050 sec (50ms)');
-        end
-    end
-
-    imgui.Spacing();
-
-    -- Display Mode dropdown
-    local displayModes = { 'normal', 'activeOnly' };
-    local displayModeLabels = { 'Normal', 'Active Only' };
-    local currentDisplayMode = crossbarSettings.displayMode or 'normal';
-    local currentDisplayIndex = 1;
-    for i, mode in ipairs(displayModes) do
-        if mode == currentDisplayMode then
-            currentDisplayIndex = i;
-            break;
-        end
-    end
-
-    imgui.AlignTextToFramePadding();
-    imgui.Text('Display Mode:');
-    imgui.SameLine();
-    imgui.SetNextItemWidth(150);
-    if imgui.BeginCombo('##displayModeCrossbar', displayModeLabels[currentDisplayIndex]) then
-        for i, label in ipairs(displayModeLabels) do
-            local isSelected = (i == currentDisplayIndex);
-            if imgui.Selectable(label, isSelected) then
-                crossbarSettings.displayMode = displayModes[i];
-                SaveSettingsOnly();
-            end
-            if isSelected then
-                imgui.SetItemDefaultFocus();
-            end
-        end
-        imgui.EndCombo();
-    end
-    imgui.ShowHelp('Normal: Always show both sides (inactive side dimmed).\nActive Only: Show only when trigger is held, displaying only the active side.');
-
-    imgui.Spacing();
-
-    -- Edit Mode for setting up crossbars without holding triggers
-    local editModeEnabled = { crossbarSettings.editMode == true };
-    if imgui.Checkbox('Edit Mode##crossbar', editModeEnabled) then
-        crossbarSettings.editMode = editModeEnabled[1];
-        SaveSettingsOnly();
-    end
-    imgui.ShowHelp('Enable Edit Mode to preview and set up crossbars without holding triggers.');
-
-    if crossbarSettings.editMode then
-        -- Preview bar dropdown on same line as checkbox
-        imgui.SameLine();
-
-        -- Build preview bar options dynamically based on settings
-        local previewBarOptions = { 'L2', 'R2' };
-        local previewBarKeys = { 'L2', 'R2' };
-
-        -- Add expanded bar options
-        if crossbarSettings.enableExpandedCrossbar then
-            if crossbarSettings.useSharedExpandedBar then
-                -- Shared mode: show single "L2+R2 (Shared)" option
-                table.insert(previewBarOptions, 'L2+R2 (Shared)');
-                table.insert(previewBarKeys, 'Shared');
-            else
-                -- Separate mode: show both L2+R2 and R2+L2
-                table.insert(previewBarOptions, 'L2+R2');
-                table.insert(previewBarKeys, 'L2R2');
-                table.insert(previewBarOptions, 'R2+L2');
-                table.insert(previewBarKeys, 'R2L2');
-            end
-        end
-
-        -- Add double-tap options if enabled
-        if crossbarSettings.enableDoubleTap then
-            table.insert(previewBarOptions, 'L2x2');
-            table.insert(previewBarKeys, 'L2x2');
-            table.insert(previewBarOptions, 'R2x2');
-            table.insert(previewBarKeys, 'R2x2');
-        end
-
-        local currentPreviewBar = crossbarSettings.editModeBar or 'L2';
-        -- Handle migration: if current bar is L2R2 or R2L2 but shared mode is now enabled, switch to Shared
-        if crossbarSettings.useSharedExpandedBar and (currentPreviewBar == 'L2R2' or currentPreviewBar == 'R2L2') then
-            currentPreviewBar = 'Shared';
-            crossbarSettings.editModeBar = 'Shared';
-        end
-        -- Handle migration: if current bar is Shared but shared mode is now disabled, switch to L2R2
-        if not crossbarSettings.useSharedExpandedBar and currentPreviewBar == 'Shared' then
-            currentPreviewBar = 'L2R2';
-            crossbarSettings.editModeBar = 'L2R2';
-        end
-
-        local currentPreviewLabel = currentPreviewBar;
-        -- Convert key to label
-        for i, key in ipairs(previewBarKeys) do
-            if key == currentPreviewBar then
-                currentPreviewLabel = previewBarOptions[i];
-                break;
-            end
-        end
-
-        imgui.SetNextItemWidth(110);
-        if imgui.BeginCombo('##editModeBar', currentPreviewLabel) then
-            for i, label in ipairs(previewBarOptions) do
-                local isSelected = (previewBarKeys[i] == currentPreviewBar);
-                if imgui.Selectable(label, isSelected) then
-                    crossbarSettings.editModeBar = previewBarKeys[i];
-                    SaveSettingsOnly();
-                end
-                if isSelected then
-                    imgui.SetItemDefaultFocus();
-                end
-            end
-            imgui.EndCombo();
-        end
-        imgui.ShowHelp('Select which crossbar to preview in Edit Mode.');
-
-        -- Warning text on next line
-        imgui.TextColored({1.0, 1.0, 0.0, 1.0}, '(!) Disable before playing');
-    end
-
-    imgui.Spacing();
-    imgui.Separator();
-    imgui.Spacing();
-
-    -- Per-Crossbar tabs
-    imgui.TextColored(components.TAB_STYLE.gold, 'Per-Crossbar Settings');
-    imgui.Spacing();
-
-    for i, crossbarType in ipairs(CROSSBAR_TYPES) do
-        local clicked, _ = components.DrawStyledTab(
-            crossbarType.label,
-            'crossbarTab' .. crossbarType.key,
-            selectedCrossbarTab == i,
-            nil,
-            components.TAB_STYLE.smallHeight,
-            components.TAB_STYLE.smallPadding
-        );
-        if clicked then
-            selectedCrossbarTab = i;
-        end
-        if i < #CROSSBAR_TYPES then
-            imgui.SameLine();
-        end
-    end
-
-    imgui.Spacing();
-    imgui.Separator();
-    imgui.Spacing();
-
-    -- Draw settings based on selected tab
-    local currentCrossbar = CROSSBAR_TYPES[selectedCrossbarTab];
-    if currentCrossbar then
-        if currentCrossbar.isGlobal then
-            -- Global Crossbar Palettes section first (most commonly used)
-            DrawCrossbarGlobalPalettesSection();
-            imgui.Separator();
-
-            -- Global Visual Settings
-            imgui.TextColored(components.TAB_STYLE.gold, 'Global Visual Settings');
-            imgui.Spacing();
-
-            if components.CollapsingSection('Slot Settings##crossbar', false) then
-                components.DrawPartySliderInt(crossbarSettings, 'Slot Size (px)##crossbar', 'slotSize', 32, 64, '%d', nil, 48);
-                imgui.ShowHelp('Size of each slot in pixels.');
-
-                components.DrawPartySliderInt(crossbarSettings, 'Slot Gap (Vertical)##crossbar', 'slotGapV', 0, 128, '%d', nil, 4);
-                imgui.ShowHelp('Vertical gap between top and bottom slots in each diamond.');
-
-                components.DrawPartySliderInt(crossbarSettings, 'Slot Gap (Horizontal)##crossbar', 'slotGapH', 0, 128, '%d', nil, 4);
-                imgui.ShowHelp('Horizontal gap between left and right slots in each diamond.');
-
-                components.DrawPartySliderInt(crossbarSettings, 'Diamond Spacing##crossbar', 'diamondSpacing', 0, 128, '%d', nil, 20);
-                imgui.ShowHelp('Horizontal space between D-pad and face button diamonds.');
-
-                components.DrawPartySliderInt(crossbarSettings, 'Group Spacing##crossbar', 'groupSpacing', 0, 128, '%d', nil, 40);
-                imgui.ShowHelp('Space between L2 and R2 groups.');
-
-                components.DrawPartyCheckbox(crossbarSettings, 'Show Divider##crossbar', 'showDivider');
-                imgui.ShowHelp('Show a divider line between L2 and R2 groups.');
-
-                -- Show MP Cost with X/Y offsets
-                components.DrawPartyCheckbox(crossbarSettings, 'Show MP Cost##crossbar', 'showMpCost');
-                if crossbarSettings.showMpCost then
-                    imgui.SameLine();
-                    components.DrawInlineOffsets(crossbarSettings, 'crossbarmp', 'mpCostOffsetX', 'mpCostOffsetY', 35);
-                end
-                imgui.ShowHelp('Display MP cost on spell slots. X/Y offsets adjust position.');
-
-                -- Show Item Quantity with X/Y offsets
-                components.DrawPartyCheckbox(crossbarSettings, 'Show Item Quantity##crossbar', 'showQuantity');
-                if crossbarSettings.showQuantity then
-                    imgui.SameLine();
-                    components.DrawInlineOffsets(crossbarSettings, 'crossbarqty', 'quantityOffsetX', 'quantityOffsetY', 35);
-                end
-                imgui.ShowHelp('Display item quantity on item slots. X/Y offsets adjust position.');
-
-                -- Show full-stack count above the item quantity (only counts complete stacks)
-                components.DrawPartyCheckbox(crossbarSettings, 'Show Stack Quantity##crossbar', 'showStackQuantity');
-                imgui.ShowHelp('Show full-stack count next to the item quantity. Only complete stacks are counted (e.g. 25 of stack-12 items shows "(2)"). Shares position/font with Show Item Quantity.');
-
-                -- Show Combo Text with X/Y offsets
-                components.DrawPartyCheckbox(crossbarSettings, 'Show Combo Text##crossbar', 'showComboText');
-                if crossbarSettings.showComboText then
-                    imgui.SameLine();
-                    components.DrawInlineOffsets(crossbarSettings, 'crossbarcombo', 'comboTextOffsetX', 'comboTextOffsetY', 35);
-                end
-                imgui.ShowHelp('Show current combo mode text in center (L2+R2, R2+L2, L2x2, R2x2). X/Y offsets adjust position.');
-
-                -- Show Palette Name with X/Y offsets
-                components.DrawPartyCheckbox(crossbarSettings, 'Show Palette Name##crossbar', 'showPaletteName');
-                if crossbarSettings.showPaletteName then
-                    imgui.SameLine();
-                    components.DrawInlineOffsets(crossbarSettings, 'crossbarpalette', 'paletteNameOffsetX', 'paletteNameOffsetY', 35);
-                end
-                imgui.ShowHelp('Display current palette name and index (e.g., "Stuns (2/5)"). X/Y offsets adjust position.');
-
-                -- Show Action Labels with X/Y offsets
-                components.DrawPartyCheckbox(crossbarSettings, 'Show Action Labels##crossbar', 'showActionLabels');
-                if crossbarSettings.showActionLabels then
-                    imgui.SameLine();
-                    components.DrawInlineOffsets(crossbarSettings, 'crossbarlbl', 'actionLabelOffsetX', 'actionLabelOffsetY', 35);
-                end
-                imgui.ShowHelp('Show spell/ability names below slots. X/Y offsets adjust position.');
-            end
-
-            -- Background section
-            if components.CollapsingSection('Background##crossbar', false) then
-                local bgThemes = {'-None-', 'Plain', 'Window1', 'Window2', 'Window3', 'Window4', 'Window5', 'Window6', 'Window7', 'Window8'};
-                components.DrawPartyComboBox(crossbarSettings, 'Theme##bgcrossbar', 'backgroundTheme', bgThemes, DeferredUpdateVisuals);
-                imgui.ShowHelp('Select the background window theme.');
-
-                components.DrawPartySlider(crossbarSettings, 'Background Scale##crossbar', 'bgScale', 0.1, 3.0, '%.2f', nil, 1.0);
-                imgui.ShowHelp('Scale of the background texture.');
-
-                components.DrawPartySlider(crossbarSettings, 'Border Scale##crossbar', 'borderScale', 0.1, 3.0, '%.2f', nil, 1.0);
-                imgui.ShowHelp('Scale of the window borders.');
-
-                components.DrawPartySlider(crossbarSettings, 'Background Opacity##crossbar', 'backgroundOpacity', 0.0, 1.0, '%.2f');
-                imgui.ShowHelp('Opacity of the background.');
-
-                components.DrawPartySlider(crossbarSettings, 'Border Opacity##crossbar', 'borderOpacity', 0.0, 1.0, '%.2f');
-                imgui.ShowHelp('Opacity of the window borders.');
-            end
-
-            -- Controller Icons section
-            if components.CollapsingSection('Controller Icons##crossbar', false) then
-                local controllerThemes = { 'PlayStation', 'Xbox', 'Nintendo' };
-                components.DrawPartyComboBox(crossbarSettings, 'Controller Theme##crossbar', 'controllerTheme', controllerThemes);
-                imgui.ShowHelp('Select controller button icon style. Nintendo layout: X top, A right, B bottom, Y left.');
-
-                components.DrawPartyCheckbox(crossbarSettings, 'Show Button Icons##crossbar', 'showButtonIcons');
-                imgui.ShowHelp('Show d-pad and face button icons on slots.');
-
-                if crossbarSettings.showButtonIcons then
-                    components.DrawPartySliderInt(crossbarSettings, 'Button Icon Size##crossbar', 'buttonIconSize', 8, 32, '%d', nil, 16);
-                    imgui.ShowHelp('Size of controller button icons.');
-
-                    components.DrawPartySliderInt(crossbarSettings, 'Button Icon Gap (H)##crossbar', 'buttonIconGapH', 0, 24, '%d', nil, 2);
-                    imgui.ShowHelp('Horizontal spacing between center controller icons.');
-
-                    components.DrawPartySliderInt(crossbarSettings, 'Button Icon Gap (V)##crossbar', 'buttonIconGapV', 0, 24, '%d', nil, 2);
-                    imgui.ShowHelp('Vertical spacing between center controller icons.');
-                end
-
-                imgui.Separator();
-
-                components.DrawPartyCheckbox(crossbarSettings, 'Show Trigger Icons##crossbar', 'showTriggerLabels');
-                imgui.ShowHelp('Show L2/R2 trigger icons above the crossbar groups.');
-
-                if crossbarSettings.showTriggerLabels then
-                    components.DrawPartySlider(crossbarSettings, 'Trigger Icon Scale##crossbar', 'triggerIconScale', 0.5, 2.0, '%.1f', nil, 1.0);
-                    imgui.ShowHelp('Scale for L2/R2 trigger icons above groups (base size 49x28).');
-                end
-            end
-
-            -- Text section
-            if components.CollapsingSection('Text Settings##crossbar', false) then
-                components.DrawPartySliderInt(crossbarSettings, 'Keybind Text Size##crossbar', 'keybindFontSize', 6, 24, '%d', nil, 10);
-                imgui.ShowHelp('Text size for keybind labels.');
-
-                components.DrawPartySliderInt(crossbarSettings, 'Label Text Size##crossbar', 'labelFontSize', 6, 24, '%d', nil, 10);
-                imgui.ShowHelp('Text size for action labels.');
-
-                components.DrawPartySliderInt(crossbarSettings, 'Cooldown Text Size##crossbar', 'recastTimerFontSize', 6, 24, '%d', DeferredUpdateVisuals, 11);
-                imgui.ShowHelp('Text size for cooldown timer display.');
-
-                components.DrawPartyCheckbox(crossbarSettings, 'Flash Under 5 Seconds##crossbar', 'flashCooldownUnder5');
-                imgui.ShowHelp('Flash the cooldown timer text when remaining time is under 5 seconds.');
-
-                components.DrawPartyCheckbox(crossbarSettings, 'Use Hh:MM Cooldown Format##crossbar', 'useHHMMCooldownFormat');
-                imgui.ShowHelp('Display cooldown timers as Hh:MM (e.g., "1h:49") instead of "1h 49m" for shorter text.');
-
-                components.DrawPartySliderInt(crossbarSettings, 'Trigger Label Text Size##crossbar', 'triggerLabelFontSize', 6, 24, '%d', nil, 14);
-                imgui.ShowHelp('Text size for combo mode labels (L2, R2, etc.).');
-
-                components.DrawPartySliderInt(crossbarSettings, 'MP Cost Text Size##crossbar', 'mpCostFontSize', 6, 24, '%d', nil, 10);
-                imgui.ShowHelp('Text size for MP cost display.');
-
-                components.DrawPartySliderInt(crossbarSettings, 'Quantity Text Size##crossbar', 'quantityFontSize', 6, 24, '%d', nil, 10);
-                imgui.ShowHelp('Text size for item quantity display.');
-
-                components.DrawPartySliderInt(crossbarSettings, 'Combo Text Size##crossbar', 'comboTextFontSize', 8, 24, '%d', nil, 12);
-                imgui.ShowHelp('Font size for combo mode text (L2+R2, R2+L2, etc.).');
-
-                components.DrawPartySliderInt(crossbarSettings, 'Palette Name Text Size##crossbar', 'paletteNameFontSize', 8, 24, '%d', nil, 10);
-                imgui.ShowHelp('Font size for palette name display.');
-            end
-
-            -- Visual Feedback section
-            if components.CollapsingSection('Visual Feedback##crossbar', false) then
-                components.DrawPartySlider(crossbarSettings, 'Inactive Dim##crossbar', 'inactiveSlotDim', 0.0, 1.0, '%.2f', nil, 0.5);
-                imgui.ShowHelp('Dim factor for inactive trigger side (0 = black, 1 = full brightness).');
-
-                -- Default to true if not set
-                if crossbarSettings.enableTransitionAnimations == nil then
-                    crossbarSettings.enableTransitionAnimations = true;
-                end
-                local transAnimEnabled = { crossbarSettings.enableTransitionAnimations };
-                if imgui.Checkbox('Enable Transition Animations##crossbar', transAnimEnabled) then
-                    crossbarSettings.enableTransitionAnimations = transAnimEnabled[1];
-                    SaveSettingsOnly();
-                end
-                imgui.ShowHelp('Enable smooth animations when switching between crossbar modes (L2, R2, combos). Disable for instant transitions.');
-
-                -- Default to true if not set
-                if crossbarSettings.enablePressScale == nil then
-                    crossbarSettings.enablePressScale = true;
-                end
-                local pressScaleEnabled = { crossbarSettings.enablePressScale };
-                if imgui.Checkbox('Enable Press Scale##crossbar', pressScaleEnabled) then
-                    crossbarSettings.enablePressScale = pressScaleEnabled[1];
-                    SaveSettingsOnly();
-                end
-                imgui.ShowHelp('Enable icon scaling animation when pressing an action slot. Disable for no visual feedback on press.');
-            end
-        else
-            -- Per-crossbar settings (L2, R2, etc.)
-            DrawCrossbarBarSettings(crossbarSettings, currentCrossbar, currentCrossbar.settingsKey);
-        end
-    end
-
-    -- Draw confirmation popup for job-specific toggle
-    DrawJobSpecificConfirmPopup();
-
-    -- Draw palette modal (unified for both hotbar and crossbar)
-    DrawPaletteModal();
-
-    -- Draw palette manager window (separate window for advanced management)
-    paletteManager.Draw();
-
-    return selectedCrossbarTab;
-end
-
-local function DrawCrossbarColorSettings()
-    local crossbarSettings = gConfig.hotbarCrossbar;
-    if not crossbarSettings then
-        imgui.TextColored({1.0, 0.5, 0.5, 1.0}, 'Crossbar settings not initialized.');
+-- Disable XI Macros row + diagnostics + Controller Hold-to-Show (hotbarGlobal.disableMacroBars).
+-- Shared between Hotbar and Crossbar; idSuffix keeps ImGui IDs distinct when both UIs exist.
+function M.DrawSharedDisableXiMacrosControls(idSuffix)
+    idSuffix = idSuffix or 'hb';
+    local hg = gConfig.hotbarGlobal;
+    if not hg then
         return;
     end
 
-    local colorFlags = bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_AlphaPreviewHalf, ImGuiColorEditFlags_AlphaBar);
-
-    imgui.TextColored(components.TAB_STYLE.gold, 'Crossbar Color Settings');
-    imgui.Spacing();
-
-    if components.CollapsingSection('Window Colors##crossbarcolor', true) then
-        local bgColor = crossbarSettings.bgColor or 0xFFFFFFFF;
-        local bgColorTable = ARGBToImGui(bgColor);
-        if imgui.ColorEdit4('Background Color##crossbar', bgColorTable, colorFlags) then
-            crossbarSettings.bgColor = ImGuiToARGB(bgColorTable);
-            SaveSettingsOnly();
-        end
-        imgui.ShowHelp('Color tint for the window background.');
-
-        local borderColor = crossbarSettings.borderColor or 0xFFFFFFFF;
-        local borderColorTable = ARGBToImGui(borderColor);
-        if imgui.ColorEdit4('Border Color##crossbar', borderColorTable, colorFlags) then
-            crossbarSettings.borderColor = ImGuiToARGB(borderColorTable);
-            SaveSettingsOnly();
-        end
-        imgui.ShowHelp('Color tint for the window borders.');
-    end
-
-    if components.CollapsingSection('Slot Colors##crossbarcolor', true) then
-        local slotBgColor = crossbarSettings.slotBackgroundColor or 0x55000000;
-        local slotBgColorTable = ARGBToImGui(slotBgColor);
-        if imgui.ColorEdit4('Slot Background##crossbar', slotBgColorTable, colorFlags) then
-            crossbarSettings.slotBackgroundColor = ImGuiToARGB(slotBgColorTable);
-            SaveSettingsOnly();
-        end
-        imgui.ShowHelp('Color and transparency of slot backgrounds.');
-
-        components.DrawPartySlider(crossbarSettings, 'Slot Opacity##crossbar', 'slotOpacity', 0.0, 1.0, '%.2f', nil, 1.0);
-        imgui.ShowHelp('Opacity of the slot background texture.');
-
-        local highlightColor = crossbarSettings.activeSlotHighlight or 0x44FFFFFF;
-        local highlightColorTable = ARGBToImGui(highlightColor);
-        if imgui.ColorEdit4('Active Highlight##crossbar', highlightColorTable, colorFlags) then
-            crossbarSettings.activeSlotHighlight = ImGuiToARGB(highlightColorTable);
-            SaveSettingsOnly();
-        end
-        imgui.ShowHelp('Highlight color for slots when trigger is held.');
-    end
-
-    if components.CollapsingSection('Text Colors##crossbarcolor', true) then
-        local keybindColor = crossbarSettings.keybindFontColor or 0xFFFFFFFF;
-        local keybindColorTable = ARGBToImGui(keybindColor);
-        if imgui.ColorEdit4('Keybind Color##crossbar', keybindColorTable, colorFlags) then
-            crossbarSettings.keybindFontColor = ImGuiToARGB(keybindColorTable);
-            SaveSettingsOnly();
-        end
-        imgui.ShowHelp('Color for keybind labels.');
-
-        local triggerLabelColor = crossbarSettings.triggerLabelColor or 0xFFFFCC00;
-        local triggerLabelColorTable = ARGBToImGui(triggerLabelColor);
-        if imgui.ColorEdit4('Trigger Label Color##crossbar', triggerLabelColorTable, colorFlags) then
-            crossbarSettings.triggerLabelColor = ImGuiToARGB(triggerLabelColorTable);
-            SaveSettingsOnly();
-        end
-        imgui.ShowHelp('Color for combo mode labels (L2, R2, etc.).');
-
-        local mpCostColor = crossbarSettings.mpCostFontColor or 0xFFD4FF97;
-        local mpCostColorTable = ARGBToImGui(mpCostColor);
-        if imgui.ColorEdit4('MP Cost Color##crossbar', mpCostColorTable, colorFlags) then
-            crossbarSettings.mpCostFontColor = ImGuiToARGB(mpCostColorTable);
-            SaveSettingsOnly();
-        end
-        imgui.ShowHelp('Color for MP cost display on spell slots.');
-
-        local quantityColor = crossbarSettings.quantityFontColor or 0xFFFFFFFF;
-        local quantityColorTable = ARGBToImGui(quantityColor);
-        if imgui.ColorEdit4('Quantity Color##crossbar', quantityColorTable, colorFlags) then
-            crossbarSettings.quantityFontColor = ImGuiToARGB(quantityColorTable);
-            SaveSettingsOnly();
-        end
-        imgui.ShowHelp('Color for item quantity display. Note: Shows red when quantity is 0.');
-
-        local labelColor = crossbarSettings.labelFontColor or 0xFFFFFFFF;
-        local labelColorTable = ARGBToImGui(labelColor);
-        if imgui.ColorEdit4('Label Color##crossbar', labelColorTable, colorFlags) then
-            crossbarSettings.labelFontColor = ImGuiToARGB(labelColorTable);
-            SaveSettingsOnly();
-        end
-        imgui.ShowHelp('Color for action labels below slots.');
-
-        local timerColor = crossbarSettings.recastTimerFontColor or 0xFFFFFFFF;
-        local timerColorTable = ARGBToImGui(timerColor);
-        if imgui.ColorEdit4('Cooldown Timer Color##crossbar', timerColorTable, colorFlags) then
-            crossbarSettings.recastTimerFontColor = ImGuiToARGB(timerColorTable);
-            SaveSettingsOnly();
-        end
-        imgui.ShowHelp('Color for cooldown timer text displayed on slots.');
-    end
-end
-
--- Section: Hotbar Settings
-function M.DrawSettings(state)
-    local selectedBarTab = state and state.selectedHotbarTab or 1;
-    local selectedModeTab = state and state.selectedModeTab or 'hotbar';  -- 'hotbar' or 'crossbar' when mode is 'both'
-    local selectedCrossbarTab = state and state.selectedCrossbarTab or 1;  -- 1=L2, 2=R2, 3=L2R2, etc.
-
-    -- Basic toggles at top
-    components.DrawCheckbox('Enabled', 'hotbarEnabled');
-    -- Lock Movement disables drag/drop and slot swapping for hotbar bars
-    components.DrawCheckbox('Lock Movement', 'hotbarLockMovement', function()
-        -- Only reset anchors when lock is being ENABLED
-        if gConfig.hotbarLockMovement then
-            for i = 1, 6 do
-                drawing.ResetAnchorState('Hotbar' .. tostring(i));
-            end
-            drawing.ResetAnchorState('Crossbar');
-        end
-        DeferredUpdateVisuals();
-    end);
-    imgui.ShowHelp('When enabled, prevents dragging/dropping and swapping of hotbar and crossbar slots.');
-    components.DrawCheckbox('Hide When Menu Open', 'hotbarHideOnMenuFocus');
-    imgui.ShowHelp('Hide hotbars when a game menu is open (equipment, map, etc.).');
-
-    -- Disable XI macros checkbox (stored in hotbarGlobal)
-    local disableMacroBars = { gConfig.hotbarGlobal.disableMacroBars or false };
-    if imgui.Checkbox('Disable XI Macros', disableMacroBars) then
-        gConfig.hotbarGlobal.disableMacroBars = disableMacroBars[1];
+    local disableMacroBars = { hg.disableMacroBars or false };
+    if imgui.Checkbox('Disable XI Macros##disableXi_' .. idSuffix, disableMacroBars) then
+        hg.disableMacroBars = disableMacroBars[1];
         SaveSettingsOnly();
         DeferredUpdateVisuals();
     end
+    imgui.ShowHelp('Toggle macro bar behavior:\n- OFF: Built-in macros work with speed fix (macrofix)\n- ON: Macro bar hidden, XIUI hotbar/crossbar only\n\nNote: When ON, also blocks native macro commands.');
 
-    -- Controller Hold-to-Show checkbox (only shown when Disable XI Macros is OFF)
-    if not gConfig.hotbarGlobal.disableMacroBars then
+    if not hg.disableMacroBars then
         imgui.Indent(20);
-        local holdToShow = { gConfig.hotbarGlobal.controllerHoldToShow ~= false };  -- default true
-        if imgui.Checkbox('Controller Hold-to-Show', holdToShow) then
-            gConfig.hotbarGlobal.controllerHoldToShow = holdToShow[1];
+        local holdToShow = { hg.controllerHoldToShow ~= false };
+        if imgui.Checkbox('Controller Hold-to-Show##holdXi_' .. idSuffix, holdToShow) then
+            hg.controllerHoldToShow = holdToShow[1];
             SaveSettingsOnly();
             DeferredUpdateVisuals();
         end
@@ -2562,10 +1899,9 @@ function M.DrawSettings(state)
     end
 
     imgui.SameLine();
-    -- Get diagnostic info for tooltip
+    imgui.PushID('diagXi_' .. idSuffix);
     local diag = macrosLib.get_diagnostics();
 
-    -- Show warning icon if macrofix addon conflict detected
     if diag.macrofixConflict then
         imgui.TextColored({1.0, 0.4, 0.0, 1.0}, '(!)');
         if imgui.IsItemHovered() then
@@ -2584,15 +1920,13 @@ function M.DrawSettings(state)
         end
         imgui.SameLine();
     end
-    -- Show status indicator with color based on mode
     if diag.mode == 'hide' then
-        imgui.TextColored({0.5, 1.0, 0.5, 1.0}, '(hidden)');  -- Green when hidden
+        imgui.TextColored({0.5, 1.0, 0.5, 1.0}, '(hidden)');
     elseif diag.mode == 'macrofix' then
-        -- Show hold-to-show status when in macrofix mode
         local statusText = diag.controllerHoldToShow and '(macrofix, hold-to-show)' or '(macrofix)';
-        imgui.TextColored({0.5, 0.8, 1.0, 1.0}, statusText);  -- Cyan for macrofix mode
+        imgui.TextColored({0.5, 0.8, 1.0, 1.0}, statusText);
     else
-        imgui.TextColored({1.0, 0.7, 0.3, 1.0}, '(init...)');  -- Orange if still initializing
+        imgui.TextColored({1.0, 0.7, 0.3, 1.0}, '(init...)');
     end
     if imgui.IsItemHovered() then
         imgui.BeginTooltip();
@@ -2606,13 +1940,11 @@ function M.DrawSettings(state)
         end
         imgui.Text('Mode: ' .. modeStr);
 
-        -- Show controller hold-to-show status when in macrofix mode
         if diag.mode == 'macrofix' then
             local holdStatus = diag.controllerHoldToShow and 'enabled' or 'disabled';
             imgui.Text('Controller Hold-to-Show: ' .. holdStatus);
         end
 
-        -- Check if macrofix addon is loaded (safely - GetAddonManager may not exist)
         local macrofixLoaded = false;
         local ok, addonManager = pcall(function() return AshitaCore:GetAddonManager(); end);
         if ok and addonManager then
@@ -2659,42 +1991,116 @@ function M.DrawSettings(state)
         imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'active = applied, ready = available');
         imgui.EndTooltip();
     end
-    imgui.ShowHelp('Toggle macro bar behavior:\n- OFF: Built-in macros work with speed fix (macrofix)\n- ON: Macro bar hidden, XIUI hotbar/crossbar only\n\nNote: When ON, also blocks native macro commands.');
+    imgui.PopID();
+end
 
-    -- Skillchain highlight checkbox (stored in hotbarGlobal)
-    local skillchainHighlight = { gConfig.hotbarGlobal.skillchainHighlightEnabled ~= false };
-    if imgui.Checkbox('Skillchain Highlight', skillchainHighlight) then
-        gConfig.hotbarGlobal.skillchainHighlightEnabled = skillchainHighlight[1];
+-- Helper: draw a compact inline ARGB color swatch (no label, no input fields — just the
+-- swatch + click-to-open picker). Used inline with checkboxes so each toggle gets its color
+-- chip on the same row, e.g. `[x] Skillchain Highlight  [██]  (?)`. Saves on edit-finish
+-- the same way DrawTextColorPicker does, so behavior matches the rest of the config UI.
+local function DrawInlineArgbColorSwatch(parentTable, key, defaultArgb, imguiId)
+    local rgba = ARGBToImGui(parentTable[key] or defaultArgb);
+    local flags = bit.bor(ImGuiColorEditFlags_NoInputs, ImGuiColorEditFlags_NoLabel, ImGuiColorEditFlags_AlphaBar);
+    if imgui.ColorEdit4('##' .. imguiId, rgba, flags) then
+        parentTable[key] = ImGuiToARGB(rgba);
+    end
+    if imgui.IsItemDeactivatedAfterEdit() then
         SaveSettingsOnly();
     end
-    imgui.ShowHelp('Show animated border and skillchain icon on weapon skill slots when a skillchain window is open.');
+end
 
-    if gConfig.hotbarGlobal.skillchainHighlightEnabled ~= false then
-        components.DrawPartySlider(gConfig.hotbarGlobal, 'Icon Scale##skillchain', 'skillchainIconScale', 0.5, 2.0, '%.1f', nil, 1.0);
-        imgui.ShowHelp('Scale of the skillchain icon (default 1.0).');
-        components.DrawPartySliderInt(gConfig.hotbarGlobal, 'Icon Offset X##skillchain', 'skillchainIconOffsetX', -50, 50, '%d', nil, 0);
-        imgui.ShowHelp('Horizontal offset for skillchain icon position.');
-        components.DrawPartySliderInt(gConfig.hotbarGlobal, 'Icon Offset Y##skillchain', 'skillchainIconOffsetY', -50, 50, '%d', nil, 0);
-        imgui.ShowHelp('Vertical offset for skillchain icon position.');
+-- Skillchain & Magic Burst highlight options (hotbarGlobal); shared between Hotbar and Crossbar.
+-- Layout: each toggle gets its color swatch inline on the same row (only when enabled), with
+-- the (?) help marker trailing. Shared icon Scale/OffsetX/OffsetY sliders sit below and only
+-- render when at least one of the two highlights is enabled (they have no effect otherwise).
+function M.DrawSharedSkillchainHighlightControls(idSuffix)
+    idSuffix = idSuffix or 'hb';
+    local hg = gConfig.hotbarGlobal;
+    if not hg then
+        return;
     end
+
+    -- Skillchain highlight: checkbox + inline color swatch (when enabled) + help marker.
+    local skillchainHighlight = { hg.skillchainHighlightEnabled ~= false };
+    if imgui.Checkbox('Skillchain Highlight##skillchainHl_' .. idSuffix, skillchainHighlight) then
+        hg.skillchainHighlightEnabled = skillchainHighlight[1];
+        SaveSettingsOnly();
+    end
+    if hg.skillchainHighlightEnabled ~= false then
+        imgui.SameLine();
+        DrawInlineArgbColorSwatch(hg, 'skillchainHighlightColor', 0xFFD4AA44, 'skillchainColor_' .. idSuffix);
+    end
+    imgui.ShowHelp('Show animated border and skillchain icon (top-right corner) on weapon skill / Blood Pact / /ws|/pet-macro slots when a skillchain window is open on your target. Applies to keyboard hotbars and controller crossbar.');
+
+    -- Magic Burst highlight: checkbox + inline color swatch (when enabled) + help marker.
+    -- Sits directly under the skillchain row since the two are sibling features sharing the
+    -- icon scale/offset sliders below.
+    local magicBurst = { hg.magicBurstHighlightEnabled ~= false };
+    if imgui.Checkbox('Magic Burst Highlight##magicBurstHl_' .. idSuffix, magicBurst) then
+        hg.magicBurstHighlightEnabled = magicBurst[1];
+        SaveSettingsOnly();
+    end
+    if hg.magicBurstHighlightEnabled ~= false then
+        imgui.SameLine();
+        DrawInlineArgbColorSwatch(hg, 'magicBurstHighlightColor', 0xFF44D4FF, 'magicBurstColor_' .. idSuffix);
+    end
+    imgui.ShowHelp('When a skillchain closes on your target, highlight for 7 seconds any spell slots whose element matches the burstable elements (Fire/Ice/Wind/Earth/Lightning/Water/Light/Dark). Covers White / Black / Blue Magic, Ninjutsu, and the spell-named SMN Magic Blood Pact Rages (Fire II/IV, Blizzard II/IV, etc.). Border draws cyan-blue by default with the SC name in the bottom-left corner so it stays distinct from the skillchain highlight.');
+
+    -- Shared icon scale + offsets. Render only when at least one highlight is enabled — they
+    -- govern both, so showing the sliders with both highlights off would be confusing dead UI.
+    if hg.skillchainHighlightEnabled ~= false or hg.magicBurstHighlightEnabled ~= false then
+        components.DrawPartySlider(hg, 'Icon Scale##skillchainScale_' .. idSuffix, 'skillchainIconScale', 0.5, 2.0, '%.1f', nil, 1.0);
+        imgui.ShowHelp('Scale of the highlight icon (default 1.0). Shared between skillchain (top-right) and Magic Burst (bottom-left).');
+        components.DrawPartySliderInt(hg, 'Icon Offset X##skillchainOx_' .. idSuffix, 'skillchainIconOffsetX', -50, 50, '%d', nil, 0);
+        imgui.ShowHelp('Horizontal offset for the highlight icon (shared by both highlights).');
+        components.DrawPartySliderInt(hg, 'Icon Offset Y##skillchainOy_' .. idSuffix, 'skillchainIconOffsetY', -50, 50, '%d', nil, 0);
+        imgui.ShowHelp('Vertical offset for the highlight icon (shared by both highlights).');
+    end
+end
+
+
+-- Section: Hotbar Settings
+function M.DrawSettings(state)
+    local selectedBarTab = state and state.selectedHotbarTab or 1;
+
+    -- Basic toggles at top
+    components.DrawCheckbox('Enabled', 'hotbarEnabled');
+    -- Lock Movement disables drag/drop and slot swapping for keyboard hotbars only
+    components.DrawCheckbox('Lock Movement', 'hotbarLockMovement', function()
+        if gConfig.hotbarLockMovement then
+            for i = 1, 6 do
+                drawing.ResetAnchorState('Hotbar' .. tostring(i));
+            end
+        end
+        DeferredUpdateVisuals();
+    end);
+    imgui.ShowHelp('When enabled, prevents dragging, dropping, and swapping slots on keyboard hotbars (bars 1â€“6). Crossbar uses Lock Crossbar under the Crossbar category.');
+    components.DrawCheckbox('Hide When Menu Open', 'hotbarHideOnMenuFocus');
+    imgui.ShowHelp('Hide keyboard hotbars (bars 1â€“6) when a game menu is open (equipment, map, etc.). Crossbar has its own Hide When Menu Open next to Lock Crossbar.');
+
+    M.DrawSharedDisableXiMacrosControls('hb');
+    M.DrawSharedSkillchainHighlightControls('hb');
 
     imgui.Spacing();
     imgui.Separator();
     imgui.Spacing();
 
-    -- Action buttons
-    imgui.PushStyleColor(ImGuiCol_Button, components.TAB_STYLE.bgLight);
-    imgui.PushStyleColor(ImGuiCol_ButtonHovered, components.TAB_STYLE.bgLighter);
-    imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.22, 0.20, 0.17, 1.0});
-
+    -- Action buttons (Macro Manager = gold, Palette Manager = gold-accent, rest = default strip)
+    components.PushMacroManagerButtonStyle();
     if imgui.Button('Macro Manager', {120, 0}) then
-        macropalette.OpenPalette();
+        macropalette.TogglePalette();
     end
+    components.PopMacroManagerButtonStyle();
     imgui.SameLine();
+    components.PushPaletteManagerButtonStyle();
     if imgui.Button('Palette Manager', {120, 0}) then
         paletteManager.Open();
     end
+    components.PopPaletteManagerButtonStyle();
     imgui.SameLine();
+    imgui.PushStyleColor(ImGuiCol_Button, components.TAB_STYLE.bgLight);
+    imgui.PushStyleColor(ImGuiCol_ButtonHovered, components.TAB_STYLE.bgLighter);
+    imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.22, 0.20, 0.17, 1.0});
     -- selectedBarTab is index into BAR_TYPES where 1=Global, 2=Bar1, 3=Bar2, etc.
     -- So actual bar index is selectedBarTab - 1 (default to 1 if Global is selected)
     local editBarIndex = math.max(1, (selectedBarTab or 1) - 1);
@@ -2714,47 +2120,10 @@ function M.DrawSettings(state)
     imgui.Separator();
     imgui.Spacing();
 
-    -- Layout Mode dropdown
-    local modeOptions = { 'Hotbar', 'Crossbar', 'Both' };
-    local modeValues = { 'hotbar', 'crossbar', 'both' };
-    local currentMode = gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
-
-    -- Find current mode index
-    local currentModeIndex = 1;
-    for i, v in ipairs(modeValues) do
-        if v == currentMode then
-            currentModeIndex = i;
-            break;
-        end
-    end
-
-    imgui.AlignTextToFramePadding();
-    imgui.Text('Layout Mode:');
-    imgui.SameLine();
-    imgui.SetNextItemWidth(120);
-    if imgui.BeginCombo('##layoutMode', modeOptions[currentModeIndex]) then
-        for i, label in ipairs(modeOptions) do
-            local isSelected = currentModeIndex == i;
-            if imgui.Selectable(label, isSelected) then
-                if gConfig.hotbarCrossbar then
-                    gConfig.hotbarCrossbar.mode = modeValues[i];
-                    SaveSettingsOnly();
-                    DeferredUpdateVisuals();
-                end
-            end
-            if isSelected then
-                imgui.SetItemDefaultFocus();
-            end
-        end
-        imgui.EndCombo();
-    end
-    imgui.ShowHelp('Hotbar: Standard keyboard hotbars (Bars 1-6)\nCrossbar: Controller layout with L2/R2 triggers\nBoth: Show both hotbar and crossbar');
-
-    -- Conditional: KB Palette Cycle (show if mode is hotbar or both)
-    if currentMode == 'hotbar' or currentMode == 'both' then
+    if gConfig.hotbarEnabled ~= false then
         local kbOptions = { 'Disabled', 'Ctrl + Up/Down', 'Alt + Up/Down', 'Shift + Up/Down', 'Up/Down' };
         local kbModifierValues = { nil, 'ctrl', 'alt', 'shift', 'none' };
-        local currentKbIndex = 1;  -- Default to Disabled
+        local currentKbIndex = 1;
         if gConfig.hotbarGlobal.paletteCycleEnabled ~= false then
             local currentMod = gConfig.hotbarGlobal.paletteCycleModifier or 'ctrl';
             for i = 1, #kbModifierValues do
@@ -2786,72 +2155,53 @@ function M.DrawSettings(state)
             end
             imgui.EndCombo();
         end
-        imgui.ShowHelp('Keyboard shortcut to cycle through palettes.');
-    end
+        imgui.ShowHelp('Keyboard shortcut to cycle through hotbar palettes.');
 
-    -- Conditional: Controller Palette Cycle (show if mode is crossbar or both)
-    if currentMode == 'crossbar' or currentMode == 'both' then
-        local ctrlOptions = { 'Disabled', 'Enabled' };
-        local currentCtrlIndex = (gConfig.hotbarGlobal.paletteCycleControllerEnabled ~= false) and 2 or 1;
+        imgui.Spacing();
+        imgui.Separator();
+        imgui.Spacing();
 
-        imgui.AlignTextToFramePadding();
-        imgui.Text('Palette Cycle:');
-        imgui.SameLine();
-        imgui.SetNextItemWidth(90);
-        if imgui.BeginCombo('##ctrlPaletteCycle', ctrlOptions[currentCtrlIndex]) then
-            for i, label in ipairs(ctrlOptions) do
-                local isSelected = currentCtrlIndex == i;
-                if imgui.Selectable(label, isSelected) then
-                    gConfig.hotbarGlobal.paletteCycleControllerEnabled = (i == 2);
-                    SaveSettingsOnly();
-                end
-                if isSelected then imgui.SetItemDefaultFocus(); end
+        -- Per-Bar Visual Settings header
+        imgui.TextColored(components.TAB_STYLE.gold, 'Per-Bar Visual Settings');
+        imgui.ShowHelp('Configure each hotbar independently. Each bar can have its own layout, theme, and button settings.');
+        imgui.Spacing();
+
+        -- Draw Bar 1-6 tabs
+        for i, barType in ipairs(BAR_TYPES) do
+            local clicked, tabWidth = components.DrawStyledTab(
+                barType.label,
+                'hotbarBarTab' .. i,
+                selectedBarTab == i,
+                nil,
+                components.TAB_STYLE.smallHeight,
+                components.TAB_STYLE.smallPadding
+            );
+            if clicked then
+                selectedBarTab = i;
             end
-            imgui.EndCombo();
-        end
-
-        -- Hotbar cycle button selection (only if enabled)
-        if gConfig.hotbarGlobal.paletteCycleControllerEnabled ~= false then
-            imgui.SameLine();
-            imgui.Text('Button:');
-            imgui.SameLine();
-
-            local buttonOptions = { 'R1', 'L1' };
-            local currentButton = gConfig.hotbarGlobal.hotbarPaletteCycleButton or 'R1';
-            local currentButtonIndex = 1;
-            for i, btn in ipairs(buttonOptions) do
-                if btn == currentButton then
-                    currentButtonIndex = i;
-                    break;
-                end
-            end
-
-            imgui.SetNextItemWidth(60);
-            if imgui.BeginCombo('##hotbarCycleBtn', currentButton) then
-                for i, btn in ipairs(buttonOptions) do
-                    local isSelected = (i == currentButtonIndex);
-                    if imgui.Selectable(btn .. '##hbCycleBtn' .. i, isSelected) then
-                        gConfig.hotbarGlobal.hotbarPaletteCycleButton = btn;
-                        SaveSettingsOnly();
-                    end
-                    if isSelected then imgui.SetItemDefaultFocus(); end
-                end
-                imgui.EndCombo();
+            if i < #BAR_TYPES then
+                imgui.SameLine();
             end
         end
-        imgui.ShowHelp('Controller shortcut to cycle palettes.\nPress the selected button + DPad Up/Down to cycle palettes for all hotbars and the active crossbar.');
+
+        imgui.Spacing();
+        imgui.Separator();
+        imgui.Spacing();
+
+        -- Draw settings for selected bar (Global tab vs per-bar tabs)
+        local currentBar = BAR_TYPES[selectedBarTab];
+        if currentBar then
+            if currentBar.isGlobal then
+                DrawGlobalVisualSettings();
+            else
+                DrawBarVisualSettings(currentBar.configKey, currentBar.label);
+            end
+        end
+    else
+        imgui.TextColored({0.55, 0.52, 0.48, 1.0}, 'Keyboard hotbars are turned off (Hotbar â†’ Enabled). Turn Hotbar on to configure bars 1â€“6, or use the Crossbar category for controller layout.');
     end
 
-    -- Log Palette Name checkbox (show if any palette cycling is potentially enabled)
-    if currentMode == 'hotbar' or currentMode == 'crossbar' or currentMode == 'both' then
-        local logPaletteName = gConfig.hotbarGlobal.logPaletteName;
-        if logPaletteName == nil then logPaletteName = true; end  -- Default to true
-        if imgui.Checkbox('Log Palette Name', {logPaletteName}) then
-            gConfig.hotbarGlobal.logPaletteName = not logPaletteName;
-            SaveSettingsOnly();
-        end
-        imgui.ShowHelp('Show palette name in chat log when cycling palettes.');
-    end
+    M.DrawLogPaletteNameCheckbox('##hbLogPal');
 
     -- Conflicting Game Keys section
     local blockedKeys = gConfig.hotbarGlobal.blockedGameKeys or {};
@@ -2928,105 +2278,13 @@ function M.DrawSettings(state)
         imgui.EndPopup();
     end
 
-    imgui.Spacing();
-    imgui.Separator();
-    imgui.Spacing();
-
-    -- When mode is 'both', show tabs to switch between hotbar and crossbar settings
-    if currentMode == 'both' then
-        -- Draw Hotbar/Crossbar tabs
-        local hotbarClicked = components.DrawStyledTab(
-            'Hotbar',
-            'modeTabHotbar',
-            selectedModeTab == 'hotbar',
-            nil,
-            components.TAB_STYLE.height,
-            components.TAB_STYLE.padding
-        );
-        if hotbarClicked then
-            selectedModeTab = 'hotbar';
-        end
-
-        imgui.SameLine();
-
-        local crossbarClicked = components.DrawStyledTab(
-            'Crossbar',
-            'modeTabCrossbar',
-            selectedModeTab == 'crossbar',
-            nil,
-            components.TAB_STYLE.height,
-            components.TAB_STYLE.padding
-        );
-        if crossbarClicked then
-            selectedModeTab = 'crossbar';
-        end
-
-        imgui.Spacing();
-        imgui.Separator();
-        imgui.Spacing();
-
-        -- Show content based on selected tab
-        if selectedModeTab == 'crossbar' then
-            selectedCrossbarTab = DrawCrossbarSettings(selectedCrossbarTab);
-            return { selectedHotbarTab = selectedBarTab, selectedModeTab = selectedModeTab, selectedCrossbarTab = selectedCrossbarTab };
-        end
-        -- Fall through to hotbar settings below
-    elseif currentMode == 'crossbar' then
-        -- Show crossbar settings only
-        selectedCrossbarTab = DrawCrossbarSettings(selectedCrossbarTab);
-        return { selectedHotbarTab = selectedBarTab, selectedModeTab = selectedModeTab, selectedCrossbarTab = selectedCrossbarTab };
-    end
-
-    -- Show hotbar settings (mode is 'hotbar' or 'both' with hotbar tab selected)
-    imgui.Spacing();
-
-    -- Per-Bar Visual Settings header
-    imgui.TextColored(components.TAB_STYLE.gold, 'Per-Bar Visual Settings');
-    imgui.ShowHelp('Configure each hotbar independently. Each bar can have its own layout, theme, and button settings.');
-    imgui.Spacing();
-
-    -- Draw Bar 1-6 tabs
-    for i, barType in ipairs(BAR_TYPES) do
-        local clicked, tabWidth = components.DrawStyledTab(
-            barType.label,
-            'hotbarBarTab' .. i,
-            selectedBarTab == i,
-            nil,
-            components.TAB_STYLE.smallHeight,
-            components.TAB_STYLE.smallPadding
-        );
-        if clicked then
-            selectedBarTab = i;
-        end
-        if i < #BAR_TYPES then
-            imgui.SameLine();
-        end
-    end
-
-    imgui.Spacing();
-    imgui.Separator();
-    imgui.Spacing();
-
-    -- Draw settings for selected bar (Global tab vs per-bar tabs)
-    local currentBar = BAR_TYPES[selectedBarTab];
-    if currentBar then
-        if currentBar.isGlobal then
-            DrawGlobalVisualSettings();
-        else
-            DrawBarVisualSettings(currentBar.configKey, currentBar.label);
-        end
-    end
-
     -- Draw confirmation popup for job-specific toggle
     DrawJobSpecificConfirmPopup();
 
     -- Draw palette modal (unified for both hotbar and crossbar)
     DrawPaletteModal();
 
-    -- Draw palette manager window (separate window for advanced management)
-    paletteManager.Draw();
-
-    return { selectedHotbarTab = selectedBarTab, selectedModeTab = selectedModeTab, selectedCrossbarTab = selectedCrossbarTab };
+    return { selectedHotbarTab = selectedBarTab };
 end
 
 -- Helper: Draw color settings content (shared between global and per-bar)
@@ -3169,63 +2427,15 @@ end
 -- Section: Hotbar Color Settings
 function M.DrawColorSettings(state)
     local selectedBarTab = state and state.selectedHotbarTab or 1;
-    local selectedModeTab = state and state.selectedModeTab or 'hotbar';  -- 'hotbar' or 'crossbar' when mode is 'both'
-    local selectedCrossbarTab = state and state.selectedCrossbarTab or 1;  -- 1=L2, 2=R2, 3=L2R2, etc.
 
-    -- Determine what to show based on mode
-    local currentMode = gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
-
-    -- When mode is 'both', show tabs to switch between hotbar and crossbar color settings
-    if currentMode == 'both' then
-        -- Draw Hotbar/Crossbar tabs
-        local hotbarClicked = components.DrawStyledTab(
-            'Hotbar',
-            'colorModeTabHotbar',
-            selectedModeTab == 'hotbar',
-            nil,
-            components.TAB_STYLE.height,
-            components.TAB_STYLE.padding
-        );
-        if hotbarClicked then
-            selectedModeTab = 'hotbar';
-        end
-
-        imgui.SameLine();
-
-        local crossbarClicked = components.DrawStyledTab(
-            'Crossbar',
-            'colorModeTabCrossbar',
-            selectedModeTab == 'crossbar',
-            nil,
-            components.TAB_STYLE.height,
-            components.TAB_STYLE.padding
-        );
-        if crossbarClicked then
-            selectedModeTab = 'crossbar';
-        end
-
-        imgui.Spacing();
-        imgui.Separator();
-        imgui.Spacing();
-
-        -- Show content based on selected tab
-        if selectedModeTab == 'crossbar' then
-            DrawCrossbarColorSettings();
-            return { selectedHotbarTab = selectedBarTab, selectedModeTab = selectedModeTab, selectedCrossbarTab = selectedCrossbarTab };
-        end
-        -- Fall through to hotbar color settings below
-    elseif currentMode == 'crossbar' then
-        -- Show crossbar color settings only
-        DrawCrossbarColorSettings();
-        return { selectedHotbarTab = selectedBarTab, selectedModeTab = selectedModeTab, selectedCrossbarTab = selectedCrossbarTab };
+    if gConfig.hotbarEnabled == false then
+        imgui.TextColored({0.55, 0.52, 0.48, 1.0}, 'Keyboard hotbars are turned off. Crossbar colors are under the Crossbar category â†’ Color settings.');
+        return { selectedHotbarTab = selectedBarTab };
     end
 
-    -- Show hotbar color settings (mode is 'hotbar' or 'both' with hotbar tab selected)
-    -- Per-Bar Color Settings header
     imgui.TextColored(components.TAB_STYLE.gold, 'Per-Bar Color Settings');
     imgui.Spacing();
 
-    -- Draw Bar 1-6 tabs (same as visual settings)
     for i, barType in ipairs(BAR_TYPES) do
         local clicked, tabWidth = components.DrawStyledTab(
             barType.label,
@@ -3247,7 +2457,6 @@ function M.DrawColorSettings(state)
     imgui.Separator();
     imgui.Spacing();
 
-    -- Draw color settings for selected bar (Global tab vs per-bar tabs)
     local currentBar = BAR_TYPES[selectedBarTab];
     if currentBar then
         if currentBar.isGlobal then
@@ -3257,7 +2466,26 @@ function M.DrawColorSettings(state)
         end
     end
 
-    return { selectedHotbarTab = selectedBarTab, selectedModeTab = selectedModeTab, selectedCrossbarTab = selectedCrossbarTab };
+    return { selectedHotbarTab = selectedBarTab };
 end
 
+function M.DrawLogPaletteNameCheckbox(idSuffix)
+    idSuffix = idSuffix or '##logPalName';
+    local logPaletteName = gConfig.hotbarGlobal.logPaletteName;
+    if logPaletteName == nil then logPaletteName = true; end
+    local logVal = { logPaletteName };
+    if imgui.Checkbox('Log Palette Name' .. idSuffix, logVal) then
+        gConfig.hotbarGlobal.logPaletteName = logVal[1];
+        SaveSettingsOnly();
+    end
+    imgui.ShowHelp('Show palette name in chat log when cycling palettes.');
+end
+
+-- Shared palette modal API (used by config/crossbar_settings.lua for crossbar category)
+M.OpenPaletteCreateModal = OpenPaletteCreateModal;
+M.OpenPaletteRenameModal = OpenPaletteRenameModal;
+M.DrawJobSpecificConfirmPopup = DrawJobSpecificConfirmPopup;
+M.DrawPaletteModal = DrawPaletteModal;
+
 return M;
+
