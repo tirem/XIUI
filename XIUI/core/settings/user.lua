@@ -63,10 +63,31 @@ function M.createUserSettingsDefaults()
         treasurePoolExpanded = false,         -- Expanded view (false = collapsed)
 
         -- Hotbar settings (global)
-        hotbarEnabled = true,                 -- Show hotbar module
-        -- Lock movement: when true, disables drag/drop and slot swapping for hotbar bars
+        hotbarEnabled = true,                 -- Show hotbar module (keyboard strips when enabled; use Crossbar category for controller UI)
+
+        crossbarEnabled = true,               -- Load controller crossbar (L2/R2 UI); independent from keyboard hotbars
+        -- Lock movement: when true, disables drag/drop and slot swapping for keyboard hotbars only
         hotbarLockMovement = false,
+        -- Lock crossbar: when true, disables drag/drop/slot moves and window drag for controller crossbar
+        crossbarLockMovement = false,
         hotbarPreview = false,                -- Show preview with test data
+
+        -- Macro palette editor: icon auto-source + custom/ subfolder (persists per profile)
+        macroEditorIconPrefs = {
+            iconAutoSource = 'all',   -- 'all' | 'spells' | 'items' | 'custom'
+            customIconFolder = 'all', -- 'all' or a top-level folder name under assets/hotbar/custom/
+        },
+
+        -- Macro palette: custom dropdown categories (keys "custom:N" under macroDB)
+        macroCustomCategories = T{},
+        macroCustomNextSeq = 1,
+        -- When false, empty "xiui" macro bucket gets default /xiui slash shortcuts once (see macro_xiui_defaults.lua)
+        macroXiuiDefaultsSeeded = false,
+        -- When false, Global bucket may receive default "Universal 2 Hour" macro once (see macro_global_defaults.lua)
+        macroGlobalUniversalTwoHourSeeded = false,
+
+        -- "profile" = macros in this profile's lua only; "shared" = one global library (SharedMacros.lua) for all characters using Shared.
+        macroStorageScope = 'profile',
 
         -- Global hotbar visual settings (used when bar's useGlobalSettings = true)
         hotbarGlobal = factories.createHotbarGlobalDefaults(),
@@ -665,6 +686,7 @@ function M.createUserSettingsDefaults()
         petBarScaleY = 1.0,
         petBarHideDuringEvents = true,
         petBarPreview = true,
+        petBarResizeAnchor = 'top',              -- Pet bar resize: 'top' or 'bottom' fixed edge when height changes
         petBarPreviewType = 2, -- Avatar (SMN)
         petBarShowDistance = true,
         petBarShowTarget = true,
@@ -792,10 +814,14 @@ function M.createUserSettingsDefaults()
         petTargetDistanceOffsetY = 44,
 
         -- Pet Target snap to petbar (positions pet target directly below petbar)
-        petTargetSnapToPetBar = true,        -- When enabled, pet target snaps below petbar
-        petTargetSnapAnchor = 'bottom',      -- 'bottom' = offset from bottom of pet bar, 'top' = offset from top (static when buffs change height)
+        petTargetSnapToPetBar = true,        -- When enabled, pet target snaps relative to pet bar geometry
+        petTargetSnapAnchor = 'bottom',      -- bottom: pet target window below pet bar; top: above pet bar
         petTargetSnapOffsetX = 0,            -- Horizontal offset from petbar position
         petTargetSnapOffsetY = 16,           -- Vertical offset below petbar (accounts for background border)
+        -- Extra pixels between Pet Target bottom and pet bar top when snap anchor is Top (0 = use offset Y only)
+        petTargetSnapTopGap = 5,
+        -- Last measured PetBarTarget window height (top snap only); avoids first-frame placement jump after load
+        petTargetSnapCachedHeight = nil,
 
         -- Per-pet-type settings (Avatar, Charm, Jug, Automaton, Wyvern each have independent visual settings)
         petBarAvatar = factories.createPetBarTypeDefaults(),

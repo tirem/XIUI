@@ -526,7 +526,13 @@ data.recastMaxTimers = {};
 -- Window positioning (shared with pet target)
 data.lastMainWindowPosX = 0;
 data.lastMainWindowTop = 0;   -- Top of pet bar (stable anchor for snap Y offset)
+data.petBarSnapTopReferenceY = nil; -- ImGui top minus themed border outset (top snap; see display.lua)
 data.lastMainWindowBottom = 0;
+data.lastPetBarWindowHeight = nil; -- pet bar GetWindowSize height (for snap math when moving cluster from pet target)
+data.petBarTargetHitRect = nil; -- last PetBarTarget outer rect {x,y,w,h} for cluster drag while snap+NoInputs
+data.petBarClusterDragActive = false;
+data.petBarSyncResizeAnchorNextFrame = false; -- after SetWindowPos PetBar from pet target; refresh bottom anchor
+data.lastPetBarTargetWindowHeight = nil; -- last PetBarTarget height (top snap); profile also stores petTargetSnapCachedHeight
 data.lastTotalRowWidth = 150;
 data.lastWindowFlags = nil;
 data.lastColorConfig = nil;

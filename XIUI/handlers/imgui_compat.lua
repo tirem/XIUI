@@ -129,6 +129,18 @@ else
 
 end
 
+-- ImGuiWindowFlags_NoInputs: skip missing on some Ashita builds (PetBarTarget mouse pass-through during drag-drop)
+if ImGuiWindowFlags_NoInputs == nil then
+    if ImGuiWindowFlags_NoMouseInputs ~= nil and ImGuiWindowFlags_NoNavInputs ~= nil then
+        ImGuiWindowFlags_NoInputs = bit.bor(ImGuiWindowFlags_NoMouseInputs, ImGuiWindowFlags_NoNavInputs);
+    elseif ImGuiWindowFlags_NoMouseInputs ~= nil then
+        ImGuiWindowFlags_NoInputs = ImGuiWindowFlags_NoMouseInputs;
+    else
+        -- Dear ImGui 1.83-style composite (NoMouseInputs|NoNavInputs); used when Ashita exposes neither constant
+        ImGuiWindowFlags_NoInputs = 1536;
+    end
+end
+
 -- Return module info for debugging
 return {
     version = '1.0.0',

@@ -20,11 +20,15 @@ local defaultPositions = require('libs.defaultpositions');
 
 local display = {};
 
--- Window state for bottom alignment + previous-frame size cache (used for bg layering)
+-- Window state for bottom alignment + previous-frame size cache (used for bg layering).
+-- anchorBottom: locked screen Y of the window bottom edge while petBarResizeAnchor='bottom'
+-- and AlwaysAutoResize is on. Stable across +/-1px height steps that the old
+-- "delta > 1px" gate skipped, which caused the window to crawl upward over time.
 local windowState = {
     x = nil,
     y = nil,
     height = nil,
+    anchorBottom = nil,
     cachedWidth = nil,
     cachedHeight = nil,
 };
@@ -607,6 +611,52 @@ local function DrawRecastFullCharged(drawList, x, y, timerInfo, colorConfig, ful
     return barHeight;
 end
 
+-- gConfig.petBarResizeAnchor: 'top' | 'bottom' pins which edge when AlwaysAutoResize changes height.
+-- When unset/nil (should not persist after migrate), falls back to per-type alignBottom for legacy saves.
+local function PetBarResizeAnchoredBottom(typeSettings)
+    local mode = gConfig.petBarResizeAnchor;
+    if mode == 'bottom' then
+        return true;
+    end
+    if mode == 'top' then
+        return false;
+    end
+    return typeSettings.alignBottom == true;
+end
+
+-- Resize-anchor preview stripe (shown when Pet Bar Preview + XIUI config open): a thin colored
+-- band on the top or bottom edge indicating which edge is pinned during auto-resize.
+local function DrawResizeAnchorEdgePreview(px, py, w, h, anchorBottom)
+    if not (showConfig and showConfig[1] and gConfig.petBarPreview) then
+        return;
+    end
+
+    local strip = math.min(7, math.max(5, math.floor(h * 0.04)));
+    local inset = 3;
+    local x0 = px + inset;
+    local x1 = px + w - inset;
+
+    local dl = imgui.GetWindowDrawList();
+    local fillCol;
+    local outlineCol;
+    local y0;
+    local y1;
+    if anchorBottom then
+        fillCol = imgui.GetColorU32({1.0, 0.52, 0.1, 0.76});
+        outlineCol = imgui.GetColorU32({1.0, 1.0, 0.95, 0.92});
+        y0 = py + h - strip;
+        y1 = py + h;
+    else
+        fillCol = imgui.GetColorU32({0.15, 0.82, 0.95, 0.74});
+        outlineCol = imgui.GetColorU32({0.95, 0.98, 1.0, 0.9});
+        y0 = py;
+        y1 = py + strip;
+    end
+
+    dl:AddRectFilled({ x0, y0 }, { x1, y1 }, fillCol);
+    dl:AddRect({ x0, y0 }, { x1, y1 }, outlineCol, 0, ImDrawCornerFlags_All, 1.5);
+end
+
 -- ============================================
 -- DrawWindow - Main Pet Bar Rendering
 -- ============================================
@@ -636,6 +686,7 @@ function display.DrawWindow(settings)
         windowState.x = nil;
         windowState.y = nil;
         windowState.height = nil;
+        windowState.anchorBottom = nil;
         return false;
     end
 
@@ -734,7 +785,8 @@ function display.DrawWindow(settings)
     if imgui.Begin('PetBar', true, windowFlags) then
         local drawList = drawing.GetUIDrawList();
         imtext.SetConfigFromSettings(settings.name_font_settings);
-        SaveWindowPosition('PetBar');
+        -- SaveWindowPosition moved to AFTER the bottom-anchor correction below so the
+        -- corrected Y (not the pre-correction one) gets persisted.
         windowPosX, windowPosY = imgui.GetWindowPos();
         local startX, startY = imgui.GetCursorScreenPos();
 
@@ -1175,40 +1227,63 @@ function display.DrawWindow(settings)
         -- Get final window size for background
         local windowWidth, windowHeight = imgui.GetWindowSize();
 
-        -- Handle bottom alignment
-        if typeSettings.alignBottom then
-            -- Detect external position change (forced reset, user drag, etc.)
-            local positionChanged = windowState.y ~= nil and windowState.y ~= windowPosY;
+        local resizeAnchoredBottom = PetBarResizeAnchoredBottom(typeSettings);
 
-            if positionJustApplied or positionChanged then
-                -- Position was externally moved; clear tracking so height adjustment
-                -- doesn't fire until state is re-established on the next frame
-                windowState.x = nil;
-                windowState.y = nil;
-                windowState.height = nil;
-            elseif windowState.height ~= nil and windowState.height ~= windowHeight then
-                -- Height changed, adjust Y to keep bottom edge fixed
-                local newPosY = windowState.y + windowState.height - windowHeight;
-                imgui.SetWindowPos('PetBar', { windowPosX, newPosY });
-                windowPosY = newPosY;
-                windowState.x = windowPosX;
-                windowState.y = windowPosY;
-                windowState.height = windowHeight;
+        -- Bottom alignment: lock the on-screen Y of the window's bottom edge so AlwaysAutoResize
+        -- height changes pin to the bottom (instead of the simple "delta > 1px" gate which let
+        -- +/-1px steps slip through and made the bar crawl upward over time). Skip the correction
+        -- while the user is dragging the window so their placement isn't fought.
+        local petBarCanMove = not gConfig.lockPositions or (showConfig and showConfig[1] and gConfig.petBarPreview);
+        local petBarDragging = petBarCanMove and imgui.IsMouseDragging(0) and imgui.IsWindowHovered();
+        if resizeAnchoredBottom then
+            local curBottom = windowPosY + windowHeight;
+            if data.petBarSyncResizeAnchorNextFrame then
+                -- Cluster drag from PetBarTarget just moved us; re-sync the anchor to the new bottom.
+                windowState.anchorBottom = curBottom;
+                data.petBarSyncResizeAnchorNextFrame = false;
+            elseif windowState.anchorBottom == nil or positionJustApplied then
+                -- First frame after open / save-restore: seed the anchor from the current bottom.
+                windowState.anchorBottom = curBottom;
+            elseif petBarDragging then
+                -- User is dragging; track the bottom edge live so the anchor follows.
+                windowState.anchorBottom = curBottom;
             else
-                windowState.x = windowPosX;
-                windowState.y = windowPosY;
-                windowState.height = windowHeight;
+                local newPosY = windowState.anchorBottom - windowHeight;
+                if math.abs(newPosY - windowPosY) > 0.01 then
+                    imgui.SetWindowPos('PetBar', { windowPosX, newPosY });
+                    windowPosY = newPosY;
+                end
             end
+
+            windowState.x = windowPosX;
+            windowState.y = windowPosY;
+            windowState.height = windowHeight;
+        else
+            windowState.x = nil;
+            windowState.y = nil;
+            windowState.height = nil;
+            windowState.anchorBottom = nil;
         end
 
-        -- Store main window position for pet target window (top = stable anchor for snap Y offset)
-        data.lastMainWindowPosX = windowPosX;
-        data.lastMainWindowTop = windowPosY;
-        data.lastMainWindowBottom = windowPosY + windowHeight + 4;
+        -- Store main window position for pet target window snap (rounded to integers so saved
+        -- snap offsets aren't drifted by subpixel noise across re-renders).
+        data.lastMainWindowPosX = math.floor(windowPosX + 0.5);
+        data.lastMainWindowTop = math.floor(windowPosY + 0.5);
+        -- Themed window borders extend above/below the ImGui outer rect (~NoBackground + windowBg).
+        -- Top snap must reference a line above the ImGui top edge or the visual gap collapses
+        -- to zero; +4 below remains the bottom-snap default that pairs with petTargetSnapOffsetY.
+        local petBarTopSnapOutset = 8;
+        data.petBarSnapTopReferenceY = data.lastMainWindowTop - petBarTopSnapOutset;
+        data.lastMainWindowBottom = math.floor(windowPosY + windowHeight + 0.5) + 4;
+        data.lastPetBarWindowHeight = math.floor(windowHeight + 0.5);
+
+        DrawResizeAnchorEdgePreview(windowPosX, windowPosY, windowWidth, windowHeight, resizeAnchoredBottom);
 
         -- Cache window size for next frame's bg draw at the top of this function.
         windowState.cachedWidth = windowWidth;
         windowState.cachedHeight = windowHeight;
+
+        SaveWindowPosition('PetBar');
     end
     imgui.End();
 
@@ -1226,6 +1301,11 @@ display.ResetPositions = function()
     if gConfig.appliedPositions then
         gConfig.appliedPositions['PetBar'] = nil;
     end
+    -- Clear bottom-anchor tracking so the next frame re-seeds against the default position.
+    windowState.x = nil;
+    windowState.y = nil;
+    windowState.height = nil;
+    windowState.anchorBottom = nil;
 end
 
 return display;
