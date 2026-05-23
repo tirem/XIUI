@@ -8,8 +8,25 @@ local abilityRecast = require('libs.abilityrecast');
 local itemRecast = require('libs.itemrecast');
 local actiondb = require('modules.hotbar.actiondb');
 local petregistry = require('modules.hotbar.petregistry');
+local universalTwoHour = require('modules.hotbar.universal_two_hour');
 
 local M = {};
+
+-- Lazy require: actions.lua requires recast.lua (circular). Resolved at first call.
+local actionsModule = nil;
+local function getActionsModule()
+    if not actionsModule then
+        actionsModule = require('modules.hotbar.actions');
+    end
+    return actionsModule;
+end
+
+local function normalizeCommandName(name)
+    if not name then return nil; end
+    local s = tostring(name):gsub('^%s+', ''):gsub('%s+$', '');
+    if s == '' then return nil; end
+    return s:lower();
+end
 
 -- Module-level setting for Hh:MM format (set once per frame, used by all functions)
 local useHHMMFormat = false;
@@ -23,26 +40,112 @@ end
 local BP_RAGE_TIMER_ID = 173;
 local BP_WARD_TIMER_ID = 174;
 
--- Get Blood Pact timer ID by command name
--- Returns timer ID (173 for Rage, 174 for Ward) or nil if not a blood pact
+-- Get Blood Pact timer ID by command name.
+-- Case-insensitive: slot labels / macro text can differ in casing from registry entries; otherwise
+-- we fall through to ability-id lookup and miss the shared BP timer (173/174) entirely.
 local function GetBloodPactTimerId(commandName)
-    if not commandName then return nil; end
+    local want = normalizeCommandName(commandName);
+    if not want then return nil; end
 
-    -- Check if it's a Rage pact
     for _, pact in ipairs(petregistry.bloodPactsRage or {}) do
-        if pact.name == commandName then
+        if pact.name and normalizeCommandName(pact.name) == want then
             return BP_RAGE_TIMER_ID;
         end
     end
 
-    -- Check if it's a Ward pact
     for _, pact in ipairs(petregistry.bloodPactsWard or {}) do
-        if pact.name == commandName then
+        if pact.name and normalizeCommandName(pact.name) == want then
             return BP_WARD_TIMER_ID;
         end
     end
 
     return nil;
+end
+
+-- Use Horizon spell list / recast index for /ma. Same resolution as castcost/icons —
+-- otherwise duplicate English names (e.g. SummonerPact) can return the wrong spell ID.
+local function resolveSpellIndexForMa(spellName)
+    if not spellName then return nil; end
+    local am = getActionsModule();
+    if am and am.GetHorizonSpellForIconResolution then
+        local row = am.GetHorizonSpellForIconResolution(spellName, 'ma');
+        if row then
+            local idx = row.recast_id or row.id;
+            if idx then return idx; end
+        end
+    end
+    return actiondb.GetSpellId(spellName);
+end
+
+-- Fixed ability recast component IDs (Windower recast_id / memory compId) for /pet-style commands.
+-- FindAbilityRecast(abilityId) often fails when no pet is active because slots are cleared/rebound,
+-- but GetAbilityRecastSeconds(timerId) still reads the correct timer (e.g. Release 172).
+-- Source: Windower Resources job_abilities (PetCommand); aligns with castcost abilityLookup where present.
+local PET_COMMAND_TIMER_ID_BY_NAME = {
+    ['fight'] = 100,
+    ['heel'] = 101,
+    ['stay'] = 101,
+    ['leave'] = 101,
+    ['sic'] = 102,
+    ['ready'] = 102,
+    ['snarl'] = 107,
+    ['dismiss'] = 161,
+    ['assault'] = 170,
+    ['retreat'] = 171,
+    ['release'] = 172,
+    ['deploy'] = 207,
+    ['deactivate'] = 208,
+    ['retrieve'] = 209,
+    ["avatar's favor"] = 176,
+    ['steady wing'] = 70,
+    ['smiting breath'] = 238,
+    ['restoring breath'] = 239,
+};
+
+local function getPetCommandTimerIdByName(commandName)
+    local n = normalizeCommandName(commandName);
+    if not n then return nil; end
+    local tid = PET_COMMAND_TIMER_ID_BY_NAME[n];
+    if tid then return tid; end
+    if n:match('maneuver$') then
+        return 210;
+    end
+    return nil;
+end
+
+-- Fallback: read timer component id from Ashita ability resource when available
+-- (covers gaps / Horizon-specific rows the static table doesn't list).
+local function getRecastTimerIdFromAbilityResource(commandName)
+    local resMgr = AshitaCore:GetResourceManager();
+    if not resMgr then return nil; end
+    local aid = actiondb.GetAbilityId(commandName);
+    if not aid then return nil; end
+    local ab = resMgr:GetAbilityById(aid);
+    if not ab then return nil; end
+    local tid = ab.TimerId or ab.RecastTimerId or ab.timer_id or ab.RecastId;
+    if type(tid) == 'number' and tid > 0 then
+        return tid;
+    end
+    return nil;
+end
+
+-- Resolve recast using shared BP timer, static pet-command timer id, or resource timer id
+-- BEFORE falling back to ability-id scan. Returns (remaining, formattedText) or (nil, nil).
+local function getRemainingForPetLikeAbilityName(commandName)
+    local bp = GetBloodPactTimerId(commandName);
+    if bp then
+        local r = M.GetPetCommandRecast(bp);
+        return r, M.FormatRecast(r);
+    end
+    local tid = getPetCommandTimerIdByName(commandName);
+    if not tid then
+        tid = getRecastTimerIdFromAbilityResource(commandName);
+    end
+    if tid then
+        local r = M.GetPetCommandRecast(tid);
+        return r, M.FormatRecast(r);
+    end
+    return nil, nil;
 end
 
 -- Get pet command recast by timer ID
@@ -171,6 +274,154 @@ function M.GetActionRecast(actionType, spellId, abilityId, itemId)
     return remaining, M.FormatRecast(remaining);
 end
 
+-- ============================================
+-- Macro Recast Source Sniffing
+-- ============================================
+--
+-- Macros and palette rows can fire /ma, /pet, or /ja lines. To display a meaningful cooldown
+-- timer on the slot we need to figure out WHICH action's recast applies. There are two paths:
+--   1. Explicit override: actionData.recastSourceType set by the macro editor.
+--   2. Implicit sniff: scan the first few lines of macroText for /ma, /pet, /ja and use that
+--      as the recast source.
+--
+-- For palette rows whose actionType is ma / pet / ja (not the literal "macro" type), we sniff
+-- in TYPE-SPECIFIC mode so a leading /ma line in a Pet Command row doesn't replace the shared
+-- BP Ward/Rage timer with a spell recast, and a leading /pet line in a Spell row doesn't steal
+-- Carbuncle's spell timer.
+
+local function trimRecastStr(s)
+    if not s then return nil; end
+    s = tostring(s):gsub('^%s+', ''):gsub('%s+$', '');
+    return (s ~= '' and s) or nil;
+end
+
+local function extractNameAfterMacroCommand(line, commandToken)
+    if not line or not commandToken then return nil; end
+    local quoted = line:match('^' .. commandToken .. '%s+"([^"]+)"');
+    if quoted then return trimRecastStr(quoted); end
+    local unquoted = line:match('^' .. commandToken .. '%s+([^<\r\n]+)');
+    if unquoted then
+        unquoted = unquoted:gsub('%s+<.*$', '');
+        return trimRecastStr(unquoted);
+    end
+    return nil;
+end
+
+-- Generic macro: first /ma, /pet, or /ja per line (order within each line: ma → pet → ja).
+local function sniffRecastTargetFromMacroText(macroText)
+    macroText = trimRecastStr(macroText);
+    if not macroText then return nil, nil; end
+
+    local inspectedLines = 0;
+    for line in macroText:gmatch('[^\r\n]+') do
+        inspectedLines = inspectedLines + 1;
+        if inspectedLines > 6 then break; end
+
+        local l = trimRecastStr(line);
+        if l then
+            local spellName = extractNameAfterMacroCommand(l, '/ma') or extractNameAfterMacroCommand(l, '/magic');
+            if spellName then
+                return 'ma', spellName;
+            end
+
+            local petName = extractNameAfterMacroCommand(l, '/pet');
+            if petName then
+                return 'pet', petName;
+            end
+
+            local jaName = extractNameAfterMacroCommand(l, '/ja');
+            if jaName then
+                if petregistry.GetBloodPactByName and petregistry.GetBloodPactByName(jaName) then
+                    return 'pet', jaName;
+                end
+                return 'ja', jaName;
+            end
+        end
+    end
+    return nil, nil;
+end
+
+-- Spell (ma) palette rows: only /ma and /magic — ignores leading /pet so summon/buff lines
+-- do not steal Carbuncle's spell timer.
+local function sniffRecastTargetFromMaMacroText(macroText)
+    macroText = trimRecastStr(macroText);
+    if not macroText then return nil, nil; end
+
+    local inspectedLines = 0;
+    for line in macroText:gmatch('[^\r\n]+') do
+        inspectedLines = inspectedLines + 1;
+        if inspectedLines > 8 then break; end
+
+        local l = trimRecastStr(line);
+        if l then
+            local spellName = extractNameAfterMacroCommand(l, '/ma') or extractNameAfterMacroCommand(l, '/magic');
+            if spellName then
+                return 'ma', spellName;
+            end
+        end
+    end
+    return nil, nil;
+end
+
+-- Pet Command palette rows: only /pet and blood-pact /ja — ignores leading /ma so BP Ward/Rage
+-- shared timers (173/174) are not replaced by a spell recast.
+local function sniffRecastTargetFromPetMacroText(macroText)
+    macroText = trimRecastStr(macroText);
+    if not macroText then return nil, nil; end
+
+    local inspectedLines = 0;
+    for line in macroText:gmatch('[^\r\n]+') do
+        inspectedLines = inspectedLines + 1;
+        if inspectedLines > 8 then break; end
+
+        local l = trimRecastStr(line);
+        if l then
+            local petName = extractNameAfterMacroCommand(l, '/pet');
+            if petName then
+                return 'pet', petName;
+            end
+
+            local jaName = extractNameAfterMacroCommand(l, '/ja');
+            if jaName and petregistry.GetBloodPactByName and petregistry.GetBloodPactByName(jaName) then
+                return 'pet', jaName;
+            end
+        end
+    end
+    return nil, nil;
+end
+
+-- Job ability (ja) rows: /ja only — blood pacts map to pet timers, else ability recast.
+local function sniffRecastTargetFromJaMacroText(macroText)
+    macroText = trimRecastStr(macroText);
+    if not macroText then return nil, nil; end
+
+    local inspectedLines = 0;
+    for line in macroText:gmatch('[^\r\n]+') do
+        inspectedLines = inspectedLines + 1;
+        if inspectedLines > 8 then break; end
+
+        local l = trimRecastStr(line);
+        if l then
+            local jaName = extractNameAfterMacroCommand(l, '/ja');
+            if jaName then
+                if petregistry.GetBloodPactByName and petregistry.GetBloodPactByName(jaName) then
+                    return 'pet', jaName;
+                end
+                return 'ja', jaName;
+            end
+        end
+    end
+    return nil, nil;
+end
+
+local function macroHasRecastSourceOverride(actionData)
+    local t = actionData.recastSourceType;
+    if not t or t == '' or t == 'none' then
+        return false;
+    end
+    return true;
+end
+
 -- Get complete cooldown info for an action
 -- This is the main entry point for hotbar/crossbar cooldown display
 -- @param actionData: Table with actionType and action fields (bind or slotData)
@@ -187,16 +438,56 @@ function M.GetCooldownInfo(actionData)
         return cooldownResult;
     end
 
-    -- Check for macro recast source override
-    -- Allows macros to display cooldown from a different action type
-    if actionData.actionType == 'macro' and actionData.recastSourceType then
+    -- Macro: optional explicit recast source (editor override)
+    if actionData.actionType == 'macro' and macroHasRecastSourceOverride(actionData) then
         local recastData = {
             actionType = actionData.recastSourceType,
             action = actionData.recastSourceAction,
             itemId = actionData.recastSourceItemId,
         };
-        -- Safe: recastSourceType can't be 'macro', so no infinite recursion
         return M.GetCooldownInfo(recastData);
+    end
+
+    -- Macro: no override — infer from /ma, /pet, /ja (including job abilities like Divine Seal)
+    if actionData.actionType == 'macro' then
+        local st, name = sniffRecastTargetFromMacroText(actionData.macroText);
+        if st and name then
+            return M.GetCooldownInfo({
+                actionType = st,
+                action = name,
+                itemId = nil,
+            });
+        end
+        cooldownResult.isOnCooldown = false;
+        cooldownResult.recastText = nil;
+        cooldownResult.remaining = 0;
+        cooldownResult.spellId = nil;
+        cooldownResult.abilityId = nil;
+        cooldownResult.itemId = nil;
+        return cooldownResult;
+    end
+
+    -- Pet Command / Magic / Job Ability palette rows (not actionType "macro"):
+    -- Use type-specific sniffing so shared BP Rage/Ward timers are not replaced by a leading /ma line,
+    -- and Carbuncle (ma row) is not replaced by a leading /pet line.
+    local mt = actionData.macroText;
+    if mt and mt ~= '' then
+        if actionData.actionType == 'pet' then
+            local st, name = sniffRecastTargetFromPetMacroText(mt);
+            if st and name then
+                return M.GetCooldownInfo({ actionType = st, action = name, itemId = nil });
+            end
+        elseif actionData.actionType == 'ma' then
+            local st, name = sniffRecastTargetFromMaMacroText(mt);
+            if st and name then
+                return M.GetCooldownInfo({ actionType = st, action = name, itemId = nil });
+            end
+        elseif actionData.actionType == 'ja' then
+            local st, name = sniffRecastTargetFromJaMacroText(mt);
+            if st and name then
+                return M.GetCooldownInfo({ actionType = st, action = name, itemId = nil });
+            end
+        end
     end
 
     -- Look up action IDs based on action type
@@ -207,23 +498,29 @@ function M.GetCooldownInfo(actionData)
     local recastText = nil;
 
     if actionData.actionType == 'ma' then
-        spellId = actiondb.GetSpellId(actionData.action);
+        spellId = resolveSpellIndexForMa(actionData.action);
         remaining, recastText = M.GetActionRecast(actionData.actionType, spellId, nil, nil);
     elseif actionData.actionType == 'pet' then
-        -- Pet commands (Blood Pacts, Ready, etc.) - check for known timer IDs
-        local bpTimerId = GetBloodPactTimerId(actionData.action);
-        if bpTimerId then
-            -- Blood Pact - use timer ID directly
-            remaining = M.GetPetCommandRecast(bpTimerId);
-            recastText = M.FormatRecast(remaining);
+        -- Pet commands (Blood Pacts, pet-command IDs, resource-derived timer IDs) before ability scan.
+        local rPet, rtPet = getRemainingForPetLikeAbilityName(actionData.action);
+        if rPet ~= nil then
+            remaining = rPet;
+            recastText = rtPet;
         else
-            -- Other pet commands - try ability lookup
             abilityId = actiondb.GetAbilityId(actionData.action);
             remaining, recastText = M.GetActionRecast(actionData.actionType, nil, abilityId, nil);
         end
     elseif actionData.actionType == 'ja' then
-        abilityId = actiondb.GetAbilityId(actionData.action);
-        remaining, recastText = M.GetActionRecast(actionData.actionType, nil, abilityId, nil);
+        -- Universal 2hr: route to the player's current job-specific 2hr ability when applicable.
+        local jaActionName = universalTwoHour.ResolveJaActionName(actionData.action) or actionData.action;
+        local rJa, rtJa = getRemainingForPetLikeAbilityName(jaActionName);
+        if rJa ~= nil then
+            remaining = rJa;
+            recastText = rtJa;
+        else
+            abilityId = actiondb.GetAbilityId(jaActionName);
+            remaining, recastText = M.GetActionRecast(actionData.actionType, nil, abilityId, nil);
+        end
     elseif actionData.actionType == 'item' or actionData.actionType == 'equip' then
         -- itemId should already be stored in the action data
         itemId = actionData.itemId;
