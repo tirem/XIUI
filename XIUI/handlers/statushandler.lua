@@ -11,6 +11,18 @@ local TextureManager = require('libs.texturemanager');
 -- Party buffs table, populated by packet 0x076 via ReadPartyBuffsFromPacket()
 local partyBuffs = {};
 
+local LEVEL_SYNC_BUFF_ID = 269;
+
+local function partyBuffListHas(buffList, statusId)
+    if not buffList then return false; end
+    for i = 1, #buffList do
+        if buffList[i] == statusId then
+            return true;
+        end
+    end
+    return false;
+end
+
 -------------------------------------------------------------------------------
 -- exported functions
 -------------------------------------------------------------------------------
@@ -172,7 +184,35 @@ statusHandler.ReadPartyBuffsFromPacket = function(e)
             partyBuffTable[memberId] = buffs;
         end
     end
-    partyBuffs =  partyBuffTable;
+
+    local hadLevelSync = false;
+    local hasLevelSync = false;
+    local memMgr = AshitaCore:GetMemoryManager();
+    local party = memMgr and memMgr:GetParty();
+    if party and party:GetMemberIsActive(0) == 1 then
+        local sid = party:GetMemberServerId(0);
+        if sid and sid > 0 then
+            hadLevelSync = partyBuffListHas(partyBuffs[sid], LEVEL_SYNC_BUFF_ID);
+            hasLevelSync = partyBuffListHas(partyBuffTable[sid], LEVEL_SYNC_BUFF_ID);
+        end
+    end
+
+    partyBuffs = partyBuffTable;
+
+    if hadLevelSync ~= hasLevelSync then
+        pcall(function()
+            local playerdata = require('modules.hotbar.playerdata');
+            if playerdata.ClearCache then
+                playerdata.ClearCache();
+            end
+        end);
+        pcall(function()
+            local slotrenderer = require('modules.hotbar.slotrenderer');
+            if slotrenderer.ClearAvailabilityCache then
+                slotrenderer.ClearAvailabilityCache();
+            end
+        end);
+    end
 end
 
 return statusHandler;
