@@ -332,6 +332,149 @@ local weaponskillResonationMap = {
 -- state = { Attributes = {}, Depth = number, WindowOpen = time, WindowClose = time }
 local resonationMap = {};
 
+-- ============================================
+-- Magic Burst (MB) state
+-- ============================================
+--
+-- A Magic Burst window opens IMMEDIATELY when a skillchain CLOSES (the SC's additional-effect
+-- message fires on the closing WS's action packet) and stays open for 7.0s — any spell whose
+-- ELEMENT matches one of the SC's burstable elements and that FINISHES casting inside the
+-- window magic-bursts for bonus damage.
+--
+-- Note: retail's MB window is ~2s-7s post-WS (you can't burst before ~2s and the window
+-- closes around 7s). We open at 0s on purpose so the player gets the visual cue at the
+-- earliest possible moment and has the full 7s of slack to start their cast — the actual
+-- burst-eligibility timing is enforced server-side anyway, so the only thing affected by
+-- the visual is when the highlight is on screen.
+--
+-- Lifetime rules (per target):
+--   * SC fires (skillchainMessageIds match)                  → write magicBurstMap entry,
+--     overwriting any prior MB state on this target. Same path catches "another SC happened
+--     during the previous MB window" → window restarts with the new SC's elements.
+--   * WS lands WITH attributes (weaponskillResonationMap)    → clear magicBurstMap entry.
+--     This matches the FFXI mechanic where a new WS overwrites the target's resonance and
+--     closes the open MB window even if the new WS itself doesn't chain.
+--   * WS lands WITHOUT attributes (Spirits Within etc.)      → MB window untouched. The WS
+--     never reaches the weapon-skill-message branch in HandleActionPacket since its row
+--     isn't in weaponskillResonationMap, so the no-op is automatic.
+--   * Target cleared / window expired (consulted lazily on every Get*)  → entry dropped.
+--
+-- Window timing constants. Open delay 0 (highlight as soon as the SC packet arrives),
+-- duration 7.0 (window closes at SC + 7s). See block comment above for rationale.
+local MB_WINDOW_OPEN_DELAY = 0.0;
+local MB_WINDOW_DURATION = 7.0;
+
+-- Per-target Magic Burst state (entity index → { Elements, ScName, WindowOpen, WindowClose }).
+-- Kept SEPARATE from resonationMap because the two have different lifetimes: resonationMap's
+-- WindowOpen/Close describe the NEXT-SC prediction window (3.5–9.8s), MB's describe the
+-- ACTUAL magic-burstable window (0.0–7.0s via the MB_WINDOW_* constants below). Trying to
+-- share one map would conflate them.
+local magicBurstMap = {};
+
+-- Resonation result → list of burstable element IDs. Element IDs match horizonspells.lua's
+-- `element` field: 0=Fire, 1=Ice, 2=Wind, 3=Earth, 4=Lightning, 5=Water, 6=Light, 7=Dark.
+-- Level-1 SCs map to one element each; Lv2 (Fusion/Frag/Distortion/Gravitation) burst two;
+-- Lv3 (Light/Darkness/Radiance/Umbra) burst four. Radiance and Umbra are the depth-3 "Light
+-- after Light" / "Darkness after Darkness" upgrades — they burst the same element set.
+local magicBurstElements = {
+    [Resonation.Liquefaction]   = { 0 },                -- Fire
+    [Resonation.Induration]     = { 1 },                -- Ice
+    [Resonation.Detonation]     = { 2 },                -- Wind
+    [Resonation.Scission]       = { 3 },                -- Earth
+    [Resonation.Impaction]      = { 4 },                -- Lightning
+    [Resonation.Reverberation]  = { 5 },                -- Water
+    [Resonation.Transfixion]    = { 6 },                -- Light
+    [Resonation.Compression]    = { 7 },                -- Dark
+    [Resonation.Fusion]         = { 0, 6 },             -- Fire + Light
+    [Resonation.Fragmentation]  = { 4, 2 },             -- Lightning + Wind
+    [Resonation.Distortion]     = { 5, 1 },             -- Water + Ice
+    [Resonation.Gravitation]    = { 3, 7 },             -- Earth + Dark
+    [Resonation.Light]          = { 0, 6, 4, 2 },       -- Fire/Light/Lightning/Wind
+    [Resonation.Darkness]       = { 5, 1, 3, 7 },       -- Water/Ice/Earth/Dark
+    [Resonation.Light2]         = { 0, 6, 4, 2 },       -- depth-3 Light upgrade
+    [Resonation.Darkness2]      = { 5, 1, 3, 7 },       -- depth-3 Darkness upgrade
+    [Resonation.Radiance]       = { 0, 6, 4, 2 },       -- Radiance burst set = Light's
+    [Resonation.Umbra]          = { 5, 1, 3, 7 },       -- Umbra burst set = Darkness's
+};
+
+-- SMN Magical Blood Pact Rage element overrides. horizon_bloodpacts.lua stores `element = 0`
+-- as a placeholder for ALL pact rows (it's a synthetic spell-shaped DB; only mp_cost +
+-- smn_lv are authoritative there), so we can't trust the resource for SMN MB eligibility.
+-- This is the curated short list: only the spell-named "Magic" Blood Pact: Rages (Fire II,
+-- Blizzard IV, etc.). The named flavor rages (Heavenly Strike, Inferno, Judgment Bolt, etc.)
+-- and the Astral Flow 1HRs are deliberately OMITTED — the user wants MB highlight scoped to
+-- just the BLM-shadow magic pacts. Names match petregistry English so /pet "Fire II" macros
+-- and crossbar pet slots resolve via the same name key. Extend cautiously and never add
+-- physical pacts here (Punch / Rock Throw / Crescent Fang / etc.) — they'd false-positive.
+local bloodPactElementMap = {
+    -- Fire (Ifrit)
+    ['Fire II']     = 0,
+    ['Fire IV']     = 0,
+    -- Ice (Shiva)
+    ['Blizzard II'] = 1,
+    ['Blizzard IV'] = 1,
+    -- Wind (Garuda)
+    ['Aero II']     = 2,
+    ['Aero IV']     = 2,
+    -- Earth (Titan)
+    ['Stone II']    = 3,
+    ['Stone IV']    = 3,
+    -- Lightning (Ramuh)
+    ['Thunder II']  = 4,
+    ['Thunder IV']  = 4,
+    -- Water (Leviathan)
+    ['Water II']    = 5,
+    ['Water IV']    = 5,
+};
+
+-- Lazy lookup: lowercase English spell name → element id (0-7), or false if the spell exists
+-- but isn't MB-eligible (no enemy-target bit, or non-elemental). Built on first request from
+-- horizonspells.lua. Same lazy-cache pattern as actions.lua's spellsByLowerNameLookup, but
+-- stays local to this module because MB is its only consumer right now.
+--
+-- MB eligibility filter (mirrors retail mechanic):
+--   * `element` must be in 0-7 (i.e. one of the eight pure elements; 8 = non-elemental excluded)
+--   * `targets` must include the enemy bit (32) — drops Protect/Raise/-na/healing-on-friendly
+--     even though those rows technically carry a `element` value (most WHM utility spells are
+--     element=6 / Light, but they can't be cast on an enemy so they could never magic burst).
+local spellElementByLowerName = nil;
+
+local function buildSpellElementLookup()
+    spellElementByLowerName = {};
+    local ok, horizonSpells = pcall(require, 'modules.hotbar.database.horizonspells');
+    if not ok or type(horizonSpells) ~= 'table' then
+        return;
+    end
+    for _, spell in pairs(horizonSpells) do
+        if spell.en and spell.en ~= '' then
+            local key = string.lower(spell.en);
+            if spellElementByLowerName[key] == nil then
+                local elem = spell.element;
+                local tgts = spell.targets or 0;
+                local enemyBit = bit.band(tgts, 32) ~= 0;
+                if elem ~= nil and elem >= 0 and elem <= 7 and enemyBit then
+                    spellElementByLowerName[key] = elem;
+                else
+                    spellElementByLowerName[key] = false;
+                end
+            end
+        end
+    end
+end
+
+local function spellNameToBurstElement(spellName)
+    if not spellName or spellName == '' then return nil; end
+    if spellElementByLowerName == nil then buildSpellElementLookup(); end
+    local v = spellElementByLowerName[string.lower(spellName)];
+    if v == false then return nil; end
+    return v;  -- number or nil
+end
+
+local function pactNameToBurstElement(pactName)
+    if not pactName or pactName == '' then return nil; end
+    return bloodPactElementMap[pactName];
+end
+
 -- Hardcoded WS name -> ID map (resource manager lookup is unreliable)
 local wsNameToIdMap = {
     -- Hand-to-Hand
@@ -438,6 +581,27 @@ local function tableContains(tbl, val)
     return false;
 end
 
+-- Blood Pact / avatar physical pacts: English ability name (as in /pet "Name") → Level-1 attributes.
+-- Horizon: omit Level 70 pacts with no SC properties (unmapped here — no false resonance).
+local bloodPactResonationMap = {
+    ['Claw'] = { Resonation.Detonation },
+    ['Rock Throw'] = { Resonation.Scission },
+    ['Axe Kick'] = { Resonation.Induration },
+    ['Punch'] = { Resonation.Liquefaction },
+    ['Shock Strike'] = { Resonation.Impaction },
+    ['Barracuda Dive'] = { Resonation.Reverberation },
+    ['Camisado'] = { Resonation.Compression },
+    ['Poison Nails'] = { Resonation.Transfixion },
+    ['Moonlit Charge'] = { Resonation.Compression },
+    ['Crescent Fang'] = { Resonation.Transfixion },
+    ['Rock Buster'] = { Resonation.Reverberation },
+    ['Burning Strike'] = { Resonation.Impaction },
+    ['Tail Whip'] = { Resonation.Detonation },
+    ['Double Punch'] = { Resonation.Compression },
+    ['Megalith Throw'] = { Resonation.Induration },
+    ['Double Slap'] = { Resonation.Scission },
+};
+
 -- Convert server ID to entity index
 local function GetIndexFromId(id)
     local entMgr = AshitaCore:GetMemoryManager():GetEntity();
@@ -463,33 +627,17 @@ local function GetIndexFromId(id)
     return 0;
 end
 
--- Get skillchain result for a WS against current target state
--- targetServerId: server ID of the target
--- wsIdOrName: weapon skill ID (number) or name (string)
--- Returns skillchain name or nil
-function M.GetSkillchainForSlot(targetServerId, wsIdOrName)
-    if not wsIdOrName then return nil; end
+-- Shared prediction: closing ability attributes vs per-target resonation window.
+local function GetSkillchainFromClosingAttributes(targetServerId, closingAttributes)
+    if not closingAttributes or #closingAttributes == 0 then return nil; end
 
-    -- Convert name to ID if needed
-    local wsId = wsIdOrName;
-    if type(wsIdOrName) == 'string' then
-        wsId = GetWSIdFromName(wsIdOrName);
-        if not wsId then return nil; end
-    end
-
-    -- Get WS attributes early (needed for all checks)
-    local wsAttributes = weaponskillResonationMap[wsId];
-    if not wsAttributes then return nil; end
-
-    -- Convert server ID to entity index if provided
     local targetIndex = nil;
     if targetServerId and targetServerId > 0x8FF then
         targetIndex = GetIndexFromId(targetServerId);
     elseif targetServerId and targetServerId > 0 and targetServerId <= 0x8FF then
-        targetIndex = targetServerId;  -- Already an entity index
+        targetIndex = targetServerId;
     end
 
-    -- Only check the player's current target
     if not targetIndex or targetIndex == 0 then
         return nil;
     end
@@ -501,22 +649,19 @@ function M.GetSkillchainForSlot(targetServerId, wsIdOrName)
 
     local now = os.clock();
 
-    -- Check if window expired
     if now > resonation.WindowClose then
         resonationMap[targetIndex] = nil;
         return nil;
     end
 
-    -- Check if window is open
     if now < resonation.WindowOpen then
         return nil;
     end
 
-    -- Check for skillchain match
     for _, sc in ipairs(possibleSkillchains) do
         local result, opening, closing = sc[1], sc[2], sc[3];
         if tableContains(resonation.Attributes, opening) then
-            if tableContains(wsAttributes, closing) then
+            if tableContains(closingAttributes, closing) then
                 return resonationNames[result];
             end
         end
@@ -525,47 +670,85 @@ function M.GetSkillchainForSlot(targetServerId, wsIdOrName)
     return nil;
 end
 
+-- Get skillchain result for a WS against current target state
+-- targetServerId: server ID of the target
+-- wsIdOrName: weapon skill ID (number) or name (string)
+-- Returns skillchain name or nil
+function M.GetSkillchainForSlot(targetServerId, wsIdOrName)
+    if not wsIdOrName then return nil; end
+
+    local wsId = wsIdOrName;
+    if type(wsIdOrName) == 'string' then
+        wsId = GetWSIdFromName(wsIdOrName);
+        if not wsId then return nil; end
+    end
+
+    local wsAttributes = weaponskillResonationMap[wsId];
+    if not wsAttributes then return nil; end
+
+    return GetSkillchainFromClosingAttributes(targetServerId, wsAttributes);
+end
+
+--- @param pactName string English pact name (e.g. /pet "Shock Strike")
+function M.GetSkillchainForBloodPact(targetServerId, pactName)
+    if not pactName then return nil; end
+    local attrs = bloodPactResonationMap[pactName];
+    return GetSkillchainFromClosingAttributes(targetServerId, attrs);
+end
+
 -- Handle action packet (0x0028)
--- XIUI's ParseActionPacket stores WS ID in .Param (not .Id like tHotBar)
+-- Type 3: weapon skill — Param is WS id. Type 13: pet/Blood Pact — Param is ability id; map name → attributes.
 function M.HandleActionPacket(actionPacket)
     if not actionPacket then return; end
 
-    -- Only process weapon skill actions (Type 3)
-    if actionPacket.Type ~= 3 then return; end
+    local actionType = actionPacket.Type;
+    if actionType ~= 3 and actionType ~= 13 then return; end
 
-    -- WS ID is stored in Param field by XIUI's packet parser
-    local wsId = actionPacket.Param;
-    if not wsId or wsId == 0 then return; end
+    local param = actionPacket.Param;
+    if not param or param == 0 then return; end
 
-    -- Process each target
+    local pactAttributes = nil;
+    if actionType == 13 then
+        local resMgr = AshitaCore:GetResourceManager();
+        local ability = resMgr and resMgr:GetAbilityById(param);
+        local pactName = ability and ability.Name and ability.Name[1];
+        if pactName then
+            pactAttributes = bloodPactResonationMap[pactName];
+        end
+    end
+
     for _, target in ipairs(actionPacket.Targets or {}) do
         local targetIndex = GetIndexFromId(target.Id);
         if targetIndex ~= 0 then
             for _, action in ipairs(target.Actions or {}) do
-                -- Check for skillchain message
                 local skillchain = nil;
                 if action.AdditionalEffect then
                     skillchain = skillchainMessageIds[action.AdditionalEffect.Message];
                 end
 
                 if skillchain == Resonation.None then
-                    -- Skillchain interrupted
                     resonationMap[targetIndex] = nil;
+                    magicBurstMap[targetIndex] = nil;
 
                 elseif skillchain then
-                    -- Skillchain occurred - update state
                     local resonation = resonationMap[targetIndex];
                     local now = os.clock();
 
+                    -- Track the "effective" resonation that we'll use for the MB lookup. The
+                    -- depth-3 upgrade branch below promotes Light → Light2 / Darkness → Darkness2,
+                    -- but magicBurstElements has identical entries for both pairs so either key
+                    -- resolves to the same element set. We capture the resolved value to keep
+                    -- the MB write trivially correct even if the upgrade table ever diverges.
+                    local effectiveSkillchain = skillchain;
                     if resonation and (now + 1) > resonation.WindowOpen and (now - 1) < resonation.WindowClose then
-                        -- Continuing existing chain
                         resonation.Depth = resonation.Depth + 1;
 
-                        -- Handle Light/Darkness level escalation
                         if skillchain == Resonation.Light and tableContains(resonation.Attributes, Resonation.Light) then
                             resonation.Attributes = { Resonation.Light2 };
+                            effectiveSkillchain = Resonation.Light2;
                         elseif skillchain == Resonation.Darkness and tableContains(resonation.Attributes, Resonation.Darkness) then
                             resonation.Attributes = { Resonation.Darkness2 };
+                            effectiveSkillchain = Resonation.Darkness2;
                         else
                             resonation.Attributes = { skillchain };
                         end
@@ -573,7 +756,6 @@ function M.HandleActionPacket(actionPacket)
                         resonation.WindowOpen = now + 3.5;
                         resonation.WindowClose = now + (9.8 - resonation.Depth);
                     else
-                        -- New chain from skillchain
                         resonation = {
                             Depth = 1,
                             Attributes = { skillchain },
@@ -583,19 +765,42 @@ function M.HandleActionPacket(actionPacket)
                         resonationMap[targetIndex] = resonation;
                     end
 
+                    -- Open / overwrite the Magic Burst window. Overwriting (rather than checking
+                    -- "is the prior MB still open?") matches the user spec: "If another
+                    -- Skillchain is performed, stop lighting the previous, switch to the new."
+                    -- The element set for an upgraded chain (Light2/Darkness2) is identical to
+                    -- the base, so the lookup is safe either way.
+                    local burstElements = magicBurstElements[effectiveSkillchain];
+                    if burstElements then
+                        magicBurstMap[targetIndex] = {
+                            Elements = burstElements,
+                            ScName = resonationNames[effectiveSkillchain] or resonationNames[skillchain],
+                            WindowOpen = now + MB_WINDOW_OPEN_DELAY,
+                            WindowClose = now + MB_WINDOW_OPEN_DELAY + MB_WINDOW_DURATION,
+                        };
+                    end
+
                 elseif weaponskillMessageIds[action.Message] then
-                    -- WS hit without skillchain - set up new resonation
-                    local attributes = weaponskillResonationMap[wsId];
-                    if attributes then
+                    local attributes = nil;
+                    if actionType == 3 then
+                        attributes = weaponskillResonationMap[param];
+                    else
+                        attributes = pactAttributes;
+                    end
+                    if attributes and #attributes > 0 then
                         local now = os.clock();
                         resonationMap[targetIndex] = {
                             Depth = 0,
                             Attributes = attributes,
-                            -- For UI prediction, show immediately (window opens now)
-                            -- Actual skillchain can land ~3-10 seconds after opener
                             WindowOpen = now,
                             WindowClose = now + 10.0,
                         };
+                        -- A WS WITH attributes overwrites the target's resonance and closes the
+                        -- prior MB window even if this WS doesn't chain (matches FFXI). WS rows
+                        -- that have NO attributes (Spirits Within etc.) never reach this branch
+                        -- because they're absent from weaponskillResonationMap / pactAttributes,
+                        -- so the MB window survives — exactly the spec'd no-op behavior.
+                        magicBurstMap[targetIndex] = nil;
                     end
                 end
             end
@@ -606,6 +811,7 @@ end
 -- Clear all state (call on zone change)
 function M.ClearState()
     resonationMap = {};
+    magicBurstMap = {};
 end
 
 -- Clear state for a specific target
@@ -614,8 +820,107 @@ function M.ClearTargetState(targetServerId)
         local targetIndex = GetIndexFromId(targetServerId);
         if targetIndex ~= 0 then
             resonationMap[targetIndex] = nil;
+            magicBurstMap[targetIndex] = nil;
         end
     end
+end
+
+-- ============================================
+-- Magic Burst public API
+-- ============================================
+
+-- Resolve a slot to its burst-eligible element (0-7) or nil if the slot can never magic burst.
+-- Routes by actionType: 'ma' → spell name lookup, 'pet' → curated SMN pact map, 'macro' →
+-- parse primary line and route accordingly. Mirrors display.lua's skillchain dispatch so the
+-- same slot types light up for both prediction paths.
+function M.GetBurstElementForSlot(slotData)
+    if not slotData or not slotData.actionType then return nil; end
+    local aType = slotData.actionType;
+    if aType == 'ma' then
+        return spellNameToBurstElement(slotData.action);
+    elseif aType == 'pet' then
+        return pactNameToBurstElement(slotData.action);
+    elseif aType == 'macro' and slotData.macroText then
+        -- macroparse loaded lazily so skillchain.lua doesn't carry a hard dep on it for the
+        -- non-macro callers (display/crossbar require it themselves already, so the cost is
+        -- a single cached `require` after first macro-slot resolution).
+        local ok, macroparse = pcall(require, 'modules.hotbar.macroparse');
+        if not ok or not macroparse or not macroparse.GetMacroPrimaryAndJaBadge then
+            return nil;
+        end
+        local pType, pName = macroparse.GetMacroPrimaryAndJaBadge(slotData.macroText);
+        if pType == 'ma' and pName then
+            return spellNameToBurstElement(pName);
+        elseif pType == 'pet' and pName then
+            return pactNameToBurstElement(pName);
+        end
+    end
+    return nil;
+end
+
+-- Returns the SC name (e.g. 'Fusion') that opened the currently-active MB window for
+-- `targetServerId`, if the window is open AND `element` matches one of its burstable
+-- elements. Returns nil otherwise. The SC name is what slotrenderer uses as the corner
+-- icon (same `assets/hotbar/skillchain/<scName>.png` files as the skillchain highlight).
+function M.GetMagicBurstForElement(targetServerId, element)
+    if element == nil then return nil; end
+
+    local targetIndex = nil;
+    if targetServerId and targetServerId > 0x8FF then
+        targetIndex = GetIndexFromId(targetServerId);
+    elseif targetServerId and targetServerId > 0 and targetServerId <= 0x8FF then
+        targetIndex = targetServerId;
+    end
+    if not targetIndex or targetIndex == 0 then return nil; end
+
+    local mb = magicBurstMap[targetIndex];
+    if not mb then return nil; end
+
+    local now = os.clock();
+    if now > mb.WindowClose then
+        magicBurstMap[targetIndex] = nil;  -- lazy GC of expired entries
+        return nil;
+    end
+    if now < mb.WindowOpen then return nil; end
+
+    for i = 1, #mb.Elements do
+        if mb.Elements[i] == element then
+            return mb.ScName;
+        end
+    end
+    return nil;
+end
+
+-- Convenience: route a slot through GetBurstElementForSlot + GetMagicBurstForElement so
+-- display.lua / crossbar.lua only need a single call per slot for MB (matches the
+-- GetSkillchainForSlot calling pattern).
+function M.GetMagicBurstForSlot(targetServerId, slotData)
+    local element = M.GetBurstElementForSlot(slotData);
+    if element == nil then return nil; end
+    return M.GetMagicBurstForElement(targetServerId, element);
+end
+
+-- Existence helper for any UI status indicator (e.g. an on-target "MB window open!" badge
+-- the user might add later). Returns the active MB entry or nil; caller is responsible for
+-- the now-check via WindowOpen / WindowClose if it wants timing info beyond "is it open".
+function M.GetMagicBurstWindow(targetServerId)
+    local targetIndex = nil;
+    if targetServerId and targetServerId > 0x8FF then
+        targetIndex = GetIndexFromId(targetServerId);
+    elseif targetServerId and targetServerId > 0 and targetServerId <= 0x8FF then
+        targetIndex = targetServerId;
+    end
+    if not targetIndex or targetIndex == 0 then return nil; end
+
+    local mb = magicBurstMap[targetIndex];
+    if not mb then return nil; end
+
+    local now = os.clock();
+    if now > mb.WindowClose then
+        magicBurstMap[targetIndex] = nil;
+        return nil;
+    end
+    return mb;
 end
 
 -- Check if skillchain window is open for any target
