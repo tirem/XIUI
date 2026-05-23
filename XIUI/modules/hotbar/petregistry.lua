@@ -5,6 +5,27 @@
 
 local M = {};
 
+-- MP cost + SMN level: `horizon_bloodpacts.lua`. XIUI-only labels/icons: `horizon_bloodpacts_xiui.lua`.
+local horizonBloodPacts = require('modules.hotbar.database.horizon_bloodpacts');
+local horizonBloodPactsXiui = require('modules.hotbar.database.horizon_bloodpacts_xiui');
+local universalTwoHour = require('modules.hotbar.universal_two_hour');
+
+-- Ready pet command when horizon_abilities lists it with pet=true (HorizonXI includes Ready for jug gameplay).
+local function horizonDefinesBstReadyPetCommand()
+    local ha = require('modules.hotbar.database.horizon_abilities');
+    local row = ha['Ready'];
+    return row ~= nil and row.pet == true;
+end
+
+-- Jug-family Ready moves: only when Ready exists as a pet command and jug_moves is not explicitly false.
+local function horizonDefinesBstJugReadyMoves()
+    local ha = require('modules.hotbar.database.horizon_abilities');
+    local row = ha['Ready'];
+    return row ~= nil and row.pet == true and row.jug_moves ~= false;
+end
+
+M.IsBstJugReadyMovesEnabled = horizonDefinesBstJugReadyMoves;
+
 -- ============================================
 -- Job Constants
 -- ============================================
@@ -24,6 +45,13 @@ M.PET_TYPE_WYVERN = 'wyvern';
 M.PET_TYPE_AUTOMATON = 'automaton';
 M.PET_TYPE_JUG = 'jug';
 M.PET_TYPE_CHARM = 'charm';
+
+-- `petpalette:*` keys omitted from the Edit Full Palette Pets picker (no practical pet-entity hotbar to bind for these avatars in Horizon).
+M.PETBAR_EXCLUDED_STORAGE_KEYS = {
+    ['avatar:odin'] = true,
+    ['avatar:alexander'] = true,
+    ['avatar:atomos'] = true,
+};
 
 -- ============================================
 -- Avatar Mapping (petName -> storageKey)
@@ -184,8 +212,8 @@ function M.GetPetType(petName, jobId)
 end
 
 -- Get the storage key suffix for a pet
--- Returns: string like "avatar:ifrit", "wyvern", "jug", "automaton", etc.
--- For SMN avatars/spirits, returns per-entity keys
+-- Returns: string like "avatar:ifrit", "wyvern", "jug", "jug:rabbit", "automaton", etc.
+-- For SMN avatars/spirits and BST jug families, returns per-family keys when known
 -- For other jobs, returns per-type keys
 function M.GetPetKey(petName, jobId)
     if petName == nil then return nil; end
@@ -204,9 +232,15 @@ function M.GetPetKey(petName, jobId)
         if spiritKey then
             return M.PET_TYPE_SPIRIT .. ':' .. spiritKey;
         end
+    elseif petType == M.PET_TYPE_JUG then
+        local mk = M.GetJugPetPaletteMovesKeyForEntity(petName);
+        if mk then
+            return M.PET_TYPE_JUG .. ':' .. M.JugPaletteSlugFromMovesKey(mk);
+        end
+        return M.PET_TYPE_JUG;
     end
 
-    -- Other jobs: Per-type palettes (wyvern, automaton, jug, charm)
+    -- Other jobs: Per-type palettes (wyvern, automaton, charm)
     return petType;
 end
 
@@ -229,6 +263,17 @@ function M.GetDisplayNameForKey(petKey)
             for name, key in pairs(M.spirits) do
                 if key == petId then return name; end
             end
+        elseif petType == M.PET_TYPE_JUG then
+            for _, row in ipairs(M.bstJugReadyFamilyPicker) do
+                if row.movesKey:lower() == petId:lower() then
+                    return row.name;
+                end
+            end
+            local slugLabel = M.bstJugPaletteSlugLabels and M.bstJugPaletteSlugLabels[petId:lower()];
+            if slugLabel then
+                return slugLabel;
+            end
+            return 'Jug (' .. petId .. ')';
         end
     end
 
@@ -259,18 +304,53 @@ function M.GetAvailablePetKeys(jobId)
         table.insert(keys, M.PET_TYPE_AUTOMATON);
     elseif jobId == M.JOB_BST then
         table.insert(keys, M.PET_TYPE_JUG);
+        local seenSlug = {};
+        for _, row in ipairs(M.bstJugReadyFamilyPicker) do
+            local slug = row.movesKey:lower();
+            if not seenSlug[slug] then
+                seenSlug[slug] = true;
+                table.insert(keys, M.PET_TYPE_JUG .. ':' .. slug);
+            end
+        end
+        local function addJugSlugFromMovesKey(mk)
+            if not mk or mk == '' then
+                return;
+            end
+            local slug = mk:lower();
+            if not seenSlug[slug] then
+                seenSlug[slug] = true;
+                table.insert(keys, M.PET_TYPE_JUG .. ':' .. slug);
+            end
+        end
+        for _, mk in pairs(M.jugPetFamilies) do
+            addJugSlugFromMovesKey(mk);
+        end
+        for _, mk in pairs(M.jugPetPaletteMovesKeyOverrides) do
+            addJugSlugFromMovesKey(mk);
+        end
         table.insert(keys, M.PET_TYPE_CHARM);
     end
 
     return keys;
 end
 
--- Get ordered list of avatar names (for dropdowns, etc.)
+-- Get ordered list of avatar names (for dropdowns, macro editor, Edit Full Palette Pets, etc.)
 function M.GetAvatarList()
     return {
-        'Carbuncle', 'Ifrit', 'Shiva', 'Garuda', 'Titan', 'Ramuh',
-        'Leviathan', 'Fenrir', 'Diabolos', 'Atomos', 'Odin', 'Alexander',
-        'Cait Sith', 'Siren',
+        'Carbuncle',
+        'Ifrit',
+        'Titan',
+        'Leviathan',
+        'Garuda',
+        'Shiva',
+        'Ramuh',
+        'Fenrir',
+        'Diabolos',
+        'Alexander',
+        'Odin',
+        'Cait Sith',
+        'Atomos',
+        'Siren',
     };
 end
 
@@ -280,6 +360,30 @@ function M.GetSpiritList()
         'Fire Spirit', 'Ice Spirit', 'Air Spirit', 'Earth Spirit',
         'Thunder Spirit', 'Water Spirit', 'Light Spirit', 'Dark Spirit',
     };
+end
+
+-- Display order for SMN pet keys (matches GetAvatarList then GetSpiritList). Used to align pickers and Edit Palette Pets.
+local smnPetKeyOrderWeight;
+function M.GetSmnPetKeyOrderWeight(petKey)
+    if not smnPetKeyOrderWeight then
+        smnPetKeyOrderWeight = {};
+        local i = 1;
+        for _, name in ipairs(M.GetAvatarList()) do
+            local id = M.avatars[name];
+            if id then
+                smnPetKeyOrderWeight[M.PET_TYPE_AVATAR .. ':' .. id] = i;
+                i = i + 1;
+            end
+        end
+        for _, name in ipairs(M.GetSpiritList()) do
+            local id = M.spirits[name];
+            if id then
+                smnPetKeyOrderWeight[M.PET_TYPE_SPIRIT .. ':' .. id] = i;
+                i = i + 1;
+            end
+        end
+    end
+    return smnPetKeyOrderWeight[petKey] or 9999;
 end
 
 -- Get combined list of all summons (avatars + spirits)
@@ -309,20 +413,49 @@ function M.GetPetKeyForSummon(summonName)
     return nil;
 end
 
+-- True if `key` is a valid pet subtype string used in slot storage (avatar:ifrit, wyvern, jug, jug:rabbit, etc.)
+function M.IsValidPetKey(key)
+    if not key or key == '' then
+        return false;
+    end
+    if key == M.PET_TYPE_WYVERN or key == M.PET_TYPE_AUTOMATON
+        or key == M.PET_TYPE_JUG or key == M.PET_TYPE_CHARM then
+        return true;
+    end
+    local pt, pid = key:match('^([^:]+):(.+)$');
+    if not pt or not pid then
+        return false;
+    end
+    if pt == M.PET_TYPE_AVATAR then
+        for _, shortId in pairs(M.avatars) do
+            if shortId == pid then
+                return true;
+            end
+        end
+    elseif pt == M.PET_TYPE_SPIRIT then
+        for _, shortId in pairs(M.spirits) do
+            if shortId == pid then
+                return true;
+            end
+        end
+    elseif pt == M.PET_TYPE_JUG then
+        return M.MovesKeyFromBstMacroPaletteSlug(pid) ~= nil;
+    end
+    return false;
+end
+
 -- ============================================
 -- Pet Commands Data
 -- ============================================
 
--- Generic pet commands (all pet jobs)
-M.genericPetCommands = {
-    { name = 'Assault', category = 'Command' },
-    { name = 'Retreat', category = 'Command' },
-    { name = 'Stay', category = 'Command' },
-    { name = 'Heel', category = 'Command' },
-    { name = 'Release', category = 'Command' },
+-- SMN pet commands (not blood pacts)
+M.smnPetCommands = {
+    { name = 'Assault', category = 'Command', level = 1 },
+    { name = 'Release', category = 'Command', level = 1 },
+    { name = 'Retreat', category = 'Command', level = 1 },
 };
 
--- SMN Blood Pacts - Rage (offensive)
+-- SMN Blood Pacts - Rage (offensive). Retail-style layout: Shared Ifrit block, then per-avatar sections.
 M.bloodPactsRage = {
     -- Shared
     { name = 'Punch', avatars = {'Ifrit'} },
@@ -333,6 +466,7 @@ M.bloodPactsRage = {
     { name = 'Meteor Strike', avatars = {'Ifrit'} },
     { name = 'Conflag Strike', avatars = {'Ifrit'} },
     { name = 'Fire IV', avatars = {'Ifrit'} },
+    { name = 'Inferno', avatars = {'Ifrit'} },
     -- Shiva
     { name = 'Axe Kick', avatars = {'Shiva'} },
     { name = 'Blizzard II', avatars = {'Shiva'} },
@@ -340,50 +474,59 @@ M.bloodPactsRage = {
     { name = 'Blizzard IV', avatars = {'Shiva'} },
     { name = 'Rush', avatars = {'Shiva'} },
     { name = 'Heavenly Strike', avatars = {'Shiva'} },
+    { name = 'Diamond Dust', avatars = {'Shiva'} },
     -- Garuda
     { name = 'Claw', avatars = {'Garuda'} },
     { name = 'Aero II', avatars = {'Garuda'} },
     { name = 'Aero IV', avatars = {'Garuda'} },
     { name = 'Predator Claws', avatars = {'Garuda'} },
     { name = 'Wind Blade', avatars = {'Garuda'} },
+    { name = 'Aerial Blast', avatars = {'Garuda'} },
     -- Titan
     { name = 'Rock Throw', avatars = {'Titan'} },
     { name = 'Stone II', avatars = {'Titan'} },
-    { name = 'Stone IV', avatars = {'Titan'} },
     { name = 'Rock Buster', avatars = {'Titan'} },
     { name = 'Megalith Throw', avatars = {'Titan'} },
+    { name = 'Stone IV', avatars = {'Titan'} },
     { name = 'Mountain Buster', avatars = {'Titan'} },
     { name = 'Geocrush', avatars = {'Titan'} },
     { name = 'Crag Throw', avatars = {'Titan'} },
+    { name = 'Earthen Fury', avatars = {'Titan'} },
     -- Ramuh
     { name = 'Shock Strike', avatars = {'Ramuh'} },
     { name = 'Thunder II', avatars = {'Ramuh'} },
+    { name = 'Thunderspark', avatars = {'Ramuh'} },
     { name = 'Thunder IV', avatars = {'Ramuh'} },
     { name = 'Chaotic Strike', avatars = {'Ramuh'} },
     { name = 'Thunderstorm', avatars = {'Ramuh'} },
-    { name = 'Thunderspark', avatars = {'Ramuh'} },
     { name = 'Volt Strike', avatars = {'Ramuh'} },
+    { name = 'Judgment Bolt', avatars = {'Ramuh'} },
     -- Leviathan
     { name = 'Barracuda Dive', avatars = {'Leviathan'} },
     { name = 'Water II', avatars = {'Leviathan'} },
-    { name = 'Water IV', avatars = {'Leviathan'} },
     { name = 'Tail Whip', avatars = {'Leviathan'} },
+    { name = 'Water IV', avatars = {'Leviathan'} },
     { name = 'Spinning Dive', avatars = {'Leviathan'} },
     { name = 'Grand Fall', avatars = {'Leviathan'} },
+    { name = 'Tidal Wave', avatars = {'Leviathan'} },
     -- Fenrir
     { name = 'Moonlit Charge', avatars = {'Fenrir'} },
     { name = 'Crescent Fang', avatars = {'Fenrir'} },
     { name = 'Eclipse Bite', avatars = {'Fenrir'} },
-    { name = 'Howling Moon', avatars = {'Fenrir'} },
+    { name = 'Lunar Bay', avatars = {'Fenrir'} },
     { name = 'Impact', avatars = {'Fenrir'} },
+    { name = 'Howling Moon', avatars = {'Fenrir'} },
     -- Diabolos
     { name = 'Camisado', avatars = {'Diabolos'} },
     { name = 'Nether Blast', avatars = {'Diabolos'} },
     { name = 'Night Terror', avatars = {'Diabolos'} },
+    { name = 'Blindside', avatars = {'Diabolos'} },
+    { name = 'Ruinous Omen', avatars = {'Diabolos'} },
     -- Carbuncle
     { name = 'Poison Nails', avatars = {'Carbuncle'} },
     { name = 'Holy Mist', avatars = {'Carbuncle'} },
     { name = 'Meteorite', avatars = {'Carbuncle'} },
+    { name = 'Searing Light', avatars = {'Carbuncle'} },
     -- Odin
     { name = 'Zantetsuken', avatars = {'Odin'} },
     -- Cait Sith
@@ -404,6 +547,7 @@ M.bloodPactsWard = {
     -- Carbuncle
     { name = 'Soothing Ruby', avatars = {'Carbuncle'} },
     { name = 'Healing Ruby', avatars = {'Carbuncle'} },
+    { name = 'Poison Ruby', avatars = {'Carbuncle'} },
     { name = 'Shining Ruby', avatars = {'Carbuncle'} },
     { name = 'Glittering Ruby', avatars = {'Carbuncle'} },
     { name = 'Healing Ruby II', avatars = {'Carbuncle'} },
@@ -417,10 +561,12 @@ M.bloodPactsWard = {
     { name = 'Diamond Storm', avatars = {'Shiva'} },
     { name = 'Crystal Blessing', avatars = {'Shiva'} },
     -- Garuda
-    { name = 'Aerial Armor', avatars = {'Garuda'} },
     { name = 'Whispering Wind', avatars = {'Garuda'} },
     { name = 'Hastega', avatars = {'Garuda'} },
+    { name = 'Aerial Armor', avatars = {'Garuda'} },
     { name = 'Fleet Wind', avatars = {'Garuda'} },
+    { name = "Wind's Blessing", avatars = {'Garuda'} },
+    { name = 'Hastega II', avatars = {'Garuda'} },
     -- Titan
     { name = 'Earthen Ward', avatars = {'Titan'} },
     { name = 'Earthen Armor', avatars = {'Titan'} },
@@ -432,11 +578,13 @@ M.bloodPactsWard = {
     { name = 'Slowga', avatars = {'Leviathan'} },
     { name = 'Spring Water', avatars = {'Leviathan'} },
     { name = 'Tidal Roar', avatars = {'Leviathan'} },
+    { name = 'Soothing Current', avatars = {'Leviathan'} },
     -- Fenrir
     { name = 'Ecliptic Growl', avatars = {'Fenrir'} },
     { name = 'Ecliptic Howl', avatars = {'Fenrir'} },
     { name = 'Lunar Cry', avatars = {'Fenrir'} },
     { name = 'Lunar Roar', avatars = {'Fenrir'} },
+    { name = 'Heavenward Howl', avatars = {'Fenrir'} },
     -- Diabolos
     { name = 'Pavor Nocturnus', avatars = {'Diabolos'} },
     { name = 'Somnolence', avatars = {'Diabolos'} },
@@ -460,13 +608,71 @@ M.bloodPactsWard = {
     { name = 'Bitter Elegy', avatars = {'Siren'} },
 };
 
--- DRG Wyvern abilities
+-- ============================================
+-- SMN Blood Pact Lookup Index (name -> pact data)
+-- ============================================
+
+-- Overlay MP/level from horizon_bloodpacts + XIUI fields from horizon_bloodpacts_xiui.
+local function MergeBloodPactWithHorizonStats(base)
+    if not base or not base.name then
+        return base;
+    end
+    local merged = {};
+    for k, v in pairs(base) do
+        merged[k] = v;
+    end
+    local xiui = horizonBloodPactsXiui and horizonBloodPactsXiui[base.name];
+    if xiui then
+        for k, v in pairs(xiui) do
+            merged[k] = v;
+        end
+    end
+    local st = horizonBloodPacts.byName and horizonBloodPacts.byName[base.name];
+    if st then
+        merged.mp = st.mp_cost;
+        merged.level = (st.levels and st.levels[15]) or 0;
+    end
+    return merged;
+end
+
+-- Build a fast lookup table for Blood Pact data by name.
+-- This avoids scanning the pact lists every frame when rendering MP costs.
+local function BuildBloodPactIndex()
+    local idx = {};
+
+    for _, pact in ipairs(M.bloodPactsRage or {}) do
+        if pact and pact.name then
+            idx[pact.name] = MergeBloodPactWithHorizonStats(pact);
+        end
+    end
+    for _, pact in ipairs(M.bloodPactsWard or {}) do
+        if pact and pact.name then
+            idx[pact.name] = MergeBloodPactWithHorizonStats(pact);
+        end
+    end
+
+    return idx;
+end
+
+-- NOTE: This is built once at load time. If you mutate blood pact tables at runtime,
+-- call `M.RebuildBloodPactIndex()` after changes.
+M.bloodPactIndexByName = BuildBloodPactIndex();
+
+function M.RebuildBloodPactIndex()
+    M.bloodPactIndexByName = BuildBloodPactIndex();
+end
+
+-- Get Blood Pact data by name (Rage or Ward).
+-- Returns merged row: retail `avatars` + XIUI overlays + `mp`/`level` from horizon_bloodpacts, or nil.
+function M.GetBloodPactByName(name)
+    if not name then return nil; end
+    return M.bloodPactIndexByName and M.bloodPactIndexByName[name] or nil;
+end
+
+-- DRG Wyvern abilities (Horizon-era only)
 M.wyvernCommands = {
-    { name = 'Steady Wing', category = 'Ability' },
-    { name = 'Spirit Bond', category = 'Ability' },
-    { name = 'Dragon Breaker', category = 'Ability' },
-    { name = 'Spirit Jump', category = 'Ability' },
-    { name = 'Soul Jump', category = 'Ability' },
+    { name = 'Dismiss', category = 'Command', level = 1 },
+    { name = 'Steady Wing', category = 'Ability', level = 30 },
 };
 
 -- PUP Automaton commands
@@ -486,23 +692,28 @@ M.automatonCommands = {
     { name = 'Heady Artifice', category = 'Ability' },
 };
 
--- BST pet commands (not job abilities - those go in Ability section)
-M.bstReadyCommands = {
-    { name = 'Fight', category = 'Command' },
-    { name = 'Sic', category = 'Command' },
-    { name = 'Ready', category = 'Command' },
-    { name = 'Reward', category = 'Command' },
+-- BST pet commands (level-gated, displayed in pet section). Ready rows are inserted after Sic when progression allows.
+M.bstPetCommands = {
+    { name = 'Fight', category = 'Command', level = 1 },
+    { name = 'Heel', category = 'Command', level = 10 },
+    { name = 'Stay', category = 'Command', level = 15 },
+    { name = 'Sic', category = 'Command', level = 25 },
+    { name = 'Leave', category = 'Command', level = 35 },
 };
 
 -- ============================================
 -- BST Jug Pet Ready Moves by Family
--- ============================================
-
+-- Optional `familyVarianceReason`: tooltip + yellow * in searchable combos when only some jugs in the merged UI row learn the move (do not use `reason` for that — `reason` is for level/learn/unavailability elsewhere).
 M.petFamilyReadyMoves = {
     ['Rabbit'] = {
         { name = 'Foot Kick', category = 'Ready' },
         { name = 'Dust Cloud', category = 'Ready' },
         { name = 'Whirl Claws', category = 'Ready' },
+        {
+            name = 'Snow Cloud',
+            category = 'Ready',
+            familyVarianceReason = 'Arctic-line rabbit jugs only (standard rabbits do not get this Ready).',
+        },
         { name = 'Wild Carrot', category = 'Ready' },
     },
     ['Sheep'] = {
@@ -592,12 +803,16 @@ M.petFamilyReadyMoves = {
     ['Coeurl'] = {
         { name = 'Chaotic Eye', category = 'Ready' },
         { name = 'Blaster', category = 'Ready' },
-    },
-    ['Lynx'] = {
-        { name = 'Chaotic Eye', category = 'Ready' },
-        { name = 'Blaster', category = 'Ready' },
-        { name = 'Charged Whisker', category = 'Ready' },
-        { name = 'Frenzied Rage', category = 'Ready' },
+        {
+            name = 'Charged Whisker',
+            category = 'Ready',
+            familyVarianceReason = 'Lynx-line jugs only (standard Coeurl jugs do not include this Ready).',
+        },
+        {
+            name = 'Frenzied Rage',
+            category = 'Ready',
+            familyVarianceReason = 'Lynx-line jugs only (standard Coeurl jugs do not include this Ready).',
+        },
     },
     ['Ladybug'] = {
         { name = 'Sudden Lunge', category = 'Ready' },
@@ -632,7 +847,205 @@ M.petFamilyReadyMoves = {
         { name = 'Sweeping Gouge', category = 'Ready' },
         { name = 'Zealous Snort', category = 'Ready' },
     },
+    ['Leech'] = {
+        { name = 'Suction', category = 'Ready' },
+        { name = 'Drainkiss', category = 'Ready' },
+        { name = 'Acid Mist', category = 'Ready' },
+        { name = 'TP Drainkiss', category = 'Ready' },
+    },
+    ['Chapuli'] = {
+        { name = 'Sensilla Blades', category = 'Ready' },
+        { name = 'Tegmina Buffet', category = 'Ready' },
+    },
+    ['Adamantoise'] = {
+        { name = 'Tortoise Stomp', category = 'Ready' },
+        { name = 'Harden Shell', category = 'Ready' },
+        { name = 'Aqua Breath', category = 'Ready' },
+    },
+    ['Raptor'] = {
+        { name = 'Ripper Fang', category = 'Ready' },
+        { name = 'Scythe Tail', category = 'Ready' },
+        { name = 'Chomp Rush', category = 'Ready' },
+    },
+    ['Toad'] = {
+        { name = 'Croaker', category = 'Ready' },
+        { name = 'Poison Breath', category = 'Ready' },
+        { name = 'Toad Kick', category = 'Ready' },
+    },
+    ['Pugil'] = {
+        { name = 'Terror Touch', category = 'Ready' },
+        { name = 'Sucker Punch', category = 'Ready' },
+        { name = 'Intimidate', category = 'Ready' },
+    },
+    ['Apkallu'] = {
+        { name = 'Beak Lunge', category = 'Ready' },
+        { name = 'Frigid Shuffle', category = 'Ready' },
+        { name = 'Wisent Snort', category = 'Ready' },
+    },
+    ['Snapweed'] = {
+        { name = 'Seedspray', category = 'Ready' },
+        { name = 'Sprout Smack', category = 'Ready' },
+        { name = 'Infernal Pestilence', category = 'Ready' },
+    },
+    ['Spider'] = {
+        { name = 'Double Claw', category = 'Ready' },
+        { name = 'Grapple', category = 'Ready' },
+        { name = 'Spinning Top', category = 'Ready' },
+        { name = 'Filamented Hold', category = 'Ready' },
+    },
+    ['Manticore'] = {
+        { name = 'Thunderstrike', category = 'Ready' },
+        { name = 'Barbed Crescent', category = 'Ready' },
+        { name = 'Death Scissors', category = 'Ready' },
+    },
+    ['Mosquito'] = {
+        { name = 'Infectious Dusk', category = 'Ready' },
+        {
+            name = 'Absorbing Kiss',
+            category = 'Ready',
+            familyVarianceReason = 'Higher-tier / select mosquito jugs only (lower-tier familiar omits this Ready).',
+        },
+        {
+            name = 'Pandemic Nip',
+            category = 'Ready',
+            familyVarianceReason = 'Higher-tier / select mosquito jugs only (lower-tier familiar omits this Ready).',
+        },
+    },
 };
+
+-- Lynx / Arctic rabbits reuse merged family pools (aliases keep jug:lynx and jug:rabbitarctic palettes valid).
+M.petFamilyReadyMoves['Lynx'] = M.petFamilyReadyMoves['Coeurl'];
+M.petFamilyReadyMoves['RabbitArctic'] = M.petFamilyReadyMoves['Rabbit'];
+
+-- Display labels for jug palette slugs not listed as their own picker row (family consolidated in UI).
+M.bstJugPaletteSlugLabels = {
+    ['lynx'] = 'Lynx',
+    ['rabbitarctic'] = 'Rabbit (Arctic)',
+};
+
+-- Ordered jug-family rows for macro editor "Ready (Use)" — display label + petFamilyReadyMoves key (HorizonXI jug roster).
+M.bstJugReadyFamilyPicker = {
+    { name = 'Rabbit', movesKey = 'Rabbit' },
+    { name = 'Sheep', movesKey = 'Sheep' },
+    { name = 'Mandragora', movesKey = 'Mandragora' },
+    { name = 'Tiger', movesKey = 'Tiger' },
+    { name = 'Flytrap', movesKey = 'Flytrap' },
+    { name = 'Lizard', movesKey = 'Lizard' },
+    { name = 'Fly', movesKey = 'Fly' },
+    { name = 'Eft', movesKey = 'Eft' },
+    { name = 'Beetle', movesKey = 'Beetle' },
+    { name = 'Antlion', movesKey = 'Antlion' },
+    { name = 'Crab', movesKey = 'Crab' },
+    { name = 'Diremite', movesKey = 'Diremite' },
+    { name = 'Funguar', movesKey = 'Funguar' },
+    { name = 'Sabotender', movesKey = 'Sabotender' },
+    { name = 'Coeurl', movesKey = 'Coeurl' },
+    { name = 'Raptor', movesKey = 'Raptor' },
+    { name = 'Toad', movesKey = 'Toad' },
+    { name = 'Pugil', movesKey = 'Pugil' },
+    { name = 'Ladybug', movesKey = 'Ladybug' },
+    { name = 'Apkallu', movesKey = 'Apkallu' },
+    { name = 'Leech', movesKey = 'Leech' },
+    { name = 'Hippogryph', movesKey = 'Hippogryph' },
+    { name = 'Slug', movesKey = 'Slug' },
+    { name = 'Adamantoise', movesKey = 'Adamantoise' },
+    { name = 'Chapuli', movesKey = 'Chapuli' },
+    { name = 'Tulfaire', movesKey = 'Tulfaire' },
+    { name = 'Snapweed', movesKey = 'Snapweed' },
+    { name = 'Raaz', movesKey = 'Raaz' },
+    { name = 'Colibri', movesKey = 'Colibri' },
+    { name = 'Spider', movesKey = 'Spider' },
+    { name = 'Manticore', movesKey = 'Manticore' },
+    { name = 'Mosquito', movesKey = 'Mosquito' },
+    { name = 'Slime', movesKey = 'Slug' },
+};
+
+function M.JugPaletteSlugFromMovesKey(movesKey)
+    if not movesKey then
+        return nil;
+    end
+    return movesKey:lower();
+end
+
+--- Macro palette composite key `JOB_BST:jug:<slug>` from a Ready family movesKey (`petFamilyReadyMoves`).
+---@param movesKey string|nil
+---@return number|string
+function M.FormatBstMacroPaletteSaveKeyFromMovesKey(movesKey)
+    if not movesKey or movesKey == '' then
+        return M.JOB_BST;
+    end
+    return string.format('%d:%s:%s', M.JOB_BST, M.PET_TYPE_JUG, M.JugPaletteSlugFromMovesKey(movesKey));
+end
+
+--- Reverse `FormatBstMacroPaletteSaveKeyFromMovesKey` slug segment → canonical movesKey casing.
+---@param slug string|nil
+---@return string|nil
+function M.MovesKeyFromBstMacroPaletteSlug(slug)
+    if not slug or slug == '' then
+        return nil;
+    end
+    local lower = slug:lower();
+    for _, row in ipairs(M.bstJugReadyFamilyPicker) do
+        if row.movesKey:lower() == lower then
+            return row.movesKey;
+        end
+    end
+    for mk, _ in pairs(M.petFamilyReadyMoves) do
+        if mk:lower() == lower then
+            return mk;
+        end
+    end
+    return nil;
+end
+
+local bstJugReadyMoveNameSet = {};
+for _, familyMoves in pairs(M.petFamilyReadyMoves) do
+    for _, move in ipairs(familyMoves) do
+        bstJugReadyMoveNameSet[move.name] = true;
+    end
+end
+
+---@param name string|nil
+---@return boolean
+function M.IsBstJugReadyMoveName(name)
+    return name ~= nil and bstJugReadyMoveNameSet[name] == true;
+end
+
+--- Ready moves for a jug family key (`petFamilyReadyMoves`).
+---@param movesKey string|nil
+---@return table|nil
+function M.GetReadyMovesForFamilyMovesKey(movesKey)
+    if movesKey == nil or movesKey == '' then
+        return nil;
+    end
+    return M.petFamilyReadyMoves[movesKey];
+end
+
+--- Macro editor: ordered family rows (unique labels).
+---@return table
+function M.GetBstJugReadyFamilyPickerList()
+    return M.bstJugReadyFamilyPicker;
+end
+
+--- First picker-listed family whose move list contains this ability name (ambiguous moves pick earliest row).
+---@param moveName string|nil
+---@return string|nil movesKey
+function M.ResolveBstJugMovesKeyFromMoveName(moveName)
+    if moveName == nil or moveName == '' then
+        return nil;
+    end
+    for _, row in ipairs(M.bstJugReadyFamilyPicker) do
+        local moves = M.petFamilyReadyMoves[row.movesKey];
+        if moves then
+            for _, m in ipairs(moves) do
+                if m.name == moveName then
+                    return row.movesKey;
+                end
+            end
+        end
+    end
+    return nil;
+end
 
 -- ============================================
 -- Jug Pet to Family Mapping
@@ -722,6 +1135,23 @@ M.jugPetFamilies = {
     ['SlimeFamiliar'] = 'Slug',
 };
 
+-- Jug entity -> Ready/`petpalette` family key when it differs from `jugPetFamilies` (same slug as `petFamilyReadyMoves`).
+M.jugPetPaletteMovesKeyOverrides = {
+    ['LuckyLulush'] = 'RabbitArctic',
+};
+
+-- Get the Ready moves / jug palette family key for an entity name (jug jugpets naming table).
+function M.GetJugPetPaletteMovesKeyForEntity(petName)
+    if petName == nil then
+        return nil;
+    end
+    local ov = M.jugPetPaletteMovesKeyOverrides[petName];
+    if ov then
+        return ov;
+    end
+    return M.jugPetFamilies[petName];
+end
+
 -- Get the family for a jug pet name
 function M.GetJugPetFamily(petName)
     if petName == nil then return nil; end
@@ -730,7 +1160,7 @@ end
 
 -- Get ready moves for a jug pet by name
 function M.GetReadyMovesForPet(petName)
-    local family = M.GetJugPetFamily(petName);
+    local family = M.GetJugPetPaletteMovesKeyForEntity(petName);
     if family and M.petFamilyReadyMoves[family] then
         return M.petFamilyReadyMoves[family];
     end
@@ -815,21 +1245,18 @@ end
 function M.GetPetCommandsForJob(jobId, avatarName, activePetName)
     local commands = {};
 
-    -- Add generic commands first
-    for _, cmd in ipairs(M.genericPetCommands) do
-        table.insert(commands, { name = cmd.name, category = cmd.category });
-    end
-
     if jobId == M.JOB_SMN then
+        -- SMN-specific commands
+        for _, cmd in ipairs(M.smnPetCommands) do
+            table.insert(commands, { name = cmd.name, category = cmd.category, level = cmd.level });
+        end
         -- SMN: Blood Pacts
         if avatarName and M.avatars[avatarName] then
-            -- Specific avatar - add only their pacts
             local avatarPacts = M.GetBloodPactsForAvatar(avatarName);
             for _, pact in ipairs(avatarPacts) do
                 table.insert(commands, pact);
             end
         else
-            -- No specific avatar - add all pacts
             local allPacts = M.GetAllBloodPacts();
             for _, pact in ipairs(allPacts) do
                 table.insert(commands, pact);
@@ -838,7 +1265,7 @@ function M.GetPetCommandsForJob(jobId, avatarName, activePetName)
     elseif jobId == M.JOB_DRG then
         -- DRG: Wyvern commands
         for _, cmd in ipairs(M.wyvernCommands) do
-            table.insert(commands, { name = cmd.name, category = cmd.category });
+            table.insert(commands, { name = cmd.name, category = cmd.category, level = cmd.level });
         end
     elseif jobId == M.JOB_PUP then
         -- PUP: Automaton commands
@@ -846,28 +1273,210 @@ function M.GetPetCommandsForJob(jobId, avatarName, activePetName)
             table.insert(commands, { name = cmd.name, category = cmd.category });
         end
     elseif jobId == M.JOB_BST then
-        -- BST: Ready commands (abilities)
-        for _, cmd in ipairs(M.bstReadyCommands) do
-            table.insert(commands, { name = cmd.name, category = cmd.category });
-        end
-        -- BST: Ready moves for the active pet
-        if activePetName then
-            local readyMoves = M.GetReadyMovesForPet(activePetName);
-            if readyMoves then
-                for _, move in ipairs(readyMoves) do
-                    table.insert(commands, { name = move.name, category = move.category });
+        local haProgress = require('modules.hotbar.database.horizon_abilities');
+        local readyProg = haProgress['Ready'];
+        local readyLvl = (readyProg and readyProg.level) or 25;
+
+        -- BST-specific pet commands (Ready variants inserted after Sic when progression allows)
+        for _, cmd in ipairs(M.bstPetCommands) do
+            table.insert(commands, { name = cmd.name, category = cmd.category, level = cmd.level });
+            if cmd.name == 'Sic' and horizonDefinesBstReadyPetCommand() then
+                if horizonDefinesBstJugReadyMoves() then
+                    table.insert(commands, {
+                        name = 'Ready (Recast)',
+                        category = 'Command',
+                        level = readyLvl,
+                        petMacroAction = 'Ready',
+                        bstReadySynthetic = 'recast',
+                    });
+                    table.insert(commands, {
+                        name = 'Ready (Use)',
+                        category = 'Command',
+                        level = readyLvl,
+                        bstReadySynthetic = 'use',
+                    });
+                else
+                    table.insert(commands, {
+                        name = 'Ready',
+                        category = 'Command',
+                        level = readyLvl,
+                    });
                 end
-            end
-        else
-            -- No specific pet - add all ready moves
-            local allMoves = M.GetAllReadyMoves();
-            for _, move in ipairs(allMoves) do
-                table.insert(commands, move);
             end
         end
     end
 
     return commands;
 end
+
+-- ============================================
+-- "Show All" Expanded List Builders (level-gated)
+-- ============================================
+
+local STATUS_HAVE = 'have';
+local STATUS_UNAVAILABLE = 'unavailable';
+
+--- Get BST pet commands with level-gated status from horizon_abilities.
+--- When jug Ready moves are enabled, replaces plain Ready with "Ready (Recast)" + "Ready (Use)"; jug abilities are chosen via the macro editor sub-picker, not this flat list.
+---@param bstLevel number The player's BST level
+---@param activePetName string|nil Reserved for callers (jug list no longer merged here)
+---@return table Array of {name, category, level, status, reqStr}
+function M.GetBstPetCommandsExpanded(bstLevel, activePetName)
+    local horizonAbilities = require('modules.hotbar.database.horizon_abilities');
+    local commands = {};
+
+    for cmdName, info in pairs(horizonAbilities) do
+        if not info.pet then goto continue; end
+
+        if cmdName == 'Ready' and horizonDefinesBstJugReadyMoves() then
+            local status = (bstLevel >= info.level) and STATUS_HAVE or STATUS_UNAVAILABLE;
+            local reason = status == STATUS_UNAVAILABLE and ('Requires BST Lv. ' .. tostring(info.level)) or nil;
+            local reqStr = 'Lv.' .. tostring(info.level);
+            table.insert(commands, {
+                name = 'Ready (Recast)',
+                category = 'Command',
+                level = info.level,
+                status = status,
+                reqStr = reqStr,
+                reason = reason,
+                petMacroAction = 'Ready',
+                bstReadySynthetic = 'recast',
+            });
+            table.insert(commands, {
+                name = 'Ready (Use)',
+                category = 'Command',
+                level = info.level,
+                status = status,
+                reqStr = reqStr,
+                reason = reason,
+                bstReadySynthetic = 'use',
+            });
+            goto continue;
+        end
+
+        local status = (bstLevel >= info.level) and STATUS_HAVE or STATUS_UNAVAILABLE;
+        table.insert(commands, {
+            name = cmdName,
+            category = 'Command',
+            level = info.level,
+            status = status,
+            reqStr = 'Lv.' .. tostring(info.level),
+            reason = status == STATUS_UNAVAILABLE and ('Requires BST Lv. ' .. tostring(info.level)) or nil,
+        });
+        ::continue::
+    end
+
+    table.sort(commands, function(a, b)
+        local sa = a.status == STATUS_HAVE and 1 or 2;
+        local sb = b.status == STATUS_HAVE and 1 or 2;
+        if sa ~= sb then return sa < sb; end
+        local la = a.level or 999;
+        local lb = b.level or 999;
+        if la ~= lb then return la < lb; end
+        return a.name < b.name;
+    end);
+
+    return commands;
+end
+
+--- Get blood pacts for a specific avatar (or all) with level-gated status.
+---@param avatarName string|nil Avatar name to filter by, or nil for all
+---@param smnLevel number The player's SMN level
+---@return table Array of {name, category, level, mp, status, reqStr}
+function M.GetBloodPactsExpanded(avatarName, smnLevel)
+    local pacts = {};
+    local seen = {};
+
+    local function addPact(pact, cat)
+        if seen[pact.name] then return; end
+        if avatarName then
+            local match = false;
+            for _, av in ipairs(pact.avatars) do
+                if av == avatarName then match = true; break; end
+            end
+            if not match then return; end
+        end
+
+        local bpData = horizonBloodPacts.byName and horizonBloodPacts.byName[pact.name];
+        local level = 0;
+        local mp = 0;
+        if bpData then
+            level = (bpData.levels and bpData.levels[15]) or 0;
+            mp = bpData.mp_cost or 0;
+        end
+
+        local status;
+        if level <= 0 or smnLevel >= level then
+            status = STATUS_HAVE;
+        else
+            status = STATUS_UNAVAILABLE;
+        end
+
+        local reqStr;
+        if level > 0 then
+            reqStr = 'Lv.' .. tostring(level);
+        end
+
+        seen[pact.name] = true;
+        local mergedRow = M.GetBloodPactByName(pact.name);
+        local requiresAstralFlow = mergedRow and mergedRow.requiresFlow == true;
+        local pinkStarTooltip = requiresAstralFlow and universalTwoHour.PINK_STAR_ASTRAL_FLOW_TOOLTIP or nil;
+        table.insert(pacts, {
+            name = pact.name,
+            category = cat,
+            level = level,
+            mp = mp,
+            status = status,
+            reqStr = reqStr,
+            reason = (status == STATUS_UNAVAILABLE and level > 0) and ('Requires SMN Lv. ' .. tostring(level)) or nil,
+            pinkStarTooltip = pinkStarTooltip,
+            requiresAstralFlow = requiresAstralFlow,
+        });
+    end
+
+    -- SMN pet commands (Assault, Release, Retreat) — always available at level 1
+    for _, cmd in ipairs(M.smnPetCommands) do
+        local status = (smnLevel >= cmd.level) and STATUS_HAVE or STATUS_UNAVAILABLE;
+        table.insert(pacts, {
+            name = cmd.name,
+            category = 'Command',
+            level = cmd.level,
+            mp = 0,
+            status = status,
+            reqStr = 'Lv.' .. tostring(cmd.level),
+            reason = status == STATUS_UNAVAILABLE and ('Requires SMN Lv. ' .. tostring(cmd.level)) or nil,
+            requiresAstralFlow = false,
+        });
+    end
+
+    for _, pact in ipairs(M.bloodPactsRage) do
+        addPact(pact, 'BP: Rage');
+    end
+    for _, pact in ipairs(M.bloodPactsWard) do
+        addPact(pact, 'BP: Ward');
+    end
+
+    -- Sort: Astral Flow–only blood pacts first (SMN “two-hour style”), then Commands, BP: Rage, BP: Ward.
+    -- Within each band: availability, level, name.
+    local CAT_SORT = { ['Command'] = 1, ['BP: Rage'] = 2, ['BP: Ward'] = 3 };
+    table.sort(pacts, function(a, b)
+        local fa = a.requiresAstralFlow and 0 or 1;
+        local fb = b.requiresAstralFlow and 0 or 1;
+        if fa ~= fb then return fa < fb; end
+        local ca = CAT_SORT[a.category] or 9;
+        local cb = CAT_SORT[b.category] or 9;
+        if ca ~= cb then return ca < cb; end
+        local sa = a.status == STATUS_HAVE and 1 or 2;
+        local sb = b.status == STATUS_HAVE and 1 or 2;
+        if sa ~= sb then return sa < sb; end
+        if a.level ~= b.level then return a.level < b.level; end
+        return a.name < b.name;
+    end);
+
+    return pacts;
+end
+
+M.STATUS_HAVE = STATUS_HAVE;
+M.STATUS_UNAVAILABLE = STATUS_UNAVAILABLE;
 
 return M;
