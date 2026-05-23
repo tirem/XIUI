@@ -51,6 +51,93 @@ local function LoadTextureFromPath(filePath)
     return textureData;
 end
 
+-- Keys: iconname_<lowercase alnum only> — matches "Fire Spirit", "fire spirit", "FireSpirit", "firespirit"
+local ICONNAME_PREFIX = 'iconname_';
+
+local function normalizeSpellIconLookupKey(name)
+    if not name then return ''; end
+    return tostring(name):lower():gsub('[^a-z0-9]', '');
+end
+
+local function storeIconBySpellNameVariants(cache, texture, ...)
+    if not cache or not texture then return; end
+    for i = 1, select('#', ...) do
+        local s = select(i, ...);
+        local k = normalizeSpellIconLookupKey(s);
+        if k ~= '' then
+            cache[ICONNAME_PREFIX .. k] = texture;
+        end
+    end
+end
+
+-- Stems like Sneak_Attack_Icon normalize to sneakattackicon; ability lookups use sneakattack (from "Sneak Attack").
+-- Register the base stem under the ability key when the slot is still free (do not override a plain Sneak_Attack.png).
+local function spellLookupAliasStemFromIconFilenameStem(stem)
+    if not stem or stem == '' then return nil; end
+    return stem:match('^(.+)_[Ii]con$');
+end
+
+local function storeSpellNameLookupAliasIfVacant(cache, texture, nameFragment)
+    if not cache or not texture or not nameFragment or nameFragment == '' then return; end
+    local k = normalizeSpellIconLookupKey(nameFragment);
+    if k == '' or cache[ICONNAME_PREFIX .. k] then return; end
+    cache[ICONNAME_PREFIX .. k] = texture;
+end
+
+-- Optional folders: any .png is loaded and keyed by normalized filename stem (handles Summons/, Summoning/, etc.)
+local function loadPngDirectoryIndexedBySpellName(cache, dir)
+    if not cache or not dir or dir == '' then return; end
+    if not ashita.fs or not ashita.fs.get_directory then return; end
+    local files = ashita.fs.get_directory(dir, '.*%.png$');
+    if not files then return; end
+    for _, file in pairs(files) do
+        local stem = file:match('^(.+)%.[pP][nN][gG]$');
+        if stem then
+            local nk = normalizeSpellIconLookupKey(stem);
+            if nk ~= '' and not cache[ICONNAME_PREFIX .. nk] then
+                local fullPath = dir .. file;
+                local texture = LoadTextureFromPath(fullPath);
+                if texture then
+                    storeIconBySpellNameVariants(cache, texture, stem);
+                    local aliasStem = spellLookupAliasStemFromIconFilenameStem(stem);
+                    if aliasStem then
+                        storeSpellNameLookupAliasIfVacant(cache, texture, aliasStem);
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- Recursively index PNGs for GetIconBySpellName (e.g. assets/hotbar/custom/ffxiv/nin/*.png).
+local function loadPngDirectoryTreeIndexedBySpellName(cache, rootDir, depthLeft)
+    if not cache or not rootDir or rootDir == '' then return; end
+    depthLeft = (depthLeft == nil) and 8 or depthLeft;
+    if depthLeft < 0 then return; end
+    if not ashita.fs or not ashita.fs.get_directory then return; end
+    loadPngDirectoryIndexedBySpellName(cache, rootDir);
+    if depthLeft == 0 then return; end
+    local contents = ashita.fs.get_directory(rootDir, '.*');
+    if not contents then return; end
+    for _, entry in pairs(contents) do
+        if not entry:match('%.') then
+            loadPngDirectoryTreeIndexedBySpellName(cache, rootDir .. entry .. '\\', depthLeft - 1);
+        end
+    end
+end
+
+-- SMN spirit filenames (CamelCase) -> in-game spell names (for /ma "Fire Spirit" …)
+local SMN_FILE_TO_SPELL_NAME = {
+    FireSpirit = 'Fire Spirit',
+    IceSpirit = 'Ice Spirit',
+    AirSpirit = 'Air Spirit',
+    EarthSpirit = 'Earth Spirit',
+    ThunderSpirit = 'Thunder Spirit',
+    WaterSpirit = 'Water Spirit',
+    LightSpirit = 'Light Spirit',
+    DarkSpirit = 'Dark Spirit',
+};
+
 local textures = {};
 
 textures.Initialize = function(self)
@@ -198,11 +285,24 @@ textures.Initialize = function(self)
         local texture = LoadTextureFromPath(fullPath);
         if texture then
             self.Cache[icon.key] = texture;
+            storeIconBySpellNameVariants(self.Cache, texture, icon.file);
+            local spaced = SMN_FILE_TO_SPELL_NAME[icon.file];
+            if spaced then
+                storeIconBySpellNameVariants(self.Cache, texture, spaced);
+            end
         end
     end
 
+    -- Same spell icons may live under Summons/ or Summoning/ with different file naming; all match by normalized name
+    loadPngDirectoryIndexedBySpellName(self.Cache, assetsDirectory .. 'Summons\\');
+    loadPngDirectoryIndexedBySpellName(self.Cache, assetsDirectory .. 'Summoning\\');
+
     -- Load custom icons from hotbar/custom directory
     local customDirectory = string.format('%saddons\\XIUI\\assets\\hotbar\\custom\\', AshitaCore:GetInstallPath());
+
+    -- FFXIV-style per-job folders: register PNGs for name-based lookup (macro /ja badge, GetBindIcon ja/ws/ma).
+    loadPngDirectoryTreeIndexedBySpellName(self.Cache, customDirectory .. 'ffxiv\\', 8);
+    self._ffxivSpellNameIndexLoaded = true;
 
     -- Trust icons
     local trustIcons = {
@@ -347,6 +447,7 @@ textures.Release = function(self)
     if self.Cache then
         self.Cache = nil;
     end
+    self._ffxivSpellNameIndexLoaded = nil;
 end
 
 -- Get texture by filename or key
@@ -355,6 +456,25 @@ textures.Get = function(self, key)
         return nil;
     end
     return self.Cache[key];
+end
+
+--- Resolve a spell/summon icon from assets indexed by normalized English name (any casing/spacing).
+textures.GetIconBySpellName = function(self, spellName)
+    if not spellName or spellName == '' then
+        return nil;
+    end
+    if not self.Cache then
+        return nil;
+    end
+    -- Initialize() skips work when Cache already exists (e.g. addon Lua reload); index custom/ffxiv once on first lookup.
+    if not self._ffxivSpellNameIndexLoaded then
+        local customDirectory = string.format('%saddons\\XIUI\\assets\\hotbar\\custom\\', AshitaCore:GetInstallPath());
+        loadPngDirectoryTreeIndexedBySpellName(self.Cache, customDirectory .. 'ffxiv\\', 8);
+        self._ffxivSpellNameIndexLoaded = true;
+    end
+    local k = normalizeSpellIconLookupKey(spellName);
+    if k == '' then return nil; end
+    return self.Cache[ICONNAME_PREFIX .. k];
 end
 
 -- Get texture path by key (for primitive rendering)
