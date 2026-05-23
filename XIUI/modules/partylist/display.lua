@@ -13,7 +13,6 @@ local statusIcons = require('libs.statusicons');
 local progressbar = require('libs.progressbar');
 local windowBg = require('libs.windowbackground');
 local encoding = require('libs.encoding');
-local ashita_settings = require('settings');
 local castcostShared = require('modules.castcost.shared');
 local defaultPositions = require('libs.defaultpositions');
 local imtext = require('libs.imtext');
@@ -983,13 +982,20 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
                 local buffCount = 0;
                 local debuffCount = 0;
-                for i = 0, #memInfo.buffs do
-                    if (buffTable.IsBuff(memInfo.buffs[i])) then
+                -- Buff IDs are stored 1-based (see statushandler.ReadPartyBuffsFromPacket); index 0 is always nil —
+                -- looping from 0 put nil through IsBuff(nil) which classified it as a debuff, then DrawStatusIcons
+                -- called the native renderer with a nil id and could crash.
+                for i = 1, #memInfo.buffs do
+                    local sid = memInfo.buffs[i];
+                    if sid == nil or sid == -1 or sid == 255 then
+                        break;
+                    end
+                    if buffTable.IsBuff(sid) then
                         buffCount = buffCount + 1;
-                        data.reusableBuffs[buffCount] = memInfo.buffs[i];
+                        data.reusableBuffs[buffCount] = sid;
                     else
                         debuffCount = debuffCount + 1;
-                        data.reusableDebuffs[debuffCount] = memInfo.buffs[i];
+                        data.reusableDebuffs[debuffCount] = sid;
                     end
                 end
 
@@ -1290,12 +1296,25 @@ function display.DrawPartyWindow(settings, party, partyIndex)
     imgui.PopStyleVar(2);
 
     -- Handle bottom alignment
+    -- When alignBottom is true the window grows UPWARD and the bottom edge stays fixed.
+    -- ImGui windows are positioned by their top-left corner, so when the content height
+    -- changes we compensate by moving the top-left up or down by the same delta.
+    --
+    -- Two sources of drift prevented here:
+    --   1. positionJustApplied (ApplyWindowPosition fired this frame): the saved
+    --      windowPositions top may be from a different party-size session. If the saved
+    --      partyListState.y disagrees with the applied Y, clear it so a stale height
+    --      doesn't trigger a wrong correction. If they agree, the height-correction
+    --      block must still run to keep the bottom edge fixed across profile switches.
+    --   2. After any height-correction SetWindowPos, windowPositions is updated
+    --      immediately so a quick addon reload doesn't re-apply the pre-correction Y.
     if (settings.alignBottom and imguiPosX ~= nil) then
+        -- Legacy migration: partyListState was previously a flat table instead of partyIndex-keyed
         if (partyIndex == 1 and gConfig.partyListState ~= nil and gConfig.partyListState.x ~= nil) then
             local oldValues = gConfig.partyListState;
             gConfig.partyListState = {};
             gConfig.partyListState[partyIndex] = oldValues;
-            ashita_settings.save();
+            SaveSettingsOnly();
         end
 
         if (gConfig.partyListState == nil) then
@@ -1304,22 +1323,61 @@ function display.DrawPartyWindow(settings, party, partyIndex)
 
         local partyListState = gConfig.partyListState[partyIndex];
 
-        -- Detect external position change (forced reset, user drag, etc.)
-        -- Note: We don't use positionJustApplied here because partyListState is persisted
-        -- in the profile and should be preserved on normal login (when positions are applied
-        -- from saved data). RecoverAllPositions explicitly clears partyListState for resets.
-        local positionChanged = partyListState ~= nil and partyListState.y ~= nil and partyListState.y ~= imguiPosY;
+        -- positionChanged: detects user dragging the window (top Y moved externally).
+        -- Guard: only check when positionJustApplied is false, because on the first frame
+        -- after a load the applied Y may differ from the stale saved partyListState.y,
+        -- which would otherwise look like a drag and suppress the needed correction.
+        local positionChanged = (not positionJustApplied)
+            and partyListState ~= nil
+            and partyListState.y ~= nil
+            and partyListState.y ~= imguiPosY;
 
-        if positionChanged then
-            -- Position was externally moved; clear tracking so height adjustment
-            -- doesn't fire until state is re-established on the next frame
+        -- On positionJustApplied, only clear partyListState if its saved Y doesn't match
+        -- the applied Y — that would indicate a stale/corrupt state. If the Ys match,
+        -- the height may still differ (e.g. profile switch with different party size) so
+        -- we must let the height-correction block below run to keep the bottom edge fixed.
+        local staleAfterApply = positionJustApplied
+            and partyListState ~= nil
+            and partyListState.y ~= imguiPosY;
+
+        if staleAfterApply then
+            -- Saved anchor Y doesn't match the applied position — discard stale height tracking.
             gConfig.partyListState[partyIndex] = nil;
+        elseif positionChanged then
+            -- User dragged the window; reset the bottom anchor to the new location.
+            gConfig.partyListState[partyIndex] = {
+                x = imguiPosX,
+                y = imguiPosY,
+                width = menuWidth,
+                height = menuHeight,
+            };
+            if gConfig.windowPositions then
+                if not gConfig.windowPositions[windowName] then
+                    gConfig.windowPositions[windowName] = {};
+                end
+                gConfig.windowPositions[windowName].x = imguiPosX;
+                gConfig.windowPositions[windowName].y = imguiPosY;
+            end
+            data.lastSettingsSaveTime = os.clock();
+            data.pendingSettingsSave = true;
         else
             if (partyListState ~= nil) then
                 if (menuHeight ~= partyListState.height) then
+                    -- Content height changed — shift the window top by the delta so the
+                    -- bottom edge stays fixed at partyListState.y + partyListState.height.
                     local newPosY = partyListState.y + partyListState.height - menuHeight;
                     imguiPosY = newPosY;
                     imgui.SetWindowPos(windowName, { imguiPosX, imguiPosY });
+                    -- Sync windowPositions immediately so the corrected Y is used on the
+                    -- next ApplyWindowPosition call (e.g. quick addon reload before the
+                    -- next frame's SaveWindowPosition can run).
+                    if gConfig.windowPositions then
+                        if not gConfig.windowPositions[windowName] then
+                            gConfig.windowPositions[windowName] = {};
+                        end
+                        gConfig.windowPositions[windowName].x = imguiPosX;
+                        gConfig.windowPositions[windowName].y = imguiPosY;
+                    end
                 end
             end
 
@@ -1402,7 +1460,7 @@ function display.DrawWindow(settings)
     if data.pendingSettingsSave then
         local now = os.clock();
         if now - data.lastSettingsSaveTime >= data.SETTINGS_SAVE_DEBOUNCE then
-            ashita_settings.save();
+            SaveSettingsOnly();
             data.pendingSettingsSave = false;
         end
     end
