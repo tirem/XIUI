@@ -50,11 +50,11 @@ function M.GetSubTargetActive()
         return true;
     end
 
-    -- Fallback: Check if there's a valid entity in sub-target slot (index 1)
-    -- that differs from main target - indicates sub-targeting even if API doesn't report it
+    -- Fallback: sub-target slot (1) differs from main slot (0). Includes main==0 with a pending
+    -- <stpc>/<stnpc> pick (no prior target) — previous logic required main~=0 and missed that case.
     local mainTarget = playerTarget:GetTargetIndex(0);
     local subTarget = playerTarget:GetTargetIndex(1);
-    if mainTarget ~= 0 and subTarget ~= 0 and subTarget ~= mainTarget then
+    if subTarget ~= 0 and subTarget ~= mainTarget then
         return true;
     end
 
