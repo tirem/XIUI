@@ -16,10 +16,35 @@ local textures = require('modules.hotbar.textures');
 local skillchain = require('modules.hotbar.skillchain');
 local statusHandler = require('handlers.statushandler');
 local imtext = require('libs.imtext');
+-- TextureManager.DeferRelease holds Lua refs alive for one frame so wiping the
+-- texturePtrCache mid-frame (e.g. palette delete fires InvalidateAllVisualCachesAfter
+-- PaletteListMutation) doesn't race the current frame's queued AddImage calls.
+local TextureManager = require('libs.texturemanager');
+-- libs/color.lua has ARGB <-> ImGui U32 + HSV<->RGB helpers we use for UTH effects.
+-- Audit pass deduped a local ArgbToImguiU32 and a local UthHsvToRgb that had identical math.
+local colorlib = require('libs.color');
+-- universal_two_hour is a Ferris addition that tracks the universal-2hr armed-slot state
+-- so the rainbow ring glow knows which slot to decorate. Loaded with pcall so 1.7.5-era
+-- forks without the module still render normal slots without crashing.
+local universalTwoHour = nil;
+do
+    local ok, mod = pcall(require, 'modules.hotbar.universal_two_hour');
+    if ok then universalTwoHour = mod; end
+end
 
 -- Deferred tooltip: stored during render, drawn after all windows to ensure z-order
 local pendingTooltipBind = nil;
 local tooltipFontSettings = nil;
+
+-- Manual double-click tracking. Using `imgui.IsMouseDoubleClicked` here is unreliable
+-- because the drag/drop system swallows the first click on slots that participate in
+-- drag (the first MouseDown starts a deferred-drag candidate which suppresses the click).
+-- We instead track the last click target and its timestamp ourselves and decide on
+-- MouseReleased(0) — that's the same point WasDragAttempted resolves, so double-click
+-- semantics stay consistent with single-click semantics.
+local lastClickButtonId = nil;
+local lastClickTime = 0;
+local DOUBLE_CLICK_INTERVAL = 0.35;
 
 -- Tooltip constants (ARGB for text colors used with imtext, ABGR/U32 for rect colors)
 local TOOLTIP_FONT_SIZE = 12;
@@ -36,10 +61,80 @@ local ACTION_TYPE_LABELS = {
 
 -- Cache for MP cost lookups (keyed by action key string)
 local mpCostCache = {};
+local mpCostCacheSize = 0;
+local MP_COST_CACHE_MAX = 4096;
 
--- Cache for action availability checks (keyed by action key string)
+-- Cache for action availability checks (keyed by action key string).
 -- Structure: { isAvailable = bool, reason = string|nil }
+-- The cache key embeds (main job, sub job, main level, sub level, party-member main/sub level)
+-- so Level Sync transitions invalidate previously-cached availabilities (a spell that was
+-- available at L75 may stop being available at synced L40). Without this the cache returns
+-- stale results across sync changes. Size-bounded by AVAILABILITY_CACHE_MAX — when exceeded
+-- the cache is reset wholesale (cheaper than LRU eviction for a frequently-rebuilt cache).
 local availabilityCache = {};
+local availabilityCacheSize = 0;
+local AVAILABILITY_CACHE_MAX = 8192;
+
+local function PutMpCostCache(key, value)
+    if mpCostCache[key] == nil then
+        mpCostCacheSize = mpCostCacheSize + 1;
+        if mpCostCacheSize > MP_COST_CACHE_MAX then
+            mpCostCache = {};
+            mpCostCacheSize = 0;
+        end
+    end
+    mpCostCache[key] = value;
+end
+
+local function PutAvailabilityCache(key, value)
+    if availabilityCache[key] == nil then
+        availabilityCacheSize = availabilityCacheSize + 1;
+        if availabilityCacheSize > AVAILABILITY_CACHE_MAX then
+            availabilityCache = {};
+            availabilityCacheSize = 0;
+        end
+    end
+    availabilityCache[key] = value;
+end
+
+-- Per-frame snapshot of (player, party, job ids, effective levels). Reset at BeginFrame
+-- and read lazily from the availability path so we only walk the MemoryManager once per
+-- frame instead of once per (slot * frame). At ~16 main-bar slots + 16 preview slots + N
+-- keyboard bars this drops the per-frame FFI walk from N*7 getters to a constant ~7. The
+-- snapshot is intentionally lazy (first slot that needs it warms it) so frames without
+-- any availability checks pay zero cost.
+--
+-- IMPORTANT: keep this declared BEFORE M.DrawSlot — Lua local-function forward references
+-- only work if the symbol is visible at the call site. Putting it after caused a
+-- "attempt to call global 'GetFrameAvailability' (a nil value)" load error.
+local frameAvail = { ready = false };
+
+local function GetFrameAvailability()
+    if frameAvail.ready then return frameAvail; end
+    local memMgr = AshitaCore:GetMemoryManager();
+    local player = memMgr and memMgr:GetPlayer();
+    if not player then
+        frameAvail.ready = true;
+        frameAvail.jobId = 0; frameAvail.subjobId = 0;
+        frameAvail.mainLevel = 0; frameAvail.subLevel = 0;
+        frameAvail.partyMain = 0; frameAvail.partySub = 0;
+        return frameAvail;
+    end
+    frameAvail.jobId     = player:GetMainJob() or 0;
+    frameAvail.subjobId  = player:GetSubJob() or 0;
+    frameAvail.mainLevel = player:GetMainJobLevel() or 0;
+    frameAvail.subLevel  = player:GetSubJobLevel() or 0;
+    local partyMain, partySub = 0, 0;
+    local party = memMgr and memMgr:GetParty();
+    if party then
+        partyMain = party:GetMemberMainJobLevel(0) or 0;
+        partySub  = party:GetMemberSubJobLevel(0) or 0;
+    end
+    frameAvail.partyMain = partyMain;
+    frameAvail.partySub  = partySub;
+    frameAvail.ready     = true;
+    return frameAvail;
+end
 
 -- Cache for item quantity lookups (keyed by itemId or itemName)
 -- Structure: { quantity = number, timestamp = number }
@@ -366,7 +461,10 @@ local assetsPath = nil;
 
 -- Reusable result table for DrawSlot to avoid GC pressure
 -- (Creating tables per-slot per-frame causes ~7200 allocations/sec)
-local drawSlotResult = { isHovered = false };
+-- Reusable result table for M.DrawSlot. `command` is the resolved command string for the
+-- slot's bind (so callers can dispatch on click without re-calling actions.BuildCommandString
+-- per click); nil for empty / unbindable slots.
+local drawSlotResult = { isHovered = false, command = nil };
 
 -- Reusable position/UV tables for AddImage (avoids per-call table allocations)
 local imgP1 = {0, 0};
@@ -399,12 +497,22 @@ end
 -- Clear all cached state
 function M.ClearAllCache()
     availabilityCache = {};
+    availabilityCacheSize = 0;
     mpCostCache = {};
+    mpCostCacheSize = 0;
     equipmentCheckCache = {};
     ninjutsuCache = {};
     itemQuantityCache = {};
     stackSizeCache = {};
     ammoStatusCache = {};
+    -- texturePtrCache holds the SOLE Lua ref to D3D textures loaded via LoadTextureFromPath
+    -- (the underlying entries have a d3d8.gc_safe_release finalizer). Dropping the table
+    -- mid-frame would let Lua GC release the COM texture while AddImage calls for it are
+    -- still queued in this frame's draw list — that's the same EXCEPTION_ACCESS_VIOLATION
+    -- pattern that TextureManager.deferRelease guards against. Hand the table off to
+    -- TextureManager.DeferRelease so it stays alive until FlushPendingReleases runs at the
+    -- top of next d3d_present.
+    TextureManager.DeferRelease(texturePtrCache);
     texturePtrCache = {};
 end
 
@@ -412,12 +520,15 @@ end
 -- Does NOT clear availability, MP cost, or item quantity caches
 -- OPTIMIZED: Use this for palette changes to avoid unnecessary recalculation cascade
 function M.ClearSlotRenderingCache()
+    -- See M.ClearAllCache for rationale; same mid-frame texture-release race applies here.
+    TextureManager.DeferRelease(texturePtrCache);
     texturePtrCache = {};
 end
 
 -- Clear availability cache (call on job change, level sync, etc.)
 function M.ClearAvailabilityCache()
     availabilityCache = {};
+    availabilityCacheSize = 0;
 end
 
 -- Clear MP cost cache (call when a slot's action/spell may have changed, e.g. macro edits).
@@ -425,6 +536,7 @@ end
 -- until the addon reloads.
 function M.ClearMPCostCache()
     mpCostCache = {};
+    mpCostCacheSize = 0;
 end
 
 -- Clear item quantity cache (call on inventory changes)
@@ -533,6 +645,146 @@ local function DrawDashedLine(drawList, x1, y1, x2, y2, color, thickness, dashLe
     end
 end
 
+-- ============================================
+-- ARGB color helpers (XIUI palette uses 0xAARRGGBB; ImGui AddText/AddRect take GetColorU32{r,g,b,a}).
+-- ScaleArgbOpacity / DimArgbColor / LerpArgbTowardWhite are slotrenderer-specific tone-mapping
+-- ops and live here; the basic ARGB<->ImGui U32 conversion is delegated to libs/color.lua.
+-- ============================================
+
+local ArgbToImguiU32 = colorlib.ARGBToU32;
+
+local function ScaleArgbOpacity(argb, opacity)
+    if not opacity or opacity >= 0.999 then return argb; end
+    local a = bit.rshift(bit.band(argb, 0xFF000000), 24);
+    a = math.floor(a * opacity);
+    if a < 0 then a = 0; elseif a > 255 then a = 255; end
+    return bit.bor(bit.lshift(a, 24), bit.band(argb, 0x00FFFFFF));
+end
+
+local function DimArgbColor(argb, factor)
+    if not factor or factor >= 0.999 then return argb; end
+    local a = bit.band(bit.rshift(argb, 24), 0xFF);
+    local r = math.floor(bit.band(bit.rshift(argb, 16), 0xFF) * factor);
+    local g = math.floor(bit.band(bit.rshift(argb, 8), 0xFF) * factor);
+    local b = math.floor(bit.band(argb, 0xFF) * factor);
+    return bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
+end
+
+local function LerpArgbTowardWhite(argb, t)
+    if not argb or t <= 0 then return argb; end
+    if t > 1 then t = 1; end
+    local a = bit.rshift(bit.band(argb, 0xFF000000), 24);
+    local r = bit.rshift(bit.band(argb, 0x00FF0000), 16);
+    local g = bit.rshift(bit.band(argb, 0x0000FF00), 8);
+    local b = bit.band(argb, 0x000000FF);
+    r = math.floor(r + (255 - r) * t);
+    g = math.floor(g + (255 - g) * t);
+    b = math.floor(b + (255 - b) * t);
+    return bit.bor(bit.lshift(a, 24), bit.lshift(r, 16), bit.lshift(g, 8), b);
+end
+
+-- ============================================
+-- Universal Two-Hour (UTH) visual effects: rainbow marching border + subtarget ring glow.
+-- Triggered when an action is the "armed" universal 2hr ability awaiting <stpc>/<stnpc> confirmation.
+-- All pure ImGui drawList ops; no font or persistent-primitive dependencies.
+-- ============================================
+
+-- HSV (h in [0,1)) -> RGB used by the rainbow color cycling for UTH.
+-- Thin wrapper over libs/color.lua's shared hsvToRgb so the UTH animation always
+-- stays in sync with whatever color math the rest of the addon uses.
+local function UthHsvToRgb(h, s, v)
+    h = math.fmod(h, 1.0);
+    if h < 0 then h = h + 1.0; end
+    return colorlib.hsvToRgb(h, s, v);
+end
+
+-- Skillchain-style marching dashed rect; rainbow hue shifts with animation offset + time.
+local function DrawUniversalTwoHourRainbowMarchingBorder(drawList, x1, y1, x2, y2, opacityMul)
+    if not drawList or opacityMul <= 0.01 then return; end
+    local animOffset = skillchain.GetAnimationOffset();
+    local t = os.clock();
+    local dashLen = 4;
+    local gapLen = 4;
+    local thickness = 2.5;
+    local hueBase = math.fmod(animOffset * 0.0035 + t * 0.052, 1.0);
+    local function edgeColor(edgeIdx)
+        local h = math.fmod(hueBase + edgeIdx * 0.085, 1.0);
+        local r, g, b = UthHsvToRgb(h, 0.74, 1.0);
+        return imgui.GetColorU32({ r, g, b, 0.9 * opacityMul });
+    end
+    DrawDashedLine(drawList, x1, y1, x2, y1, edgeColor(0), thickness, dashLen, gapLen, animOffset);
+    DrawDashedLine(drawList, x2, y1, x2, y2, edgeColor(1), thickness, dashLen, gapLen, animOffset);
+    DrawDashedLine(drawList, x2, y2, x1, y2, edgeColor(2), thickness, dashLen, gapLen, animOffset);
+    DrawDashedLine(drawList, x1, y2, x1, y1, edgeColor(3), thickness, dashLen, gapLen, animOffset);
+end
+
+-- Rainbow rotating rings while Universal 2 Hour waits on <stpc>/<stnpc> confirmation.
+-- Ring radii breathe (collapse / expand); dashed border stays on the slot edge.
+-- Opacity uses animOpacity * dimFactor * armFadeScale.
+local function DrawUniversalTwoHourSubtargetGlow(drawList, x, y, size, animOpacity, dimFactor, armFadeScale)
+    if not drawList or animOpacity <= 0.01 then return; end
+    armFadeScale = armFadeScale or 1.0;
+    if armFadeScale <= 0.01 then return; end
+    local cx = x + size * 0.5;
+    local cy = y + size * 0.5;
+    local t = os.clock();
+    local op = math.min(1.0, animOpacity * dimFactor) * armFadeScale;
+
+    -- Collapse toward center then expand (cosine ease per cycle) — line rings only, no filled wash over the icon.
+    local breatheMin = 0.46;
+    local breathe = breatheMin + (1.0 - breatheMin) * (0.5 + 0.5 * math.cos(t * 3.05));
+
+    local function rainbowDashRing(spin, rad, thick, segs, hueSpin, lineAlpha, dashPred)
+        rad = rad * breathe;
+        for i = 0, segs - 1 do
+            if dashPred(i) then
+                local a0 = spin + (i / segs) * math.pi * 2;
+                local a1 = spin + ((i + 1) / segs) * math.pi * 2;
+                local mid = (a0 + a1) * 0.5;
+                local hue = math.fmod(mid / (math.pi * 2) + hueSpin, 1.0);
+                local r, g, b = UthHsvToRgb(hue, 0.82, 1.0);
+                drawList:AddLine(
+                    { cx + math.cos(a0) * rad, cy + math.sin(a0) * rad },
+                    { cx + math.cos(a1) * rad, cy + math.sin(a1) * rad },
+                    imgui.GetColorU32({ r, g, b, lineAlpha * op }),
+                    thick
+                );
+            end
+        end
+    end
+
+    local spinOuter = t * 4.2;
+    local spinInner = -t * 3.1;
+    local hueTravel = t * 0.14;
+
+    rainbowDashRing(-spinOuter, size * 0.485, 2.5, 28, hueTravel + 0.08, 0.78,
+        function(i) return i % 3 ~= 2; end);
+    rainbowDashRing(spinOuter, size * 0.52, 3.2, 28, hueTravel, 0.85,
+        function(i) return i % 3 ~= 0; end);
+    rainbowDashRing(spinInner, size * 0.46, 2.2, 28, hueTravel + 0.17, 0.80,
+        function(i) return i % 3 ~= 0; end);
+
+    local ringPulse = 0.55 + 0.45 * math.sin(t * 5.1);
+    local outerRad = (size * 0.58 + ringPulse * 1.5) * breathe;
+    local outerThick = 2.2 + ringPulse * 0.35;
+    local segsO = 48;
+    for i = 0, segsO - 1 do
+        local a0 = (i / segsO) * math.pi * 2;
+        local a1 = ((i + 1) / segsO) * math.pi * 2;
+        local mid = (a0 + a1) * 0.5;
+        local hue = math.fmod(mid / (math.pi * 2) + hueTravel + 0.05, 1.0);
+        local r, g, b = UthHsvToRgb(hue, 0.75, 1.0);
+        drawList:AddLine(
+            { cx + math.cos(a0) * outerRad, cy + math.sin(a0) * outerRad },
+            { cx + math.cos(a1) * outerRad, cy + math.sin(a1) * outerRad },
+            imgui.GetColorU32({ r, g, b, 0.88 * op }),
+            outerThick
+        );
+    end
+
+    DrawUniversalTwoHourRainbowMarchingBorder(drawList, x, y, x + size, y + size, op);
+end
+
 -- Draw skillchain highlight on a slot (animated dashed border + icon)
 -- @param drawList: ImGui draw list (foreground recommended)
 -- @param x, y: Top-left corner of slot
@@ -540,7 +792,10 @@ end
 -- @param scName: Skillchain name (e.g., 'Light', 'Darkness', 'Fusion')
 -- @param color: Highlight color (ARGB)
 -- @param opacity: Overall opacity (0-1)
-local function DrawSkillchainHighlight(drawList, x, y, size, scName, color, opacity)
+-- @param iconScaleOverride, iconOxOverride, iconOyOverride: optional per-call overrides
+--        (used by the macro palette editor to push the skillchain icon out of the corner
+--        when it would otherwise overlap an action-label or BST-Ready badge).
+local function DrawSkillchainHighlight(drawList, x, y, size, scName, color, opacity, iconScaleOverride, iconOxOverride, iconOyOverride)
     if not drawList or not scName or opacity <= 0.01 then return; end
 
     -- Animation offset for marching ants effect
@@ -568,11 +823,13 @@ local function DrawSkillchainHighlight(drawList, x, y, size, scName, color, opac
     -- Left edge
     DrawDashedLine(drawList, x, y + size, x, y, lineColor, thickness, dashLen, gapLen, animOffset);
 
-    -- Draw skillchain icon in top-right corner
-    local scale = gConfig.hotbarGlobal.skillchainIconScale or 1.0;
+    -- Draw skillchain icon in top-right corner. Per-call overrides take precedence over the
+    -- global config (used by the macro palette editor to relocate the icon out of corners
+    -- that the editor uses for action labels or BST-Ready badges).
+    local scale = iconScaleOverride or gConfig.hotbarGlobal.skillchainIconScale or 1.0;
     local iconSize = math.floor(size * 0.35 * scale);
-    local offsetX = gConfig.hotbarGlobal.skillchainIconOffsetX or 0;
-    local offsetY = gConfig.hotbarGlobal.skillchainIconOffsetY or 0;
+    local offsetX = iconOxOverride or gConfig.hotbarGlobal.skillchainIconOffsetX or 0;
+    local offsetY = iconOyOverride or gConfig.hotbarGlobal.skillchainIconOffsetY or 0;
     local iconX = x + size - iconSize - 2 + offsetX;
     local iconY = y + 2 + offsetY;
 
@@ -600,17 +857,205 @@ local function DrawSkillchainHighlight(drawList, x, y, size, scName, color, opac
     end
 end
 
+-- Draw a Magic Burst highlight on a spell slot. Mirrors DrawSkillchainHighlight (dashed
+-- border + SC-name icon corner badge) so the two highlights read as a visual family, with
+-- two intentional differences:
+--   * Color is sourced from `color` (cyan-blue default), distinct from the gold skillchain
+--     border, so a glance tells the player which window is open.
+--   * Icon is placed in the BOTTOM-LEFT corner instead of top-right. Spells almost never
+--     have a charges-quantity badge to collide with there, and it keeps the corner-budget
+--     separate from MP cost (top-left), skillchain icon (top-right), and stack quantity
+--     (bottom-right). On the rare slot where MB and skillchain are both eligible (a /ws
+--     macro that also matches a /ma element via macroparse picking the wrong primary,
+--     etc.), both icons remain visible.
+-- @param drawList   ImGui draw list (window or foreground)
+-- @param x, y       Top-left of slot
+-- @param size       Slot size in pixels
+-- @param scName     Skillchain name driving the icon (e.g. 'Fusion', 'Light') — same asset
+--                   pool as DrawSkillchainHighlight (assets/hotbar/skillchain/<name>.png).
+-- @param color      Border color in ARGB (0xAARRGGBB)
+-- @param opacity    Render opacity (0-1)
+-- @param iconScaleOverride, iconOxOverride, iconOyOverride: optional per-call overrides
+--                   (mirrors DrawSkillchainHighlight's editor-corner-pushing hooks).
+local function DrawMagicBurstHighlight(drawList, x, y, size, scName, color, opacity, iconScaleOverride, iconOxOverride, iconOyOverride)
+    if not drawList or not scName or opacity <= 0.01 then return; end
+
+    local animOffset = skillchain.GetAnimationOffset();
+
+    -- Decompose ARGB. Same shape as DrawSkillchainHighlight so any future migration to a
+    -- shared helper is a single refactor (not duplicated unpack logic).
+    local a = math.floor(bit.rshift(bit.band(color, 0xFF000000), 24) * opacity);
+    local r = bit.rshift(bit.band(color, 0x00FF0000), 16) / 255;
+    local g = bit.rshift(bit.band(color, 0x0000FF00), 8) / 255;
+    local b = bit.band(color, 0x000000FF) / 255;
+    local lineColor = imgui.GetColorU32({ r, g, b, a / 255 });
+
+    local dashLen = 4;
+    local gapLen = 4;
+    local thickness = 2;
+
+    -- Phase-shift the marching ants by half a dash so the MB pattern doesn't look identical
+    -- to the skillchain pattern when (in some future build) both fire on the same slot.
+    local mbAnimOffset = (animOffset + (dashLen + gapLen) * 0.5) % (dashLen + gapLen);
+
+    DrawDashedLine(drawList, x, y, x + size, y, lineColor, thickness, dashLen, gapLen, mbAnimOffset);
+    DrawDashedLine(drawList, x + size, y, x + size, y + size, lineColor, thickness, dashLen, gapLen, mbAnimOffset);
+    DrawDashedLine(drawList, x + size, y + size, x, y + size, lineColor, thickness, dashLen, gapLen, mbAnimOffset);
+    DrawDashedLine(drawList, x, y + size, x, y, lineColor, thickness, dashLen, gapLen, mbAnimOffset);
+
+    -- Bottom-left icon corner. Reuses the skillchainIcon{Scale|OffsetX|OffsetY} global settings
+    -- so users who already tuned their SC icon size don't have to redo it; the offsets are
+    -- applied relative to the BOTTOM-LEFT anchor (not top-right) so positive Y still means
+    -- "shift down" and positive X still means "shift right" intuitively from the corner.
+    local scale = iconScaleOverride or gConfig.hotbarGlobal.skillchainIconScale or 1.0;
+    local iconSize = math.floor(size * 0.35 * scale);
+    local offsetX = iconOxOverride or gConfig.hotbarGlobal.skillchainIconOffsetX or 0;
+    local offsetY = iconOyOverride or gConfig.hotbarGlobal.skillchainIconOffsetY or 0;
+    local iconX = x + 2 + offsetX;
+    local iconY = y + size - iconSize - 2 + offsetY;
+
+    local iconPath = GetSkillchainIconsPath() .. scName .. '.png';
+    if not skillchainIconCache[scName] then
+        local tex = textures:LoadTextureFromPath(iconPath);
+        skillchainIconCache[scName] = tex;
+    end
+
+    local iconTex = skillchainIconCache[scName];
+    if iconTex and iconTex.image then
+        local iconPtr = tonumber(ffi.cast("uint32_t", iconTex.image));
+        if iconPtr then
+            local iconAlpha = math.floor(255 * opacity);
+            local iconTint = bit.bor(bit.lshift(iconAlpha, 24), 0x00FFFFFF);
+            drawList:AddImage(
+                iconPtr,
+                { iconX, iconY },
+                { iconX + iconSize, iconY + iconSize },
+                { 0, 0 }, { 1, 1 },
+                iconTint
+            );
+        end
+    end
+end
+
 -- Helper: determine if movement/drag-drop is locked for this slot
--- Shift key overrides the lock to allow dragging while locked
+-- Shift key overrides the lock to allow dragging while locked.
+-- Hotbar slots use hotbarLockMovement; crossbar slots use crossbarLockMovement;
+-- palette editor slots ('paled*' drop zones) are never locked so users can edit them.
 local function IsMovementLockedForDropZone(dropZoneId)
     if not dropZoneId then return false; end
     if imgui.GetIO().KeyShift then
         return false;
     end
-    if gConfig and gConfig.hotbarLockMovement then
-        return true;
+    if not gConfig then return false; end
+    if type(dropZoneId) == 'string' and dropZoneId:sub(1, 5) == 'paled' then
+        return false;
     end
-    return false;
+    if type(dropZoneId) == 'string' and dropZoneId:sub(1, 9) == 'crossbar_' then
+        return gConfig.crossbarLockMovement == true;
+    end
+    return gConfig.hotbarLockMovement == true;
+end
+
+-- ============================================
+-- Editor label helpers (Ferris's "Edit Full Palette" view).
+-- Crossbar editor passes `labelForeground = true` + `editorMinimalView = true` so the action
+-- name renders on the slot via ImGui drawList (not via the GDI labelFont). When the editor
+-- view is OFF but `labelForeground` is on, labels render above/below the slot with a soft wrap.
+-- ============================================
+
+local function SplitNewlinesEditor(s)
+    if not s or s == '' then return {}; end
+    local t = {};
+    local startPos = 1;
+    local len = #s;
+    while startPos <= len do
+        local nl = s:find('\n', startPos, true);
+        if not nl then
+            t[#t + 1] = s:sub(startPos);
+            break;
+        end
+        t[#t + 1] = s:sub(startPos, nl - 1);
+        startPos = nl + 1;
+    end
+    return t;
+end
+
+-- Idle abbreviation for Edit Full Palette: first 4 non-whitespace chars of the trimmed name.
+-- Full text is shown when the user hovers the slot; the abbreviation lets even cramped 32px
+-- slots show *something* recognisable while editing the palette.
+local function EditorIdleAbbrev4(fullName)
+    if not fullName or fullName == '' then return ''; end
+    local t = fullName:gsub('^%s+', ''):gsub('%s+$', '');
+    if t == '' then return ''; end
+    if #t <= 4 then return t; end
+    return t:sub(1, 4);
+end
+
+-- Wrap rule for editor labels: at most one newline, with the line closest to the slot holding
+-- a single word so the slot stays visually attached to its label.
+-- labelAboveSlot=true  → "A B C D" -> "A B C\nD"  (last word lands beside the slot)
+-- labelAboveSlot=false → "A B C D" -> "A\nB C D"  (first word lands beside the slot)
+local function EditorLabelWrapNearSlot(text, labelAboveSlot)
+    if not text or text == '' then return text; end
+    local t = text:gsub('^%s+', ''):gsub('%s+$', '');
+    if not t:find('%s') then return t; end
+    local words = {};
+    for w in t:gmatch('%S+') do words[#words + 1] = w; end
+    if #words < 2 then return t; end
+    if labelAboveSlot then
+        local last = table.remove(words);
+        return table.concat(words, ' ') .. '\n' .. last;
+    end
+    local first = table.remove(words, 1);
+    return first .. '\n' .. table.concat(words, ' ');
+end
+
+-- Pixel-snap centre X so adjacent slots' labels line up vertically (fonts at fractional X
+-- jitter visibly when neighbours sit at integer positions).
+local function EditorLabelCenterX(cx, line, fontSize)
+    local w = imtext.Measure(line, fontSize);
+    return math.floor(cx - w * 0.5 + 0.5);
+end
+
+-- Multi-line outlined label centred on slot (editorMinimalView). One imtext.Draw call per line
+-- (which already includes the 4-cardinal outline) — matches Ferris's "thin outline only, no
+-- scrim or halo" style so wrapped lines don't stack thick shadows on each other.
+local function DrawEditorMultilineCenteredOnSlot(drawList, slotX, slotY, slotSize, argbColor, multilineText, fontSize)
+    if not drawList or not multilineText or multilineText == '' or not slotSize or slotSize <= 0 then return; end
+    local raw = SplitNewlinesEditor(multilineText);
+    local lines = {};
+    for i = 1, #raw do
+        if raw[i] ~= '' then lines[#lines + 1] = raw[i]; end
+    end
+    if #lines == 0 then return; end
+    local _, lineH = imtext.Measure('Mg', fontSize);
+    local lineStep = (lineH and lineH > 0) and (lineH + 1) or (fontSize + 2);
+    local cx = slotX + slotSize * 0.5;
+    local cy = slotY + slotSize * 0.5;
+    local totalH = #lines * lineStep;
+    local topY = math.floor(cy - totalH * 0.5 + 0.5);
+    for i = 1, #lines do
+        local px = EditorLabelCenterX(cx, lines[i], fontSize);
+        imtext.Draw(drawList, lines[i], px, topY, argbColor, fontSize);
+        topY = topY + lineStep;
+    end
+end
+
+-- Multi-line outlined label centred above/below the slot (non-minimal editor view).
+local function DrawEditorMultilineCenteredAtY(drawList, cx, topY, argbColor, multilineText, fontSize)
+    if not drawList or not multilineText or multilineText == '' then return; end
+    local lines = SplitNewlinesEditor(multilineText);
+    local _, lineH = imtext.Measure('Mg', fontSize);
+    local lineStep = (lineH and lineH > 0) and (lineH + 1) or (fontSize + 2);
+    local py = math.floor(topY + 0.5);
+    for i = 1, #lines do
+        local line = lines[i];
+        if line ~= '' then
+            local px = EditorLabelCenterX(cx, line, fontSize);
+            imtext.Draw(drawList, line, px, py, argbColor, fontSize);
+        end
+        py = py + lineStep;
+    end
 end
 
 --[[
@@ -619,7 +1064,13 @@ end
     MUST be called inside an ImGui window context for interactions to work.
 
     @param params: Rendering and interaction parameters (position, bind, icon, visual settings, callbacks)
-    @return table: { isHovered } (reused - read values immediately, do NOT cache)
+        Edit Full Palette extras (set by crossbar editor only):
+        - editorClipRect: { minX, minY, maxX, maxY } — slot is hidden when fully outside the rect.
+        - editorStrictContain: bool — when true, ALL of the slot (incl. label) must be inside the rect.
+        - labelForeground: bool — draw the action name via ImGui drawList instead of any GDI font path.
+        - editorMinimalView: bool — draw the label centred on the slot (idle abbreviation, full on hover).
+        - labelAboveSlot: bool — place label above the slot rather than below.
+    @return table: { isHovered, command } (reused - read values immediately, do NOT cache)
 ]]--
 function M.DrawSlot(params)
     local x = params.x;
@@ -632,14 +1083,69 @@ function M.DrawSlot(params)
     local animOpacity = params.animOpacity or 1.0;
     local isPressed = params.isPressed or false;
 
+    -- Crossbar: use the current window draw list so MP/timer/hover overlays stack with other
+    -- ImGui windows (GetForegroundDrawList always paints above every window, which can cover
+    -- modal dialogs). Hotbar and editors keep the shared UI draw list. The selector returns
+    -- the appropriate drawList for overlays drawn on top of the slot icon.
+    local function slotOverlayDrawList()
+        if params.windowName == 'Crossbar' then
+            local wdl = imgui.GetWindowDrawList();
+            if wdl then return wdl; end
+        end
+        return GetUIDrawList();
+    end
+
     -- Reuse result table to avoid GC pressure
     -- NOTE: Caller must read values immediately, do not cache the return value
     drawSlotResult.isHovered = false;
+    drawSlotResult.command = nil;
     local result = drawSlotResult;
 
     -- Skip rendering if fully transparent
     if animOpacity <= 0.01 then
         return result;
+    end
+
+    -- Editor clip rect culling: when the crossbar's Edit Full Palette window scrolls, slots
+    -- can land outside the visible region. With all rendering on ImGui draw lists the parent
+    -- window's clip rect already culls drawing, but the slot still pays for per-frame state
+    -- checks (recast, MP, availability, hover, drag) and emits ImGui draw commands that get
+    -- discarded later. Short-circuiting here turns ~120 slots * (full pipeline) into a single
+    -- 4-comparison reject for off-screen rows.
+    local minimalEditorView = params.editorMinimalView == true;
+    do
+        local clip = params.editorClipRect;
+        if clip and clip[1] and clip[2] and clip[3] and clip[4] then
+            local fs = params.labelFontSize or 10;
+            local padTop, padBot = 4, 4;
+            if params.showLabel and params.labelText and params.labelText ~= '' then
+                if not minimalEditorView then
+                    local extraLinePad = 0;
+                    if params.labelText:find('%s') then
+                        extraLinePad = math.floor(fs * 1.05 + 0.5);
+                    end
+                    if params.labelAboveSlot then
+                        padTop = fs + 14 + extraLinePad;
+                    else
+                        padBot = fs + 14 + extraLinePad;
+                    end
+                end
+                -- editorMinimalView labels render on the slot itself, no extra pad needed.
+            end
+            local sx1 = x;
+            local sy1 = y - padTop;
+            local sx2 = x + size;
+            local sy2 = y + size + padBot;
+            if params.editorStrictContain then
+                if sx1 < clip[1] or sy1 < clip[2] or sx2 > clip[3] or sy2 > clip[4] then
+                    return result;
+                end
+            else
+                if sx2 < clip[1] or sx1 > clip[3] or sy2 < clip[2] or sy1 > clip[4] then
+                    return result;
+                end
+            end
+        end
     end
 
     -- Check hover state
@@ -651,7 +1157,11 @@ function M.DrawSlot(params)
     -- ========================================
     -- 1. Slot Background (ImGui AddImage)
     -- ========================================
-    local drawList = GetUIDrawList();
+    -- For Crossbar windows we draw to the window draw list so all of the slot's
+    -- visual layers (background -> icon -> text -> hover) stack within the window's
+    -- z-order; the shared UI draw list lands ABOVE every ImGui window which can
+    -- cover modals and tooltips.
+    local drawList = slotOverlayDrawList();
     do
         local slotTexPtr = GetCachedTexturePtr(GetSlotTexPath());
         if slotTexPtr and drawList then
@@ -715,7 +1225,7 @@ function M.DrawSlot(params)
         local mpCost = mpCostCache[bindKey];
         if mpCost == nil then
             mpCost = actions.GetMPCost(bind) or false;
-            mpCostCache[bindKey] = mpCost;
+            PutMpCostCache(bindKey, mpCost);
         end
         if mpCost and mpCost ~= false then
             local party = AshitaCore:GetMemoryManager():GetParty();
@@ -724,30 +1234,53 @@ function M.DrawSlot(params)
         end
     end
 
-    -- Check if action is available (job/level requirements)
+    -- Check if action is available (job/level requirements). Allowlist covers magic ('ma'),
+    -- job abilities ('ja'), weapon skills ('ws'), pet pacts ('pet'), and macros — macros are
+    -- validated against their resolved primary line (and optional /ja badge) so a macro that
+    -- /pet's a not-yet-learned blood pact reads as unavailable too.
     local isUnavailable = false;
     local unavailableReason = nil;
-    if bind and (bind.actionType == 'ma' or bind.actionType == 'ja' or bind.actionType == 'ws') then
-        -- Include job/subjob in cache key so cache invalidates on job change
-        local player = AshitaCore:GetMemoryManager():GetPlayer();
-        local jobId = player and player:GetMainJob() or 0;
-        local subjobId = player and player:GetSubJob() or 0;
-        local availKey = bindKey .. ':' .. jobId .. ':' .. subjobId;
+    local unavailDisplayText = nil;  -- pre-parsed 'Lv65' / 'X' string (computed at insert time)
+    if bind and (
+            bind.actionType == 'ma'
+            or bind.actionType == 'ja'
+            or bind.actionType == 'ws'
+            or bind.actionType == 'pet'
+            or bind.actionType == 'macro') then
+        local fa = GetFrameAvailability();
+        local availKey = bindKey .. ':' .. fa.jobId .. ':' .. fa.subjobId .. ':'
+            .. fa.mainLevel .. ':' .. fa.subLevel .. ':' .. fa.partyMain .. ':' .. fa.partySub;
 
         local cached = availabilityCache[availKey];
         if cached == nil then
             local available, reason = actions.IsActionAvailable(bind);
             -- Don't cache if reason is "pending" (player state invalid, e.g., during zoning)
             if reason ~= "pending" then
-                availabilityCache[availKey] = { isAvailable = available, reason = reason };
-                cached = availabilityCache[availKey];
+                -- Pre-parse the display text once at insert time so the MP-cost render path
+                -- doesn't call string.match every frame for every unavailable slot.
+                local dispText = 'X';
+                if reason then
+                    local lv = reason:match('^Lv(%d+)$');
+                    if lv then
+                        dispText = 'Lv' .. lv;
+                    else
+                        local legacyLvl = reason:match('^Lvl%.(%d+)$');
+                        if legacyLvl then
+                            dispText = 'Lv' .. legacyLvl;
+                        end
+                    end
+                end
+                local entry = { isAvailable = available, reason = reason, displayText = dispText };
+                PutAvailabilityCache(availKey, entry);
+                cached = entry;
             else
                 -- Use temp result but don't cache
-                cached = { isAvailable = available, reason = nil };
+                cached = { isAvailable = available, reason = nil, displayText = 'X' };
             end
         end
         isUnavailable = not cached.isAvailable;
         unavailableReason = cached.reason;
+        unavailDisplayText = cached.displayText;
     end
 
     -- ========================================
@@ -900,7 +1433,13 @@ function M.DrawSlot(params)
     end
 
     -- ========================================
-    -- 9. Label Text (action name below slot)
+    -- 9. Label Text (action name)
+    -- Three modes:
+    --   (a) Standard hotbar/crossbar: single line below the slot (default).
+    --   (b) labelForeground + editorMinimalView: multi-line centred ON the slot
+    --       (Edit Full Palette idle view — 4-char abbrev, full text shown via hover tooltip).
+    --   (c) labelForeground (non-minimal): multi-line centred above/below the slot
+    --       with EditorLabelWrapNearSlot soft-wrap putting one word beside the slot.
     -- ========================================
     if params.showLabel and params.labelText and params.labelText ~= '' and animOpacity > 0.5 and drawList then
         local lblFontSize = params.labelFontSize or 10;
@@ -913,10 +1452,53 @@ function M.DrawSlot(params)
         elseif notEnoughMp then
             labelColor = params.labelNoMpColor or 0xFFFF4444;
         end
-        local lblW = imtext.Measure(params.labelText, lblFontSize);
-        local labelX = x + (size - lblW) / 2 + (params.labelOffsetX or 0);
-        local labelY = y + size + 2 + (params.labelOffsetY or 0);
-        imtext.Draw(drawList, params.labelText, labelX, labelY, labelColor, lblFontSize);
+
+        -- Apply animation opacity into the label color (label paths below don't otherwise modulate alpha).
+        if animOpacity < 1.0 then
+            local a = math.floor(bit.rshift(bit.band(labelColor, 0xFF000000), 24) * animOpacity);
+            if a < 0 then a = 0; elseif a > 255 then a = 255; end
+            labelColor = bit.bor(bit.lshift(a, 24), bit.band(labelColor, 0x00FFFFFF));
+        end
+
+        if params.labelForeground then
+            if minimalEditorView then
+                -- (b) On-slot view: 4-char abbrev when idle, full name on hover. Multi-line if hover label wraps.
+                local textForDraw = isHovered and params.labelText or EditorIdleAbbrev4(params.labelText);
+                if textForDraw and textForDraw ~= '' then
+                    DrawEditorMultilineCenteredOnSlot(drawList, x, y, size, labelColor, textForDraw, lblFontSize);
+                end
+            else
+                -- (c) Above/below-slot view with soft wrap so one word lands beside the slot.
+                local wrapped = EditorLabelWrapNearSlot(params.labelText, params.labelAboveSlot);
+                local cx = x + size * 0.5 + (params.labelOffsetX or 0);
+                local lineCount = 1;
+                if wrapped and wrapped:find('\n') then lineCount = 2; end
+                local _, lineH = imtext.Measure('Mg', lblFontSize);
+                local lineStep = (lineH and lineH > 0) and (lineH + 1) or (lblFontSize + 2);
+                local topY;
+                if params.labelAboveSlot then
+                    topY = y - 2 - lineStep * lineCount + (params.labelOffsetY or 0);
+                else
+                    topY = y + size + 2 + (params.labelOffsetY or 0);
+                end
+                DrawEditorMultilineCenteredAtY(drawList, cx, topY, labelColor, wrapped, lblFontSize);
+            end
+        else
+            -- (a) Default single-line render. Honors params.labelAboveSlot so the crossbar's
+            -- top diamond slot can flip its label above (otherwise the bottom slot's MP/qty
+            -- text overlaps the top slot's label). Keyboard hotbars always pass false → below.
+            local lblW = imtext.Measure(params.labelText, lblFontSize);
+            local labelX = x + (size - lblW) / 2 + (params.labelOffsetX or 0);
+            local labelY;
+            if params.labelAboveSlot then
+                local _, lblH = imtext.Measure('Mg', lblFontSize);
+                local h = (lblH and lblH > 0) and lblH or lblFontSize;
+                labelY = y - 2 - h + (params.labelOffsetY or 0);
+            else
+                labelY = y + size + 2 + (params.labelOffsetY or 0);
+            end
+            imtext.Draw(drawList, params.labelText, labelX, labelY, labelColor, lblFontSize);
+        end
     end
 
     -- ========================================
@@ -930,20 +1512,24 @@ function M.DrawSlot(params)
             local mpFontSize = params.mpCostFontSize or 10;
             local mpX, mpY = GetAnchoredPosition(x, y, size, mpAnchor, params.mpCostOffsetX, params.mpCostOffsetY);
 
-            -- If action is unavailable, show "X" instead of MP cost
+            -- If action is unavailable, render either a level requirement ("Lv65") when
+            -- IsActionAvailable returned an Lv-style reason, or a plain "X" for non-level
+            -- failures (e.g. weaponskills not learned, wrong job, missing scroll). The
+            -- display text was pre-parsed by the availability cache insert above, so this
+            -- hot-path branch just reads the field — no per-frame string.match here.
             if isUnavailable then
-                local xText = "X";
+                local unavailText = unavailDisplayText or 'X';
                 local xColor = 0xFFFF4444;
                 if mpAnchor == 'topRight' or mpAnchor == 'bottomRight' then
-                    local w = imtext.Measure(xText, mpFontSize);
+                    local w = imtext.Measure(unavailText, mpFontSize);
                     mpX = mpX - w;
                 end
-                imtext.Draw(drawList, xText, mpX, mpY, xColor, mpFontSize);
+                imtext.Draw(drawList, unavailText, mpX, mpY, xColor, mpFontSize);
             else
                 local mpCost = mpCostCache[bindKey];
                 if mpCost == nil then
                     mpCost = actions.GetMPCost(bind) or false;
-                    mpCostCache[bindKey] = mpCost;
+                    PutMpCostCache(bindKey, mpCost);
                 end
                 if mpCost and mpCost ~= false then
                     local mpText = tostring(mpCost);
@@ -1069,7 +1655,33 @@ function M.DrawSlot(params)
         -- Skillchain highlight (animated dotted border + icon)
         if params.skillchainName then
             local scColor = params.skillchainColor or 0xFFD4AA44;
-            DrawSkillchainHighlight(drawList, x, y, size, params.skillchainName, scColor, animOpacity);
+            -- Per-call icon scale/offset overrides used by the macro palette editor
+            -- to push the skillchain icon out of corner badges. Falls back to
+            -- gConfig.hotbarGlobal.skillchainIcon* when not provided.
+            DrawSkillchainHighlight(drawList, x, y, size, params.skillchainName, scColor, animOpacity,
+                params.skillchainIconScale, params.skillchainIconOffsetX, params.skillchainIconOffsetY);
+        end
+
+        -- Magic Burst highlight (animated dotted border + SC-name icon in BOTTOM-LEFT corner).
+        -- Renders independently from the skillchain highlight: a slot can legitimately have
+        -- ONE of them active at a time (WS slots → skillchain prediction, spell slots → MB).
+        -- Drawing this AFTER the skillchain pass means if both ever fire on the same slot
+        -- (rare — primary-parse path would have to disagree), the MB border ends up on top.
+        if params.magicBurstName then
+            local mbColor = params.magicBurstColor or 0xFF44D4FF;
+            DrawMagicBurstHighlight(drawList, x, y, size, params.magicBurstName, mbColor, animOpacity,
+                params.skillchainIconScale, params.skillchainIconOffsetX, params.skillchainIconOffsetY);
+        end
+
+        -- Universal Two-Hour: rainbow rotating rings + marching border while the user is
+        -- confirming <stpc>/<stnpc> (or briefly after click during the arming-shimmer
+        -- fade window). universal_two_hour module decides whether this slot is the armed
+        -- ability; if the module isn't loaded (1.7.5 fork) the check is a silent no-op.
+        if bind and not isOnCooldown and universalTwoHour and universalTwoHour.ShouldGlowUniversalTwoHourSlot
+            and universalTwoHour.ShouldGlowUniversalTwoHourSlot(bind) then
+            local armScale = universalTwoHour.GetArmingShimmerOpacityScale
+                and universalTwoHour.GetArmingShimmerOpacityScale() or 1.0;
+            DrawUniversalTwoHourSubtargetGlow(drawList, x, y, size, animOpacity, dimFactor, armScale);
         end
     end
 
@@ -1080,6 +1692,10 @@ function M.DrawSlot(params)
         dragdrop.DropZone(params.dropZoneId, x, y, size, size, {
             accepts = params.dropAccepts or {'macro'},
             highlightColor = params.dropHighlightColor or 0xA8FFFFFF,
+            -- dropPriority is the tie-break for overlapping zones (e.g. Edit Full Palette preview
+            -- overlay on top of a live crossbar slot); the higher number wins via FlushDeferredDrops.
+            -- Default is nil so the existing first-registered-wins behavior is preserved.
+            dropPriority = params.dropPriority,
             onDrop = params.onDrop,
         });
     end
@@ -1111,10 +1727,30 @@ function M.DrawSlot(params)
             end
         end
 
-        -- Left click to execute (BuildCommand deferred to click time to avoid per-frame cost)
+        -- Left click / double-click. Edit Full Palette slots set `suppressActionOnClick`:
+        -- a single click on those is meaningless (no live action to fire — the slot is a
+        -- draft preview), but we still need to track the click to detect double-click and
+        -- open the macro editor. `params.suppressActionOnClick` also tells us to ignore a
+        -- cancelled-micro-drag attempt (without this, even a tiny mouse jitter between
+        -- press and release blocks the double-click pipeline).
         if isItemHovered and imgui.IsMouseReleased(0) then
-            if not dragdrop.IsDragging() and not dragdrop.WasDragAttempted() then
-                if params.onClick then
+            local ignoreCancelledMicroDrag = params.suppressActionOnClick;
+            if not dragdrop.IsDragging()
+                and (ignoreCancelledMicroDrag or not dragdrop.WasDragAttempted()) then
+                local now = os.clock();
+                local isDoubleClick = (params.buttonId == lastClickButtonId)
+                    and (now - lastClickTime) < DOUBLE_CLICK_INTERVAL;
+
+                if isDoubleClick and params.onDoubleClick then
+                    params.onDoubleClick();
+                    lastClickButtonId = nil;
+                    lastClickTime = 0;
+                elseif params.suppressActionOnClick then
+                    -- Treat as the first half of a potential double-click and do nothing
+                    -- else. Editor slots intentionally don't fire any action on single click.
+                    lastClickButtonId = params.buttonId;
+                    lastClickTime = now;
+                elseif params.onClick then
                     params.onClick();
                 elseif bind then
                     local cmd = actions.BuildCommand(bind);
@@ -1125,9 +1761,11 @@ function M.DrawSlot(params)
             end
         end
 
-        -- Right click (disabled when Lock Movement is enabled)
+        -- Right click (disabled when the slot's Lock Movement is enabled). Uses the same
+        -- per-zone lock policy as drop zones so the Hotbar lock doesn't accidentally disable
+        -- right-click-to-clear on crossbar slots (and vice versa).
         if isItemHovered and imgui.IsMouseClicked(1) and bind then
-            if params.onRightClick and not gConfig.hotbarLockMovement then
+            if params.onRightClick and not IsMovementLockedForDropZone(params.dropZoneId) then
                 params.onRightClick();
             end
         end
@@ -1159,14 +1797,20 @@ function M.DrawTooltip(bind)
         return '<' .. cleaned .. '>';
     end
 
-    -- Check if action is unavailable for current job/subjob (cached lookup)
+    -- Check if action is unavailable for current job/subjob (cached lookup). Cache key
+    -- shape MUST match the one DrawSlot uses or we'd get spurious cache misses every time
+    -- the tooltip checks: same (action key, jobs, levels, party-effective levels). Routes
+    -- through the same per-frame snapshot used by DrawSlot so we don't re-walk MM here.
     local isUnavailable = false;
-    if bind.actionType == 'ma' or bind.actionType == 'ja' or bind.actionType == 'ws' then
+    if bind.actionType == 'ma'
+        or bind.actionType == 'ja'
+        or bind.actionType == 'ws'
+        or bind.actionType == 'pet'
+        or bind.actionType == 'macro' then
         local bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
-        local player = AshitaCore:GetMemoryManager():GetPlayer();
-        local jobId = player and player:GetMainJob() or 0;
-        local subjobId = player and player:GetSubJob() or 0;
-        local availKey = bindKey .. ':' .. jobId .. ':' .. subjobId;
+        local fa = GetFrameAvailability();
+        local availKey = bindKey .. ':' .. fa.jobId .. ':' .. fa.subjobId .. ':'
+            .. fa.mainLevel .. ':' .. fa.subLevel .. ':' .. fa.partyMain .. ':' .. fa.partySub;
         local cached = availabilityCache[availKey];
         if cached then
             isUnavailable = not cached.isAvailable;
@@ -1235,6 +1879,7 @@ end
 function M.BeginFrame(fontSettings)
     pendingTooltipBind = nil;
     tooltipFontSettings = fontSettings;
+    frameAvail.ready = false;
 end
 
 -- Size of the abbreviation "pick-up" tile that follows the cursor on icon-less drags.

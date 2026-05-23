@@ -11,6 +11,7 @@ local windowBg = require('libs.windowbackground');
 local drawing = require('libs.drawing');
 
 local data = require('modules.hotbar.data');
+local playerdata = require('modules.hotbar.playerdata');
 local actions = require('modules.hotbar.actions');
 local textures = require('modules.hotbar.textures');
 local macropalette = require('modules.hotbar.macropalette');
@@ -21,8 +22,13 @@ local hotbarConfig = require('config.hotbar');
 local petpalette = require('modules.hotbar.petpalette');
 local palette = require('modules.hotbar.palette');
 local skillchain = require('modules.hotbar.skillchain');
+local macroparse = require('modules.hotbar.macroparse');
 local targetLib = require('libs.target');
 local imtext = require('libs.imtext');
+-- TextureManager.DeferRelease keeps a Lua ref to wiped iconCache entries alive
+-- for one frame so palette-delete / job-change paths don't release a D3D texture
+-- that's still queued in this frame's draw list (CTD on Ashita 4.16).
+local TextureManager = require('libs.texturemanager');
 
 local M = {};
 
@@ -113,6 +119,12 @@ local function BuildBindKey(bind)
     if bind.customIconType or bind.customIconId or bind.customIconPath then
         iconPart = ':icon:' .. (bind.customIconType or '') .. ':' .. tostring(bind.customIconId or '') .. ':' .. (bind.customIconPath or '');
     end
+    -- Macros render a /ja badge overlay; its icon (whether resolved from a job-ability
+    -- name in macroText or from a macro.jaBadgeCustom* override) must invalidate the
+    -- cache when changed. Defensive guard: function lives in actions.lua (Phase 2.4).
+    if bind.actionType == 'macro' and actions.GetMacroJaBadgeIconCacheSuffix then
+        iconPart = iconPart .. (actions.GetMacroJaBadgeIconCacheSuffix(bind) or '');
+    end
     return (bind.actionType or '') .. ':' .. (bind.action or '') .. ':' .. (bind.target or '') .. iconPart;
 end
 
@@ -136,10 +148,15 @@ local function GetCachedIcon(barIndex, slotIndex, bind)
         end
     end
 
-    -- Cache miss - compute icon and (if no icon) abbreviation
+    -- Cache miss - resolve icon only (BuildCommand also builds command strings; per-frame
+    -- draw paths don't need the command, so we use GetBindIcon when available to skip that work).
     local icon = nil;
     if bind then
-        _, icon = actions.BuildCommand(bind);
+        if actions.GetBindIcon then
+            icon = actions.GetBindIcon(bind);
+        else
+            _, icon = actions.BuildCommand(bind);
+        end
     end
 
     local abbr, abbrW = nil, nil;
@@ -161,12 +178,29 @@ end
 
 -- Clear icon cache (call when slots change)
 local function ClearIconCache()
+    -- iconCache rows hold the only Lua ref to D3D textures loaded by actions.GetBindIcon
+    -- (LoadTextureFromPath wires a gc_safe_release finalizer); dropping the table mid-frame
+    -- lets Lua GC release the COM texture while AddImage queued earlier this frame still
+    -- references its pointer. Hold the old table alive until next d3d_present flushes it.
+    TextureManager.DeferRelease(iconCache);
     iconCache = {};
+    -- Mirror the wipe to actions.lua's negative-result cache; otherwise a "no icon" decision
+    -- pinned from a previous job/palette/macro state survives across cache invalidations.
+    if actions.ClearNoIconCache then
+        actions.ClearNoIconCache();
+    end
 end
 
 -- Clear icon cache for a specific slot (call on targeted slot updates)
 local function ClearIconCacheForSlot(barIndex, slotIndex)
     if iconCache[barIndex] then
+        -- Per-slot wipes (drag/drop, single rebuild) need the same deferred-release
+        -- guard as ClearIconCache so the slot's queued AddImage from earlier this frame
+        -- doesn't end up dereferencing a freed COM texture.
+        local oldRow = iconCache[barIndex][slotIndex];
+        if oldRow ~= nil then
+            TextureManager.DeferRelease(oldRow);
+        end
         iconCache[barIndex][slotIndex] = nil;
     end
 end
@@ -257,7 +291,7 @@ local function GetSlotInteraction(barIndex, slotIndex)
 end
 
 -- Draw a single hotbar slot using shared renderer
-local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings, animOpacity, skillchainName)
+local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings, animOpacity, skillchainName, magicBurstName)
     -- Get icon (and pre-resolved abbreviation, if no icon) for this slot.
     -- All three are cached together; recomputed only when bind changes.
     local icon, cachedAbbr, cachedAbbrW = GetCachedIcon(barIndex, slotIndex, bind);
@@ -313,7 +347,7 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     p.mpCostFontSize = (barSettings and barSettings.mpCostFontSize or 10) * gs;
     p.mpCostFontColor = barSettings and barSettings.mpCostFontColor or 0xFFD4FF97;
     p.mpCostNoMpColor = barSettings and barSettings.labelNoMpColor or 0xFFFF4444;
-    p.mpCostAnchor = barSettings and barSettings.mpCostAnchor or 'topRight';
+    p.mpCostAnchor = barSettings and barSettings.mpCostAnchor or 'topLeft';
     p.mpCostOffsetX = (barSettings and barSettings.mpCostOffsetX or 0) * gs;
     p.mpCostOffsetY = (barSettings and barSettings.mpCostOffsetY or 0) * gs;
     p.showQuantity = barSettings and barSettings.showQuantity ~= false;
@@ -337,6 +371,11 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     -- Skillchain highlight
     p.skillchainName = skillchainName;
     p.skillchainColor = gConfig.hotbarGlobal.skillchainHighlightColor or 0xFFD4AA44;
+    -- Magic Burst highlight (separate from skillchain — different SC->element predictor,
+    -- different color, different corner icon). Resolved upstream in the per-slot loop so
+    -- this just plumbs the name/color through to slotrenderer.
+    p.magicBurstName = magicBurstName;
+    p.magicBurstColor = gConfig.hotbarGlobal.magicBurstHighlightColor or 0xFF44D4FF;
 
     -- Render slot using shared renderer (handles ALL rendering and interactions)
     local result = slotrenderer.DrawSlot(p);
@@ -456,10 +495,14 @@ local function DrawBarWindow(barIndex, settings)
         -- drop zones earlier so they're registered when the drag activates
         local isDragging = dragdrop.IsDragging() or dragdrop.IsDragPending();
 
-        -- Get target server ID for skillchain prediction (cached for all slots)
+        -- Get target server ID for skillchain / magic burst prediction (cached for all slots).
+        -- Both features key off the same target so we resolve once per frame here and reuse
+        -- the cached server ID inside the per-slot loop. Either feature being disabled is
+        -- fine: the resolver still returns the ID, and the per-slot path early-exits below.
         local targetServerId = nil;
         local skillchainEnabled = gConfig.hotbarGlobal.skillchainHighlightEnabled ~= false;
-        if skillchainEnabled then
+        local magicBurstEnabled = gConfig.hotbarGlobal.magicBurstHighlightEnabled ~= false;
+        if skillchainEnabled or magicBurstEnabled then
             local mainTargetIdx = targetLib.GetTargets();
             if mainTargetIdx and mainTargetIdx ~= 0 then
                 local targetEntity = GetEntity(mainTargetIdx);
@@ -481,13 +524,32 @@ local function DrawBarWindow(barIndex, settings)
                     if hideEmptySlots and not paletteOpen and not keybindEditorOpen and not isDragging and not bind then
                         -- Empty slot: skip rendering (ImGui draws are stateless, nothing to hide)
                     else
-                        -- Check for skillchain prediction on weapon skill slots
+                        -- Skillchain prediction: WS slots, Blood Pact slots, and macros whose
+                        -- primary line is /ws or /pet (parsed via macroparse).
                         local slotSkillchainName = nil;
-                        if skillchainEnabled and bind and bind.actionType == 'ws' and bind.action then
-                            -- Pass WS name directly - skillchain module handles name->ID conversion
-                            slotSkillchainName = skillchain.GetSkillchainForSlot(targetServerId, bind.action);
+                        if skillchainEnabled and bind then
+                            if bind.actionType == 'ws' and bind.action then
+                                slotSkillchainName = skillchain.GetSkillchainForSlot(targetServerId, bind.action);
+                            elseif bind.actionType == 'pet' and bind.action then
+                                slotSkillchainName = skillchain.GetSkillchainForBloodPact(targetServerId, bind.action);
+                            elseif bind.actionType == 'macro' and bind.macroText then
+                                local primaryType, primaryName = macroparse.GetMacroPrimaryAndJaBadge(bind.macroText);
+                                if primaryType == 'ws' and primaryName then
+                                    slotSkillchainName = skillchain.GetSkillchainForSlot(targetServerId, primaryName);
+                                elseif primaryType == 'pet' and primaryName then
+                                    slotSkillchainName = skillchain.GetSkillchainForBloodPact(targetServerId, primaryName);
+                                end
+                            end
                         end
-                        DrawSlot(barIndex, slotIndex, slotX, slotY, buttonSize, bind, barSettings, animOpacity, slotSkillchainName);
+                        -- Magic Burst prediction: spells (/ma), magical pact rages (/pet curated
+                        -- map), and /ma|/pet-primary macros. Routes via skillchain.GetMagicBurstForSlot
+                        -- so the dispatch matches the skillchain pass above; the lookup is a single
+                        -- table read after the lazy element-by-name cache is warmed.
+                        local slotMagicBurstName = nil;
+                        if magicBurstEnabled and bind then
+                            slotMagicBurstName = skillchain.GetMagicBurstForSlot(targetServerId, bind);
+                        end
+                        DrawSlot(barIndex, slotIndex, slotX, slotY, buttonSize, bind, barSettings, animOpacity, slotSkillchainName, slotMagicBurstName);
                     end
                 end
                 slotIndex = slotIndex + 1;
@@ -573,6 +635,10 @@ end
 
 function M.DrawWindow(settings)
     -- Note: dragdrop.Update() is called from init.lua before this
+
+    -- Refresh per-frame cached spell/ability/WS/item lists used by macropalette filters
+    -- and by GetBindIcon resolution for macro lines.
+    playerdata.RefreshCachedLists(data);
 
     -- Initialize textures on first draw
     if not texturesInitialized then
