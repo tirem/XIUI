@@ -55,6 +55,31 @@ local settingsUpdater = require('core.settings.updater');
 local gameState = require('core.gamestate');
 local uiModules = require('core.moduleregistry');
 local profileManager = require('core.profile_manager');
+local sharedMacroStore = require('core.shared_macro_store');
+
+-- When gConfig is replaced, hotbar data caches must be invalidated (macroIdLookup points into macroDB)
+local function xiuiInvalidateHotbarDataCaches()
+    local ok, d = pcall(require, 'modules.hotbar.data');
+    if (ok and d and d.InvalidateConfigDerivedCaches) then
+        d.InvalidateConfigDerivedCaches();
+    end
+end
+
+-- Apply Crossbar "Default Palette Type" from the loaded profile only (not on zone/level/job packets).
+local function xiuiApplyDefaultCrossbarPaletteScopeAfterProfileLoad()
+    local okD, dataMod = pcall(require, 'modules.hotbar.data');
+    local okP, paletteMod = pcall(require, 'modules.hotbar.palette');
+    if not (okD and okP and dataMod and paletteMod) then
+        return;
+    end
+    if dataMod.SetPlayerJob and dataMod.SetPlayerJob() and dataMod.jobId then
+        pcall(function()
+            paletteMod.ValidatePalettesForJob(dataMod.jobId, dataMod.subjobId or 0, { applyDefaultCrossbarScope = true });
+        end);
+    else
+        paletteMod.NotifyProfileSettingsLoaded();
+    end
+end
 
 -- UI modules
 local uiMods = require('modules.init');
@@ -82,6 +107,7 @@ local palette = require('modules.hotbar.palette');
 local skillchainModule = require('modules.hotbar.skillchain');
 local slotrenderer = require('modules.hotbar.slotrenderer');
 local configMenu = require('config');
+local paletteManager = require('config.palettemanager');
 local debuffHandler = require('handlers.debuffhandler');
 local petBuffHandler = require('handlers.petbuffhandler');
 local actionTracker = require('handlers.actiontracker');
@@ -283,7 +309,6 @@ uiModules.Register('hotbar', {
     settingsKey = 'hotbarSettings',
     configKey = 'showhotbar',
     hideOnEventKey = 'hotbarHideDuringEvents',
-    hideOnMenuFocusKey = 'hotbarHideOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('readyCheck', {
@@ -307,7 +332,7 @@ local migrationResult = settingsMigration.MigrateFromHXUI();
 -- Load raw settings to detect legacy data (without default filtering)
 -- Use pcall to handle first-load case where no settings exist
 local rawSettingsSuccess, rawSettings = pcall(function()
-    return settings.load({});
+    return settings.load(T{});
 end);
 if not rawSettingsSuccess then
     rawSettings = {}; -- No existing settings, nothing to migrate
@@ -460,8 +485,19 @@ end
 -- ==========================================================
 
 -- Load character settings (tracks which profile is active)
-local charSettings = settings.load({ currentProfile = 'Default' });
+local charSettings = settings.load(T{ currentProfile = 'Default' });
 config = charSettings; -- Keep reference to character config
+
+-- Initialize per-character known weaponskills cache
+do
+    if not charSettings.knownWeaponskills then
+        charSettings.knownWeaponskills = {};
+    end
+    local okPd, pd = pcall(require, 'modules.hotbar.playerdata');
+    if okPd and pd and pd.SetKnownWeaponskills then
+        pd.SetKnownWeaponskills(charSettings.knownWeaponskills);
+    end
+end
 
 -- Global profiles list
 local globalProfiles = profileManager.GetGlobalProfiles();
@@ -539,6 +575,9 @@ end
 
 gConfigVersion = 0;
 settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
+sharedMacroStore.ApplyAfterProfileLoad(gConfig);
+xiuiInvalidateHotbarDataCaches();
+xiuiApplyDefaultCrossbarPaletteScopeAfterProfileLoad();
 
 -- Show migration message
 
@@ -595,7 +634,12 @@ function CreateProfile(name)
     return true;
 end
 
-function DuplicateProfile(name)
+-- options.includeMacroLibrary: default true (full file clone). When false, macroDB is reset and
+-- palette-macro bar slots are cleared; use for a new character that should keep layout but not
+-- the source macro library. Use Profile -> Export/Import JSON to move a chosen macro set.
+function DuplicateProfile(name, options)
+    options = options or {};
+    local includeMacroLibrary = (options.includeMacroLibrary ~= false);
     local baseName = name;
     -- If duplicating Default, we might want to name it "Profile (1)" or just "Default (1)"
 
@@ -611,6 +655,17 @@ function DuplicateProfile(name)
     if (currentSettings == nil) then return false; end
 
     local newSettings = deep_copy_table(currentSettings);
+    if (not includeMacroLibrary) then
+        newSettings.macroDB = {};
+        newSettings.macroCustomCategories = deep_copy_table(defaultUserSettings.macroCustomCategories or T{});
+        newSettings.macroCustomNextSeq = defaultUserSettings.macroCustomNextSeq or 1;
+        newSettings.macroXiuiDefaultsSeeded = false;
+        newSettings.macroGlobalUniversalTwoHourSeeded = false;
+        local ok, hotbarData = pcall(require, 'modules.hotbar.data');
+        if (ok and hotbarData and hotbarData.StripPaletteMacroBindsFromSettings) then
+            hotbarData.StripPaletteMacroBindsFromSettings(newSettings);
+        end
+    end
     profileManager.SaveProfileSettings(newName, newSettings);
 
     local globalProfiles = profileManager.GetGlobalProfiles();
@@ -622,13 +677,27 @@ function DuplicateProfile(name)
     return true;
 end
 
+-- Writes profiles/<name>.lua. When macroStorageScope is shared, the profile file keeps the frozen
+-- macroDB snapshot; the live global library is saved to SharedMacros.lua.
+function SaveCurrentProfileFileToDisk()
+    if sharedMacroStore.IsSharedScope(gConfig) then
+        local oldM = gConfig.macroDB;
+        gConfig.macroDB = sharedMacroStore.GetProfileMacroDbForSave(gConfig);
+        profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+        gConfig.macroDB = oldM;
+        sharedMacroStore.PersistSharedLibraryIfNeeded(gConfig);
+    else
+        profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    end
+end
+
 
 
 function ChangeProfile(name)
     if (not profileManager.ProfileExists(name)) then return false; end
 
     -- Always save current profile before switching (positions, etc.)
-    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    SaveCurrentProfileFileToDisk();
 
     config.currentProfile = name;
     bInternalSave = true;
@@ -650,6 +719,9 @@ function ChangeProfile(name)
     end
 
     settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
+    sharedMacroStore.ApplyAfterProfileLoad(gConfig);
+    xiuiInvalidateHotbarDataCaches();
+    xiuiApplyDefaultCrossbarPaletteScopeAfterProfileLoad();
     UpdateSettings();
     return true;
 end
@@ -678,7 +750,11 @@ function ResetSettings()
     gConfig = deep_copy_table(defaultUserSettings);
     gConfig.windowPositions = GetDefaultWindowPositions();
     gConfig.appliedPositions = {};
-    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
+    sharedMacroStore.ApplyAfterProfileLoad(gConfig);
+    xiuiInvalidateHotbarDataCaches();
+    xiuiApplyDefaultCrossbarPaletteScopeAfterProfileLoad();
+    SaveCurrentProfileFileToDisk();
 
     -- Reset all module positions to defaults BEFORE deferring visuals so the
     -- next-frame UpdateVisualsAll picks up the corrected positions.
@@ -722,7 +798,7 @@ function RecoverAllPositions()
     gConfig.partyListState = {};
 
     -- Save
-    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    SaveCurrentProfileFileToDisk();
     bInternalSave = true;
     settings.save();
     if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
@@ -747,7 +823,7 @@ function SaveSettingsToDisk()
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
-    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    SaveCurrentProfileFileToDisk();
     bInternalSave = true;
     settings.save();
     if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
@@ -758,7 +834,7 @@ function SaveSettingsOnly()
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
-    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    SaveCurrentProfileFileToDisk();
     bInternalSave = true;
     settings.save();
     if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
@@ -942,6 +1018,9 @@ settings.register('settings', 'settings_update', function (s)
 
         -- Run migrations
         settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
+        sharedMacroStore.ApplyAfterProfileLoad(gConfig);
+        xiuiInvalidateHotbarDataCaches();
+        xiuiApplyDefaultCrossbarPaletteScopeAfterProfileLoad();
 
         -- Update visuals
         UpdateSettings();
@@ -962,6 +1041,14 @@ ashita.events.register('d3d_present', 'present_cb', function ()
     if not bInitialized then return; end
 
     local ok, err = pcall(function()
+        -- Reset ImGui cursor to Arrow at the start of every frame.
+        -- FFXI uses a DirectX hardware cursor that can get lost on alt+tab;
+        -- resetting here ensures we never leave a stale Hand/None cursor
+        -- state that survives into the first frame after the game regains focus.
+        if imgui and imgui.SetMouseCursor then
+            imgui.SetMouseCursor(0); -- 0 = ImGuiMouseCursor_Arrow
+        end
+
         -- Drop references to textures evicted/cleared during the PREVIOUS
         -- frame so Lua GC is free to run d3d8.gc_safe_release on them.
         -- Must run before anything else this frame queues new draws or
@@ -1018,6 +1105,13 @@ ashita.events.register('d3d_present', 'present_cb', function ()
             end
 
             configMenu.DrawWindow();
+            -- Floating Palette Manager + shared modals (must run outside config hotbar/crossbar tabs or /xiui pal never draws)
+            paletteManager.Draw();
+
+            -- Finalize drag-drop after all drop zones (including palette editor) have been processed
+            if hotbar.FinalizeFrame then
+                hotbar.FinalizeFrame();
+            end
 
             -- Render deferred hotbar tooltip after all modules (correct z-order)
             slotrenderer.FlushTooltip();
@@ -1118,6 +1212,26 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
+        -- Debug: print the current FFXI menu name to chat: /xiui menuname
+        if (#command_args == 2 and command_args[2]:any('menuname', 'menu')) then
+            local gamestate = require('core.gamestate');
+            local raw  = gamestate.GetMenuName();
+            local isContainer = gamestate.IsContainerNavigationMenu();
+            AshitaCore:GetChatManager():QueueCommand(1, string.format(
+                '/echo [XIUI] Menu: "%s" | container-nav: %s', raw, tostring(isContainer)));
+            return;
+        end
+
+        -- /xiui pal - toggle floating Palette Manager (hotbar); /xiui pal <...> still cycles/selects palettes below
+        if #command_args == 2 and command_args[2] == 'pal' then
+            if paletteManager.ToggleHotbarPaletteManager() then
+                print('[XIUI] Palette Manager opened (Hotbar).');
+            else
+                print('[XIUI] Palette Manager closed.');
+            end
+            return;
+        end
+
         -- Open keybind editor: /xiui keybinds or /xiui binds [bar]
         if (#command_args >= 2 and command_args[2]:any('keybinds', 'keybind', 'binds', 'bind')) then
             local hotbarConfig = require('config.hotbar');
@@ -1197,7 +1311,7 @@ ashita.events.register('command', 'command_cb', function (e)
         -- Switch between named palettes. Hotbar palettes (bars 1-6) and the crossbar
         -- have separate palette pools; "all" applies across both, "crossbar"/"cb"/"xb"
         -- targets the crossbar only, a bar number targets a single hotbar.
-        if (command_args[2] == 'palette' or command_args[2] == 'pal') then
+        if (command_args[2] == 'palette' or (command_args[2] == 'pal' and #command_args >= 3)) then
             local paletteModule = require('modules.hotbar.palette');
             local hotbarData = require('modules.hotbar.data');
             local jobId = hotbarData.jobId or 1;
@@ -1380,6 +1494,353 @@ ashita.events.register('command', 'command_cb', function (e)
                     end
                 end
             end
+            return;
+        end
+
+        -- Toggle Edit Full Palette for the currently active crossbar palette (silent): /xiui cpaledit
+        if (command_args[2] == 'cpaledit') then
+            paletteManager.ToggleEditFullPaletteForCurrent();
+            return;
+        end
+
+        -- Crossbar palettes: /xiui cpalette toggles config; Global [G] vs Job storage are separate CLI paths (no Global-Sets gate). Aliases: cpal, xcpalette, xcpal.
+        if (command_args[2] == 'cpalette' or command_args[2] == 'cpal' or command_args[2] == 'xcpalette' or command_args[2] == 'xcpal') then
+            if #command_args == 2 then
+                configMenu.ToggleCrossbarManagePalettes();
+                return;
+            end
+
+            local sub = command_args[3];
+            local originalArgs = e.command:args();
+
+            if sub == 'help' or sub == '?' then
+                print('[XIUI] Crossbar palette:');
+                print('  /xiui cpalette          Toggle Crossbar -> Manage Palettes in config');
+                print('  /xiui cpaledit          Toggle Edit Full Palette for current active palette');
+                print('  /xiui cpalette list     List Global [G] crossbar palettes');
+                print('  /xiui cpalette scope job|universal');
+                print('  /xiui cpalette toggle   (same as controller: hold L1, tap R1)');
+                print('  /xiui cpalette g <name>   Global [G] only (also: global, gname)');
+                print('  /xiui cpalette <JOB> <name|#>   Job [J]-tier (# = order in list)');
+                print('  /xiui cpalette WHMSMN <name|#>   SJ-tier: # = (SJ) rows in Manage, e.g. WHMBLM 1');
+                print('  /xiui cpalette job <JOB> <...>   optional keyword (J-tier)');
+                print('  Other job than yours = temporary preview; RB+D-pad still cycles live job');
+                print('  /xiui cpalette cycle on|off <name>   Global [G] RB+D-pad cycle include');
+                print('  Optional legacy prefix: active ...');
+                return;
+            end
+
+            local cross = gConfig and gConfig.hotbarCrossbar;
+
+            local function cpalXbLogVerbose()
+                local hg = gConfig and gConfig.hotbarGlobal;
+                local v = hg and hg.logPaletteNameCrossbar;
+                if v == nil then return true; end
+                return v == true;
+            end
+            local function cpalXbLogRbHint()
+                if not cpalXbLogVerbose() then return false; end
+                local hg = gConfig and gConfig.hotbarGlobal;
+                local v = hg and hg.logPaletteNameCrossbarCycleHint;
+                if v == nil then return true; end
+                return v == true;
+            end
+            local function cpalNotice(msg)
+                print('[XIUI Notice] ' .. msg);
+            end
+            local function cpalLogJobSuccess(mainAbbr, storageSubjob, sjAbbr, paletteName)
+                if not cpalXbLogVerbose() then return; end
+                local loc;
+                if storageSubjob == 0 then
+                    loc = mainAbbr .. '[J]';
+                else
+                    loc = mainAbbr .. '[SJ:' .. (sjAbbr or '?') .. ']';
+                end
+                print('[XIUI] Crossbar Palette: ' .. loc .. ' "' .. paletteName .. '".');
+            end
+            local function cpalLogGlobalSuccess(paletteName)
+                if not cpalXbLogVerbose() then return; end
+                print('[XIUI] Crossbar Palette: Global[G] "' .. paletteName .. '".');
+            end
+            local function cpalLogPreviewHint()
+                if not cpalXbLogRbHint() then return; end
+                print('[XIUI] RB(R1)+Up/Down to return to Job Palettes.');
+            end
+
+            if sub == 'list' then
+                local names = palette.GetUniversalCrossbarPaletteNamesOrdered();
+                local active = palette.GetActiveUniversalCrossbarPalette();
+                local scope = palette.GetCrossbarPaletteScope();
+                print('[XIUI] Global [G] crossbar palettes (scope: ' .. scope .. '):');
+                for _, name in ipairs(names) do
+                    local inc = palette.GetUniversalPaletteIncludeInCycle(name);
+                    local m = (name == active) and ' *' or '';
+                    local c = inc and '' or ' [cycle off]';
+                    print('  - ' .. name .. m .. c);
+                end
+                return;
+            end
+
+            if sub == 'toggle' then
+                if palette.ToggleCrossbarPaletteScope() then
+                    if cpalXbLogVerbose() then
+                        print('[XIUI] Crossbar palette scope: ' .. palette.GetCrossbarPaletteScope());
+                    end
+                else
+                    if cpalXbLogVerbose() then
+                        print('[XIUI] Scope unchanged (debounced or already toggling).');
+                    end
+                end
+                return;
+            end
+
+            if sub == 'scope' then
+                if not command_args[4] then
+                    cpalNotice('Invalid /xiui cpal command. Try /xiui cpal help');
+                    return;
+                end
+                local s = command_args[4]:lower();
+                if s == 'job' or s == 'universal' then
+                    if palette.SetCrossbarPaletteScope(s) then
+                        if cpalXbLogVerbose() then
+                            print('[XIUI] Crossbar palette scope: ' .. s);
+                        end
+                    else
+                        if cpalXbLogVerbose() then
+                            print('[XIUI] Scope unchanged (already ' .. s .. ').');
+                        end
+                    end
+                else
+                    cpalNotice('Invalid /xiui cpal command. Try /xiui cpal help');
+                end
+                return;
+            end
+
+            if sub == 'cycle' then
+                if not command_args[4] or #originalArgs < 5 then
+                    cpalNotice('Invalid /xiui cpal command. Try /xiui cpal help');
+                    return;
+                end
+                local onoff = command_args[4]:lower();
+                if onoff ~= 'on' and onoff ~= 'off' then
+                    cpalNotice('Invalid /xiui cpal command. Try /xiui cpal help');
+                    return;
+                end
+                local nameParts = {};
+                for i = 5, #originalArgs do
+                    table.insert(nameParts, originalArgs[i]);
+                end
+                local paletteName = table.concat(nameParts, ' ');
+                local key = palette.BuildUniversalCrossbarStorageKey(paletteName);
+                if not cross or not cross.slotActions or not cross.slotActions[key] then
+                    cpalNotice('Cannot find the requested Palette.');
+                    return;
+                end
+                palette.SetUniversalPaletteIncludeInCycle(paletteName, onoff == 'on');
+                if cpalXbLogVerbose() then
+                    print('[XIUI] ' .. paletteName .. ' include in RB+D-pad cycle: ' .. onoff);
+                end
+                return;
+            end
+
+            -- Select crossbar palette: first token at [ps], or after optional "active" at [3].
+            local ps = 3;
+            if sub == 'active' then
+                ps = 4;
+                if #command_args < ps then
+                    cpalNotice('Invalid /xiui cpal command. Try /xiui cpal help');
+                    return;
+                end
+            end
+
+            if #command_args >= ps then
+                local tbarMigration = require('handlers.tbar_migration');
+                local hotbarData = require('modules.hotbar.data');
+
+                local function joinOriginalName(fromIdx)
+                    local nameParts = {};
+                    for i = fromIdx, #originalArgs do
+                        table.insert(nameParts, originalArgs[i]);
+                    end
+                    return table.concat(nameParts, ' ');
+                end
+
+                -- Compact MAIN(3)+SUB(3) only (e.g. WHMSMN).
+                local function splitCompactMainSub(compactTok)
+                    local s = compactTok:upper();
+                    if #s ~= 6 then
+                        return nil, nil;
+                    end
+                    local a = s:sub(1, 3);
+                    local b = s:sub(4, 6);
+                    local j1 = tbarMigration.GetJobId(a);
+                    local j2 = tbarMigration.GetJobId(b);
+                    if not j1 or not j2 then
+                        return nil, nil;
+                    end
+                    return j1, j2;
+                end
+
+                local function paletteNameFromTierIndex(mainJobId, storageTier, idx)
+                    local names = palette.GetCrossbarPaletteNamesForOrderTier(mainJobId, storageTier);
+                    if #names == 0 or idx < 1 or idx > #names or idx ~= math.floor(idx) then
+                        cpalNotice('Cannot find the requested Palette.');
+                        return nil;
+                    end
+                    return names[idx];
+                end
+
+                -- WHMSMN # numbering matches (SJ) rows only in Manage (not full SJ bucket list).
+                local function paletteNameFromSjExtrasIndex(mainJobId, sjId, idx)
+                    local names = palette.GetCrossbarSjOnlyPaletteNamesOrdered(mainJobId, sjId);
+                    if #names == 0 or idx < 1 or idx > #names or idx ~= math.floor(idx) then
+                        cpalNotice('Cannot find the requested Palette.');
+                        return nil;
+                    end
+                    return names[idx];
+                end
+
+                local function applyJobPaletteCli(mainJobId, storageSubjob, paletteName)
+                    if not cross then
+                        cpalNotice('Cannot find the requested Palette.');
+                        return;
+                    end
+                    if not cross.slotActions then
+                        cpalNotice('Cannot find the requested Palette.');
+                        return;
+                    end
+                    local key = palette.BuildPaletteStorageKey(mainJobId, storageSubjob, paletteName);
+                    if not cross.slotActions[key] then
+                        cpalNotice('Cannot find the requested Palette.');
+                        return;
+                    end
+                    local crossCfg = cross;
+                    if crossCfg.enableUniversalCrossbarPalettes and palette.GetCrossbarPaletteScope() == 'universal' then
+                        cpalNotice('Cannot apply Job Palettes to Global.');
+                        return;
+                    end
+                    local liveJob = hotbarData.jobId;
+                    local liveSub = hotbarData.subjobId or 0;
+                    local commit = liveJob
+                        and mainJobId == liveJob
+                        and (storageSubjob == 0 or storageSubjob == liveSub);
+                    local jobs = require('libs.jobs');
+                    local jn = jobs[mainJobId] or ('JOB' .. tostring(mainJobId));
+                    local sjAbbr = (storageSubjob ~= 0) and (jobs[storageSubjob] or nil) or nil;
+                    if commit then
+                        palette.SetCpalJobAnchorIfUnset(
+                            palette.GetActivePaletteForCombo(nil),
+                            palette.GetCrossbarActiveStorageSubjob(),
+                            hotbarData.jobId
+                        );
+                        palette.SetActivePaletteForCombo(nil, paletteName, storageSubjob);
+                        cpalLogJobSuccess(jn, storageSubjob, sjAbbr, paletteName);
+                    else
+                        palette.SetCrossbarCliPreview(mainJobId, storageSubjob, paletteName);
+                        cpalLogJobSuccess(jn, storageSubjob, sjAbbr, paletteName);
+                        cpalLogPreviewHint();
+                    end
+                end
+
+                local function parseJobAndApply(firstIdx)
+                    if #command_args < firstIdx + 1 then
+                        cpalNotice('Invalid /xiui cpal command. Try /xiui cpal help');
+                        return true;
+                    end
+                    local mainId = tbarMigration.GetJobId(command_args[firstIdx]:upper());
+                    if not mainId then
+                        return false;
+                    end
+                    local tok = command_args[firstIdx + 1];
+                    local idx = tonumber(tok);
+                    if idx and idx >= 1 and idx == math.floor(idx) then
+                        if #command_args > firstIdx + 1 then
+                            cpalNotice('Invalid /xiui cpal command. Try /xiui cpal help');
+                            return true;
+                        end
+                        local jobs = require('libs.jobs');
+                        local jn = jobs[mainId] or ('JOB' .. tostring(mainId));
+                        local name = paletteNameFromTierIndex(mainId, 0, idx);
+                        if not name then
+                            return true;
+                        end
+                        applyJobPaletteCli(mainId, 0, name);
+                        return true;
+                    end
+                    local paletteName = joinOriginalName(firstIdx + 1);
+                    if paletteName == '' then
+                        cpalNotice('Cannot find the requested Palette.');
+                        return true;
+                    end
+                    applyJobPaletteCli(mainId, 0, paletteName);
+                    return true;
+                end
+
+                local caFirst = command_args[ps];
+
+                if caFirst == 'global' or caFirst == 'g' or caFirst == 'gname' then
+                    local paletteName = joinOriginalName(ps + 1);
+                    if paletteName == '' then
+                        cpalNotice('Invalid /xiui cpal command. Try /xiui cpal help');
+                        return;
+                    end
+                    local key = palette.BuildUniversalCrossbarStorageKey(paletteName);
+                    if cross and cross.slotActions and cross.slotActions[key] then
+                        palette.SetCpalUniversalAnchorIfUnset(palette.GetActiveUniversalCrossbarPalette());
+                        palette.SetActiveUniversalCrossbarPalette(paletteName);
+                        cpalLogGlobalSuccess(paletteName);
+                    else
+                        cpalNotice('Cannot find the requested Palette.');
+                    end
+                    return;
+                end
+
+                local cMain, cSub = splitCompactMainSub(caFirst);
+                if cMain and cSub and #command_args >= ps + 1 then
+                    local tok = command_args[ps + 1];
+                    local idx = tonumber(tok);
+                    if idx and idx >= 1 and idx == math.floor(idx) then
+                        if #command_args > ps + 1 then
+                            cpalNotice('Invalid /xiui cpal command. Try /xiui cpal help');
+                            return;
+                        end
+                        local name = paletteNameFromSjExtrasIndex(cMain, cSub, idx);
+                        if not name then
+                            return;
+                        end
+                        applyJobPaletteCli(cMain, cSub, name);
+                        return;
+                    end
+                    local paletteName = joinOriginalName(ps + 1);
+                    if paletteName == '' then
+                        cpalNotice('Cannot find the requested Palette.');
+                        return;
+                    end
+                    applyJobPaletteCli(cMain, cSub, paletteName);
+                    return;
+                end
+
+                if caFirst == 'job' then
+                    if #command_args < ps + 2 then
+                        cpalNotice('Invalid /xiui cpal command. Try /xiui cpal help');
+                        return;
+                    end
+                    if parseJobAndApply(ps + 1) then
+                        return;
+                    end
+                    cpalNotice('Cannot find the requested Palette.');
+                    return;
+                end
+
+                if parseJobAndApply(ps) then
+                    return;
+                end
+
+                cpalNotice('Invalid /xiui cpal command. Try /xiui cpal help');
+                return;
+            end
+
+            cpalNotice('Invalid /xiui cpal command. Try /xiui cpal help');
             return;
         end
 
@@ -1616,8 +2077,8 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         petBar.HandlePacket(e);
     end
 
-    -- Hotbar pet palette sync (0x0068 Pet Sync)
-    if e.id == 0x0068 and gConfig.hotbarEnabled then
+    -- Hotbar pet palette sync (0x0068 Pet Sync) - also updates crossbar pet palettes
+    if e.id == 0x0068 and (gConfig.hotbarEnabled or gConfig.crossbarEnabled) then
         hotbar.HandlePetSyncPacket();
     end
 
@@ -1635,7 +2096,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
             actionTracker.HandleActionPacket(actionPacket);
             if gConfig.showNotifications then notifications.HandleActionPacket(actionPacket); end
             -- Skillchain tracking for hotbar/crossbar WS highlighting
-            if gConfig.hotbarEnabled then
+            if gConfig.hotbarEnabled or gConfig.crossbarEnabled then
                 skillchainModule.HandleActionPacket(actionPacket);
             end
         end
@@ -1660,8 +2121,8 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         ClearEntityCache();
         ResetD3D8Device();
         bLoggedIn = true;
-        -- Initialize hotbar job on zone-in (handles initial login and job change during zone)
-        if gConfig.hotbarEnabled then
+        -- Initialize hotbar/crossbar job on zone-in (handles initial login and job change during zone)
+        if gConfig.hotbarEnabled or gConfig.crossbarEnabled then
             hotbar.HandleJobChangePacket(e);
         end
     elseif (e.id == 0x0029) then
@@ -1708,14 +2169,14 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         TextureManager.clearOnZone();
         ResetD3D8Device();
         bLoggedIn = false;
-        -- Also notify hotbar of zone (clears state)
-        if gConfig.hotbarEnabled then
+        -- Also notify hotbar/crossbar of zone (clears state)
+        if gConfig.hotbarEnabled or gConfig.crossbarEnabled then
             hotbar.HandleZonePacket();
             skillchainModule.ClearState();  -- Clear skillchain tracking on zone
         end
     elseif (e.id == 0x001B) then
-        -- Job change packet - update hotbar to show new job's actions
-        if gConfig.hotbarEnabled then
+        -- Job change packet - update hotbar/crossbar to show new job's actions
+        if gConfig.hotbarEnabled or gConfig.crossbarEnabled then
             hotbar.HandleJobChangePacket(e);
         end
     elseif (e.id == 0x076) then
