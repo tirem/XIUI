@@ -5,6 +5,8 @@
 
 local M = {};
 local profileManager = require('core.profile_manager');
+local macroXiuiDefaults = require('modules.hotbar.macro_xiui_defaults');
+local macroGlobalDefaults = require('modules.hotbar.macro_global_defaults');
 
 -- Migrate settings from HXUI to XIUI (one-time migration for users upgrading from HXUI)
 -- IMPORTANT: This must be called BEFORE settings.load() so that copied files are picked up
@@ -607,6 +609,20 @@ function M.MigrateIndividualSettings(gConfig, defaults)
             if petType.tpFontSize == nil then petType.tpFontSize = oldVitalsFontSize; end
         end
     end
+
+    if gConfig.petBarResizeAnchor == nil then
+        local wantsBottom = false;
+        for _, pt in ipairs(petTypeTables) do
+            if pt and pt.alignBottom then
+                wantsBottom = true;
+                break;
+            end
+        end
+        gConfig.petBarResizeAnchor = wantsBottom and 'bottom' or 'top';
+    end
+    if gConfig.petTargetSnapAnchor == 'top' and type(gConfig.petTargetSnapOffsetX) == 'number' and gConfig.petTargetSnapOffsetX >= 100 then
+        gConfig.petTargetSnapOffsetX = 0;
+    end
 end
 
 -- Migrate flat castCost* settings to nested castCost table
@@ -1053,7 +1069,116 @@ end
 
 -- Run structure migrations (called AFTER settings.load())
 -- These handle migrating old settings structures to new ones
+-- Split legacy hotbarCrossbar.mode ('hotbar'|'crossbar'|'both') into separate visibility flags
+function M.MigrateCrossbarModuleFlags(gConfig)
+    if not gConfig then
+        return;
+    end
+    if gConfig.crossbarEnabled == nil then
+        if gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.showCrossbar ~= nil then
+            gConfig.crossbarEnabled = gConfig.hotbarCrossbar.showCrossbar;
+        else
+            gConfig.crossbarEnabled = true;
+        end
+    end
+    local hg = gConfig.hotbarGlobal;
+    if hg and hg.logPaletteNameCrossbar == nil then
+        hg.logPaletteNameCrossbar = hg.logPaletteName;
+    end
+    if hg and hg.logPaletteNameCrossbarCycleHint == nil then
+        hg.logPaletteNameCrossbarCycleHint = true;
+    end
+end
+
+function M.MigrateHotbarCrossbarLayoutFlags(gConfig)
+    if not gConfig or type(gConfig.hotbarCrossbar) ~= 'table' then
+        return;
+    end
+    local m = gConfig.hotbarCrossbar.mode;
+    if m ~= nil then
+        if m == 'hotbar' then
+            gConfig.hotbarShowKeyboardBars = true;
+            gConfig.hotbarCrossbar.showCrossbar = false;
+        elseif m == 'crossbar' then
+            gConfig.hotbarShowKeyboardBars = false;
+            gConfig.hotbarCrossbar.showCrossbar = true;
+        else
+            gConfig.hotbarShowKeyboardBars = true;
+            gConfig.hotbarCrossbar.showCrossbar = true;
+        end
+        gConfig.hotbarCrossbar.mode = nil;
+    end
+    if gConfig.hotbarShowKeyboardBars == nil then
+        gConfig.hotbarShowKeyboardBars = true;
+    end
+    if gConfig.hotbarCrossbar.showCrossbar == nil then
+        gConfig.hotbarCrossbar.showCrossbar = true;
+    end
+end
+
+-- Fold legacy hotbarShowKeyboardBars into hotbarEnabled (same intent as Hotbar → Enabled today).
+function M.MigrateHotbarShowKeyboardBarsRemoval(gConfig)
+    if not gConfig then
+        return;
+    end
+    if gConfig.hotbarShowKeyboardBars == false and gConfig.hotbarEnabled ~= false then
+        gConfig.hotbarEnabled = false;
+    end
+    gConfig.hotbarShowKeyboardBars = nil;
+end
+
+-- Drop deprecated keys from profiles saved during older builds (macros/skillchain are hotbarGlobal only now).
+function M.MigrateCrossbarRemoveDeprecatedMirroredKeys(gConfig)
+    if not gConfig or type(gConfig.hotbarCrossbar) ~= 'table' then
+        return;
+    end
+    local xb = gConfig.hotbarCrossbar;
+    xb.crossbarDisableXiMacros = nil;
+    xb.skillchainHighlightEnabled = nil;
+    xb.skillchainHighlightColor = nil;
+    xb.skillchainIconScale = nil;
+    xb.skillchainIconOffsetX = nil;
+    xb.skillchainIconOffsetY = nil;
+end
+
+function M.MigrateMacroGlobalUniversalTwoHour(gConfig)
+    if not gConfig then
+        return;
+    end
+    macroGlobalDefaults.SeedUniversalTwoHourIfNeeded(gConfig);
+end
+
+function M.MigrateMacroXiuiDefaults(gConfig)
+    if not gConfig then
+        return;
+    end
+    local inserted = macroXiuiDefaults.SeedIfNeeded(gConfig);
+    if inserted then
+        local ok, hotbarData = pcall(require, 'modules.hotbar.data');
+        if ok and hotbarData and hotbarData.MarkMacroLookupDirty then
+            hotbarData.MarkMacroLookupDirty();
+        end
+    end
+end
+
 function M.RunStructureMigrations(gConfig, defaults)
+    -- Run before anything touches macroDB: coalesce "4" vs 4 and dedupe macro ids (fixes wrong macro on hotbar / drag)
+    if gConfig then
+        local ok, data = pcall(require, 'modules.hotbar.data');
+        if ok and data and data.EnsureMacroDatabaseCoherence then
+            data.EnsureMacroDatabaseCoherence(gConfig);
+        end
+    end
+    M.MigrateCrossbarModuleFlags(gConfig);
+    M.MigrateHotbarCrossbarLayoutFlags(gConfig);
+    M.MigrateHotbarShowKeyboardBarsRemoval(gConfig);
+    M.MigrateCrossbarRemoveDeprecatedMirroredKeys(gConfig);
+    if gConfig then
+        local ok, hbData = pcall(require, 'modules.hotbar.data');
+        if ok and hbData and hbData.MigrateSlotDualMacroBindings then
+            hbData.MigrateSlotDualMacroBindings(gConfig);
+        end
+    end
     M.MigratePartyListLayoutSettings(gConfig, defaults);
     M.MigratePerPartySettings(gConfig, defaults);
     M.MigratePerPetTypeSettings(gConfig, defaults);
@@ -1067,6 +1192,8 @@ function M.RunStructureMigrations(gConfig, defaults)
     M.MigrateCrossbarComboModeSettings(gConfig, defaults);
     M.MigrateLegacyPositionFields(gConfig);
     M.MigrateSlotMacroRefs(gConfig);
+    M.MigrateMacroXiuiDefaults(gConfig);
+    M.MigrateMacroGlobalUniversalTwoHour(gConfig);
 end
 
 -- Legacy function for backward compatibility (if any external code calls it)
