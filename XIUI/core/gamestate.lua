@@ -77,6 +77,38 @@ function M.IsMenuOpen()
     return not IGNORED_MENUS[shortName];
 end
 
+-- ============================================================
+-- Container / Inventory Navigation Detection
+-- ============================================================
+-- Identifies menus where FFXI uses trigger+D-pad to cycle between container
+-- windows (Mog Safe, Storage, Wardrobe, etc.).  These are the ONLY menus
+-- where the crossbar should be disabled; all combat menus (magic, WS, JA,
+-- battle command menus, etc.) are intentionally left unblocked.
+--
+-- Pattern rules (matched against the lower-cased short name after stripping
+-- the "menu " prefix):
+--   ^mtr      – Mog Treasure storage rooms (mtrsafe, mtrstorage, mtrwrd1-4,
+--               mtrlocker, mtrsack, mtrcase, mtrpouch, mtrsatchel …)
+--   cntnr     – Container overview / selection screen
+-- Exact names can be added to CONTAINER_NAV_EXACT when patterns aren't enough.
+local CONTAINER_NAV_PATTERNS = {
+    '^mtr',   -- Mog house storage rooms
+    'cntnr',  -- Container select / overview
+};
+local CONTAINER_NAV_EXACT = {};
+
+function M.IsContainerNavigationMenu()
+    local menuName = M.GetMenuName():gsub('%s+$', '');
+    if menuName == '' then return false; end
+    local shortName = (menuName:match('^menu%s+(.+)') or menuName):lower();
+    if shortName == '' then return false; end
+    if CONTAINER_NAV_EXACT[shortName] then return true; end
+    for _, pat in ipairs(CONTAINER_NAV_PATTERNS) do
+        if shortName:match(pat) then return true; end
+    end
+    return false;
+end
+
 -- Check if Ashita's FontManager has been hidden (e.g., by autohide addon)
 function M.GetFontManagerHidden()
     local fontManager = AshitaCore:GetFontManager();
