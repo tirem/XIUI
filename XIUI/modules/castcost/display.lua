@@ -383,10 +383,7 @@ function M.Render(itemInfo, itemType, settings, colors)
                 -- Center bar vertically within cooldownRowHeight
                 local barYOffset = (cooldownRowHeight - barHeight) / 2;
 
-                -- Share the same draw list as the window bg/text (GetUIDrawList,
-                -- resolved at line 217) so call order = z-order. WindowDrawList
-                -- sits below ForegroundDrawList in ImGui, so leaving the bar on
-                -- WindowDrawList would hide it behind the window bg.
+                -- Reuse the UI draw list so the bar isn't hidden behind the window bg.
                 progressbar.ProgressBar(
                     {{cooldownPercent, barGradient}},
                     {barWidth, barHeight},

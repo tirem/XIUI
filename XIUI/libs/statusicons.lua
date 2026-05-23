@@ -233,11 +233,7 @@ local debuff_font_settings = T{
 -- @param buffTable: the bufftable module
 function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset, buffTimes, settings, statusHandler, buffTableLib)
     if (statusIds ~= nil and #statusIds > 0) then
-        -- Render onto the shared UI draw list (same list as window backgrounds,
-        -- progress bars, and text). Using imgui.Image() here puts icons on the
-        -- per-window draw list, which sits BELOW the foreground draw list where
-        -- the window bg now lives -- so the bg would visually cover the icons.
-        -- Cursor advancement and hover are still handled by imgui.Dummy() below.
+        -- Draw onto the same list as window bgs so icons aren't hidden behind them.
         local drawList = GetUIDrawList();
         local currentRow = 1;
         local currentColumn = 0;
@@ -255,30 +251,14 @@ function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOf
                     local resetX, resetY = imgui.GetCursorScreenPos();
                     local isBuff = buffTableLib.IsBuff(statusIds[i]);
                     local bgSize = iconSize * 1.1;
-                    local yOffset = bgSize * -0.1;
-                    if (isBuff) then
-                        yOffset = bgSize * -0.3;
-                    end
+                    local yOffset = isBuff and (bgSize * -0.3) or (bgSize * -0.1);
                     local bgX = resetX - ((bgSize - iconSize) / 1.5);
                     local bgY = resetY + yOffset;
-                    local bgIcon = statusHandler.GetBackground(isBuff);
-                    if bgIcon then
-                        drawList:AddImage(
-                            bgIcon,
-                            {bgX, bgY},
-                            {bgX + bgSize + 1, bgY + bgSize / 0.75}
-                        );
-                    end
+                    drawList:AddImage(statusHandler.GetBackground(isBuff),
+                        {bgX, bgY}, {bgX + bgSize + 1, bgY + bgSize / 0.75});
                 end
-                -- Capture position BEFORE drawing icon to get accurate position
                 local iconPosX, iconPosY = imgui.GetCursorScreenPos();
-                drawList:AddImage(
-                    icon,
-                    {iconPosX, iconPosY},
-                    {iconPosX + iconSize, iconPosY + iconSize}
-                );
-                -- Advance the cursor and register a hover region so tooltips,
-                -- SameLine, and row layout below all keep working unchanged.
+                drawList:AddImage(icon, {iconPosX, iconPosY}, {iconPosX + iconSize, iconPosY + iconSize});
                 imgui.Dummy({iconSize, iconSize});
                 if buffTimes ~= nil and buffTimes[i] ~= nil then
                     local font_base = settings or debuff_font_settings;
