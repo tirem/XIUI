@@ -42,8 +42,9 @@ local CATEGORY_CONFIG = {
         clearOnZone = false,
     },
     custom_icons = {
-        maxSize = 250,  -- ~2 pages of icons cached
-        evictionCount = 50,
+        -- No eviction: hotbar/macro picker revisit the same PNG paths; LRU evict+reload caused heavy stutter.
+        maxSize = 0,
+        evictionCount = 0,
         clearOnZone = false,
     },
     assets = {
@@ -73,6 +74,19 @@ local function deferRelease(entry)
     if entry ~= nil then
         pendingReleases[#pendingReleases + 1] = entry;
     end
+end
+
+-- Public: hold any Lua value (table, texture entry, cache-row) alive until the
+-- start of the next d3d_present, then drop the reference so GC can finalize it.
+-- Use this whenever caller code wipes a cache that holds the last Lua reference
+-- to a texture (so its FFI pointer may still be queued in this frame's ImGui
+-- draw list). Same race the per-category clears already guard against — see
+-- the comment on `pendingReleases` above. Without this, palette-deletion paths
+-- (slotrenderer / display / crossbar icon caches) crash with
+-- EXCEPTION_ACCESS_VIOLATION when the renderer reaches an already-released
+-- D3D texture pointer.
+function M.DeferRelease(value)
+    deferRelease(value);
 end
 
 -- Per-category arrays for LRU eviction tracking
