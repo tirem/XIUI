@@ -8,6 +8,7 @@ local d3d8 = require('d3d8');
 local data = require('modules.hotbar.data');
 local horizonSpells = require('modules.hotbar.database.horizonspells');
 local textures = require('modules.hotbar.textures');
+local TextureManager = require('libs.texturemanager');
 local macrosLib = require('libs.ffxi.macros');
 local palette = require('modules.hotbar.palette');
 
@@ -653,11 +654,13 @@ function M.GetBindIcon(bind)
                             if customIconCache[macro.customIconPath] then
                                 return customIconCache[macro.customIconPath], nil;
                             end
-                            local customDir = string.format('%saddons\\XIUI\\assets\\hotbar\\custom\\', AshitaCore:GetInstallPath());
-                            icon = textures:LoadTextureFromPath(customDir .. macro.customIconPath);
-                            if icon then
-                                customIconCache[macro.customIconPath] = icon;
-                                return icon, nil;
+                            local fullPath = TextureManager.ResolveCustomIconPath(macro.customIconPath);
+                            if fullPath then
+                                icon = textures:LoadTextureFromPath(fullPath);
+                                if icon then
+                                    customIconCache[macro.customIconPath] = icon;
+                                    return icon, nil;
+                                end
                             end
                         end
                     end
@@ -682,12 +685,14 @@ function M.GetBindIcon(bind)
             if customIconCache[bind.customIconPath] then
                 return customIconCache[bind.customIconPath], nil;
             end
-            -- Load custom icon from assets/hotbar/custom/ directory
-            local customDir = string.format('%saddons\\XIUI\\assets\\hotbar\\custom\\', AshitaCore:GetInstallPath());
-            icon = textures:LoadTextureFromPath(customDir .. bind.customIconPath);
-            if icon then
-                customIconCache[bind.customIconPath] = icon;
-                return icon, nil;
+            -- Resolve via TextureManager so submodule-prefixed paths route correctly
+            local fullPath = TextureManager.ResolveCustomIconPath(bind.customIconPath);
+            if fullPath then
+                icon = textures:LoadTextureFromPath(fullPath);
+                if icon then
+                    customIconCache[bind.customIconPath] = icon;
+                    return icon, nil;
+                end
             end
         end
     end

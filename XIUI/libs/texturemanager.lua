@@ -420,8 +420,30 @@ function M.getFileTexture(path)
     end, 'assets');
 end
 
+-- Custom icon roots. Submodule icons are stored with a prefix so the same
+-- relativePath string disambiguates which root to resolve against.
+local CUSTOM_ICON_ROOT_PREFIX_XIUI_ICONS = 'submodules\\xiui-icons\\';
+local CUSTOM_ICON_ROOT_PREFIX_XIUI_ICONS_LEN = #CUSTOM_ICON_ROOT_PREFIX_XIUI_ICONS;
+
+-- Resolve a stored customIconPath to an absolute file path. Legacy entries
+-- (no recognized prefix) resolve under assets/hotbar/custom/.
+-- @param relativePath string
+-- @return string|nil
+function M.ResolveCustomIconPath(relativePath)
+    if relativePath == nil or relativePath == '' then
+        return nil;
+    end
+    local installPath = AshitaCore:GetInstallPath();
+    if relativePath:sub(1, CUSTOM_ICON_ROOT_PREFIX_XIUI_ICONS_LEN) == CUSTOM_ICON_ROOT_PREFIX_XIUI_ICONS then
+        local rest = relativePath:sub(CUSTOM_ICON_ROOT_PREFIX_XIUI_ICONS_LEN + 1);
+        return string.format('%saddons\\XIUI\\submodules\\xiui-icons\\XIUI\\assets\\hotbar\\%s', installPath, rest);
+    end
+    return string.format('%saddons\\XIUI\\assets\\hotbar\\custom\\%s', installPath, relativePath);
+end
+
 -- Get custom icon from hotbar custom icons directory
--- @param relativePath string - Path relative to assets/hotbar/custom/
+-- @param relativePath string - Path relative to assets/hotbar/custom/, or
+--   prefixed with `submodules\xiui-icons\` for icons from the xiui-icons submodule
 -- @return table|nil - Texture table with .image field, or nil
 function M.getCustomIcon(relativePath)
     if relativePath == nil or relativePath == '' then
@@ -430,7 +452,8 @@ function M.getCustomIcon(relativePath)
 
     local key = 'custom_' .. relativePath;
     return getOrCreate(key, function()
-        local fullPath = string.format('%s/assets/hotbar/custom/%s', addon.path, relativePath);
+        local fullPath = M.ResolveCustomIconPath(relativePath);
+        if not fullPath then return nil; end
         return loadTextureFromFile(fullPath);
     end, 'custom_icons');
 end
