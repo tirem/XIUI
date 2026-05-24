@@ -233,6 +233,8 @@ local debuff_font_settings = T{
 -- @param buffTable: the bufftable module
 function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset, buffTimes, settings, statusHandler, buffTableLib)
     if (statusIds ~= nil and #statusIds > 0) then
+        -- Draw onto the same list as window bgs so icons aren't hidden behind them.
+        local drawList = GetUIDrawList();
         local currentRow = 1;
         local currentColumn = 0;
         if (xOffset ~= nil) then
@@ -247,21 +249,17 @@ function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOf
             if (icon ~= nil) then
                 if (drawBg == true) then
                     local resetX, resetY = imgui.GetCursorScreenPos();
-                    local bgIcon;
                     local isBuff = buffTableLib.IsBuff(statusIds[i]);
                     local bgSize = iconSize * 1.1;
-                    local yOffset = bgSize * -0.1;
-                    if (isBuff) then
-                        yOffset = bgSize * -0.3;
-                    end
-                    imgui.SetCursorScreenPos({resetX - ((bgSize - iconSize) / 1.5), resetY + yOffset});
-                    bgIcon = statusHandler.GetBackground(isBuff);
-                    imgui.Image(bgIcon, { bgSize + 1, bgSize  / .75});
-                    imgui.SetCursorScreenPos({resetX, resetY});
+                    local yOffset = isBuff and (bgSize * -0.3) or (bgSize * -0.1);
+                    local bgX = resetX - ((bgSize - iconSize) / 1.5);
+                    local bgY = resetY + yOffset;
+                    drawList:AddImage(statusHandler.GetBackground(isBuff),
+                        {bgX, bgY}, {bgX + bgSize + 1, bgY + bgSize / 0.75});
                 end
-                -- Capture position BEFORE drawing icon to get accurate position
                 local iconPosX, iconPosY = imgui.GetCursorScreenPos();
-                imgui.Image(icon, { iconSize, iconSize }, { 0, 0 }, { 1, 1 });
+                drawList:AddImage(icon, {iconPosX, iconPosY}, {iconPosX + iconSize, iconPosY + iconSize});
+                imgui.Dummy({iconSize, iconSize});
                 if buffTimes ~= nil and buffTimes[i] ~= nil then
                     local font_base = settings or debuff_font_settings;
                     -- When no explicit font settings are provided (target bar buffs, pet bar buffs)
@@ -277,7 +275,6 @@ function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOf
                     local gs = gConfig.globalScale or 1.0;
                     local scaledFontHeight = (gConfig.targetBarIconFontSize and gConfig.targetBarIconFontSize * gs) or font_base.font_height;
                     local timerW, _ = imtext.Measure(timerText, scaledFontHeight);
-                    local drawList = GetUIDrawList();
                     local timerColor = font_base.font_color or 0xFFFFFFFF;
                     imtext.Draw(drawList, timerText, textPosX - timerW / 2, textPosY, timerColor, scaledFontHeight);
                 end

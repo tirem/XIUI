@@ -125,8 +125,15 @@ local function DrawIconWithTooltip(texture, size, tooltipText)
     -- Always use Dummy to advance cursor and enable hover detection
     imgui.Dummy({size, size});
 
+    -- Draw on foreground draw list so the tooltip renders above XIUI's bars,
+    -- which sit on the foreground layer and would otherwise hide SetTooltip.
     if tooltipText and imgui.IsItemHovered() then
-        imgui.SetTooltip(tooltipText);
+        local t = tooltipText:gsub('%%%%', '%%');
+        local mx, my = imgui.GetMousePos();
+        local tw, th = imgui.CalcTextSize(t);
+        local dl = imgui.GetForegroundDrawList();
+        dl:AddRectFilled({mx + 12, my + 12}, {mx + 24 + tw, my + 20 + th}, 0xE0000000, 3);
+        dl:AddText({mx + 18, my + 16}, 0xFFFFFFFF, t);
     end
 
     return size;
