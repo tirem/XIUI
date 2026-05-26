@@ -3235,6 +3235,7 @@ function M.DrawMacroEditor()
         -- Get screen position for icon preview (DrawIconPreview needs screen coords)
         local screenPos = {imgui.GetCursorScreenPos()};
         DrawIconPreview(editingMacro, screenPos[1], screenPos[2], iconPreviewSize);
+        imgui.Dummy({iconPreviewSize, iconPreviewSize});
 
         -- Change Icon button below preview (use window-relative SetCursorPos for scroll support)
         imgui.SetCursorPos({iconPreviewX - 10, startCursorY + iconPreviewSize + 8});
