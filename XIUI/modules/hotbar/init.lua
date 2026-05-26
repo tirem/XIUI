@@ -433,6 +433,8 @@ end
 -- ============================================
 
 function M.HandleZonePacket()
+    -- Flush any pending macro/slot saves before zone transition
+    macropalette.FlushPendingSave();
     data.Clear();
     petpalette.ClearPetState();
     -- Clear availability cache since player state is invalid during zone

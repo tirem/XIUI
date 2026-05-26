@@ -968,6 +968,11 @@ ashita.events.register('d3d_present', 'present_cb', function ()
         -- triggers another cache clear.
         TextureManager.FlushPendingReleases();
 
+        -- Process deferred icon cache clears scheduled by macro CRUD last frame.
+        -- Must run AFTER FlushPendingReleases (so prior evictions are safe) and
+        -- BEFORE any rendering this frame (so stale caches don't produce wrong icons).
+        macropalette.FlushPendingFrameWork();
+
         -- Clear internal save flag (deferred for Ashita 4.3+ async callbacks)
         if bPendingInternalSaveClear then
             bInternalSave = false;
