@@ -63,8 +63,7 @@ function M.DrawSettings()
     ensureDefaults();
 
     components.DrawCheckbox('Enabled', 'treasurePoolEnabled', CheckVisibility);
-    components.DrawCheckbox('Hide When Menu Open', 'treasurePoolHideOnMenuFocus');
-    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
+    components.DrawHideWhenMenuOpenOptions('treasurePoolHideOnMenuFocus', 'treasurePoolHideMacroPalette');
     components.DrawCheckbox('Preview', 'treasurePoolPreview', onPreviewChanged);
 
     if components.CollapsingSection('Display Settings', true) then

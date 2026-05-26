@@ -1045,8 +1045,7 @@ end
 -- Helper: Draw Pet Bar specific settings (used in tab)
 local function DrawPetBarSettingsContent()
     components.DrawCheckbox('Enabled', 'showPetBar', CheckVisibility);
-    components.DrawCheckbox('Hide When Menu Open', 'petBarHideOnMenuFocus');
-    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
+    components.DrawHideWhenMenuOpenOptions('petBarHideOnMenuFocus', 'petBarHideMacroPalette');
     components.DrawCheckbox('Hide During Events', 'petBarHideDuringEvents');
     components.DrawCheckbox('Preview Mode', 'petBarPreview');
     imgui.ShowHelp('Show the pet bar with mock data. Preview shows the pet type from the selected tab below.');

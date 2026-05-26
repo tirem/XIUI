@@ -2537,8 +2537,7 @@ function M.DrawSettings(state)
         DeferredUpdateVisuals();
     end);
     imgui.ShowHelp('When enabled, prevents dragging/dropping and swapping of hotbar and crossbar slots.');
-    components.DrawCheckbox('Hide When Menu Open', 'hotbarHideOnMenuFocus');
-    imgui.ShowHelp('Hide hotbars when a game menu is open (equipment, map, etc.).');
+    components.DrawHideWhenMenuOpenOptions('hotbarHideOnMenuFocus', 'hotbarHideMacroPalette');
 
     -- Disable XI macros checkbox (stored in hotbarGlobal)
     local disableMacroBars = { gConfig.hotbarGlobal.disableMacroBars or false };
