@@ -194,11 +194,12 @@ local ACTION_TYPE_LABELS = {
 };
 
 -- Recast source types for macros (allows displaying cooldown from a different action)
-local RECAST_SOURCE_TYPES = { 'none', 'ma', 'ja', 'item', 'pet' };
+local RECAST_SOURCE_TYPES = { 'none', 'ma', 'ja', 'ws', 'item', 'pet' };
 local RECAST_SOURCE_LABELS = {
     none = 'None',
     ma = 'Spell',
     ja = 'Ability',
+    ws = 'Weaponskill',
     item = 'Item',
     pet = 'Pet Command',
 };
@@ -309,6 +310,15 @@ local petAvatarFilter = 1;  -- 1 = All, 2+ = specific avatar index
 
 -- Search filter for dropdowns
 local searchFilter = { '' };
+
+-- Macro editor dropdown refresh state (shows "Loading..." when reopening lists)
+local editorFrameCounter = 0;
+local dropdownLoadState = {};  -- [label] = frame when refresh started
+
+-- Copy macro dialog state
+local copyMacroDialogOpen = false;
+local copyMacroSource = nil;
+local copyTargetIndex = { 1 };
 
 -- Icon picker state
 local iconPickerOpen = false;
@@ -476,6 +486,17 @@ local itemIconLoadState = {
     batchSize = 500,  -- Load 500 items per frame (fast since we're just reading names)
 };
 
+-- Browsing icon cache for DrawSearchableCombo dropdowns.
+-- Pre-load item icons in batches so opening item dropdowns doesn't tank FPS.
+local browsingIconCache = {
+    icons = {},       -- icons[itemId] = texture table or false (no icon)
+    itemIds = nil,
+    loadIndex = 0,
+    loaded = false,
+    loading = false,
+    batchSize = 25,
+};
+
 -- ============================================
 -- Spell/Ability/Weaponskill Retrieval (via shared playerdata module)
 -- ============================================
@@ -621,6 +642,178 @@ local function GetItemLoadProgress()
         return 100;
     end
     return math.floor((itemIconLoadState.currentId / itemIconLoadState.maxId) * 100);
+end
+
+-- Start pre-loading browsing icons for a list of items.
+local function StartBrowsingIconLoad(items)
+    if not items or #items == 0 then
+        browsingIconCache.loaded = true;
+        browsingIconCache.loading = false;
+        return;
+    end
+
+    local ids = {};
+    for _, item in ipairs(items) do
+        if item.id and item.id > 0 and item.id ~= 65535 then
+            if browsingIconCache.icons[item.id] == nil then
+                ids[#ids + 1] = item.id;
+            end
+        end
+    end
+
+    if #ids == 0 then
+        browsingIconCache.loaded = true;
+        browsingIconCache.loading = false;
+        return;
+    end
+
+    browsingIconCache.itemIds = ids;
+    browsingIconCache.loadIndex = 0;
+    browsingIconCache.loaded = false;
+    browsingIconCache.loading = true;
+end
+
+-- Load a batch of browsing icons (call once per frame while loading).
+local function LoadBrowsingIconBatch()
+    if browsingIconCache.loaded or not browsingIconCache.loading then
+        return;
+    end
+
+    local ids = browsingIconCache.itemIds;
+    if not ids then return; end
+
+    local endIdx = math.min(browsingIconCache.loadIndex + browsingIconCache.batchSize, #ids);
+
+    for i = browsingIconCache.loadIndex + 1, endIdx do
+        local itemId = ids[i];
+        if browsingIconCache.icons[itemId] == nil then
+            local icon = textures:LoadItemIconFromMemory(itemId);
+            browsingIconCache.icons[itemId] = icon or false;
+        end
+    end
+
+    browsingIconCache.loadIndex = endIdx;
+
+    if browsingIconCache.loadIndex >= #ids then
+        browsingIconCache.loaded = true;
+        browsingIconCache.loading = false;
+        browsingIconCache.itemIds = nil;
+    end
+end
+
+-- Get a browsing icon from the pre-built cache (O(1), no D3D calls).
+local function GetBrowsingIcon(itemId)
+    local cached = browsingIconCache.icons[itemId];
+    if cached and cached ~= false then
+        return cached;
+    end
+    return nil;
+end
+
+-- Get browsing icon load progress (0-100).
+local function GetBrowsingIconProgress()
+    if browsingIconCache.loaded then return 100; end
+    if not browsingIconCache.itemIds or #browsingIconCache.itemIds == 0 then return 0; end
+    return math.floor((browsingIconCache.loadIndex / #browsingIconCache.itemIds) * 100);
+end
+
+-- Invalidate browsing icon cache (call when player inventory changes).
+local function InvalidateBrowsingIconCache()
+    browsingIconCache.icons = {};
+    browsingIconCache.itemIds = nil;
+    browsingIconCache.loadIndex = 0;
+    browsingIconCache.loaded = false;
+    browsingIconCache.loading = false;
+end
+
+-- Build/return pet commands for the macro editor dropdown.
+local function GetEditorPetCommands()
+    if not cachedPetCommands then
+        local viewedJobId = selectedPaletteType;
+        if type(viewedJobId) ~= 'number' then
+            viewedJobId = playerdata.GetCacheJobId() or 0;
+        end
+
+        local avatarName = nil;
+        local activePetName = nil;
+        local avatarList = petregistry.GetAvatarList();
+
+        if viewedJobId == petregistry.JOB_SMN then
+            if selectedAvatarPalette then
+                avatarName = selectedAvatarPalette;
+            elseif petAvatarFilter > 1 then
+                avatarName = avatarList[petAvatarFilter - 1];
+            end
+        elseif viewedJobId == petregistry.JOB_BST then
+            activePetName = petpalette.GetCurrentPetEntityName();
+        end
+
+        cachedPetCommands = GetPetCommandsForJob(viewedJobId, avatarName, activePetName);
+    end
+
+    return cachedPetCommands or {};
+end
+
+-- Eagerly rebuild pet command cache (matches playerdata ForceRefresh* pattern)
+local function ForceRefreshPetCommands()
+    cachedPetCommands = nil;
+    return GetEditorPetCommands();
+end
+
+-- Refresh macro editor dropdown data when a list is opened.
+local DROPDOWN_REFRESH = {
+    spells = function()
+        playerdata.ForceRefreshSpells();
+    end,
+    abilities = function()
+        playerdata.ForceRefreshAbilities();
+    end,
+    weaponskills = function()
+        playerdata.ForceRefreshWeaponskills();
+    end,
+    items = function()
+        playerdata.ForceRefreshItems();
+        InvalidateBrowsingIconCache();
+    end,
+    pet = function()
+        ForceRefreshPetCommands();
+    end,
+    recastSource = function()
+        playerdata.ForceRefreshSpells();
+        playerdata.ForceRefreshAbilities();
+        playerdata.ForceRefreshWeaponskills();
+        playerdata.ForceRefreshItems();
+        ForceRefreshPetCommands();
+        InvalidateBrowsingIconCache();
+    end,
+};
+
+local function RefreshDropdownList(refreshType)
+    local refresh = DROPDOWN_REFRESH[refreshType];
+    if refresh then
+        refresh();
+    end
+end
+
+local ITEM_COMBO_WIDTH = 220;
+
+-- Item section title with optional inventory quantity on the same line, right-aligned to combo width.
+local function DrawItemLabelWithQuantity(label, itemId, itemName)
+    imgui.TextColored(COLORS.goldDim, label);
+    if not itemName or itemName == '' then return; end
+
+    if slotrenderer == nil then
+        local success, mod = pcall(require, 'modules.hotbar.slotrenderer');
+        if success then slotrenderer = mod; end
+    end
+    if not slotrenderer or not slotrenderer.GetItemQuantity then return; end
+
+    local qty = slotrenderer.GetItemQuantity(itemId, itemName) or 0;
+    local color = qty == 0 and COLORS.danger or COLORS.textMuted;
+    local text = 'x' .. qty .. ' in inventory';
+    local textWidth = imgui.CalcTextSize(text);
+    imgui.SameLine(ITEM_COMBO_WIDTH - textWidth);
+    imgui.TextColored(color, text);
 end
 
 -- ============================================
@@ -904,20 +1097,50 @@ local function PopComboStyle()
 end
 
 -- Draw a searchable dropdown combo box with XIUI styling
+-- getItems: function returning the item list (refreshed each time the dropdown opens)
 -- showIcons: if true, will attempt to load and display item icons
 -- equipSlotFilter: if provided, only show items that can be equipped in this slot (e.g., 'main', 'head')
-local function DrawSearchableCombo(label, items, currentValue, onSelect, showIcons, equipSlotFilter)
+-- refreshType: when set, invalidates cached data when the dropdown is opened
+-- emptyMessage: text shown when the list is empty after loading
+local function DrawSearchableCombo(label, getItems, currentValue, onSelect, showIcons, equipSlotFilter, refreshType, emptyMessage)
     local displayText = currentValue ~= '' and currentValue or 'Select...';
 
     -- Get the slot mask for filtering if provided
     local slotMask = equipSlotFilter and EQUIP_SLOT_MASKS[equipSlotFilter] or nil;
 
+    local iconsReady = not showIcons;
+
     -- Apply XIUI styling to combo popup
     PushComboStyle();
 
-    imgui.SetNextItemWidth(220);
+    imgui.SetNextItemWidth(ITEM_COMBO_WIDTH);
     -- Use HeightLargest so popup fits our child window without its own scrollbar
     if imgui.BeginCombo(label, displayText, ImGuiComboFlags_HeightLargest) then
+        if imgui.IsWindowAppearing() and refreshType then
+            RefreshDropdownList(refreshType);
+            dropdownLoadState[label] = editorFrameCounter;
+        end
+
+        local isLoading = dropdownLoadState[label] ~= nil
+            and editorFrameCounter <= dropdownLoadState[label];
+
+        local items = nil;
+        if not isLoading then
+            dropdownLoadState[label] = nil;
+            items = getItems();
+        end
+
+        -- Kick off batched icon loading when the popup is open
+        if showIcons and items and #items > 0 then
+            if not browsingIconCache.loaded and not browsingIconCache.loading then
+                StartBrowsingIconLoad(items);
+            end
+            if browsingIconCache.loading then
+                LoadBrowsingIconBatch();
+            end
+            iconsReady = browsingIconCache.loaded;
+        end
+
         -- Search input at top (fixed, not scrollable)
         imgui.SetNextItemWidth(200);
         imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
@@ -933,76 +1156,86 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
 
         imgui.Separator();
 
-        -- Scrollable child region for items only
-        local childHeight = 200;
-        imgui.BeginChild('##comboScroll' .. label, {0, childHeight}, false);
+        if isLoading then
+            imgui.TextColored(COLORS.textMuted, 'Loading...');
+        elseif showIcons and items and #items > 0 and not iconsReady then
+            local progress = GetBrowsingIconProgress();
+            imgui.TextColored(COLORS.textMuted, string.format('Loading... %d%%', progress));
+        elseif not items or #items == 0 then
+            imgui.TextColored(COLORS.textMuted, emptyMessage or 'No matches');
+        else
+            -- Scrollable child region for items only
+            local childHeight = 200;
+            imgui.BeginChild('##comboScroll' .. label, {0, childHeight}, false);
 
-        local filter = searchFilter[1]:lower();
-        local matchCount = 0;
-        local iconSize = 16;
+            local filter = searchFilter[1]:lower();
+            local matchCount = 0;
+            local iconSize = 16;
 
-        for _, item in ipairs(items) do
-            local itemName = item.name or '';
+            for _, item in ipairs(items) do
+                local itemName = item.name or '';
 
-            -- Check if item passes equipment slot filter
-            local passesSlotFilter = true;
-            if slotMask and item.slots then
-                passesSlotFilter = bit.band(item.slots, slotMask) ~= 0;
-            end
-
-            if passesSlotFilter and (filter == '' or itemName:lower():find(filter, 1, true)) then
-                matchCount = matchCount + 1;
-                local isSelected = currentValue == itemName;
-
-                -- Determine text color: gold if selected, blue if usable, default otherwise
-                local textColor = nil;
-                if isSelected then
-                    textColor = COLORS.gold;
-                elseif item.usable then
-                    textColor = COLORS.usable;
+                -- Check if item passes equipment slot filter
+                local passesSlotFilter = true;
+                if slotMask and item.slots then
+                    passesSlotFilter = bit.band(item.slots, slotMask) ~= 0;
                 end
 
-                if textColor then
-                    imgui.PushStyleColor(ImGuiCol_Text, textColor);
-                end
+                if passesSlotFilter and (filter == '' or itemName:lower():find(filter, 1, true)) then
+                    matchCount = matchCount + 1;
+                    local isSelected = currentValue == itemName;
 
-                -- Show icon if enabled and item has an id
-                if showIcons and item.id then
-                    -- Use memory-only loading (no PNG creation) for browsing
-                    local icon = actions.GetItemIconForBrowsing(item.id);
-                    if icon and icon.image then
-                        local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
-                        if iconPtr then
-                            imgui.Image(iconPtr, {iconSize, iconSize});
-                            imgui.SameLine();
+                    -- Determine text color: gold if selected, blue if usable, default otherwise
+                    local textColor = nil;
+                    if isSelected then
+                        textColor = COLORS.gold;
+                    elseif item.usable then
+                        textColor = COLORS.usable;
+                    end
+
+                    if textColor then
+                        imgui.PushStyleColor(ImGuiCol_Text, textColor);
+                    end
+
+                    -- Show icon from pre-built cache (no D3D calls during rendering)
+                    if showIcons and iconsReady and item.id then
+                        local icon = GetBrowsingIcon(item.id);
+                        if icon and icon.image then
+                            local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
+                            if iconPtr then
+                                imgui.Image(iconPtr, {iconSize, iconSize});
+                                imgui.SameLine();
+                            end
                         end
                     end
-                end
 
-                local itemLabel = item.level and string.format('[%d] %s', item.level, itemName) or itemName;
-                -- Add quantity for items with count > 1
-                if item.count and item.count > 1 then
-                    itemLabel = itemLabel .. ' x' .. item.count;
-                end
-                if imgui.Selectable(itemLabel .. '##item' .. (item.id or matchCount), isSelected) then
-                    onSelect(item);
-                    searchFilter[1] = '';
-                    imgui.CloseCurrentPopup();
-                end
+                    local itemLabel = item.level and string.format('[%d] %s', item.level, itemName) or itemName;
+                    -- Add quantity for items with count > 1
+                    if item.count and item.count > 1 then
+                        itemLabel = itemLabel .. ' x' .. item.count;
+                    end
+                    if imgui.Selectable(itemLabel .. '##item' .. (item.id or matchCount), isSelected) then
+                        onSelect(item);
+                        searchFilter[1] = '';
+                        imgui.CloseCurrentPopup();
+                    end
 
-                if textColor then
-                    imgui.PopStyleColor();
+                    if textColor then
+                        imgui.PopStyleColor();
+                    end
                 end
             end
-        end
 
-        if matchCount == 0 then
-            imgui.TextColored(COLORS.textMuted, 'No matches');
-        end
+            if matchCount == 0 then
+                imgui.TextColored(COLORS.textMuted, 'No matches');
+            end
 
-        imgui.EndChild();
+            imgui.EndChild();
+        end
 
         imgui.EndCombo();
+    else
+        dropdownLoadState[label] = nil;
     end
 
     PopComboStyle();
@@ -1068,6 +1301,7 @@ function M.SyncToCurrentJob()
     end
     -- Clear spell/ability/item caches so they rebuild for new job
     playerdata.ClearCache();
+    InvalidateBrowsingIconCache();
     cachedPetCommands = nil;
     petAvatarFilter = 1;
     selectedAvatarPalette = nil;
@@ -1124,6 +1358,54 @@ function M.AddMacro(macroData)
     data.MarkMacroLookupDirty();
 
     return macroData.id;
+end
+
+-- Escape special characters for use in Lua pattern matching
+local function EscapePattern(str)
+    return (str:gsub('([%%%^%$%(%)%.%[%]%*%+%-%?])', '%%%1'));
+end
+
+-- Build the next incremental copy name: "Stun" -> "Stun (1)", "Stun (1)" -> "Stun (1) (1)"
+local function GetNextCopyDisplayName(sourceName, db)
+    local prefix = sourceName or 'Macro';
+    local pattern = '^' .. EscapePattern(prefix) .. ' %((%d+)%)%$';
+    local maxN = 0;
+
+    for _, macro in ipairs(db) do
+        local name = macro.displayName or macro.action or '';
+        local n = name:match(pattern);
+        if n then
+            maxN = math.max(maxN, tonumber(n));
+        end
+    end
+
+    return prefix .. ' (' .. (maxN + 1) .. ')';
+end
+
+-- Add a macro copy to a specific palette type key (Global, job ID, etc.)
+local function AddMacroToTypeKey(typeKey, macroData)
+    if not gConfig.macroDB then
+        gConfig.macroDB = {};
+    end
+    if not gConfig.macroDB[typeKey] then
+        gConfig.macroDB[typeKey] = {};
+    end
+
+    local db = gConfig.macroDB[typeKey];
+    local maxId = 0;
+    for _, macro in ipairs(db) do
+        if macro.id and macro.id > maxId then
+            maxId = macro.id;
+        end
+    end
+
+    local copy = deep_copy_table(macroData);
+    copy.id = maxId + 1;
+    table.insert(db, copy);
+    SaveSettingsToDisk();
+    data.MarkMacroLookupDirty();
+
+    return copy.id;
 end
 
 -- Update an existing macro
@@ -1411,6 +1693,9 @@ function M.ClosePalette()
     editingMacro = nil;
     isCreatingNew = false;
     currentPalettePage = 1;  -- Reset to page 1
+    copyMacroDialogOpen = false;
+    copyMacroSource = nil;
+    InvalidateBrowsingIconCache();
 end
 
 function M.IsPaletteOpen()
@@ -1572,6 +1857,104 @@ for i, job in ipairs(JOB_LIST) do
     JOB_ID_MAP[job.id] = i;
 end
 
+-- Build destination options for the copy macro dialog
+local copyTargetOptions = nil;
+local function GetCopyTargetOptions()
+    if copyTargetOptions then
+        return copyTargetOptions;
+    end
+
+    copyTargetOptions = {
+        { key = GLOBAL_MACRO_KEY, label = 'Global' },
+    };
+
+    for _, job in ipairs(JOB_LIST) do
+        copyTargetOptions[#copyTargetOptions + 1] = {
+            key = job.id,
+            label = job.name,
+        };
+    end
+
+    return copyTargetOptions;
+end
+
+local function DrawCopyMacroDialog()
+    if not copyMacroDialogOpen or not copyMacroSource then
+        return;
+    end
+
+    local isOpen = { true };
+    imgui.SetNextWindowSize({320, 170}, ImGuiCond_Appearing);
+
+    PushWindowStyle();
+    if imgui.Begin('Copy Macro###CopyMacroDialog', isOpen, ImGuiWindowFlags_NoCollapse) then
+        local macroName = copyMacroSource.displayName or copyMacroSource.action or 'Macro';
+        imgui.TextColored(COLORS.textDim, 'Copy "' .. macroName .. '" to:');
+
+        imgui.Spacing();
+
+        local targets = GetCopyTargetOptions();
+        local selectedTarget = targets[copyTargetIndex[1]] or targets[1];
+
+        PushComboStyle();
+        imgui.SetNextItemWidth(260);
+        if imgui.BeginCombo('##copyTarget', selectedTarget.label) then
+            for i, target in ipairs(targets) do
+                local isSelected = copyTargetIndex[1] == i;
+                if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
+                if imgui.Selectable(target.label, isSelected) then
+                    copyTargetIndex[1] = i;
+                end
+                if isSelected then imgui.PopStyleColor(); end
+            end
+            imgui.EndCombo();
+        end
+        PopComboStyle();
+
+        imgui.Spacing();
+        imgui.Separator();
+        imgui.Spacing();
+
+        imgui.PushStyleColor(ImGuiCol_Button, COLORS.success);
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.5, 0.8, 0.5, 1.0});
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.6, 0.9, 0.6, 1.0});
+        imgui.PushStyleColor(ImGuiCol_Text, {0.1, 0.1, 0.1, 1.0});
+
+        if imgui.Button('Copy', {90, 28}) then
+            local target = targets[copyTargetIndex[1]] or targets[1];
+            local copy = deep_copy_table(copyMacroSource);
+            copy.id = nil;
+
+            local currentTypeKey = GetEffectivePaletteType();
+            if target.key == currentTypeKey then
+                local baseName = copy.displayName or copy.action or 'Macro';
+                local targetDb = gConfig.macroDB and gConfig.macroDB[target.key] or {};
+                copy.displayName = GetNextCopyDisplayName(baseName, targetDb);
+            end
+
+            AddMacroToTypeKey(target.key, copy);
+            copyMacroDialogOpen = false;
+            copyMacroSource = nil;
+        end
+
+        imgui.PopStyleColor(4);
+
+        imgui.SameLine();
+
+        if imgui.Button('Cancel', {90, 28}) then
+            copyMacroDialogOpen = false;
+            copyMacroSource = nil;
+        end
+    end
+    imgui.End();
+    PopWindowStyle();
+
+    if not isOpen[1] then
+        copyMacroDialogOpen = false;
+        copyMacroSource = nil;
+    end
+end
+
 -- Draw the palette window
 function M.DrawPalette()
     if not paletteOpen then
@@ -1678,6 +2061,7 @@ function M.DrawPalette()
                 currentPalettePage = 1;
                 -- Clear caches to force refresh
                 playerdata.ClearCache();
+                InvalidateBrowsingIconCache();
                 cachedPetCommands = nil;
                 petAvatarFilter = 1;
             end
@@ -1729,6 +2113,7 @@ function M.DrawPalette()
                     currentPalettePage = 1;    -- Reset to page 1 when switching types
                     -- Clear caches to force refresh
                     playerdata.ClearCache();
+                    InvalidateBrowsingIconCache();
                     cachedPetCommands = nil;
                     petAvatarFilter = 1;
                 end
@@ -2008,6 +2393,21 @@ function M.DrawPalette()
 
         imgui.SameLine();
 
+        if imgui.Button('Copy', {60, 26}) and hasSelection then
+            copyMacroSource = deep_copy_table(db[selectedMacroIndex]);
+            copyTargetIndex[1] = 1;
+            local currentTypeKey = GetEffectivePaletteType();
+            for i, target in ipairs(GetCopyTargetOptions()) do
+                if target.key == currentTypeKey then
+                    copyTargetIndex[1] = i;
+                    break;
+                end
+            end
+            copyMacroDialogOpen = true;
+        end
+
+        imgui.SameLine();
+
         -- Delete button with danger styling (or dimmed when disabled)
         if hasSelection then
             imgui.PushStyleColor(ImGuiCol_Button, COLORS.dangerDim);
@@ -2205,6 +2605,9 @@ function M.DrawPalette()
     if editingMacro then
         M.DrawMacroEditor();
     end
+
+    -- Draw copy macro dialog if needed
+    DrawCopyMacroDialog();
 end
 
 -- ============================================
@@ -3204,6 +3607,8 @@ function M.DrawMacroEditor()
         return;
     end
 
+    editorFrameCounter = editorFrameCounter + 1;
+
     -- Initialize editor fields from editing macro
     editorFields.actionType[1] = FindIndex(ACTION_TYPES, editingMacro.actionType or 'ma');
     editorFields.action[1] = editingMacro.action or '';
@@ -3294,19 +3699,14 @@ function M.DrawMacroEditor()
         if currentType == 'ma' then
             -- Spell: Show searchable dropdown
             imgui.TextColored(COLORS.goldDim, 'Spell');
-            local spells = GetCachedSpells();
-            if spells and #spells > 0 then
-                DrawSearchableCombo('##spellCombo', spells, editingMacro.action or '', function(spell)
-                    editingMacro.action = spell.name;
-                    editorFields.action[1] = spell.name;
-                    if (editingMacro.displayName or '') == '' then
-                        editingMacro.displayName = spell.name;
-                        editorFields.displayName[1] = spell.name;
-                    end
-                end);
-            else
-                imgui.TextColored(COLORS.textMuted, 'No spells available for this job');
-            end
+            DrawSearchableCombo('##spellCombo', GetCachedSpells, editingMacro.action or '', function(spell)
+                editingMacro.action = spell.name;
+                editorFields.action[1] = spell.name;
+                if (editingMacro.displayName or '') == '' then
+                    editingMacro.displayName = spell.name;
+                    editorFields.displayName[1] = spell.name;
+                end
+            end, false, nil, 'spells', 'No spells available for this job');
 
             -- Target dropdown
             imgui.Spacing();
@@ -3330,19 +3730,14 @@ function M.DrawMacroEditor()
         elseif currentType == 'ja' then
             -- Ability: Show searchable dropdown
             imgui.TextColored(COLORS.goldDim, 'Ability');
-            local abilities = GetCachedAbilities();
-            if abilities and #abilities > 0 then
-                DrawSearchableCombo('##abilityCombo', abilities, editingMacro.action or '', function(ability)
-                    editingMacro.action = ability.name;
-                    editorFields.action[1] = ability.name;
-                    if (editingMacro.displayName or '') == '' then
-                        editingMacro.displayName = ability.name;
-                        editorFields.displayName[1] = ability.name;
-                    end
-                end);
-            else
-                imgui.TextColored(COLORS.textMuted, 'No abilities available');
-            end
+            DrawSearchableCombo('##abilityCombo', GetCachedAbilities, editingMacro.action or '', function(ability)
+                editingMacro.action = ability.name;
+                editorFields.action[1] = ability.name;
+                if (editingMacro.displayName or '') == '' then
+                    editingMacro.displayName = ability.name;
+                    editorFields.displayName[1] = ability.name;
+                end
+            end, false, nil, 'abilities', 'No abilities available');
 
             -- Target dropdown
             imgui.Spacing();
@@ -3366,19 +3761,14 @@ function M.DrawMacroEditor()
         elseif currentType == 'ws' then
             -- Weaponskill: Show searchable dropdown
             imgui.TextColored(COLORS.goldDim, 'Weaponskill');
-            local weaponskills = GetCachedWeaponskills();
-            if weaponskills and #weaponskills > 0 then
-                DrawSearchableCombo('##wsCombo', weaponskills, editingMacro.action or '', function(ws)
-                    editingMacro.action = ws.name;
-                    editorFields.action[1] = ws.name;
-                    if (editingMacro.displayName or '') == '' then
-                        editingMacro.displayName = ws.name;
-                        editorFields.displayName[1] = ws.name;
-                    end
-                end);
-            else
-                imgui.TextColored(COLORS.textMuted, 'No weaponskills available');
-            end
+            DrawSearchableCombo('##wsCombo', GetCachedWeaponskills, editingMacro.action or '', function(ws)
+                editingMacro.action = ws.name;
+                editorFields.action[1] = ws.name;
+                if (editingMacro.displayName or '') == '' then
+                    editingMacro.displayName = ws.name;
+                    editorFields.displayName[1] = ws.name;
+                end
+            end, false, nil, 'weaponskills', 'No weaponskills available');
 
             -- Target dropdown (default to <t>)
             imgui.Spacing();
@@ -3401,21 +3791,14 @@ function M.DrawMacroEditor()
 
         elseif currentType == 'item' then
             -- Item: Searchable dropdown or manual input
-            imgui.TextColored(COLORS.goldDim, 'Item');
-            local items = GetCachedItems();
-            if items and #items > 0 then
-                DrawSearchableCombo('##itemCombo', items, editingMacro.action or '', function(item)
-                    editingMacro.action = item.name;
-                    editingMacro.itemId = item.id;  -- Store item ID for fast icon lookup
-                    editorFields.action[1] = item.name;
-                    editingMacro.displayName = item.name;
-                    editorFields.displayName[1] = item.name;
-                end, true);  -- Show icons
-                imgui.SameLine();
-                imgui.TextColored(COLORS.textMuted, '(' .. #items .. ')');
-            else
-                imgui.TextColored(COLORS.textMuted, 'No items found in storage');
-            end
+            DrawItemLabelWithQuantity('Item', editingMacro.itemId, editingMacro.action);
+            DrawSearchableCombo('##itemCombo', GetCachedItems, editingMacro.action or '', function(item)
+                editingMacro.action = item.name;
+                editingMacro.itemId = item.id;  -- Store item ID for fast icon lookup
+                editorFields.action[1] = item.name;
+                editingMacro.displayName = item.name;
+                editorFields.displayName[1] = item.name;
+            end, true, nil, 'items', 'No items found in storage');
 
             -- Manual input fallback
             imgui.Spacing();
@@ -3472,21 +3855,14 @@ function M.DrawMacroEditor()
             -- Item: Searchable dropdown or manual input (filtered by selected equipment slot)
             imgui.Spacing();
             local selectedSlot = EQUIP_SLOTS[editorFields.equipSlot[1]];
-            imgui.TextColored(COLORS.goldDim, 'Item (' .. EQUIP_SLOT_LABELS[selectedSlot] .. ')');
-            local equipItems = GetCachedItems();
-            if equipItems and #equipItems > 0 then
-                DrawSearchableCombo('##equipItemCombo', equipItems, editingMacro.action or '', function(item)
-                    editingMacro.action = item.name;
-                    editingMacro.itemId = item.id;  -- Store item ID for fast icon lookup
-                    editorFields.action[1] = item.name;
-                    editingMacro.displayName = item.name;
-                    editorFields.displayName[1] = item.name;
-                end, true, selectedSlot);  -- Show icons, filter by selected slot
-                imgui.SameLine();
-                imgui.TextColored(COLORS.textMuted, '(' .. #equipItems .. ')');
-            else
-                imgui.TextColored(COLORS.textMuted, 'No items found in storage');
-            end
+            DrawItemLabelWithQuantity('Item (' .. EQUIP_SLOT_LABELS[selectedSlot] .. ')', editingMacro.itemId, editingMacro.action);
+            DrawSearchableCombo('##equipItemCombo', GetCachedItems, editingMacro.action or '', function(item)
+                editingMacro.action = item.name;
+                editingMacro.itemId = item.id;  -- Store item ID for fast icon lookup
+                editorFields.action[1] = item.name;
+                editingMacro.displayName = item.name;
+                editorFields.displayName[1] = item.name;
+            end, true, selectedSlot, 'items', 'No items found in storage');
 
             -- Manual input fallback
             imgui.Spacing();
@@ -3530,26 +3906,41 @@ function M.DrawMacroEditor()
                 imgui.SetNextItemWidth(240);
                 local currentRecastType = RECAST_SOURCE_TYPES[editorFields.recastSourceType[1]] or 'none';
                 if imgui.BeginCombo('##recastSourceType', RECAST_SOURCE_LABELS[currentRecastType] or 'None') then
-                    for i, sourceType in ipairs(RECAST_SOURCE_TYPES) do
-                        local isSelected = editorFields.recastSourceType[1] == i;
-                        if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
-                        if imgui.Selectable(RECAST_SOURCE_LABELS[sourceType], isSelected) then
-                            editorFields.recastSourceType[1] = i;
-                            if sourceType == 'none' then
-                                editingMacro.recastSourceType = nil;
+                    if imgui.IsWindowAppearing() then
+                        RefreshDropdownList('recastSource');
+                        dropdownLoadState['##recastSourceType'] = editorFrameCounter;
+                    end
+
+                    local isRecastTypeLoading = dropdownLoadState['##recastSourceType'] ~= nil
+                        and editorFrameCounter <= dropdownLoadState['##recastSourceType'];
+
+                    if isRecastTypeLoading then
+                        imgui.TextColored(COLORS.textMuted, 'Loading...');
+                    else
+                        dropdownLoadState['##recastSourceType'] = nil;
+                        for i, sourceType in ipairs(RECAST_SOURCE_TYPES) do
+                            local isSelected = editorFields.recastSourceType[1] == i;
+                            if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
+                            if imgui.Selectable(RECAST_SOURCE_LABELS[sourceType], isSelected) then
+                                editorFields.recastSourceType[1] = i;
+                                if sourceType == 'none' then
+                                    editingMacro.recastSourceType = nil;
+                                    editingMacro.recastSourceAction = nil;
+                                    editingMacro.recastSourceItemId = nil;
+                                else
+                                    editingMacro.recastSourceType = sourceType;
+                                end
+                                -- Clear action when type changes
                                 editingMacro.recastSourceAction = nil;
                                 editingMacro.recastSourceItemId = nil;
-                            else
-                                editingMacro.recastSourceType = sourceType;
+                                editorFields.recastSourceAction[1] = '';
                             end
-                            -- Clear action when type changes
-                            editingMacro.recastSourceAction = nil;
-                            editingMacro.recastSourceItemId = nil;
-                            editorFields.recastSourceAction[1] = '';
+                            if isSelected then imgui.PopStyleColor(); end
                         end
-                        if isSelected then imgui.PopStyleColor(); end
                     end
                     imgui.EndCombo();
+                else
+                    dropdownLoadState['##recastSourceType'] = nil;
                 end
                 PopComboStyle();
 
@@ -3559,60 +3950,43 @@ function M.DrawMacroEditor()
                 if currentRecastType == 'ma' then
                     imgui.Spacing();
                     imgui.TextColored(COLORS.goldDim, 'Spell');
-                    local spells = GetCachedSpells();
-                    if spells and #spells > 0 then
-                        DrawSearchableCombo('##recastSpellCombo', spells, editingMacro.recastSourceAction or '', function(spell)
-                            editingMacro.recastSourceAction = spell.name;
-                            editorFields.recastSourceAction[1] = spell.name;
-                        end);
-                    else
-                        imgui.TextColored(COLORS.textMuted, 'No spells available');
-                    end
+                    DrawSearchableCombo('##recastSpellCombo', GetCachedSpells, editingMacro.recastSourceAction or '', function(spell)
+                        editingMacro.recastSourceAction = spell.name;
+                        editorFields.recastSourceAction[1] = spell.name;
+                    end, false, nil, 'spells', 'No spells available');
 
                 elseif currentRecastType == 'ja' then
                     imgui.Spacing();
                     imgui.TextColored(COLORS.goldDim, 'Ability');
-                    local abilities = GetCachedAbilities();
-                    if abilities and #abilities > 0 then
-                        DrawSearchableCombo('##recastAbilityCombo', abilities, editingMacro.recastSourceAction or '', function(ability)
-                            editingMacro.recastSourceAction = ability.name;
-                            editorFields.recastSourceAction[1] = ability.name;
-                        end);
-                    else
-                        imgui.TextColored(COLORS.textMuted, 'No abilities available');
-                    end
+                    DrawSearchableCombo('##recastAbilityCombo', GetCachedAbilities, editingMacro.recastSourceAction or '', function(ability)
+                        editingMacro.recastSourceAction = ability.name;
+                        editorFields.recastSourceAction[1] = ability.name;
+                    end, false, nil, 'abilities', 'No abilities available');
+
+                elseif currentRecastType == 'ws' then
+                    imgui.Spacing();
+                    imgui.TextColored(COLORS.goldDim, 'Weaponskill');
+                    DrawSearchableCombo('##recastWsCombo', GetCachedWeaponskills, editingMacro.recastSourceAction or '', function(ws)
+                        editingMacro.recastSourceAction = ws.name;
+                        editorFields.recastSourceAction[1] = ws.name;
+                    end, false, nil, 'weaponskills', 'No weaponskills available');
 
                 elseif currentRecastType == 'item' then
                     imgui.Spacing();
-                    imgui.TextColored(COLORS.goldDim, 'Item');
-                    local items = GetCachedItems();
-                    if items and #items > 0 then
-                        DrawSearchableCombo('##recastItemCombo', items, editingMacro.recastSourceAction or '', function(item)
-                            editingMacro.recastSourceAction = item.name;
-                            editingMacro.recastSourceItemId = item.id;
-                            editorFields.recastSourceAction[1] = item.name;
-                        end, true);  -- Show icons
-                    else
-                        imgui.TextColored(COLORS.textMuted, 'No items available');
-                    end
+                    DrawItemLabelWithQuantity('Item', editingMacro.recastSourceItemId, editingMacro.recastSourceAction);
+                    DrawSearchableCombo('##recastItemCombo', GetCachedItems, editingMacro.recastSourceAction or '', function(item)
+                        editingMacro.recastSourceAction = item.name;
+                        editingMacro.recastSourceItemId = item.id;
+                        editorFields.recastSourceAction[1] = item.name;
+                    end, true, nil, 'items', 'No items available');
 
                 elseif currentRecastType == 'pet' then
                     imgui.Spacing();
                     imgui.TextColored(COLORS.goldDim, 'Pet Command');
-                    -- Use current job for pet commands
-                    local viewedJobId = selectedPaletteType;
-                    if type(viewedJobId) ~= 'number' then
-                        viewedJobId = playerdata.GetCacheJobId() or 0;
-                    end
-                    local petCommands = GetPetCommandsForJob(viewedJobId, selectedAvatarPalette, nil);
-                    if petCommands and #petCommands > 0 then
-                        DrawSearchableCombo('##recastPetCombo', petCommands, editingMacro.recastSourceAction or '', function(cmd)
-                            editingMacro.recastSourceAction = cmd.name;
-                            editorFields.recastSourceAction[1] = cmd.name;
-                        end);
-                    else
-                        imgui.TextColored(COLORS.textMuted, 'No pet commands available');
-                    end
+                    DrawSearchableCombo('##recastPetCombo', GetEditorPetCommands, editingMacro.recastSourceAction or '', function(cmd)
+                        editingMacro.recastSourceAction = cmd.name;
+                        editorFields.recastSourceAction[1] = cmd.name;
+                    end, false, nil, 'pet', 'No pet commands available');
                 end
 
                 imgui.TreePop();
@@ -3660,38 +4034,16 @@ function M.DrawMacroEditor()
                 imgui.Spacing();
             end
 
-            -- Build pet commands cache if needed
-            if not cachedPetCommands then
-                local avatarName = nil;
-                local activePetName = nil;
-                if viewedJobId == petregistry.JOB_SMN then
-                    -- Prefer the macro palette's avatar selection, then the filter
-                    if selectedAvatarPalette then
-                        avatarName = selectedAvatarPalette;
-                    elseif petAvatarFilter > 1 then
-                        avatarName = avatarList[petAvatarFilter - 1];
-                    end
-                elseif viewedJobId == petregistry.JOB_BST then
-                    -- Get the active pet's entity name for BST ready moves
-                    activePetName = petpalette.GetCurrentPetEntityName();
-                end
-                cachedPetCommands = GetPetCommandsForJob(viewedJobId, avatarName, activePetName);
-            end
-
             -- Pet command dropdown
             imgui.TextColored(COLORS.goldDim, 'Pet Command');
-            if cachedPetCommands and #cachedPetCommands > 0 then
-                DrawSearchableCombo('##petCommandCombo', cachedPetCommands, editingMacro.action or '', function(cmd)
-                    editingMacro.action = cmd.name;
-                    editorFields.action[1] = cmd.name;
-                    if (editingMacro.displayName or '') == '' then
-                        editingMacro.displayName = cmd.name;
-                        editorFields.displayName[1] = cmd.name;
-                    end
-                end);
-            else
-                imgui.TextColored(COLORS.textMuted, 'No pet commands available for this job');
-            end
+            DrawSearchableCombo('##petCommandCombo', GetEditorPetCommands, editingMacro.action or '', function(cmd)
+                editingMacro.action = cmd.name;
+                editorFields.action[1] = cmd.name;
+                if (editingMacro.displayName or '') == '' then
+                    editingMacro.displayName = cmd.name;
+                    editorFields.displayName[1] = cmd.name;
+                end
+            end, false, nil, 'pet', 'No pet commands available for this job');
 
             -- Manual input fallback
             imgui.Spacing();
