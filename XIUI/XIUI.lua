@@ -1410,6 +1410,10 @@ ashita.events.register('command', 'command_cb', function (e)
                 -- Toggle hotbar debug mode
                 local currentState = hotbar.IsDebugEnabled();
                 hotbar.SetDebugEnabled(not currentState);
+            elseif moduleName == 'subtarget' then
+                -- Toggle subtarget macro debug (ST wait/confirm/cancel only)
+                local currentState = hotbar.IsSubtargetDebugEnabled();
+                hotbar.SetSubtargetDebugEnabled(not currentState);
             elseif moduleName == 'macroblock' then
                 -- Toggle macro block debug mode (both memory patches AND controller)
                 local macrosLib = require('libs.ffxi.macros');
@@ -1428,7 +1432,7 @@ ashita.events.register('command', 'command_cb', function (e)
                 local currentState = hotbar.IsPaletteDebugEnabled();
                 hotbar.SetPaletteDebugEnabled(not currentState);
             else
-                print('[XIUI] Debug modules: hotbar, macroblock, rawinput, palette');
+                print('[XIUI] Debug modules: hotbar, subtarget, macroblock, rawinput, palette');
                 print('[XIUI] Usage: /xiui debug <module>');
             end
             return;
