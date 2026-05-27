@@ -829,25 +829,28 @@ local function GetCustomIconsDir()
 end
 
 -- Recursively scan a directory for PNG files
+-- pathPrefix: prepended to every entry's stored `path` (lets multi-root scans
+--             disambiguate which root the icon came from at load time)
 -- topLevelCategory: the immediate subdirectory name (for nested files)
-local function ScanDirectoryForPngs(dir, relativePath, results, topLevelCategory)
+local function ScanDirectoryForPngs(dir, relativePath, results, topLevelCategory, pathPrefix)
     relativePath = relativePath or '';
     results = results or {};
-    
+    pathPrefix = pathPrefix or '';
+
     local contents = ashita.fs.get_directory(dir, '.*');
     if not contents then return results; end
-    
+
     for _, entry in pairs(contents) do
         local fullPath = dir .. entry;
         local relPath = relativePath ~= '' and (relativePath .. '\\' .. entry) or entry;
-        
+
         -- Check if it's a PNG file
         if entry:lower():match('%.png$') then
             -- Category is: root (if at root level), or the top-level folder name
             local category = topLevelCategory or 'root';
             table.insert(results, {
                 name = entry:gsub('%.png$', ''),  -- Remove .png extension for display
-                path = relPath,  -- Relative path from custom/ directory
+                path = pathPrefix .. relPath,  -- Stored path (resolved by TextureManager.ResolveCustomIconPath)
                 category = category,
             });
         -- Check if it's a directory (no extension, not a file)
@@ -857,52 +860,79 @@ local function ScanDirectoryForPngs(dir, relativePath, results, topLevelCategory
             -- If we're already in a subdirectory, keep the original top-level category
             local categoryForNested = topLevelCategory or entry;
             -- Recursively scan subdirectory
-            ScanDirectoryForPngs(fullPath .. '\\', relPath, results, categoryForNested);
+            ScanDirectoryForPngs(fullPath .. '\\', relPath, results, categoryForNested, pathPrefix);
         end
     end
-    
+
     return results;
 end
 
--- Scan and cache all custom icons
+-- Roots scanned for the icon picker's "Custom" tab. Submodule roots use a
+-- pathPrefix so the resulting `customIconPath` round-trips through save/load
+-- and resolves back to the correct disk location.
+local function GetCustomIconRoots()
+    local installPath = AshitaCore:GetInstallPath();
+    return {
+        {
+            dir = string.format('%saddons\\XIUI\\assets\\hotbar\\custom\\', installPath),
+            pathPrefix = '',
+            includeEmptyFolders = true,  -- show user-created empty folders
+        },
+        {
+            dir = string.format('%saddons\\XIUI\\submodules\\xiui-icons\\XIUI\\assets\\hotbar\\', installPath),
+            pathPrefix = 'submodules\\xiui-icons\\',
+            includeEmptyFolders = false,  -- skip submodule non-PNG folders (e.g. TEMPLATE)
+        },
+    };
+end
+
+-- Scan and cache all custom icons (across every configured root)
 local function LoadCustomIcons()
     if customIconsCache then
         return customIconsCache;
     end
-    
-    local baseDir = GetCustomIconsDir();
-    customIconsCache = ScanDirectoryForPngs(baseDir);
-    
+
+    customIconsCache = {};
+    local roots = GetCustomIconRoots();
+    for _, root in ipairs(roots) do
+        ScanDirectoryForPngs(root.dir, '', customIconsCache, nil, root.pathPrefix);
+    end
+
     -- Sort alphabetically by name
     table.sort(customIconsCache, function(a, b)
         return a.name:lower() < b.name:lower();
     end);
-    
+
     -- Build category list from folders only
     CUSTOM_ICON_CATEGORIES = { 'all' };  -- 'all' is always first
     customIconsByCategoryCache = { ['all'] = customIconsCache };
     customCategoryIconCache = {};  -- Clear category icon cache
-    
+
     local seenCategories = { ['all'] = true };
-    
-    -- First, scan for all immediate subdirectories (including empty ones)
-    local contents = ashita.fs.get_directory(baseDir, '.*');
-    if contents then
-        for _, entry in pairs(contents) do
-            -- Check if it's a directory (no file extension)
-            if not entry:match('%.') then
-                if not seenCategories[entry] then
-                    seenCategories[entry] = true;
-                    table.insert(CUSTOM_ICON_CATEGORIES, entry);
-                    customIconsByCategoryCache[entry] = {};
-                    -- Generate label from directory name
-                    local label = entry:gsub('^%l', string.upper):gsub('_', ' ');
-                    CUSTOM_ICON_LABELS[entry] = label;
+
+    -- First, scan each root for immediate subdirectories (including empty ones,
+    -- if the root opts in — e.g. user-created folders under custom/)
+    for _, root in ipairs(roots) do
+        if root.includeEmptyFolders then
+            local contents = ashita.fs.get_directory(root.dir, '.*');
+            if contents then
+                for _, entry in pairs(contents) do
+                    -- Check if it's a directory (no file extension)
+                    if not entry:match('%.') then
+                        if not seenCategories[entry] then
+                            seenCategories[entry] = true;
+                            table.insert(CUSTOM_ICON_CATEGORIES, entry);
+                            customIconsByCategoryCache[entry] = {};
+                            -- Generate label from directory name
+                            local label = entry:gsub('^%l', string.upper):gsub('_', ' ');
+                            CUSTOM_ICON_LABELS[entry] = label;
+                        end
+                    end
                 end
             end
         end
     end
-    
+
     -- Then populate categories from found icons
     for _, icon in ipairs(customIconsCache) do
         -- Only add to categories for folders (not root-level files)
@@ -920,14 +950,14 @@ local function LoadCustomIcons()
         end
         -- Root files are only in 'all', no separate category
     end
-    
+
     -- Sort categories alphanumerically (but keep 'all' first)
     table.sort(CUSTOM_ICON_CATEGORIES, function(a, b)
         if a == 'all' then return true; end
         if b == 'all' then return false; end
         return a:lower() < b:lower();
     end);
-    
+
     return customIconsCache;
 end
 

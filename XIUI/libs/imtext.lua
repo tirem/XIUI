@@ -37,21 +37,18 @@ local colorCache = {};
 local pos = {0, 0};
 
 local fontFamilyToFile = {
-    tahoma                   = { regular = 'tahoma.ttf',   bold = 'tahomabd.ttf' },
     arial                    = { regular = 'arial.ttf',    bold = 'arialbd.ttf' },
-    consolas                 = { regular = 'consola.ttf',  bold = 'consolab.ttf' },
     calibri                  = { regular = 'calibri.ttf',  bold = 'calibrib.ttf' },
-    segoeui                  = { regular = 'segoeui.ttf',  bold = 'segoeuib.ttf' },
-    ['segoe ui']             = { regular = 'segoeui.ttf',  bold = 'segoeuib.ttf' },
-    verdana                  = { regular = 'verdana.ttf',  bold = 'verdanab.ttf' },
-    trebuchet                = { regular = 'trebuc.ttf',   bold = 'trebucbd.ttf' },
-    ['trebuchet ms']         = { regular = 'trebuc.ttf',   bold = 'trebucbd.ttf' },
-    lucida                   = { regular = 'lucon.ttf',    bold = 'lucon.ttf' },
-    ['lucida console']       = { regular = 'lucon.ttf',    bold = 'lucon.ttf' },
+    consolas                 = { regular = 'consola.ttf',  bold = 'consolab.ttf' },
     ['courier new']          = { regular = 'cour.ttf',     bold = 'courbd.ttf' },
     georgia                  = { regular = 'georgia.ttf',  bold = 'georgiab.ttf' },
-    ['times new roman']      = { regular = 'times.ttf',    bold = 'timesbd.ttf' },
+    ['lucida console']       = { regular = 'lucon.ttf',    bold = 'lucon.ttf' },
     ['microsoft sans serif'] = { regular = 'micross.ttf',  bold = 'micross.ttf' },
+    ['segoe ui']             = { regular = 'segoeui.ttf',  bold = 'segoeuib.ttf' },
+    tahoma                   = { regular = 'tahoma.ttf',   bold = 'tahomabd.ttf' },
+    ['times new roman']      = { regular = 'times.ttf',    bold = 'timesbd.ttf' },
+    ['trebuchet ms']         = { regular = 'trebuc.ttf',   bold = 'trebucbd.ttf' },
+    verdana                  = { regular = 'verdana.ttf',  bold = 'verdanab.ttf' },
 };
 
 local function resolveFontPath(fontFamily, isBold)
