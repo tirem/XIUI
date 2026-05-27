@@ -607,6 +607,44 @@ function M.MigrateIndividualSettings(gConfig, defaults)
             if petType.tpFontSize == nil then petType.tpFontSize = oldVitalsFontSize; end
         end
     end
+
+    -- Hotbar anchored layout settings
+    M.MigrateHotbarLayoutSettings(gConfig, defaults);
+end
+
+function M.MigrateHotbarLayoutSettings(gConfig, defaults)
+    local globalDefaults = defaults.hotbarGlobal or {};
+    local globalSettings = gConfig.hotbarGlobal;
+    if globalSettings then
+        if globalSettings.positionMode == nil then
+            globalSettings.positionMode = globalDefaults.positionMode or 'absolute';
+        end
+        if globalSettings.backgroundPaddingX == nil then
+            globalSettings.backgroundPaddingX = globalDefaults.backgroundPaddingX or 0;
+        end
+        if globalSettings.backgroundPaddingY == nil then
+            globalSettings.backgroundPaddingY = globalDefaults.backgroundPaddingY or 0;
+        end
+        if globalSettings.hotbarSpacing == nil then
+            globalSettings.hotbarSpacing = globalDefaults.hotbarSpacing or 0;
+        end
+    end
+
+    for barIndex = 1, 6 do
+        local barCfg = gConfig['hotbarBar' .. barIndex];
+        local barDefaults = defaults['hotbarBar' .. barIndex] or {};
+        if barCfg then
+            if barCfg.anchoredInStack == nil then
+                barCfg.anchoredInStack = barDefaults.anchoredInStack ~= false;
+            end
+            if barCfg.backgroundPaddingX == nil then
+                barCfg.backgroundPaddingX = barDefaults.backgroundPaddingX or 0;
+            end
+            if barCfg.backgroundPaddingY == nil then
+                barCfg.backgroundPaddingY = barDefaults.backgroundPaddingY or 0;
+            end
+        end
+    end
 end
 
 -- Migrate flat castCost* settings to nested castCost table

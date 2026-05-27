@@ -225,6 +225,7 @@ end
 -- Keys that are always per-bar (never pulled from global)
 local PER_BAR_ONLY_KEYS = {
     enabled = true,
+    anchoredInStack = true,
     rows = true,
     columns = true,
     slots = true,
