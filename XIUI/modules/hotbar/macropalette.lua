@@ -66,6 +66,12 @@ local function MarkHotbarDirty()
     hotbarDataDirty = true;
 end
 
+-- Deferred icon cache clear: dropping texture references mid-render-frame lets
+-- GC release D3D COM objects whose pointers are still queued in ImGui's draw
+-- list, causing EXCEPTION_ACCESS_VIOLATION. We schedule the clear and execute
+-- it at the TOP of the next d3d_present (after TextureManager.FlushPendingReleases).
+local pendingIconCacheClear = false;
+
 -- Helper to generate abbreviated text from action name (max 4 chars)
 -- If preferAction is true, prioritize action name over displayName (for previews)
 local function GetActionAbbreviation(macro, preferAction)
@@ -105,6 +111,11 @@ local function GetActionAbbreviation(macro, preferAction)
 end
 
 -- Helper to clear all hotbar/crossbar icon caches (full clear - expensive)
+-- IMPORTANT: This must only run at the TOP of d3d_present, never mid-frame.
+-- Clearing texturePtrCache mid-frame drops the last Lua reference to D3D
+-- texture tables, making them GC-eligible. If GC fires (e.g. from the heavy
+-- string allocations in SerializeLegacy), it releases COM objects whose
+-- pointers are still queued in the current frame's ImGui draw list → crash.
 local slotrenderer = nil;  -- Lazy-loaded
 local function ClearAllIconCaches()
     -- Lazy-load display to avoid circular dependency
@@ -144,6 +155,20 @@ local function ClearAllIconCaches()
     -- on edited macros are picked up next frame.
     if actions and actions.ClearNoIconCache then
         actions.ClearNoIconCache();
+    end
+end
+
+-- When true, FlushPendingFrameWork also calls slotrenderer.ClearAllCache
+-- (needed for pet palette switches that change which abilities are visible).
+local pendingFullSlotCacheClear = false;
+
+-- Schedule icon cache clear for the start of the next frame instead of
+-- executing it immediately. Call this from mid-frame code paths (button
+-- handlers, save callbacks) that must not drop texture references.
+local function ScheduleIconCacheClear(includeFullSlotCache)
+    pendingIconCacheClear = true;
+    if includeFullSlotCache then
+        pendingFullSlotCacheClear = true;
     end
 end
 
@@ -476,6 +501,21 @@ local itemIconLoadState = {
     batchSize = 500,  -- Load 500 items per frame (fast since we're just reading names)
 };
 
+-- Browsing icon cache for DrawSearchableCombo dropdowns.
+-- Creating a D3D texture via D3DXCreateTextureFromFileInMemoryEx for every
+-- item every frame while a dropdown is open tanks FPS (461 items → 15 FPS).
+-- Instead we pre-load all icons once into this cache in batches spread across
+-- frames, and show "Loading..." until ready.
+local browsingIconCache = {
+    icons = {},       -- icons[itemId] = { image = cdata, ... } or false (no icon)
+    itemIds = nil,    -- array of item IDs to load (set when loading starts)
+    loadIndex = 0,    -- how far through itemIds we've loaded
+    loaded = false,   -- true when all icons are cached
+    loading = false,  -- true while batches are in progress
+    batchSize = 25,   -- D3D texture creations per frame (heavier than name reads)
+    generation = 0,   -- bumped when item list changes, invalidates stale caches
+};
+
 -- ============================================
 -- Spell/Ability/Weaponskill Retrieval (via shared playerdata module)
 -- ============================================
@@ -621,6 +661,93 @@ local function GetItemLoadProgress()
         return 100;
     end
     return math.floor((itemIconLoadState.currentId / itemIconLoadState.maxId) * 100);
+end
+
+-- Start pre-loading browsing icons for a list of items.
+-- Returns immediately; call LoadBrowsingIconBatch() each frame to make progress.
+local function StartBrowsingIconLoad(items)
+    if not items or #items == 0 then
+        browsingIconCache.loaded = true;
+        browsingIconCache.loading = false;
+        return;
+    end
+
+    -- Build the list of item IDs that need loading
+    local ids = {};
+    for _, item in ipairs(items) do
+        if item.id and item.id > 0 and item.id ~= 65535 then
+            -- Skip if already cached from a previous load
+            if browsingIconCache.icons[item.id] == nil then
+                ids[#ids + 1] = item.id;
+            end
+        end
+    end
+
+    if #ids == 0 then
+        browsingIconCache.loaded = true;
+        browsingIconCache.loading = false;
+        return;
+    end
+
+    browsingIconCache.itemIds = ids;
+    browsingIconCache.loadIndex = 0;
+    browsingIconCache.loaded = false;
+    browsingIconCache.loading = true;
+end
+
+-- Load a batch of browsing icons (call once per frame while loading).
+local function LoadBrowsingIconBatch()
+    if browsingIconCache.loaded or not browsingIconCache.loading then
+        return;
+    end
+
+    local ids = browsingIconCache.itemIds;
+    if not ids then return; end
+
+    local endIdx = math.min(browsingIconCache.loadIndex + browsingIconCache.batchSize, #ids);
+
+    for i = browsingIconCache.loadIndex + 1, endIdx do
+        local itemId = ids[i];
+        if browsingIconCache.icons[itemId] == nil then
+            local icon = textures:LoadItemIconFromMemory(itemId);
+            -- Store the texture (or false as a negative cache entry)
+            browsingIconCache.icons[itemId] = icon or false;
+        end
+    end
+
+    browsingIconCache.loadIndex = endIdx;
+
+    if browsingIconCache.loadIndex >= #ids then
+        browsingIconCache.loaded = true;
+        browsingIconCache.loading = false;
+        browsingIconCache.itemIds = nil;
+    end
+end
+
+-- Get a browsing icon from the pre-built cache (O(1), no D3D calls).
+local function GetBrowsingIcon(itemId)
+    local cached = browsingIconCache.icons[itemId];
+    if cached and cached ~= false then
+        return cached;
+    end
+    return nil;
+end
+
+-- Get browsing icon load progress (0-100).
+local function GetBrowsingIconProgress()
+    if browsingIconCache.loaded then return 100; end
+    if not browsingIconCache.itemIds or #browsingIconCache.itemIds == 0 then return 0; end
+    return math.floor((browsingIconCache.loadIndex / #browsingIconCache.itemIds) * 100);
+end
+
+-- Invalidate browsing icon cache (call when player inventory changes).
+local function InvalidateBrowsingIconCache()
+    browsingIconCache.icons = {};
+    browsingIconCache.itemIds = nil;
+    browsingIconCache.loadIndex = 0;
+    browsingIconCache.loaded = false;
+    browsingIconCache.loading = false;
+    browsingIconCache.generation = browsingIconCache.generation + 1;
 end
 
 -- ============================================
@@ -942,12 +1069,25 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
     -- Get the slot mask for filtering if provided
     local slotMask = equipSlotFilter and EQUIP_SLOT_MASKS[equipSlotFilter] or nil;
 
+    local iconsReady = not showIcons;  -- true when icons aren't requested
+
     -- Apply XIUI styling to combo popup
     PushComboStyle();
 
     imgui.SetNextItemWidth(220);
     -- Use HeightLargest so popup fits our child window without its own scrollbar
     if imgui.BeginCombo(label, displayText, ImGuiComboFlags_HeightLargest) then
+        -- Kick off batched icon loading when the popup is open so we never
+        -- call D3DXCreateTextureFromFileInMemoryEx inside the item loop.
+        if showIcons and items and #items > 0 then
+            if not browsingIconCache.loaded and not browsingIconCache.loading then
+                StartBrowsingIconLoad(items);
+            end
+            if browsingIconCache.loading then
+                LoadBrowsingIconBatch();
+            end
+            iconsReady = browsingIconCache.loaded;
+        end
         -- Search input at top (fixed, not scrollable)
         imgui.SetNextItemWidth(200);
         imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
@@ -962,6 +1102,13 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
         end
 
         imgui.Separator();
+
+        -- Show loading indicator while icons are being cached
+        if showIcons and not iconsReady then
+            local progress = GetBrowsingIconProgress();
+            imgui.TextColored(COLORS.textMuted, string.format('Loading icons... %d%%', progress));
+            imgui.Separator();
+        end
 
         -- Scrollable child region for items only
         local childHeight = 200;
@@ -996,10 +1143,9 @@ local function DrawSearchableCombo(label, items, currentValue, onSelect, showIco
                     imgui.PushStyleColor(ImGuiCol_Text, textColor);
                 end
 
-                -- Show icon if enabled and item has an id
-                if showIcons and item.id then
-                    -- Use memory-only loading (no PNG creation) for browsing
-                    local icon = actions.GetItemIconForBrowsing(item.id);
+                -- Show icon from pre-built cache (no D3D calls during rendering)
+                if showIcons and iconsReady and item.id then
+                    local icon = GetBrowsingIcon(item.id);
                     if icon and icon.image then
                         local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
                         if iconPtr then
@@ -1098,6 +1244,7 @@ function M.SyncToCurrentJob()
     end
     -- Clear spell/ability/item caches so they rebuild for new job
     playerdata.ClearCache();
+    InvalidateBrowsingIconCache();
     cachedPetCommands = nil;
     petAvatarFilter = 1;
     selectedAvatarPalette = nil;
@@ -1150,7 +1297,7 @@ function M.AddMacro(macroData)
 
     macroData.id = maxId + 1;
     table.insert(db, macroData);
-    SaveSettingsToDisk();
+    MarkHotbarDirty();
     data.MarkMacroLookupDirty();
 
     return macroData.id;
@@ -1164,9 +1311,10 @@ function M.UpdateMacro(macroId, macroData)
         if macro.id == macroId then
             macroData.id = macroId;  -- Preserve ID
             db[i] = macroData;
-            SaveSettingsToDisk();
-            -- Clear icon cache so hotbar slots referencing this macro update
-            ClearAllIconCaches();
+            MarkHotbarDirty();
+            -- Defer icon cache clear to next frame start to avoid dropping
+            -- D3D texture references while ImGui draw list still holds pointers
+            ScheduleIconCacheClear();
             data.MarkMacroLookupDirty();
             return true;
         end
@@ -1230,9 +1378,9 @@ function M.DeleteMacro(macroId)
             table.remove(db, i);
             -- Clear any hotbar/crossbar slots referencing this macro
             ClearSlotsReferencingMacro(macroId, typeKey);
-            SaveSettingsToDisk();
-            -- Clear icon cache so hotbar slots update immediately
-            ClearAllIconCaches();
+            MarkHotbarDirty();
+            -- Defer icon cache clear to next frame start
+            ScheduleIconCacheClear();
             data.MarkMacroLookupDirty();
             return true;
         end
@@ -1441,6 +1589,7 @@ function M.ClosePalette()
     editingMacro = nil;
     isCreatingNew = false;
     currentPalettePage = 1;  -- Reset to page 1
+    InvalidateBrowsingIconCache();
 end
 
 function M.IsPaletteOpen()
@@ -1708,6 +1857,7 @@ function M.DrawPalette()
                 currentPalettePage = 1;
                 -- Clear caches to force refresh
                 playerdata.ClearCache();
+                InvalidateBrowsingIconCache();
                 cachedPetCommands = nil;
                 petAvatarFilter = 1;
             end
@@ -1759,6 +1909,7 @@ function M.DrawPalette()
                     currentPalettePage = 1;    -- Reset to page 1 when switching types
                     -- Clear caches to force refresh
                     playerdata.ClearCache();
+                    InvalidateBrowsingIconCache();
                     cachedPetCommands = nil;
                     petAvatarFilter = 1;
                 end
@@ -1923,9 +2074,7 @@ function M.DrawPalette()
 
                         if imgui.Selectable('Automatic', isAutoSelected) then
                             petpalette.SetPalette(barIndex, nil);
-                            local slotrenderer = require('modules.hotbar.slotrenderer');
-                            slotrenderer.ClearAllCache();
-                            ClearAllIconCaches();
+                            ScheduleIconCacheClear(true);
                         end
                         imgui.PopStyleColor();
 
@@ -1950,9 +2099,7 @@ function M.DrawPalette()
 
                                 if imgui.Selectable('  ' .. summon.name, isSelected) then
                                     petpalette.SetPalette(barIndex, petKey);
-                                    local slotrenderer = require('modules.hotbar.slotrenderer');
-                                    slotrenderer.ClearAllCache();
-                                    ClearAllIconCaches();
+                                    ScheduleIconCacheClear(true);
                                 end
                                 imgui.PopStyleColor();
 
@@ -1979,9 +2126,7 @@ function M.DrawPalette()
 
                                 if imgui.Selectable('  ' .. summon.name, isSelected) then
                                     petpalette.SetPalette(barIndex, petKey);
-                                    local slotrenderer = require('modules.hotbar.slotrenderer');
-                                    slotrenderer.ClearAllCache();
-                                    ClearAllIconCaches();
+                                    ScheduleIconCacheClear(true);
                                 end
                                 imgui.PopStyleColor();
 
@@ -3869,6 +4014,26 @@ function M.FlushPendingSave()
     if hotbarDataDirty then
         SaveSettingsToDisk();
         hotbarDataDirty = false;
+    end
+end
+
+-- Process deferred work at the start of each frame.
+-- Call AFTER TextureManager.FlushPendingReleases so that any textures queued
+-- for release last frame have already been handled before we drop new refs.
+function M.FlushPendingFrameWork()
+    if pendingIconCacheClear then
+        pendingIconCacheClear = false;
+        if pendingFullSlotCacheClear then
+            pendingFullSlotCacheClear = false;
+            if slotrenderer == nil then
+                local success, mod = pcall(require, 'modules.hotbar.slotrenderer');
+                if success then slotrenderer = mod; end
+            end
+            if slotrenderer and slotrenderer.ClearAllCache then
+                slotrenderer.ClearAllCache();
+            end
+        end
+        ClearAllIconCaches();
     end
 end
 
