@@ -479,7 +479,7 @@ function components.DrawHideWhenMenuOpenOptions(hideOnMenuFocusKey, hideMacroPal
 
     imgui.Indent(components.INDENT_SIZE);
     if showMacroPaletteOption then
-        components.DrawCheckbox('Hide Macro Palette', hideMacroPaletteKey);
+        components.DrawCheckbox('Keep Macro Palette Visible', hideMacroPaletteKey);
         imgui.ShowHelp('Keep this module visible when the in-game macro palette is open.');
     end
     if hideOnlyAllianceKey then
