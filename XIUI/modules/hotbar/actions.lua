@@ -8,6 +8,8 @@ local d3d8 = require('d3d8');
 local data = require('modules.hotbar.data');
 local horizonSpells = require('modules.hotbar.database.horizonspells');
 local textures = require('modules.hotbar.textures');
+local actiondb = require('modules.hotbar.actiondb');
+local playerdata = require('modules.hotbar.playerdata');
 local TextureManager = require('libs.texturemanager');
 local macrosLib = require('libs.ffxi.macros');
 package.loaded['libs.target'] = nil;
@@ -446,6 +448,128 @@ function M.GetMPCost(bind)
     return nil;
 end
 
+-- TP cost cache for weaponskills (static resource data)
+local wsTpCostCache = {};
+
+-- Action types checked directly for job/gear/inventory availability dimming
+local AVAILABILITY_ACTION_TYPES = {
+    ma = true, ja = true, ws = true, pet = true, equip = true, item = true,
+};
+
+--- Whether a bind shows item quantity on the slot (item action or macro item recast)
+---@param bind table|nil
+---@return boolean
+function M.UsesItemQuantityOverlay(bind)
+    if not bind then return false; end
+    return bind.actionType == 'item'
+        or (bind.actionType == 'macro' and bind.recastSourceType == 'item');
+end
+
+--- Whether this bind should be checked for job/gear availability dimming
+---@param bind table
+---@return boolean
+function M.NeedsAvailabilityCheck(bind)
+    if not bind then return false; end
+    if AVAILABILITY_ACTION_TYPES[bind.actionType] then return true; end
+    return bind.actionType == 'macro'
+        and bind.recastSourceType ~= nil
+        and bind.recastSourceType ~= 'none';
+end
+
+--- Whether this bind should be dimmed when the player lacks enough TP
+---@param bind table
+---@return boolean
+function M.NeedsTpCheck(bind)
+    if not bind then return false; end
+
+    if bind.actionType == 'ws' then
+        return true;
+    end
+
+    if bind.actionType == 'macro' and bind.recastSourceType == 'ws' and bind.recastSourceAction then
+        return true;
+    end
+
+    return false;
+end
+
+--- Get TP cost for a weaponskill (clamped to 1000-3000)
+---@param wsName string
+---@return number
+function M.GetWeaponskillTpCost(wsName)
+    if not wsName or wsName == '' then
+        return 1000;
+    end
+
+    local cached = wsTpCostCache[wsName];
+    if cached then
+        return cached;
+    end
+
+    local tpCost = 1000;
+    local abilityId = actiondb.GetAbilityId(wsName);
+    if abilityId then
+        local ability = AshitaCore:GetResourceManager():GetAbilityById(abilityId);
+        if ability and ability.TP and ability.TP >= 1000 then
+            tpCost = ability.TP;
+        end
+    end
+
+    if tpCost > 3000 then
+        tpCost = 3000;
+    end
+
+    wsTpCostCache[wsName] = tpCost;
+    return tpCost;
+end
+
+--- Check if the player currently has enough TP for a weaponskill bind
+---@param bind table
+---@return boolean hasEnoughTp
+function M.HasEnoughTpForBind(bind)
+    if not M.NeedsTpCheck(bind) then
+        return true;
+    end
+
+    local wsName = bind.action;
+    if bind.actionType == 'macro' then
+        wsName = bind.recastSourceAction;
+    end
+
+    local tpCost = M.GetWeaponskillTpCost(wsName);
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    local playerTp = party and party:GetMemberTP(0) or 0;
+    return playerTp >= tpCost;
+end
+
+--- Resolve macro recast source into a bind suitable for availability checks
+---@param bind table
+---@return table
+local function ResolveAvailabilityBind(bind)
+    if bind.actionType == 'macro' and bind.recastSourceType and bind.recastSourceType ~= 'none' then
+        return {
+            actionType = bind.recastSourceType,
+            action = bind.recastSourceAction,
+            itemId = bind.recastSourceItemId,
+            equipSlot = bind.equipSlot,
+        };
+    end
+    return bind;
+end
+
+--- Check if the player currently has a named ability or weaponskill
+---@param player table
+---@param actionName string
+---@param cacheFallback function|nil Fallback when ability ID lookup fails
+---@return boolean
+local function PlayerHasNamedAbility(player, actionName, cacheFallback)
+    local abilityId = actiondb.GetAbilityId(actionName);
+    if abilityId then
+        return player:HasAbility(abilityId);
+    end
+    return cacheFallback and cacheFallback(actionName) or false;
+end
+
 --- Check if an action is currently available to use
 --- Takes into account job, level, subjob, and level sync
 ---@param bind table The keybind data with actionType and action fields
@@ -453,6 +577,8 @@ end
 ---@return string|nil reason Reason if not available (e.g., "Level 50 required", "Wrong job")
 function M.IsActionAvailable(bind)
     if not bind then return true, nil; end
+
+    bind = ResolveAvailabilityBind(bind);
 
     local player = AshitaCore:GetMemoryManager():GetPlayer();
     if not player then return true, nil; end
@@ -468,8 +594,17 @@ function M.IsActionAvailable(bind)
         return true, "pending";  -- "pending" signals not to cache this result
     end
 
+    if bind.actionType == 'macro' then
+        return true, nil;
+    end
+
     -- Handle magic spells
     if bind.actionType == 'ma' then
+        local spellId = actiondb.GetSpellId(bind.action);
+        if spellId and not player:HasSpell(spellId) then
+            return false, "N/A";
+        end
+
         local spell = GetSpellByName(bind.action);
         if not spell then return true, nil; end  -- Unknown spell, assume available
 
@@ -506,20 +641,30 @@ function M.IsActionAvailable(bind)
             return false, "Job";
         end
 
-    -- Handle job abilities
+    -- Handle job abilities (live HasAbility reflects current job/gear state)
     elseif bind.actionType == 'ja' then
-        -- Use playerdata's cached abilities as single source of truth
-        -- This ensures availability matches what's shown in the dropdown
-        local playerdata = require('modules.hotbar.playerdata');
-        if not playerdata.IsAbilityInCache(bind.action) then
+        if not PlayerHasNamedAbility(player, bind.action, playerdata.IsAbilityInCache) then
             return false, "N/A";
         end
 
-    -- Handle weapon skills
+    -- Handle weapon skills (HasAbility reflects currently equipped weapon types)
     elseif bind.actionType == 'ws' then
-        -- Use playerdata's cached weaponskills as single source of truth
-        local playerdata = require('modules.hotbar.playerdata');
-        if not playerdata.IsWeaponskillInCache(bind.action) then
+        if not PlayerHasNamedAbility(player, bind.action, playerdata.IsWeaponskillInCache) then
+            return false, "N/A";
+        end
+
+    elseif bind.actionType == 'pet' then
+        if not playerdata.IsPetCommandAvailable(bind.action) then
+            return false, "N/A";
+        end
+
+    elseif bind.actionType == 'equip' then
+        if not playerdata.IsEquipActionAvailable(bind.equipSlot, bind.action, bind.itemId) then
+            return false, "N/A";
+        end
+
+    elseif bind.actionType == 'item' then
+        if not playerdata.IsItemInAccessibleInventory(bind.itemId, bind.action) then
             return false, "N/A";
         end
     end

@@ -11,6 +11,7 @@ local ffi = require('ffi');
 local imgui = require('imgui');
 local recast = require('modules.hotbar.recast');
 local actions = require('modules.hotbar.actions');
+local playerdata = require('modules.hotbar.playerdata');
 local dragdrop = require('libs.dragdrop');
 local textures = require('modules.hotbar.textures');
 local skillchain = require('modules.hotbar.skillchain');
@@ -28,6 +29,26 @@ local TOOLTIP_COL_DIM    = 0xFF999999;
 local TOOLTIP_COL_RED    = 0xFFFF4D4D;
 local TOOLTIP_COL_BG     = 0xF2110F0E;
 local TOOLTIP_COL_BORDER = 0xCC3E4748;
+local TOOLTIP_MAX_WIDTH = 480;
+local TOOLTIP_SCREEN_MARGIN = 8;
+local TOOLTIP_WRAP_INDENT = 14;
+
+-- Slot dimming multipliers (icon + abbreviation rendering)
+local DIM_UNAVAILABLE = 0.3;
+local DIM_RESTRICTED = 0.5;  -- cooldown, insufficient MP/TP
+local DIM_UNAVAILABLE_ALPHA = 0.7;
+
+---@return number colorMult
+---@return boolean applyGreyTint
+local function GetSlotColorMult(isUnavailable, isOnCooldown, notEnoughMp, notEnoughTp)
+    if isUnavailable then
+        return DIM_UNAVAILABLE, true;
+    end
+    if isOnCooldown or notEnoughMp or notEnoughTp then
+        return DIM_RESTRICTED, false;
+    end
+    return 1.0, false;
+end
 
 local ACTION_TYPE_LABELS = {
     ma = 'Spell (ma)', ja = 'Ability (ja)', ws = 'Weaponskill (ws)',
@@ -52,9 +73,6 @@ local ITEM_QUANTITY_CACHE_TTL = 2.0;  -- Cache for 2 seconds (inventory doesn't 
 -- Stack size is static resource data, so cache forever for the session.
 -- Stored value: number (StackSize) or false (lookup failed / not stackable).
 local stackSizeCache = {};
-
--- Containers to search for item quantities
-local ITEM_CONTAINERS = { 0, 8, 10, 11, 12, 13, 14, 15, 16 };  -- Inventory, wardrobes, satchel, etc.
 
 -- Ninja spell to tool mapping (using item IDs for reliable lookups)
 -- Maps spell name prefixes to required tool item IDs
@@ -265,37 +283,7 @@ function M.GetItemQuantity(itemId, itemName)
         return cached.quantity;
     end
 
-    local memMgr = AshitaCore:GetMemoryManager();
-    if not memMgr then return nil; end
-
-    local inventory = memMgr:GetInventory();
-    if not inventory then return nil; end
-
-    local resMgr = AshitaCore:GetResourceManager();
-    local totalCount = 0;
-
-    for _, containerId in ipairs(ITEM_CONTAINERS) do
-        local maxSlots = inventory:GetContainerCountMax(containerId);
-        if maxSlots and maxSlots > 0 then
-            for slotIndex = 1, maxSlots do
-                local item = inventory:GetContainerItem(containerId, slotIndex);
-                if item and item.Id and item.Id > 0 and item.Id ~= 65535 then
-                    local match = false;
-                    if itemId and item.Id == itemId then
-                        match = true;
-                    elseif itemName and resMgr then
-                        local itemRes = resMgr:GetItemById(item.Id);
-                        if itemRes and itemRes.Name and itemRes.Name[1] == itemName then
-                            match = true;
-                        end
-                    end
-                    if match then
-                        totalCount = totalCount + (item.Count or 1);
-                    end
-                end
-            end
-        end
-    end
+    local totalCount = playerdata.CountAccessibleItem(itemId, itemName);
 
     -- Cache the result
     local result = totalCount > 0 and totalCount or nil;
@@ -430,6 +418,61 @@ end
 -- Clear item quantity cache (call on inventory changes)
 function M.ClearItemQuantityCache()
     itemQuantityCache = {};
+end
+
+-- Build cache key for availability checks (includes equipped weapon signature)
+local function AppendOwnedFlag(key, itemId, itemName)
+    local owned = playerdata.IsItemOwned(itemId, itemName);
+    return key .. ':' .. (owned and '1' or '0');
+end
+
+local function AppendAccessibleFlag(key, itemId, itemName)
+    local accessible = playerdata.IsItemInAccessibleInventory(itemId, itemName);
+    return key .. ':' .. (accessible and '1' or '0');
+end
+
+local function BuildAvailabilityCacheKey(bind, bindKey)
+    local key = bindKey or '';
+    if not bind then
+        return key;
+    end
+
+    if bind.actionType == 'macro' and bind.recastSourceType and bind.recastSourceType ~= 'none' then
+        key = key .. ':rs:' .. bind.recastSourceType .. ':' .. (bind.recastSourceAction or '');
+        if bind.recastSourceType == 'item' then
+            key = AppendAccessibleFlag(key, bind.recastSourceItemId, bind.recastSourceAction);
+        end
+    elseif bind.actionType == 'equip' then
+        key = key .. ':' .. (bind.equipSlot or '');
+        key = AppendOwnedFlag(key, bind.itemId, bind.action);
+    elseif bind.actionType == 'item' then
+        key = AppendAccessibleFlag(key, bind.itemId, bind.action);
+    end
+
+    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    local jobId = player and player:GetMainJob() or 0;
+    local subjobId = player and player:GetSubJob() or 0;
+    return key .. ':' .. jobId .. ':' .. subjobId .. ':' .. playerdata.GetEquipmentSignature();
+end
+
+local function GetAvailabilityState(bind, bindKey)
+    if not bind or not actions.NeedsAvailabilityCheck(bind) then
+        return false, nil;
+    end
+
+    local availKey = BuildAvailabilityCacheKey(bind, bindKey);
+    local cached = availabilityCache[availKey];
+    if cached == nil then
+        local available, reason = actions.IsActionAvailable(bind);
+        if reason ~= 'pending' then
+            availabilityCache[availKey] = { isAvailable = available, reason = reason };
+            cached = availabilityCache[availKey];
+        else
+            cached = { isAvailable = available, reason = nil };
+        end
+    end
+
+    return not cached.isAvailable, cached.reason;
 end
 
 local function GetAssetsPath()
@@ -724,30 +767,16 @@ function M.DrawSlot(params)
         end
     end
 
-    -- Check if action is available (job/level requirements)
+    -- Check if action is available (job/level/gear/pet/inventory requirements)
     local isUnavailable = false;
-    local unavailableReason = nil;
-    if bind and (bind.actionType == 'ma' or bind.actionType == 'ja' or bind.actionType == 'ws') then
-        -- Include job/subjob in cache key so cache invalidates on job change
-        local player = AshitaCore:GetMemoryManager():GetPlayer();
-        local jobId = player and player:GetMainJob() or 0;
-        local subjobId = player and player:GetSubJob() or 0;
-        local availKey = bindKey .. ':' .. jobId .. ':' .. subjobId;
+    if bind then
+        isUnavailable = select(1, GetAvailabilityState(bind, bindKey));
+    end
 
-        local cached = availabilityCache[availKey];
-        if cached == nil then
-            local available, reason = actions.IsActionAvailable(bind);
-            -- Don't cache if reason is "pending" (player state invalid, e.g., during zoning)
-            if reason ~= "pending" then
-                availabilityCache[availKey] = { isAvailable = available, reason = reason };
-                cached = availabilityCache[availKey];
-            else
-                -- Use temp result but don't cache
-                cached = { isAvailable = available, reason = nil };
-            end
-        end
-        isUnavailable = not cached.isAvailable;
-        unavailableReason = cached.reason;
+    -- Weaponskills (and WS recast-source macros) dim when TP is below the WS cost
+    local notEnoughTp = false;
+    if bind and actions.NeedsTpCheck(bind) and not isUnavailable then
+        notEnoughTp = not actions.HasEnoughTpForBind(bind);
     end
 
     -- ========================================
@@ -771,16 +800,9 @@ function M.DrawSlot(params)
             local iconY = y + (size - renderedHeight) / 2;
 
             -- Calculate color: unavailable/cooldown/noMP darkening + dim factor + animation opacity
-            local colorMult = 1.0;
-            local applyGreyTint = false;
-            if isUnavailable then
-                colorMult = 0.35;  -- Significantly dimmed when unavailable
-                applyGreyTint = true;  -- Apply grey/desaturated tint
-            elseif isOnCooldown then
-                colorMult = 0.4;
-            elseif notEnoughMp then
-                colorMult = 0.6;  -- Slightly dimmed when not enough MP
-            end
+            local colorMult, applyGreyTint = GetSlotColorMult(
+                isUnavailable, isOnCooldown, notEnoughMp, notEnoughTp
+            );
             colorMult = colorMult * dimFactor;
 
             -- Calculate RGB values
@@ -794,7 +816,7 @@ function M.DrawSlot(params)
                 r, g, b = rgb, rgb, rgb;
             end
 
-            local alpha = math.floor(255 * animOpacity * (isUnavailable and 0.7 or 1.0));  -- Lower opacity when unavailable
+            local alpha = math.floor(255 * animOpacity * (isUnavailable and DIM_UNAVAILABLE_ALPHA or 1.0));
             local tintColor = bit.bor(
                 bit.lshift(alpha, 24),
                 bit.lshift(r, 16),
@@ -847,9 +869,7 @@ function M.DrawSlot(params)
             abbrW = imtext.Measure(abbr, 12);
         end
 
-        local colorMult = 1.0;
-        if isUnavailable then colorMult = 0.35;
-        elseif notEnoughMp then colorMult = 0.6; end
+        local colorMult = select(1, GetSlotColorMult(isUnavailable, isOnCooldown, notEnoughMp, notEnoughTp));
         colorMult = colorMult * dimFactor;
         -- Gold base: R=244, G=218, B=151 (0xF4DA97)
         local r = math.floor(244 * colorMult);
@@ -905,12 +925,12 @@ function M.DrawSlot(params)
     if params.showLabel and params.labelText and params.labelText ~= '' and animOpacity > 0.5 and drawList then
         local lblFontSize = params.labelFontSize or 10;
         local labelColor = params.labelFontColor or 0xFFFFFFFF;
-        -- Priority: Unavailable (grey) > Cooldown (grey) > Not enough MP (red) > Normal
+        -- Priority: Unavailable (grey) > Cooldown (grey) > Not enough MP/TP (red) > Normal
         if isUnavailable then
             labelColor = 0xFF888888;
         elseif isOnCooldown then
             labelColor = params.labelCooldownColor or 0xFF888888;
-        elseif notEnoughMp then
+        elseif notEnoughMp or notEnoughTp then
             labelColor = params.labelNoMpColor or 0xFFFF4444;
         end
         local lblW = imtext.Measure(params.labelText, lblFontSize);
@@ -930,8 +950,8 @@ function M.DrawSlot(params)
             local mpFontSize = params.mpCostFontSize or 10;
             local mpX, mpY = GetAnchoredPosition(x, y, size, mpAnchor, params.mpCostOffsetX, params.mpCostOffsetY);
 
-            -- If action is unavailable, show "X" instead of MP cost
-            if isUnavailable then
+            -- Unavailable "X" overlay (items use x-count instead)
+            if isUnavailable and not actions.UsesItemQuantityOverlay(bind) then
                 local xText = "X";
                 local xColor = 0xFFFF4444;
                 if mpAnchor == 'topRight' or mpAnchor == 'bottomRight' then
@@ -978,6 +998,13 @@ function M.DrawSlot(params)
                     quantity = M.GetItemQuantity(bind.itemId, bind.action) or 0;
                     shouldShowQty = true;
                 end
+            elseif bind.actionType == 'macro' and bind.recastSourceType == 'item' then
+                -- Show inventory count for macro recast source items
+                local isEquipment = bind.recastSourceItemId and IsEquipmentItem(bind.recastSourceItemId) or nil;
+                if isEquipment ~= true then
+                    quantity = M.GetItemQuantity(bind.recastSourceItemId, bind.recastSourceAction) or 0;
+                    shouldShowQty = true;
+                end
             elseif bind.actionType == 'ma' then
                 -- Check if this is a ninjutsu spell that requires a tool
                 local toolQty = M.GetNinjutsuToolQuantity(bind.action);
@@ -1003,16 +1030,24 @@ function M.DrawSlot(params)
             -- Optional: full-stack count, drawn just above (or below for top
             -- anchors) the quantity text. Only shown for stackable items
             -- with at least one full stack; ninjutsu tools are excluded.
-            if params.showStackQuantity and bind.actionType == 'item' and bind.itemId then
-                local stackSize = M.GetItemStackSize(bind.itemId);
-                local stacks = stackSize and math.floor(quantity / stackSize) or 0;
-                if stacks > 0 then
-                    local stackText = '(' .. stacks .. ')';
-                    local stackY = isTop and (qtyY + qtyFontSize + 1) or (qtyY - qtyFontSize - 1);
-                    local stackX = isRight
-                        and (qtyX + qtyW - imtext.Measure(stackText, qtyFontSize))
-                        or qtyX;
-                    imtext.Draw(drawList, stackText, stackX, stackY, qtyColor, qtyFontSize);
+            if params.showStackQuantity then
+                local stackItemId = nil;
+                if bind.actionType == 'item' and bind.itemId then
+                    stackItemId = bind.itemId;
+                elseif bind.actionType == 'macro' and bind.recastSourceType == 'item' and bind.recastSourceItemId then
+                    stackItemId = bind.recastSourceItemId;
+                end
+                if stackItemId then
+                    local stackSize = M.GetItemStackSize(stackItemId);
+                    local stacks = stackSize and math.floor(quantity / stackSize) or 0;
+                    if stacks > 0 then
+                        local stackText = '(' .. stacks .. ')';
+                        local stackY = isTop and (qtyY + qtyFontSize + 1) or (qtyY - qtyFontSize - 1);
+                        local stackX = isRight
+                            and (qtyX + qtyW - imtext.Measure(stackText, qtyFontSize))
+                            or qtyX;
+                        imtext.Draw(drawList, stackText, stackX, stackY, qtyColor, qtyFontSize);
+                    end
                 end
             end
         end
@@ -1022,8 +1057,15 @@ function M.DrawSlot(params)
     -- 12. Ammo Status Effect Icon (top-right corner)
     -- Shows status effect icon for ammo that applies debuffs
     -- ========================================
-    if bind and bind.actionType == 'item' and bind.itemId and animOpacity > 0.5 then
-        local statusId = GetAmmoStatusEffect(bind.itemId);
+    local statusItemId = nil;
+    if bind and bind.actionType == 'item' and bind.itemId then
+        statusItemId = bind.itemId;
+    elseif bind and bind.actionType == 'macro' and bind.recastSourceType == 'item' and bind.recastSourceItemId then
+        statusItemId = bind.recastSourceItemId;
+    end
+
+    if statusItemId and animOpacity > 0.5 then
+        local statusId = GetAmmoStatusEffect(statusItemId);
         if statusId then
             local statusIconPtr = statusHandler.get_icon_from_theme(gConfig.statusIconTheme, statusId);
             if statusIconPtr and drawList then
@@ -1144,6 +1186,91 @@ function M.DrawSlot(params)
     return result;
 end
 
+-- Split macro text into individual command lines for tooltip rendering.
+local function SplitMacroTextLines(macroText)
+    local result = {};
+    if not macroText or macroText == '' then
+        return result;
+    end
+
+    for line in macroText:gmatch('[^\r\n]+') do
+        result[#result + 1] = line;
+    end
+
+    return result;
+end
+
+-- Word-wrap a tooltip line so it fits within maxWidth.
+-- Returns { { text, indent }, ... } where indent > 0 marks wrapped continuations.
+local function WrapTooltipLine(text, maxWidth)
+    if not text or text == '' then
+        return { { '', 0 } };
+    end
+
+    if imtext.Measure(text, TOOLTIP_FONT_SIZE) <= maxWidth then
+        return { { text, 0 } };
+    end
+
+    local wrapped = {};
+    local line = '';
+    local contMaxWidth = maxWidth - TOOLTIP_WRAP_INDENT;
+
+    local function currentMaxWidth()
+        return #wrapped == 0 and maxWidth or contMaxWidth;
+    end
+
+    for word in text:gmatch('%S+') do
+        local candidate = line == '' and word or (line .. ' ' .. word);
+        if imtext.Measure(candidate, TOOLTIP_FONT_SIZE) <= currentMaxWidth() then
+            line = candidate;
+        else
+            if line ~= '' then
+                wrapped[#wrapped + 1] = { line, #wrapped == 0 and 0 or TOOLTIP_WRAP_INDENT };
+            end
+            line = word;
+
+            while imtext.Measure(line, TOOLTIP_FONT_SIZE) > currentMaxWidth() and #line > 1 do
+                local cut = #line;
+                while cut > 1 and imtext.Measure(line:sub(1, cut), TOOLTIP_FONT_SIZE) > currentMaxWidth() do
+                    cut = cut - 1;
+                end
+                wrapped[#wrapped + 1] = { line:sub(1, cut), #wrapped == 0 and 0 or TOOLTIP_WRAP_INDENT };
+                line = line:sub(cut + 1);
+            end
+        end
+    end
+
+    if line ~= '' then
+        wrapped[#wrapped + 1] = { line, #wrapped == 0 and 0 or TOOLTIP_WRAP_INDENT };
+    end
+
+    return #wrapped > 0 and wrapped or { { text, 0 } };
+end
+
+-- Keep tooltip fully on screen, preferring left/above the cursor when needed.
+local function ClampTooltipPosition(tx, ty, tooltipW, tooltipH, mx, my)
+    local io = imgui.GetIO();
+    local screenW = io.DisplaySize.x or 1920;
+    local screenH = io.DisplaySize.y or 1080;
+    local margin = TOOLTIP_SCREEN_MARGIN;
+
+    if tx + tooltipW > screenW - margin then
+        tx = mx - tooltipW - 16;
+    end
+    if tx < margin then
+        tx = margin;
+    end
+
+    if ty + tooltipH > screenH - margin then
+        ty = my - tooltipH - 8;
+    end
+    if ty < margin then
+        ty = margin;
+    end
+
+    return tx, ty;
+end
+
 --[[
     Draw tooltip for an action on the foreground draw list.
     Renders on top of all ImGui windows and draw list content.
@@ -1159,23 +1286,11 @@ function M.DrawTooltip(bind)
         return '<' .. cleaned .. '>';
     end
 
-    -- Check if action is unavailable for current job/subjob (cached lookup)
+    -- Check if action is unavailable for current job/subjob/gear (cached lookup)
     local isUnavailable = false;
-    if bind.actionType == 'ma' or bind.actionType == 'ja' or bind.actionType == 'ws' then
+    if bind and actions.NeedsAvailabilityCheck(bind) then
         local bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
-        local player = AshitaCore:GetMemoryManager():GetPlayer();
-        local jobId = player and player:GetMainJob() or 0;
-        local subjobId = player and player:GetSubJob() or 0;
-        local availKey = bindKey .. ':' .. jobId .. ':' .. subjobId;
-        local cached = availabilityCache[availKey];
-        if cached then
-            isUnavailable = not cached.isAvailable;
-        else
-            local available, reason = actions.IsActionAvailable(bind);
-            if reason ~= 'pending' then
-                isUnavailable = not available;
-            end
-        end
+        isUnavailable = select(1, GetAvailabilityState(bind, bindKey));
     end
 
     -- Ensure custom font is configured for measuring/drawing
@@ -1185,22 +1300,33 @@ function M.DrawTooltip(bind)
 
     local lines = {};
     local displayName = bind.displayName or bind.action or 'Unknown';
-    lines[#lines+1] = { displayName, TOOLTIP_COL_GOLD };
+    lines[#lines+1] = { displayName, TOOLTIP_COL_GOLD, 0 };
 
     local typeLabel = ACTION_TYPE_LABELS[bind.actionType] or bind.actionType or '?';
-    lines[#lines+1] = { 'Type: ' .. typeLabel, TOOLTIP_COL_DIM };
+    lines[#lines+1] = { 'Type: ' .. typeLabel, TOOLTIP_COL_DIM, 0 };
 
     if bind.actionType ~= 'macro' and bind.target and bind.target ~= '' then
         local ft = formatTarget(bind.target);
-        if ft then lines[#lines+1] = { 'Target: ' .. ft, TOOLTIP_COL_DIM }; end
+        if ft then lines[#lines+1] = { 'Target: ' .. ft, TOOLTIP_COL_DIM, 0 }; end
     end
 
+    local maxTextWidth = math.min(
+        TOOLTIP_MAX_WIDTH,
+        (imgui.GetIO().DisplaySize.x or 1920) * 0.45
+    );
+
     if bind.actionType == 'macro' and bind.macroText then
-        lines[#lines+1] = { bind.macroText, TOOLTIP_COL_DIM };
+        local macroLines = SplitMacroTextLines(bind.macroText);
+
+        for _, macroLine in ipairs(macroLines) do
+            for _, wrappedLine in ipairs(WrapTooltipLine(macroLine, maxTextWidth)) do
+                lines[#lines + 1] = { wrappedLine[1], TOOLTIP_COL_DIM, wrappedLine[2] or 0 };
+            end
+        end
     end
 
     if isUnavailable then
-        lines[#lines+1] = { 'Action not available', TOOLTIP_COL_RED };
+        lines[#lines+1] = { 'Action not available', TOOLTIP_COL_RED, 0 };
     end
 
     local padX, padY = 8, 6;
@@ -1208,9 +1334,10 @@ function M.DrawTooltip(bind)
     local lineH = sampleH + 2;
     local maxW = 0;
     for _, line in ipairs(lines) do
-        local w = imtext.Measure(line[1], TOOLTIP_FONT_SIZE);
+        local w = imtext.Measure(line[1], TOOLTIP_FONT_SIZE) + (line[3] or 0);
         if w > maxW then maxW = w; end
     end
+    maxW = math.min(maxW, maxTextWidth);
 
     local tooltipW = maxW + padX * 2;
     local tooltipH = #lines * lineH + padY * 2;
@@ -1218,6 +1345,7 @@ function M.DrawTooltip(bind)
     local mx, my = imgui.GetMousePos();
     local tx = mx + 16;
     local ty = my + 8;
+    tx, ty = ClampTooltipPosition(tx, ty, tooltipW, tooltipH, mx, my);
 
     local fgList = imgui.GetForegroundDrawList();
     fgList:AddRectFilled({tx, ty}, {tx + tooltipW, ty + tooltipH}, TOOLTIP_COL_BG, 4);
@@ -1225,7 +1353,7 @@ function M.DrawTooltip(bind)
 
     local textY = ty + padY;
     for _, line in ipairs(lines) do
-        imtext.DrawSimple(fgList, line[1], tx + padX, textY, line[2], TOOLTIP_FONT_SIZE);
+        imtext.DrawSimple(fgList, line[1], tx + padX + (line[3] or 0), textY, line[2], TOOLTIP_FONT_SIZE);
         textY = textY + lineH;
     end
 end
