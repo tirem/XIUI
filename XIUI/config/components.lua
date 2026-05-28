@@ -459,6 +459,36 @@ function components.DrawCheckbox(label, configKey, callback)
     end
 end
 
+-- Draw "Hide When Menu Open" with optional indented sub-options
+-- @param hideOnMenuFocusKey: config key for hide when menu open
+-- @param hideMacroPaletteKey: optional config key for macro palette exception
+-- @param hideOnlyAllianceKey: optional config key for party list alliance-only hide
+function components.DrawHideWhenMenuOpenOptions(hideOnMenuFocusKey, hideMacroPaletteKey, hideOnlyAllianceKey)
+    components.DrawCheckbox('Hide When Menu Open', hideOnMenuFocusKey);
+    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
+
+    if not gConfig[hideOnMenuFocusKey] then
+        return;
+    end
+
+    local showMacroPaletteOption = hideMacroPaletteKey
+        and not (gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars);
+    if not showMacroPaletteOption and not hideOnlyAllianceKey then
+        return;
+    end
+
+    imgui.Indent(components.INDENT_SIZE);
+    if showMacroPaletteOption then
+        components.DrawCheckbox('Hide Macro Palette', hideMacroPaletteKey);
+        imgui.ShowHelp('Keep this module visible when the in-game macro palette is open.');
+    end
+    if hideOnlyAllianceKey then
+        components.DrawCheckbox('Hide Only Alliance', hideOnlyAllianceKey);
+        imgui.ShowHelp('Keep main party visible when a game menu is open(equipment, map, etc.).');
+    end
+    imgui.Unindent(components.INDENT_SIZE);
+end
+
 -- Helper function for slider with deferred save (top-level gConfig keys)
 function components.DrawSlider(label, configKey, min, max, format, callback)
     local value = { gConfig[configKey] };

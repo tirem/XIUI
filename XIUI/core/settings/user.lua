@@ -46,6 +46,22 @@ function M.createUserSettingsDefaults()
         hotbarHideOnMenuFocus = false,
         mobInfoHideOnMenuFocus = false,
 
+        playerBarHideMacroPalette = false,
+        targetBarHideMacroPalette = false,
+        enemyListHideMacroPalette = false,
+        expBarHideMacroPalette = false,
+        gilTrackerHideMacroPalette = false,
+        inventoryTrackerHideMacroPalette = false,
+        partyListHideMacroPalette = false,
+        partyListHideOnlyAllianceOnMenuFocus = false,
+        castBarHideMacroPalette = false,
+        petBarHideMacroPalette = false,
+        castCostHideMacroPalette = false,
+        notificationsHideMacroPalette = false,
+        treasurePoolHideMacroPalette = false,
+        hotbarHideMacroPalette = false,
+        mobInfoHideMacroPalette = false,
+
         -- Treasure Pool settings
         treasurePoolEnabled = true,           -- Show treasure pool when items in pool
         treasurePoolShowTimerBar = true,      -- Show countdown progress bar

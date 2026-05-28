@@ -24,8 +24,7 @@ end
 -- Section: Cast Bar Settings
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showCastBar', CheckVisibility);
-    components.DrawCheckbox('Hide When Menu Open', 'castBarHideOnMenuFocus');
-    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
+    components.DrawHideWhenMenuOpenOptions('castBarHideOnMenuFocus', 'castBarHideMacroPalette');
 
     if components.CollapsingSection('Display Options##castBar') then
         components.DrawCheckbox('Show Bookends', 'showCastBarBookends');
