@@ -675,6 +675,11 @@ targetbar.DrawWindow = function(settings)
 			local totalCastBarSpace = settings.castBarOffsetY + settings.castBarHeight + 2 + castTextHeight;
 			imgui.Dummy({0, totalCastBarSpace});
 		end
+
+		-- ImGui 1.91+: SetCursorPos/SetCursorScreenPos no longer auto-extends window
+		-- content boundaries. Submit a zero-sized Dummy to commit any pending extensions
+		-- from SetCursorPosY (buffsOffsetY) or SetCursorScreenPos (arrow/ToT positioning).
+		imgui.Dummy({0, 0});
     end
     imgui.End();
 
