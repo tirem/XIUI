@@ -90,6 +90,38 @@ local function ComputeBgRect(x, y, w, h, padding, paddingY)
     return x - padding, y - paddingY, w + (padding * 2), h + (paddingY * 2);
 end
 
+-- bgScale >= 1 zooms in (UV subset stretched to fill the rect).
+-- bgScale < 1 zooms out (tile the texture; UVs past 1.0 clamp and stretch edges).
+local function DrawScaledBackground(drawList, ptr, bgX, bgY, bgW, bgH, bgScale, tint)
+    if bgScale <= 0 then
+        return;
+    end
+
+    if bgScale >= 1.0 then
+        local uvMax = 1.0 / bgScale;
+        drawList:AddImage(ptr, {bgX, bgY}, {bgX + bgW, bgY + bgH}, {0, 0}, {uvMax, uvMax}, tint);
+        return;
+    end
+
+    local tileW = bgW * bgScale;
+    local tileH = bgH * bgScale;
+    local cols = math.ceil(bgW / tileW);
+    local rows = math.ceil(bgH / tileH);
+
+    for row = 0, rows - 1 do
+        local y = bgY + row * tileH;
+        local th = math.min(tileH, bgY + bgH - y);
+        local uvMaxY = th / tileH;
+
+        for col = 0, cols - 1 do
+            local x = bgX + col * tileW;
+            local tw = math.min(tileW, bgX + bgW - x);
+            local uvMaxX = tw / tileW;
+            drawList:AddImage(ptr, {x, y}, {x + tw, y + th}, {0, 0}, {uvMaxX, uvMaxY}, tint);
+        end
+    end
+end
+
 -- ============================================
 -- Public API
 -- ============================================
@@ -121,11 +153,7 @@ function M.DrawBackground(drawList, x, y, w, h, options)
     if ptr == nil then return; end
 
     local tint = TintU32(ResolveTint(bgColor, options.bgOpacity));
-    -- bgScale > 1 zooms in (less of the texture covers the same area), matching
-    -- the old primitive scale_x/y behavior. UVs are clamped at the sampler so
-    -- bgScale < 1 just shows edge pixels past UV=1 rather than tiling.
-    local uvMax = 1.0 / bgScale;
-    drawList:AddImage(ptr, {bgX, bgY}, {bgX + bgW, bgY + bgH}, {0, 0}, {uvMax, uvMax}, tint);
+    DrawScaledBackground(drawList, ptr, bgX, bgY, bgW, bgH, bgScale, tint);
 end
 
 --[[
@@ -271,8 +299,8 @@ end
         theme         = string   -- '-None-' | 'Plain' | 'Window1'..'Window8'
         padding       = number   -- Horizontal pad (default 8)
         paddingY      = number   -- Vertical pad (defaults to padding)
-        bgScale       = number   -- Zoom factor on the bg texture (UV scaling)
-                                  -- >1 zooms in, default 1.0
+        bgScale       = number   -- Uniform zoom on the bg texture (default 1.0)
+                                  -- >1 zooms in, <1 zooms out (tiled)
         borderScale   = number   -- Scales border piece size (default 1.0)
         bgOpacity     = number   -- Optional 0..1; overrides bgColor's alpha
         bgColor       = number   -- ARGB tint (default 0xFFFFFFFF)
