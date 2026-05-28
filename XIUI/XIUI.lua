@@ -307,7 +307,7 @@ local migrationResult = settingsMigration.MigrateFromHXUI();
 -- Load raw settings to detect legacy data (without default filtering)
 -- Use pcall to handle first-load case where no settings exist
 local rawSettingsSuccess, rawSettings = pcall(function()
-    return settings.load({});
+    return settings.load(T{ });
 end);
 if not rawSettingsSuccess then
     rawSettings = {}; -- No existing settings, nothing to migrate
@@ -460,7 +460,7 @@ end
 -- ==========================================================
 
 -- Load character settings (tracks which profile is active)
-local charSettings = settings.load({ currentProfile = 'Default' });
+local charSettings = settings.load(T{ currentProfile = 'Default' });
 config = charSettings; -- Keep reference to character config
 
 -- Global profiles list
