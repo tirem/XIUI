@@ -18,88 +18,44 @@ local ui = {}
 -- unmatched and surface as "missing End()" / "missing popStyleColor()").
 local SetWindowFontScale = imgui.SetWindowFontScale or function() end
 
--- ── Job icon loader ────────────────────────────────────────────────────────────
--- Delegate to XIUI's statusHandler so we reuse its TextureManager cache and
--- respect the user's chosen job icon theme (gConfig.jobIconTheme).
-local function load_job_icon(jobIdx)
-    return statusHandler.GetJobIcon(jobIdx)
-end
-
--- ── XIDB theme ─────────────────────────────────────────────────────────────────
-local THEME_COLORS = {
-    { ImGuiCol_WindowBg,             { 0.000, 0.000, 0.000, 1.00 } },
-    { ImGuiCol_ChildBg,              { 0.000, 0.000, 0.000, 1.00 } },
-    { ImGuiCol_TitleBg,              { 0.098, 0.090, 0.075, 1.00 } },
-    { ImGuiCol_TitleBgActive,        { 0.137, 0.125, 0.106, 1.00 } },
-    { ImGuiCol_TitleBgCollapsed,     { 0.000, 0.000, 0.000, 1.00 } },
-    { ImGuiCol_FrameBg,              { 0.125, 0.110, 0.086, 0.98 } },
-    { ImGuiCol_FrameBgHovered,       { 0.173, 0.153, 0.122, 0.98 } },
-    { ImGuiCol_FrameBgActive,        { 0.231, 0.200, 0.157, 0.98 } },
-    { ImGuiCol_Header,               { 0.137, 0.125, 0.106, 1.00 } },
-    { ImGuiCol_HeaderHovered,        { 0.176, 0.161, 0.137, 1.00 } },
-    { ImGuiCol_HeaderActive,         { 0.957, 0.855, 0.592, 0.30 } },
-    { ImGuiCol_Border,               { 0.765, 0.684, 0.474, 0.85 } },
-    { ImGuiCol_Text,                 { 0.878, 0.855, 0.812, 1.00 } },
-    { ImGuiCol_TextDisabled,         { 0.765, 0.684, 0.474, 1.00 } },
-    { ImGuiCol_Button,               { 0.176, 0.149, 0.106, 0.95 } },
-    { ImGuiCol_ButtonHovered,        { 0.286, 0.239, 0.165, 0.95 } },
-    { ImGuiCol_ButtonActive,         { 0.420, 0.353, 0.243, 0.95 } },
-    { ImGuiCol_CheckMark,            { 0.957, 0.855, 0.592, 1.00 } },
-    { ImGuiCol_SliderGrab,           { 0.765, 0.684, 0.474, 1.00 } },
-    { ImGuiCol_SliderGrabActive,     { 0.957, 0.855, 0.592, 1.00 } },
-    { ImGuiCol_ScrollbarBg,          { 0.098, 0.090, 0.075, 1.00 } },
-    { ImGuiCol_ScrollbarGrab,        { 0.176, 0.161, 0.137, 1.00 } },
-    { ImGuiCol_ScrollbarGrabHovered, { 0.300, 0.275, 0.235, 1.00 } },
-    { ImGuiCol_ScrollbarGrabActive,  { 0.765, 0.684, 0.474, 1.00 } },
-    { ImGuiCol_Separator,            { 0.300, 0.275, 0.235, 1.00 } },
-    { ImGuiCol_PopupBg,              { 0.098, 0.090, 0.075, 1.00 } },
-    { ImGuiCol_ResizeGrip,           { 0.573, 0.512, 0.355, 1.00 } },
-    { ImGuiCol_ResizeGripHovered,    { 0.765, 0.684, 0.474, 1.00 } },
-    { ImGuiCol_ResizeGripActive,     { 0.957, 0.855, 0.592, 1.00 } },
+-- Styles used by the prompt/tracker windows (text, buttons, separators, title bar).
+local WINDOW_COLORS = {
+    { ImGuiCol_WindowBg,          { 0.051, 0.051, 0.051, 0.95 } },
+    { ImGuiCol_TitleBg,           { 0.098, 0.090, 0.075, 1.00 } },
+    { ImGuiCol_TitleBgActive,     { 0.137, 0.125, 0.106, 1.00 } },
+    { ImGuiCol_TitleBgCollapsed,  { 0.051, 0.051, 0.051, 0.95 } },
+    { ImGuiCol_Border,            { 0.300, 0.275, 0.235, 1.00 } },
+    { ImGuiCol_Text,              { 0.878, 0.855, 0.812, 1.00 } },
+    { ImGuiCol_TextDisabled,      { 0.765, 0.684, 0.474, 1.00 } },
+    { ImGuiCol_Button,            { 0.098, 0.090, 0.075, 1.00 } },
+    { ImGuiCol_ButtonHovered,     { 0.137, 0.125, 0.106, 1.00 } },
+    { ImGuiCol_ButtonActive,      { 0.176, 0.161, 0.137, 1.00 } },
+    { ImGuiCol_Separator,         { 0.300, 0.275, 0.235, 1.00 } },
+    { ImGuiCol_ResizeGrip,        { 0.573, 0.512, 0.355, 1.00 } },
+    { ImGuiCol_ResizeGripHovered, { 0.765, 0.684, 0.474, 1.00 } },
+    { ImGuiCol_ResizeGripActive,  { 0.957, 0.855, 0.592, 1.00 } },
 }
 
-local THEME_VARS = {
-    { ImGuiStyleVar_WindowPadding,     { 12, 12 } },
-    { ImGuiStyleVar_FramePadding,      { 8,  6  } },
-    { ImGuiStyleVar_ItemSpacing,       { 8,  7  } },
-    { ImGuiStyleVar_FrameRounding,     4.0        },
-    { ImGuiStyleVar_WindowRounding,    6.0        },
-    { ImGuiStyleVar_ChildRounding,     4.0        },
-    { ImGuiStyleVar_PopupRounding,     4.0        },
-    { ImGuiStyleVar_ScrollbarRounding, 4.0        },
-    { ImGuiStyleVar_GrabRounding,      4.0        },
-    { ImGuiStyleVar_WindowBorderSize,  1.0        },
-    { ImGuiStyleVar_ChildBorderSize,   1.0        },
-    { ImGuiStyleVar_FrameBorderSize,   1.0        },
-    { ImGuiStyleVar_WindowTitleAlign,  { 0.5, 0.5 } },
+local WINDOW_VARS = {
+    { ImGuiStyleVar_WindowPadding,    { 12, 12 } },
+    { ImGuiStyleVar_FramePadding,     { 6,  4  } },
+    { ImGuiStyleVar_ItemSpacing,      { 8,  6  } },
+    { ImGuiStyleVar_FrameRounding,    4.0        },
+    { ImGuiStyleVar_WindowRounding,   6.0        },
+    { ImGuiStyleVar_WindowBorderSize, 1.0        },
+    { ImGuiStyleVar_WindowTitleAlign, { 0.5, 0.5 } },
 }
 
-local THEME_COLOR_COUNT = #THEME_COLORS
-local THEME_VAR_COUNT   = #THEME_VARS
+local WINDOW_COLOR_COUNT = #WINDOW_COLORS
+local WINDOW_VAR_COUNT   = #WINDOW_VARS
 
--- Pre-computed window flags
-local PROMPT_FLAGS = bit.bor(
-    ImGuiWindowFlags_NoCollapse,
-    ImGuiWindowFlags_NoResize,
-    ImGuiWindowFlags_NoScrollbar,
-    ImGuiWindowFlags_AlwaysAutoResize,
-    ImGuiWindowFlags_NoSavedSettings,
-    ImGuiWindowFlags_NoMove
-)
-local TRACKER_FLAGS = bit.bor(
+local WINDOW_FLAGS = bit.bor(
     ImGuiWindowFlags_NoCollapse,
     ImGuiWindowFlags_AlwaysAutoResize,
     ImGuiWindowFlags_NoScrollbar,
-    ImGuiWindowFlags_NoSavedSettings,
-    ImGuiWindowFlags_NoMove
+    ImGuiWindowFlags_NoSavedSettings
 )
-local CONFIG_FLAGS = bit.bor(
-    ImGuiWindowFlags_NoCollapse,
-    ImGuiWindowFlags_AlwaysAutoResize,
-    ImGuiWindowFlags_NoScrollbar,
-    ImGuiWindowFlags_NoSavedSettings,
-    ImGuiWindowFlags_NoMove
-)
+local PROMPT_FLAGS = bit.bor(WINDOW_FLAGS, ImGuiWindowFlags_NoResize)
 
 -- Pre-allocated per-frame constants (zero GC per frame)
 local COLOR_READY     = { 0.20, 1.00, 0.20, 1.0 }
@@ -111,7 +67,6 @@ local ICON_UV1        = { 1, 1 }
 local ICON_TINT       = { 1, 1, 1, 1 }
 local ICON_BORDER     = { 0, 0, 0, 0 }
 local PIVOT_CENTER    = { 0.5, 0.5 }
-local BTN_YES_NO      = { 100, 28 }
 local BTN_CLOSE       = { -1, 24 }
 local FONT_SCALE      = 1.2
 local BTN_PROMPT      = { 120, 36 }
@@ -125,21 +80,43 @@ local COLOR_GOLD_BRIGHT  = { 0.957, 0.855, 0.592, 1.0 }
 local MIN_PARTY_COL_W    = 125
 local WIN_CENTER         = { 0, 0 }
 
-local function push_xidb_theme()
-    for i = 1, THEME_COLOR_COUNT do
-        local e = THEME_COLORS[i]
+local function push_window_styles()
+    for i = 1, WINDOW_COLOR_COUNT do
+        local e = WINDOW_COLORS[i]
         imgui.PushStyleColor(e[1], e[2])
     end
-    for i = 1, THEME_VAR_COUNT do
-        local e = THEME_VARS[i]
+    for i = 1, WINDOW_VAR_COUNT do
+        local e = WINDOW_VARS[i]
         imgui.PushStyleVar(e[1], e[2])
     end
+end
+
+local function member_status_color(status)
+    if status == 'ready' then return COLOR_READY end
+    if status == 'not_ready' then return COLOR_NOT_READY end
+    return COLOR_PENDING
+end
+
+local function draw_member_row(member)
+    imgui.PushStyleColor(ImGuiCol_Text, member_status_color(member.status))
+    local icon_ptr = statusHandler.GetJobIcon(member.job)
+    if icon_ptr then
+        imgui.Image(icon_ptr, ICON_SIZE, ICON_UV0, ICON_UV1, ICON_TINT, ICON_BORDER)
+    else
+        imgui.Dummy(ICON_SIZE)
+    end
+    imgui.SameLine()
+    imgui.Text(member.name)
+    imgui.PopStyleColor(1)
 end
 
 local function render_prompt(state, handlers)
     if not state.prompt_open[1] then return end
 
-    imgui.SetNextWindowPos(WIN_CENTER, ImGuiCond_Always, PIVOT_CENTER)
+    if state.prompt_center_next then
+        imgui.SetNextWindowPos(WIN_CENTER, ImGuiCond_Always, PIVOT_CENTER)
+        state.prompt_center_next = false
+    end
     imgui.SetNextWindowBgAlpha(0.95)
 
     if imgui.Begin('Ready Check##prompt', state.prompt_open, PROMPT_FLAGS) then
@@ -200,10 +177,13 @@ end
 local function render_tracker(state, handlers)
     if not state.checker_open[1] then return end
 
-    imgui.SetNextWindowPos(WIN_CENTER, ImGuiCond_Always, PIVOT_CENTER)
+    if state.tracker_center_next then
+        imgui.SetNextWindowPos(WIN_CENTER, ImGuiCond_Always, PIVOT_CENTER)
+        state.tracker_center_next = false
+    end
     imgui.SetNextWindowBgAlpha(0.90)
 
-    if imgui.Begin('Ready Check##tracker', state.checker_open, TRACKER_FLAGS) then
+    if imgui.Begin('Ready Check##tracker', state.checker_open, WINDOW_FLAGS) then
         SetWindowFontScale(FONT_SCALE)
         imgui.Text('Party / Alliance Status')
         imgui.SameLine()
@@ -261,20 +241,7 @@ local function render_tracker(state, handlers)
                     for col = 1, num_cols do
                         local member = parties[col][row]
                         if member then
-                            local status = member.status
-                            local col_c = status == 'ready'     and COLOR_READY
-                                       or status == 'not_ready' and COLOR_NOT_READY
-                                       or COLOR_PENDING
-                            imgui.PushStyleColor(ImGuiCol_Text, col_c)
-                            local icon_ptr = load_job_icon(member.job)
-                            if icon_ptr then
-                                imgui.Image(icon_ptr, ICON_SIZE, ICON_UV0, ICON_UV1, ICON_TINT, ICON_BORDER)
-                            else
-                                imgui.Dummy(ICON_SIZE)
-                            end
-                            imgui.SameLine()
-                            imgui.Text(member.name)
-                            imgui.PopStyleColor(1)
+                            draw_member_row(member)
                         else
                             imgui.Dummy({ 1, ICON_SIZE[2] })
                         end
@@ -286,21 +253,7 @@ local function render_tracker(state, handlers)
             else
                 local grp = parties[1]
                 for i = 1, #grp do
-                    local member = grp[i]
-                    local status = member.status
-                    local col_c = status == 'ready'     and COLOR_READY
-                               or status == 'not_ready' and COLOR_NOT_READY
-                               or COLOR_PENDING
-                    imgui.PushStyleColor(ImGuiCol_Text, col_c)
-                    local icon_ptr = load_job_icon(member.job)
-                    if icon_ptr then
-                        imgui.Image(icon_ptr, ICON_SIZE, ICON_UV0, ICON_UV1, ICON_TINT, ICON_BORDER)
-                    else
-                        imgui.Dummy(ICON_SIZE)
-                    end
-                    imgui.SameLine()
-                    imgui.Text(member.name)
-                    imgui.PopStyleColor(1)
+                    draw_member_row(grp[i])
                 end
             end
         end
@@ -317,91 +270,18 @@ local function render_tracker(state, handlers)
     imgui.End()
 end
 
-local function render_config(state, handlers)
-    if not state.config_open[1] then return end
-
-    imgui.SetNextWindowPos(WIN_CENTER, ImGuiCond_Always, PIVOT_CENTER)
-    imgui.SetNextWindowBgAlpha(0.95)
-
-    if imgui.Begin('ReadyCheck Config##config', state.config_open, CONFIG_FLAGS) then
-        SetWindowFontScale(FONT_SCALE)
-
-        imgui.PushStyleColor(ImGuiCol_Text, COLOR_GOLD_BRIGHT)
-        imgui.Text('Sound Settings')
-        imgui.PopStyleColor(1)
-        imgui.Separator()
-        imgui.Spacing()
-
-        imgui.Checkbox('Play sound when sending a ready check',   state.cfg.sound_on_checker)
-        imgui.Checkbox('Play sound when receiving a ready check', state.cfg.sound_on_prompt)
-        imgui.Spacing()
-
-        imgui.Text('Sound file:')
-        local files   = state.cfg.sound_files
-        local sel_idx = state.cfg.sound_sel_idx
-        if files and #files > 0 then
-            local preview = files[sel_idx[1]] or ''
-            imgui.SetNextItemWidth(300)
-            if imgui.BeginCombo('##rc_sound_combo', preview, ImGuiComboFlags_None) then
-                for i, fname in ipairs(files) do
-                    local selected = (i == sel_idx[1])
-                    if imgui.Selectable(fname, selected) then
-                        sel_idx[1] = i
-                    end
-                    if selected then imgui.SetItemDefaultFocus() end
-                end
-                imgui.EndCombo()
-            end
-            imgui.SameLine()
-            if imgui.Button('Refresh##rc_refresh', { 70, 0 }) then
-                handlers.scan_sound_files()
-            end
-            imgui.PushStyleColor(ImGuiCol_Text, { 0.55, 0.55, 0.55, 1.0 })
-            imgui.Text(addon.path .. 'modules\\readycheck\\sound\\' .. (files[sel_idx[1]] or ''))
-            imgui.PopStyleColor(1)
-        else
-            imgui.PushStyleColor(ImGuiCol_Text, { 0.80, 0.45, 0.20, 1.0 })
-            imgui.Text('No .wav files found in sound\\ folder.')
-            imgui.PopStyleColor(1)
-            imgui.SameLine()
-            if imgui.Button('Refresh##rc_refresh', { 70, 0 }) then
-                handlers.scan_sound_files()
-            end
-        end
-
-        imgui.Spacing()
-        imgui.Separator()
-        imgui.Spacing()
-
-        if imgui.Button('Test Sound', BTN_YES_NO) then
-            handlers.test_config_sound()
-        end
-        imgui.SameLine()
-        if imgui.Button('Save', BTN_YES_NO) then
-            handlers.save_config()
-        end
-        imgui.SameLine()
-        if imgui.Button('Close', BTN_YES_NO) then
-            state.config_open[1] = false
-        end
-        imgui.Spacing()
-    end
-    imgui.End()
-end
-
 function ui.render(state, handlers)
-    if not (state.prompt_open[1] or state.checker_open[1] or state.config_open[1]) then return end
+    if not (state.prompt_open[1] or state.checker_open[1]) then return end
 
     local display = imgui.GetIO().DisplaySize
     WIN_CENTER[1] = display.x * 0.5
     WIN_CENTER[2] = display.y * 0.5
 
-    push_xidb_theme()
+    push_window_styles()
     render_prompt(state, handlers)
     render_tracker(state, handlers)
-    render_config(state, handlers)
-    imgui.PopStyleVar(THEME_VAR_COUNT)
-    imgui.PopStyleColor(THEME_COLOR_COUNT)
+    imgui.PopStyleVar(WINDOW_VAR_COUNT)
+    imgui.PopStyleColor(WINDOW_COLOR_COUNT)
 end
 
 return ui
