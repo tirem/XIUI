@@ -17,6 +17,7 @@ local ashita_settings = require('settings');
 local castcostShared = require('modules.castcost.shared');
 local defaultPositions = require('libs.defaultpositions');
 local imtext = require('libs.imtext');
+local gameState = require('core.gamestate');
 
 local data = require('modules.partylist.data');
 
@@ -1413,8 +1414,17 @@ function display.DrawWindow(settings)
     -- Main party window
     display.DrawPartyWindow(settings, party, 1);
 
+    local hideAllianceOnMenu = gameState.ShouldHideModuleOnMenuFocus(
+        gConfig,
+        'partyListHideOnMenuFocus',
+        'partyListHideMacroPalette'
+    ) and gConfig.partyListHideOnlyAllianceOnMenuFocus;
+
     -- Alliance party windows
-    if (gConfig.partyListAlliance) then
+    if hideAllianceOnMenu then
+        data.UpdateTextVisibility(false, 2);
+        data.UpdateTextVisibility(false, 3);
+    elseif (gConfig.partyListAlliance) then
         display.DrawPartyWindow(settings, party, 2);
         display.DrawPartyWindow(settings, party, 3);
     else

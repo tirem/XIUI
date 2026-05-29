@@ -5,62 +5,56 @@
 require('common');
 local imgui      = require('imgui');
 local components = require('config.components');
+local rcSlider   = require('modules.readycheck.slider');
 local readycheck = require('modules.readycheck.init');
 
 local M = {};
 
-function M.DrawSettings()
-    components.DrawCheckbox('Enabled', 'showReadyCheck', CheckVisibility);
-    imgui.Spacing();
-    imgui.Separator();
-    imgui.Spacing();
+local SOUND_DIR          = addon.path .. 'modules\\readycheck\\sound\\';
+local DEFAULT_SOUND_FILE = 'ffxiv-notification.wav';
+local VOLUME_DETENTS     = { 50, 100 };
 
-    -- Sound toggles
-    local sound_on_checker = readycheck.GetSoundOnCheckerFlag();
-    imgui.Checkbox('Play sound when sending a ready check##rc_cfg',   sound_on_checker);
+local function ensureDefaults()
+    if gConfig.readyCheckSoundFile == nil or gConfig.readyCheckSoundFile == '' then
+        gConfig.readyCheckSoundFile = DEFAULT_SOUND_FILE;
+    end
+    gConfig.readyCheckSoundVolume = math.max(0, math.min(150, gConfig.readyCheckSoundVolume or 50));
+end
 
-    local sound_on_prompt  = readycheck.GetSoundOnPromptFlag();
-    imgui.Checkbox('Play sound when receiving a ready check##rc_cfg', sound_on_prompt);
+local function getSoundFiles()
+    return ashita.fs.get_directory(SOUND_DIR, '.*\\.wav$') or {};
+end
 
-    imgui.Spacing();
-
-    -- Sound file dropdown
+local function drawSoundFileRow()
     imgui.Text('Sound file:');
-    local files, sel_idx = readycheck.GetSoundFileList();
-    if files and #files > 0 then
-        local preview = files[sel_idx[1]] or '';
+    local files = getSoundFiles();
+    if #files > 0 then
         imgui.SetNextItemWidth(280);
-        if imgui.BeginCombo('##rc_cfg_sound', preview, ImGuiComboFlags_None) then
-            for i, fname in ipairs(files) do
-                local selected = (i == sel_idx[1]);
-                if imgui.Selectable(fname, selected) then
-                    sel_idx[1] = i;
-                end
-                if selected then imgui.SetItemDefaultFocus(); end
-            end
-            imgui.EndCombo();
-        end
-        imgui.SameLine();
-        if imgui.Button('Refresh##rc_cfg') then
-            readycheck.ScanSoundFiles();
-        end
+        components.Combo('##rc_cfg', gConfig, 'readyCheckSoundFile', files, nil, DEFAULT_SOUND_FILE);
     else
         imgui.TextDisabled('No .wav files found in sound\\ folder.');
-        imgui.SameLine();
-        if imgui.Button('Refresh##rc_cfg') then
-            readycheck.ScanSoundFiles();
-        end
     end
 
-    imgui.Spacing();
-
+    imgui.SameLine();
     if imgui.Button('Test Sound##rc_cfg') then
         readycheck.TestSound();
     end
-    imgui.SameLine();
-    if imgui.Button('Save##rc_cfg') then
-        readycheck.SaveSettings();
-    end
+end
+
+function M.DrawSettings()
+    ensureDefaults();
+
+    components.DrawCheckbox('Enabled', 'showReadyCheck', CheckVisibility);
+    components.DrawCheckbox('Play sound when sending a ready check', 'readyCheckSoundOnChecker');
+    components.DrawCheckbox('Play sound when receiving a ready check', 'readyCheckSoundOnPrompt');
+
+    imgui.Spacing();
+    drawSoundFileRow();
+
+    imgui.Spacing();
+    local volume = { gConfig.readyCheckSoundVolume };
+    rcSlider.DrawInt('Volume:##rc_cfg', volume, 0, 150, '%d%%', VOLUME_DETENTS, 280, SaveSettingsToDisk);
+    gConfig.readyCheckSoundVolume = volume[1];
 end
 
 function M.DrawColorSettings()

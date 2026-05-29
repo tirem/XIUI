@@ -67,14 +67,45 @@ local IGNORED_MENUS = {
     magic    = true,  -- Magic / Trust menu
     abiselec = true,  -- Abilities side menu
     ability  = true,  -- JA, WS, Pet commands
+    mount    = true,  -- Mount menu
 };
 
-function M.IsMenuOpen()
+local MACRO_PALETTE_MENUS = {
+    mcr1pall = true,  -- Macro palette page 1
+    mcr2pall = true,  -- Macro palette page 2
+};
+
+function M.GetMenuShortName()
     local menuName = M.GetMenuName():gsub('%s+$', '');
-    if menuName == '' then return false; end
-    -- Extract the short name (strip "menu" prefix and internal whitespace)
-    local shortName = menuName:match('^menu%s+(.+)') or menuName;
+    if menuName == '' then return ''; end
+    return menuName:match('^menu%s+(.+)') or menuName;
+end
+
+function M.IsMacroPaletteOpen()
+    return MACRO_PALETTE_MENUS[M.GetMenuShortName()] == true;
+end
+
+function M.IsMenuOpen()
+    local shortName = M.GetMenuShortName();
+    if shortName == '' then return false; end
     return not IGNORED_MENUS[shortName];
+end
+
+-- Whether a module with "Hide When Menu Open" should hide for the current menu state
+function M.ShouldHideModuleOnMenuFocus(gConfig, hideOnMenuFocusKey, hideMacroPaletteKey)
+    if not hideOnMenuFocusKey or not gConfig[hideOnMenuFocusKey] then
+        return false;
+    end
+    if not M.IsMenuOpen() then
+        return false;
+    end
+    if hideMacroPaletteKey and gConfig[hideMacroPaletteKey] then
+        local disableMacroBars = gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars;
+        if not disableMacroBars and M.IsMacroPaletteOpen() then
+            return false;
+        end
+    end
+    return true;
 end
 
 -- Check if Ashita's FontManager has been hidden (e.g., by autohide addon)

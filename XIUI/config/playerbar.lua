@@ -13,8 +13,7 @@ local M = {};
 -- Section: Player Bar Settings
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showPlayerBar', CheckVisibility);
-    components.DrawCheckbox('Hide When Menu Open', 'playerBarHideOnMenuFocus');
-    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
+    components.DrawHideWhenMenuOpenOptions('playerBarHideOnMenuFocus', 'playerBarHideMacroPalette');
 
     if components.CollapsingSection('Display Options##playerBar') then
         components.DrawCheckbox('Show Bookends', 'showPlayerBarBookends');

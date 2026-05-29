@@ -433,6 +433,8 @@ end
 -- ============================================
 
 function M.HandleZonePacket()
+    -- Flush any pending macro/slot saves before zone transition
+    macropalette.FlushPendingSave();
     data.Clear();
     petpalette.ClearPetState();
     -- Clear availability cache since player state is invalid during zone
@@ -587,9 +589,21 @@ function M.SetDebugEnabled(enabled)
     print('[XIUI] Hotbar debug mode: ' .. state);
 end
 
+-- Toggle subtarget macro debug (actions only)
+-- Usage: /xiui debug subtarget
+function M.SetSubtargetDebugEnabled(enabled)
+    actions.SetSubtargetDebugEnabled(enabled);
+    local state = enabled and 'ON' or 'OFF';
+    print('[XIUI] Subtarget debug mode: ' .. state);
+end
+
 -- Check if debug is enabled
 function M.IsDebugEnabled()
     return actions.IsDebugEnabled() or controller.IsDebugEnabled();
+end
+
+function M.IsSubtargetDebugEnabled()
+    return actions.IsSubtargetDebugEnabled();
 end
 
 -- Toggle palette key debug mode

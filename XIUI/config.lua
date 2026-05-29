@@ -721,11 +721,13 @@ config.DrawWindow = function(us)
         imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {8, 6});
 
         -- Profiles Button
-        imgui.PushStyleColor(ImGuiCol_Button, bgLight);
+        imgui.PushStyleColor(ImGuiCol_Button, buttonColor);
+        imgui.PushStyleColor(ImGuiCol_ButtonHovered, buttonHoverColor);
+        imgui.PushStyleColor(ImGuiCol_ButtonActive, buttonActiveColor);
         if (imgui.Button("Profiles", { 0, 26 })) then
             showProfilesWindow[1] = true;
         end
-        imgui.PopStyleColor();
+        imgui.PopStyleColor(3);
         
         imgui.SameLine();
         imgui.PushItemWidth(300); -- Increased width for profile select

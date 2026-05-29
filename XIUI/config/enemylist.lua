@@ -13,8 +13,7 @@ local M = {};
 -- Section: Enemy List Settings
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showEnemyList', CheckVisibility);
-    components.DrawCheckbox('Hide When Menu Open', 'enemyListHideOnMenuFocus');
-    imgui.ShowHelp('Hide this module when a game menu is open (equipment, map, etc.).');
+    components.DrawHideWhenMenuOpenOptions('enemyListHideOnMenuFocus', 'enemyListHideMacroPalette');
     components.DrawCheckbox('Preview Enemies (when config open)', 'enemyListPreview');
 
     if components.CollapsingSection('Display Options##enemyList') then

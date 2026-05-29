@@ -30,6 +30,12 @@ function M.createUserSettingsDefaults()
         showNotifications = true,
         showReadyCheck = true,
 
+        -- Ready Check module settings (per profile)
+        readyCheckSoundFile = 'ffxiv-notification.wav',
+        readyCheckSoundOnChecker = true,
+        readyCheckSoundOnPrompt = true,
+        readyCheckSoundVolume = 50,
+
         -- Hide when game menu is open (default off)
         playerBarHideOnMenuFocus = false,
         targetBarHideOnMenuFocus = false,
@@ -45,6 +51,22 @@ function M.createUserSettingsDefaults()
         treasurePoolHideOnMenuFocus = false,
         hotbarHideOnMenuFocus = false,
         mobInfoHideOnMenuFocus = false,
+
+        playerBarHideMacroPalette = false,
+        targetBarHideMacroPalette = false,
+        enemyListHideMacroPalette = false,
+        expBarHideMacroPalette = false,
+        gilTrackerHideMacroPalette = false,
+        inventoryTrackerHideMacroPalette = false,
+        partyListHideMacroPalette = false,
+        partyListHideOnlyAllianceOnMenuFocus = false,
+        castBarHideMacroPalette = false,
+        petBarHideMacroPalette = false,
+        castCostHideMacroPalette = false,
+        notificationsHideMacroPalette = false,
+        treasurePoolHideMacroPalette = false,
+        hotbarHideMacroPalette = false,
+        mobInfoHideMacroPalette = false,
 
         -- Treasure Pool settings
         treasurePoolEnabled = true,           -- Show treasure pool when items in pool

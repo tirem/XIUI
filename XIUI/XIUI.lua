@@ -153,6 +153,7 @@ uiModules.Register('playerBar', {
     configKey = 'showPlayerBar',
     hideOnEventKey = 'playerBarHideDuringEvents',
     hideOnMenuFocusKey = 'playerBarHideOnMenuFocus',
+    hideMacroPaletteKey = 'playerBarHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('targetBar', {
@@ -161,6 +162,7 @@ uiModules.Register('targetBar', {
     configKey = 'showTargetBar',
     hideOnEventKey = 'targetBarHideDuringEvents',
     hideOnMenuFocusKey = 'targetBarHideOnMenuFocus',
+    hideMacroPaletteKey = 'targetBarHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('enemyList', {
@@ -168,6 +170,7 @@ uiModules.Register('enemyList', {
     settingsKey = 'enemyListSettings',
     configKey = 'showEnemyList',
     hideOnMenuFocusKey = 'enemyListHideOnMenuFocus',
+    hideMacroPaletteKey = 'enemyListHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('expBar', {
@@ -175,6 +178,7 @@ uiModules.Register('expBar', {
     settingsKey = 'expBarSettings',
     configKey = 'showExpBar',
     hideOnMenuFocusKey = 'expBarHideOnMenuFocus',
+    hideMacroPaletteKey = 'expBarHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('gilTracker', {
@@ -182,6 +186,7 @@ uiModules.Register('gilTracker', {
     settingsKey = 'gilTrackerSettings',
     configKey = 'showGilTracker',
     hideOnMenuFocusKey = 'gilTrackerHideOnMenuFocus',
+    hideMacroPaletteKey = 'gilTrackerHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('inventoryTracker', {
@@ -189,6 +194,7 @@ uiModules.Register('inventoryTracker', {
     settingsKey = 'inventoryTrackerSettings',
     configKey = 'showInventoryTracker',
     hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
+    hideMacroPaletteKey = 'inventoryTrackerHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('satchelTracker', {
@@ -196,6 +202,7 @@ uiModules.Register('satchelTracker', {
     settingsKey = 'satchelTrackerSettings',
     configKey = 'showSatchelTracker',
     hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
+    hideMacroPaletteKey = 'inventoryTrackerHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('lockerTracker', {
@@ -203,6 +210,7 @@ uiModules.Register('lockerTracker', {
     settingsKey = 'lockerTrackerSettings',
     configKey = 'showLockerTracker',
     hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
+    hideMacroPaletteKey = 'inventoryTrackerHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('safeTracker', {
@@ -210,6 +218,7 @@ uiModules.Register('safeTracker', {
     settingsKey = 'safeTrackerSettings',
     configKey = 'showSafeTracker',
     hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
+    hideMacroPaletteKey = 'inventoryTrackerHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('storageTracker', {
@@ -217,6 +226,7 @@ uiModules.Register('storageTracker', {
     settingsKey = 'storageTrackerSettings',
     configKey = 'showStorageTracker',
     hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
+    hideMacroPaletteKey = 'inventoryTrackerHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('wardrobeTracker', {
@@ -224,6 +234,7 @@ uiModules.Register('wardrobeTracker', {
     settingsKey = 'wardrobeTrackerSettings',
     configKey = 'showWardrobeTracker',
     hideOnMenuFocusKey = 'inventoryTrackerHideOnMenuFocus',
+    hideMacroPaletteKey = 'inventoryTrackerHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('partyList', {
@@ -232,6 +243,8 @@ uiModules.Register('partyList', {
     configKey = 'showPartyList',
     hideOnEventKey = 'partyListHideDuringEvents',
     hideOnMenuFocusKey = 'partyListHideOnMenuFocus',
+    hideMacroPaletteKey = 'partyListHideMacroPalette',
+    hideOnlyAllianceOnMenuFocusKey = 'partyListHideOnlyAllianceOnMenuFocus',
     hasSetHidden = true,
 });
 uiModules.Register('castBar', {
@@ -239,6 +252,7 @@ uiModules.Register('castBar', {
     settingsKey = 'castBarSettings',
     configKey = 'showCastBar',
     hideOnMenuFocusKey = 'castBarHideOnMenuFocus',
+    hideMacroPaletteKey = 'castBarHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('castCost', {
@@ -246,6 +260,7 @@ uiModules.Register('castCost', {
     settingsKey = 'castCostSettings',
     configKey = 'showCastCost',
     hideOnMenuFocusKey = 'castCostHideOnMenuFocus',
+    hideMacroPaletteKey = 'castCostHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('mobInfo', {
@@ -253,6 +268,7 @@ uiModules.Register('mobInfo', {
     settingsKey = 'mobInfoSettings',
     configKey = 'showMobInfo',
     hideOnMenuFocusKey = 'mobInfoHideOnMenuFocus',
+    hideMacroPaletteKey = 'mobInfoHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('petBar', {
@@ -261,6 +277,7 @@ uiModules.Register('petBar', {
     configKey = 'showPetBar',
     hideOnEventKey = 'petBarHideDuringEvents',
     hideOnMenuFocusKey = 'petBarHideOnMenuFocus',
+    hideMacroPaletteKey = 'petBarHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('notifications', {
@@ -269,6 +286,7 @@ uiModules.Register('notifications', {
     configKey = 'showNotifications',
     hideOnEventKey = 'notificationsHideDuringEvents',
     hideOnMenuFocusKey = 'notificationsHideOnMenuFocus',
+    hideMacroPaletteKey = 'notificationsHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('treasurePool', {
@@ -276,6 +294,7 @@ uiModules.Register('treasurePool', {
     settingsKey = 'treasurePoolSettings',
     configKey = 'treasurePoolEnabled',
     hideOnMenuFocusKey = 'treasurePoolHideOnMenuFocus',
+    hideMacroPaletteKey = 'treasurePoolHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('hotbar', {
@@ -284,6 +303,7 @@ uiModules.Register('hotbar', {
     configKey = 'showhotbar',
     hideOnEventKey = 'hotbarHideDuringEvents',
     hideOnMenuFocusKey = 'hotbarHideOnMenuFocus',
+    hideMacroPaletteKey = 'hotbarHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('readyCheck', {
@@ -307,7 +327,7 @@ local migrationResult = settingsMigration.MigrateFromHXUI();
 -- Load raw settings to detect legacy data (without default filtering)
 -- Use pcall to handle first-load case where no settings exist
 local rawSettingsSuccess, rawSettings = pcall(function()
-    return settings.load({});
+    return settings.load(T{ });
 end);
 if not rawSettingsSuccess then
     rawSettings = {}; -- No existing settings, nothing to migrate
@@ -460,7 +480,7 @@ end
 -- ==========================================================
 
 -- Load character settings (tracks which profile is active)
-local charSettings = settings.load({ currentProfile = 'Default' });
+local charSettings = settings.load(T{ currentProfile = 'Default' });
 config = charSettings; -- Keep reference to character config
 
 -- Global profiles list
@@ -968,6 +988,11 @@ ashita.events.register('d3d_present', 'present_cb', function ()
         -- triggers another cache clear.
         TextureManager.FlushPendingReleases();
 
+        -- Process deferred icon cache clears scheduled by macro CRUD last frame.
+        -- Must run AFTER FlushPendingReleases (so prior evictions are safe) and
+        -- BEFORE any rendering this frame (so stale caches don't produce wrong icons).
+        macropalette.FlushPendingFrameWork();
+
         -- Clear internal save flag (deferred for Ashita 4.3+ async callbacks)
         if bPendingInternalSaveClear then
             bInternalSave = false;
@@ -1410,6 +1435,10 @@ ashita.events.register('command', 'command_cb', function (e)
                 -- Toggle hotbar debug mode
                 local currentState = hotbar.IsDebugEnabled();
                 hotbar.SetDebugEnabled(not currentState);
+            elseif moduleName == 'subtarget' then
+                -- Toggle subtarget macro debug (ST wait/confirm/cancel only)
+                local currentState = hotbar.IsSubtargetDebugEnabled();
+                hotbar.SetSubtargetDebugEnabled(not currentState);
             elseif moduleName == 'macroblock' then
                 -- Toggle macro block debug mode (both memory patches AND controller)
                 local macrosLib = require('libs.ffxi.macros');
@@ -1428,7 +1457,7 @@ ashita.events.register('command', 'command_cb', function (e)
                 local currentState = hotbar.IsPaletteDebugEnabled();
                 hotbar.SetPaletteDebugEnabled(not currentState);
             else
-                print('[XIUI] Debug modules: hotbar, macroblock, rawinput, palette');
+                print('[XIUI] Debug modules: hotbar, subtarget, macroblock, rawinput, palette');
                 print('[XIUI] Usage: /xiui debug <module>');
             end
             return;

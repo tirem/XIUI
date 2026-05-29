@@ -312,6 +312,14 @@ function M.createHotbarGlobalDefaults()
         slotXPadding = 8,
         slotYPadding = 6,
 
+        -- Bar positioning (hotbar only; crossbar unchanged)
+        positionMode = 'absolute',  -- 'absolute' or 'anchored'
+        hotbarSpacing = 0,        -- Vertical gap between anchored hotbars
+
+        -- Gap between window background edge and slot grid
+        backgroundPaddingX = 0,
+        backgroundPaddingY = 0,
+
         -- Slot appearance
         slotBackgroundColor = 0x55000000,
 
@@ -375,6 +383,7 @@ function M.createHotbarBarDefaults(overrides)
 
         -- Layout settings (always per-bar)
         enabled = true,
+        anchoredInStack = true,  -- Include in bottom-up stack when positionMode is anchored
         rows = 1,               -- Number of rows (1-12)
         columns = 12,           -- Number of columns (1-12)
         slots = 12,             -- Total slots, auto-calculated from rows*columns
@@ -397,6 +406,10 @@ function M.createHotbarBarDefaults(overrides)
         -- Slot padding (gap between slots)
         slotXPadding = 8,       -- Horizontal gap between slots
         slotYPadding = 6,       -- Vertical gap between rows
+
+        -- Gap between window background edge and slot grid (used when bar overrides global visuals)
+        backgroundPaddingX = 0,
+        backgroundPaddingY = 0,
 
         -- Slot appearance
         slotBackgroundColor = 0x55000000,  -- ARGB color for slot backgrounds (black at 33% opacity)

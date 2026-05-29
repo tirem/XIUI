@@ -117,7 +117,7 @@ giltracker.DrawWindow = function(settings)
 
 	-- Detect invalid reads: if gil changes by millions in a single frame, it's likely
 	-- garbage data from zoning - skip this frame but don't reset tracking
-	if lastKnownGil ~= nil then
+	if lastKnownGil ~= nil and lastKnownGil > 0 then
 		local frameDiff = math.abs(currentGil - lastKnownGil);
 		-- If changed by more than 10 million in one frame, skip (likely zone garbage)
 		if frameDiff > 10000000 then

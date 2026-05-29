@@ -4,6 +4,7 @@
 ]]--
 
 local chat = require('chat');
+local gameState = require('core.gamestate');
 
 local M = {};
 
@@ -14,6 +15,8 @@ local M = {};
 --   configKey: key in gConfig for visibility (optional)
 --   hideOnEventKey: config key for hiding during events (optional)
 --   hideOnMenuFocusKey: config key for hiding when game menu is open (optional)
+--   hideMacroPaletteKey: config key to keep module visible when macro palette is open (optional)
+--   hideOnlyAllianceOnMenuFocusKey: config key to hide only alliance parties on menu open (optional)
 --   hasSetHidden: whether module has SetHidden function
 local registry = {};
 
@@ -103,8 +106,16 @@ function M.RenderModule(name, gConfig, gAdjustedSettings, eventSystemActive, men
     end
 
     -- Check menu focus hiding
-    if shouldShow and entry.hideOnMenuFocusKey and menuOpen then
-        shouldShow = not gConfig[entry.hideOnMenuFocusKey];
+    local menuHideActive = gameState.ShouldHideModuleOnMenuFocus(
+        gConfig,
+        entry.hideOnMenuFocusKey,
+        entry.hideMacroPaletteKey
+    );
+    local partialAllianceHide = menuHideActive and entry.hideOnlyAllianceOnMenuFocusKey
+        and gConfig[entry.hideOnlyAllianceOnMenuFocusKey];
+
+    if shouldShow and menuHideActive and not partialAllianceHide then
+        shouldShow = false;
     end
 
     if shouldShow then

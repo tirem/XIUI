@@ -383,15 +383,14 @@ function M.Render(itemInfo, itemType, settings, colors)
                 -- Center bar vertically within cooldownRowHeight
                 local barYOffset = (cooldownRowHeight - barHeight) / 2;
 
-                -- Draw the progress bar using the progressbar library
-                local pbDrawList = imgui.GetWindowDrawList();
+                -- Reuse the UI draw list so the bar isn't hidden behind the window bg.
                 progressbar.ProgressBar(
                     {{cooldownPercent, barGradient}},
                     {barWidth, barHeight},
                     {
                         absolutePosition = {barStartX, yPos + barYOffset},
                         decorate = false,
-                        drawList = pbDrawList,
+                        drawList = drawList,
                     }
                 );
             elseif isWeaponSkill and not hasEnoughTp then

@@ -50,14 +50,40 @@ function M.GetSubTargetActive()
         return true;
     end
 
-    -- Fallback: Check if there's a valid entity in sub-target slot (index 1)
-    -- that differs from main target - indicates sub-targeting even if API doesn't report it
+    -- Fallback: stpc/st with no main target still puts cursor in sub slot
     local mainTarget = playerTarget:GetTargetIndex(0);
     local subTarget = playerTarget:GetTargetIndex(1);
-    if mainTarget ~= 0 and subTarget ~= 0 and subTarget ~= mainTarget then
+    if mainTarget == 0 and subTarget ~= 0 then
         return true;
     end
 
+    return false;
+end
+
+--- Raw main/sub target slot indices from the game (slot 0 = main, slot 1 = sub/cursor).
+function M.GetTargetSlotIndices()
+    local playerTarget = AshitaCore:GetMemoryManager():GetTarget();
+    if playerTarget == nil then
+        return 0, 0;
+    end
+    return playerTarget:GetTargetIndex(0) or 0, playerTarget:GetTargetIndex(1) or 0;
+end
+
+--- True when the player has a main target selected (slot 0).
+function M.HasMainTarget()
+    local main, _ = M.GetTargetSlotIndices();
+    return main ~= 0;
+end
+
+--- True when the game reports target/subtarget selection was dismissed without confirm.
+function M.GetTargetDeactivate()
+    local playerTarget = AshitaCore:GetMemoryManager():GetTarget();
+    if playerTarget == nil then
+        return false;
+    end
+    if playerTarget.GetTargetDeactivate ~= nil then
+        return playerTarget:GetTargetDeactivate() == 1;
+    end
     return false;
 end
 
