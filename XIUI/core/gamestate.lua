@@ -67,45 +67,46 @@ local IGNORED_MENUS = {
     magic    = true,  -- Magic / Trust menu
     abiselec = true,  -- Abilities side menu
     ability  = true,  -- JA, WS, Pet commands
-    mount    = true,  -- Mount menu
 };
-
-local MACRO_PALETTE_MENUS = {
-    mcr1pall = true,  -- Macro palette page 1
-    mcr2pall = true,  -- Macro palette page 2
-};
-
-function M.GetMenuShortName()
-    local menuName = M.GetMenuName():gsub('%s+$', '');
-    if menuName == '' then return ''; end
-    return menuName:match('^menu%s+(.+)') or menuName;
-end
-
-function M.IsMacroPaletteOpen()
-    return MACRO_PALETTE_MENUS[M.GetMenuShortName()] == true;
-end
 
 function M.IsMenuOpen()
-    local shortName = M.GetMenuShortName();
-    if shortName == '' then return false; end
+    local menuName = M.GetMenuName():gsub('%s+$', '');
+    if menuName == '' then return false; end
+    -- Extract the short name (strip "menu" prefix and internal whitespace)
+    local shortName = menuName:match('^menu%s+(.+)') or menuName;
     return not IGNORED_MENUS[shortName];
 end
 
--- Whether a module with "Hide When Menu Open" should hide for the current menu state
-function M.ShouldHideModuleOnMenuFocus(gConfig, hideOnMenuFocusKey, hideMacroPaletteKey)
-    if not hideOnMenuFocusKey or not gConfig[hideOnMenuFocusKey] then
-        return false;
+-- ============================================================
+-- Container / Inventory Navigation Detection
+-- ============================================================
+-- Identifies menus where FFXI uses trigger+D-pad to cycle between container
+-- windows (Mog Safe, Storage, Wardrobe, etc.).  These are the ONLY menus
+-- where the crossbar should be disabled; all combat menus (magic, WS, JA,
+-- battle command menus, etc.) are intentionally left unblocked.
+--
+-- Pattern rules (matched against the lower-cased short name after stripping
+-- the "menu " prefix):
+--   ^mtr      – Mog Treasure storage rooms (mtrsafe, mtrstorage, mtrwrd1-4,
+--               mtrlocker, mtrsack, mtrcase, mtrpouch, mtrsatchel …)
+--   cntnr     – Container overview / selection screen
+-- Exact names can be added to CONTAINER_NAV_EXACT when patterns aren't enough.
+local CONTAINER_NAV_PATTERNS = {
+    '^mtr',   -- Mog house storage rooms
+    'cntnr',  -- Container select / overview
+};
+local CONTAINER_NAV_EXACT = {};
+
+function M.IsContainerNavigationMenu()
+    local menuName = M.GetMenuName():gsub('%s+$', '');
+    if menuName == '' then return false; end
+    local shortName = (menuName:match('^menu%s+(.+)') or menuName):lower();
+    if shortName == '' then return false; end
+    if CONTAINER_NAV_EXACT[shortName] then return true; end
+    for _, pat in ipairs(CONTAINER_NAV_PATTERNS) do
+        if shortName:match(pat) then return true; end
     end
-    if not M.IsMenuOpen() then
-        return false;
-    end
-    if hideMacroPaletteKey and gConfig[hideMacroPaletteKey] then
-        local disableMacroBars = gConfig.hotbarGlobal and gConfig.hotbarGlobal.disableMacroBars;
-        if not disableMacroBars and M.IsMacroPaletteOpen() then
-            return false;
-        end
-    end
-    return true;
+    return false;
 end
 
 -- Check if Ashita's FontManager has been hidden (e.g., by autohide addon)
