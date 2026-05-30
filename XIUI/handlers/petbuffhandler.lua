@@ -23,24 +23,44 @@ local PET_ABILITY_BUFFS = {
 };
 
 -- Message IDs for "target gains/receives/is <status>" (LSB msg_basic.h + msg_std.h). Param = effect icon/ID.
+-- Union of debuffhandler IDs (enemies casting on players) + pet-specific IDs.
 local statusOnMes = {
-    [29]=true, [84]=true,   -- IS_PARALYZED, IS_PARALYZED_2 (<target> is paralyzed)
+    -- Pet-specific / paralyzed messages
+    [29]=true, [84]=true,   -- IS_PARALYZED, IS_PARALYZED_2
+    -- Shared with debuffhandler (enemy-cast status, ability-granted, etc.)
+    [101]=true, [127]=true,
+    [160]=true, [164]=true, [166]=true,
     [186]=true,             -- USES_SKILL_GAINS_EFFECT
+    [194]=true,
     [203]=true,             -- IS_STATUS
     [205]=true,             -- MsgStd::GainsEffect
     [230]=true, [236]=true, [237]=true,  -- MAGIC_GAINS_EFFECT, MAGIC_STATUS, MAGIC_RECEIVES_EFFECT
     [242]=true, [243]=true, -- USES_SKILL_STATUS, USES_SKILL_RECEIVES_EFFECT
-    [266]=true, [277]=true, [278]=true,  -- TARGET_GAINS_EFFECT, TARGET_STATUS, TARGET_RECEIVES_EFFECT
-    [374]=true,             -- STATUS_SPIKES (attacker gains from spikes)
+    [266]=true, [267]=true, [268]=true, [269]=true, -- TARGET_GAINS_EFFECT and variants
+    [271]=true, [272]=true,
+    [277]=true, [278]=true, [279]=true, [280]=true, -- TARGET_STATUS, TARGET_RECEIVES_EFFECT and variants
+    [319]=true, [320]=true, -- Monster-specific status messages
+    [374]=true, [375]=true, -- STATUS_SPIKES variants
+    [412]=true,
     [420]=true, [421]=true, -- ROLL_MAIN, ROLL_SUB (target receives effect)
+    [645]=true,
+    [754]=true, [755]=true,
+    [804]=true,
 };
 -- Message IDs for "effect wears off / target loses status" (LSB msg_basic.h + msg_std.h). Param = effect icon/ID.
--- Includes normal expiry, dispel, DRG Spirit Link and BST Reward II clearing pet buffs (server sends 206 per effect).
+-- Union of debuffhandler IDs + pet-specific IDs.
+-- Includes normal expiry, dispel, DRG Spirit Link and BST Reward II clearing pet buffs.
 local statusOffMes = {
-    [206]=true,             -- MsgStd::EffectWearsOff
-    [343]=true,             -- MsgBasic::TARGET_EFFECT_DISAPPEARS
-    [378]=true,             -- MsgBasic::USES_ABILITY_DISPEL
-    [426]=true, [427]=true, -- MsgBasic::DOUBLEUP_BUST, DOUBLEUP_BUST_SUB
+    [64]=true, [159]=true, [168]=true, [204]=true,
+    [206]=true,             -- MsgStd::EffectWearsOff (most common)
+    [321]=true, [322]=true,
+    [341]=true, [342]=true, [343]=true, [344]=true, -- TARGET_EFFECT_DISAPPEARS and variants
+    [350]=true,
+    [378]=true,             -- USES_ABILITY_DISPEL
+    [426]=true, [427]=true, -- DOUBLEUP_BUST, DOUBLEUP_BUST_SUB
+    [531]=true,
+    [647]=true,
+    [805]=true, [806]=true,
 };
 local deathMes = {
     [6]=true, [20]=true, [97]=true, [113]=true, [406]=true, [605]=true, [646]=true,
@@ -76,8 +96,11 @@ end
 local function tryApplyUnknownStatus(message, param, pkt, alreadyHandled)
     if alreadyHandled or not statusOnMes[message] then return; end
     local effectId = param;
-    if (not effectId or effectId == 0 or effectId > 1000) and pkt and pkt.Type == 4 then
-        effectId = buffTable.GetBuffIdBySpellId(pkt.Param);
+    if (not effectId or effectId == 0 or effectId > 1000) then
+        if pkt and pkt.Type == 4 then
+            -- Magic: map spell ID to buff ID
+            effectId = buffTable.GetBuffIdBySpellId(pkt.Param);
+        end
     end
     if not effectId or effectId <= 0 or effectId >= 1000 then return; end
     local duration;
@@ -160,7 +183,8 @@ petBuffHandler.HandleMessagePacket = function(messagePacket)
     local message = messagePacket.message;
     local param = messagePacket.param;
 
-    local isPetRelevant = (targetId == petServerId) or (message == 206 and senderId == petServerId);
+    local isPetRelevant = (targetId == petServerId)
+        or (statusOffMes[message] and senderId == petServerId);
     if not isPetRelevant then return; end
 
     if deathMes[message] then

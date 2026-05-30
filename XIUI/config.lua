@@ -1,4 +1,4 @@
---[[
+﻿--[[
 * XIUI Config Menu - Main Window
 * Entry point for the config menu, handles window rendering and dispatches to module files
 ]]--
@@ -24,16 +24,27 @@ local petbarModule = require('config.petbar');
 local notificationsModule = require('config.notifications');
 local treasurepoolModule = require('config.treasurepool');
 local hotbarModule = require('config.hotbar');
+local crossbarModule = require('config.crossbar');
 local readycheckModule = require('config.readycheck');
 
 local treasurePool = require('modules.treasurepool.init');
 local macropalette = require('modules.hotbar.macropalette');
 local palette = require('modules.hotbar.palette');
+local paletteJson = require('modules.hotbar.palette_json');
 
 local config = {};
 
 -- Track previous config state to detect when config closes
 local wasConfigOpen = false;
+
+-- Lazy: defer closing XIUI Config when Edit Full Palette is open (see config.palettemanager).
+local paletteManagerForCloseDefer = nil;
+local function getPaletteManagerForCloseDefer()
+    if not paletteManagerForCloseDefer then
+        paletteManagerForCloseDefer = require('config.palettemanager');
+    end
+    return paletteManagerForCloseDefer;
+end
 
 -- Track last known config window geometry for smart reposition on open
 local lastConfigPosX, lastConfigPosY = 20, 20;
@@ -114,6 +125,23 @@ local showNewProfilePopup = false;
 local triggerNewProfilePopup = false;
 local triggerDeleteProfilePopup = false;
 local triggerRenameProfilePopup = false;
+local triggerCopyProfilePopup = false;
+-- [1] = include full macroDB when using Copy (DuplicateProfile)
+local copyProfileIncludeMacros = { true };
+
+-- Profile JSON export/import (whole-profile: all palettes + all macros)
+local profileJsonWinOpen = { false };
+local profileJsonMode = 'export'; -- 'export' | 'import'
+local profileJsonBuf = { '' };
+local profileJsonErr = nil;
+local profileJsonInfo = nil;
+local profileJsonExportPart = { 'all' }; -- paletteJson.EXPORT_PART_*
+local profileJsonImportPalettes = { true };
+local profileJsonImportMacros = { true };
+local profileJsonImportMode = { paletteJson.IMPORT_MODE_MERGE }; -- merge | replace (see palette_json)
+local profileJsonImportFiles = {};
+local profileJsonImportSelectedIdx = { -1 };
+local profileJsonImportSelectedName = nil;
 
 -- XIUI Theme Colors (dark + gold accent)
 local gold = {0.957, 0.855, 0.592, 1.0};           -- #F4DA97 - Primary gold accent
@@ -192,12 +220,253 @@ local function PopThemeStyles()
     imgui.PopStyleColor(34);
 end
 
+local function OpenProfileJsonExport()
+    profileJsonMode = 'export';
+    profileJsonErr = nil;
+    profileJsonInfo = nil;
+    profileJsonBuf[1] = '';
+    profileJsonExportPart[1] = paletteJson.EXPORT_PART_ALL;
+    profileJsonWinOpen[1] = true;
+end
+
+local function RefreshProfileJsonImportFiles()
+    local files = paletteJson.ListExportFiles();
+    profileJsonImportFiles = files or {};
+    if profileJsonImportSelectedName then
+        profileJsonImportSelectedIdx[1] = -1;
+        for i, n in ipairs(profileJsonImportFiles) do
+            if n == profileJsonImportSelectedName then
+                profileJsonImportSelectedIdx[1] = i - 1;
+                break;
+            end
+        end
+    else
+        profileJsonImportSelectedIdx[1] = -1;
+    end
+end
+
+local function OpenProfileJsonImport()
+    profileJsonMode = 'import';
+    profileJsonErr = nil;
+    profileJsonInfo = nil;
+    profileJsonBuf[1] = '';
+    profileJsonImportPalettes[1] = true;
+    profileJsonImportMacros[1] = true;
+    profileJsonImportMode[1] = paletteJson.IMPORT_MODE_MERGE;
+    profileJsonImportSelectedName = nil;
+    profileJsonWinOpen[1] = true;
+    RefreshProfileJsonImportFiles();
+end
+
+local function RunProfileJsonExport()
+    local text, err = paletteJson.ExportProfile(profileJsonExportPart[1] or paletteJson.EXPORT_PART_ALL);
+    if not text then
+        profileJsonErr = err or 'Export failed';
+        return;
+    end
+    profileJsonBuf[1] = text;
+    profileJsonErr = nil;
+    profileJsonInfo = nil;
+end
+
+local function RunProfileJsonSaveToFile()
+    local baseName = (GetCurrentProfileName and GetCurrentProfileName()) or 'profile';
+    local part = profileJsonExportPart[1] or paletteJson.EXPORT_PART_ALL;
+    baseName = tostring(baseName) .. '_' .. part;
+    local ok, path = paletteJson.SaveTextFile(baseName, profileJsonBuf[1] or '');
+    if ok then
+        profileJsonInfo = path;
+        profileJsonErr = nil;
+    else
+        profileJsonErr = tostring(path);
+    end
+end
+
+local function RunImportFromSelectedFile()
+    local idx = profileJsonImportSelectedIdx[1];
+    if not idx or idx < 0 then
+        profileJsonErr = 'Pick a file from the list first.';
+        return;
+    end
+    local name = profileJsonImportFiles[idx + 1];
+    if not name then
+        profileJsonErr = 'Selected file is no longer present.';
+        return;
+    end
+    local okImp, errImp = paletteJson.ImportProfileFromFile(name, {
+        importPalettes = profileJsonImportPalettes[1],
+        importMacros = profileJsonImportMacros[1],
+        importMode = profileJsonImportMode[1] or paletteJson.IMPORT_MODE_MERGE,
+    });
+    if okImp then
+        profileJsonErr = nil;
+        profileJsonInfo = 'Import applied from ' .. name .. '.';
+        profileJsonWinOpen[1] = false;
+    else
+        profileJsonErr = errImp or 'Import failed';
+    end
+end
+
+local function DrawProfileJsonWindow()
+    if not profileJsonWinOpen[1] then return; end
+
+    PushThemeStyles();
+    imgui.SetNextWindowSize({ 680, 560 }, ImGuiCond_FirstUseEver);
+    local title = (profileJsonMode == 'export') and 'Profile Export (JSON)##xiuiProfJson' or 'Profile Import (JSON)##xiuiProfJson';
+    if imgui.Begin(title, profileJsonWinOpen, ImGuiWindowFlags_NoCollapse) then
+        if profileJsonMode == 'export' then
+            imgui.TextWrapped(
+                'Export this profile\'s palettes and/or macros to a single JSON file. Use it to back up this profile or transfer it to a new character. Entries are pretty-printed with human-readable "_label" tags (job / subjob / palette name), so you can open the file in a text editor, delete the blocks you do not want, save, and then import only the rest.'
+            );
+        else
+            imgui.TextWrapped(
+                'Pick a file from the exports folder, or paste JSON below. Choose Add to existing to merge with this profile, or Replace with file to clear the matching data first so the result matches the export.'
+            );
+        end
+        imgui.Spacing();
+
+        if profileJsonErr then
+            imgui.TextColored({ 1.0, 0.3, 0.3, 1.0 }, profileJsonErr);
+        end
+        if profileJsonInfo then
+            imgui.TextColored({ 0.65, 0.8, 0.65, 1.0 }, profileJsonInfo);
+        end
+        imgui.Separator();
+
+        if profileJsonMode == 'export' then
+            imgui.Text('Include in file:');
+            if imgui.RadioButton('All palettes + macros##pjExAll', profileJsonExportPart[1] == paletteJson.EXPORT_PART_ALL) then
+                profileJsonExportPart[1] = paletteJson.EXPORT_PART_ALL;
+            end
+            imgui.SameLine();
+            if imgui.RadioButton('All palettes only##pjExPal', profileJsonExportPart[1] == paletteJson.EXPORT_PART_PALETTES_ONLY) then
+                profileJsonExportPart[1] = paletteJson.EXPORT_PART_PALETTES_ONLY;
+            end
+            imgui.SameLine();
+            if imgui.RadioButton('All macros only##pjExMac', profileJsonExportPart[1] == paletteJson.EXPORT_PART_MACROS_ONLY) then
+                profileJsonExportPart[1] = paletteJson.EXPORT_PART_MACROS_ONLY;
+            end
+            if imgui.ShowHelp then
+                imgui.ShowHelp(
+                    'All palettes + macros: complete profile backup (every keyboard hotbar palette, every crossbar palette, and all macro text).\nAll palettes only: every palette for this profile without macro definitions. Import into a profile that already has the macros.\nAll macros only: the entire macro library without changing any palette layouts.'
+                );
+            end
+
+            imgui.Spacing();
+            if imgui.Button('Generate JSON##pjGen') then
+                RunProfileJsonExport();
+            end
+            imgui.SameLine();
+            if imgui.Button('Save to file##pjSave') then
+                if profileJsonBuf[1] == nil or profileJsonBuf[1] == '' then
+                    RunProfileJsonExport();
+                end
+                if profileJsonBuf[1] ~= nil and profileJsonBuf[1] ~= '' then
+                    RunProfileJsonSaveToFile();
+                end
+            end
+            imgui.SameLine();
+            if imgui.Button('Open exports folder##pjExOpenDir') then
+                paletteJson.OpenExportsDir();
+            end
+            imgui.SameLine();
+            imgui.TextColored({ 0.6, 0.6, 0.65, 1.0 }, 'Files save to config/addons/xiui/exports/.');
+
+            imgui.Spacing();
+            imgui.InputTextMultiline('##profJsonBuf', profileJsonBuf, 200000, { -1, -1 });
+        else
+            if imgui.Checkbox('Import palettes##pjImpPal', profileJsonImportPalettes) then end
+            imgui.SameLine();
+            if imgui.ShowHelp then
+                imgui.ShowHelp(
+                    'Apply keyboard hotbar and crossbar layouts from the file. Add to existing: overlay slot data and merge palette name lists. Replace with file: clear those layouts first, then apply; palette order lists come only from the file.'
+                );
+            end
+            if imgui.Checkbox('Import macros##pjImpMac', profileJsonImportMacros) then end
+            imgui.SameLine();
+            if imgui.ShowHelp then
+                imgui.ShowHelp(
+                    'Add to existing: append macro rows with new IDs and remap palette references. Replace with file: macro library becomes exactly what is in the file (same macro IDs as the export). If you import palettes only and uncheck macros, the file must reference macros that already exist here.'
+                );
+            end
+
+            imgui.Spacing();
+            imgui.Text('Apply mode:');
+            if imgui.RadioButton('Add to existing (merge)##pjModeMerge', profileJsonImportMode[1] == paletteJson.IMPORT_MODE_MERGE) then
+                profileJsonImportMode[1] = paletteJson.IMPORT_MODE_MERGE;
+            end
+            imgui.SameLine();
+            if imgui.ShowHelp then
+                imgui.ShowHelp(
+                    'Overlay the file onto this profile: palette slot data and name lists merge with what you already have; new macro rows get new IDs.'
+                );
+            end
+            if imgui.RadioButton('Replace with file (overwrite)##pjModeReplace', profileJsonImportMode[1] == paletteJson.IMPORT_MODE_REPLACE) then
+                profileJsonImportMode[1] = paletteJson.IMPORT_MODE_REPLACE;
+            end
+            imgui.SameLine();
+            if imgui.ShowHelp then
+                imgui.ShowHelp(
+                    'Before applying: clears hotbar/crossbar layouts for sides present in the file, replaces palette order lists from the file, and replaces the macro library with the file when Import macros is checked. Use this when you want the profile to match the export instead of mixing with old data.'
+                );
+            end
+            if profileJsonImportMode[1] == paletteJson.IMPORT_MODE_REPLACE then
+                imgui.PushStyleColor(ImGuiCol_Text, { 1.0, 0.55, 0.35, 1.0 });
+                if imgui.TextWrapped then
+                    imgui.TextWrapped(
+                        'Replace mode can remove existing bars, combos, palette lists, and macros (for the options you checked) so only the file remains.'
+                    );
+                end
+                imgui.PopStyleColor();
+            end
+
+            imgui.Spacing();
+            imgui.Text('Pick a file from config/addons/xiui/exports/:');
+            imgui.SetNextItemWidth(-220);
+            local fileCount = #profileJsonImportFiles;
+            if fileCount == 0 then
+                imgui.PushStyleColor(ImGuiCol_Text, { 0.7, 0.7, 0.75, 1.0 });
+                -- BeginListBox is not available on all Ashita ImGui builds; use a bordered child instead.
+                imgui.BeginChild('##profJsonFilesEmpty', { -220, 90 }, true);
+                imgui.Text('(No .json files found in the exports folder.)');
+                imgui.EndChild();
+                imgui.PopStyleColor();
+            else
+                if imgui.ListBox and imgui.ListBox('##profJsonFiles', profileJsonImportSelectedIdx, profileJsonImportFiles, fileCount, 5) then
+                    local idx = profileJsonImportSelectedIdx[1];
+                    if idx and idx >= 0 then
+                        profileJsonImportSelectedName = profileJsonImportFiles[idx + 1];
+                    end
+                end
+            end
+            imgui.SameLine();
+            imgui.BeginGroup();
+            if imgui.Button('Load & Import##pjLoadImportFile', { 200, 0 }) then
+                RunImportFromSelectedFile();
+            end
+            if imgui.Button('Refresh list##pjRefreshFiles', { 200, 0 }) then
+                RefreshProfileJsonImportFiles();
+                profileJsonInfo = 'Refreshed (' .. #profileJsonImportFiles .. ' file(s)).';
+            end
+            if imgui.Button('Open exports folder##pjOpenDir', { 200, 0 }) then
+                paletteJson.OpenExportsDir();
+            end
+            imgui.EndGroup();
+        end
+    end
+    imgui.End();
+    PopThemeStyles();
+end
+
 local function DrawProfilesWindow()
-    if (not showProfilesWindow[1]) then return; end
+    if (not showProfilesWindow[1]) then
+        DrawProfileJsonWindow();
+        return;
+    end
 
     PushThemeStyles();
 
-    imgui.SetNextWindowSize({ 350, 145 }, ImGuiCond_Always);
+    imgui.SetNextWindowSize({ 380, 300 }, ImGuiCond_Always);
     -- Using + for flags as they are typically integers
     if (imgui.Begin("Profiles", showProfilesWindow, ImGuiWindowFlags_NoCollapse + ImGuiWindowFlags_NoResize)) then
 
@@ -221,6 +490,17 @@ local function DrawProfilesWindow()
             imgui.EndCombo();
         end
 
+        if imgui.TextWrapped then
+            imgui.Spacing();
+            imgui.PushStyleColor(ImGuiCol_Text, { 0.55, 0.55, 0.62, 1.0 });
+            imgui.TextWrapped(
+                'Every character that uses this profile name shares the same XIUI data (palettes, macros, layout). '
+                .. 'Use Copy to duplicate the active profile: you can include the full macro library or only layout/appearance. '
+                .. 'To move specific macros, use Export/Import JSON. Empty palette buckets (e.g. Items) are not stored on disk until you add something there.'
+            );
+            imgui.PopStyleColor();
+        end
+
         imgui.Spacing();
         imgui.Spacing();
 
@@ -234,7 +514,8 @@ local function DrawProfilesWindow()
         imgui.SameLine();
 
         if (imgui.Button("Copy")) then
-            DuplicateProfile(currentProfile);
+            copyProfileIncludeMacros[1] = true;
+            triggerCopyProfilePopup = true;
         end
 
         imgui.SameLine();
@@ -282,12 +563,30 @@ local function DrawProfilesWindow()
             imgui.PopStyleColor(3);
         end
 
+        imgui.Spacing();
+        imgui.Separator();
+        imgui.Spacing();
 
+        imgui.Text('Backup / Transfer:');
+        if imgui.ShowHelp then
+            imgui.SameLine();
+            imgui.ShowHelp(
+                'Export or import this entire profile as one JSON file: all keyboard hotbar palettes, all crossbar palettes, and the full macro library for this profile. Use it to back up this profile or move everything onto a new character. You can choose to include palettes, macros, or both on both sides.'
+            );
+        end
+        if imgui.Button('Export JSON##profJsonOpenEx') then
+            OpenProfileJsonExport();
+        end
+        imgui.SameLine();
+        if imgui.Button('Import JSON##profJsonOpenIm') then
+            OpenProfileJsonImport();
+        end
 
         imgui.End();
     end
 
     PopThemeStyles();
+    DrawProfileJsonWindow();
 end
 
 -- Navigation state
@@ -304,8 +603,7 @@ local selectedPetTypeTab = 1;  -- 1 = Avatar, 2 = Charm, 3 = Jug, 4 = Automaton,
 local selectedPetTypeColorTab = 1;  -- Pet type color sub-tab
 local selectedPetBarColorTab = 1;  -- 1 = Pet Bar, 2 = Pet Target (for color settings)
 local selectedHotbarTab = 1;  -- 1 = Bar 1, 2 = Bar 2, etc. (for hotbar settings)
-local selectedModeTab = 'hotbar';  -- 'hotbar' or 'crossbar' (for hotbar/crossbar toggle in 'both' mode)
-local selectedCrossbarTab = 1;  -- 1=L2, 2=R2, 3=L2R2, 4=R2L2, 5=L2x2, 6=R2x2
+local selectedCrossbarTab = 1;  -- 1=Global, 2=L2, â€¦ (for Crossbar category panel)
 
 -- Category definitions
 local categories = {
@@ -323,13 +621,26 @@ local categories = {
     { name = 'notifications', label = 'Notifications' },
     { name = 'treasurePool', label = 'Treasure Pool' },
     { name = 'hotbar', label = 'Hotbar' },
+    { name = 'crossbar', label = 'Crossbar' },
     { name = 'readyCheck', label = 'Ready Check' },
 };
 
 
+-- Index of the Crossbar sidebar category (for palette edit context sync)
+local function GetCrossbarCategoryIndex()
+    for i, c in ipairs(categories) do
+        if c.name == 'crossbar' then
+            return i;
+        end
+    end
+    return nil;
+end
+
 -- Build state object for modules that need tab state
 local function buildState()
     return {
+        selectedCategory = selectedCategory,
+        crossbarCategoryIndex = GetCrossbarCategoryIndex(),
         selectedPartyTab = selectedPartyTab,
         selectedPartyColorTab = selectedPartyColorTab,
         selectedInventoryTab = selectedInventoryTab,
@@ -341,7 +652,6 @@ local function buildState()
         selectedPetTypeTab = selectedPetTypeTab,
         selectedPetTypeColorTab = selectedPetTypeColorTab,
         selectedHotbarTab = selectedHotbarTab,
-        selectedModeTab = selectedModeTab,
         selectedCrossbarTab = selectedCrossbarTab,
         githubTexture = githubTexture,
     };
@@ -356,7 +666,6 @@ local function applySettingsState(newState)
         if newState.selectedPetBarTab then selectedPetBarTab = newState.selectedPetBarTab; end
         if newState.selectedPetTypeTab then selectedPetTypeTab = newState.selectedPetTypeTab; end
         if newState.selectedHotbarTab then selectedHotbarTab = newState.selectedHotbarTab; end
-        if newState.selectedModeTab then selectedModeTab = newState.selectedModeTab; end
         if newState.selectedCrossbarTab then selectedCrossbarTab = newState.selectedCrossbarTab; end
     end
 end
@@ -369,7 +678,6 @@ local function applyColorState(newState)
         if newState.selectedPetBarColorTab then selectedPetBarColorTab = newState.selectedPetBarColorTab; end
         if newState.selectedPetTypeColorTab then selectedPetTypeColorTab = newState.selectedPetTypeColorTab; end
         if newState.selectedHotbarTab then selectedHotbarTab = newState.selectedHotbarTab; end
-        if newState.selectedModeTab then selectedModeTab = newState.selectedModeTab; end
         if newState.selectedCrossbarTab then selectedCrossbarTab = newState.selectedCrossbarTab; end
     end
 end
@@ -433,6 +741,11 @@ end
 
 local function DrawHotbarSettings()
     local newState = hotbarModule.DrawSettings(buildState());
+    applySettingsState(newState);
+end
+
+local function DrawCrossbarSettingsPanel()
+    local newState = crossbarModule.DrawSettings(buildState());
     applySettingsState(newState);
 end
 
@@ -502,6 +815,11 @@ local function DrawHotbarColorSettings()
     applyColorState(newState);
 end
 
+local function DrawCrossbarColorSettingsPanel()
+    local newState = crossbarModule.DrawColorSettings(buildState());
+    applyColorState(newState);
+end
+
 local function DrawReadyCheckColorSettings()
     readycheckModule.DrawColorSettings();
 end
@@ -522,6 +840,7 @@ local settingsDrawFunctions = {
     DrawNotificationsSettings,
     DrawTreasurePoolSettings,
     DrawHotbarSettings,
+    DrawCrossbarSettingsPanel,
     DrawReadyCheckSettings,
 };
 
@@ -540,6 +859,7 @@ local colorSettingsDrawFunctions = {
     DrawNotificationsColorSettings,
     DrawTreasurePoolColorSettings,
     DrawHotbarColorSettings,
+    DrawCrossbarColorSettingsPanel,
     DrawReadyCheckColorSettings,
 };
 
@@ -559,9 +879,13 @@ local function DrawProfilePopups()
         imgui.OpenPopup("Delete Profile");
         triggerDeleteProfilePopup = false;
     end
+    if (triggerCopyProfilePopup) then
+        imgui.OpenPopup("Copy Profile");
+        triggerCopyProfilePopup = false;
+    end
 
     -- New Profile Popup
-    if (imgui.BeginPopupModal("New Profile", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+    if (imgui.BeginPopup("New Profile")) then
         isModalOpen = true;
         imgui.Text("Create New Profile:");
         imgui.InputText("##NewProfileName", newProfileName, 32);
@@ -584,7 +908,7 @@ local function DrawProfilePopups()
     end
 
     -- Rename Popup
-    if (imgui.BeginPopupModal("Rename Profile", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+    if (imgui.BeginPopup("Rename Profile")) then
         isModalOpen = true;
         imgui.Text("Rename '" .. GetCurrentProfileName() .. "' to:");
         imgui.InputText("##RenameInput", renameProfileName, 32);
@@ -606,7 +930,7 @@ local function DrawProfilePopups()
     end
 
     -- Delete Confirmation Popup
-    if (imgui.BeginPopupModal("Delete Profile", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+    if (imgui.BeginPopup("Delete Profile")) then
         isModalOpen = true;
         imgui.Text("Are you sure you want to delete profile:");
         imgui.TextColored({1.0, 0.3, 0.3, 1.0}, profileToDelete);
@@ -624,7 +948,41 @@ local function DrawProfilePopups()
         end
         imgui.EndPopup();
     end
-    
+
+    -- Copy Profile: optional macro library (full clone vs layout-only for another character)
+    if (imgui.BeginPopup("Copy Profile")) then
+        isModalOpen = true;
+        local src = (GetCurrentProfileName and GetCurrentProfileName()) or '';
+        imgui.Text("Create a new profile from:");
+        imgui.TextColored(gold, src);
+        imgui.Spacing();
+        imgui.TextWrapped(
+            'Copy is a full snapshot of the selected profile on disk, except you can start without a macro library. '
+            .. 'Buckets that were never used (e.g. Items / Equipment) are not in the file â€” that is why a clone can show Global/job rows but no separate items bucket until you add some.'
+        );
+        imgui.Spacing();
+        imgui.Checkbox("Include full macro library##copyInclMacros", copyProfileIncludeMacros);
+        if (imgui.ShowHelp) then
+            imgui.SameLine();
+            imgui.ShowHelp(
+                "When checked: all macro palette buckets in this profile (same as a full file copy). When unchecked: empty macro list and custom categories reset; keyboard/crossbar slots that used palette macros are cleared. Spells, abilities, and items on bars are kept. Use Profile â†’ Export/Import JSON to move chosen macros between profiles."
+            );
+        end
+        imgui.Spacing();
+        if (imgui.Button("Create copy##CopyProfileGo", { 120, 0 })) then
+            if (DuplicateProfile and GetCurrentProfileName) then
+                if (DuplicateProfile(GetCurrentProfileName(), { includeMacroLibrary = (copyProfileIncludeMacros[1] == true) })) then
+                    imgui.CloseCurrentPopup();
+                end
+            end
+        end
+        imgui.SameLine();
+        if (imgui.Button("Cancel##CopyProfile", { 120, 0 })) then
+            imgui.CloseCurrentPopup();
+        end
+        imgui.EndPopup();
+    end
+
     return isModalOpen;
 end
 
@@ -634,23 +992,32 @@ config.DrawWindow = function(us)
     -- Detect when config closes and clear treasure pool preview
     local isConfigOpen = showConfig[1];
     if wasConfigOpen and not isConfigOpen then
-        -- Config just closed - always save profile to persist window positions
-        SaveSettingsToDisk();
-        
-        -- Clear dirty flags if they were set
-        if macropalette.IsHotbarDirty() then
-            macropalette.ClearHotbarDirty();
+        local deferClose = getPaletteManagerForCloseDefer().DeferConfigCloseIfEditFullPaletteOpen();
+        if deferClose then
+            -- Keep XIUI Config open; palette manager shows a confirm popup on the next draw.
+            showConfig[1] = true;
+        else
+            -- Config just closed - always save profile to persist window positions
+            SaveSettingsToDisk();
+
+            -- Clear dirty flags if they were set
+            if macropalette.IsHotbarDirty() then
+                macropalette.ClearHotbarDirty();
+            end
+            if palette.IsPaletteStateDirty() then
+                palette.ClearPaletteStateDirty();
+            end
+            -- Clear preview state and reset settings
+            treasurePool.ClearPreview();
+            gConfig.treasurePoolMiniPreview = false;
+            gConfig.treasurePoolFullPreview = false;
         end
-        if palette.IsPaletteStateDirty() then
-            palette.ClearPaletteStateDirty();
-        end
-        -- Clear preview state and reset settings
-        treasurePool.ClearPreview();
-        gConfig.treasurePoolMiniPreview = false;
-        gConfig.treasurePoolFullPreview = false;
     end
     local configJustOpened = isConfigOpen and not wasConfigOpen;
     wasConfigOpen = isConfigOpen;
+    if configJustOpened then
+        crossbarModule.OnConfigWindowOpened();
+    end
 
     -- Early exit if config window isn't shown (atom0s recommendation)
     -- This prevents unnecessary style pushes and imgui.End() calls when window is hidden
@@ -658,9 +1025,9 @@ config.DrawWindow = function(us)
 
     -- Constrain config window to never exceed the game's render resolution.
     -- Prevents the window from being larger than the screen or lost off-screen on small resolutions.
-    local ioData = imgui.GetIO();
-    local sw = ioData.DisplaySize.x;
-    local sh = ioData.DisplaySize.y;
+    local io = imgui.GetIO();
+    local sw = io.DisplaySize.x;
+    local sh = io.DisplaySize.y;
     if not sw or sw < 1 then return; end
     if not sh or sh < 1 then return; end
 
@@ -690,8 +1057,7 @@ config.DrawWindow = function(us)
             imgui.SetNextWindowPos({ 20, 20 }, ImGuiCond_Always);
         end
     end
-    local configVisible = imgui.Begin("XIUI Config - v" .. addon.version, showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking));
-    if configVisible then
+    if(imgui.Begin("XIUI Config - v" .. addon.version, showConfig, bit.bor(ImGuiWindowFlags_NoSavedSettings, ImGuiWindowFlags_NoDocking))) then
         local windowWidth = imgui.GetContentRegionAvail();
         local sidebarWidth = 180;
         local contentWidth = windowWidth - sidebarWidth - 20;
@@ -721,13 +1087,11 @@ config.DrawWindow = function(us)
         imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {8, 6});
 
         -- Profiles Button
-        imgui.PushStyleColor(ImGuiCol_Button, buttonColor);
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, buttonHoverColor);
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, buttonActiveColor);
+        imgui.PushStyleColor(ImGuiCol_Button, bgLight);
         if (imgui.Button("Profiles", { 0, 26 })) then
             showProfilesWindow[1] = true;
         end
-        imgui.PopStyleColor(3);
+        imgui.PopStyleColor();
         
         imgui.SameLine();
         imgui.PushItemWidth(300); -- Increased width for profile select
@@ -821,7 +1185,7 @@ config.DrawWindow = function(us)
             showRestoreDefaultsConfirm = false;
         end
 
-        if (imgui.BeginPopupModal("Confirm Reset Settings", true, ImGuiWindowFlags_AlwaysAutoResize)) then
+        if (imgui.BeginPopup("Confirm Reset Settings")) then
             anyModalOpen = true;
             imgui.Text("Are you sure you want to reset all settings to defaults?");
             imgui.Text("This will reset all your customizations including:");
@@ -987,10 +1351,12 @@ config.DrawWindow = function(us)
     end
 
     -- Capture config window geometry while open for smart reposition on next open.
-    -- Two local assignments per frame — negligible cost, but ensures we always have
+    -- Two local assignments per frame â€” negligible cost, but ensures we always have
     -- current values even on addon unload or profile change without an extra frame.
     lastConfigPosX, lastConfigPosY = imgui.GetWindowPos();
     lastConfigSizeW, lastConfigSizeH = imgui.GetWindowSize();
+    -- For other UI (e.g. Crossbar full palette window) to stagger offset from this window without a require() cycle
+    _G._XIUI_CONFIG_LAST_GEOM = { lastConfigPosX, lastConfigPosY, lastConfigSizeW, lastConfigSizeH };
 
     imgui.End();
 
@@ -1025,4 +1391,42 @@ function config.OpenResetSettingsPopup()
     showRestoreDefaultsConfirm = true;
 end
 
+-- Open XIUI config on Crossbar category, Manage Palettes & Crossbar tab (/xiui cpalette)
+-- Used by palette manager modal to close XIUI Config after forcing Edit Full Palette shut.
+function config.SetWindowOpen(isOpen)
+    showConfig[1] = isOpen and true or false;
+end
+
+function config.OpenCrossbarManagePalettes()
+    local idx = GetCrossbarCategoryIndex();
+    if not idx then
+        return false;
+    end
+    selectedCategory = idx;
+    selectedTab = 1;
+    showConfig[1] = true;
+    crossbarModule.OpenCrossbarManagePalettesTab();
+    return true;
+end
+
+-- Toggle: close config if already on Crossbar â†’ Manage Palettes; otherwise open there (/xiui cpalette with no subcommand)
+function config.ToggleCrossbarManagePalettes()
+    local idx = GetCrossbarCategoryIndex();
+    if not idx then
+        return nil;
+    end
+    if showConfig[1] and selectedCategory == idx and selectedTab == 1 then
+        local cross = gConfig and gConfig.hotbarCrossbar;
+        if cross and cross.configUiTab == 2 then
+            showConfig[1] = false;
+            return 'closed';
+        end
+    end
+    if not config.OpenCrossbarManagePalettes() then
+        return nil;
+    end
+    return 'opened';
+end
+
 return config;
+
