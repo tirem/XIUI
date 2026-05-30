@@ -23,7 +23,7 @@
 -- [21] = Geomancer
 -- [22] = Rune Fencer
 
-return {
+local _horizonSpells = {
     [1] = {id=1,en="Cure",ja="ケアル",cast_time=2,element=6,icon_id=86,icon_id_nq=6,levels={[3]=1,[5]=3,[7]=5,[20]=5},mp_cost=8,prefix="/magic",range=12,recast=5,recast_id=1,requirements=1,skill=33,targets=63,type="WhiteMagic"},
     [2] = {id=2,en="Cure II",ja="ケアルII",cast_time=2.25,element=6,icon_id=87,icon_id_nq=6,levels={[3]=11,[5]=14,[7]=17,[20]=17},mp_cost=24,prefix="/magic",range=12,recast=5.5,recast_id=2,requirements=1,skill=33,targets=63,type="WhiteMagic"},
     [3] = {id=3,en="Cure III",ja="ケアルIII",cast_time=2.5,element=6,icon_id=88,icon_id_nq=6,levels={[3]=21,[5]=26,[7]=30,[20]=30},mp_cost=46,prefix="/magic",range=12,recast=6,recast_id=3,requirements=1,skill=33,targets=63,type="WhiteMagic"},
@@ -343,22 +343,22 @@ return {
     [317] = {id=317,en="Enwater II",ja="エンウォータII",cast_time=3,duration=180,element=5,icon_id=185,icon_id_nq=5,levels={[5]=60},mp_cost=24,overwrites={100,101,102,103,104,105,312,313,314,315,316,317},prefix="/magic",range=0,recast=30,recast_id=317,requirements=0,skill=34,status=282,targets=1,type="WhiteMagic"},
     [318] = {id=318,en="Monomi: Ichi",ja="物見の術:壱",cast_time=1.5,duration=420,element=2,icon_id=-1,icon_id_nq=26,levels={[13]=25},mp_cost=0,prefix="/ninjutsu",range=0,recast=30,recast_id=318,requirements=0,skill=39,status=71,targets=1,type="Ninjutsu"},
     [319] = {id=319,en="Aisha: Ichi",ja="哀車の術:壱",cast_time=4,duration=120,element=5,icon_id=-1,icon_id_nq=29,levels={[13]=78},mp_cost=0,prefix="/ninjutsu",range=11,recast=30,recast_id=319,requirements=0,skill=39,status=147,targets=32,type="Ninjutsu"},
-    [320] = {id=320,en="Katon: Ichi",ja="火遁の術:壱",cast_time=4,element=0,icon_id=-1,icon_id_nq=24,levels={[13]=15},mp_cost=0,prefix="/ninjutsu",range=11,recast=30,recast_id=320,requirements=0,skill=39,targets=32,type="Ninjutsu"},
+    [320] = {id=320,en="Katon: Ichi",ja="火遁の術:壱",cast_time=4,element=0,icon_id=-1,icon_id_nq=24,levels={[13]=12},mp_cost=0,prefix="/ninjutsu",range=11,recast=30,recast_id=320,requirements=0,skill=39,targets=32,type="Ninjutsu"},
     [321] = {id=321,en="Katon: Ni",ja="火遁の術:弐",cast_time=1.5,element=0,icon_id=-1,icon_id_nq=24,levels={[13]=40},mp_cost=0,prefix="/ninjutsu",range=11,recast=45,recast_id=321,requirements=0,skill=39,targets=32,type="Ninjutsu"},
     [322] = {id=322,en="Katon: San",ja="火遁の術:参",cast_time=2.75,element=0,icon_id=-1,icon_id_nq=24,levels={[13]=75},mp_cost=0,prefix="/ninjutsu",range=11,recast=60,recast_id=322,requirements=0,skill=39,targets=32,type="Ninjutsu"},
-    [323] = {id=323,en="Hyoton: Ichi",ja="氷遁の術:壱",cast_time=4,element=1,icon_id=-1,icon_id_nq=25,levels={[13]=15},mp_cost=0,prefix="/ninjutsu",range=11,recast=30,recast_id=323,requirements=0,skill=39,targets=32,type="Ninjutsu"},
+    [323] = {id=323,en="Hyoton: Ichi",ja="氷遁の術:壱",cast_time=4,element=1,icon_id=-1,icon_id_nq=25,levels={[13]=12},mp_cost=0,prefix="/ninjutsu",range=11,recast=30,recast_id=323,requirements=0,skill=39,targets=32,type="Ninjutsu"},
     [324] = {id=324,en="Hyoton: Ni",ja="氷遁の術:弐",cast_time=1.5,element=1,icon_id=-1,icon_id_nq=25,levels={[13]=40},mp_cost=0,prefix="/ninjutsu",range=11,recast=45,recast_id=324,requirements=0,skill=39,targets=32,type="Ninjutsu"},
     [325] = {id=325,en="Hyoton: San",ja="氷遁の術:参",cast_time=2.75,element=1,icon_id=-1,icon_id_nq=25,levels={[13]=75},mp_cost=0,prefix="/ninjutsu",range=11,recast=60,recast_id=325,requirements=0,skill=39,targets=32,type="Ninjutsu"},
-    [326] = {id=326,en="Huton: Ichi",ja="風遁の術:壱",cast_time=4,element=2,icon_id=-1,icon_id_nq=26,levels={[13]=15},mp_cost=0,prefix="/ninjutsu",range=11,recast=30,recast_id=326,requirements=0,skill=39,targets=32,type="Ninjutsu"},
+    [326] = {id=326,en="Huton: Ichi",ja="風遁の術:壱",cast_time=4,element=2,icon_id=-1,icon_id_nq=26,levels={[13]=12},mp_cost=0,prefix="/ninjutsu",range=11,recast=30,recast_id=326,requirements=0,skill=39,targets=32,type="Ninjutsu"},
     [327] = {id=327,en="Huton: Ni",ja="風遁の術:弐",cast_time=1.5,element=2,icon_id=-1,icon_id_nq=26,levels={[13]=40},mp_cost=0,prefix="/ninjutsu",range=11,recast=45,recast_id=327,requirements=0,skill=39,targets=32,type="Ninjutsu"},
     [328] = {id=328,en="Huton: San",ja="風遁の術:参",cast_time=2.75,element=2,icon_id=-1,icon_id_nq=26,levels={[13]=75},mp_cost=0,prefix="/ninjutsu",range=11,recast=60,recast_id=328,requirements=0,skill=39,targets=32,type="Ninjutsu"},
-    [329] = {id=329,en="Doton: Ichi",ja="土遁の術:壱",cast_time=4,element=3,icon_id=-1,icon_id_nq=27,levels={[13]=15},mp_cost=0,prefix="/ninjutsu",range=11,recast=30,recast_id=329,requirements=0,skill=39,targets=32,type="Ninjutsu"},
+    [329] = {id=329,en="Doton: Ichi",ja="土遁の術:壱",cast_time=4,element=3,icon_id=-1,icon_id_nq=27,levels={[13]=12},mp_cost=0,prefix="/ninjutsu",range=11,recast=30,recast_id=329,requirements=0,skill=39,targets=32,type="Ninjutsu"},
     [330] = {id=330,en="Doton: Ni",ja="土遁の術:弐",cast_time=1.5,element=3,icon_id=-1,icon_id_nq=27,levels={[13]=40},mp_cost=0,prefix="/ninjutsu",range=11,recast=45,recast_id=330,requirements=0,skill=39,targets=32,type="Ninjutsu"},
     [331] = {id=331,en="Doton: San",ja="土遁の術:参",cast_time=2.75,element=3,icon_id=-1,icon_id_nq=27,levels={[13]=75},mp_cost=0,prefix="/ninjutsu",range=11,recast=60,recast_id=331,requirements=0,skill=39,targets=32,type="Ninjutsu"},
-    [332] = {id=332,en="Raiton: Ichi",ja="雷遁の術:壱",cast_time=4,element=4,icon_id=-1,icon_id_nq=28,levels={[13]=15},mp_cost=0,prefix="/ninjutsu",range=11,recast=30,recast_id=332,requirements=0,skill=39,targets=32,type="Ninjutsu"},
+    [332] = {id=332,en="Raiton: Ichi",ja="雷遁の術:壱",cast_time=4,element=4,icon_id=-1,icon_id_nq=28,levels={[13]=12},mp_cost=0,prefix="/ninjutsu",range=11,recast=30,recast_id=332,requirements=0,skill=39,targets=32,type="Ninjutsu"},
     [333] = {id=333,en="Raiton: Ni",ja="雷遁の術:弐",cast_time=1.5,element=4,icon_id=-1,icon_id_nq=28,levels={[13]=40},mp_cost=0,prefix="/ninjutsu",range=11,recast=45,recast_id=333,requirements=0,skill=39,targets=32,type="Ninjutsu"},
     [334] = {id=334,en="Raiton: San",ja="雷遁の術:参",cast_time=2.75,element=4,icon_id=-1,icon_id_nq=28,levels={[13]=75},mp_cost=0,prefix="/ninjutsu",range=11,recast=60,recast_id=334,requirements=0,skill=39,targets=32,type="Ninjutsu"},
-    [335] = {id=335,en="Suiton: Ichi",ja="水遁の術:壱",cast_time=4,element=5,icon_id=-1,icon_id_nq=29,levels={[13]=15},mp_cost=0,prefix="/ninjutsu",range=11,recast=30,recast_id=335,requirements=0,skill=39,targets=32,type="Ninjutsu"},
+    [335] = {id=335,en="Suiton: Ichi",ja="水遁の術:壱",cast_time=4,element=5,icon_id=-1,icon_id_nq=29,levels={[13]=12},mp_cost=0,prefix="/ninjutsu",range=11,recast=30,recast_id=335,requirements=0,skill=39,targets=32,type="Ninjutsu"},
     [336] = {id=336,en="Suiton: Ni",ja="水遁の術:弐",cast_time=1.5,element=5,icon_id=-1,icon_id_nq=29,levels={[13]=40},mp_cost=0,prefix="/ninjutsu",range=11,recast=45,recast_id=336,requirements=0,skill=39,targets=32,type="Ninjutsu"},
     [337] = {id=337,en="Suiton: San",ja="水遁の術:参",cast_time=2.75,element=5,icon_id=-1,icon_id_nq=29,levels={[13]=75},mp_cost=0,prefix="/ninjutsu",range=11,recast=60,recast_id=337,requirements=0,skill=39,targets=32,type="Ninjutsu"},
     [338] = {id=338,en="Utsusemi: Ichi",ja="空蝉の術:壱",cast_time=4,duration=600,element=2,icon_id=-1,icon_id_nq=26,levels={[13]=12},mp_cost=0,prefix="/ninjutsu",range=0,recast=30,recast_id=338,requirements=0,skill=39,targets=1,type="Ninjutsu"},
@@ -980,7 +980,19 @@ return {
     [1017] = {id=1017,en="Arciela II",ja="アシェラII",cast_time=2,element=6,icon_id=1052,icon_id_nq=22,levels={[1]=1,[2]=1,[3]=1,[4]=1,[5]=1,[6]=1,[7]=1,[8]=1,[9]=1,[10]=1,[11]=1,[12]=1,[13]=1,[14]=1,[15]=1,[16]=1,[17]=1,[18]=1,[19]=1,[20]=1,[21]=1,[22]=1},mp_cost=0,prefix="/magic",range=0,recast=48,recast_id=1017,requirements=0,skill=0,targets=1,type="Trust"},
     [1018] = {id=1018,en="Iroha II",ja="イロハII",cast_time=2,element=6,icon_id=1017,icon_id_nq=22,levels={[1]=1,[2]=1,[3]=1,[4]=1,[5]=1,[6]=1,[7]=1,[8]=1,[9]=1,[10]=1,[11]=1,[12]=1,[13]=1,[14]=1,[15]=1,[16]=1,[17]=1,[18]=1,[19]=1,[20]=1,[21]=1,[22]=1},mp_cost=0,prefix="/magic",range=0,recast=48,recast_id=1018,requirements=0,skill=0,targets=1,type="Trust"},
     [1019] = {id=1019,en="Shantotto II",ja="シャントットII",cast_time=2,element=6,icon_id=1029,icon_id_nq=22,levels={[1]=1,[2]=1,[3]=1,[4]=1,[5]=1,[6]=1,[7]=1,[8]=1,[9]=1,[10]=1,[11]=1,[12]=1,[13]=1,[14]=1,[15]=1,[16]=1,[17]=1,[18]=1,[19]=1,[20]=1,[21]=1,[22]=1},mp_cost=0,prefix="/magic",range=0,recast=48,recast_id=1019,requirements=0,skill=0,targets=1,type="Trust"},
-}, {"id", "en", "ja", "cast_time", "element", "icon_id", "icon_id_nq", "levels", "mp_cost", "prefix", "range", "recast", "recast_id", "requirements", "skill", "targets", "type", "duration", "status", "overwrites", "unlearnable", "blu_points"}
+};
+
+-- SMN blood pact abilities (MP + SMN level): single source in horizon_bloodpacts.lua, merged for icon/MP resolution.
+do
+    local hp = require('modules.hotbar.database.horizon_bloodpacts');
+    if hp and hp.rows then
+        for k, v in pairs(hp.rows) do
+            _horizonSpells[k] = v;
+        end
+    end
+end
+
+return _horizonSpells, {"id", "en", "ja", "cast_time", "element", "icon_id", "icon_id_nq", "levels", "mp_cost", "prefix", "range", "recast", "recast_id", "requirements", "skill", "targets", "type", "duration", "status", "overwrites", "unlearnable", "blu_points"}
 
 --[[
 Copyright © 2013-2022, Windower
