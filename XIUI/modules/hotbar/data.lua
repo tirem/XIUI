@@ -6,8 +6,42 @@
 require('common');
 
 local gameState = require('core.gamestate');
+local petregistry = require('modules.hotbar.petregistry');
+local petAllowlist = require('modules.hotbar.pet_palette_allowlist');
 
 local M = {};
+
+-- While the Crossbar "Edit Full Palette" window is open, crossbar.lua uses this key with
+-- draft functions so edits don't go live until the user confirms.
+local crossbarPaletteEditStorageKey = nil;
+local draftForStorageKey = nil;   -- persists across Begin/End cycles to guard draft re-init
+-- Multi-key draft: segment overrides read/write alternate storage keys (jobsegment:…, global:palette:…)
+local draftByKey = nil;            -- [storageKey] = { L2 = { [slot]=... }, ... }
+local draftEditJobId = nil;       -- job context for Edit Full Palette (nil = universal editor)
+local draftTouchedKeys = nil;     -- { [storageKey] = true } keys modified this session
+local draftDirty = false;
+local draftUndoStack = {};
+local draftUndoGroupActive = false;
+local DRAFT_MAX_UNDO = 30;
+-- Draft slot cell == this string means "explicitly cleared in draft". String survives deepCopyTable (undo); a table
+-- sentinel would clone to a fresh {} and break equality. Missing slot index still means "inherit live" for overlay reads.
+local DRAFT_CROSSBAR_SLOT_EMPTY = '__XIUI_DRAFT_SLOT_EMPTY__';
+
+-- Draft CRUD functions are defined after helpers (deepCopyTable, buildSlotRecord, etc.)
+-- to satisfy Lua local scoping. See "Draft Layer" section below line 1112.
+
+function M.GetCrossbarPaletteEditSessionKey()
+    return crossbarPaletteEditStorageKey;
+end
+
+--- True while crossbar draft buffers exist (Edit Full Palette session). Palette rows use draft when drawing with
+--- palSk; the gameplay HUD keeps live binds until Apply. Swap reads use GetCrossbarSlotRawForSwapOverlay when draft is open.
+function M.IsCrossbarDraftLayerOpen()
+    return draftForStorageKey ~= nil and draftByKey ~= nil;
+end
+
+-- Pet-aware slot layouts are shared across job:subjob pairs; keyed only by pet subtype
+local PETPALETTE_STORAGE_PREFIX = 'petpalette:';
 
 -- Callback for slot data changes (used by macropalette for debounced saves)
 local onSlotDataChanged = nil;
@@ -40,31 +74,154 @@ local function getPalette()
 end
 
 -- ============================================
+-- Macro palette DB: many buckets, one profile (gConfig.macroDB)
+-- ============================================
+-- Each key is a separate palette: global, items, equipment, xiui, custom:*, job id
+-- (4 = BLM), SMN composite "15:avatar:ifrit", etc. Rows in different buckets are
+-- independent: same displayName, same numeric id, or same macro text in two jobs
+-- are all valid. Hotbar/crossbar slots disambiguate with macroRef + macroPaletteKey.
+--
+-- Coherence (EnsureMacroDatabaseCoherence) only: (1) merge accidental duplicate
+-- *job* storage keys "4" and 4 for the *same* job, never other key shapes; (2) fix
+-- duplicate macro.id *within* one bucket. It does not merge distinct palettes.
+
+-- ============================================
 -- Performance: Macro ID Lookup Cache
 -- ============================================
 -- O(1) lookup instead of O(n) linear search per GetMacroById call
 -- With 197 macros and 72 slots, this reduces from ~14,184 iterations/frame to 72 lookups
+-- macroIdLookup[paletteKey] is a separate id map per bucket (see design note above)
 
 local macroIdLookup = {};  -- macroIdLookup[paletteKey][macroId] = macro
 local macroIdLookupDirty = true;
--- Identity reference of the macroDB the lookup was built against. If gConfig
--- gets reassigned (profile switch / character swap), this will no longer
--- match gConfig.macroDB and we'll rebuild automatically. This prevents the
--- "globals from old profile" bug where switching characters left stale
--- macros (e.g. Ramrock's macroDB[3]="Heel") in the lookup while the new
--- profile (Mazungu) had macroDB[3]="SendPep".
-local macroIdLookupSource = nil;
+
+-- Per gConfig in-memory: avoid re-running and avoid persisting a sentinel in profile files
+local macroDbCoherenceIdentity = nil;
+
+-- One-time (per gConfig object) repair for macroDB (see "Macro palette DB" note above):
+-- - Coalesce string job keys (JSON "4") with numeric (4) so buckets are not split.
+-- - Deduplicate macro.id within each bucket (first row keeps id) so GetMacroById matches palette grid order.
+function M.EnsureMacroDatabaseCoherence(cfg)
+    local c = cfg or gConfig;
+    if not c or macroDbCoherenceIdentity == c then
+        return;
+    end
+    macroDbCoherenceIdentity = c;
+    if not c.macroDB or type(c.macroDB) ~= 'table' then
+        return;
+    end
+    local mdb = c.macroDB;
+    -- Collect first: do not modify mdb while iterating with pairs().
+
+    -- 1) Merge "4" and 4 (pure numeric string keys only; not composite "15:avatar:ifrit")
+    local stringNumberKeys = {};
+    for k, v in pairs(mdb) do
+        if type(k) == 'string' and k:match('^%d+$') and not k:find(':') and type(v) == 'table' then
+            stringNumberKeys[k] = v;
+        end
+    end
+    for k, v in pairs(stringNumberKeys) do
+        local n = tonumber(k);
+        if n and n > 0 then
+            if mdb[n] and type(mdb[n]) == 'table' then
+                for _, m in ipairs(v) do
+                    table.insert(mdb[n], m);
+                end
+            else
+                mdb[n] = v;
+            end
+            mdb[k] = nil;
+        end
+    end
+    -- 2) Deduplicate ids per bucket (stable: first row wins, later duplicates renumbered).
+    -- Track any id remappings so slot macroRef pointers can be fixed below.
+    local remaps = {}; -- remaps[bucketKey][oldId] = newId
+    for bucketKey, macros in pairs(mdb) do
+        if type(macros) == 'table' then
+            local seen = {};
+            local maxId = 0;
+            for _, m in ipairs(macros) do
+                if m and m.id and type(m.id) == 'number' and m.id > maxId then
+                    maxId = m.id;
+                end
+            end
+            for _, m in ipairs(macros) do
+                if m then
+                    if not m.id or type(m.id) ~= 'number' then
+                        maxId = maxId + 1;
+                        m.id = maxId;
+                        seen[m.id] = true;
+                    elseif seen[m.id] then
+                        local oldId = m.id;
+                        repeat
+                            maxId = maxId + 1;
+                        until not seen[maxId];
+                        m.id = maxId;
+                        seen[m.id] = true;
+                        if not remaps[bucketKey] then remaps[bucketKey] = {}; end
+                        remaps[bucketKey][oldId] = maxId;
+                    else
+                        seen[m.id] = true;
+                    end
+                end
+            end
+        end
+    end
+
+    -- 3) If any ids were renumbered, patch slot macroRef in all hotbar and crossbar palettes.
+    if next(remaps) then
+        local function patchArm(arm, bucketKey)
+            if arm and type(arm) == 'table' and type(arm.macroRef) == 'number' then
+                local bk = arm.macroPaletteKey or bucketKey;
+                local bmap = bk and remaps[bk];
+                if bmap and bmap[arm.macroRef] then
+                    arm.macroRef = bmap[arm.macroRef];
+                end
+            end
+        end
+        local function patchSlot(slot, bucketKey)
+            if not slot or type(slot) ~= 'table' then return; end
+            patchArm(slot['macroBindProfile'], bucketKey);
+            patchArm(slot['macroBindShared'],  bucketKey);
+            patchArm(slot, bucketKey);
+        end
+        local function patchPaletteTable(palettes)
+            if not palettes or type(palettes) ~= 'table' then return; end
+            for palKey, slots in pairs(palettes) do
+                if type(slots) == 'table' then
+                    for _, slot in pairs(slots) do
+                        patchSlot(slot, palKey);
+                    end
+                end
+            end
+        end
+        -- Hotbar bars
+        for barIndex = 1, 6 do
+            local barCfg = c['hotbarBar' .. barIndex];
+            if barCfg then patchPaletteTable(barCfg.slotActions); end
+        end
+        -- Crossbar
+        if c.hotbarCrossbar then
+            patchPaletteTable(c.hotbarCrossbar.slotActions);
+        end
+    end
+end
 
 local function RebuildMacroLookup()
+    if gConfig then
+        M.EnsureMacroDatabaseCoherence(gConfig);
+    end
     macroIdLookup = {};
-    macroIdLookupSource = (gConfig and gConfig.macroDB) or nil;
     if gConfig and gConfig.macroDB then
         for paletteKey, macros in pairs(gConfig.macroDB) do
             macroIdLookup[paletteKey] = {};
             if type(macros) == 'table' then
                 for _, macro in ipairs(macros) do
-                    if macro.id then
-                        macroIdLookup[paletteKey][macro.id] = macro;
+                    if macro and macro.id then
+                        -- First wins: matches ipairs order in macropalette M.GetMacroById
+                        if not macroIdLookup[paletteKey][macro.id] then
+                            macroIdLookup[paletteKey][macro.id] = macro;
+                        end
                     end
                 end
             end
@@ -74,14 +231,34 @@ local function RebuildMacroLookup()
 end
 
 local function GetMacroFromLookup(macroId, paletteKey)
-    -- Rebuild if explicitly dirty OR if gConfig.macroDB has been reassigned
-    -- (i.e. profile switched out from under us).
-    if macroIdLookupDirty or macroIdLookupSource ~= (gConfig and gConfig.macroDB) then
+    if macroIdLookupDirty then
         RebuildMacroLookup();
     end
-    local paletteLookup = macroIdLookup[paletteKey];
-    if paletteLookup then
-        return paletteLookup[macroId];
+    local function try(pk)
+        local t = macroIdLookup[pk];
+        if t then
+            return t[macroId];
+        end
+        return nil;
+    end
+    local m = try(paletteKey);
+    if m then
+        return m;
+    end
+    if type(paletteKey) == 'number' and paletteKey > 0 then
+        m = try(tostring(paletteKey));
+        if m then
+            return m;
+        end
+    end
+    if type(paletteKey) == 'string' and paletteKey:match('^%d+$') then
+        local n = tonumber(paletteKey);
+        if n and n > 0 then
+            m = try(n);
+            if m then
+                return m;
+            end
+        end
     end
     return nil;
 end
@@ -93,11 +270,6 @@ end
 
 local storageKeyCache = {};  -- storageKeyCache[barIndex] = storageKey
 local storageKeyCacheDirty = true;
--- Identity reference of the gConfig the storage key cache was built against.
--- If gConfig is reassigned (profile switch) the cached keys could be stale
--- (jobSpecific / petAware / palette names are profile-specific), so we
--- detect the swap and invalidate.
-local storageKeyCacheSource = nil;
 
 -- ============================================
 -- Constants
@@ -112,6 +284,32 @@ M.PADDING = 4;
 M.BUTTON_GAP = 8;
 M.LABEL_GAP = -8;  -- Default label position offset (was 4, moved up by 12px)
 M.ROW_GAP = 6;
+
+-- ============================================
+-- Per-Bar State
+-- ============================================
+
+-- Background primitive handles (one per bar)
+M.bgHandles = {};
+
+-- Legacy GDI font/primitive tables (kept as empty placeholders for migration safety only).
+-- 1.8.0 moved all per-slot rendering to libs/imtext.lua (stateless per-frame ImGui drawing)
+-- and libs/windowbackground.lua (immediate-mode background). None of these tables are
+-- populated anymore; any leftover writes from older crossbar/macropalette code are inert.
+-- Once the Tier 3 crossbar.lua / macropalette.lua passes are complete and all GDI writes
+-- are gone, this whole block can be deleted. Reads still work (table lookups just return nil).
+M.slotPrims = {};
+M.keybindFonts = {};
+M.labelFonts = {};
+M.iconPrims = {};
+M.cooldownPrims = {};
+M.framePrims = {};
+M.timerFonts = {};
+M.mpCostFonts = {};
+M.quantityFonts = {};
+M.abbreviationFonts = {};
+M.hotbarNumberFonts = {};
+M.allFonts = nil;
 
 -- ============================================
 -- Job State
@@ -135,42 +333,34 @@ local function normalizeJobId(jobId)
     return jobId or 1;
 end
 
--- Helper to get the storage key based on jobSpecific setting
--- Returns 'global' for global mode, or '{jobId}:{subjobId}' for job-specific mode
-local function getStorageKey(barSettings, jobId, subjobId)
-    if barSettings.jobSpecific == false then
+-- Shared helper: resolve a storage key from settings that have a jobSpecific flag.
+-- Used by both hotbar bars and crossbar.
+local function resolveStorageKey(settings, jobId, subjobId)
+    if settings.jobSpecific == false then
         return GLOBAL_SLOT_KEY;
     end
-    -- Always return composite key with job:subjob
     local normalizedJobId = normalizeJobId(jobId);
     local normalizedSubjobId = normalizeJobId(subjobId or 0);
     return string.format('%d:%d', normalizedJobId, normalizedSubjobId);
 end
 
-
--- Helper to get slotActions with storage key
--- Handles: 'global' and composite keys ('15:10', '15:10:avatar:ifrit', '15:10:palette:name')
--- Falls back to base job key (jobId:0) or base palette key (jobId:0:palette:name) if exact key doesn't exist
-local function getSlotActionsForJob(slotActions, storageKey)
+-- Shared helper: look up a slotActions bucket by storage key with subjob-0 fallback.
+-- Works for both hotbar (flat per-slot) and crossbar (per-combo-mode nesting) since
+-- this only resolves the top-level key; callers index into the result as needed.
+local function getSlotActionsForKey(slotActions, storageKey)
     if not slotActions then return nil; end
-    -- Handle 'global' key specially
     if storageKey == GLOBAL_SLOT_KEY then
         return slotActions[GLOBAL_SLOT_KEY];
     end
-    -- Try exact storage key first (e.g., '3:5' for WHM/RDM, '3:5:palette:Esuna')
     local result = slotActions[storageKey];
     if result then
         return result;
     end
-    -- Fallback: try base job key (jobId:0) for imported data without subjob
-    -- This handles tHotBar imports which don't track subjobs
     local jobId, subjobId, suffix = storageKey:match('^(%d+):(%d+)(.*)$');
     if jobId and subjobId ~= '0' then
-        -- Build fallback key with subjob=0, preserving any suffix (palette, avatar, etc.)
         local fallbackKey = jobId .. ':0' .. (suffix or '');
-        result = slotActions[fallbackKey];
-        if result then
-            return result;
+        if fallbackKey ~= storageKey then
+            return slotActions[fallbackKey];
         end
     end
     return nil;
@@ -186,55 +376,982 @@ local function deepCopyTable(tbl)
     return copy;
 end
 
--- Helper to ensure slotActions structure exists for a storage key
--- Handles: 'global' and composite keys ('15:10', '15:10:avatar:ifrit')
--- IMPORTANT: When creating a new key, copies data from fallback keys to preserve slot data
-local function ensureSlotActionsStructure(barSettings, storageKey)
-    if not barSettings.slotActions then
-        barSettings.slotActions = {};
+M.CopyTable = deepCopyTable;
+
+-- Shared helper: copy the canonical set of fields from one slot data table to another.
+-- Avoids repeating the field list in every Get/Set path.
+local SLOT_DATA_FIELDS = {
+    'actionType', 'action', 'target', 'displayName', 'equipSlot',
+    'macroText', 'itemId', 'customIconType', 'customIconId', 'customIconPath',
+    'recastSourceType', 'recastSourceAction', 'recastSourceItemId',
+    'showJaBadgeOnMacro',
+    'macroRef', 'macroPaletteKey', 'macroSourceStore',
+};
+-- Dual library placement: per-slot profile vs shared binding (independent of which macro file is "live").
+M.MACRO_BIND_PROFILE_KEY = 'macroBindProfile';
+M.MACRO_BIND_SHARED_KEY = 'macroBindShared';
+local K_BIND_P = M.MACRO_BIND_PROFILE_KEY;
+local K_BIND_S = M.MACRO_BIND_SHARED_KEY;
+local function copySlotFields(src)
+    local out = {};
+    for _, k in ipairs(SLOT_DATA_FIELDS) do
+        out[k] = src[k];
     end
-    -- Handle 'global' key specially
-    if storageKey == GLOBAL_SLOT_KEY then
-        if not barSettings.slotActions[GLOBAL_SLOT_KEY] then
-            barSettings.slotActions[GLOBAL_SLOT_KEY] = {};
+    return out;
+end
+
+
+--- true when slot uses per-library macroBindProfile / macroBindShared (post-migration).
+local function isDualMacroSlotTable(slotAction)
+    return slotAction and type(slotAction) == 'table'
+        and (slotAction[K_BIND_P] ~= nil or slotAction[K_BIND_S] ~= nil);
+end
+
+--- The active library's subtable for a macro row (or legacy flat macro slot). Returns: arm, isMacro.
+local function getActiveMacroBindingFromSlot(slotAction)
+    if not slotAction or type(slotAction) ~= 'table' or slotAction.cleared then
+        return nil, false;
+    end
+    if isDualMacroSlotTable(slotAction) then
+        local sh = gConfig and (gConfig.macroStorageScope or 'profile') == 'shared';
+        if sh then
+            return slotAction[K_BIND_S], true;
         end
-        return barSettings.slotActions[GLOBAL_SLOT_KEY];
+        return slotAction[K_BIND_P], true;
     end
-    -- All job-specific keys are composite strings (job:subjob format)
-    if not barSettings.slotActions[storageKey] then
-        -- Before creating empty table, check for fallback data to migrate
-        -- This preserves slot data when subjob changes (e.g., '1:0' -> '1:5')
+    if slotAction.macroRef and slotAction.actionType == 'macro' then
+        return slotAction, true;
+    end
+    if slotAction.macroRef then
+        return slotAction, true;
+    end
+    return nil, false;
+end
+
+M._GetActiveMacroBindingFromSlot = getActiveMacroBindingFromSlot;
+M.IsMacroSlotDualLayout = isDualMacroSlotTable;
+
+-- Shared helper: build a write-ready slot table from incoming slotData (Set operations).
+-- Adds macroRef, macroPaletteKey, macroSourceStore on top of the canonical fields.
+local function buildSlotRecord(slotData)
+    local rec = copySlotFields(slotData);
+    rec.macroRef = slotData.macroRef or slotData.id;
+    rec.macroPaletteKey = slotData.macroPaletteKey;
+    rec.macroSourceStore = slotData.macroSourceStore;
+    return rec;
+end
+
+--- Public write-ready slot builder. Two output shapes:
+---   * macro binding → { macroRef, macroPaletteKey } (the live macro is resolved at read time
+---     via the macro DB so we never persist a stale copy of the macro action/text).
+---   * everything else → full slot record with the standard action / target / customIcon / etc.
+---     fields plus the Ferris extras (macroSourceStore for dual-arm bindings).
+--- This is the 1.8.0 public API that callers like `macropalette.HandleDropOnSlot` rely on.
+--- It coexists with the local `buildSlotRecord` (which always includes the macro extras —
+--- different shape because it's used by Ferris's macro-arm builders that already know they
+--- want the full record).
+---@param slotData table|nil
+---@return table|nil
+function M.BuildSlotDataForWrite(slotData)
+    if not slotData then return nil; end
+
+    local macroRef = slotData.macroRef or slotData.id;
+    if macroRef then
+        -- Preserve dual-arm metadata (macroSourceStore: 'profile'|'shared') and the JA badge flag
+        -- when the caller supplied them. The 1.8.0 minimal {macroRef, macroPaletteKey} shape is
+        -- still the default; the extras are only added when present so untouched slot data round-
+        -- trips losslessly through this builder (i.e. swap operations keep arm identity).
+        return {
+            macroRef = macroRef,
+            macroPaletteKey = slotData.macroPaletteKey,
+            macroSourceStore = slotData.macroSourceStore,
+            showJaBadgeOnMacro = slotData.showJaBadgeOnMacro,
+        };
+    end
+
+    return {
+        actionType = slotData.actionType,
+        action = slotData.action,
+        target = slotData.target,
+        displayName = slotData.displayName,
+        equipSlot = slotData.equipSlot,
+        macroText = slotData.macroText,
+        itemId = slotData.itemId,
+        customIconType = slotData.customIconType,
+        customIconId = slotData.customIconId,
+        customIconPath = slotData.customIconPath,
+        recastSourceType = slotData.recastSourceType,
+        recastSourceAction = slotData.recastSourceAction,
+        recastSourceItemId = slotData.recastSourceItemId,
+        -- showJaBadgeOnMacro applies to macro slots too; forward when present so swap/move
+        -- operations from macropalette.lua preserve the user's per-slot badge preference.
+        showJaBadgeOnMacro = slotData.showJaBadgeOnMacro,
+    };
+end
+
+--- Build a parent macro slot with one arm set from a palette drop, preserving the other arm from existing.
+function M.BuildMacroSlotAfterDrop(armData, sourceStore, existingParentSlot)
+    -- sourceStore: 'profile' | 'shared' (GetMacroSourceTagForDrops)
+    local sh = (sourceStore or 'profile') == 'shared';
+    local arm = buildSlotRecord(armData);
+    if not sh and arm.macroSourceStore == nil then
+        arm.macroSourceStore = 'profile';
+    end
+    if sh and arm.macroSourceStore == nil then
+        arm.macroSourceStore = 'shared';
+    end
+    local out = { actionType = 'macro' };
+    if existingParentSlot and isDualMacroSlotTable(existingParentSlot) then
+        out[K_BIND_P] = existingParentSlot[K_BIND_P] and deepCopyTable(existingParentSlot[K_BIND_P]);
+        out[K_BIND_S] = existingParentSlot[K_BIND_S] and deepCopyTable(existingParentSlot[K_BIND_S]);
+    elseif existingParentSlot and existingParentSlot.macroRef and not isDualMacroSlotTable(existingParentSlot) then
+        -- migrate-on-write: one legacy binding → the appropriate arm
+        local leg = buildSlotRecord(existingParentSlot);
+        if (existingParentSlot.macroSourceStore or 'profile') == 'shared' then
+            out[K_BIND_S] = leg;
+        else
+            out[K_BIND_P] = leg;
+        end
+    else
+        out[K_BIND_P] = nil;
+        out[K_BIND_S] = nil;
+    end
+    if sh then
+        out[K_BIND_S] = arm;
+    else
+        out[K_BIND_P] = arm;
+    end
+    if out[K_BIND_P] and out[K_BIND_S] and out[K_BIND_P] == out[K_BIND_S] then
+        out[K_BIND_S] = deepCopyTable(out[K_BIND_S]);
+    end
+    return out;
+end
+
+-- Shared helper: resolve a slot's macroRef to live macro data if available.
+-- Returns a fresh table with canonical fields, the original non-macro slotAction, or nil if the
+-- slot should not display (e.g. Shared scope with no match in the shared library).
+-- macroSourceStore disambiguates profile vs global shared; in Shared scope, profile-tagged keys do not show.
+local function resolveSlotMacro(slotAction)
+    if not slotAction then
+        return nil;
+    end
+    if slotAction.cleared then
+        return nil;
+    end
+
+    local arm, isMacro = getActiveMacroBindingFromSlot(slotAction);
+    if not isMacro then
+        return slotAction;
+    end
+    if not arm or not arm.macroRef then
+        if isDualMacroSlotTable(slotAction) then
+            return nil;
+        end
+        return slotAction;
+    end
+
+    local paletteKey = arm.macroPaletteKey or (M.jobId or 1);
+    local gcfg = gConfig;
+    local scopeShared = gcfg and (gcfg.macroStorageScope or 'profile') == 'shared';
+    local mss = arm.macroSourceStore;
+    if not mss and isDualMacroSlotTable(slotAction) then
+        if scopeShared and arm == slotAction[K_BIND_S] then
+            mss = 'shared';
+        elseif not scopeShared and arm == slotAction[K_BIND_P] then
+            mss = 'profile';
+        end
+    end
+    if not mss and arm == slotAction then
+        -- Unscoped legacy hotbar/crossbar macro slots behave as profile library binds; hidden in shared scope.
+        mss = slotAction.macroSourceStore or 'profile';
+    end
+    local liveMacro;
+    if mss == 'shared' and not scopeShared then
+        local ok, sms = pcall(require, 'core.shared_macro_store');
+        if ok and sms and sms.LookupInDiskSharedFile then
+            liveMacro = sms.LookupInDiskSharedFile(arm.macroRef, paletteKey);
+        end
+    elseif mss == 'profile' and scopeShared then
+        -- Shared mode: do not show profile library binding — empty until re-drag from shared.
+        liveMacro = nil;
+    else
+        liveMacro = M.GetMacroById and M.GetMacroById(arm.macroRef, paletteKey);
+    end
+    if not liveMacro then
+        if scopeShared then
+            return nil;
+        end
+        -- Orphan macro binding: the macroRef no longer resolves to a live macro (deleted from
+        -- Macro Manager, or the draft layer still holds a stale ref the live gConfig sweep
+        -- didn't reach). Modern slots are minimal {macroRef, macroPaletteKey} records with no
+        -- fallback displayName/action — returning slotAction would render the slot with no
+        -- name and the abbreviation pass produces "?" placeholder garbage. Return nil so the
+        -- slot draws empty. Legacy slots that still carry cached displayName/action keep their
+        -- old behaviour (slotAction fallback) so partially-migrated profiles aren't wiped.
+        if isDualMacroSlotTable(slotAction) then
+            return nil;
+        end
+        if not slotAction.displayName and not slotAction.action then
+            return nil;
+        end
+        return slotAction;
+    end
+    local out = copySlotFields(liveMacro);
+    out.macroRef = arm.macroRef;
+    out.macroPaletteKey = arm.macroPaletteKey;
+    out.macroSourceStore = mss;
+    return out;
+end
+
+--- Raw crossbar blobs still hold inactive macro arms (profile vs shared) while the HUD shows empty for the other library.
+--- Swap/drag reads use raw tables — align them with what resolveSlotMacro would display so "blank" slots behave empty.
+function M.NormalizeCrossbarSlotRawForSwap(raw)
+    if raw == nil then return nil; end
+    if type(raw) ~= 'table' or raw.cleared then return nil; end
+    if resolveSlotMacro(raw) == nil then
+        return nil;
+    end
+    return raw;
+end
+
+--- In-place: legacy single macro binding -> macroBindProfile or macroBindShared.
+local function migrateOneSlotToDualMacroBindings(slot)
+    if not slot or type(slot) ~= 'table' or slot.cleared then
+        return false;
+    end
+    if isDualMacroSlotTable(slot) then
+        return false;
+    end
+    if not slot.macroRef then
+        return false;
+    end
+    if slot.actionType and slot.actionType ~= 'macro' then
+        return false;
+    end
+    local arm = copySlotFields(slot);
+    arm.macroRef = slot.macroRef or slot.id;
+    arm.macroPaletteKey = slot.macroPaletteKey;
+    arm.macroSourceStore = slot.macroSourceStore;
+    for _, k in ipairs(SLOT_DATA_FIELDS) do
+        slot[k] = nil;
+    end
+    slot.actionType = 'macro';
+    if (arm.macroSourceStore or 'profile') == 'shared' then
+        slot[K_BIND_S] = arm;
+        slot[K_BIND_P] = nil;
+    else
+        slot[K_BIND_P] = arm;
+        slot[K_BIND_S] = nil;
+    end
+    return true;
+end
+
+local function migrateHotbarSlotActionsTable(slotActions)
+    if not slotActions or type(slotActions) ~= 'table' then
+        return;
+    end
+    for _, jobSlotActions in pairs(slotActions) do
+        if type(jobSlotActions) == 'table' then
+            for _, slot in pairs(jobSlotActions) do
+                if type(slot) == 'table' then
+                    migrateOneSlotToDualMacroBindings(slot);
+                end
+            end
+        end
+    end
+end
+
+local function migrateCrossbarSlotActionsTable(slotActions)
+    if not slotActions or type(slotActions) ~= 'table' then
+        return;
+    end
+    local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2' };
+    for _, jobSlotActions in pairs(slotActions) do
+        if type(jobSlotActions) == 'table' then
+            for _, comboMode in ipairs(comboModes) do
+                local comboSlots = jobSlotActions[comboMode];
+                if type(comboSlots) == 'table' then
+                    for _, slot in pairs(comboSlots) do
+                        if type(slot) == 'table' then
+                            migrateOneSlotToDualMacroBindings(slot);
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+--- One-time per-load migration: split macro hotbar/crossbar refs into profile vs shared arms.
+function M.MigrateSlotDualMacroBindings(gConfig)
+    if not gConfig then
+        return;
+    end
+    for bar = 1, 6 do
+        local configKey = 'hotbarBar' .. bar;
+        local barSettings = gConfig[configKey];
+        if barSettings and barSettings.slotActions then
+            migrateHotbarSlotActionsTable(barSettings.slotActions);
+        end
+    end
+    if gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.slotActions then
+        migrateCrossbarSlotActionsTable(gConfig.hotbarCrossbar.slotActions);
+    end
+end
+
+--- Unresolved slot as stored in config (for dual-arm swap / drop merge).
+function M.GetRawHotbarSlotAction(barIndex, slotIndex)
+    if not gConfig then
+        return nil;
+    end
+    local configKey = 'hotbarBar' .. barIndex;
+    local barSettings = gConfig[configKey];
+    if not barSettings or not barSettings.slotActions then
+        return nil;
+    end
+    local storageKey = M.GetStorageKeyForBar(barIndex);
+    local jobSlotActions = getSlotActionsForKey(barSettings.slotActions, storageKey);
+    if not jobSlotActions then
+        return nil;
+    end
+    local n = tonumber(slotIndex) or slotIndex;
+    return jobSlotActions[n] or jobSlotActions[tostring(n)];
+end
+
+function M.GetRawCrossbarSlotAction(comboMode, slotIndex)
+    if not gConfig or not gConfig.hotbarCrossbar or not gConfig.hotbarCrossbar.slotActions then
+        return nil;
+    end
+    -- M.*: local GetEffectiveComboModeForStorage is defined later; bare name would read as a nil global here.
+    local effectiveComboMode = M.GetEffectiveComboModeForStorage(comboMode);
+    local storageKey = M.GetCrossbarStorageKeyForCombo(effectiveComboMode);
+    local jobSlotActions = getSlotActionsForKey(gConfig.hotbarCrossbar.slotActions, storageKey);
+    if not jobSlotActions or not jobSlotActions[effectiveComboMode] then
+        return nil;
+    end
+    return jobSlotActions[effectiveComboMode][slotIndex];
+end
+
+--- Raw slot blob for `storageKey` (palette editor segment / named palette), ignoring the HUD active palette.
+--- Same shape as GetRawCrossbarSlotAction — used when Edit Full Palette draft inherits an untouched sparse cell.
+function M.GetRawCrossbarSlotActionForStorageKey(storageKey, comboMode, slotIndex)
+    if not storageKey or not gConfig or not gConfig.hotbarCrossbar or not gConfig.hotbarCrossbar.slotActions then
+        return nil;
+    end
+    local effectiveComboMode = M.GetEffectiveComboModeForStorage(comboMode);
+    local jobSlotActions = getSlotActionsForKey(gConfig.hotbarCrossbar.slotActions, storageKey);
+    if not jobSlotActions or not jobSlotActions[effectiveComboMode] then
+        return nil;
+    end
+    return jobSlotActions[effectiveComboMode][slotIndex];
+end
+
+--- Convert legacy layout to dual for swap / merge logic. nil or cleared => empty macro slot (no arms yet).
+function M.DualizeRawMacroSlotForMerge(raw)
+    if not raw or type(raw) ~= 'table' or raw.cleared then
+        return { actionType = 'macro' };
+    end
+    if isDualMacroSlotTable(raw) then
+        return deepCopyTable(raw);
+    end
+    if not raw.macroRef then
+        return deepCopyTable(raw);
+    end
+    if raw.actionType and raw.actionType ~= 'macro' then
+        return deepCopyTable(raw);
+    end
+    local arm = copySlotFields(raw);
+    arm.macroRef = raw.macroRef or raw.id;
+    arm.macroPaletteKey = raw.macroPaletteKey;
+    arm.macroSourceStore = raw.macroSourceStore;
+    local out = { actionType = 'macro' };
+    if (raw.macroSourceStore or 'profile') == 'shared' then
+        out[K_BIND_S] = arm;
+    else
+        out[K_BIND_P] = arm;
+    end
+    return out;
+end
+
+function M.FinalizeHotbarRawSlotForStorage(s)
+    if s == nil then
+        return { cleared = true };
+    end
+    if type(s) ~= 'table' then
+        return s;
+    end
+    if s.cleared then
+        return s;
+    end
+    if s.actionType == 'macro' and not s[K_BIND_P] and not s[K_BIND_S] and not s.macroRef then
+        return { cleared = true };
+    end
+    return s;
+end
+
+-- Crossbar empty slots are nil (not { cleared = true }).
+function M.FinalizeCrossbarRawSlotForStorage(s)
+    if not s or type(s) ~= 'table' then
+        return s;
+    end
+    if s.cleared then
+        return nil;
+    end
+    if s.actionType == 'macro' and not s[K_BIND_P] and not s[K_BIND_S] and not s.macroRef then
+        return nil;
+    end
+    return s;
+end
+
+local function macroPaletteKeysEqualData(a, b)
+    if a == b then
+        return true;
+    end
+    if a == nil or b == nil then
+        return false;
+    end
+    local na, nb = tonumber(a), tonumber(b);
+    if na ~= nil and nb ~= nil then
+        return na == nb;
+    end
+    return false;
+end
+
+local function macroArmMatchesDelete(arm, macroId, deletedTypeKey, onlyBucketForThisId, deleteKind)
+    if not arm or type(arm) ~= 'table' or arm.macroRef ~= macroId then
+        return false;
+    end
+    deleteKind = deleteKind or 'profile';
+    local mss = arm.macroSourceStore;
+    if deleteKind == 'shared' then
+        if mss == 'profile' then
+            return false;
+        end
+    else
+        if mss == 'shared' then
+            return false;
+        end
+    end
+    local spk = arm.macroPaletteKey;
+    if spk ~= nil then
+        return macroPaletteKeysEqualData(spk, deletedTypeKey);
+    end
+    return onlyBucketForThisId;
+end
+
+-- Clear macro arms that refer to a deleted macro row. emptyWhenGone: hotbar { cleared = true } or crossbar nil.
+function M.ApplyMacroDeleteToSlotAction(slotAction, macroId, deletedTypeKey, onlyBucketForThisId, deleteKind, emptyWhenGone)
+    if not slotAction or type(slotAction) ~= 'table' or slotAction.cleared then
+        return nil, false;
+    end
+    if isDualMacroSlotTable(slotAction) then
+        local out = deepCopyTable(slotAction);
+        local chg = false;
+        if macroArmMatchesDelete(out[K_BIND_P], macroId, deletedTypeKey, onlyBucketForThisId, deleteKind) then
+            out[K_BIND_P] = nil;
+            chg = true;
+        end
+        if macroArmMatchesDelete(out[K_BIND_S], macroId, deletedTypeKey, onlyBucketForThisId, deleteKind) then
+            out[K_BIND_S] = nil;
+            chg = true;
+        end
+        if not chg then
+            return nil, false;
+        end
+        if not out[K_BIND_P] and not out[K_BIND_S] then
+            return emptyWhenGone, true;
+        end
+        out.actionType = 'macro';
+        return out, true;
+    end
+    if not slotAction.macroRef or slotAction.macroRef ~= macroId then
+        return nil, false;
+    end
+    if not macroArmMatchesDelete(slotAction, macroId, deletedTypeKey, onlyBucketForThisId, deleteKind) then
+        return nil, false;
+    end
+    return emptyWhenGone, true;
+end
+
+--- True when a macro arm should be cleared because its entire palette bucket was removed.
+local function macroArmMatchesBucketRemove(arm, removedBucketKey, deleteKind)
+    if not arm or type(arm) ~= 'table' or not arm.macroRef then
+        return false;
+    end
+    deleteKind = deleteKind or 'profile';
+    local mss = arm.macroSourceStore;
+    if deleteKind == 'shared' then
+        if mss == 'profile' then
+            return false;
+        end
+    else
+        if mss == 'shared' then
+            return false;
+        end
+    end
+    if arm.macroPaletteKey == nil then
+        return false;
+    end
+    return macroPaletteKeysEqualData(arm.macroPaletteKey, removedBucketKey);
+end
+
+-- After removing an entire custom:* (or any) macro palette bucket: clear all bindings to that key.
+-- deleteKind: 'profile' = profile-library arms, 'shared' = shared-library arms. emptyWhenGone: hotbar {cleared} / cross nil.
+function M.ApplyMacroPaletteBucketRemovedToSlotAction(slotAction, removedBucketKey, deleteKind, emptyWhenGone)
+    if not slotAction or type(slotAction) ~= 'table' or slotAction.cleared then
+        return nil, false;
+    end
+    if isDualMacroSlotTable(slotAction) then
+        local out = deepCopyTable(slotAction);
+        local chg = false;
+        if macroArmMatchesBucketRemove(out[K_BIND_P], removedBucketKey, deleteKind) then
+            out[K_BIND_P] = nil;
+            chg = true;
+        end
+        if macroArmMatchesBucketRemove(out[K_BIND_S], removedBucketKey, deleteKind) then
+            out[K_BIND_S] = nil;
+            chg = true;
+        end
+        if not chg then
+            return nil, false;
+        end
+        if not out[K_BIND_P] and not out[K_BIND_S] then
+            return emptyWhenGone, true;
+        end
+        out.actionType = 'macro';
+        return out, true;
+    end
+    if not slotAction.macroRef then
+        return nil, false;
+    end
+    if not macroArmMatchesBucketRemove(slotAction, removedBucketKey, deleteKind) then
+        return nil, false;
+    end
+    return emptyWhenGone, true;
+end
+
+--- Compare macro palette bucket keys (job id number vs string forms, reserved string buckets).
+function M.MacroPaletteKeysEqual(a, b)
+    return macroPaletteKeysEqualData(a, b);
+end
+
+-- Arms pointing at `macroId` in `sourceKey`: explicit palette key match, or nil key only when
+-- `onlyBucketForThisId` (macro id appears in a single macroDB bucket worldwide).
+local function macroArmMatchesMoveSource(arm, macroId, sourceKey, onlyBucketForThisId)
+    if not arm or type(arm) ~= 'table' or arm.macroRef ~= macroId then
+        return false;
+    end
+    local spk = arm.macroPaletteKey;
+    if spk ~= nil then
+        return macroPaletteKeysEqualData(spk, sourceKey);
+    end
+    return onlyBucketForThisId;
+end
+
+--- Rewrite palette macro bindings after MoveMacro: same slots keep working under new macroRef + macroPaletteKey.
+function M.ApplyMacroMoveToSlotAction(slotAction, oldId, oldKey, newId, newKey, onlyBucketForThisId)
+    if not slotAction or type(slotAction) ~= 'table' or slotAction.cleared then
+        return nil, false;
+    end
+    if isDualMacroSlotTable(slotAction) then
+        local out = deepCopyTable(slotAction);
+        local chg = false;
+        if macroArmMatchesMoveSource(out[K_BIND_P], oldId, oldKey, onlyBucketForThisId) then
+            out[K_BIND_P].macroRef = newId;
+            out[K_BIND_P].macroPaletteKey = newKey;
+            chg = true;
+        end
+        if macroArmMatchesMoveSource(out[K_BIND_S], oldId, oldKey, onlyBucketForThisId) then
+            out[K_BIND_S].macroRef = newId;
+            out[K_BIND_S].macroPaletteKey = newKey;
+            chg = true;
+        end
+        if not chg then
+            return nil, false;
+        end
+        out.actionType = 'macro';
+        return out, true;
+    end
+    if not slotAction.macroRef or slotAction.macroRef ~= oldId then
+        return nil, false;
+    end
+    if not macroArmMatchesMoveSource(slotAction, oldId, oldKey, onlyBucketForThisId) then
+        return nil, false;
+    end
+    local out = deepCopyTable(slotAction);
+    out.macroRef = newId;
+    out.macroPaletteKey = newKey;
+    return out, true;
+end
+
+local CROSSBAR_COMBO_MODES_FOR_MACRO_SWEEP = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2' };
+
+--- Hotbars + crossbar live slot maps in cfg (typically gConfig).
+function M.RewriteMacroPaletteBindingsInConfig(cfg, oldId, oldKey, newId, newKey, onlyBucketForThisId, notifyLayouts)
+    if not cfg or not oldId or oldKey == nil or not newId or newKey == nil then
+        return false;
+    end
+    local changed = false;
+    for barIndex = 1, 6 do
+        local configKey = 'hotbarBar' .. barIndex;
+        if cfg[configKey] and cfg[configKey].slotActions then
+            local barSettings = cfg[configKey];
+            for storageKey, jobSlotActions in pairs(barSettings.slotActions) do
+                if jobSlotActions then
+                    for slotIndex, slotAction in pairs(jobSlotActions) do
+                        local newSlot, chg = M.ApplyMacroMoveToSlotAction(
+                            slotAction, oldId, oldKey, newId, newKey, onlyBucketForThisId);
+                        if chg then
+                            jobSlotActions[slotIndex] = newSlot;
+                            changed = true;
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if cfg.hotbarCrossbar and cfg.hotbarCrossbar.slotActions then
+        local crossbarSettings = cfg.hotbarCrossbar;
+        for storageKey, jobSlotActions in pairs(crossbarSettings.slotActions) do
+            if jobSlotActions then
+                for _, comboMode in ipairs(CROSSBAR_COMBO_MODES_FOR_MACRO_SWEEP) do
+                    local comboSlots = jobSlotActions[comboMode];
+                    if comboSlots then
+                        for slotIndex, slotAction in pairs(comboSlots) do
+                            local newSlot, chg = M.ApplyMacroMoveToSlotAction(
+                                slotAction, oldId, oldKey, newId, newKey, onlyBucketForThisId);
+                            if chg then
+                                comboSlots[slotIndex] = newSlot;
+                                changed = true;
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if changed and notifyLayouts then
+        NotifySlotDataChanged();
+    end
+    return changed;
+end
+--- For each hotbar/crossbar slot that has a profile arm matching `profileMacroId`
+--- (in `profilePaletteKey` bucket), add a shared arm pointing at `sharedMacroId` /
+--- `sharedPaletteKey`.  The profile arm is left untouched so switching back to Profile
+--- mode is lossless (dual arms coexist; the active scope determines which is shown).
+function M.AddSharedArmToSlotsWithProfileMacro(cfg, profileMacroId, profilePaletteKey, sharedMacroId, sharedPaletteKey)
+    if not cfg or not profileMacroId or not sharedMacroId then return false; end
+    local changed = false;
+    local newSharedArm = {
+        macroRef         = sharedMacroId,
+        macroPaletteKey  = sharedPaletteKey,
+        macroSourceStore = 'shared',
+    };
+
+    local function processSlot(slots, idx)
+        local s = slots[idx];
+        if not s or type(s) ~= 'table' or s.cleared then return; end
+        local profileArm;
+        if isDualMacroSlotTable(s) then
+            profileArm = s[K_BIND_P];
+        elseif s.macroRef and (s.macroSourceStore or 'profile') ~= 'shared' then
+            profileArm = s;
+        end
+        if not profileArm or profileArm.macroRef ~= profileMacroId then return; end
+        -- Only enforce bucket check when the arm actually has a stored key; nil-key
+        -- legacy slots never stored macroPaletteKey and should match by macroRef alone.
+        if profileArm.macroPaletteKey ~= nil and profilePaletteKey ~= nil
+            and not macroPaletteKeysEqualData(profileArm.macroPaletteKey, profilePaletteKey) then
+            return;
+        end
+
+        local out;
+        if isDualMacroSlotTable(s) then
+            out = deepCopyTable(s);
+        else
+            out = { actionType = 'macro', [K_BIND_P] = deepCopyTable(profileArm) };
+            if out[K_BIND_P].macroSourceStore == nil then
+                out[K_BIND_P].macroSourceStore = 'profile';
+            end
+        end
+        out[K_BIND_S] = deepCopyTable(newSharedArm);
+        slots[idx] = out;
+        changed = true;
+    end
+
+    for barIndex = 1, 6 do
+        local configKey = 'hotbarBar' .. barIndex;
+        if cfg[configKey] and cfg[configKey].slotActions then
+            for _, jobSlots in pairs(cfg[configKey].slotActions) do
+                if jobSlots then
+                    for idx in pairs(jobSlots) do processSlot(jobSlots, idx); end
+                end
+            end
+        end
+    end
+    if cfg.hotbarCrossbar and cfg.hotbarCrossbar.slotActions then
+        for _, jobSlots in pairs(cfg.hotbarCrossbar.slotActions) do
+            if jobSlots then
+                for _, comboMode in ipairs(CROSSBAR_COMBO_MODES_FOR_MACRO_SWEEP) do
+                    local comboSlots = jobSlots[comboMode];
+                    if comboSlots then
+                        for idx in pairs(comboSlots) do processSlot(comboSlots, idx); end
+                    end
+                end
+            end
+        end
+    end
+    if changed then NotifySlotDataChanged(); end
+    return changed;
+end
+
+--- Edit Full Palette draft crossbar blobs (if open).
+function M.RewriteMacroPaletteBindingsInDraft(oldId, oldKey, newId, newKey, onlyBucketForThisId)
+    if not draftForStorageKey or not draftByKey then
+        return false;
+    end
+    local changed = false;
+    for _, blob in pairs(draftByKey) do
+        if type(blob) == 'table' then
+            for _, comboMode in ipairs(CROSSBAR_COMBO_MODES_FOR_MACRO_SWEEP) do
+                local comboSlots = blob[comboMode];
+                if comboSlots then
+                    for slotIndex, slotAction in pairs(comboSlots) do
+                        local newSlot, chg = M.ApplyMacroMoveToSlotAction(
+                            slotAction, oldId, oldKey, newId, newKey, onlyBucketForThisId);
+                        if chg then
+                            comboSlots[slotIndex] = newSlot;
+                            changed = true;
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if changed then
+        draftDirty = true;
+        NotifySlotDataChanged();
+    end
+    return changed;
+end
+
+local function isLibraryMacroSlotForSwap(s)
+    if not s or type(s) ~= 'table' or s.cleared then
+        return false;
+    end
+    if s[K_BIND_P] ~= nil or s[K_BIND_S] ~= nil then
+        return true;
+    end
+    if s.macroRef and (not s.actionType or s.actionType == 'macro') then
+        return true;
+    end
+    return false;
+end
+
+-- If profile and shared arm tables are the same reference (data corruption or legacy bug), the active-arm
+-- swap can move a profile binding into the wrong key or "clone" the same row — split into two tables.
+local function disambiguateDualMacroArms(t)
+    if not t or type(t) ~= 'table' then
+        return;
+    end
+    if t[K_BIND_P] ~= nil and t[K_BIND_S] ~= nil and t[K_BIND_P] == t[K_BIND_S] then
+        t[K_BIND_S] = deepCopyTable(t[K_BIND_S]);
+    end
+end
+
+--- Exchange only the active library's arm when both slots are palette macro bindings; else swap whole slot tables.
+-- rawA = source slot (dragged from), rawB = target slot (dropped onto).
+-- Returns (value for target index, value for source index) for callers that assign:
+--   job[target] = first; job[source] = second
+function M.SwapActiveMacroArmsInPlace(rawA, rawB)
+    if isLibraryMacroSlotForSwap(rawA) and isLibraryMacroSlotForSwap(rawB) then
+        local a = M.DualizeRawMacroSlotForMerge(rawA);
+        local b = M.DualizeRawMacroSlotForMerge(rawB);
+        disambiguateDualMacroArms(a);
+        disambiguateDualMacroArms(b);
+        local sh = (gConfig and (gConfig.macroStorageScope or 'profile') == 'shared');
+        local k = sh and K_BIND_S or K_BIND_P;
+        local t = a[k];
+        a[k] = b[k];
+        b[k] = t;
+        -- Deep copy so we never return tables that still alias nested refs from the other cell or from gConfig.
+        return deepCopyTable(b), deepCopyTable(a);
+    end
+    return deepCopyTable(rawA), deepCopyTable(rawB);
+end
+
+-- Merge slot maps when migrating legacy job:subjob:petKey -> petpalette:petKey (fill empty slots only)
+local function mergeHotbarSlotActions(dst, src)
+    if type(dst) ~= 'table' or type(src) ~= 'table' then
+        return;
+    end
+    for si, action in pairs(src) do
+        if dst[si] == nil then
+            dst[si] = deepCopyTable(action);
+        elseif type(dst[si]) == 'table' and dst[si].cleared
+            and type(action) == 'table' and not action.cleared then
+            dst[si] = deepCopyTable(action);
+        end
+    end
+end
+
+local function mergeCrossbarComboSlotActions(dst, src)
+    if type(dst) ~= 'table' or type(src) ~= 'table' then
+        return;
+    end
+    for comboMode, slots in pairs(src) do
+        if type(slots) == 'table' then
+            if not dst[comboMode] then
+                dst[comboMode] = {};
+            end
+            mergeHotbarSlotActions(dst[comboMode], slots);
+        end
+    end
+end
+
+-- One-time migration: legacy '{job}:{sub}:{petKey}' -> 'petpalette:{petKey}' for pet-aware storage
+function M.MigratePetAwareSlotStorageKeys()
+    if not gConfig then
+        return false;
+    end
+    local changed = false;
+    local palPrefix = 'palette:';
+
+    local function shouldMigrateKey(remainder)
+        if not remainder or remainder == '' then
+            return false;
+        end
+        if remainder:sub(1, #palPrefix) == palPrefix then
+            return false;
+        end
+        if remainder:sub(1, #PETPALETTE_STORAGE_PREFIX) == PETPALETTE_STORAGE_PREFIX then
+            return false;
+        end
+        return petregistry.IsValidPetKey(remainder);
+    end
+
+    local function migrateFlatSlotActions(slotActions)
+        if not slotActions or type(slotActions) ~= 'table' then
+            return;
+        end
+        local moves = {};
+        for key, payload in pairs(slotActions) do
+            if type(key) == 'string' and type(payload) == 'table' then
+                local jid, sjid, remainder = key:match('^(%d+):(%d+):(.+)$');
+                if jid and sjid and shouldMigrateKey(remainder) then
+                    local newKey = PETPALETTE_STORAGE_PREFIX .. remainder;
+                    moves[key] = newKey;
+                end
+            end
+        end
+        for oldKey, newKey in pairs(moves) do
+            local oldData = slotActions[oldKey];
+            slotActions[oldKey] = nil;
+            changed = true;
+            if not slotActions[newKey] then
+                slotActions[newKey] = deepCopyTable(oldData);
+            else
+                mergeHotbarSlotActions(slotActions[newKey], oldData);
+            end
+        end
+    end
+
+    local function migrateCrossbarSlotActions(slotActions)
+        if not slotActions or type(slotActions) ~= 'table' then
+            return;
+        end
+        local moves = {};
+        for key, payload in pairs(slotActions) do
+            if type(key) == 'string' and type(payload) == 'table' then
+                local jid, sjid, remainder = key:match('^(%d+):(%d+):(.+)$');
+                if jid and sjid and shouldMigrateKey(remainder) then
+                    local newKey = PETPALETTE_STORAGE_PREFIX .. remainder;
+                    moves[key] = newKey;
+                end
+            end
+        end
+        for oldKey, newKey in pairs(moves) do
+            local oldData = slotActions[oldKey];
+            slotActions[oldKey] = nil;
+            changed = true;
+            if not slotActions[newKey] then
+                slotActions[newKey] = deepCopyTable(oldData);
+            else
+                mergeCrossbarComboSlotActions(slotActions[newKey], oldData);
+            end
+        end
+    end
+
+    for barIndex = 1, M.NUM_BARS do
+        local configKey = 'hotbarBar' .. barIndex;
+        local barSettings = gConfig[configKey];
+        if barSettings and barSettings.slotActions then
+            migrateFlatSlotActions(barSettings.slotActions);
+        end
+    end
+    if gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.slotActions then
+        migrateCrossbarSlotActions(gConfig.hotbarCrossbar.slotActions);
+    end
+    if changed then
+        NotifySlotDataChanged();
+    end
+    return changed;
+end
+
+-- Shared helper: ensure slotActions structure exists for a storage key.
+-- When comboMode is provided (crossbar), also ensures the combo-mode sub-table and returns it.
+-- When comboMode is nil (hotbar), returns the top-level bucket for the key.
+-- Copies from subjob-0 fallback when creating a new key to preserve data across subjob changes.
+local function ensureSlotActionsStructure(settings, storageKey, comboMode)
+    if not settings.slotActions then
+        settings.slotActions = {};
+    end
+    if storageKey == GLOBAL_SLOT_KEY then
+        if not settings.slotActions[GLOBAL_SLOT_KEY] then
+            settings.slotActions[GLOBAL_SLOT_KEY] = {};
+        end
+        local bucket = settings.slotActions[GLOBAL_SLOT_KEY];
+        if comboMode then
+            if not bucket[comboMode] then bucket[comboMode] = {}; end
+            return bucket[comboMode];
+        end
+        return bucket;
+    end
+    if not settings.slotActions[storageKey] then
         local jobId, subjobId, suffix = storageKey:match('^(%d+):(%d+)(.*)$');
         if jobId and subjobId ~= '0' then
-            -- Build fallback key with subjob=0, preserving any suffix (palette, avatar, etc.)
             local fallbackKey = jobId .. ':0' .. (suffix or '');
-            local fallbackData = barSettings.slotActions[fallbackKey];
+            local fallbackData = settings.slotActions[fallbackKey];
             if fallbackData then
-                -- Deep copy fallback data to the new key to preserve all slots
-                barSettings.slotActions[storageKey] = deepCopyTable(fallbackData);
+                settings.slotActions[storageKey] = deepCopyTable(fallbackData);
             else
-                barSettings.slotActions[storageKey] = {};
+                settings.slotActions[storageKey] = {};
             end
         else
-            barSettings.slotActions[storageKey] = {};
+            settings.slotActions[storageKey] = {};
         end
     end
-    return barSettings.slotActions[storageKey];
+    local bucket = settings.slotActions[storageKey];
+    if comboMode then
+        if not bucket[comboMode] then bucket[comboMode] = {}; end
+        return bucket[comboMode];
+    end
+    return bucket;
 end
 
 -- Keys that are always per-bar (never pulled from global)
 local PER_BAR_ONLY_KEYS = {
     enabled = true,
-    anchoredInStack = true,
     rows = true,
     columns = true,
     slots = true,
     useGlobalSettings = true,
-    keybinds = true,
+    keyBindings = true,
     slotActions = true,
     jobSpecific = true,
     petAware = true,
     showPetIndicator = true,
+    petPalettePetKeys = true,
 };
 
 -- ============================================
@@ -242,18 +1359,11 @@ local PER_BAR_ONLY_KEYS = {
 -- ============================================
 
 -- Build full storage key for a bar, considering job, subjob, pet awareness, and general palettes
--- Returns: 'global', '{jobId}:{subjobId}' (base), '{jobId}:{subjobId}:{petKey}' (pet), or '{jobId}:{subjobId}:palette:{name}' (palette)
+-- Returns: 'global', '{jobId}:{subjobId}' (base), 'petpalette:{petKey}' (pet), or '{jobId}:{subjobId}:palette:{name}' (palette)
 -- Priority: global > pet-aware > general palette > base
 -- NOTE: Palettes can be subjob-specific or shared (subjob 0), with fallback to shared if no subjob-specific exist
 -- OPTIMIZED: Results are cached to avoid 72+ string allocations per frame
 function M.GetStorageKeyForBar(barIndex)
-    -- If gConfig was swapped out (profile change), invalidate.
-    if storageKeyCacheSource ~= gConfig then
-        storageKeyCache = {};
-        storageKeyCacheDirty = true;
-        storageKeyCacheSource = gConfig;
-    end
-
     -- Check cache first (major optimization for runtime rendering)
     if not storageKeyCacheDirty and storageKeyCache[barIndex] then
         return storageKeyCache[barIndex];
@@ -288,11 +1398,14 @@ function M.GetStorageKeyForBar(barIndex)
             if pp then
                 -- Check for manual override or auto-detected pet
                 petKey = pp.GetEffectivePetKey(barIndex);
+                if petKey and not petAllowlist.Allows(barSettings, petKey) then
+                    petKey = nil;
+                end
             end
         end
 
         if petKey then
-            result = string.format('%s:%s', baseKey, petKey);
+            result = PETPALETTE_STORAGE_PREFIX .. petKey;
         else
             -- Check for general palette (user-defined named palettes)
             -- Palettes use subjob-aware keys with fallback to shared (subjob 0) if no subjob-specific exist
@@ -348,7 +1461,9 @@ function M.GetAvailablePalettes(barIndex)
         if pp then
             local petPalettes = pp.GetAvailablePalettes(barIndex, jobId, subjobId);
             for _, p in ipairs(petPalettes) do
-                table.insert(palettes, p);
+                if p.key == nil or petAllowlist.Allows(barSettings, p.key) then
+                    table.insert(palettes, p);
+                end
             end
         end
     end
@@ -381,9 +1496,12 @@ function M.GetCurrentPaletteDisplayName(barIndex)
     if barSettings and barSettings.petAware then
         local pp = getPetPalette();
         if pp then
-            local petDisplayName = pp.GetPaletteDisplayName(barIndex, jobId);
-            if petDisplayName and petDisplayName ~= 'Base' then
-                return petDisplayName;
+            local ek = pp.GetEffectivePetKey(barIndex);
+            if ek and petAllowlist.Allows(barSettings, ek) then
+                local petDisplayName = pp.GetPaletteDisplayName(barIndex, jobId);
+                if petDisplayName and petDisplayName ~= 'Base' then
+                    return petDisplayName;
+                end
             end
         end
     end
@@ -427,13 +1545,147 @@ end
 -- Expose for external use (e.g., crossbar icon caching)
 M.GetEffectiveComboModeForStorage = GetEffectiveComboModeForStorage;
 
+-- Job-wide shared segment storage (Edit Full Palette: Job-Shared override). effectiveComboMode = GetEffectiveComboModeForStorage(mode).
+function M.BuildJobSegmentSharedStorageKey(jobId, effectiveComboMode)
+    local j = normalizeJobId(jobId);
+    local m = effectiveComboMode or 'L2x2';
+    return string.format('jobsegment:%d:%s', j, m);
+end
+
+-- FFXI main jobs 1..22 — segment override rows are keyed per job; Global [G] redirects must resolve for the *current* job id in-game.
+local SEGMENT_OVERRIDE_FALLBACK_JOB_MAX = 22;
+
+local function GetSegmentOverrideEntry(jobId, comboMode)
+    local cross = gConfig and gConfig.hotbarCrossbar;
+    if not cross or not cross.segmentOverrides then
+        return nil;
+    end
+    local eff = GetEffectiveComboModeForStorage(comboMode);
+    if eff == 'L2' or eff == 'R2' then
+        return nil;
+    end
+    local jidStr = tostring(normalizeJobId(jobId));
+    local modes = cross.segmentOverrides[jidStr];
+    local seg = modes and modes[eff];
+    if seg and seg.scope == 'jobShared' then
+        return seg, eff;
+    end
+    if seg and seg.scope == 'global' and type(seg.globalPalette) == 'string' and seg.globalPalette ~= '' then
+        return seg, eff;
+    end
+    -- Legacy / partial saves: Global was only stored on the job row open in Edit Full Palette; other job ids had no entry.
+    if not seg or not seg.scope then
+        local anyJobShared = false;
+        local globalPaletteName;
+        for j = 1, SEGMENT_OVERRIDE_FALLBACK_JOB_MAX do
+            local candidate = cross.segmentOverrides[tostring(j)] and cross.segmentOverrides[tostring(j)][eff];
+            if candidate and candidate.scope == 'jobShared' then
+                anyJobShared = true;
+            elseif candidate and candidate.scope == 'global' and type(candidate.globalPalette) == 'string' and candidate.globalPalette ~= '' then
+                globalPaletteName = candidate.globalPalette;
+            end
+        end
+        if not anyJobShared and globalPaletteName then
+            return { scope = 'global', globalPalette = globalPaletteName }, eff;
+        end
+    end
+    return nil;
+end
+
+-- Resolved slotActions key when a Job-Shared / Global segment override is active (nil if none).
+function M.GetSegmentOverrideResolvedStorageKey(jobId, comboMode)
+    local seg, eff = GetSegmentOverrideEntry(jobId, comboMode);
+    if not seg or not seg.scope then
+        return nil;
+    end
+    if seg.scope == 'jobShared' then
+        return M.BuildJobSegmentSharedStorageKey(jobId, eff);
+    end
+    if seg.scope == 'global' and type(seg.globalPalette) == 'string' and seg.globalPalette ~= '' then
+        return getPalette().BuildUniversalCrossbarStorageKey(seg.globalPalette);
+    end
+    return nil;
+end
+
+-- For Edit Full Palette warnings: { scope, globalPalette?, effectiveMode } or nil
+function M.GetSegmentOverrideDescriptorForJob(jobId, comboMode)
+    local seg, eff = GetSegmentOverrideEntry(jobId, comboMode);
+    if not seg or not seg.scope then
+        return nil;
+    end
+    return {
+        scope = seg.scope,
+        globalPalette = seg.globalPalette,
+        effectiveMode = eff,
+    };
+end
+
 -- ============================================
 -- Crossbar Storage Key Resolution (GLOBAL Palette)
 -- ============================================
 
+-- Per combo *segment* (L2, R2, …) pet type filter: comboModeSettings[mode].petPalettePetKeys, or fallback
+-- hotbarCrossbar.petPalettePetKeys, or nil = all. Not per named [J] palette.
+local function getCrossbarPetTypeKeysForMode(crossbarSettings, mode)
+    if not crossbarSettings or not mode then
+        return nil;
+    end
+    local cm = crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[mode];
+    if cm and cm.petPalettePetKeys ~= nil then
+        return cm.petPalettePetKeys;
+    end
+    if crossbarSettings.petPalettePetKeys ~= nil then
+        return crossbarSettings.petPalettePetKeys;
+    end
+    return nil;
+end
+
+-- Merge Crossbar defaults with optional per-named-palette overrides (Job [J] scope only)
+local function GetMergedCrossbarComboModeSettings(comboMode)
+    local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
+    local base = crossbarSettings and crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[comboMode];
+    if not base then
+        base = { petAware = false, universalOverridePalette = nil };
+    end
+    local merged = {
+        petAware = base.petAware == true,
+        universalOverridePalette = base.universalOverridePalette,
+        petPalettePetKeys = getCrossbarPetTypeKeysForMode(crossbarSettings, comboMode),
+    };
+    local p = getPalette();
+    if not crossbarSettings or not p or not crossbarSettings.namedPaletteComboModeSettings then
+        return merged;
+    end
+    if crossbarSettings.enableUniversalCrossbarPalettes and p.GetCrossbarPaletteScope() == 'universal' then
+        return merged;
+    end
+    local jobId = M.jobId or 1;
+    local subjobId = M.subjobId or 0;
+    local palName = p.GetActivePaletteForCombo('L2');
+    if not palName or palName == '' then
+        return merged;
+    end
+    local tier = subjobId;
+    if subjobId ~= 0 and p.GetCrossbarActivePaletteStorageSubjobForResolution then
+        tier = p.GetCrossbarActivePaletteStorageSubjobForResolution(jobId, subjobId);
+    end
+    local storageKey = p.BuildPaletteStorageKey(jobId, tier, palName);
+    local byPal = crossbarSettings.namedPaletteComboModeSettings[storageKey];
+    local ovr = byPal and byPal[comboMode];
+    if not ovr then
+        return merged;
+    end
+    -- Pet palette on/off and pet-type allowlist are job-wide, not per named palette.
+    if ovr.universalOverridePalette ~= nil then
+        local u = ovr.universalOverridePalette;
+        merged.universalOverridePalette = (type(u) == 'string' and u ~= '') and u or nil;
+    end
+    return merged;
+end
+
 -- Build full storage key for a crossbar combo mode, considering job, subjob, pet awareness, and palettes
--- NOTE: Crossbar now uses a SINGLE global palette for all combo modes (not per-combo-mode)
--- Returns: 'global', '{jobId}:{subjobId}' (base), '{jobId}:{subjobId}:{petKey}' (pet), or '{jobId}:{subjobId}:palette:{name}' (palette)
+-- Returns: 'global', 'global:palette:{name}', '{jobId}:{subjobId}', 'petpalette:{petKey}',
+--   or '{jobId}:{subjobId}:palette:{name}'
 function M.GetCrossbarStorageKeyForCombo(comboMode)
     local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
     if not crossbarSettings then
@@ -445,51 +1697,71 @@ function M.GetCrossbarStorageKeyForCombo(comboMode)
     local normalizedJobId = normalizeJobId(jobId);
     local normalizedSubjobId = normalizeJobId(subjobId);
 
-    -- Global mode (non-job-specific)
+    -- Global mode (non-job-specific single flat slot map)
     if crossbarSettings.jobSpecific == false then
         return GLOBAL_SLOT_KEY;
     end
 
-    -- Build base job:subjob key (used for base slots - subjob-specific)
     local baseKey = string.format('%d:%d', normalizedJobId, normalizedSubjobId);
+    local modeSettings = GetMergedCrossbarComboModeSettings(comboMode);
+    local p = getPalette();
 
-    -- Get per-combo-mode settings (still used for pet-aware, but not for palette)
-    local modeSettings = crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[comboMode];
+    -- [G] L1+R1 scope: all combos use all-jobs storage keys; pet never applies (including per-combo [G] attach)
+    if crossbarSettings.enableUniversalCrossbarPalettes and p and p.GetCrossbarPaletteScope() == 'universal' then
+        if modeSettings and type(modeSettings.universalOverridePalette) == 'string' and modeSettings.universalOverridePalette ~= '' then
+            return p.BuildUniversalCrossbarStorageKey(modeSettings.universalOverridePalette);
+        end
+        local uName = p.GetActiveUniversalCrossbarPalette();
+        if uName and uName ~= '' then
+            return p.BuildUniversalCrossbarStorageKey(uName);
+        end
+        return baseKey;
+    end
 
-    -- Check pet-aware mode for this combo mode
+    -- Temporary /xiui cpal summon: another job's named palette (flat layout; skips pet, segment overrides, per-mode [G] attach).
+    if p and p.GetCrossbarCliPreview then
+        local pv = p.GetCrossbarCliPreview();
+        if pv and pv.paletteName and pv.jobId then
+            local sfx = p.GetPaletteKeySuffix(pv.paletteName);
+            if sfx then
+                return string.format('%d:%d:%s', pv.jobId, pv.storageSubjob or 0, sfx);
+            end
+        end
+    end
+
+    -- [J] scope: pet can override job-tier storage, including when a combo uses an attached [G] palette name
     if modeSettings and modeSettings.petAware then
         local pp = getPetPalette();
         if pp then
             local effectivePetKey = pp.GetEffectivePetKeyForCombo(comboMode);
-            if effectivePetKey then
-                return string.format('%s:%s', baseKey, effectivePetKey);
+            if effectivePetKey and petAllowlist.Allows(modeSettings, effectivePetKey) then
+                return PETPALETTE_STORAGE_PREFIX .. effectivePetKey;
             end
         end
     end
 
-    -- Check for GLOBAL crossbar palette (shared across all combo modes)
-    -- Palettes use subjob-aware keys with fallback to shared (subjob 0) if no subjob-specific exist
-    local p = getPalette();
+    -- Per-job segment override (Edit Full Palette): Job-Shared bucket or Global [G] palette source — supersedes legacy per-palette [G] attach below
+    local segOvrKey = M.GetSegmentOverrideResolvedStorageKey(normalizedJobId, comboMode);
+    if segOvrKey then
+        return segOvrKey;
+    end
+
+    if p and modeSettings and type(modeSettings.universalOverridePalette) == 'string' and modeSettings.universalOverridePalette ~= '' then
+        return p.BuildUniversalCrossbarStorageKey(modeSettings.universalOverridePalette);
+    end
+
+    -- Named job / job+subjob crossbar palettes
     if p then
         local paletteSuffix = p.GetEffectivePaletteKeySuffixForCombo(comboMode);
         if paletteSuffix then
-            -- Determine which subjobId to use: check if using fallback to shared palettes
-            local effectiveSubjobId = normalizedSubjobId;
-            -- Use crossbar-specific fallback check
-            if p.IsUsingFallbackPalettes then
-                -- Check crossbar palettes specifically
-                local crossbarPalettes = p.GetCrossbarAvailablePalettes(normalizedJobId, normalizedSubjobId);
-                -- If no palettes found and we're not at subjob 0, we're likely using fallback
-                if #crossbarPalettes == 0 or (normalizedSubjobId ~= 0 and p.IsUsingFallbackPalettes(normalizedJobId, normalizedSubjobId)) then
-                    effectiveSubjobId = 0;  -- Use shared palette key
-                end
+            local tierSubjob = normalizedSubjobId;
+            if normalizedSubjobId ~= 0 and p.GetCrossbarActivePaletteStorageSubjobForResolution then
+                tierSubjob = p.GetCrossbarActivePaletteStorageSubjobForResolution(normalizedJobId, normalizedSubjobId);
             end
-            -- NEW FORMAT: '{jobId}:{subjobId}:palette:{name}'
-            return string.format('%d:%d:%s', normalizedJobId, effectiveSubjobId, paletteSuffix);
+            return string.format('%d:%d:%s', normalizedJobId, tierSubjob, paletteSuffix);
         end
     end
 
-    -- No pet or palette - fall back to base job:subjob key
     return baseKey;
 end
 
@@ -498,22 +1770,60 @@ end
 -- NOTE: Now uses GLOBAL crossbar palette instead of per-combo-mode
 function M.GetCrossbarPaletteDisplayName(comboMode)
     local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
-    local modeSettings = crossbarSettings and crossbarSettings.comboModeSettings and crossbarSettings.comboModeSettings[comboMode];
+    local modeSettings = GetMergedCrossbarComboModeSettings(comboMode);
     local jobId = M.jobId or 1;
+    local p = getPalette();
 
-    -- Check pet palette first (if pet-aware - still per-combo-mode)
+    -- [G] scope: universal keys only (no pet)
+    if crossbarSettings and crossbarSettings.enableUniversalCrossbarPalettes and p and p.GetCrossbarPaletteScope() == 'universal' then
+        if modeSettings and type(modeSettings.universalOverridePalette) == 'string' and modeSettings.universalOverridePalette ~= '' then
+            return modeSettings.universalOverridePalette;
+        end
+        local u = p.GetActiveUniversalCrossbarPalette();
+        if u and u ~= '' then
+            return u;
+        end
+    end
+
+    if p and p.GetCrossbarCliPreview and p.GetCrossbarPaletteScope() == 'job' then
+        local pv = p.GetCrossbarCliPreview();
+        if pv and pv.paletteName then
+            return pv.paletteName .. ' (preview)';
+        end
+    end
+
+    -- [J] scope: pet wins over attached [G] palette name and job palette
     if modeSettings and modeSettings.petAware then
         local pp = getPetPalette();
         if pp then
-            local petDisplayName = pp.GetCrossbarPaletteDisplayName(comboMode, jobId);
-            if petDisplayName and petDisplayName ~= 'Base' then
-                return petDisplayName;
+            local ek = pp.GetEffectivePetKeyForCombo(comboMode);
+            if ek and petAllowlist.Allows(modeSettings, ek) then
+                local petDisplayName = pp.GetCrossbarPaletteDisplayName(comboMode, jobId);
+                if petDisplayName and petDisplayName ~= 'Base' then
+                    return petDisplayName;
+                end
             end
         end
     end
 
-    -- Check GLOBAL crossbar palette (shared across all combo modes)
-    local p = getPalette();
+    local segDesc = M.GetSegmentOverrideDescriptorForJob(jobId, comboMode);
+    if segDesc then
+        if segDesc.scope == 'global' and type(segDesc.globalPalette) == 'string' and segDesc.globalPalette ~= '' then
+            return segDesc.globalPalette;
+        end
+        if segDesc.scope == 'jobShared' then
+            local n = p and p.GetActivePaletteForCombo('L2');
+            if n and n ~= '' then
+                return n .. ' (job-shared)';
+            end
+            return 'Job-shared';
+        end
+    end
+
+    if modeSettings and type(modeSettings.universalOverridePalette) == 'string' and modeSettings.universalOverridePalette ~= '' then
+        return modeSettings.universalOverridePalette;
+    end
+
     if p then
         local paletteName = p.GetActivePaletteForCombo(comboMode);
         if paletteName then
@@ -669,40 +1979,23 @@ function M.GetKeybindDisplay(barIndex, slotIndex)
     return '';
 end
 
--- Helper to look up a macro from macroDB by id
--- paletteKey can be a job ID (number) or composite key (string like "15:avatar:ifrit")
--- OPTIMIZED: Uses O(1) lookup map instead of linear search
--- Falls back to scanning all palettes for legacy slots that don't have macroPaletteKey set
+-- Look up a macro row: macroId is unique only within the given paletteKey bucket
+-- (not across jobs or global). paletteKey: job id, global/items/equipment/xiui/custom:*, or
+-- composite (e.g. "15:avatar:ifrit"). OPTIMIZED: O(1) via lookup + string/number key alias.
 local function GetMacroById(macroId, paletteKey)
     if not gConfig or not gConfig.macroDB then return nil; end
 
     -- Try the specific palette key first using O(1) lookup
-    if paletteKey ~= nil then
-        local macro = GetMacroFromLookup(macroId, paletteKey);
-        if macro then
-            return macro;
-        end
-
-        -- If paletteKey is a composite key and macro not found, try base job palette
-        if type(paletteKey) == 'string' then
-            local baseJobId = tonumber(paletteKey:match('^(%d+)'));
-            if baseJobId then
-                macro = GetMacroFromLookup(macroId, baseJobId);
-                if macro then
-                    return macro;
-                end
-            end
-        end
+    local macro = GetMacroFromLookup(macroId, paletteKey);
+    if macro then
+        return macro;
     end
 
-    -- Fallback for legacy slots missing macroPaletteKey: scan all palettes
-    -- (rebuild lookup if dirty OR if gConfig.macroDB was swapped under us)
-    if macroIdLookupDirty or macroIdLookupSource ~= (gConfig and gConfig.macroDB) then
-        RebuildMacroLookup();
-    end
-    for key, paletteLookup in pairs(macroIdLookup) do
-        if key ~= paletteKey then
-            local macro = paletteLookup[macroId];
+    -- If paletteKey is a composite key and macro not found, try base job palette
+    if type(paletteKey) == 'string' then
+        local baseJobId = tonumber(paletteKey:match('^(%d+)'));
+        if baseJobId then
+            macro = GetMacroFromLookup(macroId, baseJobId);
             if macro then
                 return macro;
             end
@@ -712,6 +2005,9 @@ local function GetMacroById(macroId, paletteKey)
     return nil;
 end
 
+-- O(1) macro row lookup (paletteKey = job id, global key, or composite pet key)
+M.GetMacroById = GetMacroById;
+
 -- Get action assignment for a specific bar and slot
 function M.GetKeybindForSlot(barIndex, slotIndex)
     -- First check for custom slot actions in per-bar settings
@@ -720,56 +2016,29 @@ function M.GetKeybindForSlot(barIndex, slotIndex)
         local barSettings = gConfig[configKey];
         -- Use pet-aware storage key (handles global, job-specific, and pet palettes)
         local storageKey = M.GetStorageKeyForBar(barIndex);
-        local jobSlotActions = getSlotActionsForJob(barSettings.slotActions, storageKey);
+        local jobSlotActions = getSlotActionsForKey(barSettings.slotActions, storageKey);
 
         -- NOTE: Do NOT fall back to base job when pet palette is active
         -- If user has a pet out and petAware enabled, show the pet-specific palette (even if empty)
         -- This prevents the base job summon macros from showing when an avatar is summoned
         if jobSlotActions then
-            -- Handle both numeric and string keys (JSON serialization converts numeric keys to strings)
             local numericSlot = tonumber(slotIndex) or slotIndex;
             local slotAction = jobSlotActions[numericSlot] or jobSlotActions[tostring(numericSlot)];
             if slotAction then
-                -- Check for "cleared" marker - slot was explicitly emptied
                 if slotAction.cleared then
-                    return nil;  -- Don't fall back to defaults
+                    return nil;
                 end
 
-                -- If this slot has a macro reference, the macroDB is the single source of truth.
-                -- Old configs may have duplicated macro fields cached on the slot - we ignore them.
-                -- If the live lookup fails (orphaned macro), the slot is treated as unavailable.
-                local macroData;
-                if slotAction.macroRef then
-                    local paletteKey = slotAction.macroPaletteKey or M.jobId;
-                    macroData = GetMacroById(slotAction.macroRef, paletteKey);
-                    if not macroData then
-                        return nil;  -- Macro reference is orphaned
-                    end
-                else
-                    -- Custom non-macro slot - use inline fields directly
-                    macroData = slotAction;
+                local resolved = resolveSlotMacro(slotAction);
+                if not resolved then
+                    return nil;
                 end
-
-                -- Return slot action in the same format as parsed keybinds
-                return {
-                    context = 'battle',
-                    hotbar = barIndex,
-                    slot = slotIndex,
-                    actionType = macroData.actionType,
-                    action = macroData.action,
-                    target = macroData.target,
-                    displayName = macroData.displayName or macroData.action,
-                    equipSlot = macroData.equipSlot,
-                    macroText = macroData.macroText,
-                    itemId = macroData.itemId,
-                    customIconType = macroData.customIconType,
-                    customIconId = macroData.customIconId,
-                    customIconPath = macroData.customIconPath,
-                    -- Recast source override (for macros showing cooldown from different action)
-                    recastSourceType = macroData.recastSourceType,
-                    recastSourceAction = macroData.recastSourceAction,
-                    recastSourceItemId = macroData.recastSourceItemId,
-                };
+                local out = copySlotFields(resolved);
+                out.context = 'battle';
+                out.hotbar = barIndex;
+                out.slot = slotIndex;
+                out.displayName = out.displayName or resolved.action;
+                return out;
             end
         end
     end
@@ -781,69 +2050,7 @@ end
 -- Crossbar Slot Data Helpers
 -- ============================================
 
--- Helper to get the crossbar storage key based on jobSpecific setting
--- Returns 'global' or '{jobId}:{subjobId}' format
-local function getCrossbarStorageKey(crossbarSettings, jobId, subjobId)
-    if crossbarSettings.jobSpecific == false then
-        return GLOBAL_SLOT_KEY;
-    end
-    -- Always return composite key with job:subjob
-    local normalizedJobId = normalizeJobId(jobId);
-    local normalizedSubjobId = normalizeJobId(subjobId or 0);
-    return string.format('%d:%d', normalizedJobId, normalizedSubjobId);
-end
-
--- Helper to get crossbar slotActions with storage key
--- Handles: 'global' and composite keys ('15:10', '15:10:palette:Stuns', '15:10:avatar:ifrit')
--- Falls back to base job key (jobId:0) preserving any suffix if full job:subjob key doesn't exist
-local function getCrossbarSlotActionsForJob(slotActions, storageKey)
-    if not slotActions then return nil; end
-    -- Handle 'global' key specially
-    if storageKey == GLOBAL_SLOT_KEY then
-        return slotActions[GLOBAL_SLOT_KEY];
-    end
-    -- Try exact storage key first (e.g., '3:5' for WHM/RDM, '3:5:palette:Stuns')
-    local result = slotActions[storageKey];
-    if result then
-        return result;
-    end
-    -- Fallback: try base job key (jobId:0) for imported data without subjob
-    -- IMPORTANT: Preserve any suffix (palette:X, avatar:Y) in the fallback key
-    local jobId, subjobId, suffix = storageKey:match('^(%d+):(%d+)(.*)$');
-    if jobId and subjobId ~= '0' then
-        local fallbackKey = jobId .. ':0' .. (suffix or '');
-        if fallbackKey ~= storageKey then
-            return slotActions[fallbackKey];
-        end
-    end
-    return nil;
-end
-
--- Helper to ensure crossbar slotActions structure exists for a storage key and combo mode
--- Handles: 'global' and composite keys ('15:10')
-local function ensureCrossbarSlotActionsStructure(crossbarSettings, storageKey, comboMode)
-    if not crossbarSettings.slotActions then
-        crossbarSettings.slotActions = {};
-    end
-    -- Handle 'global' key specially
-    if storageKey == GLOBAL_SLOT_KEY then
-        if not crossbarSettings.slotActions[GLOBAL_SLOT_KEY] then
-            crossbarSettings.slotActions[GLOBAL_SLOT_KEY] = {};
-        end
-        if not crossbarSettings.slotActions[GLOBAL_SLOT_KEY][comboMode] then
-            crossbarSettings.slotActions[GLOBAL_SLOT_KEY][comboMode] = {};
-        end
-        return crossbarSettings.slotActions[GLOBAL_SLOT_KEY][comboMode];
-    end
-    -- All job-specific keys are composite strings (job:subjob format)
-    if not crossbarSettings.slotActions[storageKey] then
-        crossbarSettings.slotActions[storageKey] = {};
-    end
-    if not crossbarSettings.slotActions[storageKey][comboMode] then
-        crossbarSettings.slotActions[storageKey][comboMode] = {};
-    end
-    return crossbarSettings.slotActions[storageKey][comboMode];
-end
+-- (Crossbar uses the same shared helpers: resolveStorageKey, getSlotActionsForKey, ensureSlotActionsStructure with comboMode)
 
 -- Get slot data for a crossbar slot
 -- comboMode: 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2', or 'Shared'
@@ -859,77 +2066,12 @@ function M.GetCrossbarSlotData(comboMode, slotIndex)
 
     -- Use per-combo-mode storage key (considers pet-aware and palette settings per combo)
     local storageKey = M.GetCrossbarStorageKeyForCombo(effectiveComboMode);
-    local jobSlotActions = getCrossbarSlotActionsForJob(gConfig.hotbarCrossbar.slotActions, storageKey);
+    local jobSlotActions = getSlotActionsForKey(gConfig.hotbarCrossbar.slotActions, storageKey);
     if not jobSlotActions then return nil; end
     if not jobSlotActions[effectiveComboMode] then return nil; end
 
     local slotAction = jobSlotActions[effectiveComboMode][slotIndex];
-    if not slotAction then return nil; end
-
-    -- If this slot has a macro reference, the macroDB is the single source of truth.
-    -- Old configs may have duplicated macro fields cached on the slot - we ignore them.
-    -- If the live lookup fails (orphaned macro), the slot is treated as unavailable.
-    if slotAction.macroRef then
-        local paletteKey = slotAction.macroPaletteKey or jobId;
-        local liveMacro = GetMacroById(slotAction.macroRef, paletteKey);
-        if not liveMacro then
-            return nil;  -- Macro reference is orphaned
-        end
-        return {
-            actionType = liveMacro.actionType,
-            action = liveMacro.action,
-            target = liveMacro.target,
-            displayName = liveMacro.displayName,
-            equipSlot = liveMacro.equipSlot,
-            macroText = liveMacro.macroText,
-            itemId = liveMacro.itemId,
-            customIconType = liveMacro.customIconType,
-            customIconId = liveMacro.customIconId,
-            customIconPath = liveMacro.customIconPath,
-            macroRef = slotAction.macroRef,
-            macroPaletteKey = slotAction.macroPaletteKey,
-            -- Recast source override (for macros showing cooldown from different action)
-            recastSourceType = liveMacro.recastSourceType,
-            recastSourceAction = liveMacro.recastSourceAction,
-            recastSourceItemId = liveMacro.recastSourceItemId,
-        };
-    end
-
-    -- Custom non-macro slot - return inline data directly
-    return slotAction;
-end
-
--- Build the persisted form of slot data.
--- When the slot references a macro (macroRef or id), only the reference is stored;
--- the macroDB is the single source of truth for action/macroText/displayName/etc.
--- When the slot has no macro reference, inline fields are stored as-is (custom slots).
--- This is exposed on M so external writers (macropalette, migrations) can reuse it.
-function M.BuildSlotDataForWrite(slotData)
-    if not slotData then return nil; end
-
-    local macroRef = slotData.macroRef or slotData.id;
-    if macroRef then
-        return {
-            macroRef = macroRef,
-            macroPaletteKey = slotData.macroPaletteKey,
-        };
-    end
-
-    return {
-        actionType = slotData.actionType,
-        action = slotData.action,
-        target = slotData.target,
-        displayName = slotData.displayName,
-        equipSlot = slotData.equipSlot,
-        macroText = slotData.macroText,
-        itemId = slotData.itemId,
-        customIconType = slotData.customIconType,
-        customIconId = slotData.customIconId,
-        customIconPath = slotData.customIconPath,
-        recastSourceType = slotData.recastSourceType,
-        recastSourceAction = slotData.recastSourceAction,
-        recastSourceItemId = slotData.recastSourceItemId,
-    };
+    return resolveSlotMacro(slotAction);
 end
 
 -- Set slot data for a crossbar slot
@@ -952,12 +2094,15 @@ function M.SetCrossbarSlotData(comboMode, slotIndex, slotData)
     -- Map L2R2/R2L2 to Shared when shared expanded bar is enabled
     local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
 
-    -- Use per-combo-mode storage key (considers pet-aware and palette settings per combo)
     local storageKey = M.GetCrossbarStorageKeyForCombo(effectiveComboMode);
-    local comboSlots = ensureCrossbarSlotActionsStructure(gConfig.hotbarCrossbar, storageKey, effectiveComboMode);
+    local comboSlots = ensureSlotActionsStructure(gConfig.hotbarCrossbar, storageKey, effectiveComboMode);
 
-    comboSlots[slotIndex] = M.BuildSlotDataForWrite(slotData);
-
+    if isDualMacroSlotTable(slotData) then
+        comboSlots[slotIndex] = slotData;
+    else
+        comboSlots[slotIndex] = buildSlotRecord(slotData);
+    end
+    M.SyncDraftSlotFromLive(comboMode, slotIndex);
     NotifySlotDataChanged();
 end
 
@@ -971,16 +2116,408 @@ function M.ClearCrossbarSlotData(comboMode, slotIndex)
     -- Map L2R2/R2L2 to Shared when shared expanded bar is enabled
     local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
 
-    -- Use per-combo-mode storage key (considers pet-aware and palette settings per combo)
     local storageKey = M.GetCrossbarStorageKeyForCombo(effectiveComboMode);
-    local jobSlotActions = getCrossbarSlotActionsForJob(gConfig.hotbarCrossbar.slotActions, storageKey);
+    local jobSlotActions = getSlotActionsForKey(gConfig.hotbarCrossbar.slotActions, storageKey);
     if not jobSlotActions then return; end
     if not jobSlotActions[effectiveComboMode] then return; end
 
-    -- Clear the slot
-    jobSlotActions[effectiveComboMode][slotIndex] = nil;
-
+    local raw = jobSlotActions[effectiveComboMode][slotIndex];
+    if isDualMacroSlotTable(raw) then
+        local sh = (gConfig.macroStorageScope or 'profile') == 'shared';
+        if sh then
+            raw[K_BIND_S] = nil;
+        else
+            raw[K_BIND_P] = nil;
+        end
+        if not raw[K_BIND_P] and not raw[K_BIND_S] then
+            jobSlotActions[effectiveComboMode][slotIndex] = nil;
+        else
+            raw.actionType = 'macro';
+        end
+    else
+        jobSlotActions[effectiveComboMode][slotIndex] = nil;
+    end
+    M.SyncDraftSlotFromLive(comboMode, slotIndex);
     NotifySlotDataChanged();
+end
+
+-- Direct read/write for a fixed storage key (palette editor / Edit Full Palette). Does not call GetCrossbarStorageKeyForCombo.
+function M.GetCrossbarSlotDataForStorageKey(storageKey, comboMode, slotIndex)
+    if not gConfig or not gConfig.hotbarCrossbar or not storageKey then
+        return nil;
+    end
+    local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
+    local jobSlotActions = getSlotActionsForKey(gConfig.hotbarCrossbar.slotActions, storageKey);
+    if not jobSlotActions or not jobSlotActions[effectiveComboMode] then
+        return nil;
+    end
+    return resolveSlotMacro(jobSlotActions[effectiveComboMode][slotIndex]);
+end
+
+function M.SetCrossbarSlotDataForStorageKey(storageKey, comboMode, slotIndex, slotData)
+    if not storageKey then return; end
+    if not slotData then
+        M.ClearCrossbarSlotDataForStorageKey(storageKey, comboMode, slotIndex);
+        return;
+    end
+    if not gConfig.hotbarCrossbar then
+        gConfig.hotbarCrossbar = {};
+    end
+    local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
+    local comboSlots = ensureSlotActionsStructure(gConfig.hotbarCrossbar, storageKey, effectiveComboMode);
+    if isDualMacroSlotTable(slotData) then
+        comboSlots[slotIndex] = slotData;
+    else
+        comboSlots[slotIndex] = buildSlotRecord(slotData);
+    end
+    NotifySlotDataChanged();
+end
+
+function M.ClearCrossbarSlotDataForStorageKey(storageKey, comboMode, slotIndex)
+    if not gConfig.hotbarCrossbar or not storageKey then return; end
+    local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
+    local jobSlotActions = getSlotActionsForKey(gConfig.hotbarCrossbar.slotActions, storageKey);
+    if not jobSlotActions or not jobSlotActions[effectiveComboMode] then return; end
+    jobSlotActions[effectiveComboMode][slotIndex] = nil;
+    NotifySlotDataChanged();
+end
+
+-- ============================================
+-- Draft Layer (Edit Full Palette)
+-- ============================================
+-- Edits stay in a draft buffer until the user clicks Apply. deepCopyTable, buildSlotRecord,
+-- resolveSlotMacro, and GetEffectiveComboModeForStorage are all defined above by this point.
+-- draftByKey can hold multiple storage keys when Job-Shared / Global segment overrides redirect combo modes.
+
+local function resolveDraftStorageKeyForCombo(comboMode)
+    if not draftForStorageKey or not draftByKey then
+        return nil;
+    end
+    if draftEditJobId then
+        local sk = M.GetSegmentOverrideResolvedStorageKey(draftEditJobId, comboMode);
+        if sk then
+            return sk;
+        end
+    end
+    return draftForStorageKey;
+end
+
+local function ensureDraftBucket(resolvedKey)
+    if not resolvedKey or not draftByKey then
+        return nil;
+    end
+    if not draftByKey[resolvedKey] then
+        if gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.slotActions then
+            draftByKey[resolvedKey] = deepCopyTable(gConfig.hotbarCrossbar.slotActions[resolvedKey]) or {};
+        else
+            draftByKey[resolvedKey] = {};
+        end
+    end
+    return draftByKey[resolvedKey];
+end
+
+--- After live `gConfig` crossbar mutations while Edit Full Palette draft is open, copy the affected slot into the draft
+--- blob so the palette row matches HUD (HUD stays authoritative for gameplay binds during the session).
+--- When the HUD is showing a different palette than `rk`, skips — otherwise active-palette hops overwrite the draft.
+function M.SyncDraftSlotFromLive(comboMode, slotIndex)
+    if not draftForStorageKey or not draftByKey then
+        return;
+    end
+    local rk = resolveDraftStorageKeyForCombo(comboMode);
+    if not rk then
+        return;
+    end
+    local effectiveComboModeForHud = M.GetEffectiveComboModeForStorage(comboMode);
+    local liveKey = M.GetCrossbarStorageKeyForCombo(effectiveComboModeForHud);
+    if liveKey ~= rk then
+        return;
+    end
+    local bucket = ensureDraftBucket(rk);
+    if not bucket then
+        return;
+    end
+    local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
+    if not bucket[effectiveComboMode] then
+        bucket[effectiveComboMode] = {};
+    end
+    draftTouchedKeys[rk] = true;
+    local liveRaw = M.GetRawCrossbarSlotAction(comboMode, slotIndex);
+    if liveRaw == nil then
+        bucket[effectiveComboMode][slotIndex] = DRAFT_CROSSBAR_SLOT_EMPTY;
+    else
+        bucket[effectiveComboMode][slotIndex] = deepCopyTable(liveRaw);
+    end
+    draftDirty = true;
+end
+
+--- Dual macro slots: clearing only the active arm can leave the inactive arm in the bucket while resolveSlotMacro shows empty.
+--- Only dual-layout blobs need this — never run on freshly written single-arm macros (profile vs shared visibility differs).
+local function scrubDraftBucketSlotIfInvisible(bucket, rk, effectiveComboMode, slotIndex)
+    if not bucket or not bucket[effectiveComboMode] then
+        return false;
+    end
+    local raw = bucket[effectiveComboMode][slotIndex];
+    if raw == nil or not isDualMacroSlotTable(raw) then
+        return false;
+    end
+    if resolveSlotMacro(raw) ~= nil then
+        return false;
+    end
+    bucket[effectiveComboMode][slotIndex] = DRAFT_CROSSBAR_SLOT_EMPTY;
+    draftTouchedKeys[rk] = true;
+    return true;
+end
+
+local function pushDraftUndo()
+    if draftUndoGroupActive then return; end
+    if not draftByKey then return; end
+    local touchedCopy = {};
+    if draftTouchedKeys then
+        for k, v in pairs(draftTouchedKeys) do
+            touchedCopy[k] = v;
+        end
+    end
+    table.insert(draftUndoStack, {
+        blob = deepCopyTable(draftByKey),
+        touched = touchedCopy,
+    });
+    if #draftUndoStack > DRAFT_MAX_UNDO then
+        table.remove(draftUndoStack, 1);
+    end
+end
+
+function M.BeginDraftUndoGroup()
+    pushDraftUndo();
+    draftUndoGroupActive = true;
+end
+
+function M.EndDraftUndoGroup()
+    draftUndoGroupActive = false;
+end
+
+function M.BeginCrossbarPaletteEditSession(storageKey, editJobId)
+    crossbarPaletteEditStorageKey = storageKey;
+    local ej = editJobId;
+    if draftForStorageKey == storageKey and draftByKey and draftEditJobId == ej then
+        return;
+    end
+    draftForStorageKey = storageKey;
+    draftEditJobId = ej;
+    draftDirty = false;
+    draftUndoStack = {};
+    draftTouchedKeys = {};
+    draftByKey = {};
+    if gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.slotActions and storageKey then
+        draftByKey[storageKey] = deepCopyTable(gConfig.hotbarCrossbar.slotActions[storageKey]) or {};
+    elseif storageKey then
+        draftByKey[storageKey] = {};
+    end
+end
+
+-- Segment override toggles used to clear draftForStorageKey here; that breaks GetDraftSlotData for the
+-- rest of the frame and forces a full draft re-init next frame (scroll jumps, wrong row heights, data risk).
+-- Resolved storage keys already update via GetSegmentOverrideResolvedStorageKey + ensureDraftBucket.
+function M.InvalidateCrossbarDraftLayout()
+end
+
+function M.EndCrossbarPaletteEditSession()
+    crossbarPaletteEditStorageKey = nil;
+end
+
+function M.FullyClosePaletteEditSession()
+    crossbarPaletteEditStorageKey = nil;
+    draftForStorageKey = nil;
+    draftEditJobId = nil;
+    draftByKey = nil;
+    draftTouchedKeys = nil;
+    draftDirty = false;
+    draftUndoStack = {};
+end
+
+function M.GetDraftSlotData(comboMode, slotIndex)
+    if not draftByKey then return nil; end
+    local rk = resolveDraftStorageKeyForCombo(comboMode);
+    if not rk then return nil; end
+    local bucket = ensureDraftBucket(rk);
+    if not bucket then return nil; end
+    local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
+    if not bucket[effectiveComboMode] then return nil; end
+    local cell = bucket[effectiveComboMode][slotIndex];
+    if cell == DRAFT_CROSSBAR_SLOT_EMPTY then
+        return nil;
+    end
+    return resolveSlotMacro(cell);
+end
+
+function M.GetDraftRawSlotData(comboMode, slotIndex)
+    if not draftByKey then return nil; end
+    local rk = resolveDraftStorageKeyForCombo(comboMode);
+    if not rk then return nil; end
+    local bucket = ensureDraftBucket(rk);
+    if not bucket then return nil; end
+    local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
+    if not bucket[effectiveComboMode] then return nil; end
+    local v = bucket[effectiveComboMode][slotIndex];
+    if v == DRAFT_CROSSBAR_SLOT_EMPTY then
+        return nil;
+    end
+    return v;
+end
+
+--- Swap/drag reads: draft cell wins when present; explicit draft empty beats inherit; missing cell inherits
+--- persisted `gConfig` for the palette being edited (`rk`), not the HUD active palette (see GetRawCrossbarSlotAction).
+function M.GetCrossbarSlotRawForSwapOverlay(comboMode, slotIndex)
+    if not draftForStorageKey or not draftByKey then
+        return M.GetRawCrossbarSlotAction(comboMode, slotIndex);
+    end
+    local rk = resolveDraftStorageKeyForCombo(comboMode);
+    if not rk then
+        return M.GetRawCrossbarSlotAction(comboMode, slotIndex);
+    end
+    local blob = draftByKey[rk];
+    if not blob then
+        return M.GetRawCrossbarSlotActionForStorageKey(rk, comboMode, slotIndex);
+    end
+    local eff = GetEffectiveComboModeForStorage(comboMode);
+    local row = blob[eff];
+    if not row then
+        return M.GetRawCrossbarSlotActionForStorageKey(rk, comboMode, slotIndex);
+    end
+    local v = row[slotIndex];
+    if v == DRAFT_CROSSBAR_SLOT_EMPTY then
+        return nil;
+    end
+    if v ~= nil then
+        return v;
+    end
+    return M.GetRawCrossbarSlotActionForStorageKey(rk, comboMode, slotIndex);
+end
+
+function M.SetDraftSlotData(comboMode, slotIndex, slotData)
+    if not draftByKey then return; end
+    if not slotData then
+        M.ClearDraftSlotData(comboMode, slotIndex);
+        return;
+    end
+    pushDraftUndo();
+    local rk = resolveDraftStorageKeyForCombo(comboMode);
+    if not rk then return; end
+    local bucket = ensureDraftBucket(rk);
+    if not bucket then return; end
+    draftTouchedKeys[rk] = true;
+    local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
+    if not bucket[effectiveComboMode] then
+        bucket[effectiveComboMode] = {};
+    end
+    if isDualMacroSlotTable(slotData) then
+        bucket[effectiveComboMode][slotIndex] = slotData;
+    else
+        bucket[effectiveComboMode][slotIndex] = buildSlotRecord(slotData);
+    end
+    draftDirty = true;
+end
+
+function M.ClearDraftSlotData(comboMode, slotIndex)
+    if not draftByKey then return; end
+    pushDraftUndo();
+    local rk = resolveDraftStorageKeyForCombo(comboMode);
+    if not rk then return; end
+    local bucket = ensureDraftBucket(rk);
+    if not bucket then return; end
+    draftTouchedKeys[rk] = true;
+    local effectiveComboMode = GetEffectiveComboModeForStorage(comboMode);
+    if not bucket[effectiveComboMode] then return; end
+    local raw = bucket[effectiveComboMode][slotIndex];
+    if isDualMacroSlotTable(raw) then
+        local sh = gConfig and (gConfig.macroStorageScope or 'profile') == 'shared';
+        if sh then
+            raw[K_BIND_S] = nil;
+        else
+            raw[K_BIND_P] = nil;
+        end
+        if not raw[K_BIND_P] and not raw[K_BIND_S] then
+            bucket[effectiveComboMode][slotIndex] = DRAFT_CROSSBAR_SLOT_EMPTY;
+        else
+            raw.actionType = 'macro';
+        end
+    else
+        bucket[effectiveComboMode][slotIndex] = DRAFT_CROSSBAR_SLOT_EMPTY;
+    end
+    scrubDraftBucketSlotIfInvisible(bucket, rk, effectiveComboMode, slotIndex);
+    draftDirty = true;
+end
+
+function M.UndoDraft()
+    if #draftUndoStack == 0 then return false; end
+    local prev = table.remove(draftUndoStack);
+    draftByKey = prev.blob;
+    draftTouchedKeys = prev.touched or {};
+    draftDirty = #draftUndoStack > 0;
+    return true;
+end
+
+function M.CanUndoDraft()
+    return #draftUndoStack > 0;
+end
+
+local function prepareDraftBlobForApply(blob)
+    local out = {};
+    for comboMode, row in pairs(blob) do
+        out[comboMode] = {};
+        for slotIndex, cell in pairs(row) do
+            if cell ~= DRAFT_CROSSBAR_SLOT_EMPTY then
+                out[comboMode][slotIndex] = deepCopyTable(cell);
+            end
+        end
+    end
+    return out;
+end
+
+function M.ApplyDraft()
+    if not draftForStorageKey or not draftByKey then return; end
+    if not gConfig.hotbarCrossbar then gConfig.hotbarCrossbar = {}; end
+    if not gConfig.hotbarCrossbar.slotActions then gConfig.hotbarCrossbar.slotActions = {}; end
+    for key, _ in pairs(draftTouchedKeys or {}) do
+        local blob = draftByKey[key];
+        if blob then
+            gConfig.hotbarCrossbar.slotActions[key] = prepareDraftBlobForApply(blob);
+        end
+    end
+    draftDirty = false;
+    draftUndoStack = {};
+    draftTouchedKeys = {};
+    M.InvalidateStorageKeyCache();
+    NotifySlotDataChanged();
+end
+
+function M.DiscardDraft()
+    local key = crossbarPaletteEditStorageKey or draftForStorageKey;
+    if not key then return; end
+    draftByKey = {};
+    draftTouchedKeys = {};
+    if gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.slotActions then
+        draftByKey[key] = deepCopyTable(gConfig.hotbarCrossbar.slotActions[key]) or {};
+    else
+        draftByKey[key] = {};
+    end
+    draftDirty = false;
+    draftUndoStack = {};
+end
+
+function M.IsDraftDirty()
+    return draftDirty;
+end
+
+local pendingPaletteSlotEdit = nil;
+
+function M.SetPendingPaletteSlotEdit(slotData, comboMode, slotIndex)
+    pendingPaletteSlotEdit = { slotData = slotData, comboMode = comboMode, slotIndex = slotIndex };
+end
+
+function M.ConsumePendingPaletteSlotEdit()
+    local edit = pendingPaletteSlotEdit;
+    pendingPaletteSlotEdit = nil;
+    return edit;
 end
 
 -- Clear all slot actions for a hotbar (used when switching between job-specific and global modes)
@@ -1015,9 +2552,12 @@ function M.SetSlotData(barIndex, slotIndex, slotData)
     local jobSlotActions = ensureSlotActionsStructure(barSettings, storageKey);
 
     if slotData then
-        jobSlotActions[slotIndex] = M.BuildSlotDataForWrite(slotData);
+        if isDualMacroSlotTable(slotData) then
+            jobSlotActions[slotIndex] = slotData;
+        else
+            jobSlotActions[slotIndex] = buildSlotRecord(slotData);
+        end
     else
-        -- Mark as explicitly cleared
         jobSlotActions[slotIndex] = { cleared = true };
     end
 
@@ -1031,11 +2571,33 @@ function M.ClearSlotData(barIndex, slotIndex)
 
     local barSettings = gConfig[configKey];
     local storageKey = M.GetStorageKeyForBar(barIndex);
-    local jobSlotActions = getSlotActionsForJob(barSettings.slotActions, storageKey);
+    local jobSlotActions = getSlotActionsForKey(barSettings.slotActions, storageKey);
 
     if jobSlotActions then
-        -- Mark as explicitly cleared
-        jobSlotActions[slotIndex] = { cleared = true };
+        local num = tonumber(slotIndex) or slotIndex;
+        local raw = jobSlotActions[num] or jobSlotActions[tostring(num)];
+        if isDualMacroSlotTable(raw) then
+            local sh = (gConfig.macroStorageScope or 'profile') == 'shared';
+            if sh then
+                raw[K_BIND_S] = nil;
+            else
+                raw[K_BIND_P] = nil;
+            end
+            if not raw[K_BIND_P] and not raw[K_BIND_S] then
+                jobSlotActions[num] = { cleared = true };
+                if jobSlotActions[tostring(num)] then
+                    jobSlotActions[tostring(num)] = { cleared = true };
+                end
+            else
+                raw.actionType = 'macro';
+                jobSlotActions[num] = raw;
+            end
+        else
+            jobSlotActions[num] = { cleared = true };
+            if jobSlotActions[tostring(num)] then
+                jobSlotActions[tostring(num)] = { cleared = true };
+            end
+        end
         NotifySlotDataChanged();
     end
 end
@@ -1060,6 +2622,32 @@ function M.InvalidateStorageKeyCache()
     storageKeyCache = {};
 end
 
+-- Call whenever the global gConfig table is replaced (profile switch, settings reload, reset).
+-- macroIdLookup holds references into gConfig.macroDB; if gConfig is swapped without invalidating,
+-- lookups can return macro rows from the previous profile in memory (wrong name/icon for macroRef).
+function M.InvalidateConfigDerivedCaches()
+    macroIdLookupDirty = true;
+    macroDbCoherenceIdentity = nil;
+    M.InvalidateStorageKeyCache();
+end
+
+-- ============================================
+-- Font Visibility Helpers
+-- ============================================
+-- REMOVED in 1.8.0 (and intentionally preserved-deleted here during migration):
+--   M.RebuildAllFonts, M.SetAllFontsVisible, M.SetBarFontsVisible
+-- These managed the GDI font lifecycle (`primitives` + `FontManager`) for per-slot keybind/
+-- label/timer/MP/quantity/abbreviation text. 1.8.0 replaced the entire rendering pipeline
+-- with libs/imtext.lua which is stateless per-frame — no font objects to create, hide,
+-- or rebuild. The old per-bar font tables (M.keybindFonts / M.labelFonts / M.timerFonts /
+-- M.mpCostFonts / M.quantityFonts / M.abbreviationFonts / M.hotbarNumberFonts / M.allFonts)
+-- are no longer populated; any lingering refs would also be obsolete.
+--
+-- Any caller of the dropped functions should be considered dead code from 1.7.5; the
+-- imtext path needs no per-bar visibility toggling because un-emitted draw calls don't
+-- render. If a caller still exists in macropalette.lua / crossbar.lua, it should be
+-- removed when that file is migrated (no replacement needed).
+
 -- ============================================
 -- Preview Mode (stub for compatibility)
 -- ============================================
@@ -1071,6 +2659,57 @@ function M.ClearPreview()
 end
 
 function M.ClearError()
+end
+
+-- ============================================
+-- Profile duplicate (no macro library): strip bar binds to palette macros
+-- ============================================
+
+-- Clears actionType == 'macro' slots in settings (in-memory copy) so a duplicated profile
+-- that dropped the macro library does not show ghost bindings to missing macroRef rows.
+function M.StripPaletteMacroBindsFromSettings(settings)
+    if not settings or type(settings) ~= 'table' then
+        return;
+    end
+    local function isPaletteMacro(slot)
+        if not slot or type(slot) ~= 'table' or slot.cleared then
+            return false;
+        end
+        if isDualMacroSlotTable(slot) then
+            return slot.actionType == 'macro' or slot[K_BIND_P] ~= nil or slot[K_BIND_S] ~= nil;
+        end
+        return slot.actionType == 'macro';
+    end
+    for bar = 1, 6 do
+        local configKey = 'hotbarBar' .. bar;
+        local barSettings = settings[configKey];
+        if barSettings and type(barSettings.slotActions) == 'table' then
+            for _, jobSlotActions in pairs(barSettings.slotActions) do
+                if type(jobSlotActions) == 'table' then
+                    for si, slot in pairs(jobSlotActions) do
+                        if isPaletteMacro(slot) then
+                            jobSlotActions[si] = { cleared = true };
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if settings.hotbarCrossbar and type(settings.hotbarCrossbar.slotActions) == 'table' then
+        for _, jobSlotActions in pairs(settings.hotbarCrossbar.slotActions) do
+            if type(jobSlotActions) == 'table' then
+                for _, comboSlots in pairs(jobSlotActions) do
+                    if type(comboSlots) == 'table' then
+                        for si, slot in pairs(comboSlots) do
+                            if isPaletteMacro(slot) then
+                                comboSlots[si] = nil;
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
 end
 
 -- ============================================
@@ -1098,6 +2737,10 @@ function M.SetPlayerJob()
     -- Invalidate caches if job changed
     if M.jobId ~= currentJobId or M.subjobId ~= currentSubjobId then
         M.InvalidateStorageKeyCache();
+        local okPal, palMod = pcall(require, 'modules.hotbar.palette');
+        if okPal and palMod and palMod.ClearCrossbarCliPreview then
+            palMod.ClearCrossbarCliPreview();
+        end
     end
 
     M.jobId = currentJobId;
@@ -1112,6 +2755,19 @@ end
 -- Cleanup (call on addon unload)
 function M.Cleanup()
     M.Clear();
+    M.bgHandles = {};
+    M.slotPrims = {};
+    M.iconPrims = {};
+    M.cooldownPrims = {};
+    M.framePrims = {};
+    M.keybindFonts = {};
+    M.labelFonts = {};
+    M.timerFonts = {};
+    M.mpCostFonts = {};
+    M.quantityFonts = {};
+    M.abbreviationFonts = {};
+    M.hotbarNumberFonts = {};
+    M.allFonts = nil;
 end
 
 return M;

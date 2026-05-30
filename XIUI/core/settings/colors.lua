@@ -34,6 +34,7 @@ function M.createColorCustomizationDefaults()
         targetBar = T{
             hpGradient = T{ enabled = true, start = '#e26c6c', stop = '#fb9494' },
             castBarGradient = T{ enabled = true, start = '#ffaa00', stop = '#ffcc44' },
+            mpBarGradient = T{ enabled = true, start = '#9abb5a', stop = '#bfe07d' },  -- Aspirable mob MP stripe (defaults to match player MP bar)
             distanceTextColor = 0xFFFFFFFF,
             castTextColor = 0xFFFFAA00,  -- Orange color for enemy casting
             -- Per-entity-type HP bar gradients (used when targetBarHpColorByType is enabled)

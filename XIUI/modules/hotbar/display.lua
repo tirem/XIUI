@@ -11,6 +11,7 @@ local windowBg = require('libs.windowbackground');
 local drawing = require('libs.drawing');
 
 local data = require('modules.hotbar.data');
+local playerdata = require('modules.hotbar.playerdata');
 local actions = require('modules.hotbar.actions');
 local textures = require('modules.hotbar.textures');
 local macropalette = require('modules.hotbar.macropalette');
@@ -21,72 +22,22 @@ local hotbarConfig = require('config.hotbar');
 local petpalette = require('modules.hotbar.petpalette');
 local palette = require('modules.hotbar.palette');
 local skillchain = require('modules.hotbar.skillchain');
+local macroparse = require('modules.hotbar.macroparse');
 local targetLib = require('libs.target');
 local imtext = require('libs.imtext');
+-- TextureManager.DeferRelease keeps a Lua ref to wiped iconCache entries alive
+-- for one frame so palette-delete / job-change paths don't release a D3D texture
+-- that's still queued in this frame's draw list (CTD on Ashita 4.16).
+local TextureManager = require('libs.texturemanager');
 
 local M = {};
 
 -- ============================================
--- Anchored Layout Helpers (hotbar only)
+-- Constants
 -- ============================================
 
-local function GetHotbarBarConfig(barIndex)
-    return gConfig and gConfig['hotbarBar' .. barIndex];
-end
-
-local function IsAnchoredMode()
-    return gConfig.hotbarGlobal and gConfig.hotbarGlobal.positionMode == 'anchored';
-end
-
-local function IsBarInAnchorStack(barIndex)
-    if not IsAnchoredMode() then
-        return false;
-    end
-
-    local barConfig = GetHotbarBarConfig(barIndex);
-    if not barConfig or barConfig.enabled == false then
-        return false;
-    end
-
-    return barConfig.anchoredInStack ~= false;
-end
-
-local function GetAnchoredStackBars()
-    local stack = {};
-    if not IsAnchoredMode() then
-        return stack;
-    end
-
-    for barIndex = 1, data.NUM_BARS do
-        if IsBarInAnchorStack(barIndex) then
-            stack[#stack + 1] = barIndex;
-        end
-    end
-
-    return stack;
-end
-
-local function GetBackgroundPadding(barSettings)
-    local gs = (gConfig and gConfig.globalScale) or 1.0;
-    local padX = (barSettings and barSettings.backgroundPaddingX) or 0;
-    local padY = (barSettings and barSettings.backgroundPaddingY) or 0;
-    return padX * gs, padY * gs;
-end
-
-local function GetBarSavedPosition(barIndex, defaultX, defaultY)
-    local windowName = string.format('Hotbar%d', barIndex);
-    local saved = gConfig.windowPositions and gConfig.windowPositions[windowName];
-    if saved then
-        return saved.x, saved.y;
-    end
-    return defaultX, defaultY;
-end
-
--- Forward declarations (defined after GetBarDimensions)
-local GetBarMetrics;
-local ComputeAnchoredLayout;
-local DrawWindowBackground;
-local DrawBarBackground;
+local KEYBIND_OFFSET_X = 2;
+local KEYBIND_OFFSET_Y = 2;
 
 -- ============================================
 -- State
@@ -168,6 +119,12 @@ local function BuildBindKey(bind)
     if bind.customIconType or bind.customIconId or bind.customIconPath then
         iconPart = ':icon:' .. (bind.customIconType or '') .. ':' .. tostring(bind.customIconId or '') .. ':' .. (bind.customIconPath or '');
     end
+    -- Macros render a /ja badge overlay; its icon (whether resolved from a job-ability
+    -- name in macroText or from a macro.jaBadgeCustom* override) must invalidate the
+    -- cache when changed. Defensive guard: function lives in actions.lua (Phase 2.4).
+    if bind.actionType == 'macro' and actions.GetMacroJaBadgeIconCacheSuffix then
+        iconPart = iconPart .. (actions.GetMacroJaBadgeIconCacheSuffix(bind) or '');
+    end
     return (bind.actionType or '') .. ':' .. (bind.action or '') .. ':' .. (bind.target or '') .. iconPart;
 end
 
@@ -191,10 +148,15 @@ local function GetCachedIcon(barIndex, slotIndex, bind)
         end
     end
 
-    -- Cache miss - compute icon and (if no icon) abbreviation
+    -- Cache miss - resolve icon only (BuildCommand also builds command strings; per-frame
+    -- draw paths don't need the command, so we use GetBindIcon when available to skip that work).
     local icon = nil;
     if bind then
-        _, icon = actions.BuildCommand(bind);
+        if actions.GetBindIcon then
+            icon = actions.GetBindIcon(bind);
+        else
+            _, icon = actions.BuildCommand(bind);
+        end
     end
 
     local abbr, abbrW = nil, nil;
@@ -216,12 +178,29 @@ end
 
 -- Clear icon cache (call when slots change)
 local function ClearIconCache()
+    -- iconCache rows hold the only Lua ref to D3D textures loaded by actions.GetBindIcon
+    -- (LoadTextureFromPath wires a gc_safe_release finalizer); dropping the table mid-frame
+    -- lets Lua GC release the COM texture while AddImage queued earlier this frame still
+    -- references its pointer. Hold the old table alive until next d3d_present flushes it.
+    TextureManager.DeferRelease(iconCache);
     iconCache = {};
+    -- Mirror the wipe to actions.lua's negative-result cache; otherwise a "no icon" decision
+    -- pinned from a previous job/palette/macro state survives across cache invalidations.
+    if actions.ClearNoIconCache then
+        actions.ClearNoIconCache();
+    end
 end
 
 -- Clear icon cache for a specific slot (call on targeted slot updates)
 local function ClearIconCacheForSlot(barIndex, slotIndex)
     if iconCache[barIndex] then
+        -- Per-slot wipes (drag/drop, single rebuild) need the same deferred-release
+        -- guard as ClearIconCache so the slot's queued AddImage from earlier this frame
+        -- doesn't end up dereferencing a freed COM texture.
+        local oldRow = iconCache[barIndex][slotIndex];
+        if oldRow ~= nil then
+            TextureManager.DeferRelease(oldRow);
+        end
         iconCache[barIndex][slotIndex] = nil;
     end
 end
@@ -270,122 +249,6 @@ local function GetBarDimensions(barIndex)
     return width, height, slotSize, slotGap, rowGap, layout;
 end
 
-GetBarMetrics = function(barIndex, inAnchoredStack)
-    local barSettings = data.GetBarSettings(barIndex);
-    local contentW, contentH, buttonSize, buttonGap, rowGap, layout = GetBarDimensions(barIndex);
-    local gs = (gConfig and gConfig.globalScale) or 1.0;
-
-    if inAnchoredStack then
-        return {
-            contentW = contentW,
-            contentH = contentH,
-            windowW = contentW,
-            windowH = contentH,
-            bgPadX = 0,
-            bgPadY = 0,
-            buttonSize = buttonSize,
-            buttonGap = buttonGap,
-            rowGap = rowGap,
-            layout = layout,
-            slotPadding = data.PADDING * gs,
-        };
-    end
-
-    local bgPadX, bgPadY = GetBackgroundPadding(barSettings);
-
-    return {
-        contentW = contentW,
-        contentH = contentH,
-        windowW = contentW + (bgPadX * 2),
-        windowH = contentH + (bgPadY * 2),
-        bgPadX = bgPadX,
-        bgPadY = bgPadY,
-        buttonSize = buttonSize,
-        buttonGap = buttonGap,
-        rowGap = rowGap,
-        layout = layout,
-        slotPadding = data.PADDING * gs,
-    };
-end
-
-ComputeAnchoredLayout = function(stack)
-    local layout = {};
-    if #stack == 0 then
-        return layout;
-    end
-
-    local anchorBar = stack[1];
-    local defaultX, defaultY = GetDefaultBarPosition(anchorBar);
-    local anchorX, anchorY = GetBarSavedPosition(anchorBar, defaultX, defaultY);
-    local globalSettings = gConfig.hotbarGlobal or {};
-    local bgPadX, bgPadY = GetBackgroundPadding(globalSettings);
-    local gs = (gConfig and gConfig.globalScale) or 1.0;
-    local stackSpacing = (globalSettings.hotbarSpacing or 0) * gs;
-    local currentY = anchorY;
-    local maxContentW = 0;
-    local topBarY = anchorY;
-
-    for i, barIndex in ipairs(stack) do
-        if i > 1 then
-            currentY = currentY - stackSpacing;
-        end
-
-        local metrics = GetBarMetrics(barIndex, true);
-        maxContentW = math.max(maxContentW, metrics.contentW);
-        layout[barIndex] = {
-            x = anchorX,
-            y = currentY,
-            metrics = metrics,
-        };
-        topBarY = currentY;
-        currentY = currentY - metrics.contentH;
-    end
-
-    local bottomEntry = layout[anchorBar];
-    local bottomY = bottomEntry.y + bottomEntry.metrics.contentH;
-    -- Outer background rect for the whole anchored stack (not per-bar).
-    layout._stackBackground = {
-        x = anchorX - bgPadX,
-        y = topBarY - bgPadY,
-        width = maxContentW + (bgPadX * 2),
-        height = (bottomY - topBarY) + (bgPadY * 2),
-    };
-
-    return layout;
-end
-
-local function BuildWindowBgOptions(settings)
-    return {
-        theme = settings.backgroundTheme or '-None-',
-        padding = 0,
-        paddingY = 0,
-        bgScale = settings.bgScale or 1.0,
-        borderScale = settings.borderScale or 1.0,
-        bgOpacity = settings.backgroundOpacity or 0.87,
-        borderOpacity = settings.borderOpacity or 1.0,
-        bgColor = settings.bgColor or 0xFFFFFFFF,
-        borderColor = settings.borderColor or 0xFFFFFFFF,
-    };
-end
-
-DrawWindowBackground = function(x, y, width, height, settings)
-    local bgOptions = BuildWindowBgOptions(settings);
-    if bgOptions.theme == '-None-' then
-        return;
-    end
-
-    local drawList = GetUIDrawList();
-    if not drawList then
-        return;
-    end
-
-    windowBg.Draw(drawList, x, y, width, height, bgOptions);
-end
-
-DrawBarBackground = function(windowPosX, windowPosY, metrics, barSettings)
-    DrawWindowBackground(windowPosX, windowPosY, metrics.windowW, metrics.windowH, barSettings);
-end
-
 -- Cached asset path
 local assetsPath = nil;
 
@@ -428,7 +291,7 @@ local function GetSlotInteraction(barIndex, slotIndex)
 end
 
 -- Draw a single hotbar slot using shared renderer
-local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings, animOpacity, skillchainName)
+local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings, animOpacity, skillchainName, magicBurstName)
     -- Get icon (and pre-resolved abbreviation, if no icon) for this slot.
     -- All three are cached together; recomputed only when bind changes.
     local icon, cachedAbbr, cachedAbbrW = GetCachedIcon(barIndex, slotIndex, bind);
@@ -484,7 +347,7 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     p.mpCostFontSize = (barSettings and barSettings.mpCostFontSize or 10) * gs;
     p.mpCostFontColor = barSettings and barSettings.mpCostFontColor or 0xFFD4FF97;
     p.mpCostNoMpColor = barSettings and barSettings.labelNoMpColor or 0xFFFF4444;
-    p.mpCostAnchor = barSettings and barSettings.mpCostAnchor or 'topRight';
+    p.mpCostAnchor = barSettings and barSettings.mpCostAnchor or 'topLeft';
     p.mpCostOffsetX = (barSettings and barSettings.mpCostOffsetX or 0) * gs;
     p.mpCostOffsetY = (barSettings and barSettings.mpCostOffsetY or 0) * gs;
     p.showQuantity = barSettings and barSettings.showQuantity ~= false;
@@ -508,6 +371,11 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     -- Skillchain highlight
     p.skillchainName = skillchainName;
     p.skillchainColor = gConfig.hotbarGlobal.skillchainHighlightColor or 0xFFD4AA44;
+    -- Magic Burst highlight (separate from skillchain — different SC->element predictor,
+    -- different color, different corner icon). Resolved upstream in the per-slot loop so
+    -- this just plumbs the name/color through to slotrenderer.
+    p.magicBurstName = magicBurstName;
+    p.magicBurstColor = gConfig.hotbarGlobal.magicBurstHighlightColor or 0xFF44D4FF;
 
     -- Render slot using shared renderer (handles ALL rendering and interactions)
     local result = slotrenderer.DrawSlot(p);
@@ -515,9 +383,7 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
 end
 
 -- Draw a single hotbar window
-local function DrawBarWindow(barIndex, settings, drawContext)
-    drawContext = drawContext or {};
-
+local function DrawBarWindow(barIndex, settings)
     -- Get per-bar settings
     local barSettings = data.GetBarSettings(barIndex);
 
@@ -526,44 +392,35 @@ local function DrawBarWindow(barIndex, settings, drawContext)
         return;
     end
 
-    local metrics = drawContext.metrics or GetBarMetrics(barIndex);
-    local barWidth = metrics.windowW;
-    local barHeight = metrics.windowH;
-    local buttonSize = metrics.buttonSize;
-    local buttonGap = metrics.buttonGap;
-    local rowGap = metrics.rowGap;
-    local layout = metrics.layout;
-    local bgPadX = metrics.bgPadX;
-    local bgPadY = metrics.bgPadY;
-    local slotPadding = metrics.slotPadding;
-
+    -- Get default position for fallback
     local defaultX, defaultY = GetDefaultBarPosition(barIndex);
     local windowName = string.format('Hotbar%d', barIndex);
-    local hasSaved = gConfig.windowPositions and gConfig.windowPositions[windowName];
-    local useAnchoredPosition = drawContext.resolvedPosition ~= nil;
-    local skipBackground = drawContext.skipBackground == true;
-    local isAnchorBar = drawContext.isAnchorBar == true;
-    local savePosition = drawContext.savePosition ~= false;
-    local anchorDragging = drawing.IsAnchorDragging(windowName);
 
-    if useAnchoredPosition then
-        if isAnchorBar and (anchorDragging or forcePositionReset) then
-            local targetX, targetY = GetBarSavedPosition(barIndex, defaultX, defaultY);
-            imgui.SetNextWindowPos({targetX, targetY}, ImGuiCond_Always);
-        else
-            imgui.SetNextWindowPos({drawContext.resolvedPosition.x, drawContext.resolvedPosition.y}, ImGuiCond_Always);
-        end
-    elseif hasSaved then
+    -- Apply saved position if exists (using helper for profile support), otherwise set default
+    local hasSaved = gConfig.windowPositions and gConfig.windowPositions[windowName];
+
+    if hasSaved then
         ApplyWindowPosition(windowName);
     else
         imgui.SetNextWindowPos({defaultX, defaultY}, ImGuiCond_FirstUseEver);
     end
 
+    -- Get dimensions (now includes layout)
+    local barWidth, barHeight, buttonSize, buttonGap, rowGap, layout = GetBarDimensions(barIndex);
+
+    local slotCount = layout.slots;
+
     -- Window flags (dummy window for positioning)
     local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
 
-    if not useAnchoredPosition and (anchorDragging or forcePositionReset) then
-        local targetX, targetY = GetBarSavedPosition(barIndex, defaultX, defaultY);
+    -- Check if anchor is currently being dragged or positions are being reset - if so, force position
+    local anchorDragging = drawing.IsAnchorDragging(windowName);
+    
+    if anchorDragging or forcePositionReset then
+        -- Force position update during drag
+        local saved = gConfig.windowPositions and gConfig.windowPositions[windowName];
+        local targetX = saved and saved.x or defaultX;
+        local targetY = saved and saved.y or defaultY;
         imgui.SetNextWindowPos({targetX, targetY}, ImGuiCond_Always);
     end
 
@@ -572,22 +429,43 @@ local function DrawBarWindow(barIndex, settings, drawContext)
     local windowPosX, windowPosY;
 
     if imgui.Begin(windowName, true, windowFlags) then
-        if savePosition then
-            SaveWindowPosition(windowName);
-        end
+        -- Save position if moved
+        SaveWindowPosition(windowName);
         windowPosX, windowPosY = imgui.GetWindowPos();
 
         -- Reserve space
         imgui.Dummy({barWidth, barHeight});
 
-        if not skipBackground then
-            DrawBarBackground(windowPosX, windowPosY, metrics, barSettings);
-        end
+        -- Update background using per-bar settings
+        local bgTheme = barSettings.backgroundTheme or '-None-';
+        local bgScale = barSettings.bgScale or 1.0;
+        local borderScale = barSettings.borderScale or 1.0;
+        local bgOpacity = barSettings.backgroundOpacity or 0.87;
+        local borderOpacity = barSettings.borderOpacity or 1.0;
+
+        -- Use per-bar color settings
+        local bgColor = barSettings.bgColor or 0xFFFFFFFF;
+        local borderColor = barSettings.borderColor or 0xFFFFFFFF;
+
+        local bgOptions = {
+            theme = bgTheme,
+            padding = 0,  -- Padding already included in barWidth/barHeight
+            paddingY = 0,
+            bgScale = bgScale,
+            borderScale = borderScale,
+            bgOpacity = bgOpacity,
+            borderOpacity = borderOpacity,
+            bgColor = bgColor,
+            borderColor = borderColor,
+        };
+
+        windowBg.Draw(GetUIDrawList(), windowPosX, windowPosY, barWidth, barHeight, bgOptions);
 
         -- Draw hotbar number to the LEFT of the bar (outside container)
         local showNumber = barSettings.showHotbarNumber;
         if showNumber == nil then showNumber = true; end
         if showNumber then
+            -- Position to the left of the bar with optional offsets
             local hbnOffsetX = barSettings.hotbarNumberOffsetX or 0;
             local hbnOffsetY = barSettings.hotbarNumberOffsetY or 0;
             local hbnText = tostring(barIndex);
@@ -600,19 +478,31 @@ local function DrawBarWindow(barIndex, settings, drawContext)
         end
 
         -- Draw slots based on layout (rows x columns)
-        slotCount = layout.slots;
+        local gs = (gConfig and gConfig.globalScale) or 1.0;
+        local padding = data.PADDING * gs;
+        local slotCount = layout.slots;
         local slotIndex = 1;
 
+        -- Get palette change animation opacity
         local animOpacity = GetPaletteAnimationOpacity(barIndex);
 
+        -- Check if we should hide empty slots
         local hideEmptySlots = barSettings.hideEmptySlots or false;
         local paletteOpen = macropalette.IsPaletteOpen();
         local keybindEditorOpen = hotbarConfig.IsKeybindModalOpen();
+        -- Use both IsDragging and IsDragPending to show empty slots during entire drag process
+        -- IsDragging only returns true after drag threshold is met, but we need to show
+        -- drop zones earlier so they're registered when the drag activates
         local isDragging = dragdrop.IsDragging() or dragdrop.IsDragPending();
 
+        -- Get target server ID for skillchain / magic burst prediction (cached for all slots).
+        -- Both features key off the same target so we resolve once per frame here and reuse
+        -- the cached server ID inside the per-slot loop. Either feature being disabled is
+        -- fine: the resolver still returns the ID, and the per-slot path early-exits below.
         local targetServerId = nil;
         local skillchainEnabled = gConfig.hotbarGlobal.skillchainHighlightEnabled ~= false;
-        if skillchainEnabled then
+        local magicBurstEnabled = gConfig.hotbarGlobal.magicBurstHighlightEnabled ~= false;
+        if skillchainEnabled or magicBurstEnabled then
             local mainTargetIdx = targetLib.GetTargets();
             if mainTargetIdx and mainTargetIdx ~= 0 then
                 local targetEntity = GetEntity(mainTargetIdx);
@@ -625,42 +515,68 @@ local function DrawBarWindow(barIndex, settings, drawContext)
         for row = 1, layout.rows do
             for col = 1, layout.columns do
                 if slotIndex <= slotCount then
-                    local slotX = windowPosX + bgPadX + slotPadding + (col - 1) * (buttonSize + buttonGap);
-                    local slotY = windowPosY + bgPadY + slotPadding + (row - 1) * (buttonSize + rowGap);
+                    local slotX = windowPosX + padding + (col - 1) * (buttonSize + buttonGap);
+                    local slotY = windowPosY + padding + (row - 1) * (buttonSize + rowGap);
 
                     local bind = data.GetKeybindForSlot(barIndex, slotIndex);
 
+                    -- Hide empty slots if setting enabled and not editing/dragging
                     if hideEmptySlots and not paletteOpen and not keybindEditorOpen and not isDragging and not bind then
-                        -- Empty slot: skip rendering
+                        -- Empty slot: skip rendering (ImGui draws are stateless, nothing to hide)
                     else
+                        -- Skillchain prediction: WS slots, Blood Pact slots, and macros whose
+                        -- primary line is /ws or /pet (parsed via macroparse).
                         local slotSkillchainName = nil;
-                        if skillchainEnabled and bind and bind.actionType == 'ws' and bind.action then
-                            slotSkillchainName = skillchain.GetSkillchainForSlot(targetServerId, bind.action);
+                        if skillchainEnabled and bind then
+                            if bind.actionType == 'ws' and bind.action then
+                                slotSkillchainName = skillchain.GetSkillchainForSlot(targetServerId, bind.action);
+                            elseif bind.actionType == 'pet' and bind.action then
+                                slotSkillchainName = skillchain.GetSkillchainForBloodPact(targetServerId, bind.action);
+                            elseif bind.actionType == 'macro' and bind.macroText then
+                                local primaryType, primaryName = macroparse.GetMacroPrimaryAndJaBadge(bind.macroText);
+                                if primaryType == 'ws' and primaryName then
+                                    slotSkillchainName = skillchain.GetSkillchainForSlot(targetServerId, primaryName);
+                                elseif primaryType == 'pet' and primaryName then
+                                    slotSkillchainName = skillchain.GetSkillchainForBloodPact(targetServerId, primaryName);
+                                end
+                            end
                         end
-                        DrawSlot(barIndex, slotIndex, slotX, slotY, buttonSize, bind, barSettings, animOpacity, slotSkillchainName);
+                        -- Magic Burst prediction: spells (/ma), magical pact rages (/pet curated
+                        -- map), and /ma|/pet-primary macros. Routes via skillchain.GetMagicBurstForSlot
+                        -- so the dispatch matches the skillchain pass above; the lookup is a single
+                        -- table read after the lazy element-by-name cache is warmed.
+                        local slotMagicBurstName = nil;
+                        if magicBurstEnabled and bind then
+                            slotMagicBurstName = skillchain.GetMagicBurstForSlot(targetServerId, bind);
+                        end
+                        DrawSlot(barIndex, slotIndex, slotX, slotY, buttonSize, bind, barSettings, animOpacity, slotSkillchainName, slotMagicBurstName);
                     end
                 end
                 slotIndex = slotIndex + 1;
             end
         end
 
+
         imgui.End();
     end
 
     -- Draw pet palette indicator dot OUTSIDE window bounds (above bar number)
+    -- Must be after End() and use ForegroundDrawList to avoid clipping
+    -- Only shows for pet-aware bars (gold indicator)
     local hasPetIndicator = barSettings.petAware and barSettings.showPetIndicator ~= false;
 
     if windowPosX and hasPetIndicator then
-        local dotX = windowPosX - 12;
-        local dotY = windowPosY + (barHeight / 2) - 20;
+        local dotX = windowPosX - 12;  -- Centered above bar number
+        local dotY = windowPosY + (barHeight / 2) - 20;  -- Above the number
         local dotRadius = 5;
         local fgDrawList = GetUIDrawList();
 
-        local indicatorColor = {1.0, 0.8, 0.2, 1.0};
+        local indicatorColor = {1.0, 0.8, 0.2, 1.0};  -- Gold
 
         fgDrawList:AddCircleFilled({dotX, dotY}, dotRadius, imgui.GetColorU32(indicatorColor), 12);
         fgDrawList:AddCircle({dotX, dotY}, dotRadius, imgui.GetColorU32({0.0, 0.0, 0.0, 1.0}), 12, 1.0);
 
+        -- Check hover for tooltip
         local mouseX, mouseY = imgui.GetMousePos();
         local dx = mouseX - dotX;
         local dy = mouseY - dotY;
@@ -671,6 +587,7 @@ local function DrawBarWindow(barIndex, settings, drawContext)
             imgui.TextColored({1.0, 0.8, 0.2, 1.0}, 'Pet Palette Bar ' .. barIndex);
             imgui.Separator();
 
+            -- Current pet info
             local currentPet = petpalette.GetCurrentPetDisplayName();
             if currentPet then
                 imgui.Text('Current Pet: ' .. currentPet);
@@ -678,6 +595,7 @@ local function DrawBarWindow(barIndex, settings, drawContext)
                 imgui.TextColored({0.6, 0.6, 0.6, 1.0}, 'No pet summoned');
             end
 
+            -- Palette mode
             local hasOverride = petpalette.HasManualOverride(barIndex);
             if hasOverride then
                 local overrideName = petpalette.GetPaletteDisplayName(barIndex, data.jobId);
@@ -691,16 +609,19 @@ local function DrawBarWindow(barIndex, settings, drawContext)
     end
 
     -- Draw move anchor (only visible when config is open)
+    -- Must be called after we have window position
     if windowPosX ~= nil then
+        -- Only show anchor when movement is NOT locked (global setting)
         local globalLocked = gConfig and gConfig.hotbarLockMovement;
-        local showAnchor = not globalLocked and (not useAnchoredPosition or isAnchorBar);
-        if showAnchor then
+        if not globalLocked then
+            -- Use same window name as ImGui window so positions are shared
             local anchorName = string.format('Hotbar%d', barIndex);
             local anchorNewX, anchorNewY = drawing.DrawMoveAnchor(anchorName, windowPosX, windowPosY);
             if anchorNewX ~= nil then
                 windowPosX = anchorNewX;
                 windowPosY = anchorNewY;
-
+                
+                -- Update config immediately so next frame's positioning logic picks it up
                 if not gConfig.windowPositions then gConfig.windowPositions = {}; end
                 gConfig.windowPositions[anchorName] = { x = anchorNewX, y = anchorNewY };
             end
@@ -715,42 +636,22 @@ end
 function M.DrawWindow(settings)
     -- Note: dragdrop.Update() is called from init.lua before this
 
+    -- Refresh per-frame cached spell/ability/WS/item lists used by macropalette filters
+    -- and by GetBindIcon resolution for macro lines.
+    playerdata.RefreshCachedLists(data);
+
     -- Initialize textures on first draw
     if not texturesInitialized then
         textures:Initialize();
         texturesInitialized = true;
     end
 
-    local anchoredStack = GetAnchoredStackBars();
-    local anchoredLayout = ComputeAnchoredLayout(anchoredStack);
-    local anchorBar = anchoredStack[1];
-
-    local stackBackground = anchoredLayout._stackBackground;
-    if stackBackground then
-        DrawWindowBackground(
-            stackBackground.x,
-            stackBackground.y,
-            stackBackground.width,
-            stackBackground.height,
-            gConfig.hotbarGlobal or {}
-        );
-    end
-
+    -- Draw each bar as its own window (per-bar themes handled in DrawBarWindow)
     for barIndex = 1, data.NUM_BARS do
-        local drawContext = {};
-        local anchoredEntry = anchoredLayout[barIndex];
-
-        if anchoredEntry then
-            drawContext.resolvedPosition = { x = anchoredEntry.x, y = anchoredEntry.y };
-            drawContext.metrics = anchoredEntry.metrics;
-            drawContext.skipBackground = true;
-            drawContext.isAnchorBar = (barIndex == anchorBar);
-            drawContext.savePosition = (barIndex == anchorBar);
-        end
-
-        DrawBarWindow(barIndex, settings, drawContext);
+        DrawBarWindow(barIndex, settings);
     end
 
+    -- Clear force position reset flag after all bars have been drawn
     if forcePositionReset then
         forcePositionReset = false;
     end

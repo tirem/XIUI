@@ -13,12 +13,9 @@ local statusIcons = require('libs.statusicons');
 local progressbar = require('libs.progressbar');
 local windowBg = require('libs.windowbackground');
 local encoding = require('libs.encoding');
-local ashita_settings = require('settings');
 local castcostShared = require('modules.castcost.shared');
 local defaultPositions = require('libs.defaultpositions');
 local imtext = require('libs.imtext');
-local gameState = require('core.gamestate');
-
 local data = require('modules.partylist.data');
 
 local display = {};
@@ -984,13 +981,20 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
                 local buffCount = 0;
                 local debuffCount = 0;
-                for i = 0, #memInfo.buffs do
-                    if (buffTable.IsBuff(memInfo.buffs[i])) then
+                -- Buff IDs are stored 1-based (see statushandler.ReadPartyBuffsFromPacket); index 0 is always nil —
+                -- looping from 0 put nil through IsBuff(nil) which classified it as a debuff, then DrawStatusIcons
+                -- called the native renderer with a nil id and could crash.
+                for i = 1, #memInfo.buffs do
+                    local sid = memInfo.buffs[i];
+                    if sid == nil or sid == -1 or sid == 255 then
+                        break;
+                    end
+                    if buffTable.IsBuff(sid) then
                         buffCount = buffCount + 1;
-                        data.reusableBuffs[buffCount] = memInfo.buffs[i];
+                        data.reusableBuffs[buffCount] = sid;
                     else
                         debuffCount = debuffCount + 1;
-                        data.reusableDebuffs[debuffCount] = memInfo.buffs[i];
+                        data.reusableDebuffs[debuffCount] = sid;
                     end
                 end
 
@@ -1287,57 +1291,100 @@ function display.DrawPartyWindow(settings, party, partyIndex)
         );
     end
 
-    imgui.End();
-    imgui.PopStyleVar(2);
-
-    -- Handle bottom alignment
+    -- Handle bottom alignment BEFORE imgui.End() so the SetWindowPos call takes
+    -- effect this frame (not deferred to the next).  Mirrors the petbar pattern.
     if (settings.alignBottom and imguiPosX ~= nil) then
+        -- Legacy migration: flat table → partyIndex-keyed
         if (partyIndex == 1 and gConfig.partyListState ~= nil and gConfig.partyListState.x ~= nil) then
             local oldValues = gConfig.partyListState;
             gConfig.partyListState = {};
             gConfig.partyListState[partyIndex] = oldValues;
-            ashita_settings.save();
+            SaveSettingsOnly();
         end
-
-        if (gConfig.partyListState == nil) then
-            gConfig.partyListState = {};
-        end
+        if (gConfig.partyListState == nil) then gConfig.partyListState = {}; end
 
         local partyListState = gConfig.partyListState[partyIndex];
+        local curBottom = imguiPosY + menuHeight;
 
-        -- Detect external position change (forced reset, user drag, etc.)
-        -- Note: We don't use positionJustApplied here because partyListState is persisted
-        -- in the profile and should be preserved on normal login (when positions are applied
-        -- from saved data). RecoverAllPositions explicitly clears partyListState for resets.
-        local positionChanged = partyListState ~= nil and partyListState.y ~= nil and partyListState.y ~= imguiPosY;
-
-        if positionChanged then
-            -- Position was externally moved; clear tracking so height adjustment
-            -- doesn't fire until state is re-established on the next frame
-            gConfig.partyListState[partyIndex] = nil;
-        else
-            if (partyListState ~= nil) then
-                if (menuHeight ~= partyListState.height) then
-                    local newPosY = partyListState.y + partyListState.height - menuHeight;
-                    imguiPosY = newPosY;
-                    imgui.SetWindowPos(windowName, { imguiPosX, imguiPosY });
-                end
+        if positionJustApplied or partyListState == nil then
+            -- First frame after load / position restore: seed or refresh the anchor.
+            -- When partyListState already has an anchor (e.g. a relog within the same
+            -- Ashita session that reset appliedPositions), keep the existing anchor so
+            -- the potentially-unstable first-frame menuHeight doesn't corrupt it.
+            local keepAnchor = partyListState ~= nil and partyListState.anchorBottom ~= nil;
+            gConfig.partyListState[partyIndex] = {
+                x = imguiPosX, y = imguiPosY,
+                width = menuWidth, height = menuHeight,
+                anchorBottom = keepAnchor and partyListState.anchorBottom or curBottom,
+            };
+            if not keepAnchor then
+                data.pendingSettingsSave = true;
+                data.lastSettingsSaveTime = os.clock();
             end
+        else
+            local positionChanged = partyListState.y ~= nil and partyListState.y ~= imguiPosY;
 
-            if (partyListState == nil or
-                    imguiPosX ~= partyListState.x or imguiPosY ~= partyListState.y or
-                    menuWidth ~= partyListState.width or menuHeight ~= partyListState.height) then
+            if positionChanged then
+                -- User dragged the window; update the bottom anchor to follow.
                 gConfig.partyListState[partyIndex] = {
-                    x = imguiPosX,
-                    y = imguiPosY,
-                    width = menuWidth,
-                    height = menuHeight,
+                    x = imguiPosX, y = imguiPosY,
+                    width = menuWidth, height = menuHeight,
+                    anchorBottom = curBottom,
                 };
+                if gConfig.windowPositions then
+                    if not gConfig.windowPositions[windowName] then
+                        gConfig.windowPositions[windowName] = {};
+                    end
+                    gConfig.windowPositions[windowName].x = imguiPosX;
+                    gConfig.windowPositions[windowName].y = imguiPosY;
+                end
                 data.lastSettingsSaveTime = os.clock();
                 data.pendingSettingsSave = true;
+            else
+                -- No drag: enforce the fixed bottom anchor.
+                local anchorBottom = (partyListState.anchorBottom ~= nil)
+                    and partyListState.anchorBottom or curBottom;
+                local newPosY = anchorBottom - menuHeight;
+                if math.abs(newPosY - imguiPosY) > 0.5 then
+                    imgui.SetWindowPos(windowName, { imguiPosX, newPosY });
+                    imguiPosY = newPosY;
+                    -- Sync windowPositions immediately so a reload uses the corrected Y.
+                    if gConfig.windowPositions then
+                        if not gConfig.windowPositions[windowName] then
+                            gConfig.windowPositions[windowName] = {};
+                        end
+                        gConfig.windowPositions[windowName].x = imguiPosX;
+                        gConfig.windowPositions[windowName].y = newPosY;
+                    end
+                end
+                -- Persist current state (may be no-op if nothing changed).
+                -- Only save when x or anchorBottom change — those represent user
+                -- intent (drag / initial placement).  Height and derived y are
+                -- transient corrections that don't need a disk write.
+                local anchorChanged = partyListState.x ~= imguiPosX
+                    or partyListState.anchorBottom ~= anchorBottom;
+                if anchorChanged then
+                    data.lastSettingsSaveTime = os.clock();
+                    data.pendingSettingsSave = true;
+                end
+                -- Always update the in-memory state even when not saving to disk.
+                if partyListState.x ~= imguiPosX
+                        or partyListState.y ~= imguiPosY
+                        or partyListState.width ~= menuWidth
+                        or partyListState.height ~= menuHeight
+                        or partyListState.anchorBottom ~= anchorBottom then
+                    gConfig.partyListState[partyIndex] = {
+                        x = imguiPosX, y = imguiPosY,
+                        width = menuWidth, height = menuHeight,
+                        anchorBottom = anchorBottom,
+                    };
+                end
             end
         end
     end
+
+    imgui.End();
+    imgui.PopStyleVar(2);
 end
 
 -- ============================================
@@ -1378,19 +1425,21 @@ function display.DrawWindow(settings)
     for partyIndex = 1, 3 do
         local firstIdx = (partyIndex - 1) * data.partyMaxSize;
         local count = 0;
-        data.frameCache.activeMemberList[partyIndex] = {};
+        -- Reuse the existing table to avoid a new allocation every frame.
+        local list = data.frameCache.activeMemberList[partyIndex];
+        for k in pairs(list) do list[k] = nil; end
 
         if showConfig[1] and gConfig.partyListPreview then
             count = data.partyMaxSize;
             for i = 0, data.partyMaxSize - 1 do
-                data.frameCache.activeMemberList[partyIndex][i] = true;
+                list[i] = true;
             end
         else
             for i = 0, data.partyMaxSize - 1 do
                 local memIdx = firstIdx + i;
                 if party:GetMemberIsActive(memIdx) ~= 0 then
                     count = count + 1;
-                    data.frameCache.activeMemberList[partyIndex][i] = true;
+                    list[i] = true;
                 else
                     break;
                 end
@@ -1403,7 +1452,7 @@ function display.DrawWindow(settings)
     if data.pendingSettingsSave then
         local now = os.clock();
         if now - data.lastSettingsSaveTime >= data.SETTINGS_SAVE_DEBOUNCE then
-            ashita_settings.save();
+            SaveSettingsOnly();
             data.pendingSettingsSave = false;
         end
     end
@@ -1411,25 +1460,28 @@ function display.DrawWindow(settings)
     data.partyTargeted = false;
     data.partySubTargeted = false;
 
+    -- Clear pending tooltip from the previous frame before drawing new windows.
+    statusIcons.pendingTooltipId = nil;
+
     -- Main party window
     display.DrawPartyWindow(settings, party, 1);
 
-    local hideAllianceOnMenu = gameState.ShouldHideModuleOnMenuFocus(
-        gConfig,
-        'partyListHideOnMenuFocus',
-        'partyListHideMacroPalette'
-    ) and gConfig.partyListHideOnlyAllianceOnMenuFocus;
-
     -- Alliance party windows
-    if hideAllianceOnMenu then
-        data.UpdateTextVisibility(false, 2);
-        data.UpdateTextVisibility(false, 3);
-    elseif (gConfig.partyListAlliance) then
+    if (gConfig.partyListAlliance) then
         display.DrawPartyWindow(settings, party, 2);
         display.DrawPartyWindow(settings, party, 3);
     else
         data.UpdateTextVisibility(false, 2);
         data.UpdateTextVisibility(false, 3);
+    end
+
+    -- Render any hovered buff/debuff tooltip AFTER all party windows are closed.
+    -- Drawing the tooltip inside the buff sub-window caused it to render below the
+    -- main party list window (which uses NoBringToFrontOnFocus). Deferring here
+    -- ensures the tooltip is always drawn on top of everything.
+    if statusIcons.pendingTooltipId then
+        statusHandler.render_tooltip(statusIcons.pendingTooltipId);
+        statusIcons.pendingTooltipId = nil;
     end
 end
 
@@ -1447,6 +1499,11 @@ display.ResetPositions = function()
         end
         if gConfig.appliedPositions then
             gConfig.appliedPositions[windowNames[i]] = nil;
+        end
+        -- Clear the anchorBottom state so alignBottom re-seeds from the
+        -- reset position rather than fighting the default placement.
+        if gConfig.partyListState then
+            gConfig.partyListState[i] = nil;
         end
     end
 end

@@ -42,8 +42,9 @@ local CATEGORY_CONFIG = {
         clearOnZone = false,
     },
     custom_icons = {
-        maxSize = 250,  -- ~2 pages of icons cached
-        evictionCount = 50,
+        -- No eviction: hotbar/macro picker revisit the same PNG paths; LRU evict+reload caused heavy stutter.
+        maxSize = 0,
+        evictionCount = 0,
         clearOnZone = false,
     },
     assets = {
@@ -73,6 +74,19 @@ local function deferRelease(entry)
     if entry ~= nil then
         pendingReleases[#pendingReleases + 1] = entry;
     end
+end
+
+-- Public: hold any Lua value (table, texture entry, cache-row) alive until the
+-- start of the next d3d_present, then drop the reference so GC can finalize it.
+-- Use this whenever caller code wipes a cache that holds the last Lua reference
+-- to a texture (so its FFI pointer may still be queued in this frame's ImGui
+-- draw list). Same race the per-category clears already guard against — see
+-- the comment on `pendingReleases` above. Without this, palette-deletion paths
+-- (slotrenderer / display / crossbar icon caches) crash with
+-- EXCEPTION_ACCESS_VIOLATION when the renderer reaches an already-released
+-- D3D texture pointer.
+function M.DeferRelease(value)
+    deferRelease(value);
 end
 
 -- Per-category arrays for LRU eviction tracking
@@ -420,30 +434,8 @@ function M.getFileTexture(path)
     end, 'assets');
 end
 
--- Custom icon roots. Submodule icons are stored with a prefix so the same
--- relativePath string disambiguates which root to resolve against.
-local CUSTOM_ICON_ROOT_PREFIX_XIUI_ICONS = 'submodules\\xiui-icons\\';
-local CUSTOM_ICON_ROOT_PREFIX_XIUI_ICONS_LEN = #CUSTOM_ICON_ROOT_PREFIX_XIUI_ICONS;
-
--- Resolve a stored customIconPath to an absolute file path. Legacy entries
--- (no recognized prefix) resolve under assets/hotbar/custom/.
--- @param relativePath string
--- @return string|nil
-function M.ResolveCustomIconPath(relativePath)
-    if relativePath == nil or relativePath == '' then
-        return nil;
-    end
-    local installPath = AshitaCore:GetInstallPath();
-    if relativePath:sub(1, CUSTOM_ICON_ROOT_PREFIX_XIUI_ICONS_LEN) == CUSTOM_ICON_ROOT_PREFIX_XIUI_ICONS then
-        local rest = relativePath:sub(CUSTOM_ICON_ROOT_PREFIX_XIUI_ICONS_LEN + 1);
-        return string.format('%saddons\\XIUI\\submodules\\xiui-icons\\XIUI\\assets\\hotbar\\%s', installPath, rest);
-    end
-    return string.format('%saddons\\XIUI\\assets\\hotbar\\custom\\%s', installPath, relativePath);
-end
-
 -- Get custom icon from hotbar custom icons directory
--- @param relativePath string - Path relative to assets/hotbar/custom/, or
---   prefixed with `submodules\xiui-icons\` for icons from the xiui-icons submodule
+-- @param relativePath string - Path relative to assets/hotbar/custom/
 -- @return table|nil - Texture table with .image field, or nil
 function M.getCustomIcon(relativePath)
     if relativePath == nil or relativePath == '' then
@@ -452,8 +444,7 @@ function M.getCustomIcon(relativePath)
 
     local key = 'custom_' .. relativePath;
     return getOrCreate(key, function()
-        local fullPath = M.ResolveCustomIconPath(relativePath);
-        if not fullPath then return nil; end
+        local fullPath = string.format('%s/assets/hotbar/custom/%s', addon.path, relativePath);
         return loadTextureFromFile(fullPath);
     end, 'custom_icons');
 end

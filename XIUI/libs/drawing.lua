@@ -158,7 +158,9 @@ local ANCHOR_DEFAULTS = {
 ---@param id string Unique identifier for this anchor
 ---@param windowX number Current window X position
 ---@param windowY number Current window Y position
----@param options table|nil Optional configuration (size, padding, colors, etc.)
+---@param options table|nil Optional configuration (size, padding, anchorSide, windowWidth, colors, etc.)
+---  options.anchorSide   : 'left' (default) or 'top' — where the handle sits relative to the window
+---  options.windowWidth  : required when anchorSide = 'top' to centre the handle horizontally
 ---@return number|nil newX New X position if dragged, nil otherwise
 ---@return number|nil newY New Y position if dragged, nil otherwise
 function M.DrawMoveAnchor(id, windowX, windowY, options)
@@ -175,9 +177,17 @@ function M.DrawMoveAnchor(id, windowX, windowY, options)
     local padding = options.padding or ANCHOR_DEFAULTS.padding;
     local rounding = options.rounding or ANCHOR_DEFAULTS.rounding;
 
-    -- Calculate anchor position (left of target window)
-    local anchorX = windowX - size - padding;
-    local anchorY = windowY;
+    -- Calculate anchor position: 'left' (default) or 'top'
+    local anchorX, anchorY;
+    if options.anchorSide == 'top' then
+        local ww = options.windowWidth or 0;
+        anchorX = windowX + math.floor(ww / 2) - math.floor(size / 2);
+        anchorY = windowY - size - padding;
+    else
+        -- Default: left of the target window
+        anchorX = windowX - size - padding;
+        anchorY = windowY;
+    end
 
     -- Window flags for the anchor (invisible, draggable)
     local windowFlags = bit.bor(

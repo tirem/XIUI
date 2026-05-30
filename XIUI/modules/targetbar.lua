@@ -374,6 +374,27 @@ targetbar.DrawWindow = function(settings)
 
 		progressbar.ProgressBar(hpPercentData, {settings.barWidth, settings.barHeight}, progressBarOptions);
 
+		-- === MP STRIPE (shown at the bottom of the HP bar when mob is aspirable) ===
+		if gConfig.showTargetBarMpStripe and isMonster then
+			local mobInfo = mobdata.GetMobInfo(targetEntity.Name, targetIndex);
+			if mobdata.IsAspirable(mobInfo, targetEntity.Name) then
+				local mpGradient = GetCustomGradient(gConfig.colorCustomization.targetBar, 'mpBarGradient')
+					or GetCustomGradient(gConfig.colorCustomization.playerBar, 'mpGradient')
+					or {'#9abb5a', '#bfe07d'};
+				local stripeH = 3;
+				local stripeY = startY + settings.barHeight - stripeH;
+				local stripeX1 = startX + bookendWidth;
+				local stripeX2 = startX + settings.barWidth - bookendWidth;
+				local colL = HexToU32(mpGradient[1]);
+				local colR = HexToU32(mpGradient[2]);
+				drawList:AddRectFilledMultiColor(
+					{stripeX1, stripeY},
+					{stripeX2, stripeY + stripeH},
+					colL, colR, colR, colL
+				);
+			end
+		end
+
 		-- Draw lock icon if locked on (using draw list to avoid affecting cursor position)
 		local lockIconOffset = 0;
 		if (isLockedOn and gConfig.showTargetBarLockOnBorder and lockTexture ~= nil) then
@@ -675,11 +696,6 @@ targetbar.DrawWindow = function(settings)
 			local totalCastBarSpace = settings.castBarOffsetY + settings.castBarHeight + 2 + castTextHeight;
 			imgui.Dummy({0, totalCastBarSpace});
 		end
-
-		-- ImGui 1.91+: SetCursorPos/SetCursorScreenPos no longer auto-extends window
-		-- content boundaries. Submit a zero-sized Dummy to commit any pending extensions
-		-- from SetCursorPosY (buffsOffsetY) or SetCursorScreenPos (arrow/ToT positioning).
-		imgui.Dummy({0, 0});
     end
     imgui.End();
 

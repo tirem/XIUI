@@ -55,6 +55,14 @@ partyList.Initialize = function(settings)
             end
         end
     end
+
+    -- Pre-warm all job icons for the current theme so that a new member joining
+    -- never triggers a synchronous disk read on the render thread (D3DXCreateTextureFromFile
+    -- called from inside d3d_present would stall the whole frame).
+    local jobTheme = (gConfig and gConfig.jobIconTheme) or 'Classic';
+    for jobIdx = 1, 22 do
+        TextureManager.getJobIcon(jobIdx, jobTheme);
+    end
 end
 
 -- ============================================
@@ -89,6 +97,11 @@ partyList.UpdateVisuals = function(settings)
         end
     end
 
+    -- Re-warm job icons in case the theme changed via settings.
+    local jobTheme = (gConfig and gConfig.jobIconTheme) or 'Classic';
+    for jobIdx = 1, 22 do
+        TextureManager.getJobIcon(jobIdx, jobTheme);
+    end
 end
 
 -- ============================================

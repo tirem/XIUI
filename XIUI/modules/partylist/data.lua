@@ -73,6 +73,21 @@ data.partyCasts = {};
 data.reusableBuffs = {};
 data.reusableDebuffs = {};
 
+-- Pre-allocated member info pool (one entry per possible party slot 0-17).
+-- GetMemberInformation writes into these instead of allocating a new table
+-- each frame, eliminating GC pressure at ~60fps.
+data.memberInfoPool = {};
+for _i = 0, 17 do
+    data.memberInfoPool[_i] = {
+        hp=0, hpp=0, maxhp=0, mp=0, mpp=0, maxmp=0,
+        tp=0, job=0, level=0, subjob=0, subjoblevel=0,
+        targeted=false, isSubtargetStyle=false, serverid=0,
+        buffs=nil, sync=false, zone=0, inzone=false,
+        name='', leader=false, allianceLeader=false, index=nil,
+        previewDistance=nil,
+    };
+end
+
 -- ============================================
 -- Frame-level Cache
 -- ============================================
@@ -315,6 +330,7 @@ end
 
 function data.GetMemberInformation(memIdx)
     if (showConfig[1] and gConfig.partyListPreview) then
+        -- Preview mode: still uses a fresh table since preview data is synthetic
         local memInfo = {};
         memInfo.hpp = memIdx == 4 and 0.1 or memIdx == 2 and 0.5 or memIdx == 0 and 0.75 or 1;
         memInfo.maxhp = 1250;
@@ -437,7 +453,7 @@ function data.GetMemberInformation(memIdx)
         partyLeaderId = party:GetAlliancePartyLeaderServerId1();
     end
 
-    local memberInfo = {};
+    local memberInfo = data.memberInfoPool[memIdx];
     memberInfo.zone = party:GetMemberZone(memIdx);
     memberInfo.inzone = memberInfo.zone == party:GetMemberZone(0);
     memberInfo.name = party:GetMemberName(memIdx);

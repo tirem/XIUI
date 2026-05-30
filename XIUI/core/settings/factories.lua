@@ -274,7 +274,7 @@ end
 function M.createHotbarGlobalDefaults()
     return T{
         -- Game UI patches
-        disableMacroBars = false,  -- Disable native XI macros (macro bar display + controller macro blocking)
+        disableMacroBars = false,  -- Keyboard: hide native macro bar UI + block Ctrl/Alt+number macro keys (controller blocking is Crossbar → Disable XI Macros)
         controllerHoldToShow = true,  -- Controller triggers use hold-to-show (like macrofix addon) instead of tap-to-toggle
 
         -- Blocked game keys - array of key definitions that should be blocked from reaching the game
@@ -292,6 +292,10 @@ function M.createHotbarGlobalDefaults()
         -- Palette cycling controller (RB + Dpad)
         paletteCycleControllerEnabled = true,  -- Enable controller palette cycling
         hotbarPaletteCycleButton = 'R1',       -- 'R1' or 'L1' for hotbar cycling
+
+        logPaletteName = true,                 -- Log palette name when cycling keyboard hotbars
+        logPaletteNameCrossbar = true,         -- Log palette name when cycling via controller (crossbar)
+        logPaletteNameCrossbarCycleHint = true, -- Second CLI line: RB+D-pad return hint after job preview
 
         -- Visual settings
         slotSize = 48,          -- Slot size in pixels
@@ -311,14 +315,6 @@ function M.createHotbarGlobalDefaults()
         -- Slot padding (gap between slots)
         slotXPadding = 8,
         slotYPadding = 6,
-
-        -- Bar positioning (hotbar only; crossbar unchanged)
-        positionMode = 'absolute',  -- 'absolute' or 'anchored'
-        hotbarSpacing = 0,        -- Vertical gap between anchored hotbars
-
-        -- Gap between window background edge and slot grid
-        backgroundPaddingX = 0,
-        backgroundPaddingY = 0,
 
         -- Slot appearance
         slotBackgroundColor = 0x55000000,
@@ -341,7 +337,7 @@ function M.createHotbarGlobalDefaults()
         keybindOffsetX = 0,
         keybindOffsetY = 0,
         showMpCost = true,
-        mpCostAnchor = 'topRight',
+        mpCostAnchor = 'topLeft',
         mpCostOffsetX = 0,
         mpCostOffsetY = 0,
         showQuantity = true,
@@ -358,7 +354,16 @@ function M.createHotbarGlobalDefaults()
         skillchainIconScale = 1.0,              -- Scale multiplier for icon (0.5-2.0)
         skillchainIconOffsetX = 0,              -- X offset in pixels
         skillchainIconOffsetY = 0,              -- Y offset in pixels
-    
+
+        -- Magic Burst highlight settings. Window opens IMMEDIATELY when a SC closes and runs
+        -- for 7.0s (matches retail's MB cutoff at the back end while front-loading the visual
+        -- cue). Highlights spell / magical pact rage / /ma-or-/pet macro slots whose element
+        -- matches one of the SC's burstable elements. Uses the same corner icon as the
+        -- skillchain highlight (the SC's name asset) but in the bottom-left corner with a
+        -- cyan-blue border to keep the two highlights visually distinct.
+        magicBurstHighlightEnabled = true,      -- Show MB highlight on element-matching spell slots
+        magicBurstHighlightColor = 0xFF44D4FF,  -- Cyan-blue (ARGB) — distinct from gold SC border
+
         -- Cooldown timer settings
         recastTimerFontSize = 11,               -- Font size for cooldown timer display
         recastTimerFontColor = 0xFFFFFFFF,      -- Color for cooldown timer text
@@ -380,10 +385,11 @@ function M.createHotbarBarDefaults(overrides)
         -- Pet-aware toggle (when true, hotbar can have different palettes per pet for SMN/BST/DRG/PUP)
         petAware = false,
         showPetIndicator = true,  -- Show indicator dot when petAware is enabled
+        -- When set: array of type tokens 'avatars'|'elementals'|'beasts'|'wyvern'|'puppet' (legacy 'summons' = avatars+elementals). nil = all.
+        petPalettePetKeys = nil,
 
         -- Layout settings (always per-bar)
         enabled = true,
-        anchoredInStack = true,  -- Include in bottom-up stack when positionMode is anchored
         rows = 1,               -- Number of rows (1-12)
         columns = 12,           -- Number of columns (1-12)
         slots = 12,             -- Total slots, auto-calculated from rows*columns
@@ -407,10 +413,6 @@ function M.createHotbarBarDefaults(overrides)
         slotXPadding = 8,       -- Horizontal gap between slots
         slotYPadding = 6,       -- Vertical gap between rows
 
-        -- Gap between window background edge and slot grid (used when bar overrides global visuals)
-        backgroundPaddingX = 0,
-        backgroundPaddingY = 0,
-
         -- Slot appearance
         slotBackgroundColor = 0x55000000,  -- ARGB color for slot backgrounds (black at 33% opacity)
         slotOpacity = 1.0,                 -- Opacity multiplier for slot.png (0.0-1.0)
@@ -433,7 +435,7 @@ function M.createHotbarBarDefaults(overrides)
         keybindOffsetX = 0,
         keybindOffsetY = 0,
         showMpCost = true,
-        mpCostAnchor = 'topRight',
+        mpCostAnchor = 'topLeft',
         mpCostOffsetX = 0,
         mpCostOffsetY = 0,
         showQuantity = true,
@@ -456,6 +458,8 @@ function M.createHotbarBarDefaults(overrides)
         -- Structure: paletteOrder['{jobId}:{subjobId}'] = { 'paletteName1', 'paletteName2', ... }
         -- Palettes are displayed in this order; missing palettes are appended alphabetically
         paletteOrder = {},
+        -- paletteExcludeFromCycle[orderKey][paletteName] = true skips palette for RB / keyboard cycling only
+        paletteExcludeFromCycle = {},
     };
     if overrides then
         for k, v in pairs(overrides) do
@@ -473,22 +477,51 @@ end
 -- The crossbar provides 4 combo modes: L2, R2, L2+R2, R2+L2 (32 total slots)
 function M.createCrossbarDefaults()
     return T{
-        -- Layout mode: 'hotbar', 'crossbar', or 'both'
-        mode = 'hotbar',
+        -- Show controller crossbar UI (mirrors gConfig.crossbarEnabled; kept for migration)
+        showCrossbar = true,
+
+        -- Hide crossbar when game menu open (independent from Hotbar → Hide When Menu Open)
+        crossbarHideOnMenuFocus = false,
+
+        -- Disable crossbar input while a game menu is open (keeps it visible but blocks trigger macros)
+        crossbarDisableInMenu = true,
+
+        -- Config UI: which main section is active (1=Controller, 2=Manage palettes, 3=Global visuals)
+        configUiTab = 1,
+        -- 'universal' = editing [G] all-jobs sets; 'job' = editing palettes for configEditJobId
+        configFocus = 'job',
+        configEditJobId = nil,   -- nil = use live main job from data when in job focus
+        configEditSubjobId = nil,
 
         -- Job-specific toggle (when true, actions are stored per-job; when false, actions are shared across all jobs)
         jobSpecific = true,
 
-        -- Per-combo-mode settings (pet-aware is per-combo, palettes are GLOBAL)
-        -- NOTE: activePalette was removed - crossbar palettes are now global (see palette.lua state.crossbarActivePalette)
+        -- All-jobs universal crossbar palettes (storage: global:palette:{name} in slotActions)
+        enableUniversalCrossbarPalettes = false,
+        -- 'job' = job/subjob named palettes; 'universal' = all-jobs sets (toggle L1+R1 when enabled)
+        defaultCrossbarPaletteScope = 'job',
+        -- Per-palette: includeInCycle = false hides palette from RB+D-pad when scope is universal
+        crossbarUniversalPaletteMeta = {},
+        universalCrossbarPaletteOrder = {},
+
+        -- Per-segment: petAware, optional per-segment petPalettePetKeys, universalOverridePalette = all-jobs palette name. Default pet types: petPalettePetKeys on parent.
         comboModeSettings = {
-            L2 = { petAware = false },
-            R2 = { petAware = false },
-            L2R2 = { petAware = false },
-            R2L2 = { petAware = false },
-            L2x2 = { petAware = false },
-            R2x2 = { petAware = false },
+            L2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
+            R2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
+            L2R2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
+            R2L2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
+            L2x2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
+            R2x2 = { petAware = false, universalOverridePalette = nil, petPalettePetKeys = nil },
         },
+        -- Optional per named [J] palette: comboMode -> { petAware?, universalOverridePalette? } (nil field = inherit Crossbar defaults)
+        namedPaletteComboModeSettings = {},
+
+        -- Crossbar [J] only: which pet families (avatars/elementals/beasts/wyvern/puppet) use pet hotbar storage; nil = all. Not per named palette.
+        petPalettePetKeys = nil,
+
+        -- Per main job id (string key): effective combo mode -> { scope = 'jobShared' | 'global', globalPalette = name? }
+        -- Primary L2/R2 are not used. Resolves slot data to jobsegment:{jobId}:{mode} or global:palette:{name}.
+        segmentOverrides = {},
 
         -- Layout
         slotSize = 40,              -- Slot size in pixels
@@ -508,7 +541,8 @@ function M.createCrossbarDefaults()
         slotBackgroundColor = 0x55000000,
         slotOpacity = 1.0,                  -- Opacity multiplier for slot.png (0.0-1.0)
         activeSlotHighlight = 0x44FFFFFF,   -- Highlight color when trigger held
-        inactiveSlotDim = 0.5,              -- Dim multiplier for inactive side
+        inactiveSlotDim = 0.5,              -- Dim multiplier for inactive side (expanded / non-trigger dim)
+        inactiveSideWhileTriggerDim = 0.15, -- Dim for the non-active half while L2 or R2 is held
 
         -- Display mode
         displayMode = 'normal',             -- 'normal' or 'activeOnly'
@@ -524,6 +558,8 @@ function M.createCrossbarDefaults()
         buttonIconGapH = 8,                 -- Horizontal spacing between center icons
         buttonIconGapV = 2,                 -- Vertical spacing between center icons
         buttonIconPosition = 'corner',      -- 'corner' or 'replace_keybind'
+        -- Job icon set for palette UI (Manage Palettes strip + in-game palette scope icon when Job [J])
+        paletteJobIconTheme = 'Classic',     -- 'Classic', 'FFXI', 'FFXIV-1' (under assets/jobs/)
         controllerTheme = 'Xbox',           -- 'PlayStation', 'Xbox', or 'Nintendo' button icons
         controllerScheme = 'xbox',          -- Controller profile: 'xbox', 'dualsense', 'switchpro', 'dinput'
         triggerIconScale = 0.8,             -- Scale for L2/R2 trigger icons (base 49x28)
@@ -558,10 +594,14 @@ function M.createCrossbarDefaults()
         comboTextOffsetY = 0,               -- Y offset for combo text position
 
         -- Palette name display (shows current palette and index, e.g., "Stuns (2/5)")
-        showPaletteName = false,            -- Toggle to show palette name
+        showPaletteName = false,            -- Toggle to show palette name text below crossbar
+        showPaletteScopeIcon = true,        -- Job / Global scope icon above divider; nil in saved config = legacy (follow showPaletteName)
         paletteNameFontSize = 10,           -- Font size for palette name
         paletteNameOffsetX = 0,             -- X offset for position
         paletteNameOffsetY = 0,             -- Y offset for position
+        -- Job / Global palette scope icon above center divider
+        paletteScopeIconOffsetY = 12,       -- Vertical lift (px); higher = icon moves up
+        paletteScopeIconSize = 22,          -- Icon width/height (px); legacy profiles fall back to font-based size if unset
 
         -- Expanded crossbar (L2+R2 combos)
         enableExpandedCrossbar = true,      -- Enable L2+R2 and R2+L2 combos
@@ -570,6 +610,13 @@ function M.createCrossbarDefaults()
         -- Double-tap crossbar (tap trigger twice quickly)
         enableDoubleTap = false,            -- Enable L2x2 and R2x2 double-tap modes
         doubleTapWindow = 0.3,              -- Time window for double-tap detection (seconds)
+
+        -- Double-tap preview windows (always-visible overlays showing L2x2 / R2x2 bars)
+        showDoubleTapPreview    = false,     -- Show floating preview windows for double-tap bars
+        doubleTapPreviewScale   = 0.60,     -- Preview scale relative to main crossbar (0.3–1.0)
+        doubleTapPreviewOpacity = 1.0,      -- Preview opacity multiplier (0.2–1.0; dims with trigger)
+        doubleTapPreviewLocked  = false,    -- Lock preview positions independently of the main crossbar
+        doubleTapPreviewShowQty = true,     -- Show item stack quantity on preview slots
 
         -- Analog trigger thresholds (0-255 normalized range)
         -- Used by Xbox (XInput) and PlayStation (DirectInput with signed->unsigned conversion)
@@ -600,6 +647,8 @@ function M.createCrossbarDefaults()
         -- Structure: crossbarPaletteOrder['{jobId}:{subjobId}'] = { 'paletteName1', 'paletteName2', ... }
         -- Note: Crossbar palettes are independent from hotbar palettes
         crossbarPaletteOrder = {},
+        -- Same shape as paletteExcludeFromCycle on hotbar; per job:storage-tier key
+        crossbarPaletteExcludeFromCycle = {},
     };
 end
 

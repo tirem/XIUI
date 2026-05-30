@@ -35,6 +35,7 @@
 
 require('common');
 require('handlers.helpers');
+local gameState = require('core.gamestate');
 local dragdrop = require('libs.dragdrop');
 local imtext = require('libs.imtext');
 
@@ -75,6 +76,17 @@ M.visible = true;
 -- Track hotbar enable/disable state for transitions
 local wasHotbarEnabled = nil;
 
+-- Crossbar controller "Disable XI Macros" is shared with Hotbar -> Disable XI Macros (hotbarGlobal.disableMacroBars).
+-- Wrapper exists so the call sites read as crossbar-specific intent.
+local function GetCrossbarDisableXiMacrosEffective()
+    local hg = gConfig and gConfig.hotbarGlobal;
+    return hg and hg.disableMacroBars == true;
+end
+
+-- Palette change dedup: SetActivePalette / SetActivePaletteForCombo fire one callback per bar (1-6)
+-- or per combo mode (6x). Without deduping, display/slot cache clears run 6x per logical palette change.
+local lastPaletteVisualRefreshSig = nil;
+
 -- True if any hotbar bar or crossbar combo-mode has petAware enabled.
 -- Used to short-circuit the pet-change callback's cache wipes when no
 -- bar would actually rebind its slots in response.
@@ -113,6 +125,11 @@ function M.Initialize(settings)
 
     -- Initialize data module (sets player job)
     data.Initialize();
+    -- Migrate any legacy non-pet-aware storage keys + invalidate cache after migration.
+    if data.MigratePetAwareSlotStorageKeys then
+        data.MigratePetAwareSlotStorageKeys();
+    end
+    data.InvalidateStorageKeyCache();
 
     -- Validate palettes on reload (not just on job change packets)
     -- Helper function to validate palettes once job is ready
@@ -121,7 +138,14 @@ function M.Initialize(settings)
         local maxAttempts = 20;
 
         if data.SetPlayerJob() then
-            palette.ValidatePalettesForJob(data.jobId, data.subjobId);
+            -- Honor pending "profile loaded before job was readable" (char select / logout)
+            -- so the default crossbar palette scope applies on first job-ready frame.
+            local pending = palette.ConsumePendingApplyDefaultCrossbarScopeFromProfile
+                and palette.ConsumePendingApplyDefaultCrossbarScopeFromProfile()
+                or nil;
+            palette.ValidatePalettesForJob(data.jobId, data.subjobId, {
+                applyDefaultCrossbarScope = pending,
+            });
             macropalette.SyncToCurrentJob();
             display.ClearIconCache();
             slotrenderer.ClearAllCache();
@@ -138,7 +162,12 @@ function M.Initialize(settings)
     end
 
     if data.jobId then
-        palette.ValidatePalettesForJob(data.jobId, data.subjobId);
+        local pending = palette.ConsumePendingApplyDefaultCrossbarScopeFromProfile
+            and palette.ConsumePendingApplyDefaultCrossbarScopeFromProfile()
+            or nil;
+        palette.ValidatePalettesForJob(data.jobId, data.subjobId, {
+            applyDefaultCrossbarScope = pending,
+        });
     else
         -- Job not ready yet, start retry loop
         ashita.tasks.once(0.3, function()
@@ -177,16 +206,28 @@ function M.Initialize(settings)
         macropalette.ClearPetCommandsCache();
     end);
 
-    -- Register palette change callback to clear caches
+    -- Register palette change callback to clear caches.
+    -- Dedupe identical logical palette switches: SetActivePalette / SetActivePaletteForCombo
+    -- fire one callback per bar (1-6) or per combo mode (6x), so a single user palette change
+    -- triggers 6+ identical cache flushes if unguarded.
+    -- For no-op refreshes (same name -> same name, e.g. JSON import) include barIdentifier so
+    -- every bar/combo still runs; otherwise only the first callback fires and the UI stays blank.
     palette.OnPaletteChanged(function(barIdentifier, oldPaletteName, newPaletteName)
-        -- Invalidate storage key cache (palette change affects storage keys)
+        local sig;
+        if oldPaletteName == newPaletteName then
+            sig = tostring(barIdentifier) .. '\0' .. tostring(oldPaletteName) .. '\0' .. tostring(newPaletteName);
+        else
+            sig = tostring(oldPaletteName) .. '\0' .. tostring(newPaletteName);
+        end
+        if sig == lastPaletteVisualRefreshSig then
+            return;
+        end
+        lastPaletteVisualRefreshSig = sig;
         data.InvalidateStorageKeyCache();
-        -- Clear crossbar icon cache when any palette changes (hotbar or crossbar)
+        display.ClearIconCache();
         if crossbarInitialized then
             crossbar.ClearIconCache();
         end
-        -- Clear ONLY slot rendering cache (not availability/MP/item caches)
-        -- OPTIMIZED: Selective invalidation avoids unnecessary recalculation cascade
         slotrenderer.ClearSlotRenderingCache();
     end);
 
@@ -204,11 +245,10 @@ function M.Initialize(settings)
     end
     -- If checkbox is OFF, macrofix is already applied by initialize_patches()
 
-    -- Initialize crossbar if mode includes crossbar
-    -- Defensive: validate gConfig.hotbarCrossbar is a table before accessing
+    -- Initialize crossbar when enabled (independent flag, not mode-based).
+    -- Defensive: validate gConfig.hotbarCrossbar is a table before accessing.
     local crossbarConfig = gConfig and type(gConfig.hotbarCrossbar) == 'table' and gConfig.hotbarCrossbar or nil;
-    local crossbarMode = crossbarConfig and crossbarConfig.mode or 'hotbar';
-    local crossbarNeeded = crossbarMode == 'crossbar' or crossbarMode == 'both';
+    local crossbarNeeded = gConfig and gConfig.crossbarEnabled ~= false;
     if crossbarNeeded and crossbarConfig then
         crossbar.Initialize(crossbarConfig, gAdjustedSettings.crossbarSettings);
         
@@ -231,8 +271,8 @@ function M.Initialize(settings)
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
             crossbar.ActivateSlot(comboMode, slotIndex);
         end);
-        -- Set controller blocking enabled state (crossbar-specific)
-        controller.SetBlockingEnabled(disableMacroBars);
+        -- Set controller blocking enabled state (crossbar-specific; shares the hotbar flag).
+        controller.SetBlockingEnabled(GetCrossbarDisableXiMacrosEffective());
         crossbarInitialized = true;
     end
 
@@ -271,9 +311,8 @@ function M.UpdateVisuals(settings)
         macrosLib.set_controller_hold_to_show(holdToShow);
     end
 
-    -- Handle crossbar enable/disable based on mode
-    local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
-    local crossbarNeeded = crossbarMode == 'crossbar' or crossbarMode == 'both';
+    -- Handle crossbar enable/disable (independent flag, not mode-based)
+    local crossbarNeeded = gConfig and gConfig.crossbarEnabled ~= false;
 
     if crossbarNeeded and not crossbarInitialized then
         -- Initialize crossbar when newly needed
@@ -290,8 +329,8 @@ function M.UpdateVisuals(settings)
         controller.SetSlotActivateCallback(function(comboMode, slotIndex)
             crossbar.ActivateSlot(comboMode, slotIndex);
         end);
-        -- Set controller blocking enabled state (crossbar-specific)
-        controller.SetBlockingEnabled(disableMacroBars);
+        -- Set controller blocking enabled state (crossbar-specific; shares the hotbar flag).
+        controller.SetBlockingEnabled(GetCrossbarDisableXiMacrosEffective());
         crossbarInitialized = true;
     elseif not crossbarNeeded and crossbarInitialized then
         -- Cleanup crossbar when no longer needed
@@ -312,8 +351,8 @@ function M.UpdateVisuals(settings)
             customMapping = gConfig.hotbarCrossbar.customControllerMappings.dinput;
         end
         controller.SetControllerScheme(gConfig.hotbarCrossbar.controllerScheme, customMapping);
-        -- Update controller blocking state (crossbar-specific)
-        controller.SetBlockingEnabled(disableMacroBars);
+        -- Update controller blocking state (crossbar-specific; shares the hotbar flag).
+        controller.SetBlockingEnabled(GetCrossbarDisableXiMacrosEffective());
     end
 
     -- Update state tracking for hotbar enable/disable
@@ -339,38 +378,50 @@ function M.DrawWindow(settings)
         texturesInitialized = true;
     end
 
-    if gConfig and gConfig.hotbarEnabled == false then
-        display.HideWindow();
-        if crossbarInitialized then
-            crossbar.SetHidden(true);
-        end
-        return;
-    end
+    -- Hotbar and crossbar are independent; either, both, or neither can be on. Menu-hide
+    -- is evaluated here per-system so keyboard hotbars and the crossbar can have different
+    -- hideOnMenuFocus behaviors (they previously shared `hotbarHideOnMenuFocus`).
+    local menuOpen = gameState.IsMenuOpen();
+    local hideKbOnMenu = gConfig.hotbarHideOnMenuFocus == true;
+    local hideXbOnMenu = gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.crossbarHideOnMenuFocus == true;
+    local showHotbar = gConfig
+        and gConfig.hotbarEnabled ~= false
+        and not (menuOpen and hideKbOnMenu);
+    local showCrossbar = gConfig
+        and gConfig.crossbarEnabled ~= false
+        and not (menuOpen and hideXbOnMenu);
 
-    -- Determine what to draw based on mode
-    local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
-    local showHotbar = crossbarMode == 'hotbar' or crossbarMode == 'both';
-    local showCrossbar = crossbarMode == 'crossbar' or crossbarMode == 'both';
-
-    -- Draw hotbar if mode includes it
+    -- Draw keyboard hotbars when enabled
     if showHotbar then
         display.DrawWindow(settings);
     else
         display.HideWindow();
     end
 
-    -- Draw crossbar if mode includes it
+    -- Draw crossbar when enabled
     if showCrossbar and crossbarInitialized then
         crossbar.DrawWindow(gConfig.hotbarCrossbar, gAdjustedSettings.crossbarSettings);
     elseif crossbarInitialized then
         crossbar.SetHidden(true);
     end
 
-    -- Always draw macro palette and keybind modal (regardless of mode)
+    -- Always draw macro palette and keybind modal (regardless of enabled state)
     macropalette.DrawPalette();
     hotbarConfig.DrawKeybindModal();
 
-    -- Render drag preview (must be called at end of frame, after all drop zones)
+    -- Drop previews / deferred overlaps happen in M.FinalizeFrame() — XIUI.lua calls it
+    -- after palettemanager.Draw so the floating palette can win when its DropZone overlaps
+    -- the HUD crossbar / Edit Full Palette preview.
+end
+
+-- Called by XIUI.lua at the very end of d3d_present, after palettemanager.Draw().
+-- Resolves overlapping DropZone hits via FlushDeferredDrops (highest dropPriority wins)
+-- and then renders the drag preview overlay.
+function M.FinalizeFrame()
+    if not M.initialized then return; end
+
+    -- Resolve overlapping DropZones (HUD crossbar vs. Edit Full Palette preview, etc.)
+    dragdrop.FlushDeferredDrops();
     dragdrop.Render();
 
     -- Handle slot dragged outside (remove the action)
@@ -381,9 +432,13 @@ function M.DrawWindow(settings)
                 -- Standard hotbar slot was dragged outside - clear it
                 macropalette.ClearSlot(lastPayload.barIndex, lastPayload.slotIndex);
             elseif lastPayload.type == 'crossbar_slot' then
-                -- Crossbar slot was dragged outside - clear it
-                data.ClearCrossbarSlotData(lastPayload.comboMode, lastPayload.slotIndex);
-                -- Clear icon cache for this slot (targeted - fast)
+                -- Crossbar slot dragged outside: distinguish a draft slot (Edit Full Palette
+                -- editing buffer) from a live HUD slot so we don't blow away the wrong store.
+                if lastPayload.paletteEditStorageKey and data.ClearDraftSlotData then
+                    data.ClearDraftSlotData(lastPayload.comboMode, lastPayload.slotIndex);
+                else
+                    data.ClearCrossbarSlotData(lastPayload.comboMode, lastPayload.slotIndex);
+                end
                 if crossbarInitialized then
                     crossbar.ClearIconCacheForSlot(lastPayload.comboMode, lastPayload.slotIndex);
                 end
@@ -433,12 +488,16 @@ end
 -- ============================================
 
 function M.HandleZonePacket()
-    -- Flush any pending macro/slot saves before zone transition
-    macropalette.FlushPendingSave();
     data.Clear();
     petpalette.ClearPetState();
     -- Clear availability cache since player state is invalid during zone
     slotrenderer.ClearAvailabilityCache();
+    -- Universal 2hr glow state can hold a stale subtarget arm across zones.
+    -- Defensive require: module may not be merged yet in intermediate states.
+    local okU, uth = pcall(require, 'modules.hotbar.universal_two_hour');
+    if okU and uth and uth.ResetUniversalTwoHourSubtargetGlowArm then
+        uth.ResetUniversalTwoHourSubtargetGlowArm();
+    end
 end
 
 function M.HandleJobChangePacket(e)
@@ -447,9 +506,26 @@ function M.HandleJobChangePacket(e)
         local maxAttempts = 20;
 
         if data.SetPlayerJob() then
-            -- Job successfully read - proceed with refresh
+            -- Job successfully read - proceed with refresh.
+            -- Reset universal 2hr subtarget glow arm; it can carry stale state across job change.
+            local okU, uth = pcall(require, 'modules.hotbar.universal_two_hour');
+            if okU and uth and uth.ResetUniversalTwoHourSubtargetGlowArm then
+                uth.ResetUniversalTwoHourSubtargetGlowArm();
+            end
             macropalette.SyncToCurrentJob();
-            palette.ValidatePalettesForJob(data.jobId, data.subjobId);
+            -- Universal 2hr global row mirrors the current job's 2hr ability; resync after job change.
+            local okMg, macroGlobalDefaults = pcall(require, 'modules.hotbar.macro_global_defaults');
+            if okMg and macroGlobalDefaults and macroGlobalDefaults.SyncUniversalTwoHourGlobalRow and gConfig then
+                macroGlobalDefaults.SyncUniversalTwoHourGlobalRow(gConfig);
+            end
+            -- Honor pending "profile loaded before job was readable" (char select / logout) so
+            -- Default Palette Type on Profile Load applies on first job-ready frame.
+            local pending = palette.ConsumePendingApplyDefaultCrossbarScopeFromProfile
+                and palette.ConsumePendingApplyDefaultCrossbarScopeFromProfile()
+                or nil;
+            palette.ValidatePalettesForJob(data.jobId, data.subjobId, {
+                applyDefaultCrossbarScope = pending,
+            });
             display.ClearIconCache();
             actions.ClearNoIconCache();
             if crossbarInitialized then
@@ -526,10 +602,8 @@ function M.HandleKey(event)
 end
 
 function M.HandleXInputState(e)
+    -- Controller events go through crossbar regardless of keyboard hotbar enable state.
     if not crossbarInitialized then return; end
-    if gConfig and gConfig.hotbarEnabled == false then return; end
-    local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
-    if crossbarMode ~= 'crossbar' and crossbarMode ~= 'both' then return; end
     controller.HandleXInputState(e);
 end
 
@@ -537,9 +611,6 @@ end
 -- Returns true if the button should be blocked
 function M.HandleXInputButton(e)
     if not crossbarInitialized then return false; end
-    if gConfig and gConfig.hotbarEnabled == false then return false; end
-    local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
-    if crossbarMode ~= 'crossbar' and crossbarMode ~= 'both' then return false; end
     return controller.HandleXInputButton(e);
 end
 
@@ -547,18 +618,12 @@ end
 -- Returns true if the button should be blocked
 function M.HandleDInputButton(e)
     if not crossbarInitialized then return false; end
-    if gConfig and gConfig.hotbarEnabled == false then return false; end
-    local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
-    if crossbarMode ~= 'crossbar' and crossbarMode ~= 'both' then return false; end
     return controller.HandleDInputButton(e);
 end
 
 -- Handle DirectInput state event (for D-pad POV)
 function M.HandleDInputState(e)
     if not crossbarInitialized then return; end
-    if gConfig and gConfig.hotbarEnabled == false then return; end
-    local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
-    if crossbarMode ~= 'crossbar' and crossbarMode ~= 'both' then return; end
     controller.HandleDInputState(e);
 end
 
@@ -589,21 +654,9 @@ function M.SetDebugEnabled(enabled)
     print('[XIUI] Hotbar debug mode: ' .. state);
 end
 
--- Toggle subtarget macro debug (actions only)
--- Usage: /xiui debug subtarget
-function M.SetSubtargetDebugEnabled(enabled)
-    actions.SetSubtargetDebugEnabled(enabled);
-    local state = enabled and 'ON' or 'OFF';
-    print('[XIUI] Subtarget debug mode: ' .. state);
-end
-
 -- Check if debug is enabled
 function M.IsDebugEnabled()
     return actions.IsDebugEnabled() or controller.IsDebugEnabled();
-end
-
-function M.IsSubtargetDebugEnabled()
-    return actions.IsSubtargetDebugEnabled();
 end
 
 -- Toggle palette key debug mode

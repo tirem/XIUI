@@ -120,6 +120,7 @@ function M.Render(itemInfo, itemType, settings, colors)
     local timeText = '';
     local hasEnoughMp = true; -- Track if player has enough MP for spells
     local hasEnoughTp = true; -- Track if player has enough TP for weapon skills
+    local isBstJugReadySpellCost = false; -- BST jug Ready: ManaCost field holds pet charge cost
 
     -- Get player's current MP and TP for cost comparison
     local playerMp = 0;
@@ -145,11 +146,22 @@ function M.Render(itemInfo, itemType, settings, colors)
 
     if itemType == 'spell' then
         -- Spell: Show MP cost, recast
+        -- BST jug Ready moves: MP field actually stores the pet charge cost (display as "Cost:").
+        local petregistry = require('modules.hotbar.petregistry');
+        local player = GetPlayerSafe();
+        if player and player:GetMainJob() == petregistry.JOB_BST
+            and itemInfo.name and petregistry.IsBstJugReadyMoveName(itemInfo.name) then
+            isBstJugReadySpellCost = true;
+        end
         -- Always check if player has enough MP (even if not displaying cost)
         if itemInfo.mpCost and itemInfo.mpCost > 0 then
             hasEnoughMp = playerMp >= itemInfo.mpCost;
             if settings.showMpCost then
-                costText = string.format('MP: %d', itemInfo.mpCost);
+                if isBstJugReadySpellCost then
+                    costText = string.format('Cost: %d', itemInfo.mpCost);
+                else
+                    costText = string.format('MP: %d', itemInfo.mpCost);
+                end
             end
         end
         if settings.showRecast and itemInfo.recastDelay and itemInfo.recastDelay > 0 then
@@ -329,6 +341,8 @@ function M.Render(itemInfo, itemType, settings, colors)
                 costColor = colors.tpNotEnoughColor or 0xFFFF6666;
             elseif isWeaponSkill then
                 costColor = colors.tpCostTextColor or 0xFFFFCC00;  -- Gold/yellow for TP
+            elseif isBstJugReadySpellCost then
+                costColor = colors.tpCostTextColor or 0xFFFFCC00;  -- Same gold as TP for pet Ready charge
             else
                 costColor = colors.mpCostTextColor or 0xFFD4FF97;
             end
@@ -383,14 +397,15 @@ function M.Render(itemInfo, itemType, settings, colors)
                 -- Center bar vertically within cooldownRowHeight
                 local barYOffset = (cooldownRowHeight - barHeight) / 2;
 
-                -- Reuse the UI draw list so the bar isn't hidden behind the window bg.
+                -- Draw the progress bar using the progressbar library
+                local pbDrawList = imgui.GetWindowDrawList();
                 progressbar.ProgressBar(
                     {{cooldownPercent, barGradient}},
                     {barWidth, barHeight},
                     {
                         absolutePosition = {barStartX, yPos + barYOffset},
                         decorate = false,
-                        drawList = drawList,
+                        drawList = pbDrawList,
                     }
                 );
             elseif isWeaponSkill and not hasEnoughTp then

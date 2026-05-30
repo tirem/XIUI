@@ -39,6 +39,9 @@ local imgui = require('imgui');
 -- ========================================
 
 -- Window Positioning Helper
+-- Returns true on the one frame that the saved position is applied (first open after load/relog).
+-- Callers use this to suppress stale-state corrections that would otherwise fire immediately
+-- after the position is restored, before live size data is re-established.
 function ApplyWindowPosition(windowName)
     if (gConfig and gConfig.windowPositions and gConfig.windowPositions[windowName]) then
         if (not gConfig.appliedPositions) then gConfig.appliedPositions = {}; end

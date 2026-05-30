@@ -1,4 +1,4 @@
---[[
+﻿--[[
 * XIUI Hotbar - Macro Palette Module
 * Provides a visual grid of user-created macros that can be dragged to hotbar slots
 ]]--
@@ -18,11 +18,144 @@ local petpalette = require('modules.hotbar.petpalette');
 local petregistry = require('modules.hotbar.petregistry');
 local playerdata = require('modules.hotbar.playerdata');
 local actiondb = require('modules.hotbar.actiondb');
+local iconmatch = require('modules.hotbar.iconmatch');
+local macroBuckets = require('modules.hotbar.macro_palette_buckets');
+local macroGlobalDefaults = require('modules.hotbar.macro_global_defaults');
+local profileManager = require('core.profile_manager');
+local sharedMacroStore = require('core.shared_macro_store');
 -- display and crossbar are loaded lazily to avoid circular dependencies
 local display = nil;
 local crossbar = nil;
 
 local M = {};
+
+-- Bundle for macropalette_macroeditor.lua (Lua 5.1: max 60 upvalues per function).
+local MP = {};
+
+MP.editingMacro = nil;
+MP.isCreatingNew = false;
+MP.currentPalettePage = 1;
+MP.editorPaletteKey = nil;
+MP.editorAutoLabel = nil;
+MP.editorAutoIconKey = nil;
+MP.editorDidInitialIconPick = false;
+MP.editorIconAutoSource = 'all';
+MP.editorCustomIconCategory = 'all';
+MP.selectedPaletteType = nil;
+MP.selectedAvatarPalette = nil;
+-- SMN only: when true, macro grid lists Base SMN + every avatar bucket together.
+MP.smnShowAllAvatarSubsets = false;
+-- BST: jug-family subset (movesKey from petregistry), nil = Base BST bucket.
+MP.selectedBstJugMovesKey = nil;
+-- BST: when true, macro grid lists Base BST + every jug:* macro bucket together.
+MP.bstShowAllJugSubsets = false;
+MP.cachedPetCommands = nil;
+MP.petAvatarFilter = 1;
+MP.searchFilter = { '' };
+-- Macro Palette window: filter tiles by display/action name (not icon-picker search).
+MP.macroPaletteSearchName = { '' };
+MP.macroNewCategoryBuf = { '' };
+MP.macroCustomRenameBuf = { '' };
+MP.macroCustomRenameTargetKey = nil; -- 'custom:N' for MacroCustomRename modal
+MP.macroCustomDeleteKey = nil; -- pending delete: confirm modal
+MP.macroCustomDeleteLabel = nil;
+MP.macroCustomDeleteN = 0;
+MP.macroMoveSourceKey = nil;
+MP.macroMoveMacroId = nil;
+MP.macroMoveDestKey = nil;
+MP._macroSearchPaletteKey = nil;
+MP._lastMacroPaletteSearch = nil;
+-- Which scope switch confirmation is open (single non-modal BeginPopup, no full-screen dim).
+MP.macroScopeConfirmKind = nil; -- 'toShared' | 'toProfile' while 'MacroScopeSwitch##xiui' is open
+--- State for Import from Profile popup (nil = closed).
+MP.importFromProfile = nil;
+MP.showAllMode = false;
+MP.showAllPetMode = false;
+MP.wsWeaponFilter = 'All';
+MP.spellTypeFilter = 'All';
+MP.abilityJobFilter = 0;
+MP.petTypeOverride = 0;
+MP.iconPickerTargetIsJaBadge = false;
+MP.iconPickerOpen = false;
+MP.iconPickerFilter = { '' };
+MP.iconPickerTab = 1;
+MP.iconPickerPage = { 1, 1, 1 };
+MP.iconPickerLastFilter = { '', '', '' };
+MP.iconPickerSpellType = 'All';
+MP.iconPickerItemType = 0;
+MP.editorImplicitActionIconDone = false;
+MP.editorIconManuallySet = false;
+-- When true, JA badge icon is not replaced by implicit /ja resolution; use "Sync JA badge" to refresh.
+MP.editorJaBadgeManuallySet = false;
+MP.editorIconPrefsHydrated = false;
+
+
+
+-- Palette / editor: GetBindIcon + ResolveMacroJaBadgeIcon do real work (macroparse, DB, texture lookup).
+-- The macro grid calls them once per tile per frame â€” cache by stable keys; clear when palette type changes.
+local PALETTE_ICON_NONE = {};
+local PALETTE_JA_NONE = {};
+
+local paletteMainIconCache = {};
+local paletteJaBadgeIconCache = {};
+local paletteIconCacheDbKey = nil;
+
+local editorPreviewIconKey = nil;
+local editorPreviewCachedIcon = nil;
+
+local function ClearEditorPreviewIconCache()
+    editorPreviewIconKey = nil;
+    editorPreviewCachedIcon = nil;
+end
+
+local function ClearPaletteJaBadgeIconCache()
+    for k in pairs(paletteJaBadgeIconCache) do
+        paletteJaBadgeIconCache[k] = nil;
+    end
+end
+
+local function BuildMacroMainIconCacheKey(macro)
+    if not macro then
+        return 'nil';
+    end
+    return table.concat({
+        tostring(macro.id or 0),
+        macro.actionType or '',
+        macro.action or '',
+        macro.target or '',
+        macro.macroText or '',
+        macro.customIconType or '',
+        tostring(macro.customIconId or ''),
+        macro.customIconPath or '',
+        macro.itemId and tostring(macro.itemId) or '',
+        tostring(macro.macroRef or ''),
+    }, '|');
+end
+
+local function BuildMacroJaBadgeCacheKey(macro)
+    if not macro then
+        return '';
+    end
+    return table.concat({
+        tostring(macro.id or 0),
+        macro.macroText or '',
+        tostring(macro.jaBadgeCustomIconType or ''),
+        tostring(macro.jaBadgeCustomIconId or ''),
+        macro.jaBadgeCustomIconPath or '',
+        tostring(macro.showJaBadgeOnMacro ~= false),
+    }, '|');
+end
+
+local function GetCachedPaletteMainIcon(macro)
+    local k = BuildMacroMainIconCacheKey(macro);
+    local hit = paletteMainIconCache[k];
+    if hit ~= nil then
+        return hit == PALETTE_ICON_NONE and nil or hit;
+    end
+    local icon = actions.GetBindIcon(macro);
+    paletteMainIconCache[k] = icon or PALETTE_ICON_NONE;
+    return icon;
+end
 
 -- ============================================
 -- Constants
@@ -30,11 +163,13 @@ local M = {};
 
 local INPUT_BUFFER_SIZE = 64;
 local MACRO_BUFFER_SIZE = 512;  -- 8 lines * ~60 chars each
-local PALETTE_COLUMNS = 6;
+local PALETTE_COLUMNS = 7;
 local PALETTE_ROWS = 6;
-local PALETTE_MACROS_PER_PAGE = PALETTE_COLUMNS * PALETTE_ROWS;  -- 36 macros per page
+local PALETTE_MACROS_PER_PAGE = PALETTE_COLUMNS * PALETTE_ROWS;  -- 42 macros per page
 local PALETTE_TILE_SIZE = 48;
 local PALETTE_TILE_GAP = 4;
+-- Slightly rounded macro grid tiles (ImGui button shape; icons draw square on top).
+local PALETTE_TILE_ROUNDING = 6;
 local PALETTE_PADDING = 8;
 
 -- XIUI Color Scheme (from components.TAB_STYLE)
@@ -66,20 +201,24 @@ local function MarkHotbarDirty()
     hotbarDataDirty = true;
 end
 
--- Deferred icon cache clear: dropping texture references mid-render-frame lets
--- GC release D3D COM objects whose pointers are still queued in ImGui's draw
--- list, causing EXCEPTION_ACCESS_VIOLATION. We schedule the clear and execute
--- it at the TOP of the next d3d_present (after TextureManager.FlushPendingReleases).
-local pendingIconCacheClear = false;
-
 -- Helper to generate abbreviated text from action name (max 4 chars)
 -- If preferAction is true, prioritize action name over displayName (for previews)
 local function GetActionAbbreviation(macro, preferAction)
     local name;
+    -- Macros: never abbreviate from raw `action` (it may be the full multiline buffer â€” yields garbage like /"S<).
+    if macro and macro.actionType == 'macro' and macro.macroText and macro.macroText ~= '' then
+        local mp = require('modules.hotbar.macroparse');
+        local _, pName = mp.GetMacroPrimaryAndJaBadge(macro.macroText);
+        if pName and pName ~= '' then
+            name = pName;
+        end
+    end
+    if not name or name == '' then
     if preferAction then
         name = macro.action or macro.displayName or '';
     else
         name = macro.displayName or macro.action or '';
+        end
     end
     if name == '' then return '?'; end
 
@@ -111,11 +250,6 @@ local function GetActionAbbreviation(macro, preferAction)
 end
 
 -- Helper to clear all hotbar/crossbar icon caches (full clear - expensive)
--- IMPORTANT: This must only run at the TOP of d3d_present, never mid-frame.
--- Clearing texturePtrCache mid-frame drops the last Lua reference to D3D
--- texture tables, making them GC-eligible. If GC fires (e.g. from the heavy
--- string allocations in SerializeLegacy), it releases COM objects whose
--- pointers are still queued in the current frame's ImGui draw list → crash.
 local slotrenderer = nil;  -- Lazy-loaded
 local function ClearAllIconCaches()
     -- Lazy-load display to avoid circular dependency
@@ -142,33 +276,19 @@ local function ClearAllIconCaches()
     if slotrenderer and slotrenderer.ClearSlotRenderingCache then
         slotrenderer.ClearSlotRenderingCache();
     end
-    -- Edits that change a macro's action leave the old actionType:action entry
-    -- orphaned in mpCostCache / availabilityCache. Functionally fine (the new key
-    -- naturally misses), but bounds memory across many edits.
+    -- 1.8.0 additions: edits that change a macro's action leave the old actionType:action
+    -- entry orphaned in the MP cost / availability caches. Functionally fine (the new key
+    -- naturally misses) but unbounded across many edits, so flush both during full clears.
     if slotrenderer and slotrenderer.ClearMPCostCache then
         slotrenderer.ClearMPCostCache();
     end
     if slotrenderer and slotrenderer.ClearAvailabilityCache then
         slotrenderer.ClearAvailabilityCache();
     end
-    -- Clear the icon-resolution negative cache so newly-added custom icons
-    -- on edited macros are picked up next frame.
+    -- Drop the icon-resolution negative cache so newly-added custom icons on edited
+    -- macros are picked up on the next frame instead of remaining "no icon".
     if actions and actions.ClearNoIconCache then
         actions.ClearNoIconCache();
-    end
-end
-
--- When true, FlushPendingFrameWork also calls slotrenderer.ClearAllCache
--- (needed for pet palette switches that change which abilities are visible).
-local pendingFullSlotCacheClear = false;
-
--- Schedule icon cache clear for the start of the next frame instead of
--- executing it immediately. Call this from mid-frame code paths (button
--- handlers, save callbacks) that must not drop texture references.
-local function ScheduleIconCacheClear(includeFullSlotCache)
-    pendingIconCacheClear = true;
-    if includeFullSlotCache then
-        pendingFullSlotCacheClear = true;
     end
 end
 
@@ -187,6 +307,8 @@ local function ClearSlotIconCache(barIndex, slotIndex)
     if display and display.ClearIconCacheForSlot then
         display.ClearIconCacheForSlot(barIndex, slotIndex);
     end
+    -- Note: per-slot slotrenderer.InvalidateSlotByKey was removed in 1.8.0. Slot rendering is
+    -- immediate-mode (no persistent prim cache); the per-frame bind hash naturally re-derives.
 end
 
 -- Helper to clear icon cache for a single crossbar slot (targeted - fast)
@@ -204,6 +326,7 @@ local function ClearCrossbarSlotIconCache(comboMode, slotIndex)
     if crossbar and crossbar.ClearIconCacheForSlot then
         crossbar.ClearIconCacheForSlot(comboMode, slotIndex);
     end
+    -- Note: per-slot slotrenderer.InvalidateSlotByKey was removed in 1.8.0. See ClearSlotIconCache above.
 end
 
 -- Action type constants (needed by DrawMacroTile and DrawMacroEditor)
@@ -212,19 +335,21 @@ local ACTION_TYPE_LABELS = {
     ma = 'Spell (ma)',
     ja = 'Ability (ja)',
     ws = 'Weaponskill (ws)',
-    item = 'Item',
+    item = 'Items',
     equip = 'Equip',
     macro = 'Macro',
     pet = 'Pet Command',
 };
 
+-- Items palette bucket: Action Type combo offers only these (order: Item, Macro, Equip).
+local ACTION_TYPES_ITEMS_BUCKET = { 'item', 'macro', 'equip' };
+
 -- Recast source types for macros (allows displaying cooldown from a different action)
-local RECAST_SOURCE_TYPES = { 'none', 'ma', 'ja', 'ws', 'item', 'pet' };
+local RECAST_SOURCE_TYPES = { 'none', 'ma', 'ja', 'item', 'pet' };
 local RECAST_SOURCE_LABELS = {
     none = 'None',
     ma = 'Spell',
     ja = 'Ability',
-    ws = 'Weaponskill',
     item = 'Item',
     pet = 'Pet Command',
 };
@@ -266,8 +391,39 @@ local EQUIP_SLOT_MASKS = {
 -- Special key for global (non-job-specific) slot storage
 local GLOBAL_SLOT_KEY = 'global';
 
--- Special key for global macros (shared across all jobs)
-local GLOBAL_MACRO_KEY = 'global';
+-- Macro palette bucket keys (see macro_palette_buckets.lua)
+local GLOBAL_MACRO_KEY = macroBuckets.GLOBAL;
+local ITEMS_MACRO_KEY = macroBuckets.ITEMS;
+local EQUIPMENT_MACRO_KEY = macroBuckets.EQUIPMENT;
+local XIUI_MACRO_KEY = macroBuckets.XIUI;
+
+local function DefaultNewMacroBodyForPaletteKey(paletteKey)
+    if data.MacroPaletteKeysEqual(paletteKey, ITEMS_MACRO_KEY) then
+        return {
+            actionType = 'item',
+            action = '',
+            target = 't',
+            displayName = '',
+            customIconType = 'xiui_default',
+            customIconPath = 'item',
+        }, 'xiui_default::item';
+    end
+    return {
+        actionType = 'ma',
+        action = '',
+        target = 't',
+        displayName = '',
+        customIconType = 'xiui_default',
+        customIconPath = 'ma',
+    }, 'xiui_default::ma';
+end
+
+local function IsSharedJobAgnosticMacroSelection(sel)
+    if sel == GLOBAL_MACRO_KEY or sel == ITEMS_MACRO_KEY or sel == EQUIPMENT_MACRO_KEY or sel == XIUI_MACRO_KEY then
+        return true;
+    end
+    return macroBuckets.isCustomCategoryKey(sel);
+end
 
 -- Helper to deep copy a table (for migrating slot data)
 local function deepCopyTable(tbl)
@@ -319,39 +475,15 @@ end
 -- State
 -- ============================================
 
-local paletteOpen = false;
-local selectedMacroIndex = nil;
-local editingMacro = nil;
-local isCreatingNew = false;
-local currentPalettePage = 1;  -- Current page in macro palette (1-indexed)
-
--- Selected job for viewing/editing macros (nil = use current player job)
-local selectedPaletteType = nil;  -- Can be GLOBAL_MACRO_KEY or a job ID
-local selectedAvatarPalette = nil;  -- For SMN: nil = base, or avatar name like 'Ifrit'
-
--- Cached pet commands (managed locally, not in shared module)
-local cachedPetCommands = nil;
-local petAvatarFilter = 1;  -- 1 = All, 2+ = specific avatar index
-
--- Search filter for dropdowns
-local searchFilter = { '' };
-
--- Macro editor dropdown refresh state (shows "Loading..." when reopening lists)
-local editorFrameCounter = 0;
-local dropdownLoadState = {};  -- [label] = frame when refresh started
-
--- Copy macro dialog state
-local copyMacroDialogOpen = false;
-local copyMacroSource = nil;
-local copyTargetIndex = { 1 };
-
--- Icon picker state
-local iconPickerOpen = false;
-local iconPickerFilter = { '' };
-local iconPickerTab = 1;  -- 1 = Spells, 2 = Items, 3 = Custom
-local iconPickerPage = { 1, 1, 1 };  -- Current page for each tab [spells, items, custom]
-local iconPickerLastFilter = { '', '', '' };  -- Track filter changes to reset page
-local iconPickerSpellType = 'All';  -- Current spell type filter
+-- Palette open state (table: avoids extra upvalues when palette draw uses MacroPaletteDrawEnv).
+local paletteUi = { open = false, selectedMacroIndex = nil };
+local ICON_AUTO_SOURCES = { 'all', 'spells', 'items', 'custom' };
+local ICON_AUTO_SOURCE_LABELS = {
+    ['all'] = 'All',
+    ['spells'] = 'Spells',
+    ['items'] = 'Items',
+    ['custom'] = 'Custom',
+};
 
 -- Spell type display names and order
 local SPELL_TYPE_ORDER = {
@@ -439,7 +571,6 @@ local ITEM_TYPE_ICONS = {
     [8] = 4096,   -- Fire Crystal
     [10] = 6232,  -- Furnishing item
 };
-local iconPickerItemType = 0;  -- 0 = All
 
 -- Custom icon categories (subdirectories in assets/hotbar/custom/)
 local CUSTOM_ICON_CATEGORIES = {};  -- Populated by scanning directory
@@ -467,6 +598,8 @@ local filteredSpellsCache = nil;
 local filteredSpellsCacheKey = nil;  -- "filter:type" key for cache invalidation
 local filteredItemsCache = nil;
 local filteredItemsCacheKey = nil;  -- "filter" key for cache invalidation
+local filteredCustomIconsCache = nil;
+local filteredCustomIconsCacheKey = nil;  -- filter + category for custom tab
 
 -- Icon picker grid constants
 local ICON_GRID_COLUMNS_DEFAULT = 12;  -- Default columns, recalculated based on window width
@@ -511,21 +644,6 @@ local itemIconLoadState = {
     batchSize = 500,  -- Load 500 items per frame (fast since we're just reading names)
 };
 
--- Browsing icon cache for DrawSearchableCombo dropdowns.
--- Creating a D3D texture via D3DXCreateTextureFromFileInMemoryEx for every
--- item every frame while a dropdown is open tanks FPS (461 items → 15 FPS).
--- Instead we pre-load all icons once into this cache in batches spread across
--- frames, and show "Loading..." until ready.
-local browsingIconCache = {
-    icons = {},       -- icons[itemId] = { image = cdata, ... } or false (no icon)
-    itemIds = nil,    -- array of item IDs to load (set when loading starts)
-    loadIndex = 0,    -- how far through itemIds we've loaded
-    loaded = false,   -- true when all icons are cached
-    loading = false,  -- true while batches are in progress
-    batchSize = 25,   -- D3D texture creations per frame (heavier than name reads)
-    generation = 0,   -- bumped when item list changes, invalidates stale caches
-};
-
 -- ============================================
 -- Spell/Ability/Weaponskill Retrieval (via shared playerdata module)
 -- ============================================
@@ -536,7 +654,7 @@ local function RefreshCachedLists()
     playerdata.RefreshCachedLists(data);
     -- Clear local pet commands cache when job changes
     if playerdata.GetCacheJobId() ~= data.jobId then
-        cachedPetCommands = nil;
+        MP.cachedPetCommands = nil;
     end
 end
 
@@ -673,183 +791,6 @@ local function GetItemLoadProgress()
     return math.floor((itemIconLoadState.currentId / itemIconLoadState.maxId) * 100);
 end
 
--- Start pre-loading browsing icons for a list of items.
--- Returns immediately; call LoadBrowsingIconBatch() each frame to make progress.
-local function StartBrowsingIconLoad(items)
-    if not items or #items == 0 then
-        browsingIconCache.loaded = true;
-        browsingIconCache.loading = false;
-        return;
-    end
-
-    -- Build the list of item IDs that need loading
-    local ids = {};
-    for _, item in ipairs(items) do
-        if item.id and item.id > 0 and item.id ~= 65535 then
-            -- Skip if already cached from a previous load
-            if browsingIconCache.icons[item.id] == nil then
-                ids[#ids + 1] = item.id;
-            end
-        end
-    end
-
-    if #ids == 0 then
-        browsingIconCache.loaded = true;
-        browsingIconCache.loading = false;
-        return;
-    end
-
-    browsingIconCache.itemIds = ids;
-    browsingIconCache.loadIndex = 0;
-    browsingIconCache.loaded = false;
-    browsingIconCache.loading = true;
-end
-
--- Load a batch of browsing icons (call once per frame while loading).
-local function LoadBrowsingIconBatch()
-    if browsingIconCache.loaded or not browsingIconCache.loading then
-        return;
-    end
-
-    local ids = browsingIconCache.itemIds;
-    if not ids then return; end
-
-    local endIdx = math.min(browsingIconCache.loadIndex + browsingIconCache.batchSize, #ids);
-
-    for i = browsingIconCache.loadIndex + 1, endIdx do
-        local itemId = ids[i];
-        if browsingIconCache.icons[itemId] == nil then
-            local icon = textures:LoadItemIconFromMemory(itemId);
-            -- Store the texture (or false as a negative cache entry)
-            browsingIconCache.icons[itemId] = icon or false;
-        end
-    end
-
-    browsingIconCache.loadIndex = endIdx;
-
-    if browsingIconCache.loadIndex >= #ids then
-        browsingIconCache.loaded = true;
-        browsingIconCache.loading = false;
-        browsingIconCache.itemIds = nil;
-    end
-end
-
--- Get a browsing icon from the pre-built cache (O(1), no D3D calls).
-local function GetBrowsingIcon(itemId)
-    local cached = browsingIconCache.icons[itemId];
-    if cached and cached ~= false then
-        return cached;
-    end
-    return nil;
-end
-
--- Get browsing icon load progress (0-100).
-local function GetBrowsingIconProgress()
-    if browsingIconCache.loaded then return 100; end
-    if not browsingIconCache.itemIds or #browsingIconCache.itemIds == 0 then return 0; end
-    return math.floor((browsingIconCache.loadIndex / #browsingIconCache.itemIds) * 100);
-end
-
--- Invalidate browsing icon cache (call when player inventory changes).
-local function InvalidateBrowsingIconCache()
-    browsingIconCache.icons = {};
-    browsingIconCache.itemIds = nil;
-    browsingIconCache.loadIndex = 0;
-    browsingIconCache.loaded = false;
-    browsingIconCache.loading = false;
-    browsingIconCache.generation = browsingIconCache.generation + 1;
-end
-
--- Build/return pet commands for the macro editor dropdown.
-local function GetEditorPetCommands()
-    if not cachedPetCommands then
-        local viewedJobId = selectedPaletteType;
-        if type(viewedJobId) ~= 'number' then
-            viewedJobId = playerdata.GetCacheJobId() or 0;
-        end
-
-        local avatarName = nil;
-        local activePetName = nil;
-        local avatarList = petregistry.GetAvatarList();
-
-        if viewedJobId == petregistry.JOB_SMN then
-            if selectedAvatarPalette then
-                avatarName = selectedAvatarPalette;
-            elseif petAvatarFilter > 1 then
-                avatarName = avatarList[petAvatarFilter - 1];
-            end
-        elseif viewedJobId == petregistry.JOB_BST then
-            activePetName = petpalette.GetCurrentPetEntityName();
-        end
-
-        cachedPetCommands = GetPetCommandsForJob(viewedJobId, avatarName, activePetName);
-    end
-
-    return cachedPetCommands or {};
-end
-
--- Eagerly rebuild pet command cache (matches playerdata ForceRefresh* pattern)
-local function ForceRefreshPetCommands()
-    cachedPetCommands = nil;
-    return GetEditorPetCommands();
-end
-
--- Refresh macro editor dropdown data when a list is opened.
-local DROPDOWN_REFRESH = {
-    spells = function()
-        playerdata.ForceRefreshSpells();
-    end,
-    abilities = function()
-        playerdata.ForceRefreshAbilities();
-    end,
-    weaponskills = function()
-        playerdata.ForceRefreshWeaponskills();
-    end,
-    items = function()
-        playerdata.ForceRefreshItems();
-        InvalidateBrowsingIconCache();
-    end,
-    pet = function()
-        ForceRefreshPetCommands();
-    end,
-    recastSource = function()
-        playerdata.ForceRefreshSpells();
-        playerdata.ForceRefreshAbilities();
-        playerdata.ForceRefreshWeaponskills();
-        playerdata.ForceRefreshItems();
-        ForceRefreshPetCommands();
-        InvalidateBrowsingIconCache();
-    end,
-};
-
-local function RefreshDropdownList(refreshType)
-    local refresh = DROPDOWN_REFRESH[refreshType];
-    if refresh then
-        refresh();
-    end
-end
-
-local ITEM_COMBO_WIDTH = 220;
-
--- Item section title with optional inventory quantity on the same line, right-aligned to combo width.
-local function DrawItemLabelWithQuantity(label, itemId, itemName)
-    imgui.TextColored(COLORS.goldDim, label);
-    if not itemName or itemName == '' then return; end
-
-    if slotrenderer == nil then
-        local success, mod = pcall(require, 'modules.hotbar.slotrenderer');
-        if success then slotrenderer = mod; end
-    end
-    if not slotrenderer or not slotrenderer.GetItemQuantity then return; end
-
-    local qty = slotrenderer.GetItemQuantity(itemId, itemName) or 0;
-    local color = qty == 0 and COLORS.danger or COLORS.textMuted;
-    local text = 'x' .. qty .. ' in inventory';
-    local textWidth = imgui.CalcTextSize(text);
-    imgui.SameLine(ITEM_COMBO_WIDTH - textWidth);
-    imgui.TextColored(color, text);
-end
-
 -- ============================================
 -- Custom Icons Loading
 -- ============================================
@@ -863,28 +804,25 @@ local function GetCustomIconsDir()
 end
 
 -- Recursively scan a directory for PNG files
--- pathPrefix: prepended to every entry's stored `path` (lets multi-root scans
---             disambiguate which root the icon came from at load time)
 -- topLevelCategory: the immediate subdirectory name (for nested files)
-local function ScanDirectoryForPngs(dir, relativePath, results, topLevelCategory, pathPrefix)
+local function ScanDirectoryForPngs(dir, relativePath, results, topLevelCategory)
     relativePath = relativePath or '';
     results = results or {};
-    pathPrefix = pathPrefix or '';
-
+    
     local contents = ashita.fs.get_directory(dir, '.*');
     if not contents then return results; end
-
+    
     for _, entry in pairs(contents) do
         local fullPath = dir .. entry;
         local relPath = relativePath ~= '' and (relativePath .. '\\' .. entry) or entry;
-
+        
         -- Check if it's a PNG file
         if entry:lower():match('%.png$') then
             -- Category is: root (if at root level), or the top-level folder name
             local category = topLevelCategory or 'root';
             table.insert(results, {
                 name = entry:gsub('%.png$', ''),  -- Remove .png extension for display
-                path = pathPrefix .. relPath,  -- Stored path (resolved by TextureManager.ResolveCustomIconPath)
+                path = relPath,  -- Relative path from custom/ directory
                 category = category,
             });
         -- Check if it's a directory (no extension, not a file)
@@ -894,79 +832,52 @@ local function ScanDirectoryForPngs(dir, relativePath, results, topLevelCategory
             -- If we're already in a subdirectory, keep the original top-level category
             local categoryForNested = topLevelCategory or entry;
             -- Recursively scan subdirectory
-            ScanDirectoryForPngs(fullPath .. '\\', relPath, results, categoryForNested, pathPrefix);
+            ScanDirectoryForPngs(fullPath .. '\\', relPath, results, categoryForNested);
         end
     end
-
+    
     return results;
 end
 
--- Roots scanned for the icon picker's "Custom" tab. Submodule roots use a
--- pathPrefix so the resulting `customIconPath` round-trips through save/load
--- and resolves back to the correct disk location.
-local function GetCustomIconRoots()
-    local installPath = AshitaCore:GetInstallPath();
-    return {
-        {
-            dir = string.format('%saddons\\XIUI\\assets\\hotbar\\custom\\', installPath),
-            pathPrefix = '',
-            includeEmptyFolders = true,  -- show user-created empty folders
-        },
-        {
-            dir = string.format('%saddons\\XIUI\\submodules\\xiui-icons\\XIUI\\assets\\hotbar\\', installPath),
-            pathPrefix = 'submodules\\xiui-icons\\',
-            includeEmptyFolders = false,  -- skip submodule non-PNG folders (e.g. TEMPLATE)
-        },
-    };
-end
-
--- Scan and cache all custom icons (across every configured root)
+-- Scan and cache all custom icons
 local function LoadCustomIcons()
     if customIconsCache then
         return customIconsCache;
     end
-
-    customIconsCache = {};
-    local roots = GetCustomIconRoots();
-    for _, root in ipairs(roots) do
-        ScanDirectoryForPngs(root.dir, '', customIconsCache, nil, root.pathPrefix);
-    end
-
+    
+    local baseDir = GetCustomIconsDir();
+    customIconsCache = ScanDirectoryForPngs(baseDir);
+    
     -- Sort alphabetically by name
     table.sort(customIconsCache, function(a, b)
         return a.name:lower() < b.name:lower();
     end);
-
+    
     -- Build category list from folders only
     CUSTOM_ICON_CATEGORIES = { 'all' };  -- 'all' is always first
     customIconsByCategoryCache = { ['all'] = customIconsCache };
     customCategoryIconCache = {};  -- Clear category icon cache
-
+    
     local seenCategories = { ['all'] = true };
-
-    -- First, scan each root for immediate subdirectories (including empty ones,
-    -- if the root opts in — e.g. user-created folders under custom/)
-    for _, root in ipairs(roots) do
-        if root.includeEmptyFolders then
-            local contents = ashita.fs.get_directory(root.dir, '.*');
-            if contents then
-                for _, entry in pairs(contents) do
-                    -- Check if it's a directory (no file extension)
-                    if not entry:match('%.') then
-                        if not seenCategories[entry] then
-                            seenCategories[entry] = true;
-                            table.insert(CUSTOM_ICON_CATEGORIES, entry);
-                            customIconsByCategoryCache[entry] = {};
-                            -- Generate label from directory name
-                            local label = entry:gsub('^%l', string.upper):gsub('_', ' ');
-                            CUSTOM_ICON_LABELS[entry] = label;
-                        end
-                    end
+    
+    -- First, scan for all immediate subdirectories (including empty ones)
+    local contents = ashita.fs.get_directory(baseDir, '.*');
+    if contents then
+        for _, entry in pairs(contents) do
+            -- Check if it's a directory (no file extension)
+            if not entry:match('%.') then
+                if not seenCategories[entry] then
+                    seenCategories[entry] = true;
+                    table.insert(CUSTOM_ICON_CATEGORIES, entry);
+                    customIconsByCategoryCache[entry] = {};
+                    -- Generate label from directory name
+                    local label = entry:gsub('^%l', string.upper):gsub('_', ' ');
+                    CUSTOM_ICON_LABELS[entry] = label;
                 end
             end
         end
     end
-
+    
     -- Then populate categories from found icons
     for _, icon in ipairs(customIconsCache) do
         -- Only add to categories for folders (not root-level files)
@@ -984,7 +895,7 @@ local function LoadCustomIcons()
         end
         -- Root files are only in 'all', no separate category
     end
-
+    
     -- Sort categories alphanumerically (but keep 'all' first)
     table.sort(CUSTOM_ICON_CATEGORIES, function(a, b)
         if a == 'all' then return true; end
@@ -992,7 +903,261 @@ local function LoadCustomIcons()
         return a:lower() < b:lower();
     end);
 
+    -- LoadCustomIcons replaces CUSTOM_ICON_CATEGORIES with a new table; keep MP.* in sync for the macro editor sub-module.
+    MP.CUSTOM_ICON_CATEGORIES = CUSTOM_ICON_CATEGORIES;
+    MP.CUSTOM_ICON_LABELS = CUSTOM_ICON_LABELS;
+    
     return customIconsCache;
+end
+
+local function HydrateMacroEditorIconPrefs()
+    if not gConfig or not gConfig.macroEditorIconPrefs then
+        return;
+    end
+    local p = gConfig.macroEditorIconPrefs;
+    local src = p.iconAutoSource;
+    if src == 'all' or src == 'spells' or src == 'items' or src == 'custom' then
+        MP.editorIconAutoSource = src;
+    end
+    if type(p.customIconFolder) == 'string' and p.customIconFolder ~= '' then
+        MP.editorCustomIconCategory = p.customIconFolder;
+    end
+end
+
+local function ValidateEditorCustomIconCategoryAgainstScan()
+    LoadCustomIcons();
+    local cat = MP.editorCustomIconCategory or 'all';
+    if cat == 'all' then
+        return;
+    end
+    local found = false;
+    for _, c in ipairs(CUSTOM_ICON_CATEGORIES or {}) do
+        if c == cat then
+            found = true;
+            break;
+        end
+    end
+    if not found then
+        MP.editorCustomIconCategory = 'all';
+    end
+end
+
+local function PersistMacroEditorIconPrefs()
+    if not gConfig then
+        return;
+    end
+    if not gConfig.macroEditorIconPrefs then
+        gConfig.macroEditorIconPrefs = {};
+    end
+    gConfig.macroEditorIconPrefs.iconAutoSource = MP.editorIconAutoSource;
+    gConfig.macroEditorIconPrefs.customIconFolder = MP.editorCustomIconCategory;
+    if SaveSettingsToDisk then
+        SaveSettingsToDisk();
+    end
+end
+
+-- Rescan custom/ PNG lists (new files, addon reload) without restarting the game client.
+local function InvalidateCustomIconScanCaches()
+    customIconsCache = nil;
+    customIconsByCategoryCache = nil;
+    customCategoryIconCache = {};
+    filteredCustomIconsCache = nil;
+    filteredCustomIconsCacheKey = nil;
+    local ok, cir = pcall(require, 'modules.hotbar.customiconresolve');
+    if ok and cir and cir.InvalidateScanCache then
+        cir.InvalidateScanCache();
+    end
+end
+
+-- Normalized relative path compare for saved custom icon paths (mixed slashes).
+local function NormalizeCustomIconRelPath(p)
+    if not p then
+        return '';
+    end
+    return tostring(p):gsub('/', '\\'):gsub('^%s+', ''):gsub('%s+$', '');
+end
+
+--- Find scanned custom icon entry by path saved on a macro (path relative to assets/hotbar/custom/).
+local function FindCustomIconEntryBySavedPath(savedPath)
+    savedPath = NormalizeCustomIconRelPath(savedPath);
+    if savedPath == '' then
+        return nil;
+    end
+    LoadCustomIcons();
+    local sle = savedPath:lower();
+    for _, icon in ipairs(customIconsCache or {}) do
+        if icon.path and NormalizeCustomIconRelPath(icon.path):lower() == sle then
+            return icon;
+        end
+    end
+    local leaf = savedPath:match('[^\\/]+$') or savedPath;
+    leaf = leaf:gsub('%.png$', ''):lower();
+    for _, icon in ipairs(customIconsCache or {}) do
+        if icon.path then
+            local il = (icon.path:match('[^\\/]+$') or icon.path):gsub('%.png$', ''):lower();
+            if il == leaf then
+                return icon;
+            end
+        end
+    end
+    return nil;
+end
+
+-- Same normalization as macro editor auto-pick (matches TryAutoPickCustomIcon).
+local function PaletteNormalizeIconMatchText(s)
+    if not s then
+        return '';
+    end
+    s = tostring(s):lower();
+    s = s:gsub('^%s+', ''):gsub('%s+$', '');
+    s = s:gsub('[\r\n\t]', ' ');
+    s = s:gsub('[%p%c%s]', '');
+    return s;
+end
+
+local function PaletteBuildIconMatchNeedles(actionName)
+    actionName = tostring(actionName or '');
+    if actionName == '' then
+        return {};
+    end
+
+    local needles = {};
+    local function add(n)
+        n = PaletteNormalizeIconMatchText(n);
+        if n ~= '' then
+            needles[n] = true;
+        end
+    end
+
+    local fullNorm = PaletteNormalizeIconMatchText(actionName);
+    add(actionName);
+    local rhs = actionName:match(':%s*(.+)$');
+    if rhs then
+        add(rhs);
+    end
+    local paren = actionName:match('%(([^)]+)%)');
+    if paren then
+        add(paren);
+    end
+    local lastWord = actionName:match('([^%s]+)%s*$');
+    if lastWord then
+        local lwNorm = PaletteNormalizeIconMatchText(lastWord);
+        -- Do not add a last-word needle when it is only a tail of the full normalized name
+        -- (e.g. "Attack" for "Sneak Attack" â†’ sneakattack) â€” exact match would pick generic Attack.png
+        -- before fuzzy matching can prefer Sneak_Attack_*.
+        if lwNorm ~= '' and lwNorm ~= fullNorm then
+            local weakTail = (#lwNorm < 9 and #fullNorm > #lwNorm + 4 and fullNorm:sub(-#lwNorm) == lwNorm);
+            if not weakTail then
+                add(lastWord);
+            end
+        end
+    end
+
+    local arr = {};
+    for n, _ in pairs(needles) do
+        table.insert(arr, n);
+    end
+    table.sort(arr, function(a, b)
+        return #a > #b;
+    end);
+    return arr;
+end
+
+--- Best custom icon match for an action name (same rules as TryAutoPickCustomIcon). Returns icon entry or nil.
+local function ResolveBestCustomIconMatchForActionName(actionName, categoryFilter)
+    actionName = tostring(actionName or '');
+    if actionName == '' then
+        return nil;
+    end
+    LoadCustomIcons();
+    local category = categoryFilter or 'all';
+    local list = customIconsByCategoryCache and (customIconsByCategoryCache[category] or customIconsByCategoryCache['all']) or nil;
+    if not list or #list == 0 then
+        return nil;
+    end
+
+    local needles = PaletteBuildIconMatchNeedles(actionName);
+    if #needles == 0 then
+        return nil;
+    end
+
+    for _, icon in ipairs(list) do
+        if icon and icon.name and icon.path then
+            local iconNorm = PaletteNormalizeIconMatchText(icon.name);
+            for _, needle in ipairs(needles) do
+                if iconNorm == needle then
+                    return icon;
+                end
+            end
+        end
+    end
+
+    -- Fuzzy round: collect all decent matches, then prefer the most specific (longest normalized stem)
+    -- so short substrings don't steal the pick when several PNGs could match.
+    local fuzzy = {};
+    for _, icon in ipairs(list) do
+        if icon and icon.name and icon.path and iconmatch.IsDecentIconNameMatch(actionName, icon.name) then
+            table.insert(fuzzy, icon);
+        end
+    end
+    if #fuzzy == 1 then
+        return fuzzy[1];
+    end
+    if #fuzzy > 1 then
+        table.sort(fuzzy, function(x, y)
+            local sx = iconmatch.MatchQualityScore(actionName, x.name);
+            local sy = iconmatch.MatchQualityScore(actionName, y.name);
+            if sx ~= sy then
+                return sx > sy;
+            end
+            return #iconmatch.NormalizeIconKey(x.name) > #iconmatch.NormalizeIconKey(y.name);
+        end);
+        return fuzzy[1];
+    end
+
+    return nil;
+end
+
+-- Icon picker search: collapse spaces, underscores, punctuation so "Sneak Attack", "sneak_attack",
+-- and "sneakattack" match the same assets (multi-word spell/ability/file names).
+local function normalizeIconPickerNameKey(s)
+    if not s then
+        return '';
+    end
+    return tostring(s):lower():gsub('[^a-z0-9]', '');
+end
+
+local function iconPickerNameMatchesFilter(name, filter)
+    if not filter or filter == '' then
+        return true;
+    end
+    if not name or name == '' then
+        return false;
+    end
+    local normName = normalizeIconPickerNameKey(name);
+    local normAll = normalizeIconPickerNameKey(filter);
+    if normAll == '' then
+        return true;
+    end
+    if normName:find(normAll, 1, true) then
+        return true;
+    end
+    local tokens = {};
+    for w in tostring(filter):gmatch('%S+') do
+        local t = normalizeIconPickerNameKey(w);
+        if t ~= '' then
+            table.insert(tokens, t);
+        end
+    end
+    if #tokens <= 1 then
+        return false;
+    end
+    for _, t in ipairs(tokens) do
+        if not normName:find(t, 1, true) then
+            return false;
+        end
+    end
+    return true;
 end
 
 -- Get custom icons filtered by category
@@ -1006,24 +1171,31 @@ local function GetCustomIconsFiltered(category, filter)
         sourceList = customIconsByCategoryCache[category] or {};
     end
     
-    -- Apply text filter if any
+    -- Apply text filter if any (best matches first: full-name embed beats loose substring)
     if filter and filter ~= '' then
         local filtered = {};
-        filter = filter:lower();
         for _, icon in ipairs(sourceList) do
-            if icon.name:lower():find(filter, 1, true) then
+            if iconPickerNameMatchesFilter(icon.name or '', filter) then
                 table.insert(filtered, icon);
             end
         end
+        table.sort(filtered, function(x, y)
+            local sx = iconmatch.MatchQualityScore(filter, x.name or '');
+            local sy = iconmatch.MatchQualityScore(filter, y.name or '');
+            if sx ~= sy then
+                return sx > sy;
+            end
+            return (x.name or '') < (y.name or '');
+        end);
         return filtered;
     end
     
     return sourceList;
 end
 
--- Load a custom icon texture by relative path (uses TextureManager with LRU caching)
+-- Load a custom icon texture by relative path (same cache as hotbar; avoids duplicate VRAM + TextureManager LRU thrash)
 local function LoadCustomIconTexture(relativePath)
-    return TextureManager.getCustomIcon(relativePath);
+    return actions.GetCustomHotbarIconTexture(relativePath);
 end
 
 -- Create a new custom icon folder
@@ -1160,59 +1332,70 @@ local function PopComboStyle()
     imgui.PopStyleColor(11);
 end
 
+-- Status tier colors for "Show All" mode
+local STATUS_COLORS = {
+    ['have']        = { 0.35, 0.85, 0.35, 1.0 },
+    ['learnable']   = { 0.95, 0.78, 0.25, 1.0 },
+    ['unavailable'] = { 0.75, 0.30, 0.30, 1.0 },
+};
+
+-- Base colors per magic type (full brightness = STATUS_HAVE)
+local SPELL_TYPE_COLORS = {
+    WhiteMagic   = { 0.96, 0.92, 0.78, 1.0 },  -- eggshell/holy white
+    BlackMagic   = { 0.75, 0.50, 0.90, 1.0 },  -- purple
+    BardSong     = { 0.50, 0.80, 1.00, 1.0 },  -- light blue
+    Ninjutsu     = { 0.78, 0.60, 0.38, 1.0 },  -- scroll brown
+    SummonerPact = { 0.50, 0.75, 0.38, 1.0 },  -- moss green
+    BlueMagic    = { 0.30, 0.70, 0.95, 1.0 },  -- steel blue
+    Geomancy     = { 0.60, 0.85, 0.45, 1.0 },  -- earthy green
+    Trust        = { 0.80, 0.80, 0.80, 1.0 },  -- silver
+};
+
+-- Human-readable headers for each spell type
+local SPELL_TYPE_HEADERS = {
+    WhiteMagic   = 'White Magic',
+    BlackMagic   = 'Black Magic',
+    BardSong     = 'Songs',
+    Ninjutsu     = 'Ninjutsu',
+    SummonerPact = 'Summoning',
+    BlueMagic    = 'Blue Magic',
+    Geomancy     = 'Geomancy',
+    Trust        = 'Trust',
+};
+
+-- Canonical type display order
+local SPELL_TYPE_ORDER = {
+    'WhiteMagic', 'BlackMagic', 'BardSong', 'Ninjutsu',
+    'SummonerPact', 'BlueMagic', 'Geomancy', 'Trust',
+};
+local SPELL_TYPE_RANK = {};
+for i, t in ipairs(SPELL_TYPE_ORDER) do SPELL_TYPE_RANK[t] = i; end
+
+
 -- Draw a searchable dropdown combo box with XIUI styling
--- getItems: function returning the item list (refreshed each time the dropdown opens)
 -- showIcons: if true, will attempt to load and display item icons
 -- equipSlotFilter: if provided, only show items that can be equipped in this slot (e.g., 'main', 'head')
--- refreshType: when set, invalidates cached data when the dropdown is opened
--- emptyMessage: text shown when the list is empty after loading
-local function DrawSearchableCombo(label, getItems, currentValue, onSelect, showIcons, equipSlotFilter, refreshType, emptyMessage)
+-- useStatusColors: if true, color text by item.status (have/learnable/unavailable)
+local function DrawSearchableCombo(label, items, currentValue, onSelect, showIcons, equipSlotFilter, itemWidth, useStatusColors)
     local displayText = currentValue ~= '' and currentValue or 'Select...';
 
     -- Get the slot mask for filtering if provided
     local slotMask = equipSlotFilter and EQUIP_SLOT_MASKS[equipSlotFilter] or nil;
 
-    local iconsReady = not showIcons;  -- true when icons aren't requested
-
     -- Apply XIUI styling to combo popup
     PushComboStyle();
 
-    imgui.SetNextItemWidth(ITEM_COMBO_WIDTH);
+    local comboW = (type(itemWidth) == 'number' and itemWidth > 0) and itemWidth or 220;
+    imgui.SetNextItemWidth(comboW);
     -- Use HeightLargest so popup fits our child window without its own scrollbar
     if imgui.BeginCombo(label, displayText, ImGuiComboFlags_HeightLargest) then
-        if imgui.IsWindowAppearing() and refreshType then
-            RefreshDropdownList(refreshType);
-            dropdownLoadState[label] = editorFrameCounter;
-        end
-
-        local isLoading = dropdownLoadState[label] ~= nil
-            and editorFrameCounter <= dropdownLoadState[label];
-
-        local items = nil;
-        if not isLoading then
-            dropdownLoadState[label] = nil;
-            items = getItems();
-        end
-
-        -- Kick off batched icon loading when the popup is open so we never
-        -- call D3DXCreateTextureFromFileInMemoryEx inside the item loop.
-        if showIcons and items and #items > 0 then
-            if not browsingIconCache.loaded and not browsingIconCache.loading then
-                StartBrowsingIconLoad(items);
-            end
-            if browsingIconCache.loading then
-                LoadBrowsingIconBatch();
-            end
-            iconsReady = browsingIconCache.loaded;
-        end
-
         -- Search input at top (fixed, not scrollable)
-        imgui.SetNextItemWidth(200);
+        imgui.SetNextItemWidth(math.max(80, comboW - 20));
         imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
-        imgui.InputText('##search' .. label, searchFilter, INPUT_BUFFER_SIZE);
+        imgui.InputText('##search' .. label, MP.searchFilter, INPUT_BUFFER_SIZE);
         imgui.PopStyleColor();
 
-        if searchFilter[1] == '' then
+        if MP.searchFilter[1] == '' then
             -- Show placeholder hint
             local inputPos = {imgui.GetItemRectMin()};
             imgui.SetCursorScreenPos({inputPos[1] + 6, inputPos[2] + 3});
@@ -1221,86 +1404,227 @@ local function DrawSearchableCombo(label, getItems, currentValue, onSelect, show
 
         imgui.Separator();
 
-        if isLoading then
-            imgui.TextColored(COLORS.textMuted, 'Loading...');
-        elseif showIcons and items and #items > 0 and not iconsReady then
-            local progress = GetBrowsingIconProgress();
-            imgui.TextColored(COLORS.textMuted, string.format('Loading... %d%%', progress));
-        elseif not items or #items == 0 then
-            imgui.TextColored(COLORS.textMuted, emptyMessage or 'No matches');
-        else
-            -- Scrollable child region for items only
-            local childHeight = 200;
-            imgui.BeginChild('##comboScroll' .. label, {0, childHeight}, false);
+        -- Scrollable child region for items only
+        local childHeight = 200;
+        imgui.BeginChild('##comboScroll' .. label, {0, childHeight}, false);
 
-            local filter = searchFilter[1]:lower();
-            local matchCount = 0;
-            local iconSize = 16;
+        local filter = MP.searchFilter[1];
+        local matchCount = 0;
+        local iconSize = 16;
+        local GOLD_STAR_COLOR = {1.0, 0.88, 0.12, 1.0};
+        local PINK_STAR_COLOR = {1.0, 0.45, 0.72, 1.0};
+        local lastType = nil;
+        local isSearching = filter ~= '';
 
-            for _, item in ipairs(items) do
-                local itemName = item.name or '';
+        for _, item in ipairs(items) do
+            local itemName = item.name or '';
 
-                -- Check if item passes equipment slot filter
-                local passesSlotFilter = true;
-                if slotMask and item.slots then
-                    passesSlotFilter = bit.band(item.slots, slotMask) ~= 0;
+            -- Check if item passes equipment slot filter
+            local passesSlotFilter = true;
+            if slotMask and item.slots then
+                passesSlotFilter = bit.band(item.slots, slotMask) ~= 0;
+            end
+
+            if passesSlotFilter and iconPickerNameMatchesFilter(itemName, filter) then
+                matchCount = matchCount + 1;
+
+                -- Insert type group header when type changes (only when not searching)
+                if not isSearching and item.type and item.type ~= lastType then
+                    if lastType ~= nil then
+                        imgui.Separator();
+                    end
+                    local headerLabel = SPELL_TYPE_HEADERS[item.type] or item.type;
+                    local headerColor = SPELL_TYPE_COLORS[item.type] or COLORS.textDim;
+                    imgui.TextColored(headerColor, headerLabel);
+                    lastType = item.type;
                 end
 
-                if passesSlotFilter and (filter == '' or itemName:lower():find(filter, 1, true)) then
-                    matchCount = matchCount + 1;
-                    local isSelected = currentValue == itemName;
+                local isSelected = currentValue == itemName;
+                local uid = item.id or matchCount;
+                local isSpellWithType = item.type and SPELL_TYPE_COLORS[item.type] ~= nil;
 
-                    -- Determine text color: gold if selected, blue if usable, default otherwise
+                if isSpellWithType and not isSelected then
+                    -- â”€â”€ Two-color spell rendering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                    -- [level] â†’ magic type color; name â†’ status color.
+                    -- Use one hit target (InvisibleButton): overlapping Selectable + Text ate clicks.
+                    local levelColor = SPELL_TYPE_COLORS[item.type];
+                    local nameColor = (item.status and STATUS_COLORS[item.status]) or COLORS.text;
+                    local rowW = math.max(60, comboW - 24);
+                    local padY = 2;
+                    local lineH = imgui.GetTextLineHeight();
+                    local rowH = lineH + padY * 2;
+
+                    imgui.InvisibleButton('##item' .. uid, {rowW, rowH});
+                    local clicked = imgui.IsItemClicked();
+                    local hovered = imgui.IsItemHovered();
+
+                    local dl = imgui.GetWindowDrawList();
+                    local rmin = {imgui.GetItemRectMin()};
+                    local tx = rmin[1] + 6;
+                    local ty = rmin[2] + padY;
+                    local curX = tx;
+                    if item.level then
+                        local lvlStr = '[' .. tostring(item.level) .. '] ';
+                        dl:AddText({curX, ty}, imgui.GetColorU32(levelColor), lvlStr);
+                        local lw = imgui.CalcTextSize(lvlStr);
+                        curX = curX + ((type(lw) == 'table' and (lw[1] or lw.x)) or lw);
+                    end
+                    dl:AddText({curX, ty}, imgui.GetColorU32(nameColor), itemName);
+                    local nw = imgui.CalcTextSize(itemName);
+                    curX = curX + ((type(nw) == 'table' and (nw[1] or nw.x)) or nw);
+
+                    local starCol, starTip = nil, nil;
+                    if item.pinkStarTooltip then
+                        starCol = PINK_STAR_COLOR;
+                        starTip = item.pinkStarTooltip;
+                    elseif item.familyVarianceReason then
+                        starCol = GOLD_STAR_COLOR;
+                        starTip = item.familyVarianceReason;
+                    end
+                    if starCol then
+                        dl:AddText({curX + 4, ty}, imgui.GetColorU32(starCol), '*');
+                    end
+
+                    if hovered then
+                        if starTip then
+                            imgui.BeginTooltip();
+                            imgui.TextUnformatted(starTip);
+                            imgui.EndTooltip();
+                        elseif item.reason then
+                            imgui.BeginTooltip();
+                            imgui.TextUnformatted(item.reason);
+                            imgui.EndTooltip();
+                        end
+                    end
+
+                    if clicked then
+                        onSelect(item);
+                        MP.searchFilter[1] = '';
+                        imgui.CloseCurrentPopup();
+                    end
+                else
+                    -- â”€â”€ Standard single-color rendering â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                     local textColor = nil;
                     if isSelected then
                         textColor = COLORS.gold;
+                    elseif useStatusColors and item.status and STATUS_COLORS[item.status] then
+                        textColor = STATUS_COLORS[item.status];
                     elseif item.usable then
                         textColor = COLORS.usable;
                     end
 
-                    if textColor then
-                        imgui.PushStyleColor(ImGuiCol_Text, textColor);
+                    local starCol, starTip = nil, nil;
+                    if item.familyVarianceReason then
+                        starCol = GOLD_STAR_COLOR;
+                        starTip = item.familyVarianceReason;
+                    elseif item.pinkStarTooltip then
+                        starCol = PINK_STAR_COLOR;
+                        starTip = item.pinkStarTooltip;
                     end
 
-                    -- Show icon from pre-built cache (no D3D calls during rendering)
-                    if showIcons and iconsReady and item.id then
-                        local icon = GetBrowsingIcon(item.id);
-                        if icon and icon.image then
-                            local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
-                            if iconPtr then
-                                imgui.Image(iconPtr, {iconSize, iconSize});
-                                imgui.SameLine();
+                    if starCol and starTip then
+                        local baseCol = isSelected and COLORS.gold or (textColor or COLORS.text);
+                        local rowW = math.max(60, comboW - 24);
+                        local rowH = math.max(iconSize + 4, imgui.GetTextLineHeight() + 6);
+
+                        imgui.InvisibleButton('##item' .. uid, {rowW, rowH});
+                        local clicked = imgui.IsItemClicked();
+                        local hovered = imgui.IsItemHovered();
+
+                        local dl = imgui.GetWindowDrawList();
+                        local rmin = {imgui.GetItemRectMin()};
+                        local curX = rmin[1] + 4;
+                        local curY = rmin[2] + 2;
+
+                        if showIcons and item.id then
+                            local icon = actions.GetItemIconForBrowsing(item.id);
+                            if icon and icon.image then
+                                local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
+                                if iconPtr then
+                                    dl:AddImage(iconPtr, {curX, curY}, {curX + iconSize, curY + iconSize});
+                                    curX = curX + iconSize + 6;
+                                end
                             end
                         end
-                    end
 
-                    local itemLabel = item.level and string.format('[%d] %s', item.level, itemName) or itemName;
-                    -- Add quantity for items with count > 1
-                    if item.count and item.count > 1 then
-                        itemLabel = itemLabel .. ' x' .. item.count;
-                    end
-                    if imgui.Selectable(itemLabel .. '##item' .. (item.id or matchCount), isSelected) then
-                        onSelect(item);
-                        searchFilter[1] = '';
-                        imgui.CloseCurrentPopup();
-                    end
+                        local labelMain = itemName;
+                        if item.level then
+                            labelMain = string.format('[%d] %s', item.level, itemName);
+                        elseif item.reqStr then
+                            labelMain = string.format('%s  (%s)', itemName, item.reqStr);
+                        end
+                        if item.count and item.count > 1 then
+                            labelMain = labelMain .. ' x' .. item.count;
+                        end
 
-                    if textColor then
-                        imgui.PopStyleColor();
+                        local ty = curY + math.max(0, (rowH - imgui.GetTextLineHeight()) / 2 - 2);
+                        dl:AddText({curX, ty}, imgui.GetColorU32(baseCol), labelMain);
+                        local lw = imgui.CalcTextSize(labelMain);
+                        curX = curX + ((type(lw) == 'table' and (lw[1] or lw.x)) or lw);
+                        dl:AddText({curX + 4, ty}, imgui.GetColorU32(starCol), '*');
+
+                        if hovered then
+                            imgui.BeginTooltip();
+                            imgui.TextUnformatted(starTip);
+                            imgui.EndTooltip();
+                        end
+
+                        if clicked then
+                            onSelect(item);
+                            MP.searchFilter[1] = '';
+                            imgui.CloseCurrentPopup();
+                        end
+                    else
+                        if textColor then imgui.PushStyleColor(ImGuiCol_Text, textColor); end
+
+                        -- Show icon if enabled and item has an id
+                        if showIcons and item.id then
+                            local icon = actions.GetItemIconForBrowsing(item.id);
+                            if icon and icon.image then
+                                local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
+                                if iconPtr then
+                                    imgui.Image(iconPtr, {iconSize, iconSize});
+                                    imgui.SameLine();
+                                end
+                            end
+                        end
+
+                        local itemLabel;
+                        if item.level then
+                            itemLabel = string.format('[%d] %s', item.level, itemName);
+                        elseif item.reqStr then
+                            itemLabel = string.format('%s  (%s)', itemName, item.reqStr);
+                        else
+                            itemLabel = itemName;
+                        end
+                        if item.count and item.count > 1 then
+                            itemLabel = itemLabel .. ' x' .. item.count;
+                        end
+                        if imgui.Selectable(itemLabel .. '##item' .. uid, isSelected) then
+                            onSelect(item);
+                            MP.searchFilter[1] = '';
+                            imgui.CloseCurrentPopup();
+                        end
+
+                        if item.reason and imgui.IsItemHovered() then
+                            imgui.BeginTooltip();
+                            imgui.TextUnformatted(item.reason);
+                            imgui.EndTooltip();
+                        end
+
+                        if textColor then imgui.PopStyleColor(); end
                     end
                 end
             end
-
-            if matchCount == 0 then
-                imgui.TextColored(COLORS.textMuted, 'No matches');
-            end
-
-            imgui.EndChild();
         end
 
+        if matchCount == 0 then
+            imgui.TextColored(COLORS.textMuted, 'No matches');
+        end
+
+        imgui.EndChild();
+
         imgui.EndCombo();
-    else
-        dropdownLoadState[label] = nil;
     end
 
     PopComboStyle();
@@ -1311,34 +1635,127 @@ end
 -- Macro Database Functions
 -- ============================================
 
+-- Clear SMN avatar / BST jug subset palette UI state (when switching macro type or job bucket).
+local function ClearSmnMacroSubsetUi()
+    MP.selectedAvatarPalette = nil;
+    MP.smnShowAllAvatarSubsets = false;
+end
+
+local function ClearBstJugMacroSubsetUi()
+    MP.selectedBstJugMovesKey = nil;
+    MP.bstShowAllJugSubsets = false;
+end
+
+local function ResetPetJobMacroPaletteSubsets()
+    ClearSmnMacroSubsetUi();
+    ClearBstJugMacroSubsetUi();
+end
+
 -- Get current effective type for the palette (selected type or player's current job)
--- Returns GLOBAL_MACRO_KEY for global macros, a job ID, or a composite key like "15:avatar:ifrit"
+-- Returns GLOBAL_MACRO_KEY, ITEMS_MACRO_KEY, a job ID, or a composite key like "15:avatar:ifrit"
 local function GetEffectivePaletteType()
-    if selectedPaletteType then
+    if MP.selectedPaletteType then
         -- If Global is selected, return the global key
-        if selectedPaletteType == GLOBAL_MACRO_KEY then
+        if MP.selectedPaletteType == GLOBAL_MACRO_KEY then
             return GLOBAL_MACRO_KEY;
         end
+        if MP.selectedPaletteType == ITEMS_MACRO_KEY then
+            return ITEMS_MACRO_KEY;
+        end
+        if MP.selectedPaletteType == EQUIPMENT_MACRO_KEY then
+            return EQUIPMENT_MACRO_KEY;
+        end
+        if MP.selectedPaletteType == XIUI_MACRO_KEY then
+            return XIUI_MACRO_KEY;
+        end
+        if type(MP.selectedPaletteType) == 'string' and macroBuckets.isCustomCategoryKey(MP.selectedPaletteType) then
+            return MP.selectedPaletteType;
+        end
         -- If a valid job ID is selected
-        if type(selectedPaletteType) == 'number' and selectedPaletteType > 0 then
+        if type(MP.selectedPaletteType) == 'number' and MP.selectedPaletteType > 0 then
             -- Check for SMN avatar-specific palette
-            if selectedPaletteType == petregistry.JOB_SMN and selectedAvatarPalette then
-                local avatarKey = petregistry.avatars[selectedAvatarPalette];
+            if MP.selectedPaletteType == petregistry.JOB_SMN and MP.selectedAvatarPalette then
+                local avatarKey = petregistry.avatars[MP.selectedAvatarPalette];
                 if avatarKey then
-                    return string.format('%d:avatar:%s', selectedPaletteType, avatarKey);
+                    return string.format('%d:avatar:%s', MP.selectedPaletteType, avatarKey);
                 end
             end
-            return selectedPaletteType;
+            if MP.selectedPaletteType == petregistry.JOB_BST and MP.selectedBstJugMovesKey then
+                return petregistry.FormatBstMacroPaletteSaveKeyFromMovesKey(MP.selectedBstJugMovesKey);
+            end
+            return MP.selectedPaletteType;
         end
     end
     -- Default to current player job
     return data.jobId or 1;
+end
+-- Exposed for crossbar drop: must match fallbacks in HandleDropOnSlot (not raw job id for Global/items/etc.)
+M.GetEffectivePaletteType = GetEffectivePaletteType;
+
+--- True when macros are being saved under the Items palette bucket (`macroDB.items`).
+function M.EditorMacroPaletteKeyIsItems(saveKey)
+    local k = saveKey;
+    if k == nil then
+        k = MP.editorPaletteKey;
+    end
+    if k == nil then
+        k = GetEffectivePaletteType();
+    end
+    return data.MacroPaletteKeysEqual(k, ITEMS_MACRO_KEY);
+end
+
+--- Restrict editor to item/macro/equip types when Saving To (or editing) Items palette; coerce illegal types to Item.
+function M.ClampMacroEditorForItemsPalette()
+    if not MP.editingMacro then
+        return;
+    end
+    if not M.EditorMacroPaletteKeyIsItems(MP.editorPaletteKey) then
+        return;
+    end
+    local allowed = { item = true, macro = true, equip = true };
+    local at = MP.editingMacro.actionType or 'item';
+    if not allowed[at] then
+        MP.editingMacro.actionType = 'item';
+        MP.editingMacro.action = '';
+        MP.editorFields.action[1] = '';
+        MP.searchFilter[1] = '';
+        MP.editingMacro.recastSourceType = nil;
+        MP.editingMacro.recastSourceAction = nil;
+        MP.editingMacro.recastSourceItemId = nil;
+        MP.editorFields.recastSourceType[1] = MP.FindIndex(MP.RECAST_SOURCE_TYPES, 'none');
+        MP.editorFields.recastSourceAction[1] = '';
+        MP.editingMacro.showJaBadgeOnMacro = nil;
+        MP.editingMacro.customIconType = 'xiui_default';
+        MP.editingMacro.customIconPath = 'item';
+        MP.editorAutoIconKey = 'xiui_default::item';
+        MP.editorImplicitActionIconDone = false;
+    end
+    MP.editorFields.actionType[1] = MP.FindIndex(ACTION_TYPES, MP.editingMacro.actionType or 'item');
 end
 
 -- Get display name for a palette type key
 local function GetPaletteDisplayName(typeKey)
     if typeKey == GLOBAL_MACRO_KEY then
         return 'Global';
+    end
+    if typeKey == ITEMS_MACRO_KEY then
+        return 'Items';
+    end
+    if typeKey == EQUIPMENT_MACRO_KEY then
+        return 'Equipment';
+    end
+    if typeKey == XIUI_MACRO_KEY then
+        return 'XIUI Commands';
+    end
+    if type(typeKey) == 'string' and macroBuckets.isCustomCategoryKey(typeKey) then
+        if gConfig and gConfig.macroCustomCategories then
+            for _, entry in ipairs(gConfig.macroCustomCategories) do
+                if entry.key == typeKey then
+                    return entry.label or typeKey;
+                end
+            end
+        end
+        return typeKey;
     end
     if type(typeKey) == 'number' then
         return jobs[typeKey] or 'Unknown';
@@ -1353,46 +1770,355 @@ local function GetPaletteDisplayName(typeKey)
                     return string.format('%s (%s)', jobs[tonumber(jobId)] or 'SMN', name);
                 end
             end
+        elseif jobId and petType == petregistry.PET_TYPE_JUG and petId then
+            local petLabel = petregistry.GetDisplayNameForKey(petregistry.PET_TYPE_JUG .. ':' .. petId);
+            return string.format('%s (%s)', jobs[tonumber(jobId)] or 'BST', petLabel);
         end
     end
     return tostring(typeKey);
 end
 
+local function CountMacrosInPalette(paletteKey)
+    if gConfig and gConfig.macroDB and gConfig.macroDB[paletteKey] then
+        return #gConfig.macroDB[paletteKey];
+    end
+    return 0;
+end
+
+-- Cache key so search/icon caches reset when toggling SMN "all subsets" view.
+local SMN_ALL_SUBSETS_VIEW_TAG = '__all_subsets__';
+local BST_ALL_SUBSETS_VIEW_TAG = '__bst_all_jug_subsets__';
+
+local function IsSmnAllSubsetsPaletteView()
+    return MP.selectedPaletteType == petregistry.JOB_SMN and MP.smnShowAllAvatarSubsets;
+end
+
+local function IsBstAllSubsetsPaletteView()
+    return MP.selectedPaletteType == petregistry.JOB_BST and MP.bstShowAllJugSubsets;
+end
+
+--- Stable jug subset rows: picker families (deduped by slug) then extra jug:* keys (e.g. Lynx, Arctic).
+local function BstJugSubsetEntriesOrdered()
+    local rows = {};
+    local seen = {};
+    local jid = petregistry.JOB_BST;
+    for _, row in ipairs(petregistry.GetBstJugReadyFamilyPickerList()) do
+        local slug = row.movesKey:lower();
+        if not seen[slug] then
+            seen[slug] = true;
+            table.insert(rows, {
+                movesKey = row.movesKey,
+                label = row.name,
+                fullKey = petregistry.FormatBstMacroPaletteSaveKeyFromMovesKey(row.movesKey),
+            });
+        end
+    end
+    local extras = {};
+    for _, pk in ipairs(petregistry.GetAvailablePetKeys(jid)) do
+        local slug = pk:match('^jug:(.+)$');
+        if slug and not seen[slug] then
+            local mk = petregistry.MovesKeyFromBstMacroPaletteSlug(slug);
+            if mk then
+                seen[slug] = true;
+                table.insert(extras, {
+                    movesKey = mk,
+                    label = petregistry.GetDisplayNameForKey(pk),
+                    fullKey = string.format('%d:%s:%s', jid, petregistry.PET_TYPE_JUG, slug),
+                });
+            end
+        end
+    end
+    table.sort(extras, function(a, b)
+        return (a.label or '') < (b.label or '');
+    end);
+    for _, e in ipairs(extras) do
+        table.insert(rows, e);
+    end
+    return rows;
+end
+
+local function CountBstAllJugSubsetsMacros()
+    local n = CountMacrosInPalette(petregistry.JOB_BST);
+    for _, ent in ipairs(BstJugSubsetEntriesOrdered()) do
+        n = n + CountMacrosInPalette(ent.fullKey);
+    end
+    return n;
+end
+
+local function BuildBstAllJugSubsetsRows()
+    local out = {};
+    local jid = petregistry.JOB_BST;
+    if not gConfig or not gConfig.macroDB then
+        return out;
+    end
+    local baseDb = gConfig.macroDB[jid];
+    if baseDb then
+        for _, m in ipairs(baseDb) do
+            table.insert(out, { macro = m, paletteKey = jid, subsetLabel = 'Base BST' });
+        end
+    end
+    for _, ent in ipairs(BstJugSubsetEntriesOrdered()) do
+        local adb = gConfig.macroDB[ent.fullKey];
+        if adb then
+            for _, m in ipairs(adb) do
+                table.insert(out, { macro = m, paletteKey = ent.fullKey, subsetLabel = ent.label });
+            end
+        end
+    end
+    return out;
+end
+
+local function CountSmnAllSubsetsMacros()
+    local n = 0;
+    local jid = petregistry.JOB_SMN;
+    if not gConfig or not gConfig.macroDB then
+        return 0;
+    end
+    local base = gConfig.macroDB[jid];
+    if base then
+        n = n + #base;
+    end
+    for _, avatar in ipairs(petregistry.GetAvatarList()) do
+        local ak = petregistry.avatars[avatar];
+        if ak then
+            local fk = string.format('%d:avatar:%s', jid, ak);
+            local adb = gConfig.macroDB[fk];
+            if adb then
+                n = n + #adb;
+            end
+        end
+    end
+    return n;
+end
+
+--- Flatten Base SMN + each avatar macro bucket (order: base, then avatars list order).
+local function BuildSmnAllSubsetsRows()
+    local rows = {};
+    local jid = petregistry.JOB_SMN;
+    if not gConfig or not gConfig.macroDB then
+        return rows;
+    end
+    local baseDb = gConfig.macroDB[jid];
+    if baseDb then
+        for _, m in ipairs(baseDb) do
+            table.insert(rows, { macro = m, paletteKey = jid, subsetLabel = 'Base SMN' });
+        end
+    end
+    for _, avatar in ipairs(petregistry.GetAvatarList()) do
+        local ak = petregistry.avatars[avatar];
+        if ak then
+            local fk = string.format('%d:avatar:%s', jid, ak);
+            local adb = gConfig.macroDB[fk];
+            if adb then
+                for _, m in ipairs(adb) do
+                    table.insert(rows, { macro = m, paletteKey = fk, subsetLabel = avatar });
+                end
+            end
+        end
+    end
+    return rows;
+end
+
+local function EnsureMacroCustomCategoriesList()
+    if not gConfig.macroCustomCategories then
+        gConfig.macroCustomCategories = {};
+    end
+    if not gConfig.macroCustomNextSeq or gConfig.macroCustomNextSeq < 1 then
+        gConfig.macroCustomNextSeq = 1;
+    end
+end
+
+local function AddMacroCustomCategory(displayLabel)
+    EnsureMacroCustomCategoriesList();
+    local label = tostring(displayLabel or ''):match('^%s*(.-)%s*$') or '';
+    if label == '' then
+        return nil;
+    end
+    local key = macroBuckets.CUSTOM_PREFIX .. tostring(gConfig.macroCustomNextSeq);
+    gConfig.macroCustomNextSeq = gConfig.macroCustomNextSeq + 1;
+    table.insert(gConfig.macroCustomCategories, { key = key, label = label });
+    if not gConfig.macroDB then
+        gConfig.macroDB = {};
+    end
+    if not gConfig.macroDB[key] then
+        gConfig.macroDB[key] = {};
+    end
+    return key;
+end
+
+local function RemoveMacroCustomCategory(remKey)
+    if not gConfig.macroCustomCategories then
+        return;
+    end
+    for i, e in ipairs(gConfig.macroCustomCategories) do
+        if e.key == remKey then
+            table.remove(gConfig.macroCustomCategories, i);
+            break;
+        end
+    end
+    if gConfig.macroDB and gConfig.macroDB[remKey] then
+        gConfig.macroDB[remKey] = nil;
+    end
+end
+
+--- Numeric job id from a save key (Global â†’ nil; composite SMN avatar keys â†’ job id).
+local function EditorSaveKeyToJobId(saveKey)
+    if saveKey == GLOBAL_MACRO_KEY or saveKey == ITEMS_MACRO_KEY or saveKey == EQUIPMENT_MACRO_KEY or saveKey == XIUI_MACRO_KEY then
+        return nil;
+    end
+    if type(saveKey) == 'string' and macroBuckets.isCustomCategoryKey(saveKey) then
+        return nil;
+    end
+    if type(saveKey) == 'number' then
+        return saveKey;
+    end
+    if type(saveKey) == 'string' then
+        local jid = saveKey:match('^(%d+):');
+        if jid then
+            return tonumber(jid);
+        end
+    end
+    return nil;
+end
+
+-- While creating an SMN macro, set Save Sub Type to match Avatar Filter when filter is a specific avatar (not "All").
+local function SyncSaveSubTypeFromPetAvatarFilter()
+    if not MP.isCreatingNew then
+        return;
+    end
+    local saveJid = EditorSaveKeyToJobId(MP.editorPaletteKey);
+    if saveJid ~= petregistry.JOB_SMN then
+        return;
+    end
+    if MP.petAvatarFilter <= 1 then
+        return;
+    end
+    local avatarList = petregistry.GetAvatarList();
+    local avatar = avatarList[MP.petAvatarFilter - 1];
+    if not avatar then
+        return;
+    end
+    local avatarKey = petregistry.avatars[avatar];
+    if not avatarKey then
+        return;
+    end
+    MP.editorPaletteKey = string.format('%d:avatar:%s', petregistry.JOB_SMN, avatarKey);
+end
+
+-- Align create-macro Avatar Filter with "Saving To" / "Save Sub Type" for SMN (independent of Macro Palette window avatar).
+local function SyncPetAvatarFilterFromSaveSubType()
+    local key = MP.editorPaletteKey;
+    if not key then
+        return;
+    end
+    local jid = EditorSaveKeyToJobId(key);
+    if jid ~= petregistry.JOB_SMN then
+        return;
+    end
+    if type(key) == 'number' and key == petregistry.JOB_SMN then
+        MP.petAvatarFilter = 1;
+        MP.cachedPetCommands = nil;
+        return;
+    end
+    if type(key) == 'string' then
+        local jobId, petType, petId = key:match('^(%d+):([^:]+):(.+)$');
+        if jobId and tonumber(jobId) == petregistry.JOB_SMN and petType == 'avatar' and petId then
+            local avatarList = petregistry.GetAvatarList();
+            for i, name in ipairs(avatarList) do
+                if petregistry.avatars[name] == petId then
+                    MP.petAvatarFilter = i + 1;
+                    MP.cachedPetCommands = nil;
+                    return;
+                end
+            end
+        end
+    end
+end
+
+local function SyncBstJugFamilyFromSaveSubType()
+    local key = MP.editorPaletteKey;
+    if not MP.editingMacro then
+        return;
+    end
+    if not key or type(key) ~= 'string' then
+        return;
+    end
+    local jobId, petType, petId = key:match('^(%d+):([^:]+):(.+)$');
+    if not jobId or tonumber(jobId) ~= petregistry.JOB_BST then
+        return;
+    end
+    if petType ~= petregistry.PET_TYPE_JUG then
+        return;
+    end
+    local mk = petregistry.MovesKeyFromBstMacroPaletteSlug(petId);
+    if not mk then
+        return;
+    end
+    MP.editingMacro.bstJugReadyMovesKey = mk;
+    MP.editingMacro.bstJugReadyFamilyLabel = nil;
+    for _, row in ipairs(petregistry.GetBstJugReadyFamilyPickerList()) do
+        if row.movesKey == mk then
+            MP.editingMacro.bstJugReadyFamilyLabel = row.name;
+            break;
+        end
+    end
+end
+
+-- While creating a BST Ready (Use) macro, align Save Sub Type with the picked jug family (SMN avatar parity).
+local function SyncSaveSubTypeFromBstJugFamily()
+    if not MP.isCreatingNew then
+        return;
+    end
+    if EditorSaveKeyToJobId(MP.editorPaletteKey) ~= petregistry.JOB_BST then
+        return;
+    end
+    local mk = MP.editingMacro and MP.editingMacro.bstJugReadyMovesKey;
+    if not mk or mk == '' then
+        return;
+    end
+    MP.editorPaletteKey = petregistry.FormatBstMacroPaletteSaveKeyFromMovesKey(mk);
+end
+
+local function SyncMacroEditorSubtypeFieldsFromSaveKey()
+    SyncPetAvatarFilterFromSaveSubType();
+    SyncBstJugFamilyFromSaveSubType();
+end
+
 -- Sync palette to current player job (call on job change)
 function M.SyncToCurrentJob()
-    -- Only sync if not viewing Global - preserve Global selection across job changes
-    if selectedPaletteType ~= GLOBAL_MACRO_KEY then
-        selectedPaletteType = data.jobId or 1;
+    -- Only sync when viewing a job bucket â€” preserve shared/custom macro categories across job changes
+    if not IsSharedJobAgnosticMacroSelection(MP.selectedPaletteType) then
+        MP.selectedPaletteType = data.jobId or 1;
     end
     -- Clear spell/ability/item caches so they rebuild for new job
     playerdata.ClearCache();
-    InvalidateBrowsingIconCache();
-    cachedPetCommands = nil;
-    petAvatarFilter = 1;
-    selectedAvatarPalette = nil;
+    MP.cachedPetCommands = nil;
+    MP.petAvatarFilter = 1;
+    ResetPetJobMacroPaletteSubsets();
     -- Close editor window if open (spells/abilities are job-specific)
-    if editingMacro then
-        editingMacro = nil;
-        isCreatingNew = false;
-        searchFilter[1] = '';
-        iconPickerOpen = false;
+    if MP.editingMacro then
+        MP.editingMacro = nil;
+        MP.isCreatingNew = false;
+        MP.searchFilter[1] = '';
+        MP.iconPickerOpen = false;
+        ClearEditorPreviewIconCache();
     end
     -- Clear macro selection (macros are per-type)
-    selectedMacroIndex = nil;
+    paletteUi.selectedMacroIndex = nil;
     -- If palette is open, immediately refresh the caches
-    if paletteOpen then
+    if paletteUi.open then
         RefreshCachedLists();
     end
 end
 
 -- Clear pet commands cache (call on pet change for BST)
 function M.ClearPetCommandsCache()
-    cachedPetCommands = nil;
+    MP.cachedPetCommands = nil;
 end
 
 -- Get the macro database for selected type (Global or job-specific)
-function M.GetMacroDatabase()
-    local typeKey = GetEffectivePaletteType();
+function M.GetMacroDatabase(typeKeyOverride)
+    local typeKey = typeKeyOverride or GetEffectivePaletteType();
 
     if not gConfig.macroDB then
         gConfig.macroDB = {};
@@ -1405,86 +2131,63 @@ function M.GetMacroDatabase()
     return gConfig.macroDB[typeKey], typeKey;
 end
 
--- Add a new macro to the database
-function M.AddMacro(macroData)
-    local db, _ = M.GetMacroDatabase();
+local function markSharedMacroLibraryDirtyIfNeeded()
+    if gConfig and sharedMacroStore.IsSharedScope(gConfig) then
+        sharedMacroStore.MarkSharedLibraryDirty();
+    end
+end
 
-    -- Generate unique ID
+-- Add a new macro to the database
+function M.AddMacro(macroData, typeKeyOverride)
+    local db, typeKey = M.GetMacroDatabase(typeKeyOverride);
+
+    if typeKey == macroBuckets.GLOBAL and macroGlobalDefaults.IsUniversalTwoHourMacro(macroData) then
+        for _, ex in ipairs(db) do
+            if macroGlobalDefaults.IsUniversalTwoHourMacro(ex) then
+                return nil;
+            end
+        end
+    end
+
+    -- Generate unique ID (per palette bucket). In Shared scope, also consider the frozen profile
+    -- library so new ids never collide with profile hotbar macroRef values in the same bucket.
     local maxId = 0;
     for _, macro in ipairs(db) do
         if macro.id and macro.id > maxId then
             maxId = macro.id;
+        end
+    end
+    if gConfig and sharedMacroStore.IsSharedScope(gConfig) then
+        local fmax = sharedMacroStore.GetMaxMacroIdInFrozenProfileBucket(typeKey);
+        if fmax > maxId then
+            maxId = fmax;
         end
     end
 
     macroData.id = maxId + 1;
     table.insert(db, macroData);
-    MarkHotbarDirty();
+    markSharedMacroLibraryDirtyIfNeeded();
+    SaveSettingsToDisk();
     data.MarkMacroLookupDirty();
 
     return macroData.id;
 end
 
--- Escape special characters for use in Lua pattern matching
-local function EscapePattern(str)
-    return (str:gsub('([%%%^%$%(%)%.%[%]%*%+%-%?])', '%%%1'));
-end
-
--- Build the next incremental copy name: "Stun" -> "Stun (1)", "Stun (1)" -> "Stun (1) (1)"
-local function GetNextCopyDisplayName(sourceName, db)
-    local prefix = sourceName or 'Macro';
-    local pattern = '^' .. EscapePattern(prefix) .. ' %((%d+)%)%$';
-    local maxN = 0;
-
-    for _, macro in ipairs(db) do
-        local name = macro.displayName or macro.action or '';
-        local n = name:match(pattern);
-        if n then
-            maxN = math.max(maxN, tonumber(n));
-        end
-    end
-
-    return prefix .. ' (' .. (maxN + 1) .. ')';
-end
-
--- Add a macro copy to a specific palette type key (Global, job ID, etc.)
-local function AddMacroToTypeKey(typeKey, macroData)
-    if not gConfig.macroDB then
-        gConfig.macroDB = {};
-    end
-    if not gConfig.macroDB[typeKey] then
-        gConfig.macroDB[typeKey] = {};
-    end
-
-    local db = gConfig.macroDB[typeKey];
-    local maxId = 0;
-    for _, macro in ipairs(db) do
-        if macro.id and macro.id > maxId then
-            maxId = macro.id;
-        end
-    end
-
-    local copy = deep_copy_table(macroData);
-    copy.id = maxId + 1;
-    table.insert(db, copy);
-    SaveSettingsToDisk();
-    data.MarkMacroLookupDirty();
-
-    return copy.id;
-end
-
 -- Update an existing macro
-function M.UpdateMacro(macroId, macroData)
-    local db = M.GetMacroDatabase();
+function M.UpdateMacro(macroId, macroData, typeKeyOverride)
+    local db = M.GetMacroDatabase(typeKeyOverride);
 
     for i, macro in ipairs(db) do
         if macro.id == macroId then
+            if macroGlobalDefaults.IsUniversalTwoHourMacro(macro) then
+                return false;
+            end
             macroData.id = macroId;  -- Preserve ID
             db[i] = macroData;
-            MarkHotbarDirty();
-            -- Defer icon cache clear to next frame start to avoid dropping
-            -- D3D texture references while ImGui draw list still holds pointers
-            ScheduleIconCacheClear();
+            markSharedMacroLibraryDirtyIfNeeded();
+            SaveSettingsToDisk();
+            -- Clear icon cache so hotbar slots referencing this macro update
+            ClearAllIconCaches();
             data.MarkMacroLookupDirty();
             return true;
         end
@@ -1493,43 +2196,64 @@ function M.UpdateMacro(macroId, macroData)
     return false;
 end
 
--- Clear all hotbar/crossbar slots that reference a specific macro ID
--- For Global macros, clears from ALL jobs' slot actions
-local function ClearSlotsReferencingMacro(macroId, typeKey)
-    local isGlobalMacro = (typeKey == GLOBAL_MACRO_KEY);
+-- Macro IDs are unique only within one macroDB[typeKey] table; the same numeric id can exist
+-- in Global and in each job palette. Clearing by macroRef alone removed unrelated slots.
+local function CountPaletteBucketsWithMacroId(macroId)
+    if not gConfig or not gConfig.macroDB then
+        return 0;
+    end
+    local n = 0;
+    for _, macros in pairs(gConfig.macroDB) do
+        if type(macros) == 'table' then
+            for _, m in ipairs(macros) do
+                if m.id == macroId then
+                    n = n + 1;
+                    break;
+                end
+            end
+        end
+    end
+    return n;
+end
 
-    -- Clear from all hotbars (1-6)
+-- deletedTypeKey / onlyBucketForThisId / deleteKind: see data.ApplyMacroDeleteToSlotAction
+local function ClearMacroSlotsInConfigTable(cfg, macroId, deletedTypeKey, onlyBucketForThisId, deleteKind)
+    if not cfg then
+        return false;
+    end
+    local changed = false;
     for barIndex = 1, 6 do
         local configKey = 'hotbarBar' .. barIndex;
-        if gConfig[configKey] and gConfig[configKey].slotActions then
-            local barSettings = gConfig[configKey];
-
-            -- Clear from ALL storage keys (macro could be on any job:subjob combination)
+        if cfg[configKey] and cfg[configKey].slotActions then
+            local barSettings = cfg[configKey];
             for storageKey, jobSlotActions in pairs(barSettings.slotActions) do
                 if jobSlotActions then
                     for slotIndex, slotAction in pairs(jobSlotActions) do
-                        if slotAction and slotAction.macroRef == macroId then
-                            jobSlotActions[slotIndex] = { cleared = true };
+                        local newSlot, chg = data.ApplyMacroDeleteToSlotAction(
+                            slotAction, macroId, deletedTypeKey, onlyBucketForThisId, deleteKind, { cleared = true });
+                        if chg then
+                            jobSlotActions[slotIndex] = newSlot;
+                            changed = true;
                         end
                     end
                 end
             end
         end
     end
-
-    -- Clear from crossbar (all combo modes, all storage keys)
-    if gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.slotActions then
-        local crossbarSettings = gConfig.hotbarCrossbar;
+    if cfg.hotbarCrossbar and cfg.hotbarCrossbar.slotActions then
+        local crossbarSettings = cfg.hotbarCrossbar;
         local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2' };
-
         for storageKey, jobSlotActions in pairs(crossbarSettings.slotActions) do
             if jobSlotActions then
                 for _, comboMode in ipairs(comboModes) do
                     local comboSlots = jobSlotActions[comboMode];
                     if comboSlots then
                         for slotIndex, slotAction in pairs(comboSlots) do
-                            if slotAction and slotAction.macroRef == macroId then
-                                comboSlots[slotIndex] = nil;
+                            local newSlot, chg = data.ApplyMacroDeleteToSlotAction(
+                                slotAction, macroId, deletedTypeKey, onlyBucketForThisId, deleteKind, nil);
+                            if chg then
+                                comboSlots[slotIndex] = newSlot;
+                                changed = true;
                             end
                         end
                     end
@@ -1537,26 +2261,265 @@ local function ClearSlotsReferencingMacro(macroId, typeKey)
             end
         end
     end
+    return changed;
 end
 
--- Delete a macro from the database
-function M.DeleteMacro(macroId)
-    local db, typeKey = M.GetMacroDatabase();
+-- Clear every slot that references a removed macroDB bucket (entire key deleted).
+local function ClearMacroSlotsInConfigForRemovedPaletteBucket(cfg, removedBucketKey, deleteKind)
+    if not cfg or removedBucketKey == nil then
+        return false;
+    end
+    local changed = false;
+    for barIndex = 1, 6 do
+        local configKey = 'hotbarBar' .. barIndex;
+        if cfg[configKey] and cfg[configKey].slotActions then
+            local barSettings = cfg[configKey];
+            for storageKey, jobSlotActions in pairs(barSettings.slotActions) do
+                if jobSlotActions then
+                    for slotIndex, slotAction in pairs(jobSlotActions) do
+                        local newSlot, chg = data.ApplyMacroPaletteBucketRemovedToSlotAction(
+                            slotAction, removedBucketKey, deleteKind, { cleared = true });
+                        if chg then
+                            jobSlotActions[slotIndex] = newSlot;
+                            changed = true;
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if cfg.hotbarCrossbar and cfg.hotbarCrossbar.slotActions then
+        local crossbarSettings = cfg.hotbarCrossbar;
+        local comboModes = { 'L2', 'R2', 'L2R2', 'R2L2', 'L2x2', 'R2x2' };
+        for storageKey, jobSlotActions in pairs(crossbarSettings.slotActions) do
+            if jobSlotActions then
+                for _, comboMode in ipairs(comboModes) do
+                    local comboSlots = jobSlotActions[comboMode];
+                    if comboSlots then
+                        for slotIndex, slotAction in pairs(comboSlots) do
+                            local newSlot, chg = data.ApplyMacroPaletteBucketRemovedToSlotAction(
+                                slotAction, removedBucketKey, deleteKind, nil);
+                            if chg then
+                                comboSlots[slotIndex] = newSlot;
+                                changed = true;
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return changed;
+end
+
+local function RemoveCustomCategoryFromProfileMeta(cfg, remKey)
+    if not cfg or not cfg.macroCustomCategories or not remKey then
+        return false;
+    end
+    for i, e in ipairs(cfg.macroCustomCategories) do
+        if e.key == remKey then
+            table.remove(cfg.macroCustomCategories, i);
+            return true;
+        end
+    end
+    return false;
+end
+
+-- Shared library: the bucket is global; other profiles' layouts may still list it or have slots. Sync metadata and slots.
+local function SweepOtherProfilesForSharedCustomCategoryDelete(remKey, currentName)
+    currentName = currentName or (config and config.currentProfile) or 'Default';
+    local globalProfiles = profileManager.GetGlobalProfiles();
+    if not globalProfiles or not globalProfiles.names then
+        return;
+    end
+    for _, name in ipairs(globalProfiles.names) do
+        if name and name ~= currentName then
+            local cfg = profileManager.GetProfileSettings(name);
+            if cfg then
+                local chg = ClearMacroSlotsInConfigForRemovedPaletteBucket(cfg, remKey, 'profile');
+                if ClearMacroSlotsInConfigForRemovedPaletteBucket(cfg, remKey, 'shared') then
+                    chg = true;
+                end
+                if RemoveCustomCategoryFromProfileMeta(cfg, remKey) then
+                    chg = true;
+                end
+                if chg then
+                    profileManager.SaveProfileSettings(name, cfg);
+                end
+            end
+        end
+    end
+    sharedMacroStore.InvalidateDiskSharedCache();
+end
+
+-- Display label only; storage key stays 'custom:N' (macro data and hotbar macroPaletteKey refs unchanged).
+local function ApplyRenameMacroCustomCategory(catKey, newLabel)
+    if not catKey or not macroBuckets.isCustomCategoryKey(catKey) then
+        return false;
+    end
+    local label = tostring(newLabel or ''):match('^%s*(.-)%s*$') or '';
+    if label == '' then
+        return false;
+    end
+    EnsureMacroCustomCategoriesList();
+    for _, e in ipairs(gConfig.macroCustomCategories) do
+        if e.key == catKey then
+            e.label = label;
+            return true;
+        end
+    end
+    return false;
+end
+
+-- Remove a custom bucket: clear all hotbar/crossbar slot refs, delete macro rows, and sync other profiles in shared mode.
+local function DeleteMacroCustomCategoryCompletely(remKey)
+    if not remKey or not macroBuckets.isCustomCategoryKey(remKey) then
+        return false;
+    end
+    local inShared = (gConfig.macroStorageScope or 'profile') == 'shared';
+    -- Custom buckets use one palette key, but a slot may have profile+shared library arms; clear both.
+    ClearMacroSlotsInConfigForRemovedPaletteBucket(gConfig, remKey, 'profile');
+    ClearMacroSlotsInConfigForRemovedPaletteBucket(gConfig, remKey, 'shared');
+    RemoveMacroCustomCategory(remKey);
+    if inShared and config and config.currentProfile then
+        SweepOtherProfilesForSharedCustomCategoryDelete(remKey, config.currentProfile);
+    end
+    markSharedMacroLibraryDirtyIfNeeded();
+    if MP.selectedPaletteType == remKey then
+        MP.selectedPaletteType = GLOBAL_MACRO_KEY;
+    end
+    ResetPetJobMacroPaletteSubsets();
+    paletteUi.selectedMacroIndex = nil;
+    MP.currentPalettePage = 1;
+    MP.macroCustomRenameTargetKey = nil;
+    playerdata.ClearCache();
+    MP.cachedPetCommands = nil;
+    MP.petAvatarFilter = 1;
+    SaveSettingsToDisk();
+    ClearAllIconCaches();
+    data.InvalidateConfigDerivedCaches();
+    data.MarkMacroLookupDirty();
+    return true;
+end
+
+-- After deleting a global shared macro: clear that ref on all other profile files (current gConfig was already cleared + saved)
+local function SweepOtherProfilesForSharedMacroDelete(macroId, typeKey, onlyBucket, currentName)
+    currentName = currentName or (config and config.currentProfile) or 'Default';
+    local globalProfiles = profileManager.GetGlobalProfiles();
+    if not globalProfiles or not globalProfiles.names then
+        return;
+    end
+    for _, name in ipairs(globalProfiles.names) do
+        if name and name ~= currentName then
+            local cfg = profileManager.GetProfileSettings(name);
+            if cfg and ClearMacroSlotsInConfigTable(cfg, macroId, typeKey, onlyBucket, 'shared') then
+                profileManager.SaveProfileSettings(name, cfg);
+            end
+        end
+    end
+    sharedMacroStore.InvalidateDiskSharedCache();
+end
+
+-- Shared macro library: update bindings on other profiles after MoveMacro (same as delete sweep, but rewrite refs).
+local function SweepOtherProfilesForSharedMacroMove(oldId, oldKey, newId, newKey, onlyBucket, currentName)
+    currentName = currentName or (config and config.currentProfile) or 'Default';
+    local globalProfiles = profileManager.GetGlobalProfiles();
+    if not globalProfiles or not globalProfiles.names then
+        return;
+    end
+    for _, name in ipairs(globalProfiles.names) do
+        if name and name ~= currentName then
+            local cfg = profileManager.GetProfileSettings(name);
+            if cfg and data.RewriteMacroPaletteBindingsInConfig(cfg, oldId, oldKey, newId, newKey, onlyBucket, false) then
+                profileManager.SaveProfileSettings(name, cfg);
+            end
+        end
+    end
+    sharedMacroStore.InvalidateDiskSharedCache();
+end
+
+-- Clear hotbar/crossbar live config (gConfig). Edit Full Palette draft buffers are not scanned here;
+-- dead macroRef in an open draft fixes on Apply (resolve) or when the user edits the slot.
+local function ClearSlotsReferencingMacro(macroId, deletedTypeKey, onlyBucketForThisId, deleteKind)
+    ClearMacroSlotsInConfigTable(gConfig, macroId, deletedTypeKey, onlyBucketForThisId, deleteKind);
+end
+
+-- Delete a macro from the database (optional typeKeyOverride targets a specific macroDB bucket).
+function M.DeleteMacro(macroId, typeKeyOverride)
+    local db, typeKey = M.GetMacroDatabase(typeKeyOverride);
+    local deleteKind = (gConfig and (gConfig.macroStorageScope or 'profile') == 'shared') and 'shared' or 'profile';
 
     for i, macro in ipairs(db) do
         if macro.id == macroId then
+            if macroGlobalDefaults.IsUniversalTwoHourMacro(macro) then
+                return false;
+            end
+            local onlyBucketForThisId = (CountPaletteBucketsWithMacroId(macroId) == 1);
             table.remove(db, i);
-            -- Clear any hotbar/crossbar slots referencing this macro
-            ClearSlotsReferencingMacro(macroId, typeKey);
-            MarkHotbarDirty();
-            -- Defer icon cache clear to next frame start
-            ScheduleIconCacheClear();
+            ClearSlotsReferencingMacro(macroId, typeKey, onlyBucketForThisId, deleteKind);
+            markSharedMacroLibraryDirtyIfNeeded();
+            SaveSettingsToDisk();
+            if deleteKind == 'shared' and config and config.currentProfile then
+                SweepOtherProfilesForSharedMacroDelete(macroId, typeKey, onlyBucketForThisId, config.currentProfile);
+            end
+            -- Clear icon cache so hotbar slots update immediately
+            ClearAllIconCaches();
             data.MarkMacroLookupDirty();
             return true;
         end
     end
 
     return false;
+end
+
+--- Copy a macro row into destPaletteKey with a new id, rewrite bindings that pointed at (macroId, sourcePaletteKey), then remove the source row.
+--- Profile + shared arms are both updated on current layout; other profiles are swept when macro storage is shared.
+function M.MoveMacroToPalette(macroId, sourcePaletteKey, destPaletteKey)
+    if not gConfig or not gConfig.macroDB or not macroId or sourcePaletteKey == nil or destPaletteKey == nil then
+        return false;
+    end
+    if data.MacroPaletteKeysEqual(sourcePaletteKey, destPaletteKey) then
+        return false;
+    end
+    local dbSrc = gConfig.macroDB[sourcePaletteKey];
+    if type(dbSrc) ~= 'table' then
+        return false;
+    end
+    local macroRow = nil;
+    local macroIdx = nil;
+    for i, m in ipairs(dbSrc) do
+        if m.id == macroId then
+            macroRow = m;
+            macroIdx = i;
+            break;
+        end
+    end
+    if not macroRow then
+        return false;
+    end
+    if macroGlobalDefaults.IsUniversalTwoHourMacro(macroRow) then
+        return false;
+    end
+    local copy = deepCopyTable(macroRow);
+    copy.id = nil;
+    local newId = M.AddMacro(copy, destPaletteKey);
+    if not newId then
+        return false;
+    end
+    local onlyBucketForThisId = (CountPaletteBucketsWithMacroId(macroId) == 1);
+    data.RewriteMacroPaletteBindingsInConfig(gConfig, macroId, sourcePaletteKey, newId, destPaletteKey, onlyBucketForThisId, true);
+    data.RewriteMacroPaletteBindingsInDraft(macroId, sourcePaletteKey, newId, destPaletteKey, onlyBucketForThisId);
+    local deleteKind = (gConfig and (gConfig.macroStorageScope or 'profile') == 'shared') and 'shared' or 'profile';
+    if deleteKind == 'shared' and config and config.currentProfile then
+        SweepOtherProfilesForSharedMacroMove(macroId, sourcePaletteKey, newId, destPaletteKey, onlyBucketForThisId, config.currentProfile);
+    end
+    table.remove(dbSrc, macroIdx);
+    markSharedMacroLibraryDirtyIfNeeded();
+    SaveSettingsToDisk();
+    ClearAllIconCaches();
+    data.InvalidateConfigDerivedCaches();
+    data.MarkMacroLookupDirty();
+    return true;
 end
 
 -- Get a macro by ID
@@ -1572,19 +2535,103 @@ function M.GetMacroById(macroId)
     return nil;
 end
 
+-- opts.bindTargetSlot = { comboMode = string, slotIndex = number } — when present AND the
+-- editor enters "creating new" mode (slotData nil), the first successful Save will write the
+-- new macro's binding into that crossbar draft slot. Consumed exactly once on first Save;
+-- cleared on Cancel/close to prevent stale binds carrying over to unrelated sessions.
+function M.OpenEditorForSlotData(slotData, opts)
+    ClearEditorPreviewIconCache();
+    MP.editorDidInitialIconPick = false;
+    MP.editorImplicitActionIconDone = false;
+    MP.editorIconManuallySet = false;
+    MP.editorJaBadgeManuallySet = false;
+    MP.showAllMode = false;
+    MP.showAllPetMode = false;
+    MP.spellTypeFilter = 'All';
+    MP.abilityJobFilter = 0;
+    MP.petTypeOverride = 0;
+    MP.editorIconPrefsHydrated = false;
+    MP.pendingNewMacroBindTarget = nil;
+
+    if slotData and slotData.macroRef then
+        local paletteKey = slotData.macroPaletteKey or data.jobId or 1;
+        local macro = data.GetMacroById(slotData.macroRef, paletteKey);
+        if macro then
+            MP.editingMacro = deep_copy_table(macro);
+            MP.isCreatingNew = false;
+            MP.editorPaletteKey = paletteKey;
+            SyncMacroEditorSubtypeFieldsFromSaveKey();
+            M.ClampMacroEditorForItemsPalette();
+            RefreshCachedLists();
+            return;
+        end
+    end
+
+    if slotData then
+        MP.editingMacro = deep_copy_table(slotData);
+        MP.isCreatingNew = false;
+        MP.editorPaletteKey = slotData.macroPaletteKey or GetEffectivePaletteType();
+        SyncMacroEditorSubtypeFieldsFromSaveKey();
+        M.ClampMacroEditorForItemsPalette();
+    else
+        MP.isCreatingNew = true;
+        MP.editorPaletteKey = GetEffectivePaletteType();
+        local body, autoKey = DefaultNewMacroBodyForPaletteKey(MP.editorPaletteKey);
+        MP.editingMacro = body;
+        MP.editorAutoIconKey = autoKey;
+        SyncMacroEditorSubtypeFieldsFromSaveKey();
+        M.ClampMacroEditorForItemsPalette();
+        if opts and opts.bindTargetSlot and opts.bindTargetSlot.comboMode and opts.bindTargetSlot.slotIndex then
+            MP.pendingNewMacroBindTarget = {
+                comboMode = opts.bindTargetSlot.comboMode,
+                slotIndex = opts.bindTargetSlot.slotIndex,
+            };
+        end
+    end
+    RefreshCachedLists();
+end
+
+-- Open the macro editor as a new macro pre-filled with a raw macro text command.
+-- The palette window is opened automatically; the user can choose where to save.
+function M.OpenNewMacroWithText(macroText, displayName)
+    M.OpenPalette();
+    ClearEditorPreviewIconCache();
+    MP.isCreatingNew              = true;
+    MP.editorDidInitialIconPick   = false;
+    MP.editorImplicitActionIconDone = false;
+    MP.editorIconManuallySet      = false;
+    MP.editorJaBadgeManuallySet   = false;
+    MP.editingMacro = {
+        actionType  = 'macro',
+        macroText   = macroText,
+        displayName = displayName or '',
+        action      = '',
+    };
+    if MP.editorFields and MP.FindIndex then
+        MP.editorFields.actionType[1]       = MP.FindIndex(MP.ACTION_TYPES or {}, 'macro');
+        MP.editorFields.action[1]           = '';
+        MP.editorFields.target[1]           = MP.FindIndex(MP.TARGET_OPTIONS or {}, 't');
+        MP.editorFields.displayName[1]      = displayName or '';
+        MP.editorFields.macroText[1]        = macroText;
+        MP.editorFields.recastSourceType[1] = MP.FindIndex(MP.RECAST_SOURCE_TYPES or {}, 'none');
+        MP.editorFields.recastSourceAction[1] = '';
+    end
+end
+
 -- ============================================
 -- Drag & Drop Functions (using dragdrop library)
 -- ============================================
 
 -- Start dragging a macro from the palette
-function M.StartDragMacro(macroIndex, macroData)
+function M.StartDragMacro(macroIndex, macroData, macroPaletteKeyOverride)
     -- Get icon for this macro
     local icon = actions.GetBindIcon(macroData);
 
     -- Include palette key in data so crossbar drops know which palette the macro came from
     local dragData = {};
     for k, v in pairs(macroData) do dragData[k] = v; end
-    dragData.macroPaletteKey = GetEffectivePaletteType();
+    dragData.macroPaletteKey = macroPaletteKeyOverride or GetEffectivePaletteType();
+    dragData.macroSourceStore = M.GetMacroSourceTagForDrops();
 
     dragdrop.StartDrag('macro', {
         data = dragData,
@@ -1596,22 +2643,32 @@ end
 
 -- Start dragging from a hotbar slot
 function M.StartDragSlot(barIndex, slotIndex, slotData)
-    -- Empty/orphaned slot - nothing to drag
+    -- 1.8.0 defensive guard: empty/orphaned slots have nothing to drag; dragdrop.StartDrag
+    -- with a nil payload bypassed the displayName fallback below and started a "ghost" drag
+    -- in 1.7.5 that confused the drop-zone logic. Bail early instead.
     if not slotData then return; end
-
     -- Get icon for this slot
     local icon = actions.GetBindIcon(slotData);
-
+    -- Raw slot preserves dual profile/shared macro arms (resolved slotData is flattened)
+    local raw = data.GetRawHotbarSlotAction(barIndex, slotIndex);
     dragdrop.StartDrag('slot', {
-        data = slotData,
+        data = raw,
         barIndex = barIndex,
         slotIndex = slotIndex,
-        label = slotData.displayName or slotData.action or 'Slot',
+        label = slotData and (slotData.displayName or slotData.action) or 'Slot',
         icon = icon,
     });
 end
 
 -- Clear drag state
+-- 'shared' | 'profile' â€” which library new hotbar/crossbar binds refer to (for delete + cross-scope resolution)
+function M.GetMacroSourceTagForDrops()
+    if gConfig and (gConfig.macroStorageScope or 'profile') == 'shared' then
+        return 'shared';
+    end
+    return 'profile';
+end
+
 function M.ClearDrag()
     dragdrop.CancelDrag();
 end
@@ -1661,53 +2718,58 @@ function M.HandleDropOnSlot(payload, targetBarIndex, targetSlotIndex)
     local jobSlotActions = ensureSlotActionsStructure(gConfig[configKey], storageKey);
 
     if payload.type == 'macro' then
-        -- Dragging from palette to slot - store only the macro reference.
-        -- macroDB is the single source of truth for action/macroText/displayName/etc.
+        -- Dragging from palette to slot
         local macroData = payload.data;
         if macroData then
-            jobSlotActions[targetSlotIndex] = data.BuildSlotDataForWrite({
-                macroRef = macroData.id,
-                macroPaletteKey = macroData.macroPaletteKey or GetEffectivePaletteType(),
-            });
+            local macroPaletteKey = macroData.macroPaletteKey or GetEffectivePaletteType();
+            local arm = {};
+            for k, v in pairs(macroData) do arm[k] = v; end
+            arm.macroPaletteKey = macroPaletteKey;
+            arm.macroRef = macroData.id;
+            local existing = data.GetRawHotbarSlotAction(targetBarIndex, targetSlotIndex);
+            local store = arm.macroSourceStore or M.GetMacroSourceTagForDrops();
+            local built = data.BuildMacroSlotAfterDrop(arm, store, existing);
+            jobSlotActions[targetSlotIndex] = data.FinalizeHotbarRawSlotForStorage(built);
             MarkHotbarDirty();
         end
 
     elseif payload.type == 'slot' then
-        -- Dragging from slot to slot (swap or move)
+        -- Dragging from slot to slot (swap)
         local sourceBarIndex = payload.barIndex;
         local sourceSlotIndex = payload.slotIndex;
-        local sourceConfigKey = 'hotbarBar' .. sourceBarIndex;
-
-        local sourceData = data.BuildSlotDataForWrite(payload.data);
-
-        -- Get target slot data
-        local targetBind = data.GetKeybindForSlot(targetBarIndex, targetSlotIndex);
-        local targetData;
-        if targetBind then
-            targetData = data.BuildSlotDataForWrite(targetBind);
-        else
-            -- Target slot is empty - mark as cleared
-            targetData = { cleared = true };
+        if sourceBarIndex == targetBarIndex and sourceSlotIndex == targetSlotIndex then
+            return false;
         end
-
-        -- Ensure source config structure exists
+        local sourceConfigKey = 'hotbarBar' .. sourceBarIndex;
         if not gConfig[sourceConfigKey] then
             gConfig[sourceConfigKey] = {};
         end
-        -- Use pet-aware storage key for source bar
         local sourceStorageKey = data.GetStorageKeyForBar(sourceBarIndex);
         local sourceJobSlotActions = ensureSlotActionsStructure(gConfig[sourceConfigKey], sourceStorageKey);
-
-        -- Swap the slots
-        jobSlotActions[targetSlotIndex] = sourceData;
-        sourceJobSlotActions[sourceSlotIndex] = targetData;
-
+        local sourceRaw = data.GetRawHotbarSlotAction(sourceBarIndex, sourceSlotIndex);
+        local targetRaw = data.GetRawHotbarSlotAction(targetBarIndex, targetSlotIndex);
+        local newTarget, newSource = data.SwapActiveMacroArmsInPlace(sourceRaw, targetRaw);
+        jobSlotActions[targetSlotIndex] = data.FinalizeHotbarRawSlotForStorage(newTarget);
+        sourceJobSlotActions[sourceSlotIndex] = data.FinalizeHotbarRawSlotForStorage(newSource);
         MarkHotbarDirty();
 
     elseif payload.type == 'crossbar_slot' then
         -- Dragging from crossbar to hotbar (one-way copy, doesn't clear source)
-        if payload.data then
-            jobSlotActions[targetSlotIndex] = data.BuildSlotDataForWrite(payload.data);
+        local crossRaw = payload.data;
+        if crossRaw and not crossRaw.cleared then
+            local existing = data.GetRawHotbarSlotAction(targetBarIndex, targetSlotIndex);
+            local isMacro = data.IsMacroSlotDualLayout(crossRaw)
+                or (crossRaw.macroRef and (not crossRaw.actionType or crossRaw.actionType == 'macro'));
+            if isMacro then
+                local arm = select(1, data._GetActiveMacroBindingFromSlot(crossRaw));
+                if arm and arm.macroRef then
+                    local store = arm.macroSourceStore or M.GetMacroSourceTagForDrops();
+                    local built = data.BuildMacroSlotAfterDrop(arm, store, existing);
+                    jobSlotActions[targetSlotIndex] = data.FinalizeHotbarRawSlotForStorage(built);
+                end
+            else
+                jobSlotActions[targetSlotIndex] = deepCopyTable(crossRaw);
+            end
             MarkHotbarDirty();
         end
     end
@@ -1734,14 +2796,15 @@ end
 -- ============================================
 
 function M.OpenPalette()
-    paletteOpen = true;
-    selectedMacroIndex = nil;
-    editingMacro = nil;
-    isCreatingNew = false;
+    paletteUi.open = true;
+    paletteUi.selectedMacroIndex = nil;
+    MP.editingMacro = nil;
+    MP.isCreatingNew = false;
+    ClearEditorPreviewIconCache();
 
-    -- Sync to current player job when opening (unless Global was selected)
-    if selectedPaletteType ~= GLOBAL_MACRO_KEY then
-        selectedPaletteType = data.jobId or 1;
+    -- Sync to current player job when opening (unless a shared or custom category was selected)
+    if not IsSharedJobAgnosticMacroSelection(MP.selectedPaletteType) then
+        MP.selectedPaletteType = data.jobId or 1;
     end
 
     -- Refresh spell/ability/weaponskill caches
@@ -1754,22 +2817,30 @@ function M.ClosePalette()
         SaveSettingsToDisk();
         hotbarDataDirty = false;
     end
-    paletteOpen = false;
-    selectedMacroIndex = nil;
-    editingMacro = nil;
-    isCreatingNew = false;
-    currentPalettePage = 1;  -- Reset to page 1
-    copyMacroDialogOpen = false;
-    copyMacroSource = nil;
-    InvalidateBrowsingIconCache();
+    paletteUi.open = false;
+    paletteUi.selectedMacroIndex = nil;
+    MP.editingMacro = nil;
+    MP.isCreatingNew = false;
+    MP.currentPalettePage = 1;  -- Reset to page 1
+    if MP.macroPaletteSearchName then
+        MP.macroPaletteSearchName[1] = '';
+    end
+    MP._lastMacroPaletteSearch = nil;
+    MP.editorDidInitialIconPick = false;
+    MP.editorIconManuallySet = false;
+    MP.editorJaBadgeManuallySet = false;
+    ClearEditorPreviewIconCache();
+    paletteMainIconCache = {};
+    ClearPaletteJaBadgeIconCache();
+    paletteIconCacheDbKey = nil;
 end
 
 function M.IsPaletteOpen()
-    return paletteOpen;
+    return paletteUi.open;
 end
 
 function M.TogglePalette()
-    if paletteOpen then
+    if paletteUi.open then
         M.ClosePalette();
     else
         M.OpenPalette();
@@ -1778,7 +2849,7 @@ end
 
 -- Draw a single macro tile (used in palette)
 local function DrawMacroTile(macro, index, x, y, size)
-    local isSelected = selectedMacroIndex == index;
+    local isSelected = paletteUi.selectedMacroIndex == index;
     local isHovered = false;
 
     -- Set cursor position
@@ -1797,13 +2868,13 @@ local function DrawMacroTile(macro, index, x, y, size)
         imgui.PushStyleColor(ImGuiCol_ButtonActive, COLORS.bgLight);
     end
 
-    imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, 4);
+    imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, PALETTE_TILE_ROUNDING);
     imgui.PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1);
     imgui.PushStyleColor(ImGuiCol_Border, isSelected and COLORS.gold or COLORS.border);
 
     local buttonId = string.format('##macrotile%d', index);
     if imgui.Button(buttonId, {size, size}) then
-        selectedMacroIndex = index;
+        paletteUi.selectedMacroIndex = index;
     end
 
     imgui.PopStyleColor(4);
@@ -1859,17 +2930,21 @@ local function DrawMacroTile(macro, index, x, y, size)
         imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
         imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {8, 6});
         imgui.BeginTooltip();
-        imgui.TextColored(COLORS.gold, macro.displayName or macro.action or 'Unknown');
-        imgui.Spacing();
-        imgui.TextColored(COLORS.textDim, 'Type: ' .. (ACTION_TYPE_LABELS[macro.actionType] or macro.actionType or '?'));
-        if macro.actionType ~= 'macro' and macro.target then
-            local formattedTarget = FormatTargetForDisplay(macro.target);
-            if formattedTarget then
-                imgui.TextColored(COLORS.textDim, 'Target: ' .. formattedTarget);
+        if macroGlobalDefaults.IsUniversalTwoHourMacro(macro) then
+            imgui.TextColored(COLORS.gold, '2-Hour Ability');
+        else
+            imgui.TextColored(COLORS.gold, macro.displayName or macro.action or 'Unknown');
+            imgui.Spacing();
+            imgui.TextColored(COLORS.textDim, 'Type: ' .. (ACTION_TYPE_LABELS[macro.actionType] or macro.actionType or '?'));
+            if macro.actionType ~= 'macro' and macro.target then
+                local formattedTarget = FormatTargetForDisplay(macro.target);
+                if formattedTarget then
+                    imgui.TextColored(COLORS.textDim, 'Target: ' .. formattedTarget);
+                end
             end
+            imgui.Spacing();
+            imgui.TextColored(COLORS.textMuted, 'Drag to hotbar slot');
         end
-        imgui.Spacing();
-        imgui.TextColored(COLORS.textMuted, 'Drag to hotbar slot');
         imgui.EndTooltip();
         imgui.PopStyleVar();
         imgui.PopStyleColor(2);
@@ -1923,141 +2998,511 @@ for i, job in ipairs(JOB_LIST) do
     JOB_ID_MAP[job.id] = i;
 end
 
--- Build destination options for the copy macro dialog
-local copyTargetOptions = nil;
-local function GetCopyTargetOptions()
-    if copyTargetOptions then
-        return copyTargetOptions;
+local function PickDefaultMacroMoveDestination(sourceKey)
+    local order = { GLOBAL_MACRO_KEY, ITEMS_MACRO_KEY, EQUIPMENT_MACRO_KEY, XIUI_MACRO_KEY };
+    for _, k in ipairs(order) do
+        if not data.MacroPaletteKeysEqual(k, sourceKey) then
+            return k;
+        end
+    end
+    EnsureMacroCustomCategoriesList();
+    for _, cat in ipairs(gConfig and gConfig.macroCustomCategories or {}) do
+        local k = cat.key;
+        if not data.MacroPaletteKeysEqual(k, sourceKey) then
+            return k;
+        end
+    end
+    for _, job in ipairs(JOB_LIST) do
+        if not data.MacroPaletteKeysEqual(job.id, sourceKey) then
+            return job.id;
+        end
+    end
+    for _, avatar in ipairs(petregistry.GetAvatarList()) do
+        local avatarKey = petregistry.avatars[avatar];
+        if avatarKey then
+            local fk = string.format('%d:avatar:%s', petregistry.JOB_SMN, avatarKey);
+            if not data.MacroPaletteKeysEqual(fk, sourceKey) then
+                return fk;
+            end
+        end
+    end
+    for _, pk in ipairs(petregistry.GetAvailablePetKeys(petregistry.JOB_BST)) do
+        local slug = pk:match('^jug:(.+)$');
+        if slug then
+            local fk = string.format('%d:%s:%s', petregistry.JOB_BST, petregistry.PET_TYPE_JUG, slug);
+            if not data.MacroPaletteKeysEqual(fk, sourceKey) then
+                return fk;
+            end
+        end
+    end
+    return GLOBAL_MACRO_KEY;
+end
+
+-- Bottom-right /ja badge on macro tiles (same corner style as small status icons on slots).
+-- Declared before M.DrawPalette so palette grid can call it (Lua local scope).
+local function DrawMacroJaBadgeOverlay(drawList, macro, x, y, boxSize)
+    if not drawList or not macro or macro.actionType ~= 'macro' or not macro.macroText then
+        return;
+    end
+    if macro.showJaBadgeOnMacro == false then
+        return;
+    end
+    local jaName = actions.GetMacroJaBadgeAbilityName(macro.macroText);
+    if not jaName or jaName == '' then
+        return;
+    end
+    local jbKey = BuildMacroJaBadgeCacheKey(macro);
+    local jaIcon = paletteJaBadgeIconCache[jbKey];
+    if jaIcon == nil then
+        jaIcon = actions.ResolveMacroJaBadgeIcon(macro) or PALETTE_JA_NONE;
+        paletteJaBadgeIconCache[jbKey] = jaIcon;
+    end
+    if jaIcon == PALETTE_JA_NONE or not jaIcon.image then
+        return;
+    end
+    local iconPtr = tonumber(ffi.cast('uint32_t', jaIcon.image));
+    if not iconPtr or iconPtr == 0 then
+        return;
+    end
+    local iconSize = math.max(10, math.floor(boxSize * 0.35));
+    local padding = 2;
+    local iconX = x + boxSize - iconSize - padding;
+    local iconY = y + boxSize - iconSize - padding;
+    drawList:AddImage(iconPtr, {iconX, iconY}, {iconX + iconSize, iconY + iconSize});
+end
+
+-- Draw icon preview box with current icon (macro editor); must be above DrawIconButton users.
+local function DrawIconPreview(macro, x, y, size)
+    local drawList = imgui.GetWindowDrawList();
+    if not drawList then return; end
+
+    local bgColor = imgui.GetColorU32({0.1, 0.09, 0.08, 0.95});
+    local borderColor = imgui.GetColorU32(COLORS.border);
+    drawList:AddRectFilled({x, y}, {x + size, y + size}, bgColor, 4);
+    drawList:AddRect({x, y}, {x + size, y + size}, borderColor, 4, 0, 1);
+
+    local pvKey = BuildMacroMainIconCacheKey(macro);
+    if pvKey ~= editorPreviewIconKey then
+        editorPreviewIconKey = pvKey;
+        editorPreviewCachedIcon = actions.GetBindIcon(macro);
+    end
+    local icon = editorPreviewCachedIcon;
+    if icon and icon.image then
+        local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
+        if iconPtr then
+            local padding = 4;
+            drawList:AddImage(
+                iconPtr,
+                {x + padding, y + padding},
+                {x + size - padding, y + size - padding}
+            );
+        end
+    else
+        local abbr = GetActionAbbreviation(macro, true);
+        local textSize = imgui.CalcTextSize(abbr);
+        local textX = x + (size - textSize) / 2;
+        local textY = y + (size - 14) / 2;
+        local textColor = imgui.GetColorU32(COLORS.gold);
+        drawList:AddText({textX, textY}, textColor, abbr);
     end
 
-    copyTargetOptions = {
-        { key = GLOBAL_MACRO_KEY, label = 'Global' },
-    };
+    DrawMacroJaBadgeOverlay(drawList, macro, x, y, size);
+end
 
-    for _, job in ipairs(JOB_LIST) do
-        copyTargetOptions[#copyTargetOptions + 1] = {
-            key = job.id,
-            label = job.name,
+-- ============================================
+-- Import from Profile helpers
+-- ============================================
+
+-- Build a list of { macro, bucketKey, status='new'|'match', sharedMatch, resolution } for every
+-- macro in the frozen profile DB (only available while in Shared scope).
+local function BuildImportPreview()
+    local frozenDb = sharedMacroStore.GetFrozenProfileMacroDb();
+    if not frozenDb or not gConfig then return {}; end
+    local sharedDb = gConfig.macroDB or {};
+    local preview = {};
+    local function nameInBucket(db, bucketKey, name)
+        local bucket = db[bucketKey];
+        if type(bucket) ~= 'table' then return nil; end
+        for _, m in ipairs(bucket) do
+            if m and m.displayName == name then return m; end
+        end
+        return nil;
+    end
+    for bucketKey, macroList in pairs(frozenDb) do
+        if type(macroList) == 'table' then
+            for _, macro in ipairs(macroList) do
+                if macro and macro.id and (macro.displayName or '') ~= '' then
+                    local match = nameInBucket(sharedDb, bucketKey, macro.displayName);
+                    local sharedMatchBucketKey = match and bucketKey or nil;
+                    if not match then
+                        -- Cross-bucket fallback: the shared library may hold the same macro
+                        -- in a different bucket (e.g. global 2-hour vs job-specific copy).
+                        for k, _ in pairs(sharedDb) do
+                            if k ~= bucketKey then
+                                local m = nameInBucket(sharedDb, k, macro.displayName);
+                                if m then
+                                    match = m;
+                                    sharedMatchBucketKey = k;
+                                    break;
+                                end
+                            end
+                        end
+                    end
+                    table.insert(preview, {
+                        macro               = macro,
+                        bucketKey           = bucketKey,
+                        status              = match and 'match' or 'new',
+                        sharedMatch         = match,
+                        sharedMatchBucketKey = sharedMatchBucketKey,
+                        resolution          = nil, -- nil = follow global mode
+                    });
+                end
+            end
+        end
+    end
+    -- Matches first (need attention), then new; alphabetical within each group
+    table.sort(preview, function(a, b)
+        if a.status ~= b.status then return a.status == 'match'; end
+        return (a.macro.displayName or '') < (b.macro.displayName or '');
+    end);
+    return preview;
+end
+
+-- Execute the import: write macros into gConfig.macroDB (shared library) and
+-- update slot bindings by adding a shared arm alongside each existing profile arm.
+local function ExecuteImportFromProfile(importState)
+    if not importState or not importState.preview or not gConfig then return; end
+    local globalMode = importState.globalConflict or 'overwrite';
+    local sharedDb   = gConfig.macroDB;
+    if not sharedDb then gConfig.macroDB = {}; sharedDb = gConfig.macroDB; end
+    local anyMacroChange = false;
+
+    local function nextIdInBucket(bucketKey)
+        local bucket = sharedDb[bucketKey];
+        local maxId  = 0;
+        if type(bucket) == 'table' then
+            for _, m in ipairs(bucket) do
+                if m and m.id and m.id > maxId then maxId = m.id; end
+            end
+        end
+        local fmax = sharedMacroStore.GetMaxMacroIdInFrozenProfileBucket(bucketKey);
+        if fmax > maxId then maxId = fmax; end
+        return maxId + 1;
+    end
+
+    local function copyMacroFields(src)
+        -- Coerce missing actionType: a macro with text but no type tag would silently
+        -- fail to execute after import (BuildCommandString returns nil for unknown types).
+        local at = src.actionType;
+        if (at == nil or at == '') and src.macroText and src.macroText ~= '' then
+            at = 'macro';
+        end
+        return {
+            displayName        = src.displayName,
+            macroText          = src.macroText,
+            target             = src.target,
+            customIcon         = src.customIcon,
+            showJaBadgeOnMacro = src.showJaBadgeOnMacro,
+            actionType         = at,
+            actionName         = src.actionName,
+            actionCategory     = src.actionCategory,
+            targetType         = src.targetType,
         };
     end
 
-    return copyTargetOptions;
+    for _, item in ipairs(importState.preview) do
+        local resolution = item.resolution or globalMode;
+        local srcMacro   = item.macro;
+        local bucketKey  = item.bucketKey;
+        local sharedMacroId, sharedPaletteKey;
+
+        if item.status == 'new' or resolution == 'rename' then
+            -- Copy macro to shared library with a fresh ID
+            local newMacro = copyMacroFields(srcMacro);
+            if resolution == 'rename' and item.status == 'match' then
+                local profName = (config and config.currentProfile) or 'Profile';
+                newMacro.displayName = (newMacro.displayName or 'Macro') .. ' [' .. profName .. ']';
+            end
+            local bucket = sharedDb[bucketKey];
+            if not bucket then sharedDb[bucketKey] = {}; bucket = sharedDb[bucketKey]; end
+            newMacro.id = nextIdInBucket(bucketKey);
+            table.insert(bucket, newMacro);
+            sharedMacroId    = newMacro.id;
+            sharedPaletteKey = bucketKey;
+            anyMacroChange   = true;
+
+        elseif resolution == 'overwrite' and item.sharedMatch then
+            -- Update existing shared macro content; keep its ID
+            local sm = item.sharedMatch;
+            sm.macroText          = srcMacro.macroText;
+            sm.target             = srcMacro.target;
+            sm.customIcon         = srcMacro.customIcon;
+            sm.showJaBadgeOnMacro = srcMacro.showJaBadgeOnMacro;
+            sm.actionType         = srcMacro.actionType;
+            sm.actionName         = srcMacro.actionName;
+            sm.actionCategory     = srcMacro.actionCategory;
+            sm.targetType         = srcMacro.targetType;
+            sharedMacroId    = sm.id;
+            sharedPaletteKey = item.sharedMatchBucketKey or bucketKey;
+            anyMacroChange   = true;
+
+        elseif resolution == 'keep' and item.sharedMatch then
+            -- Link slot arms to existing shared macro without changing its data
+            sharedMacroId    = item.sharedMatch.id;
+            sharedPaletteKey = item.sharedMatchBucketKey or bucketKey;
+        end
+
+        if sharedMacroId then
+            data.AddSharedArmToSlotsWithProfileMacro(gConfig, srcMacro.id, bucketKey, sharedMacroId, sharedPaletteKey);
+        end
+    end
+
+    if anyMacroChange then
+        markSharedMacroLibraryDirtyIfNeeded();
+    end
+    data.MarkMacroLookupDirty();
+    data.InvalidateConfigDerivedCaches();
+    SaveSettingsToDisk();
+    ClearAllIconCaches();
+    RefreshCachedLists();
 end
 
-local function DrawCopyMacroDialog()
-    if not copyMacroDialogOpen or not copyMacroSource then
-        return;
-    end
+-- Draw the palette window (Lua 5.1: max 60 upvalues per function; heavy body uses MacroPaletteDrawEnv.)
+local MacroPaletteDrawEnv = {};
 
-    local isOpen = { true };
-    imgui.SetNextWindowSize({320, 170}, ImGuiCond_Appearing);
-
-    PushWindowStyle();
-    if imgui.Begin('Copy Macro###CopyMacroDialog', isOpen, ImGuiWindowFlags_NoCollapse) then
-        local macroName = copyMacroSource.displayName or copyMacroSource.action or 'Macro';
-        imgui.TextColored(COLORS.textDim, 'Copy "' .. macroName .. '" to:');
-
-        imgui.Spacing();
-
-        local targets = GetCopyTargetOptions();
-        local selectedTarget = targets[copyTargetIndex[1]] or targets[1];
-
-        PushComboStyle();
-        imgui.SetNextItemWidth(260);
-        if imgui.BeginCombo('##copyTarget', selectedTarget.label) then
-            for i, target in ipairs(targets) do
-                local isSelected = copyTargetIndex[1] == i;
-                if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
-                if imgui.Selectable(target.label, isSelected) then
-                    copyTargetIndex[1] = i;
-                end
-                if isSelected then imgui.PopStyleColor(); end
-            end
-            imgui.EndCombo();
-        end
-        PopComboStyle();
-
-        imgui.Spacing();
-        imgui.Separator();
-        imgui.Spacing();
-
-        imgui.PushStyleColor(ImGuiCol_Button, COLORS.success);
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.5, 0.8, 0.5, 1.0});
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.6, 0.9, 0.6, 1.0});
-        imgui.PushStyleColor(ImGuiCol_Text, {0.1, 0.1, 0.1, 1.0});
-
-        if imgui.Button('Copy', {90, 28}) then
-            local target = targets[copyTargetIndex[1]] or targets[1];
-            local copy = deep_copy_table(copyMacroSource);
-            copy.id = nil;
-
-            local currentTypeKey = GetEffectivePaletteType();
-            if target.key == currentTypeKey then
-                local baseName = copy.displayName or copy.action or 'Macro';
-                local targetDb = gConfig.macroDB and gConfig.macroDB[target.key] or {};
-                copy.displayName = GetNextCopyDisplayName(baseName, targetDb);
-            end
-
-            AddMacroToTypeKey(target.key, copy);
-            copyMacroDialogOpen = false;
-            copyMacroSource = nil;
-        end
-
-        imgui.PopStyleColor(4);
-
-        imgui.SameLine();
-
-        if imgui.Button('Cancel', {90, 28}) then
-            copyMacroDialogOpen = false;
-            copyMacroSource = nil;
-        end
-    end
-    imgui.End();
-    PopWindowStyle();
-
-    if not isOpen[1] then
-        copyMacroDialogOpen = false;
-        copyMacroSource = nil;
-    end
+local function InitMacroPaletteDrawEnv()
+    local E = MacroPaletteDrawEnv;
+    E.imgui = imgui;
+    E.ffi = ffi;
+    E.data = data;
+    E.actions = actions;
+    E.textures = textures;
+    E.dragdrop = dragdrop;
+    E.petregistry = petregistry;
+    E.playerdata = playerdata;
+    E.petpalette = petpalette;
+    E.sharedMacroStore = sharedMacroStore;
+    E.macroBuckets = macroBuckets;
+    E.COLORS = COLORS;
+    E.MP = MP;
+    E.M = M;
+    E.paletteUi = paletteUi;
+    E.JOB_LIST = JOB_LIST;
+    E.INPUT_BUFFER_SIZE = INPUT_BUFFER_SIZE;
+    E.GLOBAL_MACRO_KEY = GLOBAL_MACRO_KEY;
+    E.ITEMS_MACRO_KEY = ITEMS_MACRO_KEY;
+    E.EQUIPMENT_MACRO_KEY = EQUIPMENT_MACRO_KEY;
+    E.XIUI_MACRO_KEY = XIUI_MACRO_KEY;
+    E.PALETTE_COLUMNS = PALETTE_COLUMNS;
+    E.PALETTE_ROWS = PALETTE_ROWS;
+    E.PALETTE_MACROS_PER_PAGE = PALETTE_MACROS_PER_PAGE;
+    E.PALETTE_TILE_SIZE = PALETTE_TILE_SIZE;
+    E.PALETTE_TILE_GAP = PALETTE_TILE_GAP;
+    E.PALETTE_TILE_ROUNDING = PALETTE_TILE_ROUNDING;
+    E.SMN_ALL_SUBSETS_VIEW_TAG = SMN_ALL_SUBSETS_VIEW_TAG;
+    E.BST_ALL_SUBSETS_VIEW_TAG = BST_ALL_SUBSETS_VIEW_TAG;
+    E.ACTION_TYPE_LABELS = ACTION_TYPE_LABELS;
+    E.RefreshCachedLists = RefreshCachedLists;
+    E.BuildSmnAllSubsetsRows = BuildSmnAllSubsetsRows;
+    E.BuildBstAllJugSubsetsRows = BuildBstAllJugSubsetsRows;
+    E.IsSmnAllSubsetsPaletteView = IsSmnAllSubsetsPaletteView;
+    E.IsBstAllSubsetsPaletteView = IsBstAllSubsetsPaletteView;
+    E.GetPaletteDisplayName = GetPaletteDisplayName;
+    E.PushWindowStyle = PushWindowStyle;
+    E.PopWindowStyle = PopWindowStyle;
+    E.PushComboStyle = PushComboStyle;
+    E.PopComboStyle = PopComboStyle;
+    E.ClearAllIconCaches = ClearAllIconCaches;
+    E.ResetPetJobMacroPaletteSubsets = ResetPetJobMacroPaletteSubsets;
+    E.EnsureMacroCustomCategoriesList = EnsureMacroCustomCategoriesList;
+    E.AddMacroCustomCategory = AddMacroCustomCategory;
+    E.markSharedMacroLibraryDirtyIfNeeded = markSharedMacroLibraryDirtyIfNeeded;
+    E.ApplyRenameMacroCustomCategory = ApplyRenameMacroCustomCategory;
+    E.DeleteMacroCustomCategoryCompletely = DeleteMacroCustomCategoryCompletely;
+    E.CountMacrosInPalette = CountMacrosInPalette;
+    E.CountSmnAllSubsetsMacros = CountSmnAllSubsetsMacros;
+    E.CountBstAllJugSubsetsMacros = CountBstAllJugSubsetsMacros;
+    E.GetEffectivePaletteType = GetEffectivePaletteType;
+    E.ClearBstJugMacroSubsetUi = ClearBstJugMacroSubsetUi;
+    E.ClearSmnMacroSubsetUi = ClearSmnMacroSubsetUi;
+    E.BstJugSubsetEntriesOrdered = BstJugSubsetEntriesOrdered;
+    E.SyncMacroEditorSubtypeFieldsFromSaveKey = SyncMacroEditorSubtypeFieldsFromSaveKey;
+    E.GetCachedPaletteMainIcon = GetCachedPaletteMainIcon;
+    E.DrawMacroJaBadgeOverlay = DrawMacroJaBadgeOverlay;
+    E.FormatTargetForDisplay = FormatTargetForDisplay;
+    E.ClearEditorPreviewIconCache = ClearEditorPreviewIconCache;
 end
 
--- Draw the palette window
-function M.DrawPalette()
-    if not paletteOpen then
-        return;
-    end
+InitMacroPaletteDrawEnv();
+
+local function DrawPaletteBody()
+    local E = MacroPaletteDrawEnv;
+    local imgui = E.imgui;
+    local ffi = E.ffi;
+    local data = E.data;
+    local actions = E.actions;
+    local textures = E.textures;
+    local dragdrop = E.dragdrop;
+    local petregistry = E.petregistry;
+    local playerdata = E.playerdata;
+    local petpalette = E.petpalette;
+    local sharedMacroStore = E.sharedMacroStore;
+    local macroBuckets = E.macroBuckets;
+    local COLORS = E.COLORS;
+    local MP = E.MP;
+    local M = E.M;
+    local paletteUi = E.paletteUi;
+    local JOB_LIST = E.JOB_LIST;
+    local INPUT_BUFFER_SIZE = E.INPUT_BUFFER_SIZE;
+    local GLOBAL_MACRO_KEY = E.GLOBAL_MACRO_KEY;
+    local ITEMS_MACRO_KEY = E.ITEMS_MACRO_KEY;
+    local EQUIPMENT_MACRO_KEY = E.EQUIPMENT_MACRO_KEY;
+    local XIUI_MACRO_KEY = E.XIUI_MACRO_KEY;
+    local PALETTE_COLUMNS = E.PALETTE_COLUMNS;
+    local PALETTE_ROWS = E.PALETTE_ROWS;
+    local PALETTE_MACROS_PER_PAGE = E.PALETTE_MACROS_PER_PAGE;
+    local PALETTE_TILE_SIZE = E.PALETTE_TILE_SIZE;
+    local PALETTE_TILE_GAP = E.PALETTE_TILE_GAP;
+    local PALETTE_TILE_ROUNDING = E.PALETTE_TILE_ROUNDING;
+    local SMN_ALL_SUBSETS_VIEW_TAG = E.SMN_ALL_SUBSETS_VIEW_TAG;
+    local BST_ALL_SUBSETS_VIEW_TAG = E.BST_ALL_SUBSETS_VIEW_TAG;
+    local ACTION_TYPE_LABELS = E.ACTION_TYPE_LABELS;
+    local RefreshCachedLists = E.RefreshCachedLists;
+    local BuildSmnAllSubsetsRows = E.BuildSmnAllSubsetsRows;
+    local BuildBstAllJugSubsetsRows = E.BuildBstAllJugSubsetsRows;
+    local IsSmnAllSubsetsPaletteView = E.IsSmnAllSubsetsPaletteView;
+    local IsBstAllSubsetsPaletteView = E.IsBstAllSubsetsPaletteView;
+    local GetPaletteDisplayName = E.GetPaletteDisplayName;
+    local PushWindowStyle = E.PushWindowStyle;
+    local PopWindowStyle = E.PopWindowStyle;
+    local PushComboStyle = E.PushComboStyle;
+    local PopComboStyle = E.PopComboStyle;
+    local ClearAllIconCaches = E.ClearAllIconCaches;
+    local ResetPetJobMacroPaletteSubsets = E.ResetPetJobMacroPaletteSubsets;
+    local EnsureMacroCustomCategoriesList = E.EnsureMacroCustomCategoriesList;
+    local AddMacroCustomCategory = E.AddMacroCustomCategory;
+    local markSharedMacroLibraryDirtyIfNeeded = E.markSharedMacroLibraryDirtyIfNeeded;
+    local ApplyRenameMacroCustomCategory = E.ApplyRenameMacroCustomCategory;
+    local DeleteMacroCustomCategoryCompletely = E.DeleteMacroCustomCategoryCompletely;
+    local CountMacrosInPalette = E.CountMacrosInPalette;
+    local CountSmnAllSubsetsMacros = E.CountSmnAllSubsetsMacros;
+    local CountBstAllJugSubsetsMacros = E.CountBstAllJugSubsetsMacros;
+    local GetEffectivePaletteType = E.GetEffectivePaletteType;
+    local ClearBstJugMacroSubsetUi = E.ClearBstJugMacroSubsetUi;
+    local ClearSmnMacroSubsetUi = E.ClearSmnMacroSubsetUi;
+    local BstJugSubsetEntriesOrdered = E.BstJugSubsetEntriesOrdered;
+    local SyncMacroEditorSubtypeFieldsFromSaveKey = E.SyncMacroEditorSubtypeFieldsFromSaveKey;
+    local GetCachedPaletteMainIcon = E.GetCachedPaletteMainIcon;
+    local DrawMacroJaBadgeOverlay = E.DrawMacroJaBadgeOverlay;
+    local FormatTargetForDisplay = E.FormatTargetForDisplay;
+    local ClearEditorPreviewIconCache = E.ClearEditorPreviewIconCache;
 
     -- Continuously check for job changes while palette is open
     -- This catches cases where job changed but cache wasn't refreshed properly
     RefreshCachedLists();
 
-    -- Initialize selectedPaletteType to current job if not set
-    if not selectedPaletteType then
-        selectedPaletteType = data.jobId or 1;
+    -- Initialize MP.selectedPaletteType to current job if not set
+    if not MP.selectedPaletteType then
+        MP.selectedPaletteType = data.jobId or 1;
     end
 
-    local db, typeKey = M.GetMacroDatabase();
+    local smnMergeMeta = nil;
+    local bstMergeMeta = nil;
+    local db;
+    local typeKey;
+    if IsSmnAllSubsetsPaletteView() then
+        smnMergeMeta = BuildSmnAllSubsetsRows();
+        db = {};
+        for i, row in ipairs(smnMergeMeta) do
+            db[i] = row.macro;
+        end
+        typeKey = petregistry.JOB_SMN;
+    elseif IsBstAllSubsetsPaletteView() then
+        bstMergeMeta = BuildBstAllJugSubsetsRows();
+        db = {};
+        for i, row in ipairs(bstMergeMeta) do
+            db[i] = row.macro;
+        end
+        typeKey = petregistry.JOB_BST;
+    else
+        db, typeKey = M.GetMacroDatabase();
+    end
+
+    local paletteViewCacheKey = smnMergeMeta and (tostring(petregistry.JOB_SMN) .. ':' .. SMN_ALL_SUBSETS_VIEW_TAG)
+        or (bstMergeMeta and (tostring(petregistry.JOB_BST) .. ':' .. BST_ALL_SUBSETS_VIEW_TAG))
+        or typeKey;
+    if MP._macroSearchPaletteKey ~= paletteViewCacheKey then
+        MP._macroSearchPaletteKey = paletteViewCacheKey;
+        MP.macroPaletteSearchName[1] = '';
+        MP._lastMacroPaletteSearch = nil;
+    end
+    if paletteIconCacheDbKey ~= paletteViewCacheKey then
+        paletteMainIconCache = {};
+        paletteJaBadgeIconCache = {};
+        paletteIconCacheDbKey = paletteViewCacheKey;
+    end
     local isGlobal = (typeKey == GLOBAL_MACRO_KEY);
+    local isItems = (typeKey == ITEMS_MACRO_KEY);
+    local isEquipment = (typeKey == EQUIPMENT_MACRO_KEY);
+    local isXiui = (typeKey == XIUI_MACRO_KEY);
+    local isCustomMacroBucket = macroBuckets.isCustomCategoryKey(typeKey);
+    local isSharedMacroPalette = isGlobal or isItems or isEquipment or isXiui or isCustomMacroBucket;
     local typeName = GetPaletteDisplayName(typeKey);
     local currentPlayerJob = data.jobId or 1;
-    -- For SMN with avatar selected, check base job ID
     local baseJobId = type(typeKey) == 'number' and typeKey or tonumber(tostring(typeKey):match('^(%d+)'));
-    local isViewingCurrentJob = (not isGlobal and baseJobId == currentPlayerJob);
+    local isViewingCurrentJob = (not isSharedMacroPalette and baseJobId == currentPlayerJob);
 
-    -- Calculate pagination
-    local totalMacros = #db;
+    -- Name filter (substring match on display name or action name; case-insensitive)
+    local needleRaw = (MP.macroPaletteSearchName[1] or ''):match('^%s*(.-)%s*$') or '';
+    if MP._lastMacroPaletteSearch ~= needleRaw then
+        MP._lastMacroPaletteSearch = needleRaw;
+        MP.currentPalettePage = 1;
+    end
+
+    local filteredIndices = {};
+    if needleRaw == '' then
+        for i = 1, #db do
+            filteredIndices[i] = i;
+        end
+    else
+        local needle = needleRaw:lower();
+        for i = 1, #db do
+            local m = db[i];
+            local disp = (m.displayName or ''):lower();
+            local act = (m.action or ''):lower();
+            if disp:find(needle, 1, true) or act:find(needle, 1, true) then
+                table.insert(filteredIndices, i);
+            end
+        end
+    end
+
+    if paletteUi.selectedMacroIndex then
+        local selOk = false;
+        for _, fi in ipairs(filteredIndices) do
+            if fi == paletteUi.selectedMacroIndex then
+                selOk = true;
+                break;
+            end
+        end
+        if not selOk then
+            paletteUi.selectedMacroIndex = nil;
+        end
+    end
+
+    -- Calculate pagination (filtered list)
+    local totalMacros = #filteredIndices;
     local totalPages = math.max(1, math.ceil(totalMacros / PALETTE_MACROS_PER_PAGE));
 
     -- Clamp current page to valid range
-    if currentPalettePage > totalPages then
-        currentPalettePage = totalPages;
+    if MP.currentPalettePage > totalPages then
+        MP.currentPalettePage = totalPages;
     end
-    if currentPalettePage < 1 then
-        currentPalettePage = 1;
+    if MP.currentPalettePage < 1 then
+        MP.currentPalettePage = 1;
     end
 
     -- Calculate how many macros/rows on this page
-    local startIdx = (currentPalettePage - 1) * PALETTE_MACROS_PER_PAGE + 1;
+    local startIdx = (MP.currentPalettePage - 1) * PALETTE_MACROS_PER_PAGE + 1;
     local endIdx = math.min(startIdx + PALETTE_MACROS_PER_PAGE - 1, totalMacros);
     local macrosOnPage = math.max(0, endIdx - startIdx + 1);
     local rowsOnPage = math.max(1, math.ceil(macrosOnPage / PALETTE_COLUMNS));
@@ -2078,9 +3523,318 @@ function M.DrawPalette()
     PushWindowStyle();
 
     if imgui.Begin('Macro Palette###MacroPalette', isOpen, windowFlags) then
-        -- Header with gold accent
-        imgui.TextColored(COLORS.gold, 'Drag macros to your hotbar slots');
-        imgui.Spacing();
+        -- Header: instruction (left) + macro source toggle (right, S = Shared, P = Profile)
+        do
+            local scopeShared = (gConfig.macroStorageScope or 'profile') == 'shared';
+            local scopeBtnSize = 22;
+            imgui.TextColored(COLORS.gold, 'Drag macros to your hotbar slots');
+            imgui.SameLine();
+            -- GetContentRegionAvail: use (w,h) or table [1]/[2]; do not use .x â€” sugar Vector can error (see palettemanager GetContentRegionAvailHeight).
+            local availW, availH = imgui.GetContentRegionAvail();
+            if type(availW) == 'table' then
+                availW = availW[1] or 0;
+            end
+            availW = tonumber(availW) or 0;
+            imgui.SetCursorPosX(imgui.GetCursorPosX() + availW - scopeBtnSize);
+            imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, scopeBtnSize * 0.5);
+            imgui.PushStyleVar(ImGuiStyleVar_FramePadding, { 0, 0 });
+            if scopeShared then
+                imgui.PushStyleColor(ImGuiCol_Button, { 0.35, 0.30, 0.18, 0.95 });
+                imgui.PushStyleColor(ImGuiCol_ButtonHovered, { 0.50, 0.44, 0.28, 1.0 });
+                imgui.PushStyleColor(ImGuiCol_ButtonActive, { 0.45, 0.40, 0.24, 1.0 });
+            else
+                imgui.PushStyleColor(ImGuiCol_Button, { 0.14, 0.13, 0.11, 0.95 });
+                imgui.PushStyleColor(ImGuiCol_ButtonHovered, { 0.22, 0.20, 0.16, 1.0 });
+                imgui.PushStyleColor(ImGuiCol_ButtonActive, { 0.18, 0.16, 0.13, 1.0 });
+            end
+            local scopeLabel = scopeShared and 'S##MacroScopeToggle' or 'P##MacroScopeToggle';
+            if imgui.Button(scopeLabel, { scopeBtnSize, scopeBtnSize }) then
+                if scopeShared then
+                    MP.macroScopeConfirmKind = 'toProfile';
+                else
+                    MP.macroScopeConfirmKind = 'toShared';
+                end
+                imgui.OpenPopup('MacroScopeSwitch##xiui');
+            end
+            imgui.PopStyleColor(3);
+            imgui.PopStyleVar(2);
+            if imgui.IsItemHovered() then
+                imgui.BeginTooltip();
+                imgui.PushTextWrapPos(400);
+                local profName = (GetCurrentProfileName and GetCurrentProfileName()) or (config and config.currentProfile) or 'current';
+                if scopeShared then
+                    imgui.TextColored(COLORS.gold, 'Shared is active (S)');
+                    imgui.Spacing();
+                    imgui.TextWrapped('This macro set is available here and is shared with all XIUI profiles that use Shared (SharedMacros.lua). Click the button to edit this character\'s profile-only macros instead.');
+                else
+                    imgui.TextColored(COLORS.text, 'Profile is active (P)');
+                    imgui.Spacing();
+                    imgui.TextWrapped('This macro set is available on the "' .. tostring(profName) .. '" profile only. Click the button to use the shared macro list instead (all profiles on Shared).');
+                end
+                imgui.Spacing();
+                imgui.TextColored(COLORS.textDim, 'Your hotbar/crossbar layout is not removed when you switch. Icons and actions use the active library; a slot that pointed at the other library may look empty until you switch back or re-drag a macro. The palette and bars refresh when you change mode.');
+                imgui.PopTextWrapPos();
+                imgui.EndTooltip();
+            end
+
+            -- Import from Profile button: only visible in Shared mode when a frozen profile DB exists
+            if scopeShared and sharedMacroStore.GetFrozenProfileMacroDb() ~= nil then
+                imgui.Spacing();
+                imgui.PushStyleColor(ImGuiCol_Button, { 0.20, 0.28, 0.20, 0.90 });
+                imgui.PushStyleColor(ImGuiCol_ButtonHovered, { 0.28, 0.40, 0.28, 1.0 });
+                imgui.PushStyleColor(ImGuiCol_ButtonActive, { 0.24, 0.35, 0.24, 1.0 });
+                if imgui.Button('Import from Profile...', { 0, 22 }) then
+                    MP.importFromProfile = {
+                        preview        = BuildImportPreview(),
+                        globalConflict = 'overwrite',
+                    };
+                    imgui.OpenPopup('ImportFromProfile##xiui');
+                end
+                imgui.PopStyleColor(3);
+                if imgui.IsItemHovered() then
+                    imgui.BeginTooltip();
+                    imgui.PushTextWrapPos(360);
+                    imgui.TextColored(COLORS.gold, 'Import from Profile');
+                    imgui.Spacing();
+                    imgui.TextWrapped('Copy macros from this profile\'s library into the Shared library and add shared slot bindings alongside existing profile ones. Switching back to Profile mode keeps everything intact.');
+                    imgui.PopTextWrapPos();
+                    imgui.EndTooltip();
+                end
+            end
+        end
+
+        -- Macro scope confirm: non-modal BeginPopup (palettemanager copy flow) = no full-screen dim; anchor to this window.
+        do
+            imgui.PushStyleColor(ImGuiCol_PopupBg, COLORS.bgDark);
+            imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+            imgui.PushStyleColor(ImGuiCol_TitleBg, COLORS.bgMedium);
+            imgui.PushStyleColor(ImGuiCol_TitleBgActive, COLORS.bgMedium);
+            imgui.PushStyleColor(ImGuiCol_FrameBg, COLORS.bgMedium);
+            imgui.PushStyleColor(ImGuiCol_FrameBgHovered, COLORS.bgLight);
+            imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgMedium);
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, COLORS.bgLight);
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+
+            local SCOPE_MODAL_W = 420;
+            local estPopupH = 200;
+            local aboveGap = 6;
+            imgui.SetNextWindowSize({ SCOPE_MODAL_W, 0 }, ImGuiCond_Appearing);
+            local wx, wy = imgui.GetWindowPos();
+            local wiw, wih = imgui.GetWindowSize();
+            if type(wx) == 'table' then
+                local t = wx;
+                wx, wy = tonumber(t[1]) or 0, tonumber(t[2] or 0) or 0;
+            else
+                wx, wy = tonumber(wx) or 0, tonumber(wy) or 0;
+            end
+            if type(wiw) == 'table' then
+                local t = wiw;
+                wiw, wih = tonumber(t[1]) or 0, tonumber(t[2] or 0) or 0;
+            else
+                wiw, wih = tonumber(wiw) or 0, tonumber(wih) or 0;
+            end
+            local posX = wx + (wiw - SCOPE_MODAL_W) * 0.5;
+            if posX < 2 then
+                posX = 2;
+            end
+            -- Prefer just above the palette; if that would be off-screen, sit on the top of the palette (overlaps header strip).
+            local posY = wy - aboveGap - estPopupH;
+            if posY < 2 then
+                posY = wy + 6;
+            end
+            imgui.SetNextWindowPos({ posX, posY }, ImGuiCond_Always);
+
+            if imgui.BeginPopup('MacroScopeSwitch##xiui') then
+                local function closeScopePopup()
+                    MP.macroScopeConfirmKind = nil;
+                    imgui.CloseCurrentPopup();
+                end
+
+                if MP.macroScopeConfirmKind == 'toShared' then
+                    imgui.TextColored(COLORS.gold, 'Switch to shared macros?');
+                    imgui.TextWrapped('You will use the global list (SharedMacros.lua) for every profile set to Shared. Your profile-only macros stay saved in this .lua if you switch back.');
+                    imgui.Spacing();
+                    imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
+                    if imgui.Button('Switch##ssok', { 100, 24 }) then
+                        sharedMacroStore.ApplySwitchToShared(gConfig);
+                        data.InvalidateConfigDerivedCaches();
+                        SaveSettingsToDisk();
+                        paletteUi.selectedMacroIndex = nil;
+                        MP.currentPalettePage = 1;
+                        RefreshCachedLists();
+                        ClearAllIconCaches();
+                        closeScopePopup();
+                    end
+                    imgui.PopStyleColor();
+                    imgui.SameLine();
+                    if imgui.Button('Cancel##sscancel', { 100, 24 }) then
+                        closeScopePopup();
+                    end
+                elseif MP.macroScopeConfirmKind == 'toProfile' then
+                    imgui.TextColored(COLORS.gold, 'Switch to profile-only macros?');
+                    imgui.TextWrapped('You will use only this profile file again. The shared file is not changed.');
+                    imgui.Spacing();
+                    imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
+                    if imgui.Button('Switch##spok', { 100, 24 }) then
+                        if (gConfig.macroStorageScope or 'profile') == 'shared' then
+                            SaveSettingsToDisk();
+                        end
+                        sharedMacroStore.ApplySwitchToProfile(gConfig);
+                        data.InvalidateConfigDerivedCaches();
+                        SaveSettingsToDisk();
+                        paletteUi.selectedMacroIndex = nil;
+                        MP.currentPalettePage = 1;
+                        RefreshCachedLists();
+                        ClearAllIconCaches();
+                        closeScopePopup();
+                    end
+                    imgui.PopStyleColor();
+                    imgui.SameLine();
+                    if imgui.Button('Cancel##spcancel', { 100, 24 }) then
+                        closeScopePopup();
+                    end
+                else
+                    closeScopePopup();
+                end
+                imgui.EndPopup();
+            end
+
+            -- Import from Profile popup
+            do
+                local IMPORT_W = 500;
+                imgui.SetNextWindowSize({ IMPORT_W, 0 }, ImGuiCond_Appearing);
+                local iwx, iwy = imgui.GetWindowPos();
+                local iwiw, iwih = imgui.GetWindowSize();
+                if type(iwx) == 'table' then
+                    local t = iwx; iwx, iwy = tonumber(t[1]) or 0, tonumber(t[2] or 0) or 0;
+                else
+                    iwx, iwy = tonumber(iwx) or 0, tonumber(iwy) or 0;
+                end
+                iwiw = type(iwiw) == 'table' and (tonumber(iwiw[1]) or 0) or (tonumber(iwiw) or 0);
+                iwih = type(iwih) == 'table' and (tonumber(iwih[2]) or 0) or (tonumber(iwih) or 0);
+                local impX = iwx + math.max(0, (iwiw - IMPORT_W) * 0.5);
+                local impY = iwy + 50;
+                imgui.SetNextWindowPos({ impX, impY }, ImGuiCond_Appearing);
+
+                if imgui.BeginPopup('ImportFromProfile##xiui') then
+                    local imp = MP.importFromProfile;
+                    if not imp then
+                        imgui.CloseCurrentPopup();
+                    else
+                        imgui.TextColored(COLORS.gold, 'Import from Profile');
+                        imgui.Separator();
+                        imgui.Spacing();
+
+                        local preview     = imp.preview or {};
+                        local totalNew    = 0;
+                        local totalMatch  = 0;
+                        for _, item in ipairs(preview) do
+                            if item.status == 'new'   then totalNew   = totalNew   + 1;
+                            elseif item.status == 'match' then totalMatch = totalMatch + 1; end
+                        end
+
+                        if #preview == 0 then
+                            imgui.TextColored(COLORS.textDim, 'Your profile library has no macros to import.');
+                        else
+                            local parts = {};
+                            if totalNew   > 0 then table.insert(parts, totalNew   .. ' new');      end
+                            if totalMatch > 0 then table.insert(parts, totalMatch .. ' matching'); end
+                            imgui.TextWrapped(table.concat(parts, ', ') .. ' macro(s) found in your profile library.');
+                            imgui.Spacing();
+                            imgui.PushTextWrapPos(IMPORT_W - 20);
+                            imgui.TextWrapped('New macros are copied into the Shared library. For each macro your profile and the Shared library share by name, choose how to handle it below. Slot bindings are updated to point at the Shared copy so everything works immediately. Switching back to Profile keeps the original bindings intact.');
+                            imgui.PopTextWrapPos();
+                            imgui.Spacing();
+
+                            -- Conflict resolution (only relevant when there are matches)
+                            if totalMatch > 0 then
+                                imgui.TextColored(COLORS.gold, 'When names match in the Shared library:');
+                                local modes = {
+                                    { id = 'overwrite', label = 'Overwrite shared text with profile version' },
+                                    { id = 'keep',      label = 'Keep shared macro unchanged; link slots to it' },
+                                    { id = 'rename',    label = 'Copy as "Name [Profile]" and keep both' },
+                                };
+                                for _, mode in ipairs(modes) do
+                                    local sel = (imp.globalConflict or 'overwrite') == mode.id;
+                                    if imgui.RadioButton(mode.label .. '##impmode_' .. mode.id, sel) then
+                                        imp.globalConflict = mode.id;
+                                    end
+                                end
+                                if (imp.globalConflict or 'overwrite') == 'overwrite' then
+                                    imgui.Spacing();
+                                    imgui.PushTextWrapPos(IMPORT_W - 20);
+                                    imgui.TextColored({ 1, 0.7, 0.2, 1 }, 'Overwrite affects every profile/character using those shared macros.');
+                                    imgui.PopTextWrapPos();
+                                end
+                                imgui.Spacing();
+                            end
+
+                            -- Macro list
+                            imgui.Separator();
+                            imgui.Spacing();
+                            local listH = math.min(#preview * 22, 200);
+                            imgui.BeginChild('ImportMacroList##xiui', { IMPORT_W - 20, listH }, false);
+                            for _, item in ipairs(preview) do
+                                local resolution = item.resolution or (imp.globalConflict or 'overwrite');
+                                local badge, col;
+                                if item.status == 'new' then
+                                    badge = '[New]';     col = { 0.4, 0.9, 0.4, 1 };
+                                elseif resolution == 'overwrite' then
+                                    badge = '[Overwrite]'; col = { 1, 0.6, 0.2, 1 };
+                                elseif resolution == 'keep' then
+                                    badge = '[Keep]';    col = { 0.5, 0.8, 1, 1 };
+                                else
+                                    badge = '[Rename]';  col = { 0.85, 0.85, 0.5, 1 };
+                                end
+                                imgui.TextColored(col, badge);
+                                imgui.SameLine(0, 6);
+                                imgui.Text(item.macro.displayName or '?');
+                                -- Per-item override for match entries
+                                if item.status == 'match' then
+                                    imgui.SameLine();
+                                    local overrides     = { nil, 'overwrite', 'keep', 'rename' };
+                                    local overrideLabels = { 'Global', 'Overwrite', 'Keep', 'Rename' };
+                                    local curIdx = 1;
+                                    for i, v in ipairs(overrides) do if v == item.resolution then curIdx = i; break; end; end
+                                    imgui.SetNextItemWidth(90);
+                                    if imgui.BeginCombo('##impov_' .. tostring(item.macro.id), overrideLabels[curIdx], ImGuiComboFlags_None) then
+                                        for i, v in ipairs(overrides) do
+                                            if imgui.Selectable(overrideLabels[i] .. '##sel' .. i, curIdx == i) then
+                                                item.resolution = v;
+                                            end
+                                        end
+                                        imgui.EndCombo();
+                                    end
+                                end
+                            end
+                            imgui.EndChild();
+                            imgui.Separator();
+                        end
+
+                        imgui.Spacing();
+                        imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
+                        if imgui.Button('Import##impok', { 100, 24 }) then
+                            if #preview > 0 then
+                                ExecuteImportFromProfile(imp);
+                            end
+                            MP.importFromProfile = nil;
+                            imgui.CloseCurrentPopup();
+                        end
+                        imgui.PopStyleColor();
+                        imgui.SameLine();
+                        if imgui.Button('Cancel##impcancel', { 100, 24 }) then
+                            MP.importFromProfile = nil;
+                            imgui.CloseCurrentPopup();
+                        end
+                    end
+                    imgui.EndPopup();
+                end
+            end
+
+            imgui.PopStyleColor(9);
+        end
+
+        imgui.Dummy({ 0, 4 });
 
         -- Type selector row
         imgui.TextColored(COLORS.textDim, 'Type:');
@@ -2088,7 +3842,7 @@ function M.DrawPalette()
 
         -- Style the combo popup
         PushComboStyle();
-        imgui.PushItemWidth(100);
+        imgui.PushItemWidth(148);
 
         -- Helper to get macro count for a type (Global or job ID)
         local function getMacroCount(key)
@@ -2098,8 +3852,8 @@ function M.DrawPalette()
             return 0;
         end
 
-        -- Build display label with macro count
-        local macroCount = getMacroCount(typeKey);
+        -- Build display label with macro count (uses current grid, including SMN / BST "all subsets" merge)
+        local macroCount = #db;
         local displayLabel = macroCount > 0 and string.format('%s (%d)', typeName, macroCount) or typeName;
 
         if imgui.BeginCombo('##TypeSelect', displayLabel, ImGuiComboFlags_None) then
@@ -2120,16 +3874,15 @@ function M.DrawPalette()
                 imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
             end
 
-            if imgui.Selectable(globalLabel, globalSelected) then
-                selectedPaletteType = GLOBAL_MACRO_KEY;
-                selectedAvatarPalette = nil;
-                selectedMacroIndex = nil;
-                currentPalettePage = 1;
+                if imgui.Selectable(globalLabel, globalSelected) then
+                    MP.selectedPaletteType = GLOBAL_MACRO_KEY;
+                    ResetPetJobMacroPaletteSubsets();
+                    paletteUi.selectedMacroIndex = nil;
+                MP.currentPalettePage = 1;
                 -- Clear caches to force refresh
                 playerdata.ClearCache();
-                InvalidateBrowsingIconCache();
-                cachedPetCommands = nil;
-                petAvatarFilter = 1;
+                MP.cachedPetCommands = nil;
+                MP.petAvatarFilter = 1;
             end
             imgui.PopStyleColor();
 
@@ -2137,12 +3890,140 @@ function M.DrawPalette()
                 imgui.SetItemDefaultFocus();
             end
 
-            -- Separator between Global and jobs
+            -- Items bucket (gear / consumables â€” not tied to a job)
+            local itemsSelected = isItems;
+            local itemsMacroCount = getMacroCount(ITEMS_MACRO_KEY);
+            local itemsLabel = 'Items';
+            if itemsMacroCount > 0 then
+                itemsLabel = string.format('Items (%d)', itemsMacroCount);
+            end
+
+            if itemsMacroCount > 0 and not itemsSelected then
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+            elseif itemsSelected then
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+            else
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+            end
+
+                if imgui.Selectable(itemsLabel, itemsSelected) then
+                    MP.selectedPaletteType = ITEMS_MACRO_KEY;
+                    ResetPetJobMacroPaletteSubsets();
+                    paletteUi.selectedMacroIndex = nil;
+                MP.currentPalettePage = 1;
+                playerdata.ClearCache();
+                MP.cachedPetCommands = nil;
+                MP.petAvatarFilter = 1;
+            end
+            imgui.PopStyleColor();
+
+            if itemsSelected then
+                imgui.SetItemDefaultFocus();
+            end
+
+            -- Equipment bucket (gear swap macros, all jobs)
+            local equipSelected = isEquipment;
+            local equipMacroCount = getMacroCount(EQUIPMENT_MACRO_KEY);
+            local equipLabel = 'Equipment';
+            if equipMacroCount > 0 then
+                equipLabel = string.format('Equipment (%d)', equipMacroCount);
+            end
+
+            if equipMacroCount > 0 and not equipSelected then
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+            elseif equipSelected then
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+            else
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+            end
+
+                if imgui.Selectable(equipLabel, equipSelected) then
+                    MP.selectedPaletteType = EQUIPMENT_MACRO_KEY;
+                    ResetPetJobMacroPaletteSubsets();
+                    paletteUi.selectedMacroIndex = nil;
+                MP.currentPalettePage = 1;
+                playerdata.ClearCache();
+                MP.cachedPetCommands = nil;
+                MP.petAvatarFilter = 1;
+            end
+            imgui.PopStyleColor();
+
+            if equipSelected then
+                imgui.SetItemDefaultFocus();
+            end
+
+            -- XIUI slash-command shortcuts (seeded defaults; editable like any macro bucket)
+            local xiuiSelected = isXiui;
+            local xiuiMacroCount = getMacroCount(XIUI_MACRO_KEY);
+            local xiuiLabel = 'XIUI Commands';
+            if xiuiMacroCount > 0 then
+                xiuiLabel = string.format('XIUI Commands (%d)', xiuiMacroCount);
+            end
+
+            if xiuiMacroCount > 0 and not xiuiSelected then
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+            elseif xiuiSelected then
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+            else
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+            end
+
+                if imgui.Selectable(xiuiLabel, xiuiSelected) then
+                    MP.selectedPaletteType = XIUI_MACRO_KEY;
+                    ResetPetJobMacroPaletteSubsets();
+                    paletteUi.selectedMacroIndex = nil;
+                MP.currentPalettePage = 1;
+                playerdata.ClearCache();
+                MP.cachedPetCommands = nil;
+                MP.petAvatarFilter = 1;
+            end
+            imgui.PopStyleColor();
+
+            if xiuiSelected then
+                imgui.SetItemDefaultFocus();
+            end
+
+            -- Player-defined categories (keys under macroDB["custom:N"])
+            EnsureMacroCustomCategoriesList();
+            for _, cat in ipairs(gConfig.macroCustomCategories) do
+                local cKey = cat.key;
+                local cSel = (MP.selectedPaletteType == cKey);
+                local cCount = getMacroCount(cKey);
+                local cLabel = cat.label or cKey;
+                if cCount > 0 then
+                    cLabel = string.format('%s (%d)', cLabel, cCount);
+                end
+
+                if cCount > 0 and not cSel then
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+                elseif cSel then
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+                else
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+                end
+
+                if imgui.Selectable(cLabel, cSel) then
+                    MP.selectedPaletteType = cKey;
+                    ResetPetJobMacroPaletteSubsets();
+                    paletteUi.selectedMacroIndex = nil;
+                    MP.currentPalettePage = 1;
+                    playerdata.ClearCache();
+                    MP.cachedPetCommands = nil;
+                    MP.petAvatarFilter = 1;
+                end
+                imgui.PopStyleColor();
+
+                if cSel then
+                    imgui.SetItemDefaultFocus();
+                end
+            end
+
+            -- Separator between non-job buckets and jobs
             imgui.Separator();
 
             -- Job options
             for i, job in ipairs(JOB_LIST) do
-                local isSelected = (not isGlobal and job.id == typeKey);
+                local isSelected = (not isSharedMacroPalette and MP.selectedPaletteType == job.id);
                 local jobMacroCount = getMacroCount(job.id);
 
                 -- Build label with indicators
@@ -2173,15 +4054,14 @@ function M.DrawPalette()
                 end
 
                 if imgui.Selectable(label, isSelected) then
-                    selectedPaletteType = job.id;
-                    selectedAvatarPalette = nil;  -- Clear avatar selection when switching jobs
-                    selectedMacroIndex = nil;  -- Clear selection when switching types
-                    currentPalettePage = 1;    -- Reset to page 1 when switching types
+                    MP.selectedPaletteType = job.id;
+                    ResetPetJobMacroPaletteSubsets(); -- Clear avatar / jug subset selection when switching jobs
+                    paletteUi.selectedMacroIndex = nil;  -- Clear selection when switching types
+                    MP.currentPalettePage = 1;    -- Reset to page 1 when switching types
                     -- Clear caches to force refresh
                     playerdata.ClearCache();
-                    InvalidateBrowsingIconCache();
-                    cachedPetCommands = nil;
-                    petAvatarFilter = 1;
+                    MP.cachedPetCommands = nil;
+                    MP.petAvatarFilter = 1;
                 end
 
                 imgui.PopStyleColor();
@@ -2195,28 +4075,298 @@ function M.DrawPalette()
         imgui.PopItemWidth();
         PopComboStyle();
 
-        -- Avatar sub-palette dropdown (only for SMN)
-        -- Use selectedPaletteType (the job ID) not typeKey (which may be composite like "15:avatar:ifrit")
-        if not isGlobal and selectedPaletteType == petregistry.JOB_SMN then
+        local catAddBtnSize = (imgui.GetFrameHeight and imgui.GetFrameHeight()) or 24;
+        imgui.SameLine(0, 6);
+        if imgui.Button('+##macroCatAddBtn', { catAddBtnSize, catAddBtnSize }) then
+            imgui.OpenPopup('MacroAddCustomCategory##xiui');
+        end
+        if imgui.IsItemHovered() then
+            imgui.BeginTooltip();
+            imgui.Text('Add a custom type.');
+            imgui.EndTooltip();
+        end
+
+        if isCustomMacroBucket and typeKey then
+            imgui.SameLine(0, 8);
+            imgui.PushStyleColor(ImGuiCol_Button, { 0.62, 0.12, 0.1, 1.0 });
+            imgui.PushStyleColor(ImGuiCol_ButtonHovered, { 0.78, 0.2, 0.16, 1.0 });
+            imgui.PushStyleColor(ImGuiCol_ButtonActive, { 0.7, 0.16, 0.12, 1.0 });
+            if imgui.Button('-##macroCatDelToolbar', { catAddBtnSize, catAddBtnSize }) then
+                MP.macroCustomDeleteKey = typeKey;
+                MP.macroCustomDeleteLabel = GetPaletteDisplayName(typeKey);
+                MP.macroCustomDeleteN = CountMacrosInPalette(typeKey);
+                imgui.OpenPopup('MacroCustomCatDelete##xiui');
+            end
+            imgui.PopStyleColor(3);
+            if imgui.IsItemHovered() then
+                imgui.BeginTooltip();
+                imgui.Text('Delete this custom type. Macros in the group are removed; any hotbar or crossbar slot that holds one of those macros reverts to an empty slot. Other slots are unchanged.');
+                imgui.EndTooltip();
+            end
+            imgui.SameLine(0, 8);
+            if imgui.SmallButton('Rename##macroCatRenToolbar') then
+                MP.macroCustomRenameTargetKey = typeKey;
+                MP.macroCustomRenameBuf[1] = GetPaletteDisplayName(typeKey);
+                imgui.OpenPopup('MacroCustomRename##xiui');
+            end
+        end
+
+        imgui.PushStyleColor(ImGuiCol_PopupBg, COLORS.bgDark);
+        imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+        imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+        if imgui.BeginPopup('MacroAddCustomCategory##xiui') then
+            imgui.TextColored(COLORS.textDim, 'New category name');
+            imgui.SetNextItemWidth(240);
+            imgui.InputText('##macroNewCatPopup', MP.macroNewCategoryBuf, INPUT_BUFFER_SIZE);
+            imgui.Spacing();
+            if imgui.Button('Add##macroCatAddPopup', { 100, 24 }) then
+                local nk = AddMacroCustomCategory(MP.macroNewCategoryBuf[1]);
+                if nk then
+                    MP.selectedPaletteType = nk;
+                    ResetPetJobMacroPaletteSubsets();
+                    MP.macroNewCategoryBuf[1] = '';
+                    paletteUi.selectedMacroIndex = nil;
+                    MP.currentPalettePage = 1;
+                    playerdata.ClearCache();
+                    MP.cachedPetCommands = nil;
+                    MP.petAvatarFilter = 1;
+                    markSharedMacroLibraryDirtyIfNeeded();
+                    SaveSettingsToDisk();
+                    data.MarkMacroLookupDirty();
+                    imgui.CloseCurrentPopup();
+                end
+            end
+            imgui.EndPopup();
+        end
+        imgui.PopStyleColor(3);
+
+        -- Rename custom type (modal; opened from toolbar)
+        imgui.PushStyleColor(ImGuiCol_PopupBg, COLORS.bgDark);
+        imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+        imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+        if imgui.BeginPopup('MacroCustomRename##xiui') then
+            local rk = MP.macroCustomRenameTargetKey;
+            if rk and macroBuckets.isCustomCategoryKey(rk) then
+                imgui.TextColored(COLORS.textDim, 'Display name (macros and slot data keep the same type key).');
+                imgui.SetNextItemWidth(300);
+                imgui.InputText('##mcrenfield', MP.macroCustomRenameBuf, INPUT_BUFFER_SIZE);
+                imgui.Spacing();
+                if imgui.Button('Apply##mcrenconf', { 100, 24 }) then
+                    if ApplyRenameMacroCustomCategory(rk, MP.macroCustomRenameBuf[1]) then
+                        markSharedMacroLibraryDirtyIfNeeded();
+                        SaveSettingsToDisk();
+                        MP.macroCustomRenameTargetKey = nil;
+                        imgui.CloseCurrentPopup();
+                    end
+                end
+                imgui.SameLine(0, 8);
+                if imgui.Button('Cancel##mcrencan', { 100, 24 }) then
+                    MP.macroCustomRenameTargetKey = nil;
+                    imgui.CloseCurrentPopup();
+                end
+            else
+                MP.macroCustomRenameTargetKey = nil;
+                imgui.CloseCurrentPopup();
+            end
+            imgui.EndPopup();
+        end
+        imgui.PopStyleColor(3);
+
+        -- Confirm delete for a custom type (modal; opened from red - button)
+        imgui.PushStyleColor(ImGuiCol_PopupBg, COLORS.bgDark);
+        imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+        imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+        if imgui.BeginPopup('MacroCustomCatDelete##xiui') then
+            local dk = MP.macroCustomDeleteKey;
+            if dk and macroBuckets.isCustomCategoryKey(dk) then
+                local n = tonumber(MP.macroCustomDeleteN) or 0;
+                local lab = tostring(MP.macroCustomDeleteLabel or dk);
+                imgui.TextColored(COLORS.gold, 'Delete this custom type?');
+                imgui.PushTextWrapPos(440);
+                local macroW = n == 1 and '1 macro' or (string.format('%d macros', n));
+                imgui.TextWrapped(string.format('This permanently removes %s saved under "%s" (macro text, icons, and palette data for that type).', macroW, lab));
+                imgui.TextWrapped('On every hotbar and crossbar, any slot that contains a macro from this type reverts to an empty slot. All other slots are unchanged.');
+                if (gConfig and (gConfig.macroStorageScope or 'profile') == 'shared') then
+                    imgui.TextWrapped('Shared macro mode: the type is removed from the shared library, and other XIUI profiles get the same per-slot updates anywhere their bars referenced these macros.');
+                end
+                imgui.PopTextWrapPos();
+                imgui.Spacing();
+                if imgui.Button('Delete##mcdelconf', { 100, 24 }) then
+                    DeleteMacroCustomCategoryCompletely(dk);
+                    MP.macroCustomDeleteKey = nil;
+                    imgui.CloseCurrentPopup();
+                end
+                imgui.SameLine(0, 8);
+                if imgui.Button('Cancel##mcdelcan', { 100, 24 }) then
+                    MP.macroCustomDeleteKey = nil;
+                    imgui.CloseCurrentPopup();
+                end
+            else
+                MP.macroCustomDeleteKey = nil;
+                imgui.CloseCurrentPopup();
+            end
+            imgui.EndPopup();
+        end
+        imgui.PopStyleColor(3);
+
+        -- Move macro to another palette bucket (modal)
+        imgui.PushStyleColor(ImGuiCol_PopupBg, COLORS.bgDark);
+        imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+        imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+        if imgui.BeginPopup('MacroMoveToPalette##xiui') then
+            local srcK = MP.macroMoveSourceKey;
+            local mid = MP.macroMoveMacroId;
+            if not srcK or not mid then
+                MP.macroMoveSourceKey = nil;
+                MP.macroMoveMacroId = nil;
+                MP.macroMoveDestKey = nil;
+                imgui.CloseCurrentPopup();
+            else
+                imgui.TextColored(COLORS.gold, 'Move macro');
+                imgui.PushTextWrapPos(440);
+                imgui.TextWrapped(
+                    'Creates a copy in the destination palette with a new internal id, removes it from the source palette, '
+                        .. 'and updates hotbar and crossbar bindings so slots that already use this macro keep working.');
+                imgui.PopTextWrapPos();
+                imgui.Spacing();
+                imgui.TextColored(COLORS.textDim, 'From');
+                imgui.SameLine(0, 8);
+                imgui.Text(GetPaletteDisplayName(srcK));
+                imgui.Spacing();
+                imgui.TextColored(COLORS.textDim, 'To');
+                imgui.SameLine(0, 8);
+                PushComboStyle();
+                imgui.SetNextItemWidth(360);
+                if imgui.BeginCombo('##macroMoveDest', GetPaletteDisplayName(MP.macroMoveDestKey), ImGuiComboFlags_None) then
+                    local function offerMoveDest(key)
+                        if data.MacroPaletteKeysEqual(key, srcK) then
+                            return;
+                        end
+                        local cnt = CountMacrosInPalette(key);
+                        local lab = GetPaletteDisplayName(key);
+                        if cnt > 0 then
+                            lab = string.format('%s (%d)', lab, cnt);
+                        end
+                        local sel = data.MacroPaletteKeysEqual(key, MP.macroMoveDestKey);
+                        if sel then
+                            imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+                        elseif cnt > 0 then
+                            imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+                        else
+                            imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+                        end
+                        if imgui.Selectable(lab, sel) then
+                            MP.macroMoveDestKey = key;
+                        end
+                        imgui.PopStyleColor();
+                    end
+                    offerMoveDest(GLOBAL_MACRO_KEY);
+                    offerMoveDest(ITEMS_MACRO_KEY);
+                    offerMoveDest(EQUIPMENT_MACRO_KEY);
+                    offerMoveDest(XIUI_MACRO_KEY);
+                    EnsureMacroCustomCategoriesList();
+                    for _, cat in ipairs(gConfig.macroCustomCategories or {}) do
+                        offerMoveDest(cat.key);
+                    end
+                    imgui.Separator();
+                    for _, job in ipairs(JOB_LIST) do
+                        offerMoveDest(job.id);
+                    end
+                    for _, avatar in ipairs(petregistry.GetAvatarList()) do
+                        local avatarKey = petregistry.avatars[avatar];
+                        if avatarKey then
+                            offerMoveDest(string.format('%d:avatar:%s', petregistry.JOB_SMN, avatarKey));
+                        end
+                    end
+                    for _, pk in ipairs(petregistry.GetAvailablePetKeys(petregistry.JOB_BST)) do
+                        local slug = pk:match('^jug:(.+)$');
+                        if slug then
+                            offerMoveDest(string.format('%d:%s:%s', petregistry.JOB_BST, petregistry.PET_TYPE_JUG, slug));
+                        end
+                    end
+                    imgui.EndCombo();
+                end
+                PopComboStyle();
+                imgui.Spacing();
+                local canApply = MP.macroMoveDestKey ~= nil and not data.MacroPaletteKeysEqual(MP.macroMoveDestKey, srcK);
+                if not canApply then
+                    imgui.PushStyleVar(ImGuiStyleVar_Alpha, 0.45);
+                end
+                if imgui.Button('Move##macroMoveApply', {100, 26}) and canApply then
+                    if M.MoveMacroToPalette(mid, srcK, MP.macroMoveDestKey) then
+                        paletteUi.selectedMacroIndex = nil;
+                        MP.macroMoveSourceKey = nil;
+                        MP.macroMoveMacroId = nil;
+                        MP.macroMoveDestKey = nil;
+                        imgui.CloseCurrentPopup();
+                    end
+                end
+                if not canApply then
+                    imgui.PopStyleVar();
+                end
+                imgui.SameLine(0, 8);
+                if imgui.Button('Cancel##macroMoveCancel', {100, 26}) then
+                    MP.macroMoveSourceKey = nil;
+                    MP.macroMoveMacroId = nil;
+                    MP.macroMoveDestKey = nil;
+                    imgui.CloseCurrentPopup();
+                end
+            end
+            imgui.EndPopup();
+        end
+        imgui.PopStyleColor(3);
+
+        -- SMN: base / all avatars merged / single avatar (own row so the window stays narrow)
+        if not isSharedMacroPalette and MP.selectedPaletteType == petregistry.JOB_SMN then
+            imgui.Spacing();
+            imgui.TextColored(COLORS.textDim, 'Sub-type:');
             imgui.SameLine();
             local avatarList = petregistry.GetAvatarList();
-            local avatarLabel = selectedAvatarPalette or 'Base SMN';
-
-            -- Count macros for current avatar selection
-            local avatarMacroCount = 0;
-            local currentAvatarKey = GetEffectivePaletteType();
-            if gConfig.macroDB and gConfig.macroDB[currentAvatarKey] then
-                avatarMacroCount = #gConfig.macroDB[currentAvatarKey];
-            end
-            if avatarMacroCount > 0 then
-                avatarLabel = string.format('%s (%d)', avatarLabel, avatarMacroCount);
+            local allSubCount = CountSmnAllSubsetsMacros();
+            local avatarLabel;
+            if MP.smnShowAllAvatarSubsets then
+                avatarLabel = allSubCount > 0 and string.format('All subsets (%d)', allSubCount) or 'All subsets';
+            else
+                avatarLabel = MP.selectedAvatarPalette or 'Base SMN';
+                local avatarMacroCount = 0;
+                local currentAvatarKey = GetEffectivePaletteType();
+                if gConfig.macroDB and gConfig.macroDB[currentAvatarKey] then
+                    avatarMacroCount = #gConfig.macroDB[currentAvatarKey];
+                end
+                if avatarMacroCount > 0 then
+                    avatarLabel = string.format('%s (%d)', avatarLabel, avatarMacroCount);
+                end
             end
 
             PushComboStyle();
-            imgui.SetNextItemWidth(140);
+            imgui.SetNextItemWidth(148);
             if imgui.BeginCombo('##AvatarPalette', avatarLabel, ImGuiComboFlags_None) then
-                -- Base SMN option
-                local isBaseSelected = selectedAvatarPalette == nil;
+                -- All subsets: one grid with Base SMN + every avatar bucket
+                local allSubLabel = allSubCount > 0 and string.format('All subsets (%d)', allSubCount) or 'All subsets';
+                local allSubSel = MP.smnShowAllAvatarSubsets;
+                if allSubSel then
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+                elseif allSubCount > 0 then
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+                else
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+                end
+                if imgui.Selectable(allSubLabel, allSubSel) then
+                    ClearBstJugMacroSubsetUi();
+                    MP.smnShowAllAvatarSubsets = true;
+                    MP.selectedAvatarPalette = nil;
+                    paletteUi.selectedMacroIndex = nil;
+                    MP.currentPalettePage = 1;
+                    MP.cachedPetCommands = nil;
+                end
+                imgui.PopStyleColor();
+                if allSubSel then
+                    imgui.SetItemDefaultFocus();
+                end
+
+                imgui.Separator();
+
+                local isBaseSelected = (not MP.smnShowAllAvatarSubsets and MP.selectedAvatarPalette == nil);
                 local baseMacroCount = 0;
                 if gConfig.macroDB and gConfig.macroDB[petregistry.JOB_SMN] then
                     baseMacroCount = #gConfig.macroDB[petregistry.JOB_SMN];
@@ -2232,10 +4382,12 @@ function M.DrawPalette()
                 end
 
                 if imgui.Selectable(baseLabel, isBaseSelected) then
-                    selectedAvatarPalette = nil;
-                    selectedMacroIndex = nil;
-                    currentPalettePage = 1;
-                    cachedPetCommands = nil;  -- Refresh pet commands for new avatar
+                    ClearBstJugMacroSubsetUi();
+                    MP.smnShowAllAvatarSubsets = false;
+                    MP.selectedAvatarPalette = nil;
+                    paletteUi.selectedMacroIndex = nil;
+                    MP.currentPalettePage = 1;
+                    MP.cachedPetCommands = nil;
                 end
                 imgui.PopStyleColor();
 
@@ -2245,9 +4397,8 @@ function M.DrawPalette()
 
                 imgui.Separator();
 
-                -- Avatar options
                 for _, avatar in ipairs(avatarList) do
-                    local isSelected = selectedAvatarPalette == avatar;
+                    local isSelected = (not MP.smnShowAllAvatarSubsets and MP.selectedAvatarPalette == avatar);
                     local avatarKey = petregistry.avatars[avatar];
                     local fullKey = string.format('%d:avatar:%s', petregistry.JOB_SMN, avatarKey);
                     local macroCount = 0;
@@ -2265,10 +4416,12 @@ function M.DrawPalette()
                     end
 
                     if imgui.Selectable(label, isSelected) then
-                        selectedAvatarPalette = avatar;
-                        selectedMacroIndex = nil;
-                        currentPalettePage = 1;
-                        cachedPetCommands = nil;  -- Refresh pet commands for new avatar
+                        ClearBstJugMacroSubsetUi();
+                        MP.smnShowAllAvatarSubsets = false;
+                        MP.selectedAvatarPalette = avatar;
+                        paletteUi.selectedMacroIndex = nil;
+                        MP.currentPalettePage = 1;
+                        MP.cachedPetCommands = nil;
                     end
                     imgui.PopStyleColor();
 
@@ -2281,10 +4434,134 @@ function M.DrawPalette()
             PopComboStyle();
         end
 
+        -- BST: Base / all jug families merged / single jug family (parity with SMN Sub-type)
+        if not isSharedMacroPalette and MP.selectedPaletteType == petregistry.JOB_BST then
+            imgui.Spacing();
+            imgui.TextColored(COLORS.textDim, 'Sub-type:');
+            imgui.SameLine();
+            local bstJugList = BstJugSubsetEntriesOrdered();
+            local allBstSubCount = CountBstAllJugSubsetsMacros();
+            local bstSubLabel;
+            if MP.bstShowAllJugSubsets then
+                bstSubLabel = allBstSubCount > 0 and string.format('All subsets (%d)', allBstSubCount) or 'All subsets';
+            else
+                bstSubLabel = 'Base BST';
+                if MP.selectedBstJugMovesKey ~= nil then
+                    bstSubLabel = MP.selectedBstJugMovesKey;
+                    for _, ent in ipairs(bstJugList) do
+                        if ent.movesKey == MP.selectedBstJugMovesKey then
+                            bstSubLabel = ent.label;
+                            break;
+                        end
+                    end
+                end
+                local curBstKey = GetEffectivePaletteType();
+                local bstFamMacroCount = 0;
+                if gConfig.macroDB and gConfig.macroDB[curBstKey] then
+                    bstFamMacroCount = #gConfig.macroDB[curBstKey];
+                end
+                if bstFamMacroCount > 0 then
+                    bstSubLabel = string.format('%s (%d)', bstSubLabel, bstFamMacroCount);
+                end
+            end
+
+            PushComboStyle();
+            imgui.SetNextItemWidth(148);
+            if imgui.BeginCombo('##BstJugPalette', bstSubLabel, ImGuiComboFlags_None) then
+                local allBstLabel = allBstSubCount > 0 and string.format('All subsets (%d)', allBstSubCount) or 'All subsets';
+                local allBstSel = MP.bstShowAllJugSubsets;
+                if allBstSel then
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+                elseif allBstSubCount > 0 then
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+                else
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+                end
+                if imgui.Selectable(allBstLabel, allBstSel) then
+                    ClearSmnMacroSubsetUi();
+                    MP.bstShowAllJugSubsets = true;
+                    MP.selectedBstJugMovesKey = nil;
+                    paletteUi.selectedMacroIndex = nil;
+                    MP.currentPalettePage = 1;
+                    MP.cachedPetCommands = nil;
+                end
+                imgui.PopStyleColor();
+                if allBstSel then
+                    imgui.SetItemDefaultFocus();
+                end
+
+                imgui.Separator();
+
+                local bstBaseSel = (not MP.bstShowAllJugSubsets and MP.selectedBstJugMovesKey == nil);
+                local bstBaseMacroCount = 0;
+                if gConfig.macroDB and gConfig.macroDB[petregistry.JOB_BST] then
+                    bstBaseMacroCount = #gConfig.macroDB[petregistry.JOB_BST];
+                end
+                local bstBaseLabel = bstBaseMacroCount > 0 and string.format('Base BST (%d)', bstBaseMacroCount) or 'Base BST';
+
+                if bstBaseSel then
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+                elseif bstBaseMacroCount > 0 then
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+                else
+                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+                end
+
+                if imgui.Selectable(bstBaseLabel, bstBaseSel) then
+                    ClearSmnMacroSubsetUi();
+                    MP.bstShowAllJugSubsets = false;
+                    MP.selectedBstJugMovesKey = nil;
+                    paletteUi.selectedMacroIndex = nil;
+                    MP.currentPalettePage = 1;
+                    MP.cachedPetCommands = nil;
+                end
+                imgui.PopStyleColor();
+
+                if bstBaseSel then
+                    imgui.SetItemDefaultFocus();
+                end
+
+                imgui.Separator();
+
+                for _, ent in ipairs(bstJugList) do
+                    local jugSel = (not MP.bstShowAllJugSubsets and MP.selectedBstJugMovesKey == ent.movesKey);
+                    local jugMc = 0;
+                    if gConfig.macroDB and gConfig.macroDB[ent.fullKey] then
+                        jugMc = #gConfig.macroDB[ent.fullKey];
+                    end
+                    local jugLab = jugMc > 0 and string.format('%s (%d)', ent.label, jugMc) or ent.label;
+
+                    if jugSel then
+                        imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+                    elseif jugMc > 0 then
+                        imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+                    else
+                        imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+                    end
+
+                    if imgui.Selectable(jugLab, jugSel) then
+                        ClearSmnMacroSubsetUi();
+                        MP.bstShowAllJugSubsets = false;
+                        MP.selectedBstJugMovesKey = ent.movesKey;
+                        paletteUi.selectedMacroIndex = nil;
+                        MP.currentPalettePage = 1;
+                        MP.cachedPetCommands = nil;
+                    end
+                    imgui.PopStyleColor();
+
+                    if jugSel then
+                        imgui.SetItemDefaultFocus();
+                    end
+                end
+                imgui.EndCombo();
+            end
+            PopComboStyle();
+        end
+
         -- Pet Palette section (only show if selected palette type is a pet job AND any bar has petAware enabled)
         local isPetJob = false;
-        if selectedPaletteType and type(selectedPaletteType) == 'number' then
-            isPetJob = petregistry.IsPetJob(selectedPaletteType);
+        if MP.selectedPaletteType and type(MP.selectedPaletteType) == 'number' then
+            isPetJob = petregistry.IsPetJob(MP.selectedPaletteType);
         end
 
         local hasPetAwareBar = false;
@@ -2344,7 +4621,9 @@ function M.DrawPalette()
 
                         if imgui.Selectable('Automatic', isAutoSelected) then
                             petpalette.SetPalette(barIndex, nil);
-                            ScheduleIconCacheClear(true);
+                            local slotrenderer = require('modules.hotbar.slotrenderer');
+                            slotrenderer.ClearAllCache();
+                            ClearAllIconCaches();
                         end
                         imgui.PopStyleColor();
 
@@ -2369,7 +4648,9 @@ function M.DrawPalette()
 
                                 if imgui.Selectable('  ' .. summon.name, isSelected) then
                                     petpalette.SetPalette(barIndex, petKey);
-                                    ScheduleIconCacheClear(true);
+                                    local slotrenderer = require('modules.hotbar.slotrenderer');
+                                    slotrenderer.ClearAllCache();
+                                    ClearAllIconCaches();
                                 end
                                 imgui.PopStyleColor();
 
@@ -2381,8 +4662,8 @@ function M.DrawPalette()
 
                         imgui.Separator();
 
-                        -- Spirits section
-                        imgui.TextColored(COLORS.textDim, 'Spirits');
+                        -- Elementals (SMN spirit pets)
+                        imgui.TextColored(COLORS.textDim, 'Elementals');
                         for _, summon in ipairs(allSummons) do
                             if summon.category == 'spirit' then
                                 local petKey = petregistry.GetPetKeyForSummon(summon.name);
@@ -2396,7 +4677,9 @@ function M.DrawPalette()
 
                                 if imgui.Selectable('  ' .. summon.name, isSelected) then
                                     petpalette.SetPalette(barIndex, petKey);
-                                    ScheduleIconCacheClear(true);
+                                    local slotrenderer = require('modules.hotbar.slotrenderer');
+                                    slotrenderer.ClearAllCache();
+                                    ClearAllIconCaches();
                                 end
                                 imgui.PopStyleColor();
 
@@ -2414,6 +4697,36 @@ function M.DrawPalette()
         end
 
         imgui.Spacing();
+        imgui.TextColored(COLORS.textDim, 'Search by name:');
+        imgui.SetNextItemWidth(math.min(180, gridWidth));
+        imgui.InputText('##MacroPaletteNameSearch', MP.macroPaletteSearchName, INPUT_BUFFER_SIZE);
+        imgui.ShowHelp('Filters the macro grid by display name or action name (case-insensitive).');
+
+        imgui.Spacing();
+
+        local function rowPaletteKeyForGridIdx(idx)
+            if smnMergeMeta and smnMergeMeta[idx] then
+                return smnMergeMeta[idx].paletteKey;
+            end
+            if bstMergeMeta and bstMergeMeta[idx] then
+                return bstMergeMeta[idx].paletteKey;
+            end
+            return typeKey;
+        end
+        local function rowSubsetLabelForGridIdx(idx)
+            if smnMergeMeta and smnMergeMeta[idx] then
+                return smnMergeMeta[idx].subsetLabel;
+            end
+            if bstMergeMeta and bstMergeMeta[idx] then
+                return bstMergeMeta[idx].subsetLabel;
+            end
+            return nil;
+        end
+
+        local hasSelection = paletteUi.selectedMacroIndex and db[paletteUi.selectedMacroIndex];
+        local universalLocked = hasSelection and macroGlobalDefaults.IsUniversalTwoHourMacro(db[paletteUi.selectedMacroIndex]);
+        local copyEnabled = hasSelection and not universalLocked;
+        local editDelEnabled = hasSelection and not universalLocked;
 
         -- Button row with XIUI button styling
         imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
@@ -2424,14 +4737,67 @@ function M.DrawPalette()
         imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
 
         if imgui.Button('+ New Macro', {115, 26}) then
-            isCreatingNew = true;
-            editingMacro = {
-                actionType = 'ma',
-                action = '',
-                target = 't',
-                displayName = '',
-            };
-            selectedMacroIndex = nil;
+            MP.isCreatingNew = true;
+            MP.editorDidInitialIconPick = false;
+            MP.editorImplicitActionIconDone = false;
+            MP.editorIconManuallySet = false;
+            MP.editorJaBadgeManuallySet = false;
+            MP.showAllMode = false;
+            MP.showAllPetMode = false;
+            MP.spellTypeFilter = 'All';
+            MP.abilityJobFilter = 0;
+            MP.petTypeOverride = 0;
+            MP.editorIconPrefsHydrated = false;
+            paletteUi.selectedMacroIndex = nil;
+            MP.editorPaletteKey = GetEffectivePaletteType();
+            local body, autoKey = DefaultNewMacroBodyForPaletteKey(MP.editorPaletteKey);
+            MP.editingMacro = body;
+            MP.editorAutoIconKey = autoKey;
+            SyncMacroEditorSubtypeFieldsFromSaveKey();
+            M.ClampMacroEditorForItemsPalette();
+        end
+
+        imgui.SameLine();
+
+        if not copyEnabled then
+            imgui.PushStyleVar(ImGuiStyleVar_Alpha, 0.4);
+        end
+        if imgui.Button('Copy', {60, 26}) and copyEnabled then
+            MP.editingMacro = deep_copy_table(db[paletteUi.selectedMacroIndex]);
+            MP.editingMacro.id = nil;
+            MP.isCreatingNew = true;
+            MP.editorPaletteKey = rowPaletteKeyForGridIdx(paletteUi.selectedMacroIndex);
+            SyncMacroEditorSubtypeFieldsFromSaveKey();
+            M.ClampMacroEditorForItemsPalette();
+            MP.editorDidInitialIconPick = false;
+            MP.editorImplicitActionIconDone = false;
+            MP.editorIconManuallySet = false;
+            MP.editorJaBadgeManuallySet = false;
+            MP.showAllMode = false;
+            MP.showAllPetMode = false;
+            MP.spellTypeFilter = 'All';
+            MP.abilityJobFilter = 0;
+            MP.petTypeOverride = 0;
+            MP.editorIconPrefsHydrated = false;
+            ClearEditorPreviewIconCache();
+        end
+        if not copyEnabled then
+            imgui.PopStyleVar();
+        end
+
+        imgui.SameLine();
+
+        if not copyEnabled then
+            imgui.PushStyleVar(ImGuiStyleVar_Alpha, 0.4);
+        end
+        if imgui.Button('Move', {52, 26}) and copyEnabled then
+            MP.macroMoveSourceKey = rowPaletteKeyForGridIdx(paletteUi.selectedMacroIndex);
+            MP.macroMoveMacroId = db[paletteUi.selectedMacroIndex].id;
+            MP.macroMoveDestKey = PickDefaultMacroMoveDestination(MP.macroMoveSourceKey);
+            imgui.OpenPopup('MacroMoveToPalette##xiui');
+        end
+        if not copyEnabled then
+            imgui.PopStyleVar();
         end
 
         imgui.PopStyleColor(5);
@@ -2439,52 +4805,48 @@ function M.DrawPalette()
 
         imgui.SameLine();
 
-        -- Edit/Delete buttons (always visible, disabled when no selection)
-        local hasSelection = selectedMacroIndex and db[selectedMacroIndex];
-
-        if not hasSelection then
+        -- Edit/Delete buttons (always visible, disabled when no selection or Universal 2Hr locked)
+        if not editDelEnabled then
             imgui.PushStyleVar(ImGuiStyleVar_Alpha, 0.4);
         end
 
-        if imgui.Button('Edit', {60, 26}) and hasSelection then
-            editingMacro = deep_copy_table(db[selectedMacroIndex]);
-            isCreatingNew = false;
-        end
-
-        imgui.SameLine();
-
-        if imgui.Button('Copy', {60, 26}) and hasSelection then
-            copyMacroSource = deep_copy_table(db[selectedMacroIndex]);
-            copyTargetIndex[1] = 1;
-            local currentTypeKey = GetEffectivePaletteType();
-            for i, target in ipairs(GetCopyTargetOptions()) do
-                if target.key == currentTypeKey then
-                    copyTargetIndex[1] = i;
-                    break;
-                end
-            end
-            copyMacroDialogOpen = true;
+        if imgui.Button('Edit', {60, 26}) and editDelEnabled then
+            MP.editingMacro = deep_copy_table(db[paletteUi.selectedMacroIndex]);
+            MP.isCreatingNew = false;
+            MP.editorPaletteKey = rowPaletteKeyForGridIdx(paletteUi.selectedMacroIndex);
+            SyncMacroEditorSubtypeFieldsFromSaveKey();
+            M.ClampMacroEditorForItemsPalette();
+            MP.editorDidInitialIconPick = false;
+            MP.editorImplicitActionIconDone = false;
+            MP.editorIconManuallySet = false;
+            MP.editorJaBadgeManuallySet = false;
+            MP.showAllMode = false;
+            MP.showAllPetMode = false;
+            MP.spellTypeFilter = 'All';
+            MP.abilityJobFilter = 0;
+            MP.petTypeOverride = 0;
+            MP.editorIconPrefsHydrated = false;
         end
 
         imgui.SameLine();
 
         -- Delete button with danger styling (or dimmed when disabled)
-        if hasSelection then
+        if editDelEnabled then
             imgui.PushStyleColor(ImGuiCol_Button, COLORS.dangerDim);
             imgui.PushStyleColor(ImGuiCol_ButtonHovered, COLORS.danger);
             imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.9, 0.35, 0.35, 1.0});
         end
 
-        if imgui.Button('Delete', {60, 26}) and hasSelection then
-            M.DeleteMacro(db[selectedMacroIndex].id);
-            selectedMacroIndex = nil;
+        if imgui.Button('Delete', {60, 26}) and editDelEnabled then
+            M.DeleteMacro(db[paletteUi.selectedMacroIndex].id, rowPaletteKeyForGridIdx(paletteUi.selectedMacroIndex));
+            paletteUi.selectedMacroIndex = nil;
         end
 
-        if hasSelection then
+        if editDelEnabled then
             imgui.PopStyleColor(3);
         end
 
-        if not hasSelection then
+        if not editDelEnabled then
             imgui.PopStyleVar();
         end
 
@@ -2496,12 +4858,16 @@ function M.DrawPalette()
         if #db == 0 then
             imgui.TextColored(COLORS.textDim, 'No macros yet.');
             imgui.TextColored(COLORS.textMuted, 'Click "+ New Macro" to create one.');
+        elseif totalMacros == 0 then
+            imgui.TextColored(COLORS.textDim, 'No macros match your search.');
+            imgui.TextColored(COLORS.textMuted, 'Clear the search field or try different text.');
         else
             -- Draw grid row by row using standard ImGui layout
             for row = 0, rowsOnPage - 1 do
                 for col = 0, PALETTE_COLUMNS - 1 do
-                    local idx = startIdx + row * PALETTE_COLUMNS + col;
-                    if idx <= endIdx then
+                    local pos = startIdx + row * PALETTE_COLUMNS + col;
+                    if pos <= endIdx then
+                        local idx = filteredIndices[pos];
                         local macro = db[idx];
                         if macro then
                             if col > 0 then
@@ -2509,7 +4875,7 @@ function M.DrawPalette()
                             end
 
                             -- Draw the tile inline
-                            local isSelected = selectedMacroIndex == idx;
+                            local isSelected = paletteUi.selectedMacroIndex == idx;
 
                             if isSelected then
                                 imgui.PushStyleColor(ImGuiCol_Button, {0.15, 0.13, 0.08, 0.95});
@@ -2521,7 +4887,7 @@ function M.DrawPalette()
                                 imgui.PushStyleColor(ImGuiCol_ButtonActive, COLORS.bgLight);
                             end
 
-                            imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, 4);
+                            imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, PALETTE_TILE_ROUNDING);
                             imgui.PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1);
                             imgui.PushStyleColor(ImGuiCol_Border, isSelected and COLORS.gold or COLORS.border);
 
@@ -2529,18 +4895,17 @@ function M.DrawPalette()
                             local buttonPos = {imgui.GetCursorScreenPos()};
 
                             if imgui.Button(buttonId, {PALETTE_TILE_SIZE, PALETTE_TILE_SIZE}) then
-                                selectedMacroIndex = idx;
+                                paletteUi.selectedMacroIndex = idx;
                             end
 
                             imgui.PopStyleColor(4);
                             imgui.PopStyleVar(2);
 
                             -- Draw icon on top of button, or abbreviation if no icon
-                            local icon = actions.GetBindIcon(macro);
-                            local iconRendered = false;
-                            if icon and icon.image then
                                 local drawList = imgui.GetWindowDrawList();
-                                if drawList then
+                            local icon = GetCachedPaletteMainIcon(macro);
+                            local iconRendered = false;
+                            if icon and icon.image and drawList then
                                     local iconSize = PALETTE_TILE_SIZE - 8;
                                     local iconX = buttonPos[1] + 4;
                                     local iconY = buttonPos[2] + 4;
@@ -2550,6 +4915,8 @@ function M.DrawPalette()
                                         iconRendered = true;
                                     end
                                 end
+                            if drawList then
+                                DrawMacroJaBadgeOverlay(drawList, macro, buttonPos[1], buttonPos[2], PALETTE_TILE_SIZE);
                             end
 
                             -- No icon - show abbreviated action name
@@ -2568,7 +4935,7 @@ function M.DrawPalette()
                             -- Handle drag
                             if imgui.IsItemActive() and imgui.IsMouseDragging(0, 3) then
                                 if not dragdrop.IsDragging() and not dragdrop.IsDragPending() then
-                                    M.StartDragMacro(idx, macro);
+                                    M.StartDragMacro(idx, macro, rowPaletteKeyForGridIdx(idx));
                                 end
                             end
 
@@ -2578,17 +4945,25 @@ function M.DrawPalette()
                                 imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
                                 imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {8, 6});
                                 imgui.BeginTooltip();
-                                imgui.TextColored(COLORS.gold, macro.displayName or macro.action or 'Unknown');
-                                imgui.Spacing();
-                                imgui.TextColored(COLORS.textDim, 'Type: ' .. (ACTION_TYPE_LABELS[macro.actionType] or macro.actionType or '?'));
-                                if macro.actionType ~= 'macro' and macro.target then
-                                    local formattedTarget = FormatTargetForDisplay(macro.target);
-                                    if formattedTarget then
-                                        imgui.TextColored(COLORS.textDim, 'Target: ' .. formattedTarget);
+                                if macroGlobalDefaults.IsUniversalTwoHourMacro(macro) then
+                                    imgui.TextColored(COLORS.gold, '2-Hour Ability');
+                                else
+                                    imgui.TextColored(COLORS.gold, macro.displayName or macro.action or 'Unknown');
+                                    local subLbl = rowSubsetLabelForGridIdx(idx);
+                                    if subLbl then
+                                        imgui.TextColored(COLORS.textMuted, 'Subset: ' .. subLbl);
                                     end
+                                    imgui.Spacing();
+                                    imgui.TextColored(COLORS.textDim, 'Type: ' .. (ACTION_TYPE_LABELS[macro.actionType] or macro.actionType or '?'));
+                                    if macro.actionType ~= 'macro' and macro.target then
+                                        local formattedTarget = FormatTargetForDisplay(macro.target);
+                                        if formattedTarget then
+                                            imgui.TextColored(COLORS.textDim, 'Target: ' .. formattedTarget);
+                                        end
+                                    end
+                                    imgui.Spacing();
+                                    imgui.TextColored(COLORS.textMuted, 'Drag to hotbar slot');
                                 end
-                                imgui.Spacing();
-                                imgui.TextColored(COLORS.textMuted, 'Drag to hotbar slot');
                                 imgui.EndTooltip();
                                 imgui.PopStyleVar();
                                 imgui.PopStyleColor(2);
@@ -2616,13 +4991,13 @@ function M.DrawPalette()
         imgui.SetCursorPosX(paginationStartX);
 
         -- Previous button (disabled when on first page)
-        local canGoPrev = currentPalettePage > 1;
+        local canGoPrev = MP.currentPalettePage > 1;
         if not canGoPrev then
             imgui.PushStyleVar(ImGuiStyleVar_Alpha, 0.3);
         end
         if imgui.Button('<##PrevPage', {30, 22}) and canGoPrev then
-            currentPalettePage = currentPalettePage - 1;
-            selectedMacroIndex = nil;
+            MP.currentPalettePage = MP.currentPalettePage - 1;
+            paletteUi.selectedMacroIndex = nil;
         end
         if not canGoPrev then
             imgui.PopStyleVar();
@@ -2631,7 +5006,7 @@ function M.DrawPalette()
         imgui.SameLine();
 
         -- Page indicator
-        local pageText = string.format('Page %d / %d', currentPalettePage, totalPages);
+        local pageText = string.format('Page %d / %d', MP.currentPalettePage, totalPages);
         local textWidth = imgui.CalcTextSize(pageText);
         imgui.SetCursorPosX(paginationStartX + (paginationWidth - textWidth) / 2);
         imgui.TextColored(COLORS.textDim, pageText);
@@ -2640,13 +5015,13 @@ function M.DrawPalette()
         imgui.SetCursorPosX(paginationStartX + paginationWidth - 30);
 
         -- Next button (disabled when on last page)
-        local canGoNext = currentPalettePage < totalPages;
+        local canGoNext = MP.currentPalettePage < totalPages;
         if not canGoNext then
             imgui.PushStyleVar(ImGuiStyleVar_Alpha, 0.3);
         end
         if imgui.Button('>##NextPage', {30, 22}) and canGoNext then
-            currentPalettePage = currentPalettePage + 1;
-            selectedMacroIndex = nil;
+            MP.currentPalettePage = MP.currentPalettePage + 1;
+            paletteUi.selectedMacroIndex = nil;
         end
         if not canGoNext then
             imgui.PopStyleVar();
@@ -2662,12 +5037,22 @@ function M.DrawPalette()
     end
 
     -- Draw macro editor popup if needed
-    if editingMacro then
+    if MP.editingMacro then
         M.DrawMacroEditor();
     end
+end
 
-    -- Draw copy macro dialog if needed
-    DrawCopyMacroDialog();
+function M.DrawPalette()
+    -- Macro editor must draw even when the palette list is closed (e.g. opened from Edit Full Palette
+    -- via double-click); otherwise MP.editingMacro is set but no window is ever drawn.
+    if not paletteUi.open then
+        if MP.editingMacro then
+            RefreshCachedLists();
+            M.DrawMacroEditor();
+        end
+        return;
+    end
+    DrawPaletteBody();
 end
 
 -- ============================================
@@ -2732,40 +5117,6 @@ local function FindIndex(array, value)
     return 1;
 end
 
--- Draw icon preview box with current icon
-local function DrawIconPreview(macro, x, y, size)
-    local drawList = imgui.GetWindowDrawList();
-    if not drawList then return; end
-
-    -- Draw background box
-    local bgColor = imgui.GetColorU32({0.1, 0.09, 0.08, 0.95});
-    local borderColor = imgui.GetColorU32(COLORS.border);
-    drawList:AddRectFilled({x, y}, {x + size, y + size}, bgColor, 4);
-    drawList:AddRect({x, y}, {x + size, y + size}, borderColor, 4, 0, 1);
-
-    -- Draw icon if available
-    local icon = actions.GetBindIcon(macro);
-    if icon and icon.image then
-        local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
-        if iconPtr then
-            local padding = 4;
-            drawList:AddImage(
-                iconPtr,
-                {x + padding, y + padding},
-                {x + size - padding, y + size - padding}
-            );
-        end
-    else
-        -- No icon - show abbreviated action name (prefer action for preview)
-        local abbr = GetActionAbbreviation(macro, true);
-        local textSize = imgui.CalcTextSize(abbr);
-        local textX = x + (size - textSize) / 2;
-        local textY = y + (size - 14) / 2;
-        local textColor = imgui.GetColorU32(COLORS.gold);
-        drawList:AddText({textX, textY}, textColor, abbr);
-    end
-end
-
 -- Helper to draw an icon button (works around ImageButton signature issues)
 local function DrawIconButton(id, icon, size, isSelected, tooltipText)
     local clicked = false;
@@ -2820,12 +5171,12 @@ end
 
 -- Draw the icon picker popup
 local function DrawIconPicker()
-    if not iconPickerOpen or not editingMacro then
+    if not MP.iconPickerOpen or not MP.editingMacro then
         return;
     end
 
     -- Start item loading when items tab is selected
-    if iconPickerTab == 2 then
+    if MP.iconPickerTab == 2 then
         StartItemIconLoading();
         LoadItemIconBatch();  -- Load a batch each frame
     end
@@ -2852,7 +5203,7 @@ local function DrawIconPicker()
         local tabWidth = 70;
 
         -- Spells tab
-        if iconPickerTab == 1 then
+        if MP.iconPickerTab == 1 then
             imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
             imgui.PushStyleColor(ImGuiCol_Border, COLORS.gold);
         else
@@ -2860,7 +5211,7 @@ local function DrawIconPicker()
             imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
         end
         if imgui.Button('Spells', {tabWidth, 24}) then
-            iconPickerTab = 1;
+            MP.iconPickerTab = 1;
             -- Keep filter text, don't reset - reduces lag from cache rebuilds
         end
         imgui.PopStyleColor(2);
@@ -2868,7 +5219,7 @@ local function DrawIconPicker()
         imgui.SameLine();
 
         -- Items tab
-        if iconPickerTab == 2 then
+        if MP.iconPickerTab == 2 then
             imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
             imgui.PushStyleColor(ImGuiCol_Border, COLORS.gold);
         else
@@ -2876,7 +5227,7 @@ local function DrawIconPicker()
             imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
         end
         if imgui.Button('Items', {tabWidth, 24}) then
-            iconPickerTab = 2;
+            MP.iconPickerTab = 2;
             -- Keep filter text, don't reset - reduces lag from cache rebuilds
         end
         imgui.PopStyleColor(2);
@@ -2884,7 +5235,7 @@ local function DrawIconPicker()
         imgui.SameLine();
 
         -- Custom tab
-        if iconPickerTab == 3 then
+        if MP.iconPickerTab == 3 then
             imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
             imgui.PushStyleColor(ImGuiCol_Border, COLORS.gold);
         else
@@ -2892,7 +5243,7 @@ local function DrawIconPicker()
             imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
         end
         if imgui.Button('Custom', {tabWidth, 24}) then
-            iconPickerTab = 3;
+            MP.iconPickerTab = 3;
             -- Keep filter text, don't reset - reduces lag from cache rebuilds
         end
         imgui.PopStyleColor(2);
@@ -2904,10 +5255,18 @@ local function DrawIconPicker()
         imgui.PushStyleColor(ImGuiCol_ButtonHovered, COLORS.danger);
         imgui.PushStyleColor(ImGuiCol_Border, COLORS.danger);
         if imgui.Button('Clear', {50, 24}) then
-            editingMacro.customIconType = nil;
-            editingMacro.customIconId = nil;
-            editingMacro.customIconPath = nil;
-            iconPickerOpen = false;
+            if MP.iconPickerTargetIsJaBadge then
+                MP.editingMacro.jaBadgeCustomIconType = nil;
+                MP.editingMacro.jaBadgeCustomIconId = nil;
+                MP.editingMacro.jaBadgeCustomIconPath = nil;
+                MP.editorJaBadgeManuallySet = false;
+            else
+                MP.editingMacro.customIconType = nil;
+                MP.editingMacro.customIconId = nil;
+                MP.editingMacro.customIconPath = nil;
+            end
+            MP.editorAutoIconKey = nil;
+            MP.iconPickerOpen = false;
         end
         imgui.PopStyleColor(3);
 
@@ -2919,10 +5278,10 @@ local function DrawIconPicker()
         imgui.TextColored(COLORS.goldDim, 'Search:');
         imgui.SameLine();
         imgui.SetNextItemWidth(200);
-        imgui.InputText('##iconSearch', iconPickerFilter, INPUT_BUFFER_SIZE);
+        imgui.InputText('##iconSearch', MP.iconPickerFilter, INPUT_BUFFER_SIZE);
 
         -- Show loading status for items tab (count shown near page navigation)
-        if iconPickerTab == 2 and itemIconLoadState.loading then
+        if MP.iconPickerTab == 2 and itemIconLoadState.loading then
             imgui.SameLine();
             imgui.TextColored(COLORS.textMuted, string.format('Loading... %d%%', GetItemLoadProgress()));
         end
@@ -2930,7 +5289,7 @@ local function DrawIconPicker()
         imgui.Spacing();
 
         -- Spell type filter buttons with icons (only for spells tab)
-        if iconPickerTab == 1 then
+        if MP.iconPickerTab == 1 then
             local filterIconSize = 24;
             imgui.PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2);
             imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {3, 3});
@@ -2938,7 +5297,7 @@ local function DrawIconPicker()
 
             for i, spellType in ipairs(SPELL_TYPE_ORDER) do
                 local tooltip = SPELL_TYPE_LABELS[spellType] or spellType;
-                local isSelected = iconPickerSpellType == spellType;
+                local isSelected = MP.iconPickerSpellType == spellType;
 
                 if isSelected then
                     imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
@@ -2955,8 +5314,8 @@ local function DrawIconPicker()
 
                 -- Use DrawIconButton which works on all Ashita versions
                 if DrawIconButton('##spellFilter' .. i, icon, filterIconSize, isSelected, tooltip) then
-                    iconPickerSpellType = spellType;
-                    iconPickerPage[1] = 1;
+                    MP.iconPickerSpellType = spellType;
+                    MP.iconPickerPage[1] = 1;
                 end
 
                 if i < #SPELL_TYPE_ORDER then
@@ -2969,7 +5328,7 @@ local function DrawIconPicker()
         end
 
         -- Item type filter buttons with icons (only for items tab)
-        if iconPickerTab == 2 then
+        if MP.iconPickerTab == 2 then
             local filterIconSize = 24;
             imgui.PushStyleVar(ImGuiStyleVar_FrameBorderSize, 2);
             imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {3, 3});
@@ -2977,7 +5336,7 @@ local function DrawIconPicker()
 
             for i, itemType in ipairs(ITEM_TYPE_ORDER) do
                 local tooltip = ITEM_TYPE_LABELS[itemType] or tostring(itemType);
-                local isSelected = iconPickerItemType == itemType;
+                local isSelected = MP.iconPickerItemType == itemType;
                 local itemId = ITEM_TYPE_ICONS[itemType];
 
                 -- Get item icon texture
@@ -2985,8 +5344,8 @@ local function DrawIconPicker()
 
                 -- Use DrawIconButton which works on all Ashita versions
                 if DrawIconButton('##itemFilter' .. i, icon, filterIconSize, isSelected, tooltip) then
-                    iconPickerItemType = itemType;
-                    iconPickerPage[2] = 1;
+                    MP.iconPickerItemType = itemType;
+                    MP.iconPickerPage[2] = 1;
                 end
 
                 if i < #ITEM_TYPE_ORDER then
@@ -2999,7 +5358,7 @@ local function DrawIconPicker()
         end
 
         -- Custom icon category filter buttons (only for custom tab)
-        if iconPickerTab == 3 then
+        if MP.iconPickerTab == 3 then
             -- Load categories if not loaded
             LoadCustomIcons();
             
@@ -3032,7 +5391,7 @@ local function DrawIconPicker()
                     imgui.PushStyleColor(ImGuiCol_Text, COLORS.goldDim);
                     if imgui.Button(letter .. '##customFilter' .. i, {filterIconSize, filterIconSize}) then
                         customIconCategory = category;
-                        iconPickerPage[3] = 1;
+                        MP.iconPickerPage[3] = 1;
                         customIconsCacheKey = nil;
                     end
                     imgui.PopStyleColor(3);
@@ -3045,7 +5404,7 @@ local function DrawIconPicker()
                     -- Use DrawIconButton for categories with icons
                     if DrawIconButton('##customFilter' .. i, categoryIcon, filterIconSize, isSelected, tooltip) then
                         customIconCategory = category;
-                        iconPickerPage[3] = 1;
+                        MP.iconPickerPage[3] = 1;
                         customIconsCacheKey = nil;  -- Invalidate cache
                     end
                 end
@@ -3092,7 +5451,7 @@ local function DrawIconPicker()
             imgui.PushStyleColor(ImGuiCol_ButtonHovered, COLORS.bgLight);
             imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
             
-            if imgui.BeginPopupModal('Create Custom Folder##newFolderPopup', nil, ImGuiWindowFlags_AlwaysAutoResize) then
+            if imgui.BeginPopup('Create Custom Folder##newFolderPopup') then
                 imgui.TextColored(COLORS.goldDim, 'Folder name:');
                 imgui.SetNextItemWidth(250);
                 imgui.InputText('##newFolderInput', newFolderName, 64);
@@ -3119,60 +5478,62 @@ local function DrawIconPicker()
             imgui.PopStyleColor(9);
         end
 
-        local filter = iconPickerFilter[1]:lower();
-        local currentPage = iconPickerPage[iconPickerTab];
+        local filter = MP.iconPickerFilter[1];
+        local currentPage = MP.iconPickerPage[MP.iconPickerTab];
 
         -- Build cache key for filtered results
         local cacheKey;
-        if iconPickerTab == 1 then
-            cacheKey = filter .. ':spell:' .. iconPickerSpellType;
-        elseif iconPickerTab == 2 then
-            cacheKey = filter .. ':item:' .. tostring(iconPickerItemType);
-        elseif iconPickerTab == 3 then
+        if MP.iconPickerTab == 1 then
+            cacheKey = filter .. ':spell:' .. MP.iconPickerSpellType;
+        elseif MP.iconPickerTab == 2 then
+            cacheKey = filter .. ':item:' .. tostring(MP.iconPickerItemType);
+        elseif MP.iconPickerTab == 3 then
             cacheKey = filter .. ':custom:' .. customIconCategory;
         end
 
         -- Reset page and invalidate cache if filter/type changed
-        if iconPickerTab == 1 then
+        if MP.iconPickerTab == 1 then
             if cacheKey ~= filteredSpellsCacheKey then
-                iconPickerPage[1] = 1;
+                MP.iconPickerPage[1] = 1;
                 currentPage = 1;
                 filteredSpellsCache = nil;
                 filteredSpellsCacheKey = cacheKey;
             end
-        elseif iconPickerTab == 2 then
+        elseif MP.iconPickerTab == 2 then
             if cacheKey ~= filteredItemsCacheKey then
-                iconPickerPage[2] = 1;
+                MP.iconPickerPage[2] = 1;
                 currentPage = 1;
                 filteredItemsCache = nil;
                 filteredItemsCacheKey = cacheKey;
             end
-        elseif iconPickerTab == 3 then
+        elseif MP.iconPickerTab == 3 then
             if cacheKey ~= customIconsCacheKey then
-                iconPickerPage[3] = 1;
+                MP.iconPickerPage[3] = 1;
                 currentPage = 1;
                 customIconsCacheKey = cacheKey;
+                filteredCustomIconsCache = nil;
+                filteredCustomIconsCacheKey = nil;
             end
         end
 
         -- Build filtered list (with caching to avoid rebuilding every frame)
         local filteredItems = {};
-        if iconPickerTab == 1 then
+        if MP.iconPickerTab == 1 then
             if filteredSpellsCache then
                 filteredItems = filteredSpellsCache;
             else
                 local allSpells = GetAllSpells();
                 for _, spell in ipairs(allSpells) do
                     local spellName = spell.name or '';
-                    local matchesFilter = (filter == '' or spellName:lower():find(filter, 1, true));
-                    local matchesType = (iconPickerSpellType == 'All' or spell.type == iconPickerSpellType);
+                    local matchesFilter = iconPickerNameMatchesFilter(spellName, filter);
+                    local matchesType = (MP.iconPickerSpellType == 'All' or spell.type == MP.iconPickerSpellType);
                     if matchesFilter and matchesType then
                         table.insert(filteredItems, spell);
                     end
                 end
                 filteredSpellsCache = filteredItems;
             end
-        elseif iconPickerTab == 2 then
+        elseif MP.iconPickerTab == 2 then
             -- Only use cache if: cache exists, not loading, and cache has items (or items DB is empty)
             local cacheValid = filteredItemsCache
                 and not itemIconLoadState.loading
@@ -3183,8 +5544,8 @@ local function DrawIconPicker()
             else
                 -- Use pre-filtered type list if available and a specific type is selected
                 local sourceItems;
-                if iconPickerItemType ~= 0 and itemIconLoadState.itemsByType[iconPickerItemType] then
-                    sourceItems = itemIconLoadState.itemsByType[iconPickerItemType];
+                if MP.iconPickerItemType ~= 0 and itemIconLoadState.itemsByType[MP.iconPickerItemType] then
+                    sourceItems = itemIconLoadState.itemsByType[MP.iconPickerItemType];
                 else
                     sourceItems = itemIconLoadState.items;
                 end
@@ -3198,7 +5559,7 @@ local function DrawIconPicker()
                         -- Apply text filter
                         for _, item in ipairs(sourceItems) do
                             local itemName = item.name or '';
-                            if itemName:lower():find(filter, 1, true) then
+                            if iconPickerNameMatchesFilter(itemName, filter) then
                                 table.insert(filteredItems, item);
                             end
                         end
@@ -3210,23 +5571,28 @@ local function DrawIconPicker()
                     filteredItemsCache = filteredItems;
                 end
             end
-        elseif iconPickerTab == 3 then
-            -- Custom icons - use pre-filtered category list
+        elseif MP.iconPickerTab == 3 then
+            if filteredCustomIconsCache and filteredCustomIconsCacheKey == cacheKey then
+                filteredItems = filteredCustomIconsCache;
+            else
             filteredItems = GetCustomIconsFiltered(customIconCategory, filter);
+                filteredCustomIconsCache = filteredItems;
+                filteredCustomIconsCacheKey = cacheKey;
+            end
         end
 
         local totalItems = #filteredItems;
         local totalPages = math.max(1, math.ceil(totalItems / ICONS_PER_PAGE));
 
         -- Show filtered count for spells and custom (items count shown near page navigation only)
-        if iconPickerTab == 1 then
+        if MP.iconPickerTab == 1 then
             local allSpells = GetAllSpells();
             local countText = string.format('%d of %d spells', totalItems, #allSpells);
-            if iconPickerSpellType ~= 'All' then
-                countText = countText .. ' (' .. (SPELL_TYPE_LABELS[iconPickerSpellType] or iconPickerSpellType) .. ')';
+            if MP.iconPickerSpellType ~= 'All' then
+                countText = countText .. ' (' .. (SPELL_TYPE_LABELS[MP.iconPickerSpellType] or MP.iconPickerSpellType) .. ')';
             end
             imgui.TextColored(COLORS.textMuted, countText);
-        elseif iconPickerTab == 3 then
+        elseif MP.iconPickerTab == 3 then
             local allCustom = LoadCustomIcons();
             local countText = string.format('%d of %d custom icons', totalItems, #allCustom);
             if customIconCategory ~= 'all' then
@@ -3253,16 +5619,10 @@ local function DrawIconPicker()
             imgui.PushStyleColor(ImGuiCol_ButtonHovered, COLORS.bgLight);
             imgui.PushStyleColor(ImGuiCol_Text, COLORS.goldDim);
             if imgui.Button('Refresh##refreshCustom', {60, 18}) then
-                -- Clear all caches to force rescan
-                customIconsCache = nil;
-                customIconsByCategoryCache = {};
-                customCategoryIconCache = {};
+                InvalidateCustomIconScanCaches();
                 customIconsCacheKey = nil;
-                -- Clear TextureManager custom icons cache
-                TextureManager.clearCategory('custom_icons');
-                -- Also clear the action module's custom icon cache
                 actions.ClearCustomIconCache();
-                -- Reset progressive loading
+                TextureManager.clearCategory('custom_icons');
                 ResetIconLoading();
             end
             imgui.PopStyleColor(3);
@@ -3276,7 +5636,7 @@ local function DrawIconPicker()
             imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgMedium);
             imgui.PushStyleColor(ImGuiCol_ButtonHovered, COLORS.bgLight);
             
-            if imgui.BeginPopupModal('Delete Folder##deleteFolderPopup', nil, ImGuiWindowFlags_AlwaysAutoResize) then
+            if imgui.BeginPopup('Delete Folder##deleteFolderPopup') then
                 local categoryLabel = CUSTOM_ICON_LABELS[deleteFolderTarget] or deleteFolderTarget or '';
                 local iconCount = customIconsByCategoryCache[deleteFolderTarget] and #customIconsByCategoryCache[deleteFolderTarget] or 0;
                 
@@ -3320,7 +5680,7 @@ local function DrawIconPicker()
         -- Clamp current page
         if currentPage > totalPages then
             currentPage = totalPages;
-            iconPickerPage[iconPickerTab] = currentPage;
+            MP.iconPickerPage[MP.iconPickerTab] = currentPage;
         end
 
         -- Page navigation UI
@@ -3336,7 +5696,7 @@ local function DrawIconPicker()
                 imgui.PushStyleColor(ImGuiCol_Text, COLORS.textMuted);
             end
             if imgui.Button('<##prevPage', {30, 22}) and canGoPrev then
-                iconPickerPage[iconPickerTab] = currentPage - 1;
+                MP.iconPickerPage[MP.iconPickerTab] = currentPage - 1;
             end
             if not canGoPrev then
                 imgui.PopStyleColor(3);
@@ -3357,7 +5717,7 @@ local function DrawIconPicker()
                 imgui.PushStyleColor(ImGuiCol_Text, COLORS.textMuted);
             end
             if imgui.Button('>##nextPage', {30, 22}) and canGoNext then
-                iconPickerPage[iconPickerTab] = currentPage + 1;
+                MP.iconPickerPage[MP.iconPickerTab] = currentPage + 1;
             end
             if not canGoNext then
                 imgui.PopStyleColor(3);
@@ -3391,7 +5751,7 @@ local function DrawIconPicker()
 
         local displayedCount = 0;
 
-        if iconPickerTab == 1 then
+        if MP.iconPickerTab == 1 then
             -- Spell icons - render current page from filtered list
             if totalItems == 0 then
                 imgui.TextColored(COLORS.textMuted, 'No matching spells found');
@@ -3424,11 +5784,25 @@ local function DrawIconPicker()
                                 tooltipText = spell.name .. ' (' .. (SPELL_TYPE_LABELS[spell.type] or spell.type) .. ')';
                             end
 
-                            local isSelected = editingMacro.customIconType == 'spell' and editingMacro.customIconId == spell.id;
+                            local isSelected;
+                            if MP.iconPickerTargetIsJaBadge then
+                                isSelected = MP.editingMacro.jaBadgeCustomIconType == 'spell' and MP.editingMacro.jaBadgeCustomIconId == spell.id;
+                            else
+                                isSelected = MP.editingMacro.customIconType == 'spell' and MP.editingMacro.customIconId == spell.id;
+                            end
                             if DrawIconButton('##spell' .. spell.id, icon, ICON_GRID_SIZE, isSelected, tooltipText) then
-                                editingMacro.customIconType = 'spell';
-                                editingMacro.customIconId = spell.id;
-                                iconPickerOpen = false;
+                                if MP.iconPickerTargetIsJaBadge then
+                                    MP.editingMacro.jaBadgeCustomIconType = 'spell';
+                                    MP.editingMacro.jaBadgeCustomIconId = spell.id;
+                                    MP.editingMacro.jaBadgeCustomIconPath = nil;
+                                    MP.editorJaBadgeManuallySet = true;
+                                else
+                                    MP.editingMacro.customIconType = 'spell';
+                                    MP.editingMacro.customIconId = spell.id;
+                                    MP.editingMacro.customIconPath = nil;
+                                end
+                                MP.editorAutoIconKey = nil;
+                                MP.iconPickerOpen = false;
                             end
 
                             displayedCount = displayedCount + 1;
@@ -3437,7 +5811,7 @@ local function DrawIconPicker()
                 end
             end
 
-        elseif iconPickerTab == 2 then
+        elseif MP.iconPickerTab == 2 then
             -- Item icons - render current page from filtered list with progressive loading
             if itemIconLoadState.loading and #itemIconLoadState.items == 0 then
                 imgui.TextColored(COLORS.textMuted, 'Loading item database...');
@@ -3448,7 +5822,7 @@ local function DrawIconPicker()
                 local loadCacheKey = cacheKey .. ':' .. tostring(currentPage);
                 if iconLoadState.currentCacheKey ~= loadCacheKey then
                     iconLoadState.currentPage = currentPage;
-                    iconLoadState.currentTab = iconPickerTab;
+                    iconLoadState.currentTab = MP.iconPickerTab;
                     iconLoadState.currentCacheKey = loadCacheKey;
                     iconLoadState.loadedCount = 0;
                     iconLoadState.pageIconCache = {};
@@ -3509,11 +5883,25 @@ local function DrawIconPicker()
                             tooltipText = item.name .. ' (' .. typeLabel .. ')';
                         end
 
-                        local isSelected = editingMacro.customIconType == 'item' and editingMacro.customIconId == item.id;
-                        if DrawIconButton('##item' .. item.id, icon, ICON_GRID_SIZE, isSelected, tooltipText) then
-                            editingMacro.customIconType = 'item';
-                            editingMacro.customIconId = item.id;
-                            iconPickerOpen = false;
+                        local isSelectedItem;
+                        if MP.iconPickerTargetIsJaBadge then
+                            isSelectedItem = MP.editingMacro.jaBadgeCustomIconType == 'item' and MP.editingMacro.jaBadgeCustomIconId == item.id;
+                        else
+                            isSelectedItem = MP.editingMacro.customIconType == 'item' and MP.editingMacro.customIconId == item.id;
+                        end
+                        if DrawIconButton('##item' .. item.id, icon, ICON_GRID_SIZE, isSelectedItem, tooltipText) then
+                            if MP.iconPickerTargetIsJaBadge then
+                                MP.editingMacro.jaBadgeCustomIconType = 'item';
+                                MP.editingMacro.jaBadgeCustomIconId = item.id;
+                                MP.editingMacro.jaBadgeCustomIconPath = nil;
+                                MP.editorJaBadgeManuallySet = true;
+                            else
+                                MP.editingMacro.customIconType = 'item';
+                                MP.editingMacro.customIconId = item.id;
+                                MP.editingMacro.customIconPath = nil;
+                            end
+                            MP.editorAutoIconKey = nil;
+                            MP.iconPickerOpen = false;
                         end
 
                         displayedCount = displayedCount + 1;
@@ -3521,7 +5909,7 @@ local function DrawIconPicker()
                 end
             end
         
-        elseif iconPickerTab == 3 then
+        elseif MP.iconPickerTab == 3 then
             -- Custom icons - render from custom directory with progressive loading
             if totalItems == 0 then
                 if customIconCategory ~= 'all' then
@@ -3561,9 +5949,9 @@ local function DrawIconPicker()
             else
                 -- Check if page/tab/filter changed - reset icon cache
                 local loadCacheKey = cacheKey .. ':' .. tostring(currentPage);
-                if iconLoadState.currentCacheKey ~= loadCacheKey or iconLoadState.currentTab ~= iconPickerTab then
+                if iconLoadState.currentCacheKey ~= loadCacheKey or iconLoadState.currentTab ~= MP.iconPickerTab then
                     iconLoadState.currentPage = currentPage;
-                    iconLoadState.currentTab = iconPickerTab;
+                    iconLoadState.currentTab = MP.iconPickerTab;
                     iconLoadState.currentCacheKey = loadCacheKey;
                     iconLoadState.loadedCount = 0;
                     iconLoadState.pageIconCache = {};
@@ -3622,12 +6010,25 @@ local function DrawIconPicker()
                             tooltipText = customIcon.name .. ' (' .. categoryLabel .. ')';
                         end
 
-                        local isSelected = editingMacro.customIconType == 'custom' and editingMacro.customIconPath == customIcon.path;
-                        if DrawIconButton('##custom' .. itemIdx, icon, ICON_GRID_SIZE, isSelected, tooltipText) then
-                            editingMacro.customIconType = 'custom';
-                            editingMacro.customIconPath = customIcon.path;
-                            editingMacro.customIconId = nil;
-                            iconPickerOpen = false;
+                        local isSelectedCust;
+                        if MP.iconPickerTargetIsJaBadge then
+                            isSelectedCust = MP.editingMacro.jaBadgeCustomIconType == 'custom' and MP.editingMacro.jaBadgeCustomIconPath == customIcon.path;
+                        else
+                            isSelectedCust = MP.editingMacro.customIconType == 'custom' and MP.editingMacro.customIconPath == customIcon.path;
+                        end
+                        if DrawIconButton('##custom' .. itemIdx, icon, ICON_GRID_SIZE, isSelectedCust, tooltipText) then
+                            if MP.iconPickerTargetIsJaBadge then
+                                MP.editingMacro.jaBadgeCustomIconType = 'custom';
+                                MP.editingMacro.jaBadgeCustomIconPath = customIcon.path;
+                                MP.editingMacro.jaBadgeCustomIconId = nil;
+                                MP.editorJaBadgeManuallySet = true;
+                            else
+                                MP.editingMacro.customIconType = 'custom';
+                                MP.editingMacro.customIconPath = customIcon.path;
+                                MP.editingMacro.customIconId = nil;
+                            end
+                            MP.editorAutoIconKey = nil;
+                            MP.iconPickerOpen = false;
                         end
 
                         displayedCount = displayedCount + 1;
@@ -3644,12 +6045,13 @@ local function DrawIconPicker()
     PopWindowStyle();
 
     if not isOpen[1] then
-        iconPickerOpen = false;
-        iconPickerFilter[1] = '';
-        iconPickerPage = { 1, 1, 1 };  -- Reset pages
-        iconPickerLastFilter = { '', '', '' };
-        iconPickerSpellType = 'All';  -- Reset spell type filter
-        iconPickerItemType = 0;  -- Reset item type filter (0 = All)
+        MP.iconPickerOpen = false;
+        MP.iconPickerTargetIsJaBadge = false;
+        MP.iconPickerFilter[1] = '';
+        MP.iconPickerPage = { 1, 1, 1 };  -- Reset pages
+        MP.iconPickerLastFilter = { '', '', '' };
+        MP.iconPickerSpellType = 'All';  -- Reset spell type filter
+        MP.iconPickerItemType = 0;  -- Reset item type filter (0 = All)
         customIconCategory = 'all';  -- Reset custom category filter
         -- Clear filter caches when picker closes
         filteredSpellsCache = nil;
@@ -3657,576 +6059,570 @@ local function DrawIconPicker()
         filteredItemsCache = nil;
         filteredItemsCacheKey = nil;
         customIconsCacheKey = nil;
+        filteredCustomIconsCache = nil;
+        filteredCustomIconsCacheKey = nil;
         -- Reset progressive icon loading
         ResetIconLoading();
     end
 end
 
-function M.DrawMacroEditor()
-    if not editingMacro then
+-- When opening the icon picker (Change), align tab / filters with the resolved icon; search text is always the
+-- primary action name (what auto-pick matched against), not the resolved spell/item/custom label.
+-- Implemented on M (not a file-local) so M.DrawMacroEditor does not gain an extra upvalue (Lua 5.1 limit: 60).
+function M.ApplyIconPickerContextFromEditor(forJaBadgeArg)
+    if not MP.editingMacro then
         return;
     end
 
-    editorFrameCounter = editorFrameCounter + 1;
+    local forJaBadge = forJaBadgeArg and true or false;
+    MP.iconPickerTargetIsJaBadge = forJaBadge;
 
-    -- Initialize editor fields from editing macro
-    editorFields.actionType[1] = FindIndex(ACTION_TYPES, editingMacro.actionType or 'ma');
-    editorFields.action[1] = editingMacro.action or '';
-    editorFields.target[1] = FindIndex(TARGET_OPTIONS, editingMacro.target or 't');
-    editorFields.displayName[1] = editingMacro.displayName or '';
-    editorFields.equipSlot[1] = FindIndex(EQUIP_SLOTS, editingMacro.equipSlot or 'main');
-    editorFields.macroText[1] = editingMacro.macroText or '';
-    editorFields.recastSourceType[1] = FindIndex(RECAST_SOURCE_TYPES, editingMacro.recastSourceType or 'none');
-    editorFields.recastSourceAction[1] = editingMacro.recastSourceAction or '';
+    local pType;
+    local pName;
+    local jaBadgeName;
 
-    local title = isCreatingNew and 'Create Macro###MacroEditor' or 'Edit Macro###MacroEditor';
-    local isOpen = { true };
+    if MP.editingMacro.actionType == 'macro' then
+        local mp = require('modules.hotbar.macroparse');
+        pType, pName, jaBadgeName = mp.GetMacroPrimaryAndJaBadge(MP.editingMacro.macroText or '');
+    else
+        pType = MP.editingMacro.actionType;
+        pName = MP.editingMacro.action;
+    end
 
-    imgui.SetNextWindowSize({420, 480}, ImGuiCond_FirstUseEver);
-
-    -- Apply XIUI styling
-    PushWindowStyle();
-
-    if imgui.Begin(title, isOpen, ImGuiWindowFlags_NoCollapse) then
-        -- Icon preview section at the top right (uses window-relative positioning for scrolling)
-        local iconPreviewSize = 64;
-        local contentWidth = imgui.GetContentRegionAvail();
-        local iconPreviewX = contentWidth - iconPreviewSize - 10;
-
-        -- Draw icon preview and Change button together
-        local startCursorY = imgui.GetCursorPosY();
-        imgui.SetCursorPosX(iconPreviewX);
-
-        -- Get screen position for icon preview (DrawIconPreview needs screen coords)
-        local screenPos = {imgui.GetCursorScreenPos()};
-        DrawIconPreview(editingMacro, screenPos[1], screenPos[2], iconPreviewSize);
-        imgui.Dummy({iconPreviewSize, iconPreviewSize});
-
-        -- Change Icon button below preview (use window-relative SetCursorPos for scroll support)
-        imgui.SetCursorPos({iconPreviewX - 10, startCursorY + iconPreviewSize + 8});
-        imgui.PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1);
-        imgui.PushStyleColor(ImGuiCol_Border, COLORS.gold);
-        if imgui.Button('Change', {iconPreviewSize + 20, 22}) then
-            iconPickerOpen = true;
-            iconPickerFilter[1] = '';
+    if forJaBadge then
+        if not jaBadgeName or jaBadgeName == '' then
+            return;
         end
-        imgui.PopStyleColor();
-        imgui.PopStyleVar();
+        pType = 'ja';
+        pName = jaBadgeName;
+    end
 
-        -- Reset cursor for main content (left side, use window-relative positioning)
-        imgui.SetCursorPos({8, startCursorY});
+    if pName then
+        pName = tostring(pName);
+        pName = pName:match('^%s*(.-)%s*$') or pName;
+        if pName == '' then
+            pName = nil;
+        end
+    end
 
-        -- Action Type dropdown with label
-        imgui.TextColored(COLORS.goldDim, 'Action Type');
-        PushComboStyle();
-        imgui.SetNextItemWidth(240);
-        local currentType = ACTION_TYPES[editorFields.actionType[1]];
-        if imgui.BeginCombo('##actionType', ACTION_TYPE_LABELS[currentType] or 'Select...') then
-            for i, actionType in ipairs(ACTION_TYPES) do
-                local isSelected = editorFields.actionType[1] == i;
-                if isSelected then
-                    imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
-                end
-                if imgui.Selectable(ACTION_TYPE_LABELS[actionType], isSelected) then
-                    editorFields.actionType[1] = i;
-                    editingMacro.actionType = actionType;
-                    -- Clear action when type changes
-                    editingMacro.action = '';
-                    editorFields.action[1] = '';
-                    searchFilter[1] = '';
-                    -- Clear recast source fields when changing away from macro type
-                    if actionType ~= 'macro' then
-                        editingMacro.recastSourceType = nil;
-                        editingMacro.recastSourceAction = nil;
-                        editingMacro.recastSourceItemId = nil;
-                        editorFields.recastSourceType[1] = 1;  -- Reset to 'none'
-                        editorFields.recastSourceAction[1] = '';
+    local ct = forJaBadge and MP.editingMacro.jaBadgeCustomIconType or MP.editingMacro.customIconType;
+    local cid = forJaBadge and MP.editingMacro.jaBadgeCustomIconId or MP.editingMacro.customIconId;
+    local cp = forJaBadge and MP.editingMacro.jaBadgeCustomIconPath or MP.editingMacro.customIconPath;
+
+    local src = MP.editorIconAutoSource or 'all';
+
+    -- Custom XIUI icon actually on the macro, or the same match auto-pick would use first (/pet before spell, etc.).
+    local customEntryForPicker = nil;
+    if ct == 'custom' and cp and tostring(cp) ~= '' then
+        customEntryForPicker = FindCustomIconEntryBySavedPath(cp);
+        if not customEntryForPicker then
+            local base = tostring(cp):match('[^\\/]+$') or '';
+            base = base:gsub('%.png$', '');
+            if base ~= '' then
+                customEntryForPicker = { name = base, category = 'all' };
+            end
+        end
+    elseif ct ~= 'spell' and ct ~= 'item' and pName then
+        -- Match AutoPick order: item id â†’ spell id (for /ma) before inferring a custom PNG.
+        local exactItemId = (MP.editingMacro.itemId and tonumber(MP.editingMacro.itemId)) or actiondb.GetItemId(pName);
+        local maSpellId = (pType == 'ma' and pName) and actions.GetSpellIdByEnglishName(pName, 'ma') or nil;
+        local tryInfer = (pType == 'pet' or pType == 'ja' or pType == 'ws')
+            or (src == 'custom' and pType == 'ma')
+            or (pType == 'ma' and pName and not maSpellId and (src == 'all' or src == 'custom'))
+            or ((pType == 'item' or pType == 'equip') and (not exactItemId or exactItemId == 0));
+        if tryInfer then
+            customEntryForPicker = ResolveBestCustomIconMatchForActionName(pName, MP.editorCustomIconCategory or 'all');
                     end
                 end
-                if isSelected then
-                    imgui.PopStyleColor();
+
+    if customEntryForPicker then
+        MP.iconPickerTab = 3;
+    elseif src == 'items' then
+        MP.iconPickerTab = 2;
+    elseif src == 'custom' then
+        MP.iconPickerTab = 3;
+    elseif src == 'spells' then
+        MP.iconPickerTab = 1;
+    else
+        if pType == 'item' or pType == 'equip' then
+            MP.iconPickerTab = 2;
+        else
+            MP.iconPickerTab = 1;
+                end
+            end
+
+    MP.iconPickerPage[1] = 1;
+    MP.iconPickerPage[2] = 1;
+    MP.iconPickerPage[3] = 1;
+
+    filteredSpellsCache = nil;
+    filteredSpellsCacheKey = nil;
+    filteredItemsCache = nil;
+    filteredItemsCacheKey = nil;
+    customIconsCacheKey = nil;
+    filteredCustomIconsCache = nil;
+    filteredCustomIconsCacheKey = nil;
+    ResetIconLoading();
+
+    local function mapHorizonTypeToSpellFilter(dbType)
+        if not dbType or dbType == 'All' then
+            return nil;
+        end
+        if dbType == 'BloodPact' then
+            return 'SummonerPact';
+        end
+        for _, st in ipairs(SPELL_TYPE_ORDER) do
+            if st == dbType then
+                return dbType;
+            end
+        end
+        return nil;
+    end
+
+    if MP.iconPickerTab == 2 then
+        MP.iconPickerSpellType = 'All';
+        -- Search shows the action text auto-pick matched against, not the resolved item's canonical name.
+        if pName and (pType == 'item' or pType == 'equip') then
+            MP.iconPickerFilter[1] = pName;
+        else
+            MP.iconPickerFilter[1] = '';
+        end
+        return;
+    end
+
+    if MP.iconPickerTab == 3 then
+        MP.iconPickerSpellType = 'All';
+        -- Same: search = user/primary-line text that drove matching; folder still reflects the picked asset.
+        MP.iconPickerFilter[1] = pName or '';
+        if customEntryForPicker then
+            if customEntryForPicker.category and customEntryForPicker.category ~= 'root' then
+                customIconCategory = customEntryForPicker.category;
+            else
+                customIconCategory = 'all';
+            end
+        end
+        return;
+    end
+
+    -- Spells tab: spell-type filter from resolved id/row; search = primary action text (what matching used).
+    do
+        local horizonSpells = require('modules.hotbar.database.horizonspells');
+        local hid;
+
+        if ct == 'spell' and cid then
+            hid = tonumber(cid);
+        elseif not forJaBadge then
+            local at = tostring(MP.editingMacro.actionType or '');
+            local maOrPet = false;
+            if at == 'macro' then
+                local mp = require('modules.hotbar.macroparse');
+                local pt = mp.GetMacroPrimaryAndJaBadge(MP.editingMacro.macroText or '');
+                maOrPet = (pt == 'ma' or pt == 'pet');
+            elseif at == 'ma' or at == 'pet' then
+                maOrPet = true;
+            end
+            if maOrPet then
+                local _, rid = actions.GetBindIcon(MP.editingMacro);
+                if rid and type(rid) == 'number' and horizonSpells[rid] and horizonSpells[rid].en then
+                    hid = rid;
+                end
+            end
+        end
+
+        if hid then
+            local h = horizonSpells[hid];
+            if h and h.en then
+                local bt = mapHorizonTypeToSpellFilter(h.type);
+                if bt then
+                    MP.iconPickerSpellType = bt;
+                else
+                    MP.iconPickerSpellType = 'All';
+                end
+                MP.iconPickerFilter[1] = pName or '';
+                return;
+            end
+        end
+    end
+
+    local spellRow = nil;
+    if pName and (pType == 'ma' or pType == 'pet') then
+        spellRow = actions.GetHorizonSpellForIconResolution(pName, pType);
+    end
+
+    local bestType = spellRow and mapHorizonTypeToSpellFilter(spellRow.type) or nil;
+
+    if bestType then
+        MP.iconPickerSpellType = bestType;
+        MP.iconPickerFilter[1] = pName or '';
+    elseif pType == 'ma' or pType == 'pet' then
+        MP.iconPickerSpellType = 'All';
+        MP.iconPickerFilter[1] = pName or '';
+    else
+        MP.iconPickerSpellType = 'All';
+        MP.iconPickerFilter[1] = pName or '';
+    end
+end
+
+-- Title-bar display name for the macro editor (e.g. "WHM", "Global", "SMN (Ifrit)").
+function M.GetEditorSaveDisplayName()
+    local saveKey = MP.editorPaletteKey or GetEffectivePaletteType();
+    return GetPaletteDisplayName(saveKey);
+end
+
+-- Compact save-target toolbar drawn just below the title bar in create mode.
+function M.DrawMacroEditorSaveToSection(creatingNew, contentWidth)
+    local function applyEditorSaveKey(newKey)
+        MP.editorPaletteKey = newKey;
+        SyncMacroEditorSubtypeFieldsFromSaveKey();
+        M.ClampMacroEditorForItemsPalette();
+    end
+
+    local saveKey = MP.editorPaletteKey or GetEffectivePaletteType();
+    local currentPlayerJob = data.jobId or 1;
+
+    if not creatingNew then
+        return;
+    end
+
+    local function mc(k)
+        return CountMacrosInPalette(k);
+    end
+    local function labelTextWidth(str)
+        local sz = imgui.CalcTextSize(tostring(str or ''));
+        if type(sz) == 'table' then
+            return sz[1] or sz.x or 0;
+        end
+        return tonumber(sz) or 0;
+    end
+
+    imgui.TextColored(COLORS.textDim, 'Saving To');
+    imgui.SameLine(0, 6);
+
+    local maxOptW = labelTextWidth(GetPaletteDisplayName(saveKey));
+    local gCount = mc(GLOBAL_MACRO_KEY);
+    local gLabel = gCount > 0 and string.format('Global (%d)', gCount) or 'Global';
+    maxOptW = math.max(maxOptW, labelTextWidth(gLabel));
+    local iCount = mc(ITEMS_MACRO_KEY);
+    local iLabel = iCount > 0 and string.format('Items (%d)', iCount) or 'Items';
+    maxOptW = math.max(maxOptW, labelTextWidth(iLabel));
+    local eCount = mc(EQUIPMENT_MACRO_KEY);
+    local eLabel = eCount > 0 and string.format('Equipment (%d)', eCount) or 'Equipment';
+    maxOptW = math.max(maxOptW, labelTextWidth(eLabel));
+    local xCount = mc(XIUI_MACRO_KEY);
+    local xLabel = xCount > 0 and string.format('XIUI Commands (%d)', xCount) or 'XIUI Commands';
+    maxOptW = math.max(maxOptW, labelTextWidth(xLabel));
+    EnsureMacroCustomCategoriesList();
+    for _, cat in ipairs(gConfig.macroCustomCategories) do
+        local ck = cat.key;
+        local cCount = mc(ck);
+        local cLab = cat.label or ck;
+        if cCount > 0 then
+            cLab = string.format('%s (%d)', cLab, cCount);
+        end
+        maxOptW = math.max(maxOptW, labelTextWidth(cLab));
+    end
+    for _, job in ipairs(JOB_LIST) do
+        local jCount = mc(job.id);
+        local label = job.name;
+        if jCount > 0 then
+            label = string.format('%s (%d)', label, jCount);
+        end
+        if job.id == currentPlayerJob then
+            label = label .. '  *';
+        end
+        if job.id == data.subjobId then
+            label = label .. '  /sub';
+        end
+        maxOptW = math.max(maxOptW, labelTextWidth(label));
+    end
+    local fp = imgui.GetStyle().FramePadding;
+    local fpX = (type(fp) == 'table' and (fp.x or fp[1])) or 8;
+    local comboW = maxOptW + (fpX * 2) + 28;
+    comboW = math.max(80, math.min(comboW, contentWidth * 0.4));
+
+    PushComboStyle();
+    imgui.SetNextItemWidth(comboW);
+    if imgui.BeginCombo('##macroEditorSavePalette', GetPaletteDisplayName(saveKey), ImGuiComboFlags_None) then
+        local gSel = (saveKey == GLOBAL_MACRO_KEY);
+        if gSel then
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+        elseif gCount > 0 then
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+        else
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+        end
+        if imgui.Selectable(gLabel, gSel) then
+            applyEditorSaveKey(GLOBAL_MACRO_KEY);
+        end
+        imgui.PopStyleColor();
+
+        local itemsSel = (saveKey == ITEMS_MACRO_KEY);
+        if itemsSel then
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+        elseif iCount > 0 then
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+        else
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+        end
+        if imgui.Selectable(iLabel, itemsSel) then
+            applyEditorSaveKey(ITEMS_MACRO_KEY);
+        end
+        imgui.PopStyleColor();
+
+        local equipSel = (saveKey == EQUIPMENT_MACRO_KEY);
+        if equipSel then
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+        elseif eCount > 0 then
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+        else
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+        end
+        if imgui.Selectable(eLabel, equipSel) then
+            applyEditorSaveKey(EQUIPMENT_MACRO_KEY);
+        end
+        imgui.PopStyleColor();
+
+        local xiuiSel = (saveKey == XIUI_MACRO_KEY);
+        if xiuiSel then
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+        elseif xCount > 0 then
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+        else
+            imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+        end
+        if imgui.Selectable(xLabel, xiuiSel) then
+            applyEditorSaveKey(XIUI_MACRO_KEY);
+        end
+        imgui.PopStyleColor();
+
+        for _, cat in ipairs(gConfig.macroCustomCategories) do
+            local ck = cat.key;
+            local cCount = mc(ck);
+            local cLab = cat.label or ck;
+            if cCount > 0 then
+                cLab = string.format('%s (%d)', cLab, cCount);
+            end
+            local cSel = (saveKey == ck);
+            if cSel then
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+            elseif cCount > 0 then
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+            else
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+            end
+            if imgui.Selectable(cLab, cSel) then
+                applyEditorSaveKey(ck);
+            end
+            imgui.PopStyleColor();
+        end
+
+        imgui.Separator();
+
+        for _, job in ipairs(JOB_LIST) do
+            local jCount = mc(job.id);
+            local label = job.name;
+            if jCount > 0 then
+                label = string.format('%s (%d)', label, jCount);
+            end
+            if job.id == currentPlayerJob then
+                label = label .. '  *';
+            end
+            if job.id == data.subjobId then
+                label = label .. '  /sub';
+            end
+            local jSel = (EditorSaveKeyToJobId(saveKey) == job.id);
+            if jSel then
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold);
+            elseif jCount > 0 then
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
+            else
+                imgui.PushStyleColor(ImGuiCol_Text, COLORS.textDim);
+            end
+            if imgui.Selectable(label, jSel) then
+                applyEditorSaveKey(job.id);
+            end
+            imgui.PopStyleColor();
+        end
+        imgui.EndCombo();
+    end
+    PopComboStyle();
+
+    -- SMN sub-type combo on the same line
+    if EditorSaveKeyToJobId(saveKey) == petregistry.JOB_SMN then
+        imgui.SameLine(0, 10);
+        imgui.TextColored(COLORS.textDim, '/');
+        imgui.SameLine(0, 10);
+
+        local avatarList = petregistry.GetAvatarList();
+        local currentLabel = 'Base SMN';
+        if type(saveKey) == 'string' then
+            local jobId, petType, petId = saveKey:match('^(%d+):([^:]+):(.+)$');
+            if jobId and tonumber(jobId) == petregistry.JOB_SMN and petType == 'avatar' and petId then
+                for name, key in pairs(petregistry.avatars) do
+                    if key == petId then
+                        currentLabel = name;
+                        break;
+                    end
+                end
+            end
+        end
+
+        local subMaxW = labelTextWidth('Base SMN');
+        for _, av in ipairs(avatarList) do
+            subMaxW = math.max(subMaxW, labelTextWidth(av));
+        end
+        local subComboW = subMaxW + (fpX * 2) + 28;
+        subComboW = math.max(80, math.min(subComboW, contentWidth * 0.35));
+
+        PushComboStyle();
+        imgui.SetNextItemWidth(subComboW);
+        if imgui.BeginCombo('##SaveAvatarPalette', currentLabel, ImGuiComboFlags_None) then
+            local isBaseSelected = (type(saveKey) == 'number' and saveKey == petregistry.JOB_SMN);
+            if imgui.Selectable('Base SMN', isBaseSelected) then
+                applyEditorSaveKey(petregistry.JOB_SMN);
+            end
+            imgui.Separator();
+            for _, avatar in ipairs(avatarList) do
+                local avatarKey = petregistry.avatars[avatar];
+                local fullKey = avatarKey and string.format('%d:avatar:%s', petregistry.JOB_SMN, avatarKey) or nil;
+                local isSelected = (fullKey ~= nil and saveKey == fullKey);
+                if imgui.Selectable(avatar, isSelected) then
+                    applyEditorSaveKey(fullKey);
                 end
             end
             imgui.EndCombo();
         end
         PopComboStyle();
-
-        imgui.Spacing();
-        imgui.Spacing();
-
-        -- Dynamic fields based on action type
-        currentType = ACTION_TYPES[editorFields.actionType[1]];
-
-        if currentType == 'ma' then
-            -- Spell: Show searchable dropdown
-            imgui.TextColored(COLORS.goldDim, 'Spell');
-            DrawSearchableCombo('##spellCombo', GetCachedSpells, editingMacro.action or '', function(spell)
-                editingMacro.action = spell.name;
-                editorFields.action[1] = spell.name;
-                if (editingMacro.displayName or '') == '' then
-                    editingMacro.displayName = spell.name;
-                    editorFields.displayName[1] = spell.name;
-                end
-            end, false, nil, 'spells', 'No spells available for this job');
-
-            -- Target dropdown
-            imgui.Spacing();
-            imgui.TextColored(COLORS.goldDim, 'Target');
-            PushComboStyle();
-            imgui.SetNextItemWidth(240);
-            if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[editorFields.target[1]]] or 'Select...') then
-                for i, target in ipairs(TARGET_OPTIONS) do
-                    local isSelected = editorFields.target[1] == i;
-                    if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
-                    if imgui.Selectable(TARGET_LABELS[target], isSelected) then
-                        editorFields.target[1] = i;
-                        editingMacro.target = target;
-                    end
-                    if isSelected then imgui.PopStyleColor(); end
-                end
-                imgui.EndCombo();
-            end
-            PopComboStyle();
-
-        elseif currentType == 'ja' then
-            -- Ability: Show searchable dropdown
-            imgui.TextColored(COLORS.goldDim, 'Ability');
-            DrawSearchableCombo('##abilityCombo', GetCachedAbilities, editingMacro.action or '', function(ability)
-                editingMacro.action = ability.name;
-                editorFields.action[1] = ability.name;
-                if (editingMacro.displayName or '') == '' then
-                    editingMacro.displayName = ability.name;
-                    editorFields.displayName[1] = ability.name;
-                end
-            end, false, nil, 'abilities', 'No abilities available');
-
-            -- Target dropdown
-            imgui.Spacing();
-            imgui.TextColored(COLORS.goldDim, 'Target');
-            PushComboStyle();
-            imgui.SetNextItemWidth(240);
-            if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[editorFields.target[1]]] or 'Select...') then
-                for i, target in ipairs(TARGET_OPTIONS) do
-                    local isSelected = editorFields.target[1] == i;
-                    if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
-                    if imgui.Selectable(TARGET_LABELS[target], isSelected) then
-                        editorFields.target[1] = i;
-                        editingMacro.target = target;
-                    end
-                    if isSelected then imgui.PopStyleColor(); end
-                end
-                imgui.EndCombo();
-            end
-            PopComboStyle();
-
-        elseif currentType == 'ws' then
-            -- Weaponskill: Show searchable dropdown
-            imgui.TextColored(COLORS.goldDim, 'Weaponskill');
-            DrawSearchableCombo('##wsCombo', GetCachedWeaponskills, editingMacro.action or '', function(ws)
-                editingMacro.action = ws.name;
-                editorFields.action[1] = ws.name;
-                if (editingMacro.displayName or '') == '' then
-                    editingMacro.displayName = ws.name;
-                    editorFields.displayName[1] = ws.name;
-                end
-            end, false, nil, 'weaponskills', 'No weaponskills available');
-
-            -- Target dropdown (default to <t>)
-            imgui.Spacing();
-            imgui.TextColored(COLORS.goldDim, 'Target');
-            PushComboStyle();
-            imgui.SetNextItemWidth(240);
-            if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[editorFields.target[1]]] or 'Select...') then
-                for i, target in ipairs(TARGET_OPTIONS) do
-                    local isSelected = editorFields.target[1] == i;
-                    if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
-                    if imgui.Selectable(TARGET_LABELS[target], isSelected) then
-                        editorFields.target[1] = i;
-                        editingMacro.target = target;
-                    end
-                    if isSelected then imgui.PopStyleColor(); end
-                end
-                imgui.EndCombo();
-            end
-            PopComboStyle();
-
-        elseif currentType == 'item' then
-            -- Item: Searchable dropdown or manual input
-            DrawItemLabelWithQuantity('Item', editingMacro.itemId, editingMacro.action);
-            DrawSearchableCombo('##itemCombo', GetCachedItems, editingMacro.action or '', function(item)
-                editingMacro.action = item.name;
-                editingMacro.itemId = item.id;  -- Store item ID for fast icon lookup
-                editorFields.action[1] = item.name;
-                editingMacro.displayName = item.name;
-                editorFields.displayName[1] = item.name;
-            end, true, nil, 'items', 'No items found in storage');
-
-            -- Manual input fallback
-            imgui.Spacing();
-            imgui.TextColored(COLORS.goldDim, 'Or type item name:');
-            imgui.SetNextItemWidth(220);
-            if imgui.InputText('##itemName', editorFields.action, INPUT_BUFFER_SIZE) then
-                editingMacro.action = editorFields.action[1];
-            end
-
-            -- Target dropdown
-            imgui.Spacing();
-            imgui.TextColored(COLORS.goldDim, 'Target');
-            PushComboStyle();
-            imgui.SetNextItemWidth(240);
-            if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[editorFields.target[1]]] or 'Select...') then
-                for i, target in ipairs(TARGET_OPTIONS) do
-                    local isSelected = editorFields.target[1] == i;
-                    if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
-                    if imgui.Selectable(TARGET_LABELS[target], isSelected) then
-                        editorFields.target[1] = i;
-                        editingMacro.target = target;
-                    end
-                    if isSelected then imgui.PopStyleColor(); end
-                end
-                imgui.EndCombo();
-            end
-            PopComboStyle();
-
-        elseif currentType == 'equip' then
-            -- Equipment slot dropdown
-            imgui.TextColored(COLORS.goldDim, 'Equipment Slot');
-            PushComboStyle();
-            imgui.SetNextItemWidth(240);
-            if imgui.BeginCombo('##equipSlot', EQUIP_SLOT_LABELS[EQUIP_SLOTS[editorFields.equipSlot[1]]] or 'Select...') then
-                for i, slot in ipairs(EQUIP_SLOTS) do
-                    local isSelected = editorFields.equipSlot[1] == i;
-                    if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
-                    if imgui.Selectable(EQUIP_SLOT_LABELS[slot], isSelected) then
-                        editorFields.equipSlot[1] = i;
-                        editingMacro.equipSlot = slot;
-                        -- Clear item selection when slot changes (old item may not fit new slot)
-                        editingMacro.action = '';
-                        editingMacro.itemId = nil;
-                        editingMacro.displayName = '';
-                        editorFields.action[1] = '';
-                        editorFields.displayName[1] = '';
-                    end
-                    if isSelected then imgui.PopStyleColor(); end
-                end
-                imgui.EndCombo();
-            end
-            PopComboStyle();
-
-            -- Item: Searchable dropdown or manual input (filtered by selected equipment slot)
-            imgui.Spacing();
-            local selectedSlot = EQUIP_SLOTS[editorFields.equipSlot[1]];
-            DrawItemLabelWithQuantity('Item (' .. EQUIP_SLOT_LABELS[selectedSlot] .. ')', editingMacro.itemId, editingMacro.action);
-            DrawSearchableCombo('##equipItemCombo', GetCachedItems, editingMacro.action or '', function(item)
-                editingMacro.action = item.name;
-                editingMacro.itemId = item.id;  -- Store item ID for fast icon lookup
-                editorFields.action[1] = item.name;
-                editingMacro.displayName = item.name;
-                editorFields.displayName[1] = item.name;
-            end, true, selectedSlot, 'items', 'No items found in storage');
-
-            -- Manual input fallback
-            imgui.Spacing();
-            imgui.TextColored(COLORS.goldDim, 'Or type item name:');
-            imgui.SetNextItemWidth(220);
-            if imgui.InputText('##equipItemName', editorFields.action, INPUT_BUFFER_SIZE) then
-                editingMacro.action = editorFields.action[1];
-            end
-
-        elseif currentType == 'macro' then
-            -- Raw macro command (8 lines like native FFXI macro editor)
-            imgui.TextColored(COLORS.goldDim, 'Macro Commands (8 lines)');
-
-            -- Style the multiline input
-            imgui.PushStyleColor(ImGuiCol_FrameBg, COLORS.bgMedium);
-            imgui.PushStyleColor(ImGuiCol_FrameBgHovered, COLORS.bgLight);
-            imgui.PushStyleColor(ImGuiCol_FrameBgActive, COLORS.bgLight);
-
-            -- 8 rows * ~16px line height + padding
-            local lineHeight = imgui.GetTextLineHeight();
-            local inputHeight = (lineHeight * 8) + 8;
-
-            if imgui.InputTextMultiline('##macroText', editorFields.macroText, MACRO_BUFFER_SIZE, {280, inputHeight}) then
-                editingMacro.macroText = editorFields.macroText[1];
-                editingMacro.action = editorFields.macroText[1];
-            end
-
-            imgui.PopStyleColor(3);
-            imgui.ShowHelp('Enter commands, one per line (e.g., /ma "Cure" <stpc>)');
-
-            -- Recast Source section (optional)
-            imgui.Spacing();
-            imgui.Spacing();
-            if imgui.TreeNode('Recast Source (Optional)##recastSource') then
-                imgui.TextColored(COLORS.textMuted, 'Show cooldown from a different action');
-                imgui.Spacing();
-
-                -- Recast source type dropdown
-                imgui.TextColored(COLORS.goldDim, 'Source Type');
-                PushComboStyle();
-                imgui.SetNextItemWidth(240);
-                local currentRecastType = RECAST_SOURCE_TYPES[editorFields.recastSourceType[1]] or 'none';
-                if imgui.BeginCombo('##recastSourceType', RECAST_SOURCE_LABELS[currentRecastType] or 'None') then
-                    if imgui.IsWindowAppearing() then
-                        RefreshDropdownList('recastSource');
-                        dropdownLoadState['##recastSourceType'] = editorFrameCounter;
-                    end
-
-                    local isRecastTypeLoading = dropdownLoadState['##recastSourceType'] ~= nil
-                        and editorFrameCounter <= dropdownLoadState['##recastSourceType'];
-
-                    if isRecastTypeLoading then
-                        imgui.TextColored(COLORS.textMuted, 'Loading...');
-                    else
-                        dropdownLoadState['##recastSourceType'] = nil;
-                        for i, sourceType in ipairs(RECAST_SOURCE_TYPES) do
-                            local isSelected = editorFields.recastSourceType[1] == i;
-                            if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
-                            if imgui.Selectable(RECAST_SOURCE_LABELS[sourceType], isSelected) then
-                                editorFields.recastSourceType[1] = i;
-                                if sourceType == 'none' then
-                                    editingMacro.recastSourceType = nil;
-                                    editingMacro.recastSourceAction = nil;
-                                    editingMacro.recastSourceItemId = nil;
-                                else
-                                    editingMacro.recastSourceType = sourceType;
-                                end
-                                -- Clear action when type changes
-                                editingMacro.recastSourceAction = nil;
-                                editingMacro.recastSourceItemId = nil;
-                                editorFields.recastSourceAction[1] = '';
-                            end
-                            if isSelected then imgui.PopStyleColor(); end
-                        end
-                    end
-                    imgui.EndCombo();
-                else
-                    dropdownLoadState['##recastSourceType'] = nil;
-                end
-                PopComboStyle();
-
-                -- Show action selector based on recast source type
-                currentRecastType = RECAST_SOURCE_TYPES[editorFields.recastSourceType[1]] or 'none';
-
-                if currentRecastType == 'ma' then
-                    imgui.Spacing();
-                    imgui.TextColored(COLORS.goldDim, 'Spell');
-                    DrawSearchableCombo('##recastSpellCombo', GetCachedSpells, editingMacro.recastSourceAction or '', function(spell)
-                        editingMacro.recastSourceAction = spell.name;
-                        editorFields.recastSourceAction[1] = spell.name;
-                    end, false, nil, 'spells', 'No spells available');
-
-                elseif currentRecastType == 'ja' then
-                    imgui.Spacing();
-                    imgui.TextColored(COLORS.goldDim, 'Ability');
-                    DrawSearchableCombo('##recastAbilityCombo', GetCachedAbilities, editingMacro.recastSourceAction or '', function(ability)
-                        editingMacro.recastSourceAction = ability.name;
-                        editorFields.recastSourceAction[1] = ability.name;
-                    end, false, nil, 'abilities', 'No abilities available');
-
-                elseif currentRecastType == 'ws' then
-                    imgui.Spacing();
-                    imgui.TextColored(COLORS.goldDim, 'Weaponskill');
-                    DrawSearchableCombo('##recastWsCombo', GetCachedWeaponskills, editingMacro.recastSourceAction or '', function(ws)
-                        editingMacro.recastSourceAction = ws.name;
-                        editorFields.recastSourceAction[1] = ws.name;
-                    end, false, nil, 'weaponskills', 'No weaponskills available');
-
-                elseif currentRecastType == 'item' then
-                    imgui.Spacing();
-                    DrawItemLabelWithQuantity('Item', editingMacro.recastSourceItemId, editingMacro.recastSourceAction);
-                    DrawSearchableCombo('##recastItemCombo', GetCachedItems, editingMacro.recastSourceAction or '', function(item)
-                        editingMacro.recastSourceAction = item.name;
-                        editingMacro.recastSourceItemId = item.id;
-                        editorFields.recastSourceAction[1] = item.name;
-                    end, true, nil, 'items', 'No items available');
-
-                elseif currentRecastType == 'pet' then
-                    imgui.Spacing();
-                    imgui.TextColored(COLORS.goldDim, 'Pet Command');
-                    DrawSearchableCombo('##recastPetCombo', GetEditorPetCommands, editingMacro.recastSourceAction or '', function(cmd)
-                        editingMacro.recastSourceAction = cmd.name;
-                        editorFields.recastSourceAction[1] = cmd.name;
-                    end, false, nil, 'pet', 'No pet commands available');
-                end
-
-                imgui.TreePop();
-            end
-
-        elseif currentType == 'pet' then
-            -- For SMN, show avatar filter dropdown
-            -- Use the VIEWED palette's job, not necessarily the player's current job
-            local viewedJobId = selectedPaletteType;
-            if type(viewedJobId) ~= 'number' then
-                viewedJobId = playerdata.GetCacheJobId() or 0;
-            end
-            local avatarList = petregistry.GetAvatarList();
-
-            if viewedJobId == petregistry.JOB_SMN then
-                imgui.TextColored(COLORS.goldDim, 'Avatar Filter');
-                PushComboStyle();
-                imgui.SetNextItemWidth(240);
-                local filterLabel = petAvatarFilter == 1 and 'All Avatars' or avatarList[petAvatarFilter - 1];
-                if imgui.BeginCombo('##avatarFilter', filterLabel) then
-                    -- "All" option
-                    local isAllSelected = petAvatarFilter == 1;
-                    if isAllSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
-                    if imgui.Selectable('All Avatars', isAllSelected) then
-                        petAvatarFilter = 1;
-                        cachedPetCommands = nil;  -- Clear cache to rebuild
-                    end
-                    if isAllSelected then imgui.PopStyleColor(); end
-
-                    imgui.Separator();
-
-                    -- Individual avatars
-                    for i, avatar in ipairs(avatarList) do
-                        local isSelected = petAvatarFilter == i + 1;
-                        if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
-                        if imgui.Selectable(avatar, isSelected) then
-                            petAvatarFilter = i + 1;
-                            cachedPetCommands = nil;  -- Clear cache to rebuild
-                        end
-                        if isSelected then imgui.PopStyleColor(); end
-                    end
-                    imgui.EndCombo();
-                end
-                PopComboStyle();
-                imgui.Spacing();
-            end
-
-            -- Pet command dropdown
-            imgui.TextColored(COLORS.goldDim, 'Pet Command');
-            DrawSearchableCombo('##petCommandCombo', GetEditorPetCommands, editingMacro.action or '', function(cmd)
-                editingMacro.action = cmd.name;
-                editorFields.action[1] = cmd.name;
-                if (editingMacro.displayName or '') == '' then
-                    editingMacro.displayName = cmd.name;
-                    editorFields.displayName[1] = cmd.name;
-                end
-            end, false, nil, 'pet', 'No pet commands available for this job');
-
-            -- Manual input fallback
-            imgui.Spacing();
-            imgui.TextColored(COLORS.goldDim, 'Or type command:');
-            imgui.SetNextItemWidth(220);
-            if imgui.InputText('##petCommandManual', editorFields.action, INPUT_BUFFER_SIZE) then
-                editingMacro.action = editorFields.action[1];
-            end
-
-            -- Target dropdown
-            imgui.Spacing();
-            imgui.TextColored(COLORS.goldDim, 'Target');
-            PushComboStyle();
-            imgui.SetNextItemWidth(240);
-            if imgui.BeginCombo('##targetType', TARGET_LABELS[TARGET_OPTIONS[editorFields.target[1]]] or 'Select...') then
-                for i, target in ipairs(TARGET_OPTIONS) do
-                    local isSelected = editorFields.target[1] == i;
-                    if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
-                    if imgui.Selectable(TARGET_LABELS[target], isSelected) then
-                        editorFields.target[1] = i;
-                        editingMacro.target = target;
-                    end
-                    if isSelected then imgui.PopStyleColor(); end
-                end
-                imgui.EndCombo();
-            end
-            PopComboStyle();
-        end
-
-        -- Slot Label input (for all types)
-        imgui.Spacing();
-        imgui.Spacing();
-        imgui.TextColored(COLORS.goldDim, 'Slot Label');
-        imgui.SetNextItemWidth(240);
-        if imgui.InputText('##displayName', editorFields.displayName, 32) then
-            editingMacro.displayName = editorFields.displayName[1];
-        end
-        if currentType ~= 'macro' then
-            imgui.ShowHelp('Short label shown on the slot (e.g., "Cure3"). Leave empty to use action name.');
-        else
-            imgui.ShowHelp('Label shown on the slot for this macro.');
-        end
-
-        imgui.Spacing();
-        imgui.Separator();
-        imgui.Spacing();
-
-        -- Save button with success styling
-        imgui.PushStyleColor(ImGuiCol_Button, COLORS.success);
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.5, 0.8, 0.5, 1.0});
-        imgui.PushStyleColor(ImGuiCol_ButtonActive, {0.6, 0.9, 0.6, 1.0});
-        imgui.PushStyleColor(ImGuiCol_Text, {0.1, 0.1, 0.1, 1.0});
-
-        if imgui.Button('Save', {90, 28}) then
-            -- Validate before saving
-            local canSave = false;
-
-            if currentType == 'macro' then
-                canSave = (editingMacro.macroText or '') ~= '';
-                if canSave and (editingMacro.displayName or '') == '' then
-                    editingMacro.displayName = 'Macro';
-                end
-                -- Clear target for macro type (targets are embedded in macro text)
-                editingMacro.target = nil;
-            else
-                canSave = (editingMacro.action or '') ~= '';
-                if canSave and (editingMacro.displayName or '') == '' then
-                    editingMacro.displayName = editingMacro.action;
-                end
-            end
-
-            if canSave then
-                -- Look up itemId for item/equip macros if not already set
-                -- This handles cases where user typed item name manually instead of selecting from dropdown
-                if (currentType == 'item' or currentType == 'equip') and not editingMacro.itemId and editingMacro.action then
-                    editingMacro.itemId = actiondb.GetItemId(editingMacro.action);
-                end
-
-                if isCreatingNew then
-                    M.AddMacro(editingMacro);
-                    -- Navigate to last page to show the new macro
-                    local db = M.GetMacroDatabase();
-                    currentPalettePage = math.max(1, math.ceil(#db / PALETTE_MACROS_PER_PAGE));
-                else
-                    M.UpdateMacro(editingMacro.id, editingMacro);
-                end
-                editingMacro = nil;
-                isCreatingNew = false;
-                searchFilter[1] = '';
-                iconPickerOpen = false;
-                iconPickerFilter[1] = '';
-            end
-        end
-
-        imgui.PopStyleColor(4);
-
-        imgui.SameLine();
-
-        -- Cancel button
-        if imgui.Button('Cancel', {90, 28}) then
-            editingMacro = nil;
-            isCreatingNew = false;
-            searchFilter[1] = '';
-            iconPickerOpen = false;
-            iconPickerFilter[1] = '';
-        end
     end
 
-    imgui.End();
-    PopWindowStyle();
+    if EditorSaveKeyToJobId(saveKey) == petregistry.JOB_BST then
+        imgui.SameLine(0, 10);
+        imgui.TextColored(COLORS.textDim, '/');
+        imgui.SameLine(0, 10);
 
-    if not isOpen[1] then
-        editingMacro = nil;
-        isCreatingNew = false;
-        searchFilter[1] = '';
-        iconPickerOpen = false;
-        iconPickerFilter[1] = '';
+        local currentJugLabel = 'Base BST';
+        if type(saveKey) == 'string' then
+            local jobId, petType, petId = saveKey:match('^(%d+):([^:]+):(.+)$');
+            if jobId and tonumber(jobId) == petregistry.JOB_BST and petType == petregistry.PET_TYPE_JUG and petId then
+                currentJugLabel = petregistry.GetDisplayNameForKey(petregistry.PET_TYPE_JUG .. ':' .. petId);
+            end
+        end
+
+        local subMaxW = labelTextWidth('Base BST');
+        local bstPetKeys = petregistry.GetAvailablePetKeys(petregistry.JOB_BST);
+        for _, pk in ipairs(bstPetKeys) do
+            local slug = pk:match('^jug:(.+)$');
+            if slug then
+                subMaxW = math.max(subMaxW, labelTextWidth(petregistry.GetDisplayNameForKey(pk)));
+            end
+        end
+        local subComboW = subMaxW + (fpX * 2) + 28;
+        subComboW = math.max(80, math.min(subComboW, contentWidth * 0.35));
+
+        PushComboStyle();
+        imgui.SetNextItemWidth(subComboW);
+        if imgui.BeginCombo('##SaveBstJugPalette', currentJugLabel, ImGuiComboFlags_None) then
+            local isBaseSelected = (type(saveKey) == 'number' and saveKey == petregistry.JOB_BST);
+            if imgui.Selectable('Base BST', isBaseSelected) then
+                applyEditorSaveKey(petregistry.JOB_BST);
+            end
+            imgui.Separator();
+            for _, pk in ipairs(bstPetKeys) do
+                local slug = pk:match('^jug:(.+)$');
+                if slug then
+                    local fullKey = string.format('%d:%s:%s', petregistry.JOB_BST, petregistry.PET_TYPE_JUG, slug);
+                    local label = petregistry.GetDisplayNameForKey(pk);
+                    local isSelected = (saveKey == fullKey);
+                    if imgui.Selectable(label, isSelected) then
+                        applyEditorSaveKey(fullKey);
+                    end
+                end
+            end
+            imgui.EndCombo();
+        end
+        PopComboStyle();
     end
 
-    -- Draw icon picker if open
-    DrawIconPicker();
+    imgui.SameLine(0, 6);
+    imgui.ShowHelp('Palette this macro is saved to.');
+    imgui.Separator();
+    imgui.Spacing();
 end
+
+-- Macro editor: macropalette_macroeditor.lua (Lua 5.1 max 60 upvalues per function).
+do
+    MP.M = M;
+    MP.imgui = imgui;
+    MP.ffi = ffi;
+    MP.actions = actions;
+    MP.data = data;
+    MP.textures = textures;
+    MP.petregistry = petregistry;
+    MP.actiondb = actiondb;
+    MP.playerdata = playerdata;
+    MP.petpalette = petpalette;
+    MP.components = components;
+    MP.COLORS = COLORS;
+    MP.jobs = jobs;
+    MP.ACTION_TYPES = ACTION_TYPES;
+    MP.ACTION_TYPES_ITEMS_BUCKET = ACTION_TYPES_ITEMS_BUCKET;
+    MP.ACTION_TYPE_LABELS = ACTION_TYPE_LABELS;
+    MP.RECAST_SOURCE_TYPES = RECAST_SOURCE_TYPES;
+    MP.RECAST_SOURCE_LABELS = RECAST_SOURCE_LABELS;
+    MP.TARGET_OPTIONS = TARGET_OPTIONS;
+    MP.TARGET_LABELS = TARGET_LABELS;
+    MP.EQUIP_SLOTS = EQUIP_SLOTS;
+    MP.EQUIP_SLOT_LABELS = EQUIP_SLOT_LABELS;
+    MP.ICON_AUTO_SOURCES = ICON_AUTO_SOURCES;
+    MP.ICON_AUTO_SOURCE_LABELS = ICON_AUTO_SOURCE_LABELS;
+    MP.INPUT_BUFFER_SIZE = INPUT_BUFFER_SIZE;
+    MP.MACRO_BUFFER_SIZE = MACRO_BUFFER_SIZE;
+    MP.PALETTE_MACROS_PER_PAGE = PALETTE_MACROS_PER_PAGE;
+    MP.SPELL_TYPE_ORDER = SPELL_TYPE_ORDER;
+    MP.SPELL_TYPE_LABELS = SPELL_TYPE_LABELS;
+    MP.SPELL_TYPE_JOB_ICONS = SPELL_TYPE_JOB_ICONS;
+    MP.editorFields = editorFields;
+    MP.CUSTOM_ICON_CATEGORIES = CUSTOM_ICON_CATEGORIES;
+    MP.CUSTOM_ICON_LABELS = CUSTOM_ICON_LABELS;
+    MP.FindIndex = FindIndex;
+    MP.DrawSearchableCombo = DrawSearchableCombo;
+    MP.DrawIconButton = DrawIconButton;
+    MP.DrawIconPreview = DrawIconPreview;
+    MP.PushComboStyle = PushComboStyle;
+    MP.PopComboStyle = PopComboStyle;
+    MP.PushWindowStyle = PushWindowStyle;
+    MP.PopWindowStyle = PopWindowStyle;
+    MP.LoadCustomIcons = LoadCustomIcons;
+    MP.InvalidateCustomIconScanCaches = InvalidateCustomIconScanCaches;
+    MP.GetCachedSpells = GetCachedSpells;
+    MP.GetCachedAbilities = GetCachedAbilities;
+    MP.GetCachedWeaponskills = GetCachedWeaponskills;
+    MP.GetCachedItems = GetCachedItems;
+    MP.GetPetCommandsForJob = GetPetCommandsForJob;
+    MP.EditorSaveKeyToJobId = EditorSaveKeyToJobId;
+    MP.ITEMS_MACRO_KEY = ITEMS_MACRO_KEY;
+    MP.EQUIPMENT_MACRO_KEY = EQUIPMENT_MACRO_KEY;
+    MP.XIUI_MACRO_KEY = XIUI_MACRO_KEY;
+    MP.ResolveBestCustomIconMatchForActionName = ResolveBestCustomIconMatchForActionName;
+    MP.SyncSaveSubTypeFromPetAvatarFilter = SyncSaveSubTypeFromPetAvatarFilter;
+    MP.SyncSaveSubTypeFromBstJugFamily = SyncSaveSubTypeFromBstJugFamily;
+    MP.SyncPetAvatarFilterFromSaveSubType = SyncPetAvatarFilterFromSaveSubType;
+    MP.ClearEditorPreviewIconCache = ClearEditorPreviewIconCache;
+    MP.ClearPaletteJaBadgeIconCache = ClearPaletteJaBadgeIconCache;
+    MP.HydrateMacroEditorIconPrefs = HydrateMacroEditorIconPrefs;
+    MP.ValidateEditorCustomIconCategoryAgainstScan = ValidateEditorCustomIconCategoryAgainstScan;
+    MP.PersistMacroEditorIconPrefs = PersistMacroEditorIconPrefs;
+    MP.DrawIconPicker = DrawIconPicker;
+    MP.paletteMainIconCache = paletteMainIconCache;
+    MP.paletteJaBadgeIconCache = paletteJaBadgeIconCache;
+end
+
+local runMacroEditor = require('modules.hotbar.macropalette_macroeditor')(MP);
+
+function M.DrawMacroEditor()
+    runMacroEditor();
+end
+
 
 -- ============================================
 -- Dragdrop Library Accessors (for display.lua)
@@ -4255,26 +6651,6 @@ function M.FlushPendingSave()
     end
 end
 
--- Process deferred work at the start of each frame.
--- Call AFTER TextureManager.FlushPendingReleases so that any textures queued
--- for release last frame have already been handled before we drop new refs.
-function M.FlushPendingFrameWork()
-    if pendingIconCacheClear then
-        pendingIconCacheClear = false;
-        if pendingFullSlotCacheClear then
-            pendingFullSlotCacheClear = false;
-            if slotrenderer == nil then
-                local success, mod = pcall(require, 'modules.hotbar.slotrenderer');
-                if success then slotrenderer = mod; end
-            end
-            if slotrenderer and slotrenderer.ClearAllCache then
-                slotrenderer.ClearAllCache();
-            end
-        end
-        ClearAllIconCaches();
-    end
-end
-
 -- Check if hotbar has unsaved changes
 function M.IsHotbarDirty()
     return hotbarDataDirty;
@@ -4290,3 +6666,4 @@ end
 data.SetSlotDataChangedCallback(MarkHotbarDirty);
 
 return M;
+
