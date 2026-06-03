@@ -273,6 +273,24 @@ function M.createColorCustomizationDefaults()
             levelTextColor = 0xFFFFFFFF,
         },
 
+        -- Vana'Dial
+        vanaDial = T{
+            bgColor         = 0xFF000000,
+            borderColor     = 0xFFFFFFFF,
+            textColor       = 0xFFFFFFFF,
+            moonFullColor   = 0xFFFFD700,
+            moonNewColor    = 0xFF8B0000,
+            todTimerColor   = 0xFFFFFFFF,
+            elementFire      = 0xFFFF4500,
+            elementEarth     = 0xFFB8860B,
+            elementWater     = 0xFF1E90FF,
+            elementWind      = 0xFF32CD32,
+            elementIce       = 0xFF87CEEB,
+            elementLightning = 0xFFBF5FFF,
+            elementLight     = 0xFFFFFFE0,
+            elementDark      = 0xFF2A0850,
+        },
+
         -- Global/Shared
         shared = T{
             backgroundGradient = T{ enabled = true, start = '#01122b', stop = '#061c39' },

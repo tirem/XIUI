@@ -77,6 +77,7 @@ local notifications = uiMods.notifications;
 local treasurePool = uiMods.treasurepool;
 local hotbar = uiMods.hotbar;
 local readyCheck = uiMods.readycheck;
+local vanaDial   = uiMods.vanadial;
 local macropalette = require('modules.hotbar.macropalette');
 local palette = require('modules.hotbar.palette');
 local skillchainModule = require('modules.hotbar.skillchain');
@@ -310,6 +311,13 @@ uiModules.Register('readyCheck', {
     module = readyCheck,
     settingsKey = nil,
     configKey = 'showReadyCheck',
+    hasSetHidden = true,
+});
+uiModules.Register('vanaDial', {
+    module = vanaDial,
+    settingsKey = nil,
+    configKey = 'showVanaDial',
+    hideOnMenuFocusKey = 'vanaDialHideOnMenuFocus',
     hasSetHidden = true,
 });
 
@@ -1570,6 +1578,13 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
+        -- Vana'Dial timer section shortcuts (/xiui vdships|vdboats|vdrse|vdlunar):
+        if command_args[2] == 'vdships' or command_args[2] == 'vdboats'
+        or command_args[2] == 'vdrse'   or command_args[2] == 'vdlunar' then
+            vanaDial.OpenTimersSection(command_args[2]);
+            return;
+        end
+
         -- Skillchain debug: /xiui scdebug
         if (command_args[2] == 'scdebug') then
             skillchainModule.DebugDumpState();
@@ -1639,6 +1654,11 @@ end);
 
 ashita.events.register('packet_in', 'packet_in_cb', function (e)
     expBar.HandlePacket(e)
+
+    -- Vana'Dial weather/zone packet handling (0x000A zone-in, 0x057 weather change)
+    if gConfig.showVanaDial then
+        vanaDial.HandlePacketIn(e);
+    end
 
     -- Pet bar packet handling (0x0028 Action, 0x0068 Pet Sync)
     if gConfig.showPetBar then
