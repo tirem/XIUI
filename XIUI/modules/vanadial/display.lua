@@ -170,8 +170,9 @@ local lastFontSize = -1;
 local mainWinPos  = {x=0, y=0};
 local mainWinSize = {w=0, h=0};
 
--- Deferred Fenrir tooltip: set during Begin/End, drawn after End() on foreground list
+-- Deferred tooltips: set during Begin/End, drawn after End() on foreground list
 local pendingFenrirTooltip = nil;
+local pendingDayWeekday    = nil;
 
 -- Preview flags: set by config/vanadial.lua while sliders are dragged
 if _G.XIUI_weatherElementalPreview == nil then _G.XIUI_weatherElementalPreview = false; end
@@ -353,10 +354,23 @@ local function DrawDayColumn(drawList, cx, cy, colWeekday, moonPercent, moonDay,
             ToU32(WithAlpha(0xFF8B1010, alpha)), 2, nil, 1.0);
     end
 
+    if gConfig and gConfig.vanaDialEnableTooltips ~= false
+        and imgui.IsMouseHoveringRect({cardX, cardY}, {cardX + cardW, cardY + cardH}) then
+        pendingDayWeekday = colWeekday;
+    end
+
     return cardX, cardY, cardW, cardH;
 end
 
 -- ── Fenrir tooltip ────────────────────────────────────────────────────────────
+
+local function FlushDayTooltip()
+    if pendingDayWeekday == nil then return end
+    local wd = pendingDayWeekday;
+    pendingDayWeekday = nil;
+    local name = data.WEEKDAY_NAMES[wd];
+    if name then imgui.SetTooltip(name) end
+end
 
 local function DrawFenrirTooltip(drawList, cardX, cardY, cardW, cardH, moonDay, moonPercent)
     if not (gConfig and gConfig.vanaDialEnableTooltips ~= false
@@ -505,6 +519,9 @@ local WINDOW_KEY = 'VanaDial';
 function M.Initialize()
     if gConfig then
         if not gConfig.windowPositions then gConfig.windowPositions = T{}; end
+        if gConfig.windowPositions['VanaTime'] and not gConfig.windowPositions[WINDOW_KEY] then
+            gConfig.windowPositions[WINDOW_KEY] = gConfig.windowPositions['VanaTime'];
+        end
     end
     LoadTextures();
     -- Share texture tables and position state with popups via a context table.
@@ -549,6 +566,7 @@ function M.DrawWindow(weatherId)
     if not cfg then return; end
 
     pendingFenrirTooltip = nil;
+    pendingDayWeekday    = nil;
 
     local colorCfg = (cfg.colorCustomization or {}).vanaDial or {};
     local scale    = math.max(0.5, math.min(2.0, cfg.vanaDialScale    or 1.0));
@@ -763,6 +781,10 @@ function M.DrawWindow(weatherId)
             local tx = vtX + vtMeasW + 3;
             local ty = clockY + math.floor((clockH - clockH) / 2);
             DLImage(drawList, todIconTex, tx,ty, tx+clockH,ty+clockH, ToU32(0xEEFFFFFF));
+            if cfg.vanaDialEnableTooltips ~= false and cfg.vanaDialTipTod ~= false
+                and imgui.IsMouseHoveringRect({tx, ty}, {tx + clockH, ty + clockH}) then
+                imgui.SetTooltip('Time of Day: ' .. (data.GetTodName(vtHour) or ''));
+            end
         end
 
         local function DrawClockTooltips(vtX, ltX, ltClockY)
@@ -951,6 +973,7 @@ function M.DrawWindow(weatherId)
         error(err, 2);
     end
 
+    FlushDayTooltip();
     FlushFenrirTooltip();
 
     -- ── Popup stacking offsets ────────────────────────────────────────────────

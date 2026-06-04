@@ -350,10 +350,58 @@ local function DrawRouteRow(row)
     imgui.TextColored(cdColor, row.countdownStr or '--');
 end
 
+-- One airship leg: route label, status, countdown or VT arrival time.
+local function DrawAirshipLeg(leg, fontScale)
+    if fontScale and fontScale ~= 1.0 then
+        imgui.SetWindowFontScale(fontScale);
+    end
+    if leg.city1 then
+        imgui.TextColored(leg.city1Color, leg.city1);
+        if leg.city2 and leg.city2 ~= '' then
+            imgui.SameLine(0, 4);
+            imgui.TextColored(timers.colorGoldDark, '>');
+            imgui.SameLine(0, 4);
+            imgui.TextColored(leg.city2Color, leg.city2);
+        end
+    else
+        imgui.TextColored(timers.colorGoldDark, leg.label or '');
+    end
+    imgui.SameLine(0, 10);
+    if leg.isAwaiting then
+        imgui.TextColored(timers.colorAwaiting, 'AWAITING ARRIVAL');
+        imgui.SameLine(0, 10);
+        imgui.TextColored(leg.cdColor or timers.colorDimGrey, leg.countdownStr or '--');
+    elseif leg.isBoarding then
+        imgui.TextColored(timers.colorBoarding, 'BOARDING');
+        imgui.SameLine(0, 10);
+        imgui.TextColored(leg.cdColor or timers.colorDimGrey, leg.countdownStr or '--');
+    elseif leg.isTransit then
+        imgui.TextColored(timers.colorGoldDark, 'IN-TRANSIT');
+        imgui.SameLine(0, 10);
+        imgui.TextColored(timers.colorGoldDark, 'Returns in: ');
+        imgui.SameLine(0, 6);
+        imgui.TextColored(leg.cdColor or timers.colorDimGrey, leg.countdownStr or '--');
+    else
+        imgui.TextColored(leg.cdColor or timers.colorDimGrey, leg.countdownStr or '--');
+    end
+    if fontScale and fontScale ~= 1.0 then
+        imgui.SetWindowFontScale(1.0);
+    end
+end
+
+local function DrawAirshipRow(row)
+    DrawAirshipLeg(row, 1.0);
+    if row.sub then
+        imgui.Indent(18);
+        DrawAirshipLeg(row.sub, 0.82);
+        imgui.Unindent(18);
+    end
+end
+
 local function DrawAirshipsContent()
     local a = timers.airships;
     for i, entry in ipairs(a) do
-        DrawRouteRow(entry);
+        DrawAirshipRow(entry);
         if i < #a then DrawSectionDivider() end
     end
 end
@@ -715,11 +763,7 @@ function M.DrawTodPopup(vtHour, vtMinuteOfDay, iconSize, colorCfg, rounding, ali
 
         if imgui.IsWindowHovered() then
             if cfg.vanaDialEnableTooltips ~= false and cfg.vanaDialTipTod ~= false then
-                local todName =
-                    (vtHour >= 20 or vtHour < 4)     and 'Dead of Night'
-                    or (vtHour >= 6 and vtHour < 18) and 'Day'
-                    or 'Night';
-                imgui.SetTooltip(todName);
+                imgui.SetTooltip('Time of Day: ' .. (data.GetTodName(vtHour) or ''));
             end
         end
     end

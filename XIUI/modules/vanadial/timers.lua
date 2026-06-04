@@ -23,8 +23,14 @@ local VD_DAY_SEC   = 3456;        -- real seconds per VT day  (57.6 min)
 local VD_MIN_F     = 2.4;         -- real seconds per VT minute
 local VD_MOON_DAYS = 84;
 
--- Boarding window for boats: VT minutes before departure that the boat sits at dock.
-local BOARD_WIN = 50;
+-- Ferry routes: 8 VT-hour departure cycle (480 VT). Boarding + transit lengths vary by route.
+-- Standard (Selbina<>Mhaura, Mhaura<>Whitegate): 80 VT board, 400 VT sail (Earth 3m12s / 16m).
+-- Nashmau<>Whitegate: 180 VT board (3 VT h), 300 VT sail (Earth 7m12s / 12m).
+local FERRY_CYCLE_VT        = 480;
+local FERRY_BOARD_VT_STD    = 80;
+local FERRY_TRANSIT_VT_STD  = 400;
+local FERRY_BOARD_VT_NASH   = 180;
+local FERRY_TRANSIT_VT_NASH = 300;
 
 -- Yellow "soon" threshold: 5 real minutes
 local SOON_SECS = 300;
@@ -75,6 +81,7 @@ local C_WAITING  = 0xFFCCCCCC;   -- light grey
 -- Pre-allocated float4 colour tables for route rows (reused, never mutated).
 -- Eliminates a ToF4() table allocation on every makeRow/MakeCLRouteRow call per second.
 local CF4_BOARDING = {0.267, 0.933, 0.533, 1.0};  -- 0xFF44EE88 boarding green
+local CF4_AWAITING = {0.500, 0.980, 0.720, 1.0};  -- 0xFF80FA88 lighter green (awaiting arrival)
 local CF4_SOON     = {1.0,   0.800, 0.267, 1.0};  -- 0xFFFFCC44 departure soon
 local CF4_WAITING  = {0.800, 0.800, 0.800, 1.0};  -- 0xFFCCCCCC waiting grey
 local CF4_CL_TRANS = {0.510, 0.392, 0.055, 1.0};  -- 0xFF82640E CL/Manaclipper in-transit
@@ -107,14 +114,13 @@ local DEP_JEUNOWD = {520, 880, 1240,  160};  -- 08:40  14:40  20:40  02:40
 local DEP_KAZHAM  = {160, 520,  880, 1240};  -- 02:40  08:40  14:40  20:40
 local DEP_JEUNOKD = {335, 695, 1055, 1415};  -- 05:35  11:35  17:35  23:35
 
--- ── Ferry: Selbina <> Mhaura ─────────────────────────────────────────────────
--- Both ports depart every 8 VT hours.  Two boats run simultaneously.
+-- ── Ferry schedules (departure VT min only; boarding/transit from FERRY_* constants) ──
 local DEP_SELBINA_SM     = {  0, 480,  960};  -- 00:00  08:00  16:00
-local DEP_MHAURA_SM      = {  0, 480,  960};  -- 00:00  08:00  16:00
--- Mhaura <> Al Zahbi (Whitegate) ferry — both ports depart simultaneously
-local DEP_MHAURA_WG      = {240, 720, 1200};  -- 04:00  12:00  20:00
--- Whitegate <> Nashmau ferry — both ports depart simultaneously
-local DEP_WG_NASHMAU     = {  0, 480,  960};  -- 00:00  08:00  16:00
+local DEP_MHAURA_SM      = {  0, 480,  960};
+-- Mhaura <> Whitegate: dep 04/12/20:00 → arr 10:40/18:40/02:40 (std 80+400)
+local DEP_MHAURA_WG      = {240, 720, 1200};
+-- Whitegate <> Nashmau: dep 00/08/16:00 → arr 05:00/13:00/21:00 (nash 180+300)
+local DEP_WG_NASHMAU     = {  0, 480,  960};
 
 -- ── Bibiki Bay Manaclipper ───────────────────────────────────────────────────
 -- Four named routes share the same dock at Bibiki Bay (Sunset Docks).
@@ -315,62 +321,79 @@ local function ToF4(argb)
     };
 end
 
--- Build one boat/ferry route row with real-Earth countdown.
--- city1/city2 are the location name strings (keys into C_CITY for colour lookup).
--- arrow: optional display separator, defaults to '>'. Use '<>' for bidirectional routes.
--- Returns a flat table consumed directly by DrawRouteRow in ui.lua.
-local function MakeRow(city1, city2, vtMinuteOfDay, vtDay, osNow, schedule, arrow)
-    local bestDiff    = math.huge;
-    local bestDep     = -1;
-    local bestWrapped = false;
+-- Boarding [dep-boardVt, dep). dep=0 → [1440-boardVt, 1440) (e.g. 21:00-24:00 for 180 VT board).
+local function InFerryBoarding(vtMin, dep, boardVt)
+    local start = (dep - boardVt + 1440) % 1440;
+    if dep == 0 then
+        return vtMin >= start;
+    end
+    return vtMin >= start and vtMin < dep;
+end
+
+-- In-transit [dep, dep+transitVt) only (never the full 8h cycle).
+local function InFerryTransit(vtMin, dep, transitVt)
+    local finish = (dep + transitVt) % 1440;
+    if finish > dep then
+        return vtMin >= dep and vtMin < finish;
+    end
+    return vtMin >= dep or vtMin < finish;
+end
+
+-- BOARDING [dep-boardVt, dep); IN-TRANSIT [dep, dep+transitVt). Countdown to dep / arrive.
+local function MakeFerryRow(city1, city2, vtMinuteOfDay, vtDay, osNow, schedule, arrow, boardVt, transitVt)
+    boardVt   = boardVt   or FERRY_BOARD_VT_STD;
+    transitVt = transitVt or FERRY_TRANSIT_VT_STD;
+    local empty = { city1=city1, city1Color=CityColor(city1),
+        city2=city2 or '', city2Color=CityColor(city2), arrow=arrow or '<>',
+        countdownStr='--', cdColor=CF4_WAITING,
+        isBoarding=false, isTransit=false, isEmpty=true };
 
     for _, dep in ipairs(schedule) do
-        local diff    = dep - vtMinuteOfDay;
-        local wrapped = false;
-        if diff < 0 then
-            diff    = diff + 1440;
-            wrapped = true;
+        if InFerryBoarding(vtMinuteOfDay, dep, boardVt) then
+            local secs = SecsToVtMin(dep, vtMinuteOfDay, vtDay, osNow);
+            local cdColor = (secs < SOON_SECS) and CF4_SOON or CF4_BOARDING;
+            return {
+                city1=city1, city1Color=CityColor(city1),
+                city2=city2 or '', city2Color=CityColor(city2), arrow=arrow or '<>',
+                countdownStr=FmtRealCountdown(secs), cdColor=cdColor,
+                isBoarding=true, isTransit=false, isEmpty=false,
+            };
         end
+    end
+
+    for _, dep in ipairs(schedule) do
+        if InFerryTransit(vtMinuteOfDay, dep, transitVt) then
+            local finish = (dep + transitVt) % 1440;
+            local secs = SecsToVtMin(finish, vtMinuteOfDay, vtDay, osNow);
+            local cdColor = (secs < SOON_SECS) and CF4_SOON or CF4_WAITING;
+            return {
+                city1=city1, city1Color=CityColor(city1),
+                city2=city2 or '', city2Color=CityColor(city2), arrow=arrow or '<>',
+                countdownStr=FmtRealCountdown(secs), cdColor=cdColor,
+                isBoarding=false, isTransit=true, isEmpty=false,
+            };
+        end
+    end
+
+    local bestDiff = math.huge;
+    local bestBoard = nil;
+    for _, dep in ipairs(schedule) do
+        local boardStart = (dep - boardVt + 1440) % 1440;
+        local diff = boardStart - vtMinuteOfDay;
+        if diff <= 0 then diff = diff + 1440 end
         if diff < bestDiff then
-            bestDiff    = diff;
-            bestDep     = dep;
-            bestWrapped = wrapped;
+            bestDiff = diff;
+            bestBoard = boardStart;
         end
     end
-
-    if bestDep < 0 then
-        return { city1=city1, city1Color=CityColor(city1),
-                 city2=city2 or '', city2Color=CityColor(city2),
-                 arrow=arrow or '>',
-                 countdownStr='--', cdColor=CF4_WAITING,
-                 isBoarding=false, isTransit=false, isEmpty=true };
-    end
-
-    local depVtDay   = bestWrapped and (vtDay + 1) or vtDay;
-    local isBoarding = bestDiff <= BOARD_WIN;
-    local depRealTs  = VANA_EPOCH + depVtDay * VD_DAY_SEC + bestDep * VD_MIN_F;
-    local realSecs   = math.max(0, math.floor(depRealTs - osNow));
-
-    local cdColor;
-    if isBoarding then
-        cdColor = CF4_BOARDING;
-    elseif realSecs < SOON_SECS then
-        cdColor = CF4_SOON;
-    else
-        cdColor = CF4_WAITING;
-    end
-
+    if not bestBoard then return empty end
+    local secs = SecsToVtMin(bestBoard, vtMinuteOfDay, vtDay, osNow);
+    local cdColor = (secs < SOON_SECS) and CF4_SOON or CF4_WAITING;
     return {
-        city1        = city1,
-        city1Color   = CityColor(city1),
-        city2        = city2 or '',
-        city2Color   = CityColor(city2),
-        arrow        = arrow or '>',
-        countdownStr = FmtRealCountdown(realSecs),
-        cdColor      = cdColor,
-        isBoarding   = isBoarding,
-        isTransit    = not isBoarding,
-        isEmpty      = false,
+        city1=city1, city1Color=CityColor(city1),
+        city2=city2 or '', city2Color=CityColor(city2), arrow=arrow or '<>',
+        countdownStr=FmtRealCountdown(secs), cdColor=cdColor,
+        isBoarding=false, isTransit=false, isEmpty=false,
     };
 end
 
@@ -424,83 +447,83 @@ local function MakeCLRouteRow(route, vtMin, vtDay, osNow)
         SecsToVtMin(bestBoard, vtMin, vtDay, osNow), CF4_CL_OOS);
 end
 
--- Module-level row builder for MakeRowBi (replaces the inner makeRow closure,
--- eliminating one closure allocation per airship route per second).
-local function MakeRowBiEntry(lbl, boarding, transit, realSecs)
-    local c1, c2  = lbl:match('^(%S+) > (%S+)$');
-    local cdColor = (realSecs < SOON_SECS) and CF4_SOON or CF4_WAITING;
+local function MakeAirshipLeg(lbl, realSecs, opts)
+    local c1, c2 = lbl:match('^(%S+) > (%S+)$');
+    local secs   = math.max(0, realSecs);
+    local cdColor = (secs < SOON_SECS) and CF4_SOON or CF4_WAITING;
+    if opts.boarding then cdColor = CF4_BOARDING end
     return {
         label=lbl, city1=c1 or lbl, city1Color=CityColor(c1),
         city2=c2 or '', city2Color=CityColor(c2),
-        countdownStr=FmtRealCountdown(math.max(0, realSecs)),
-        cdColor=cdColor, isBoarding=boarding, isTransit=transit, isEmpty=false,
+        countdownStr=FmtRealCountdown(secs), cdColor=cdColor,
+        isBoarding=opts.boarding or false,
+        isTransit=opts.transit or false,
+        isAwaiting=opts.awaiting or false,
+        isEmpty=false,
     };
 end
 
--- Build one airship route row using departure times only.
--- Physics (from Pyogenes live data, all routes):
---   BOARD_VT  = 60 VT min → 2m 24s boarding window  (vtMin in [dep-60, dep))
---   ROUND_VT  = 300 VT min → 12m 00s same-port round trip from any departure
--- depFwd = city departures; depRev = Jeuno departures for that route.
--- Labels must be "City1 > City2" for city-colour rendering.
+local function AttachSub(primary, sub)
+    if sub then primary.sub = sub end
+    return primary;
+end
+
+local function InAirshipWindow(vtMin, startVt, endVt)
+    if startVt == endVt then return false end
+    if startVt < endVt then return vtMin >= startVt and vtMin < endVt end
+    return vtMin >= startVt or vtMin < endVt;
+end
+
+-- Phase within one city→Jeuno→city cycle (handles midnight wrap).
+local function AirshipCyclePhase(vt, depF, depR, depFNext, boardR, boardF)
+    if InAirshipWindow(vt, depF, boardR) then return 'fwd_await_hub' end
+    if InAirshipWindow(vt, boardR, depR) then return 'rev_board_hub' end
+    if InAirshipWindow(vt, depR, boardF) then return 'fwd_await_city' end
+    if InAirshipWindow(vt, boardF, depFNext) then return 'fwd_board_city' end
+    return nil;
+end
+
+-- Display pairing (schedule math unchanged). labelFwd = City>Jeuno, labelRev = Jeuno>City.
+--   Top: next service at the dock being approached (inbound name at destination).
+--   Sub: leg that departed the other city — IN-TRANSIT until next Jeuno arrival.
 local function MakeRowBi(labelFwd, labelRev, vtMinuteOfDay, vtDay, osNow, depFwd, depRev)
     local n     = #depFwd;
-    local BOARD = 60;   -- VT min boarding window (60 VT × 2.4s = 2m 24s)
+    local BOARD = 60;
+    local vt    = vtMinuteOfDay;
 
-    -- Inline timestamp helper (avoids per-call closure allocation).
-    local vtDayBase = VANA_EPOCH + vtDay * VD_DAY_SEC;
+    -- No separate [dep-60, dep) shortcut: that window is fwd_board_city of the prior cycle
+    -- and must keep the return-leg sub row (e.g. Kazham before the 02:40 dep).
 
-    -- ── BOARDING at Fwd city : vtMin in [dep-60, dep) ───────────────────────
     for i = 1, n do
-        local dep = depFwd[i];
-        if vtMinuteOfDay >= dep - BOARD and vtMinuteOfDay < dep then
-            return MakeRowBiEntry(labelFwd, true, false, math.floor(vtDayBase + dep * VD_MIN_F - osNow));
+        local depF       = depFwd[i];
+        local depR       = depRev[i];
+        local depFNext   = depFwd[(i % n) + 1];
+        local boardR     = depR - BOARD;
+        local boardF     = depFNext - BOARD;
+        local returnHub  = depRev[(i % n) + 1] - BOARD;
+        local phase = AirshipCyclePhase(vt, depF, depR, depFNext, boardR, boardF);
+        if phase then
+            local secsReturn = SecsToVtMin(returnHub, vt, vtDay, osNow);
+            local top, sub;
+            if phase == 'fwd_await_hub' then
+                -- City>Jeuno in flight to Jeuno: top Jeuno>City awaiting, sub City>Jeuno departed
+                top = MakeAirshipLeg(labelRev, SecsToVtMin(boardR, vt, vtDay, osNow), { awaiting=true });
+                sub = MakeAirshipLeg(labelFwd, secsReturn, { transit=true });
+            elseif phase == 'rev_board_hub' then
+                top = MakeAirshipLeg(labelRev, SecsToVtMin(depR, vt, vtDay, osNow), { boarding=true });
+                sub = MakeAirshipLeg(labelFwd, secsReturn, { transit=true });
+            elseif phase == 'fwd_await_city' then
+                -- Jeuno>City in flight to city: top City>Jeuno awaiting, sub Jeuno>City departed
+                top = MakeAirshipLeg(labelFwd, SecsToVtMin(boardF, vt, vtDay, osNow), { awaiting=true });
+                sub = MakeAirshipLeg(labelRev, secsReturn, { transit=true });
+            else
+                top = MakeAirshipLeg(labelFwd, SecsToVtMin(depFNext, vt, vtDay, osNow), { boarding=true });
+                sub = MakeAirshipLeg(labelRev, secsReturn, { transit=true });
+            end
+            return AttachSub(top, sub);
         end
     end
 
-    -- ── BOARDING at Rev city : vtMin in [dep-60, dep) ───────────────────────
-    for i = 1, n do
-        local dep = depRev[i];
-        if vtMinuteOfDay >= dep - BOARD and vtMinuteOfDay < dep then
-            return MakeRowBiEntry(labelRev, true, false, math.floor(vtDayBase + dep * VD_MIN_F - osNow));
-        end
-    end
-
-    -- ── IN-TRANSIT Fwd→Rev : vtMin in [depFwd[i], depRev[i]-60) ────────────
-    for i = 1, n do
-        local depF   = depFwd[i];
-        local boardR = depRev[i] - BOARD;
-        local inTrans;
-        if depF < boardR then
-            inTrans = (vtMinuteOfDay >= depF and vtMinuteOfDay < boardR);
-        else
-            inTrans = (vtMinuteOfDay >= depF or vtMinuteOfDay < boardR);
-        end
-        if inTrans then
-            local dayOff = (vtMinuteOfDay >= boardR) and 1 or 0;
-            return MakeRowBiEntry(labelRev, false, true,
-                math.floor(vtDayBase + dayOff * VD_DAY_SEC + boardR * VD_MIN_F - osNow));
-        end
-    end
-
-    -- ── IN-TRANSIT Rev→Fwd : vtMin in [depRev[i], depFwd[next]-60) ─────────
-    for i = 1, n do
-        local depR   = depRev[i];
-        local boardF = depFwd[(i % n) + 1] - BOARD;
-        local inTrans;
-        if depR < boardF then
-            inTrans = (vtMinuteOfDay >= depR and vtMinuteOfDay < boardF);
-        else
-            inTrans = (vtMinuteOfDay >= depR or vtMinuteOfDay < boardF);
-        end
-        if inTrans then
-            local dayOff = (vtMinuteOfDay >= boardF) and 1 or 0;
-            return MakeRowBiEntry(labelFwd, false, true,
-                math.floor(vtDayBase + dayOff * VD_DAY_SEC + boardF * VD_MIN_F - osNow));
-        end
-    end
-
-    -- Fallback (should never fire — full 1440 VT min covered by above)
     return { label=labelFwd, city1=labelFwd, city1Color=CityColor(nil), city2='',
              city2Color=CityColor(nil), countdownStr='--', cdColor=CF4_WAITING,
              isBoarding=false, isTransit=false, isEmpty=true };
@@ -518,6 +541,7 @@ M.lunar    = {};
 
 -- Pre-computed colour float4 tables exposed to render code (reference CF4_ tables, no extra allocation)
 M.colorBoarding = CF4_BOARDING;
+M.colorAwaiting = CF4_AWAITING;
 M.colorSoon     = CF4_SOON;
 M.colorWaiting  = CF4_WAITING;
 M.colorServicedSoon  = {0.55, 0.95, 0.55, 1.0};   -- light green "Serviced Soon" label
@@ -530,6 +554,7 @@ M.colorDimGrey  = {0.50,  0.50,  0.50,  1.0};
 
 -- Expose the shared countdown formatter for use in ui.lua (e.g. TOD timer).
 M.FmtCountdown = FmtRealCountdown;
+M.FmtVtTime    = FmtTime;
 
 -- ── M.Update ─────────────────────────────────────────────────────────────────
 -- osNow         : os.time()  (integer Unix seconds)
@@ -557,9 +582,10 @@ function M.Update(osNow, vtMinuteOfDay, vtDay, moonDay)
         local bi = 0;
 
         bi = bi + 1; b[bi] = MakeHeader('Boats  ');
-        bi = bi + 1; b[bi] = MakeRow('Selbina',   'Mhaura',    vtMinuteOfDay, vtDay, osNow, DEP_SELBINA_SM, '<>');
-        bi = bi + 1; b[bi] = MakeRow('Mhaura',    'Whitegate', vtMinuteOfDay, vtDay, osNow, DEP_MHAURA_WG,  '<>');
-        bi = bi + 1; b[bi] = MakeRow('Whitegate', 'Nashmau',   vtMinuteOfDay, vtDay, osNow, DEP_WG_NASHMAU, '<>');
+        bi = bi + 1; b[bi] = MakeFerryRow('Selbina',   'Mhaura',    vtMinuteOfDay, vtDay, osNow, DEP_SELBINA_SM, '<>');
+        bi = bi + 1; b[bi] = MakeFerryRow('Mhaura',    'Whitegate', vtMinuteOfDay, vtDay, osNow, DEP_MHAURA_WG,  '<>');
+        bi = bi + 1; b[bi] = MakeFerryRow('Whitegate', 'Nashmau',   vtMinuteOfDay, vtDay, osNow, DEP_WG_NASHMAU, '<>',
+            FERRY_BOARD_VT_NASH, FERRY_TRANSIT_VT_NASH);
 
         bi = bi + 1; b[bi] = MakeHeader('Bibiki Manaclipper  ');
         for _, route in ipairs(BIBIKI_ROUTES) do

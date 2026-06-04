@@ -102,6 +102,22 @@ M.ELEM_KEYS = {
     [4]='elementIce',  [5]='elementLightning', [6]='elementLight', [7]='elementDark',
 };
 
+-- Weekday index (0-7) → Vana'diel day name (element order).
+M.WEEKDAY_NAMES = {
+    [0]='Firesday', [1]='Earthsday', [2]='Watersday', [3]='Windsday',
+    [4]='Iceday',   [5]='Lightningday', [6]='Lightsday', [7]='Darksday',
+};
+
+function M.GetTodName(vtHour)
+    if vtHour >= 20 or vtHour < 4 then
+        return 'Dead of Night';
+    end
+    if vtHour >= 6 and vtHour < 18 then
+        return 'Day';
+    end
+    return 'Night';
+end
+
 -- Which element each weekday DEFEATS (weakness badge)
 -- Chain: Water > Fire > Ice > Wind > Earth > Thunder > Water; Light <-> Dark
 M.ELEMENT_DEFEATS = {
