@@ -6,8 +6,8 @@
 * iterate with zero computation and zero per-frame allocation.
 *
 * Optimisation contract
-*   • Call M.Update(osNow, vtMinuteOfDay, vtDay, moonDay) once per DrawWindow tick
-*     (only when the timers panel is open; skip otherwise).
+*   • Call M.Update(osNow, vtMinuteOfDay, vtDay, moonDay) from the timers popup draw
+*     path only (skipped when the panel is closed).
 *   • Airships + boats rebuild at most once per real second.
 *   • RSE + lunar rebuild at most once per real minute.
 ]]--
@@ -340,24 +340,22 @@ local function InFerryTransit(vtMin, dep, transitVt)
 end
 
 -- BOARDING [dep-boardVt, dep); IN-TRANSIT [dep, dep+transitVt). Countdown to dep / arrive.
-local function MakeFerryRow(city1, city2, vtMinuteOfDay, vtDay, osNow, schedule, arrow, boardVt, transitVt)
+-- All Fill* helpers mutate pre-allocated row tables (no per-tick table churn).
+local function FillFerryRow(dst, city1, city2, vtMinuteOfDay, vtDay, osNow, schedule, arrow, boardVt, transitVt)
     boardVt   = boardVt   or FERRY_BOARD_VT_STD;
     transitVt = transitVt or FERRY_TRANSIT_VT_STD;
-    local empty = { city1=city1, city1Color=CityColor(city1),
-        city2=city2 or '', city2Color=CityColor(city2), arrow=arrow or '<>',
-        countdownStr='--', cdColor=CF4_WAITING,
-        isBoarding=false, isTransit=false, isEmpty=true };
+    dst.isHeader = nil;
 
     for _, dep in ipairs(schedule) do
         if InFerryBoarding(vtMinuteOfDay, dep, boardVt) then
             local secs = SecsToVtMin(dep, vtMinuteOfDay, vtDay, osNow);
             local cdColor = (secs < SOON_SECS) and CF4_SOON or CF4_BOARDING;
-            return {
-                city1=city1, city1Color=CityColor(city1),
-                city2=city2 or '', city2Color=CityColor(city2), arrow=arrow or '<>',
-                countdownStr=FmtRealCountdown(secs), cdColor=cdColor,
-                isBoarding=true, isTransit=false, isEmpty=false,
-            };
+            dst.city1 = city1; dst.city1Color = CityColor(city1);
+            dst.city2 = city2 or ''; dst.city2Color = CityColor(city2);
+            dst.arrow = arrow or '<>';
+            dst.countdownStr = FmtRealCountdown(secs); dst.cdColor = cdColor;
+            dst.isBoarding = true; dst.isTransit = false; dst.isEmpty = false;
+            return;
         end
     end
 
@@ -366,12 +364,12 @@ local function MakeFerryRow(city1, city2, vtMinuteOfDay, vtDay, osNow, schedule,
             local finish = (dep + transitVt) % 1440;
             local secs = SecsToVtMin(finish, vtMinuteOfDay, vtDay, osNow);
             local cdColor = (secs < SOON_SECS) and CF4_SOON or CF4_WAITING;
-            return {
-                city1=city1, city1Color=CityColor(city1),
-                city2=city2 or '', city2Color=CityColor(city2), arrow=arrow or '<>',
-                countdownStr=FmtRealCountdown(secs), cdColor=cdColor,
-                isBoarding=false, isTransit=true, isEmpty=false,
-            };
+            dst.city1 = city1; dst.city1Color = CityColor(city1);
+            dst.city2 = city2 or ''; dst.city2Color = CityColor(city2);
+            dst.arrow = arrow or '<>';
+            dst.countdownStr = FmtRealCountdown(secs); dst.cdColor = cdColor;
+            dst.isBoarding = false; dst.isTransit = true; dst.isEmpty = false;
+            return;
         end
     end
 
@@ -386,56 +384,60 @@ local function MakeFerryRow(city1, city2, vtMinuteOfDay, vtDay, osNow, schedule,
             bestBoard = boardStart;
         end
     end
-    if not bestBoard then return empty end
+    if not bestBoard then
+        dst.city1 = city1; dst.city1Color = CityColor(city1);
+        dst.city2 = city2 or ''; dst.city2Color = CityColor(city2);
+        dst.arrow = arrow or '<>';
+        dst.countdownStr = '--'; dst.cdColor = CF4_WAITING;
+        dst.isBoarding = false; dst.isTransit = false; dst.isEmpty = true;
+        return;
+    end
     local secs = SecsToVtMin(bestBoard, vtMinuteOfDay, vtDay, osNow);
     local cdColor = (secs < SOON_SECS) and CF4_SOON or CF4_WAITING;
-    return {
-        city1=city1, city1Color=CityColor(city1),
-        city2=city2 or '', city2Color=CityColor(city2), arrow=arrow or '<>',
-        countdownStr=FmtRealCountdown(secs), cdColor=cdColor,
-        isBoarding=false, isTransit=false, isEmpty=false,
-    };
+    dst.city1 = city1; dst.city1Color = CityColor(city1);
+    dst.city2 = city2 or ''; dst.city2Color = CityColor(city2);
+    dst.arrow = arrow or '<>';
+    dst.countdownStr = FmtRealCountdown(secs); dst.cdColor = cdColor;
+    dst.isBoarding = false; dst.isTransit = false; dst.isEmpty = false;
 end
 
--- Build a boats sub-section header row.
-local function MakeHeader(text)
-    return { isHeader=true, label=text };
+local function FillHeader(dst, text)
+    dst.isHeader = true;
+    dst.label = text;
+    dst.isEmpty = nil;
 end
 
--- Module-level helper for MakeCLRouteRow: builds the result table without capturing route
--- as a closure upvalue on every call (eliminates one closure allocation per route per second).
-local function MakeCLRow(route, transit, boarding, soon, oos, secs, cdColor)
-    return {
-        city1=route.fromName, city1Color=route.fromColor,
-        city2=route.toName,   city2Color=route.toColor,   arrow='>',
-        city3=route.city3,    city3Color=route.city3Color,
-        routeVia=route.routeVia,
-        countdownStr=FmtRealCountdown(secs), cdColor=cdColor,
-        isBoarding=boarding, isTransit=transit,
-        isServicedSoon=soon, isOOS=oos, isEmpty=false,
-    };
+local function FillCLRow(dst, route, transit, boarding, soon, oos, secs, cdColor)
+    dst.isHeader = nil;
+    dst.city1 = route.fromName; dst.city1Color = route.fromColor;
+    dst.city2 = route.toName;   dst.city2Color = route.toColor; dst.arrow = '>';
+    dst.city3 = route.city3;    dst.city3Color = route.city3Color;
+    dst.routeVia = route.routeVia;
+    dst.countdownStr = FmtRealCountdown(secs); dst.cdColor = cdColor;
+    dst.isBoarding = boarding; dst.isTransit = transit;
+    dst.isServicedSoon = soon; dst.isOOS = oos; dst.isEmpty = false;
 end
 
--- Build one Carpenters' Landing route row.  Status is ALWAYS set (never empty).
-local function MakeCLRouteRow(route, vtMin, vtDay, osNow)
+local function FillCLRouteRow(dst, route, vtMin, vtDay, osNow)
     local sched = route.schedule;
 
-    -- Check each run's active windows: IN-TRANSIT → BOARDING → SERVICED SOON.
     for _, run in ipairs(sched) do
         local soonStart = (run.boarding - CL_SOON_VT + 1440) % 1440;
         if InVtInterval(vtMin, run.dep, run.arr) then
-            return MakeCLRow(route, true, false, false, false,
+            FillCLRow(dst, route, true, false, false, false,
                 SecsToVtMin(run.arr, vtMin, vtDay, osNow), CF4_CL_TRANS);
+            return;
         elseif InVtInterval(vtMin, run.boarding, run.dep) then
-            return MakeCLRow(route, false, true, false, false,
+            FillCLRow(dst, route, false, true, false, false,
                 SecsToVtMin(run.dep, vtMin, vtDay, osNow), CF4_BOARDING);
+            return;
         elseif InVtInterval(vtMin, soonStart, run.boarding) then
-            return MakeCLRow(route, false, false, true, false,
+            FillCLRow(dst, route, false, false, true, false,
                 SecsToVtMin(run.boarding, vtMin, vtDay, osNow), CF4_CL_SVC);
+            return;
         end
     end
 
-    -- OOS: find nearest upcoming boarding across all runs.
     local bestDiff = math.huge;
     local bestBoard = sched[1].boarding;
     for _, run in ipairs(sched) do
@@ -443,29 +445,33 @@ local function MakeCLRouteRow(route, vtMin, vtDay, osNow)
         if diff <= 0 then diff = diff + 1440 end
         if diff < bestDiff then bestDiff = diff; bestBoard = run.boarding end
     end
-    return MakeCLRow(route, false, false, false, true,
+    FillCLRow(dst, route, false, false, false, true,
         SecsToVtMin(bestBoard, vtMin, vtDay, osNow), CF4_CL_OOS);
 end
 
-local function MakeAirshipLeg(lbl, realSecs, opts)
+local function FillAirshipLeg(dst, lbl, realSecs, opts)
     local c1, c2 = lbl:match('^(%S+) > (%S+)$');
     local secs   = math.max(0, realSecs);
     local cdColor = (secs < SOON_SECS) and CF4_SOON or CF4_WAITING;
     if opts.boarding then cdColor = CF4_BOARDING end
-    return {
-        label=lbl, city1=c1 or lbl, city1Color=CityColor(c1),
-        city2=c2 or '', city2Color=CityColor(c2),
-        countdownStr=FmtRealCountdown(secs), cdColor=cdColor,
-        isBoarding=opts.boarding or false,
-        isTransit=opts.transit or false,
-        isAwaiting=opts.awaiting or false,
-        isEmpty=false,
-    };
+    dst.label = lbl;
+    dst.city1 = c1 or lbl; dst.city1Color = CityColor(c1);
+    dst.city2 = c2 or '';  dst.city2Color = CityColor(c2);
+    dst.countdownStr = FmtRealCountdown(secs); dst.cdColor = cdColor;
+    dst.isBoarding = opts.boarding or false;
+    dst.isTransit = opts.transit or false;
+    dst.isAwaiting = opts.awaiting or false;
+    dst.isEmpty = false;
 end
 
-local function AttachSub(primary, sub)
-    if sub then primary.sub = sub end
-    return primary;
+local function FillEmptyAirship(dst, lbl)
+    dst.label = lbl;
+    dst.city1 = lbl; dst.city1Color = CityColor(nil);
+    dst.city2 = '';  dst.city2Color = CityColor(nil);
+    dst.countdownStr = '--'; dst.cdColor = CF4_WAITING;
+    dst.isBoarding = false; dst.isTransit = false;
+    dst.isAwaiting = false; dst.isEmpty = true;
+    dst.sub = nil;
 end
 
 local function InAirshipWindow(vtMin, startVt, endVt)
@@ -474,7 +480,6 @@ local function InAirshipWindow(vtMin, startVt, endVt)
     return vtMin >= startVt or vtMin < endVt;
 end
 
--- Phase within one city→Jeuno→city cycle (handles midnight wrap).
 local function AirshipCyclePhase(vt, depF, depR, depFNext, boardR, boardF)
     if InAirshipWindow(vt, depF, boardR) then return 'fwd_await_hub' end
     if InAirshipWindow(vt, boardR, depR) then return 'rev_board_hub' end
@@ -486,13 +491,10 @@ end
 -- Display pairing (schedule math unchanged). labelFwd = City>Jeuno, labelRev = Jeuno>City.
 --   Top: next service at the dock being approached (inbound name at destination).
 --   Sub: leg that departed the other city — IN-TRANSIT until next Jeuno arrival.
-local function MakeRowBi(labelFwd, labelRev, vtMinuteOfDay, vtDay, osNow, depFwd, depRev)
+local function FillRowBi(dst, subDst, labelFwd, labelRev, vtMinuteOfDay, vtDay, osNow, depFwd, depRev)
     local n     = #depFwd;
     local BOARD = 60;
     local vt    = vtMinuteOfDay;
-
-    -- No separate [dep-60, dep) shortcut: that window is fwd_board_city of the prior cycle
-    -- and must keep the return-leg sub row (e.g. Kazham before the 02:40 dep).
 
     for i = 1, n do
         local depF       = depFwd[i];
@@ -504,29 +506,26 @@ local function MakeRowBi(labelFwd, labelRev, vtMinuteOfDay, vtDay, osNow, depFwd
         local phase = AirshipCyclePhase(vt, depF, depR, depFNext, boardR, boardF);
         if phase then
             local secsReturn = SecsToVtMin(returnHub, vt, vtDay, osNow);
-            local top, sub;
+            dst.isEmpty = false;
+            dst.sub = subDst;
             if phase == 'fwd_await_hub' then
-                -- City>Jeuno in flight to Jeuno: top Jeuno>City awaiting, sub City>Jeuno departed
-                top = MakeAirshipLeg(labelRev, SecsToVtMin(boardR, vt, vtDay, osNow), { awaiting=true });
-                sub = MakeAirshipLeg(labelFwd, secsReturn, { transit=true });
+                FillAirshipLeg(dst, labelRev, SecsToVtMin(boardR, vt, vtDay, osNow), { awaiting=true });
+                FillAirshipLeg(subDst, labelFwd, secsReturn, { transit=true });
             elseif phase == 'rev_board_hub' then
-                top = MakeAirshipLeg(labelRev, SecsToVtMin(depR, vt, vtDay, osNow), { boarding=true });
-                sub = MakeAirshipLeg(labelFwd, secsReturn, { transit=true });
+                FillAirshipLeg(dst, labelRev, SecsToVtMin(depR, vt, vtDay, osNow), { boarding=true });
+                FillAirshipLeg(subDst, labelFwd, secsReturn, { transit=true });
             elseif phase == 'fwd_await_city' then
-                -- Jeuno>City in flight to city: top City>Jeuno awaiting, sub Jeuno>City departed
-                top = MakeAirshipLeg(labelFwd, SecsToVtMin(boardF, vt, vtDay, osNow), { awaiting=true });
-                sub = MakeAirshipLeg(labelRev, secsReturn, { transit=true });
+                FillAirshipLeg(dst, labelFwd, SecsToVtMin(boardF, vt, vtDay, osNow), { awaiting=true });
+                FillAirshipLeg(subDst, labelRev, secsReturn, { transit=true });
             else
-                top = MakeAirshipLeg(labelFwd, SecsToVtMin(depFNext, vt, vtDay, osNow), { boarding=true });
-                sub = MakeAirshipLeg(labelRev, secsReturn, { transit=true });
+                FillAirshipLeg(dst, labelFwd, SecsToVtMin(depFNext, vt, vtDay, osNow), { boarding=true });
+                FillAirshipLeg(subDst, labelRev, secsReturn, { transit=true });
             end
-            return AttachSub(top, sub);
+            return;
         end
     end
 
-    return { label=labelFwd, city1=labelFwd, city1Color=CityColor(nil), city2='',
-             city2Color=CityColor(nil), countdownStr='--', cdColor=CF4_WAITING,
-             isBoarding=false, isTransit=false, isEmpty=true };
+    FillEmptyAirship(dst, labelFwd);
 end
 
 
@@ -538,6 +537,21 @@ M.airships = {};
 M.boats    = {};
 M.rse      = {};
 M.lunar    = {};
+
+local BOAT_ROW_MAX = 24;
+
+for i = 1, 4 do
+    M.airships[i] = { sub = {} };
+end
+for i = 1, BOAT_ROW_MAX do
+    M.boats[i] = {};
+end
+for i = 1, 5 do
+    if M.rse[i] == nil then M.rse[i] = {} end
+end
+for i = 1, 12 do
+    if M.lunar[i] == nil then M.lunar[i] = {} end
+end
 
 -- Pre-computed colour float4 tables exposed to render code (reference CF4_ tables, no extra allocation)
 M.colorBoarding = CF4_BOARDING;
@@ -561,43 +575,48 @@ M.FmtVtTime    = FmtTime;
 -- vtMinuteOfDay : integer 0-1439
 -- vtDay         : integer (absolute VT day count since epoch)
 -- moonDay       : integer 0-83
+function M.NeedsUpdate(osNow)
+    local osSec = math.floor(osNow);
+    local osMin = math.floor(osNow / 60);
+    return osSec ~= _lastSec or osMin ~= _lastMin;
+end
+
 function M.Update(osNow, vtMinuteOfDay, vtDay, moonDay)
     local osSec = math.floor(osNow);
     local osMin = math.floor(osNow / 60);
+    if osSec == _lastSec and osMin == _lastMin then
+        return;
+    end
 
     -- ── Airships + boats: rebuild every real second ───────────────────────────
     if osSec ~= _lastSec then
         _lastSec = osSec;
 
         local a = M.airships;
-        a[1] = MakeRowBi('Bastok > Jeuno', 'Jeuno > Bastok', vtMinuteOfDay, vtDay, osNow, DEP_BASTOK,  DEP_JEUNOBD);
-        a[2] = MakeRowBi('Sandy > Jeuno',  'Jeuno > Sandy',  vtMinuteOfDay, vtDay, osNow, DEP_SANDY,   DEP_JEUNOSD);
-        a[3] = MakeRowBi('Windy > Jeuno',  'Jeuno > Windy',  vtMinuteOfDay, vtDay, osNow, DEP_WINDY,   DEP_JEUNOWD);
-        a[4] = MakeRowBi('Kazham > Jeuno', 'Jeuno > Kazham', vtMinuteOfDay, vtDay, osNow, DEP_KAZHAM,  DEP_JEUNOKD);
+        FillRowBi(a[1], a[1].sub, 'Bastok > Jeuno', 'Jeuno > Bastok', vtMinuteOfDay, vtDay, osNow, DEP_BASTOK,  DEP_JEUNOBD);
+        FillRowBi(a[2], a[2].sub, 'Sandy > Jeuno',  'Jeuno > Sandy',  vtMinuteOfDay, vtDay, osNow, DEP_SANDY,   DEP_JEUNOSD);
+        FillRowBi(a[3], a[3].sub, 'Windy > Jeuno',  'Jeuno > Windy',  vtMinuteOfDay, vtDay, osNow, DEP_WINDY,   DEP_JEUNOWD);
+        FillRowBi(a[4], a[4].sub, 'Kazham > Jeuno', 'Jeuno > Kazham', vtMinuteOfDay, vtDay, osNow, DEP_KAZHAM,  DEP_JEUNOKD);
 
-        -- Rebuild boats table in-place with sub-section headers.
-        -- Indices are tracked manually (no addBoat closure) to avoid one
-        -- closure allocation per second.
         local b  = M.boats;
         local bi = 0;
 
-        bi = bi + 1; b[bi] = MakeHeader('Boats  ');
-        bi = bi + 1; b[bi] = MakeFerryRow('Selbina',   'Mhaura',    vtMinuteOfDay, vtDay, osNow, DEP_SELBINA_SM, '<>');
-        bi = bi + 1; b[bi] = MakeFerryRow('Mhaura',    'Whitegate', vtMinuteOfDay, vtDay, osNow, DEP_MHAURA_WG,  '<>');
-        bi = bi + 1; b[bi] = MakeFerryRow('Whitegate', 'Nashmau',   vtMinuteOfDay, vtDay, osNow, DEP_WG_NASHMAU, '<>',
+        bi = bi + 1; FillHeader(b[bi], 'Boats  ');
+        bi = bi + 1; FillFerryRow(b[bi], 'Selbina',   'Mhaura',    vtMinuteOfDay, vtDay, osNow, DEP_SELBINA_SM, '<>');
+        bi = bi + 1; FillFerryRow(b[bi], 'Mhaura',    'Whitegate', vtMinuteOfDay, vtDay, osNow, DEP_MHAURA_WG,  '<>');
+        bi = bi + 1; FillFerryRow(b[bi], 'Whitegate', 'Nashmau',   vtMinuteOfDay, vtDay, osNow, DEP_WG_NASHMAU, '<>',
             FERRY_BOARD_VT_NASH, FERRY_TRANSIT_VT_NASH);
 
-        bi = bi + 1; b[bi] = MakeHeader('Bibiki Manaclipper  ');
+        bi = bi + 1; FillHeader(b[bi], 'Bibiki Manaclipper  ');
         for _, route in ipairs(BIBIKI_ROUTES) do
-            bi = bi + 1; b[bi] = MakeCLRouteRow(route, vtMinuteOfDay, vtDay, osNow);
+            bi = bi + 1; FillCLRouteRow(b[bi], route, vtMinuteOfDay, vtDay, osNow);
         end
 
-        bi = bi + 1; b[bi] = MakeHeader("Carpenters' Landing Barge  ");
+        bi = bi + 1; FillHeader(b[bi], "Carpenters' Landing Barge  ");
         for _, route in ipairs(CL_ROUTES) do
-            bi = bi + 1; b[bi] = MakeCLRouteRow(route, vtMinuteOfDay, vtDay, osNow);
+            bi = bi + 1; FillCLRouteRow(b[bi], route, vtMinuteOfDay, vtDay, osNow);
         end
-        -- Trim any leftover entries from a previous (shorter) build
-        for i = bi + 1, #b do b[i] = nil; end
+        for i = bi + 1, BOAT_ROW_MAX do b[i] = nil; end
     end
 
     -- ── RSE + Lunar: rebuild every real minute ────────────────────────────────
@@ -618,7 +637,6 @@ function M.Update(osNow, vtMinuteOfDay, vtDay, moonDay)
         local rse = M.rse;
         for i = 0, 4 do
             local si = (slotIdx + i) % 8;
-            if rse[i + 1] == nil then rse[i + 1] = {} end
             local e = rse[i + 1];
             e.slotName = RSE_SLOTS[si] or '???';
             local locIdx = ((si - RSE_LOC_SLOT_OFFSET + 8) % 8) % 3;
@@ -648,8 +666,6 @@ function M.Update(osNow, vtMinuteOfDay, vtDay, moonDay)
         local secsUntilEnd = math.floor(daysUntilPhaseEnd * VD_DAY_SEC - vtMinuteOfDay * VD_MIN_F);
 
         local lun = M.lunar;
-        -- Current phase
-        if lun[1] == nil then lun[1] = {} end
         local cur       = lun[1];
         cur.phaseName   = PHASE_NAMES[currentPhaseIdx] or '';
         cur.phaseIdx    = currentPhaseIdx;
@@ -660,7 +676,6 @@ function M.Update(osNow, vtMinuteOfDay, vtDay, moonDay)
         -- Upcoming phases (cumulative offset from now) — show full 12-phase cycle
         local cumSecs = secsUntilEnd;
         for i = 1, 11 do
-            if lun[i + 1] == nil then lun[i + 1] = {} end
             local e    = lun[i + 1];
             local pidx = (currentPhaseIdx + i) % 12;
             e.phaseName    = PHASE_NAMES[pidx] or '';

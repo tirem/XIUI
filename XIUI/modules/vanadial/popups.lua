@@ -83,6 +83,14 @@ local function WithAlpha(argb, alpha)
     return bit.bor(bit.lshift(a, 24), bit.band(argb, 0x00FFFFFF));
 end
 
+local function ResolveBackgroundOpacity(cfg, bgArgb)
+    local argb = tonumber(bgArgb) or 0xFF000000;
+    local fromColor = bit.band(bit.rshift(argb, 24), 0xFF) / 255.0;
+    local fromSlider = tonumber(cfg.vanaDialBackgroundOpacity);
+    if fromSlider == nil then fromSlider = 0.85; end
+    return math.max(0, math.min(1, fromColor * fromSlider));
+end
+
 local function GetTexPtr(tex)
     return _ctx and _ctx.GetTexPtr(tex) or nil;
 end
@@ -135,10 +143,7 @@ local cachedWeatherW = 0;
 local cachedTodH     = 0;
 local cachedTodW     = 0;
 
--- Wall-clock smoothed TOD countdown. Integer os.time() can advance by 2+ between
--- draws; easing by "1 per frame" still looks like a skip at 60fps. Instead decay
--- the shown value at 1 real second per real second (GetTickMs), never more than
--- 1s ahead of the true target.
+-- Wall-clock smoothed TOD countdown display.
 local todDisplaySecs = nil;
 local todLastDecayMs = nil;
 
@@ -179,7 +184,6 @@ local function UpdateTodDisplaySecs(targetSecs)
     todLastDecayMs = ms;
     local prevDisplay = todDisplaySecs;
     todDisplaySecs = todDisplaySecs - dt;
-    -- If this draw was stalled, do not drop more than 1s of display per frame.
     if prevDisplay - todDisplaySecs > 1.0 then
         todDisplaySecs = prevDisplay - 1.0;
     end
@@ -228,10 +232,17 @@ local SECTION_LABELS = {
     vdrse   = 'RSE##vdTimers',
     vdlunar = 'Lunar Phases##vdTimers',
 };
+local SECTION_KEY_ALIASES = {
+    vtships = 'vdships',
+    vtboats = 'vdboats',
+    vtrse   = 'vdrse',
+    vtlunar = 'vdlunar',
+};
 
 -- Opens the timers popup and jumps to the given section.
 -- Calling a second time with the same key closes the popup entirely.
 function M.OpenTimersSection(key)
+    key = SECTION_KEY_ALIASES[key] or key;
     local label = SECTION_LABELS[key];
     if not label then return; end
     if timersOpen and lastOpenedSection == key then
@@ -350,7 +361,6 @@ local function DrawRouteRow(row)
     imgui.TextColored(cdColor, row.countdownStr or '--');
 end
 
--- One airship leg: route label, status, countdown or VT arrival time.
 local function DrawAirshipLeg(leg, fontScale)
     if fontScale and fontScale ~= 1.0 then
         imgui.SetWindowFontScale(fontScale);
@@ -533,6 +543,18 @@ function M.DrawTimersPopup(fontSize, colorCfg, rounding)
     local cfg = gConfig;
     if not cfg or not _ctx or not timersOpen then return; end
 
+    -- Refresh schedule data only when the second/minute rolls (not every ImGui frame).
+    local osNow = os.time();
+    if timers.NeedsUpdate(osNow) then
+        local rawTime       = data.GetRawTime();
+        local vtDay         = math.floor(rawTime / data.VD_DAY_SEC);
+        local vtHour        = math.floor(rawTime % data.VD_DAY_SEC / data.VD_HOUR_SEC);
+        local vtMin         = math.floor(rawTime % data.VD_HOUR_SEC / data.VD_MIN_F);
+        local vtMinuteOfDay = vtHour * 60 + vtMin;
+        local moonDay       = (vtDay + data.VD_MOON_OFFSET) % data.VD_MOON_DAYS;
+        timers.Update(osNow, vtMinuteOfDay, vtDay, moonDay);
+    end
+
     local mainWinPos  = _ctx.mainWinPos;
     local mainWinSize = _ctx.mainWinSize;
 
@@ -564,7 +586,9 @@ function M.DrawTimersPopup(fontSize, colorCfg, rounding)
     if not globalFontSize or globalFontSize <= 1 then globalFontSize = 13; end
 
     local timersHovered = false;
+    local began = false;
     if imgui.Begin("Vana'Dial Timers", true, WIN_FLAGS_TIMERS) then
+    began = true;
         local fontScale = math.max(0.5, math.min(3.0, fontSize / globalFontSize));
         imgui.SetWindowFontScale(fontScale);
 
@@ -603,7 +627,7 @@ function M.DrawTimersPopup(fontSize, colorCfg, rounding)
         end
         imgui.SetWindowFontScale(1.0);
     end
-    imgui.End();
+    if began then imgui.End(); end
 
     -- Auto-close: click outside
     if cfg.vanaDialTimersAutoCloseClick then
@@ -687,6 +711,9 @@ function M.DrawTodPopup(vtHour, vtMinuteOfDay, iconSize, colorCfg, rounding, ali
         popX = wx + ww + WEATHER_POPUP_GAP;
         popY = wy;
     elseif side == 'left' then
+        -- Anchor the popup's RIGHT edge a gap to the left of the main window,
+        -- using the measured popup width so it never overlaps the clock (the
+        -- width grows when the TOD countdown timer is shown).
         popX = wx - WEATHER_POPUP_GAP - cachedTodW;
         popY = wy;
     elseif side == 'below' then
@@ -701,7 +728,9 @@ function M.DrawTodPopup(vtHour, vtMinuteOfDay, iconSize, colorCfg, rounding, ali
     imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, VAR_POPUP_PADDING);
     imgui.SetNextWindowPos({popX, popY}, ImGuiCond_Always);
 
+    local began = false;
     if imgui.Begin("Vana'Dial Tod", true, WIN_FLAGS_WEATHER) then
+    began = true;
         local pw, ph = imgui.GetWindowSize();
         cachedTodH = ph;
         cachedTodW = pw;
@@ -714,8 +743,8 @@ function M.DrawTodPopup(vtHour, vtMinuteOfDay, iconSize, colorCfg, rounding, ali
         local bgW = pw;            local bgH = ph;
         local contentW  = pw - 12;
         local contentH  = ph - 12;
-        local bgOpacity  = cfg.vanaDialBackgroundOpacity or 0.85;
         local bgRgb      = colorCfg.bgColor or 0xFF000000;
+        local bgOpacity  = ResolveBackgroundOpacity(cfg, bgRgb);
         local bgTheme    = 'Plain';
         local borderTheme = 'Window1';
 
@@ -750,15 +779,16 @@ function M.DrawTodPopup(vtHour, vtMinuteOfDay, iconSize, colorCfg, rounding, ali
         imgui.Dummy({iconSize, iconSize});
 
         if timerStr then
-            local fontScale = iconSize / 28.0;
-            imgui.SetWindowFontScale(fontScale);
-            local tw, _ = imgui.CalcTextSize(timerStr);
+            -- Same Tahoma (Bold) atlas as the VT/LT clock — not ImGui's default window font.
+            local clockBold = cfg.vanaDialFontBold ~= false;
+            imtext.SetConfig('Tahoma', clockBold, 1);
+            local timerFontSize = math.max(8, math.floor(12 * iconSize / 28 + 0.5));
+            local tw, th = imtext.Measure(timerStr, timerFontSize);
             local textOffX = math.max(0, math.floor((contentW - tw) / 2));
-            imgui.SetCursorPosX(imgui.GetCursorPosX() + textOffX);
+            local tx, ty = imgui.GetCursorScreenPos();
             local timerArgb = colorCfg.todTimerColor or 0xFFFFFFFF;
-            local timerF4   = {ArgbR(timerArgb), ArgbG(timerArgb), ArgbB(timerArgb), ArgbA(timerArgb)};
-            imgui.TextColored(timerF4, timerStr);
-            imgui.SetWindowFontScale(1.0);
+            imtext.DrawSimple(drawList, timerStr, tx + textOffX, ty, timerArgb, timerFontSize);
+            imgui.Dummy({tw, th});
         end
 
         if imgui.IsWindowHovered() then
@@ -767,7 +797,7 @@ function M.DrawTodPopup(vtHour, vtMinuteOfDay, iconSize, colorCfg, rounding, ali
             end
         end
     end
-    imgui.End();
+    if began then imgui.End(); end
     imgui.PopStyleVar(2);
 end
 
@@ -804,6 +834,8 @@ function M.DrawWeatherPopup(weatherId, fontSize, iconSize, colorCfg, rounding, o
         popX = wx + ww + WEATHER_POPUP_GAP;
         popY = wy;
     elseif side == 'left' then
+        -- Anchor the popup's RIGHT edge a gap to the left of the main window,
+        -- using the measured popup width (includes the double-weather icon).
         popX = wx - WEATHER_POPUP_GAP - cachedWeatherW;
         popY = wy;
     elseif side == 'below' then
@@ -820,7 +852,9 @@ function M.DrawWeatherPopup(weatherId, fontSize, iconSize, colorCfg, rounding, o
     imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, VAR_POPUP_PADDING);
     imgui.SetNextWindowPos({popX, popY}, ImGuiCond_Always);
 
+    local began = false;
     if imgui.Begin("Vana'Dial Weather", true, WIN_FLAGS_WEATHER) then
+    began = true;
         local pw, ph = imgui.GetWindowSize();
         cachedWeatherH = ph;
         cachedWeatherW = pw;
@@ -834,8 +868,8 @@ function M.DrawWeatherPopup(weatherId, fontSize, iconSize, colorCfg, rounding, o
         local bgY = cy - popBgPad;
         local bgW = popContentW + popBgPad * 2;
         local bgH = iconSize    + popBgPad * 2;
-        local bgOpacity   = cfg.vanaDialBackgroundOpacity or 0.85;
         local bgRgb       = colorCfg.bgColor  or 0xFF000000;
+        local bgOpacity   = ResolveBackgroundOpacity(cfg, bgRgb);
         local bgTheme     = 'Plain';
         local borderTheme = 'Window1';
 
@@ -880,7 +914,7 @@ function M.DrawWeatherPopup(weatherId, fontSize, iconSize, colorCfg, rounding, o
             end
         end
     end
-    imgui.End();
+    if began then imgui.End(); end
     imgui.PopStyleVar(2);
 end
 

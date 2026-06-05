@@ -108,6 +108,10 @@ M.WEEKDAY_NAMES = {
     [4]='Iceday',   [5]='Lightningday', [6]='Lightsday', [7]='Darksday',
 };
 
+function M.GetWeekdayName(weekdayIndex)
+    return M.WEEKDAY_NAMES[weekdayIndex % 8] or 'Unknown';
+end
+
 function M.GetTodName(vtHour)
     if vtHour >= 20 or vtHour < 4 then
         return 'Dead of Night';

@@ -184,12 +184,16 @@ function M.DrawSettings()
             imgui.SameLine(0, 8);
             components.DrawCheckbox('Weather##tipwx', 'vanaDialTipWeather');
             imgui.Spacing();
+            components.DrawCheckbox('Day Columns##tipday', 'vanaDialShowTooltip');
+            imgui.ShowHelp('Show weekday name and moon phase when hovering a day icon.');
             components.DrawCheckbox('Fenrir Details##vt', 'vanaDialTooltipFenrir');
             imgui.ShowHelp('Show Lunar Cry, Ecliptic Howl, and Ecliptic Growl values when hovering a day column.');
             imgui.SameLine(0, 8);
             components.DrawCheckbox("Selene's Bow##vt", 'vanaDialTooltipSeleneBow');
             imgui.ShowHelp("Show Selene's Bow Ranged Accuracy / Ranged Attack values when hovering a day column.");
-            if gConfig.vanaDialTooltipFenrir or gConfig.vanaDialTooltipSeleneBow then
+            if gConfig.vanaDialShowTooltip ~= false
+                or gConfig.vanaDialTooltipFenrir
+                or gConfig.vanaDialTooltipSeleneBow then
                 imgui.Indent(16);
                 components.Combo('Day Column Direction##vt', gConfig, 'vanaDialTooltipDirection',
                     TT_DIR_LABELS, TT_DIR_VALUES, 'above');
