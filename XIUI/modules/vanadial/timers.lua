@@ -238,11 +238,14 @@ local RSE_SLOTS = {
     [6] = 'Mithra',   [7] = 'Galka',
 };
 
--- Location cycles through 3 dungeons every slot change (every 8 VT days).
--- Formula: locIdx = ((slotIdx - RSE_LOC_SLOT_OFFSET + 8) % 8) % 3
--- Adjust RSE_LOC_SLOT_OFFSET if the shown location doesn't match in-game.
--- Default (2) calibrated from live snapshot: M Elvaan -> Shakrami Maze.
-local RSE_LOC_SLOT_OFFSET = 2;
+-- Location cycles through 3 dungeons each Vana'diel week (every 8 VT days).
+-- Tied to the absolute week counter, not the race index — race and location advance
+-- independently through the 64-week grand cycle.
+-- Formula: locIdx = (absWeek + RSE_LOC_WEEK_OFFSET) % 3
+-- Adjust RSE_LOC_WEEK_OFFSET if the shown location doesn't match in-game.
+-- Default (1) calibrated against Horizogenes/Pyogenes RSE calendar:
+-- M Taru -> Shakrami, F Taru -> Ordelle, Mithra -> Gusgen, etc.
+local RSE_LOC_WEEK_OFFSET = 1;
 local RSE_LOCATIONS = {
     [0] = 'Shakrami Maze',
     [1] = 'Ordelle Caves',
@@ -627,7 +630,8 @@ function M.Update(osNow, vtMinuteOfDay, vtDay, moonDay)
         local secsPerSlot = 8 * VD_DAY_SEC;           -- 27648 s = 7.68 h per rotation
         local adj         = vtDay - RSE_ANCHOR_OFFSET;
         local dayInSlot   = adj % 8;
-        local slotIdx     = math.floor(adj / 8) % 8;
+        local absWeek     = math.floor(adj / 8);
+        local slotIdx     = absWeek % 8;
 
         -- Seconds already elapsed in the current RSE slot
         local secInSlot   = dayInSlot * VD_DAY_SEC + vtMinuteOfDay * VD_MIN_F;
@@ -639,7 +643,7 @@ function M.Update(osNow, vtMinuteOfDay, vtDay, moonDay)
             local si = (slotIdx + i) % 8;
             local e = rse[i + 1];
             e.slotName = RSE_SLOTS[si] or '???';
-            local locIdx = ((si - RSE_LOC_SLOT_OFFSET + 8) % 8) % 3;
+            local locIdx = (absWeek + i + RSE_LOC_WEEK_OFFSET) % 3;
             e.location = RSE_LOCATIONS[locIdx] or '???';
             if i == 0 then
                 e.isCurrent    = true;
