@@ -25,6 +25,7 @@ local notificationsModule = require('config.notifications');
 local treasurepoolModule = require('config.treasurepool');
 local hotbarModule = require('config.hotbar');
 local readycheckModule = require('config.readycheck');
+local vanadialModule   = require('config.vanadial');
 
 local treasurePool = require('modules.treasurepool.init');
 local macropalette = require('modules.hotbar.macropalette');
@@ -324,6 +325,7 @@ local categories = {
     { name = 'treasurePool', label = 'Treasure Pool' },
     { name = 'hotbar', label = 'Hotbar' },
     { name = 'readyCheck', label = 'Ready Check' },
+    { name = 'vanaDial',   label = "Vana'Dial" },
 };
 
 
@@ -440,6 +442,10 @@ local function DrawReadyCheckSettings()
     readycheckModule.DrawSettings();
 end
 
+local function DrawVanaDialSettings()
+    vanadialModule.DrawSettings();
+end
+
 -- Color settings draw functions with state handling
 local function DrawGlobalColorSettings()
     globalModule.DrawColorSettings();
@@ -506,6 +512,10 @@ local function DrawReadyCheckColorSettings()
     readycheckModule.DrawColorSettings();
 end
 
+local function DrawVanaDialColorSettings()
+    vanadialModule.DrawColorSettings();
+end
+
 -- Dispatch tables for settings and color settings
 local settingsDrawFunctions = {
     DrawGlobalSettings,
@@ -523,6 +533,7 @@ local settingsDrawFunctions = {
     DrawTreasurePoolSettings,
     DrawHotbarSettings,
     DrawReadyCheckSettings,
+    DrawVanaDialSettings,
 };
 
 local colorSettingsDrawFunctions = {
@@ -541,6 +552,7 @@ local colorSettingsDrawFunctions = {
     DrawTreasurePoolColorSettings,
     DrawHotbarColorSettings,
     DrawReadyCheckColorSettings,
+    DrawVanaDialColorSettings,
 };
 
 local function DrawProfilePopups()
@@ -1024,5 +1036,30 @@ function config.OpenResetSettingsPopup()
     showConfig[1] = true;
     showRestoreDefaultsConfirm = true;
 end
+
+-- Returns the index of the Vana'Dial settings tab by looking up the function
+-- reference, so it stays correct even if tabs are added after Vana'Dial.
+local function GetVanaDialTabIndex()
+    for i, fn in ipairs(settingsDrawFunctions) do
+        if fn == DrawVanaDialSettings then return i; end
+    end
+    return #settingsDrawFunctions;
+end
+
+function config.OpenVanaDialSettings()
+    selectedCategory = GetVanaDialTabIndex();
+    showConfig[1]    = true;
+end
+XIUI_OpenVanaDialConfig   = config.OpenVanaDialSettings;
+
+function config.ToggleVanaDialSettings()
+    if showConfig[1] then
+        showConfig[1] = false;
+    else
+        selectedCategory = GetVanaDialTabIndex();
+        showConfig[1]    = true;
+    end
+end
+XIUI_ToggleVanaDialConfig = config.ToggleVanaDialSettings;
 
 return config;

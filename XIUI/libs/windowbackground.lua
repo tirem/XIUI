@@ -70,6 +70,13 @@ end
 
 -- Cached ARGB -> ImU32 conversion (drawList:AddImage takes ImU32 tints)
 local tintCache = {};
+local tintCacheSize = 0;
+
+function M.ClearTintCache()
+    tintCache = {};
+    tintCacheSize = 0;
+end
+
 local function TintU32(argb)
     local v = tintCache[argb];
     if v ~= nil then return v; end
