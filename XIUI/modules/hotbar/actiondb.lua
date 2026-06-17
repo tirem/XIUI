@@ -22,7 +22,11 @@ local function BuildSpellLookup()
         local spell = resourceMgr:GetSpellById(id);
         if spell and spell.Name and spell.Name[1] then
             local name = spell.Name[1]:lower();
-            M.spellNameToId[name] = id;
+            -- Keep the lowest id for duplicate names: some spells (e.g. Sleepga)
+            -- have an unlearnable higher-id variant that HasSpell never matches.
+            if not M.spellNameToId[name] then
+                M.spellNameToId[name] = id;
+            end
         end
     end
 end
