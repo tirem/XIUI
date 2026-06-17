@@ -46,6 +46,7 @@ local crossbar = require('modules.hotbar.crossbar');
 local controller = require('modules.hotbar.controller');
 local textures = require('modules.hotbar.textures');
 local hotbarConfig = require('config.hotbar');
+local paletteManager = require('config.palettemanager');
 local slotrenderer = require('modules.hotbar.slotrenderer');
 local petpalette = require('modules.hotbar.petpalette');
 local palette = require('modules.hotbar.palette');
@@ -366,9 +367,11 @@ function M.DrawWindow(settings)
         crossbar.SetHidden(true);
     end
 
-    -- Always draw macro palette and keybind modal (regardless of mode)
+    -- Always draw macro palette, keybind modal and palette manager (regardless of
+    -- mode), so they render whether or not the config menu is open.
     macropalette.DrawPalette();
     hotbarConfig.DrawKeybindModal();
+    paletteManager.Draw();
 
     -- Render drag preview (must be called at end of frame, after all drop zones)
     dragdrop.Render();

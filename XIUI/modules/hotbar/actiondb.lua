@@ -35,7 +35,8 @@ local function BuildAbilityLookup()
     local resourceMgr = AshitaCore:GetResourceManager();
     if not resourceMgr then return; end
 
-    for id = 0, 1024 do
+    -- Up to 2048: Blood Pacts live at 1024+ (e.g. Healing Ruby II, Whispering Wind).
+    for id = 0, 2048 do
         local ability = resourceMgr:GetAbilityById(id);
         if ability and ability.Name and ability.Name[1] then
             local name = ability.Name[1]:lower();

@@ -591,31 +591,33 @@ end
 -- Uses NEW format: '{jobId}:{subjobId}:palette:{name}'
 -- Falls back to shared key '{jobId}:0:palette:{name}' if subjob-specific not found
 -- Returns storageKey or nil if not found
+--
+-- Searches ALL bars (1-6): palettes can drift out of sync (a key present on some
+-- bars but missing on others), so checking one bar broke delete/rename/copy.
 local function FindPaletteStorageKey(barIndex, paletteName, jobId, subjobId)
-    local configKey = 'hotbarBar' .. barIndex;
-    local barSettings = gConfig and gConfig[configKey];
-    if not barSettings or not barSettings.slotActions then
-        return nil;
-    end
-
     local normalizedJobId = jobId or 1;
     local normalizedSubjobId = subjobId or 0;
 
-    -- Try subjob-specific key first: '{jobId}:{subjobId}:palette:{name}'
-    local storageKey = M.BuildPaletteStorageKey(normalizedJobId, normalizedSubjobId, paletteName);
-    if barSettings.slotActions[storageKey] then
-        return storageKey;
-    end
+    local subjobKey = M.BuildPaletteStorageKey(normalizedJobId, normalizedSubjobId, paletteName);
+    local sharedKey = (normalizedSubjobId ~= 0)
+        and M.BuildPaletteStorageKey(normalizedJobId, 0, paletteName)
+        or nil;
 
-    -- Fallback to shared key: '{jobId}:0:palette:{name}'
-    if normalizedSubjobId ~= 0 then
-        local sharedKey = M.BuildPaletteStorageKey(normalizedJobId, 0, paletteName);
-        if barSettings.slotActions[sharedKey] then
-            return sharedKey;
+    local foundShared = nil;
+    for barIdx = 1, 6 do
+        local barSettings = gConfig and gConfig['hotbarBar' .. barIdx];
+        local slotActions = barSettings and barSettings.slotActions;
+        if slotActions then
+            if slotActions[subjobKey] then
+                return subjobKey;
+            end
+            if sharedKey and not foundShared and slotActions[sharedKey] then
+                foundShared = sharedKey;
+            end
         end
     end
 
-    return nil;
+    return foundShared;
 end
 
 -- Create a new palette (GLOBAL - creates empty palette entries on all bars)

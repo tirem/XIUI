@@ -1166,16 +1166,20 @@ local function drawGroupWindow(groupNum, settings)
     -- Handle bottom-anchoring for "stack up" mode
     local positionJustApplied = ApplyWindowPosition(windowName);
     if stackUp then
-        if positionJustApplied then
-            -- Position was just force-applied (e.g., Restore UI Positions); clear stale anchor
+        if positionJustApplied and not groupSettings.anchorBottomY then
             notificationData.groupWindowAnchors[groupNum] = nil;
         else
+            -- Seed from the persisted bottom edge; windowPositions only stores the
+            -- transient top-left, which drifts with the notification count on relog.
             local anchor = notificationData.groupWindowAnchors[groupNum];
-            local isDragging = anchor and anchor.dragging;
+            if not anchor and groupSettings.anchorBottomY then
+                anchor = { y = groupSettings.anchorBottomY, x = groupSettings.anchorX or 0, dragging = false };
+                notificationData.groupWindowAnchors[groupNum] = anchor;
+            end
 
+            local isDragging = anchor and anchor.dragging;
             if anchor and anchor.y and not isDragging then
-                local newY = anchor.y - totalHeight;
-                imgui.SetNextWindowPos({anchor.x or 0, newY});
+                imgui.SetNextWindowPos({anchor.x or 0, anchor.y - totalHeight});
             end
         end
     end
@@ -1197,6 +1201,12 @@ local function drawGroupWindow(groupNum, settings)
 
                 if not notificationData.groupWindowAnchors[groupNum] then
                     notificationData.groupWindowAnchors[groupNum] = {y = currentBottomY, x = windowPosX, dragging = false};
+                    -- Persist bottom edge so it survives relog.
+                    if not groupSettings.anchorBottomY then
+                        groupSettings.anchorBottomY = currentBottomY;
+                        groupSettings.anchorX = windowPosX;
+                        SaveSettingsOnly();
+                    end
                 end
 
                 local anchor = notificationData.groupWindowAnchors[groupNum];
@@ -1208,6 +1218,9 @@ local function drawGroupWindow(groupNum, settings)
                     anchor.y = currentBottomY;
                     anchor.x = windowPosX;
                     anchor.dragging = false;
+                    groupSettings.anchorBottomY = anchor.y;
+                    groupSettings.anchorX = anchor.x;
+                    SaveSettingsOnly();
                 end
             end
 
@@ -1341,8 +1354,13 @@ M.ResetPositions = function()
             gConfig.appliedPositions[windowName] = nil;
         end
 
-        -- Clear bottom anchor for stack-up mode
+        -- Clear bottom anchor for stack-up mode (in-memory + persisted bottom edge)
         notificationData.groupWindowAnchors[groupNum] = nil;
+        local gs = notificationData.GetGroupSettings(groupNum);
+        if gs then
+            gs.anchorBottomY = nil;
+            gs.anchorX = nil;
+        end
     end
 end
 

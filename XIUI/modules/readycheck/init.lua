@@ -383,8 +383,11 @@ function M.HandleTextIn(e)
     local raw   = e.message_modified or e.message or ''
     local clean      = strip_color_codes(raw)
     local is_trigger = clean:find(TRIGGER_MSG, 1, true) ~= nil
-    local is_yes     = not is_trigger and is_exact_response(raw, YES_MSG)
-    local is_no      = not is_trigger and not is_yes and is_exact_response(raw, NO_MSG)
+    -- "Yes"/"No" are plain words: only treat them as ready-check markers while a
+    -- check is active, or a normal "yes" in party chat would be blocked.
+    local rc_active  = state.checker_open[1] or state.prompt_open[1]
+    local is_yes     = rc_active and not is_trigger and is_exact_response(raw, YES_MSG)
+    local is_no      = rc_active and not is_trigger and not is_yes and is_exact_response(raw, NO_MSG)
     local is_marker  = is_trigger or is_yes or is_no
 
     local is_manual_yes = false
