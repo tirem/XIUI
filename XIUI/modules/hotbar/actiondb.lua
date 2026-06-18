@@ -44,7 +44,11 @@ local function BuildAbilityLookup()
         local ability = resourceMgr:GetAbilityById(id);
         if ability and ability.Name and ability.Name[1] then
             local name = ability.Name[1]:lower();
-            M.abilityNameToId[name] = id;
+            -- Keep the lowest id for duplicate names (same as spells): some abilities
+            -- have a higher-id variant that HasAbility never matches.
+            if not M.abilityNameToId[name] then
+                M.abilityNameToId[name] = id;
+            end
         end
     end
 end
