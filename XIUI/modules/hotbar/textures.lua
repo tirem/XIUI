@@ -99,6 +99,25 @@ textures.Initialize = function(self)
         print('[Hotbar] No PNG files found or directory does not exist');
     end
 
+    -- Load native FFXI ability icons, named by IAbility.Id (00528.png = Mighty
+    -- Strikes) and cached under 'abilities<id>' (e.g. 'abilities00528').
+    local abilityDirectory = string.format('%saddons\\XIUI\\assets\\hotbar\\abilities\\', AshitaCore:GetInstallPath());
+    local abilityContents = ashita.fs.get_directory(abilityDirectory, '.*\\.png$');
+    if abilityContents then
+        for _, file in pairs(abilityContents) do
+            local base = file:match('^(.-)%.png$');  -- icon id stem, e.g. "00066"
+            if base then
+                local key = 'abilities' .. base;
+                if not self.Cache[key] then
+                    local texture = LoadTextureFromPath(abilityDirectory .. file);
+                    if texture then
+                        self.Cache[key] = texture;
+                    end
+                end
+            end
+        end
+    end
+
     -- Load controller button icons for crossbar (from subdirectories)
     local controllerDirectory = assetsDirectory .. 'controller\\';
 

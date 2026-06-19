@@ -2485,8 +2485,8 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
     -- Draw palette modal (unified for both hotbar and crossbar)
     DrawPaletteModal();
 
-    -- Draw palette manager window (separate window for advanced management)
-    paletteManager.Draw();
+    -- Palette manager window is drawn by the hotbar module render (always-on),
+    -- so it shows whether or not this config menu is open.
 
     return selectedCrossbarTab;
 end
@@ -3098,8 +3098,8 @@ function M.DrawSettings(state)
     -- Draw palette modal (unified for both hotbar and crossbar)
     DrawPaletteModal();
 
-    -- Draw palette manager window (separate window for advanced management)
-    paletteManager.Draw();
+    -- Palette manager window is drawn by the hotbar module render (always-on),
+    -- so it shows whether or not this config menu is open.
 
     return { selectedHotbarTab = selectedBarTab, selectedModeTab = selectedModeTab, selectedCrossbarTab = selectedCrossbarTab };
 end

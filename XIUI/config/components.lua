@@ -886,6 +886,46 @@ components.TAB_STYLE = {
     bgLighter = {0.176, 0.161, 0.137, 1.0},
 };
 
+local WINDOW_STYLE_BG_DARK = {0.067, 0.063, 0.055, 0.95};
+local WINDOW_STYLE_BORDER = {0.3, 0.28, 0.24, 0.8};
+local WINDOW_STYLE_TEXT = {0.9, 0.9, 0.9, 1.0};
+
+-- Push the shared XIUI window theme (gold/dark). Pair with PopWindowStyle.
+function components.PushWindowStyle()
+    local s = components.TAB_STYLE;
+    imgui.PushStyleColor(ImGuiCol_WindowBg, WINDOW_STYLE_BG_DARK);
+    imgui.PushStyleColor(ImGuiCol_ChildBg, WINDOW_STYLE_BG_DARK);
+    imgui.PushStyleColor(ImGuiCol_PopupBg, WINDOW_STYLE_BG_DARK);
+    imgui.PushStyleColor(ImGuiCol_TitleBg, s.bgMedium);
+    imgui.PushStyleColor(ImGuiCol_TitleBgActive, s.bgLight);
+    imgui.PushStyleColor(ImGuiCol_Border, WINDOW_STYLE_BORDER);
+    imgui.PushStyleColor(ImGuiCol_Button, s.bgMedium);
+    imgui.PushStyleColor(ImGuiCol_ButtonHovered, s.bgLight);
+    imgui.PushStyleColor(ImGuiCol_ButtonActive, s.bgLighter);
+    imgui.PushStyleColor(ImGuiCol_FrameBg, WINDOW_STYLE_BG_DARK);
+    imgui.PushStyleColor(ImGuiCol_FrameBgHovered, s.bgMedium);
+    imgui.PushStyleColor(ImGuiCol_FrameBgActive, s.bgLight);
+    imgui.PushStyleColor(ImGuiCol_Header, s.bgMedium);
+    imgui.PushStyleColor(ImGuiCol_HeaderHovered, s.bgLight);
+    imgui.PushStyleColor(ImGuiCol_HeaderActive, s.bgLighter);
+    imgui.PushStyleColor(ImGuiCol_Separator, WINDOW_STYLE_BORDER);
+    imgui.PushStyleColor(ImGuiCol_Text, WINDOW_STYLE_TEXT);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarBg, WINDOW_STYLE_BG_DARK);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrab, s.bgLight);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabHovered, s.bgLighter);
+    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabActive, s.gold);
+    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, 4);
+    imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, 3);
+    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {10, 10});
+    imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {6, 4});
+    imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {8, 6});
+end
+
+function components.PopWindowStyle()
+    imgui.PopStyleVar(5);
+    imgui.PopStyleColor(21);
+end
+
 -- Helper: Draw a styled tab button with underline when selected
 -- Returns true if tab was clicked, and the calculated tab width
 function components.DrawStyledTab(label, id, isSelected, width, height, padding)
