@@ -61,6 +61,13 @@ local satchel = T{
         stats = nil,
     },
     in_mog_house = false,
+    -- Authoritative container access from the ITEM_MAX (0x1C) packet. ItemNum2 is the
+    -- server's "usable amount" (0 = disabled), unlike ItemNum/size which can lie (Safe2).
+    container_access = {
+        seen = false,
+        usable = {},
+        max = {},
+    },
     context_menu = {
         pending_open = false,
         slot = nil,
@@ -528,6 +535,21 @@ function M.HandleCommand(e)
         return true
     end
 
+    if args[2]:lower() == 'bags' then
+        local access = satchel.container_access
+        if not access.seen then
+            print('[satchel] No ITEM_MAX (0x1C) packet seen yet (zone/relog for size data).')
+            return true
+        end
+        for _, cid in ipairs(containerlogic.tab_order) do
+            local name = containerlogic.format_tab_label(cid)
+            local usable = access.usable[cid] or 0
+            print(string.format('[satchel] %2d %-10s size=%d usable=%d %s',
+                cid, name, access.max[cid] or 0, usable, usable == 0 and '(DISABLED)' or ''))
+        end
+        return true
+    end
+
     show_help(true)
     return true
 end
@@ -601,6 +623,18 @@ function M.HandlePacketIn(e)
         satchel.visible[1] = satchel.settings.visible == true
         satchel.last_visible = satchel.visible[1]
         invalidate_slot_cache()
+    elseif id == 0x01C then
+        -- ITEM_MAX: ItemNum[18] u8 @0x04, ItemNum2[18] u16 @0x24 (after 14b pad).
+        local bytes = packet_to_bytes(e.data_modified or e.data)
+        if #bytes >= 0x48 then
+            local access = satchel.container_access
+            for c = 0, 16 do
+                access.usable[c] = read_u16_le(bytes, 0x24 + c * 2)
+                access.max[c] = math.max(0, (tonumber(bytes[0x04 + c + 1]) or 0) - 1)
+            end
+            access.seen = true
+            invalidate_slot_cache()
+        end
     elseif id == 0x096 then
         set_mog_house(true)
         invalidate_slot_cache()

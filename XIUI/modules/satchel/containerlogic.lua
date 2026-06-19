@@ -1,7 +1,5 @@
 local containerlogic = {}
 
-local SAFE2_MIRROR_CACHE_SECONDS = 2.0
-local SAFE2_SUPPORT_CACHE_SECONDS = 5.0
 local CONTAINER_SUPPORT_CACHE_SECONDS = 5.0
 
 containerlogic.container_names = {
@@ -80,160 +78,18 @@ function containerlogic.build_slot_data(satchel)
         return all_slots, slots_by_container, stats
     end
 
-    local function does_safe2_mirror_safe()
-        local cache = satchel and satchel.safe2_mirror_cache
-        local now = os.clock()
-        if cache and cache.checked_at and ((now - cache.checked_at) < SAFE2_MIRROR_CACHE_SECONDS) then
-            return cache.value == true
+    -- Server-authoritative access from the ITEM_MAX (0x1C) packet: ItemNum2 == 0 means
+    -- the container is disabled, even when its size (ItemNum) is non-zero (e.g. Safe2).
+    local function packet_container_usable(container_id)
+        local access = satchel and satchel.container_access
+        if not access or not access.seen then
+            return nil
         end
-
-        local safe_max = tonumber(inv:GetContainerCountMax(1) or 0) or 0
-        local safe2_max = tonumber(inv:GetContainerCountMax(9) or 0) or 0
-        if safe_max <= 0 or safe2_max <= 0 then
-            if satchel then
-                satchel.safe2_mirror_cache = { checked_at = now, value = false }
-            end
-            return false
+        local v = access.usable[tonumber(container_id)]
+        if v == nil then
+            return nil
         end
-
-        local safe_used = tonumber(inv:GetContainerCount(1) or 0) or 0
-        local safe2_used = tonumber(inv:GetContainerCount(9) or 0) or 0
-        if safe_used ~= safe2_used then
-            if satchel then
-                satchel.safe2_mirror_cache = { checked_at = now, value = false }
-            end
-            return false
-        end
-
-        -- If both are empty, we still attempt to infer mirror behavior from slot indices.
-        if safe_used <= 0 and safe2_used <= 0 then
-            local sample_count = math.min(safe_max, safe2_max, 10)
-            local appears_distinct = false
-
-            for slot_index = 1, sample_count do
-                local ok_safe, safe_item = pcall(function()
-                    return inv:GetContainerItem(1, slot_index)
-                end)
-                local ok_safe2, safe2_item = pcall(function()
-                    return inv:GetContainerItem(9, slot_index)
-                end)
-
-                if not ok_safe or not ok_safe2 then
-                    appears_distinct = true
-                    break
-                end
-
-                local safe_index = (safe_item and tonumber(safe_item.Index)) or 0
-                local safe2_index = (safe2_item and tonumber(safe2_item.Index)) or 0
-
-                if safe2_index >= 81 or safe_index ~= safe2_index then
-                    appears_distinct = true
-                    break
-                end
-            end
-
-            if satchel then
-                satchel.safe2_mirror_cache = { checked_at = now, value = not appears_distinct }
-            end
-            return not appears_distinct
-        end
-
-        if safe_used <= 0 then
-            if satchel then
-                satchel.safe2_mirror_cache = { checked_at = now, value = false }
-            end
-            return false
-        end
-
-        local sample_count = math.min(safe_max, safe2_max, 30)
-        for slot_index = 1, sample_count do
-            local ok_safe, safe_item = pcall(function()
-                return inv:GetContainerItem(1, slot_index)
-            end)
-            local ok_safe2, safe2_item = pcall(function()
-                return inv:GetContainerItem(9, slot_index)
-            end)
-
-            if not ok_safe or not ok_safe2 then
-                if satchel then
-                    satchel.safe2_mirror_cache = { checked_at = now, value = false }
-                end
-                return false
-            end
-
-            local safe_id = (safe_item and tonumber(safe_item.Id)) or 0
-            local safe2_id = (safe2_item and tonumber(safe2_item.Id)) or 0
-            local safe_count = (safe_item and tonumber(safe_item.Count)) or 0
-            local safe2_count = (safe2_item and tonumber(safe2_item.Count)) or 0
-            local safe_index = (safe_item and tonumber(safe_item.Index)) or 0
-            local safe2_index = (safe2_item and tonumber(safe2_item.Index)) or 0
-
-            if safe_id ~= safe2_id or safe_count ~= safe2_count or safe_index ~= safe2_index then
-                if satchel then
-                    satchel.safe2_mirror_cache = { checked_at = now, value = false }
-                end
-                return false
-            end
-        end
-
-        if satchel then
-            satchel.safe2_mirror_cache = { checked_at = now, value = true }
-        end
-        return true
-    end
-
-    local function is_safe2_supported()
-        local cache = satchel and satchel.safe2_support_cache
-        local now = os.clock()
-        if cache and cache.checked_at and ((now - cache.checked_at) < SAFE2_SUPPORT_CACHE_SECONDS) then
-            return cache.value == true
-        end
-
-        local safe2_max = tonumber(inv:GetContainerCountMax(9) or 0) or 0
-        if safe2_max <= 0 then
-            if satchel then
-                satchel.safe2_support_cache = { checked_at = now, value = false }
-            end
-            return false
-        end
-
-        local safe2_used = tonumber(inv:GetContainerCount(9) or 0) or 0
-        local sample_count = math.min(safe2_max, 10)
-        local saw_distinct_index = false
-        for slot_index = 1, sample_count do
-            local ok, item = pcall(function()
-                return inv:GetContainerItem(9, slot_index)
-            end)
-            if not ok then
-                if satchel then
-                    satchel.safe2_support_cache = { checked_at = now, value = false }
-                end
-                return false
-            end
-
-            local raw_index = item and tonumber(item.Index) or 0
-            if raw_index >= 81 then
-                saw_distinct_index = true
-                if satchel then
-                    satchel.safe2_support_cache = { checked_at = now, value = true }
-                end
-                return true
-            end
-        end
-
-        -- Conservative fallback: if the container has contents, allow mirror detection
-        -- to determine if it is a distinct container or an alias of Mog Safe.
-        if safe2_used > 0 or saw_distinct_index then
-            if satchel then
-                satchel.safe2_support_cache = { checked_at = now, value = true }
-            end
-            return true
-        end
-
-        if satchel then
-            satchel.safe2_support_cache = { checked_at = now, value = false }
-        end
-        return false
+        return v ~= 0
     end
 
     local function is_container_supported(container_id, max_slots)
@@ -290,23 +146,34 @@ function containerlogic.build_slot_data(satchel)
         return true
     end
 
-    local safe2_enabled = is_safe2_supported() and (not does_safe2_mirror_safe())
-
     local function is_container_enabled(container_id, max_slots)
         local cid = tonumber(container_id)
         if cid == nil then
             return false
         end
 
+        local total = tonumber(max_slots) or 0
+
+        -- Mog Safe is always available when allocated.
         if cid == 1 then
-            return (tonumber(max_slots) or 0) > 0
+            return total > 0
         end
 
-        if cid == 9 then
-            return safe2_enabled
+        -- Safe2 is a phantom on Horizon: it reports size/usable like a real bag but is
+        -- never accessible, and is byte-identical to a legitimate empty Safe2 (so no
+        -- packet/memory check can catch it). Hide it in limited mode; retail/LSB falls
+        -- through to the normal ItemNum2/size detection below.
+        if cid == 9 and HzLimitedMode then
+            return false
         end
 
-        return is_container_supported(cid, max_slots)
+        -- Prefer the server's usable flag (ItemNum2; 0 = disabled) when ITEM_MAX seen.
+        local usable = packet_container_usable(cid)
+        if usable ~= nil then
+            return usable and total > 0
+        end
+
+        return is_container_supported(cid, total)
     end
 
     local show_empty_slots = satchel.settings.show_empty_slots == true
