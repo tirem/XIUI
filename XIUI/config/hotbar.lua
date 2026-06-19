@@ -2146,8 +2146,8 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
     imgui.Spacing();
 
     -- Display Mode dropdown
-    local displayModes = { 'normal', 'activeOnly' };
-    local displayModeLabels = { 'Normal', 'Active Only' };
+    local displayModes = { 'normal', 'activeOnly', 'combatOnly' };
+    local displayModeLabels = { 'Normal', 'Active Only', 'Combat Only' };
     local currentDisplayMode = crossbarSettings.displayMode or 'normal';
     local currentDisplayIndex = 1;
     for i, mode in ipairs(displayModes) do
@@ -2174,7 +2174,12 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
         end
         imgui.EndCombo();
     end
-    imgui.ShowHelp('Normal: Always show both sides (inactive side dimmed).\nActive Only: Show only when trigger is held, displaying only the active side.');
+    imgui.ShowHelp('Normal: Always show both sides (inactive side dimmed).\nActive Only: Show only when trigger is held, displaying only the active side.\nCombat Only: Show both sides while your character is engaged in combat.');
+
+    if crossbarSettings.displayMode == 'combatOnly' then
+        components.DrawPartySlider(crossbarSettings, 'Trigger Release Delay##crossbarCombat', 'combatTriggerReleaseDelay', 0.0, 10.0, '%.1f sec', nil, 5.0);
+        imgui.ShowHelp('How long Combat Only keeps the crossbar visible after L2/R2 is released while out of combat.');
+    end
 
     imgui.Spacing();
 

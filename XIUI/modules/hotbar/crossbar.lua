@@ -75,6 +75,7 @@ end
 
 local SLOTS_PER_SIDE = 8;
 local COMBO_MODES = controller.COMBO_MODES;
+local ENTITY_STATUS_ENGAGED = 1;
 
 -- ============================================
 -- Layout Calculation Functions
@@ -320,6 +321,9 @@ local state = {
     currentLeftMode = 'L2',
     currentRightMode = 'R2',
 
+    -- Combat-only reveal state, used to keep the bar visible briefly after L2/R2 release
+    combatTriggerVisibleUntil = 0,
+
     -- Visibility animation state for activeOnly display mode
     visibilityAnimation = {
         active = false,
@@ -399,12 +403,47 @@ local function GetDisplayModes(activeCombo)
     end
 end
 
+local function IsPlayerEngaged()
+    if type(GetPlayerEntity) ~= 'function' then
+        return false;
+    end
+
+    local playerEnt = GetPlayerEntity();
+    return playerEnt ~= nil and playerEnt.Status == ENTITY_STATUS_ENGAGED;
+end
+
+local function GetCombatTriggerReleaseDelay(settings)
+    local delay = settings.combatTriggerReleaseDelay;
+    if type(delay) ~= 'number' then
+        return 5.0;
+    end
+    return math.max(delay, 0);
+end
+
 -- Determine which sides are visible based on display mode
 -- Returns: leftVisible, rightVisible, crossbarVisible
 local function GetVisibilityState(activeCombo, settings, isEditMode)
+    local displayMode = settings.displayMode or 'normal';
+
     -- Always show full crossbar in edit mode or normal display mode
-    if isEditMode or settings.displayMode ~= 'activeOnly' then
+    if isEditMode or displayMode == 'normal' then
         return true, true, true;
+    end
+
+    -- combatOnly mode: show the full crossbar while the player is engaged
+    if displayMode == 'combatOnly' then
+        local triggerActive = activeCombo ~= nil and activeCombo ~= COMBO_MODES.NONE;
+        local now = os.clock();
+
+        if triggerActive then
+            state.combatTriggerVisibleUntil = now + GetCombatTriggerReleaseDelay(settings);
+        end
+
+        local triggerRecentlyActive = (state.combatTriggerVisibleUntil or 0) > now;
+        if IsPlayerEngaged() or triggerActive or triggerRecentlyActive then
+            return true, true, true;
+        end
+        return false, false, false;
     end
 
     -- activeOnly mode: hide when no trigger, show only active side
@@ -422,7 +461,7 @@ local function GetVisibilityState(activeCombo, settings, isEditMode)
         return false, true, true;
     end
 
-    -- Fallback: show both
+    -- Fallback for unknown display modes: show both
     return true, true, true;
 end
 
@@ -1057,13 +1096,14 @@ function M.DrawWindow(settings, moduleSettings)
         pressedSlot = nil;  -- Don't show pressed state in edit mode
     end
 
-    -- Determine visibility for activeOnly display mode
+    -- Determine visibility for display modes that can hide the crossbar
     local leftVisible, rightVisible, crossbarVisible = GetVisibilityState(activeCombo, settings, isEditMode);
 
     -- Resolve activeOnly visibility BEFORE any SetNextWindow* calls: when hidden we
     -- skip imgui.Begin, and a pending size/pos would leak onto the next window.
     local visibilityOpacity = 1.0;
-    if settings.displayMode == 'activeOnly' and not isEditMode then
+    local isVisibilityManagedMode = (settings.displayMode == 'activeOnly' or settings.displayMode == 'combatOnly') and not isEditMode;
+    if isVisibilityManagedMode then
         local wasHidden = state.visibilityAnimation.wasHidden;
         local isNowHidden = not crossbarVisible;
 
@@ -1206,11 +1246,11 @@ function M.DrawWindow(settings, moduleSettings)
         local isActiveOnlyMode = settings.displayMode == 'activeOnly' and not isEditMode;
 
         -- Draw window background FIRST so it sits beneath all slot content on the draw list.
-        -- In activeOnly mode, apply visibility opacity to background.
+        -- In visibility-managed modes, apply visibility opacity to background.
         do
             local bgOpacity = settings.backgroundOpacity;
             local borderOpacity = settings.borderOpacity;
-            if isActiveOnlyMode then
+            if isVisibilityManagedMode then
                 bgOpacity = bgOpacity * visibilityOpacity;
                 borderOpacity = borderOpacity * visibilityOpacity;
             end
@@ -1230,9 +1270,11 @@ function M.DrawWindow(settings, moduleSettings)
             local outOpacity, outYOffset = GetOutgoingAnimationValues();
             local inOpacity, inYOffset = GetIncomingAnimationValues();
 
-            -- Apply visibility fade for activeOnly mode
-            outOpacity = outOpacity * visibilityOpacity;
-            inOpacity = inOpacity * visibilityOpacity;
+            -- Apply visibility fade for display modes that can hide the crossbar
+            if isVisibilityManagedMode then
+                outOpacity = outOpacity * visibilityOpacity;
+                inOpacity = inOpacity * visibilityOpacity;
+            end
 
             -- Determine active states for "from" bar set
             local fromExpanded = state.animation.fromBarSet == 'expanded';
@@ -1289,14 +1331,14 @@ function M.DrawWindow(settings, moduleSettings)
                         rightActive, pressedSlot, rightShowPressed, visibilityOpacity, drawList, 0, targetServerId, skillchainEnabled);
                 end
             else
-                -- Normal mode: draw both sides at full opacity
+                -- Normal/combatOnly mode: draw both sides
                 DrawBarSet(
                     state.currentLeftMode, state.currentRightMode,
                     leftGroupX, leftGroupY, rightGroupX, rightGroupY,
                     slotSize, settings,
                     leftActive, rightActive,
                     pressedSlot, leftShowPressed, rightShowPressed,
-                    1.0, drawList, 0, targetServerId, skillchainEnabled
+                    visibilityOpacity, drawList, 0, targetServerId, skillchainEnabled
                 );
             end
         end
@@ -1322,7 +1364,7 @@ function M.DrawWindow(settings, moduleSettings)
 
     -- Determine if we should show center elements (hidden in activeOnly mode)
     local isActiveOnlyMode = settings.displayMode == 'activeOnly' and not isEditMode;
-    local showCenterElements = not isActiveOnlyMode;
+    local showCenterElements = not isActiveOnlyMode and (not isVisibilityManagedMode or crossbarVisible);
 
     -- Draw center divider (optional, hidden in activeOnly mode)
     if settings.showDivider and drawList and showCenterElements then
