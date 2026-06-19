@@ -22,22 +22,15 @@ function settingslogic.create(ctx)
         return gConfig == nil or gConfig.showSatchelModule ~= false
     end
 
+    -- The satchel window only owns its visibility. Columns/rows/size/empty-slots/
+    -- containers are owned by the config UI (written to gConfig directly); persisting
+    -- them from this stale cache would clobber config changes on open/close.
     function M.persist_settings()
         if not gConfig then
             return
         end
 
         gConfig.satchelVisible = satchel.settings.visible == true
-        gConfig.satchelColumns = satchel.settings.columns
-        gConfig.satchelRows = satchel.settings.rows
-        gConfig.satchelSlotSize = satchel.settings.slot_size
-        gConfig.satchelShowEmptySlots = satchel.settings.show_empty_slots == true
-
-        local include = T{}
-        for _, container_id in ipairs(satchel.settings.include_containers or T{}) do
-            include:append(tonumber(container_id) or 0)
-        end
-        gConfig.satchelIncludeContainers = include
 
         if SaveSettingsOnly then
             SaveSettingsOnly()
@@ -58,7 +51,8 @@ function settingslogic.create(ctx)
             columns = gConfig and gConfig.satchelColumns or default_settings.columns,
             rows = gConfig and gConfig.satchelRows or default_settings.rows,
             slot_size = gConfig and gConfig.satchelSlotSize or default_settings.slot_size,
-            show_empty_slots = gConfig and gConfig.satchelShowEmptySlots ~= false or default_settings.show_empty_slots,
+            -- Default true; only false when explicitly unchecked (avoid the and/or-false trap).
+            show_empty_slots = not (gConfig and gConfig.satchelShowEmptySlots == false),
             include_containers = T{},
         }
 
@@ -70,6 +64,30 @@ function settingslogic.create(ctx)
 
         satchel.visible[1] = satchel.settings.visible == true
         satchel.last_visible = satchel.visible[1]
+    end
+
+    -- Re-sync config-owned display fields (not visibility) from gConfig when config
+    -- changes. gConfigVersion bumps on every edit, so this is a cheap per-frame check.
+    -- Returns true when a re-sync happened so the caller can invalidate the slot cache.
+    local last_cfg_version = nil
+    function M.sync_display_settings()
+        if not gConfig or not satchel.settings then
+            return false
+        end
+
+        local version = gConfigVersion or 0
+        if last_cfg_version == version then
+            return false
+        end
+        last_cfg_version = version
+
+        satchel.settings.columns = math.max(4, math.min(18, tonumber(gConfig.satchelColumns) or default_settings.columns))
+        satchel.settings.rows = math.max(4, math.min(16, tonumber(gConfig.satchelRows) or default_settings.rows))
+        satchel.settings.slot_size = math.max(24, math.min(96, tonumber(gConfig.satchelSlotSize) or default_settings.slot_size))
+        satchel.settings.show_empty_slots = not (gConfig.satchelShowEmptySlots == false)
+        satchel.settings.include_containers =
+            containerlogic.normalize_include_containers(gConfig.satchelIncludeContainers or default_settings.include_containers)
+        return true
     end
 
     function M.toggle_visible()

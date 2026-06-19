@@ -20,6 +20,7 @@ local COLOR_GIL_TEXT = { 0.98, 0.88, 0.48, 1.0 }
 
 local SLOT_CHILD_FLAGS = bor(ImGuiWindowFlags_NoScrollbar or 0, ImGuiWindowFlags_NoScrollWithMouse or 0)
 local DRAG_HOVER_FLAGS = ImGuiHoveredFlags_AllowWhenBlockedByActiveItem or 0
+local DRAG_START_THRESHOLD = 4
 
 -- Ashita 4.3 adjusted BeginChild overloads; try multiple signatures for compatibility.
 local begin_child_signature = 0
@@ -174,15 +175,19 @@ local function draw_slot(slot, index, key_prefix, ctx)
         ctx.on_slot_right_click(slot)
     end
 
+    -- Start dragging only after the mouse moves past a small threshold (not on a bare
+    -- click), so a click/double-click doesn't flash the drop-target colors.
     if slot.id and slot.id > 0 and ctx.on_slot_drag_start then
-        if imgui.IsItemClicked(ImGuiMouseButton_Left) then
-            ctx.on_slot_drag_start(slot, tex)
-        end
-
         local hovered_for_drag = imgui.IsItemHovered(DRAG_HOVER_FLAGS)
-        if hovered_for_drag and imgui.IsMouseDragging(ImGuiMouseButton_Left, 1) then
+        if hovered_for_drag and imgui.IsMouseDragging(ImGuiMouseButton_Left, DRAG_START_THRESHOLD) then
             ctx.on_slot_drag_start(slot, tex)
         end
+    end
+
+    -- After the drag block: a double-click transfers and cancels the drag it started.
+    if slot.id and slot.id > 0 and ctx.on_slot_double_click
+        and imgui.IsItemHovered() and imgui.IsMouseDoubleClicked(ImGuiMouseButton_Left) then
+        ctx.on_slot_double_click(slot)
     end
 end
 
@@ -255,10 +260,16 @@ function ui.render_slot_grid(slots, key_prefix, stat, ctx)
     local cell_gap = 2
     local slot_size = ctx.settings.slot_size or ctx.default_slot_size
     local grid_width = (used_columns * slot_size) + ((used_columns - 1) * cell_gap)
-    local grid_height = (row_count * slot_size) + ((row_count - 1) * cell_gap)
+
+    -- Cap the visible height to the configured row count and scroll the overflow.
+    local max_rows = math.max(1, tonumber(ctx.settings.rows) or row_count)
+    local visible_rows = math.min(row_count, max_rows)
+    local needs_scroll = row_count > visible_rows
+    local grid_height = (visible_rows * slot_size) + ((visible_rows - 1) * cell_gap)
+    local scrollbar_w = needs_scroll and 16 or 0
 
     imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, { cell_gap, cell_gap })
-    begin_child_compat(('##satchel_grid_%s'):format(tostring(key_prefix)), { grid_width, grid_height }, false, 0)
+    begin_child_compat(('##satchel_grid_%s'):format(tostring(key_prefix)), { grid_width + scrollbar_w, grid_height }, false, 0)
     for i = 1, total_slots do
         local slot = packed[i]
 

@@ -78,20 +78,6 @@ function containerlogic.build_slot_data(satchel)
         return all_slots, slots_by_container, stats
     end
 
-    -- Server-authoritative access from the ITEM_MAX (0x1C) packet: ItemNum2 == 0 means
-    -- the container is disabled, even when its size (ItemNum) is non-zero (e.g. Safe2).
-    local function packet_container_usable(container_id)
-        local access = satchel and satchel.container_access
-        if not access or not access.seen then
-            return nil
-        end
-        local v = access.usable[tonumber(container_id)]
-        if v == nil then
-            return nil
-        end
-        return v ~= 0
-    end
-
     local function is_container_supported(container_id, max_slots)
         local cid = tonumber(container_id)
         local total = tonumber(max_slots) or 0
@@ -159,18 +145,12 @@ function containerlogic.build_slot_data(satchel)
             return total > 0
         end
 
-        -- Safe2 is a phantom on Horizon: it reports size/usable like a real bag but is
-        -- never accessible, and is byte-identical to a legitimate empty Safe2 (so no
-        -- packet/memory check can catch it). Hide it in limited mode; retail/LSB falls
-        -- through to the normal ItemNum2/size detection below.
+        -- Safe2 is a phantom on Horizon: it reports a non-zero size like a real bag but is
+        -- never actually accessible, and is byte-identical to a legitimate empty Safe2 (so
+        -- no packet/memory check can catch it). Hide it in limited mode; retail/LSB falls
+        -- through to the normal size/slot detection below.
         if cid == 9 and HzLimitedMode then
             return false
-        end
-
-        -- Prefer the server's usable flag (ItemNum2; 0 = disabled) when ITEM_MAX seen.
-        local usable = packet_container_usable(cid)
-        if usable ~= nil then
-            return usable and total > 0
         end
 
         return is_container_supported(cid, total)

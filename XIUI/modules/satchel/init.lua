@@ -61,13 +61,6 @@ local satchel = T{
         stats = nil,
     },
     in_mog_house = false,
-    -- Authoritative container access from the ITEM_MAX (0x1C) packet. ItemNum2 is the
-    -- server's "usable amount" (0 = disabled), unlike ItemNum/size which can lie (Safe2).
-    container_access = {
-        seen = false,
-        usable = {},
-        max = {},
-    },
     context_menu = {
         pending_open = false,
         slot = nil,
@@ -128,6 +121,7 @@ local menus = contextmenu.create({
 local is_module_enabled = settings.is_module_enabled
 local persist_settings = settings.persist_settings
 local read_settings = settings.read_settings
+local sync_display_settings = settings.sync_display_settings
 local toggle_visible = settings.toggle_visible
 local open_xiui_satchel_config = settings.open_xiui_satchel_config
 local show_help = settings.show_help
@@ -265,6 +259,38 @@ local function handle_drop_to_container(target_container_id)
     clear_drag_state()
 end
 
+-- Double-click quick transfer: Inventory <-> Satchel (both always accessible everywhere).
+local QUICK_TRANSFER = { [0] = 5, [5] = 0 }
+
+local function handle_double_click_transfer(slot)
+    if not slot or not slot.id or slot.id <= 0 then
+        return
+    end
+
+    local target_container_id = QUICK_TRANSFER[tonumber(slot.container_id)]
+    if target_container_id == nil then
+        return
+    end
+
+    -- A click also starts a drag; cancel it so the transfer is the only action.
+    clear_drag_state()
+
+    local _, _, stats = get_slot_data(false)
+    if not can_drop_slot_to_container(slot, target_container_id, stats) then
+        return
+    end
+
+    local target_slot_index = find_first_empty_slot_index(target_container_id)
+    if not target_slot_index then
+        return
+    end
+
+    local move_commands = items.build_move_commands(slot, target_container_id, target_slot_index)
+    if move_commands and #move_commands > 0 then
+        queue_commands(move_commands)
+    end
+end
+
 local function handle_title_bar_drag()
     if satchel.drag.active then
         satchel.window_drag.active = false
@@ -365,6 +391,9 @@ local function render_slot_grid(slots, key_prefix, stat)
             satchel.context_menu.slot = copy_slot_ref(slot)
             satchel.context_menu.pending_open = true
         end,
+        on_slot_double_click = function(slot)
+            handle_double_click_transfer(copy_slot_ref(slot))
+        end,
         on_slot_drag_start = function(slot, icon_texture)
             if satchel.drag.active then
                 return
@@ -417,6 +446,11 @@ function M.DrawWindow()
 
     if not satchel.visible[1] then
         return
+    end
+
+    -- Pick up live config changes (columns/size/empty-slots/containers) each frame.
+    if sync_display_settings() then
+        invalidate_slot_cache()
     end
 
     local _, slots_by_container, stats = get_slot_data(false)
@@ -535,21 +569,6 @@ function M.HandleCommand(e)
         return true
     end
 
-    if args[2]:lower() == 'bags' then
-        local access = satchel.container_access
-        if not access.seen then
-            print('[satchel] No ITEM_MAX (0x1C) packet seen yet (zone/relog for size data).')
-            return true
-        end
-        for _, cid in ipairs(containerlogic.tab_order) do
-            local name = containerlogic.format_tab_label(cid)
-            local usable = access.usable[cid] or 0
-            print(string.format('[satchel] %2d %-10s size=%d usable=%d %s',
-                cid, name, access.max[cid] or 0, usable, usable == 0 and '(DISABLED)' or ''))
-        end
-        return true
-    end
-
     show_help(true)
     return true
 end
@@ -623,18 +642,6 @@ function M.HandlePacketIn(e)
         satchel.visible[1] = satchel.settings.visible == true
         satchel.last_visible = satchel.visible[1]
         invalidate_slot_cache()
-    elseif id == 0x01C then
-        -- ITEM_MAX: ItemNum[18] u8 @0x04, ItemNum2[18] u16 @0x24 (after 14b pad).
-        local bytes = packet_to_bytes(e.data_modified or e.data)
-        if #bytes >= 0x48 then
-            local access = satchel.container_access
-            for c = 0, 16 do
-                access.usable[c] = read_u16_le(bytes, 0x24 + c * 2)
-                access.max[c] = math.max(0, (tonumber(bytes[0x04 + c + 1]) or 0) - 1)
-            end
-            access.seen = true
-            invalidate_slot_cache()
-        end
     elseif id == 0x096 then
         set_mog_house(true)
         invalidate_slot_cache()
