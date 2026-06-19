@@ -44,6 +44,42 @@ local CONTAINERS = {
 -- Containers reachable from the field without mog house / special access
 local ACCESSIBLE_CONTAINERS = { 0, 8, 10, 11, 12, 13, 14, 15, 16 };
 
+-- ISpell.Type for Trust magic; used to exclude trusts by type instead of an ID
+-- range (real spells exist above the old cutoff, e.g. Death = 904).
+local MAGIC_TYPE_TRUST = 8;
+
+-- ============================================
+-- Per-frame memoization
+-- ============================================
+-- Equipment/inventory scans used to build the availability cache key can't change
+-- mid-frame, so memoize them per ImGui frame count (recomputes on the next frame).
+local frameMemo = {
+    frame = nil,
+    equipSig = nil,
+    owned = {},            -- itemKey -> boolean
+    accessibleCount = {},  -- itemKey -> number
+};
+
+local function CurrentFrame()
+    local gui = AshitaCore:GetGuiManager();
+    return gui and gui:GetFrameCount() or 0;
+end
+
+-- Reset the per-frame memo if we've advanced to a new frame.
+local function EnsureFrameMemo()
+    local f = CurrentFrame();
+    if f ~= frameMemo.frame then
+        frameMemo.frame = f;
+        frameMemo.equipSig = nil;
+        frameMemo.owned = {};
+        frameMemo.accessibleCount = {};
+    end
+end
+
+local function ItemMemoKey(itemId, itemName)
+    return tostring(itemId or '') .. '|' .. (itemName or '');
+end
+
 -- ============================================
 -- Helper Functions
 -- ============================================
@@ -146,14 +182,12 @@ function M.GetPlayerSpells()
     local addedSpells = {};  -- Track by spell ID to avoid duplicates
 
     for spellId = 1, 1024 do
-        -- Skip trust spells (IDs 896+)
-        if spellId >= 896 then
-            break;
-        end
-
         if player:HasSpell(spellId) then
             local spell = resMgr:GetSpellById(spellId);
-            if spell and spell.Name and spell.Name[1] and spell.Name[1] ~= '' then
+            -- Skip trusts by magic type, not ID range (the old ID-896 cutoff also
+            -- hid real spells above it, e.g. Death = 904).
+            if spell and spell.Name and spell.Name[1] and spell.Name[1] ~= ''
+                and (spell.Type or 0) ~= MAGIC_TYPE_TRUST then
                 local spellName = spell.Name[1];
 
                 -- Skip garbage/test spell names
@@ -586,9 +620,15 @@ local EQUIP_SLOT_MASKS = {
 --- Used to invalidate availability cache when weapons change
 ---@return string
 function M.GetEquipmentSignature()
+    EnsureFrameMemo();
+    if frameMemo.equipSig ~= nil then
+        return frameMemo.equipSig;
+    end
+
     local inventory = AshitaCore:GetMemoryManager():GetInventory();
     if not inventory then
-        return '0:0:0:0';
+        frameMemo.equipSig = '0:0:0:0';
+        return frameMemo.equipSig;
     end
 
     local parts = {};
@@ -608,7 +648,8 @@ function M.GetEquipmentSignature()
         parts[#parts + 1] = tostring(itemId);
     end
 
-    return table.concat(parts, ':');
+    frameMemo.equipSig = table.concat(parts, ':');
+    return frameMemo.equipSig;
 end
 
 --- Check if the player owns an item anywhere in tracked storage containers
@@ -616,7 +657,15 @@ end
 ---@param itemName string|nil
 ---@return boolean
 function M.IsItemOwned(itemId, itemName)
-    return ScanContainersForItem(ALL_CONTAINER_IDS, itemId, itemName, false) > 0;
+    EnsureFrameMemo();
+    local key = ItemMemoKey(itemId, itemName);
+    local cached = frameMemo.owned[key];
+    if cached ~= nil then
+        return cached;
+    end
+    local owned = ScanContainersForItem(ALL_CONTAINER_IDS, itemId, itemName, false) > 0;
+    frameMemo.owned[key] = owned;
+    return owned;
 end
 
 --- Count an item in accessible inventory (inventory + wardrobes)
@@ -624,7 +673,15 @@ end
 ---@param itemName string|nil
 ---@return number
 function M.CountAccessibleItem(itemId, itemName)
-    return ScanContainersForItem(ACCESSIBLE_CONTAINERS, itemId, itemName, true);
+    EnsureFrameMemo();
+    local key = ItemMemoKey(itemId, itemName);
+    local cached = frameMemo.accessibleCount[key];
+    if cached ~= nil then
+        return cached;
+    end
+    local count = ScanContainersForItem(ACCESSIBLE_CONTAINERS, itemId, itemName, true);
+    frameMemo.accessibleCount[key] = count;
+    return count;
 end
 
 --- Check if an item is in accessible inventory (inventory + wardrobes, not mog safe/storage/satchel)

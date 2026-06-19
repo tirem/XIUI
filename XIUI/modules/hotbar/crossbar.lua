@@ -1084,25 +1084,6 @@ function M.DrawWindow(settings, moduleSettings)
     local windowName = 'Crossbar';
     local defaultX, defaultY = GetDefaultPosition(settings);
 
-    -- Check if anchor is currently being dragged - if so, force position
-    local anchorDragging = drawing.IsAnchorDragging(windowName);
-    
-    if anchorDragging then
-        -- Use state position directly during drag for immediate response
-        imgui.SetNextWindowPos({state.windowX, state.windowY}, ImGuiCond_Always);
-    else
-        -- Apply saved position (once) or default
-        local hasSaved = gConfig.windowPositions and gConfig.windowPositions[windowName];
-
-        if hasSaved then
-            ApplyWindowPosition(windowName);
-        else
-            imgui.SetNextWindowPos({defaultX, defaultY}, ImGuiCond_FirstUseEver);
-        end
-    end
-    
-    imgui.SetNextWindowSize({width, height}, ImGuiCond_Always);
-
     -- Get current combo mode and pressed slot from controller
     local activeCombo = controller.GetActiveCombo();
     local pressedSlot = controller.GetPressedSlot();
@@ -1118,7 +1099,8 @@ function M.DrawWindow(settings, moduleSettings)
     -- Determine visibility for display modes that can hide the crossbar
     local leftVisible, rightVisible, crossbarVisible = GetVisibilityState(activeCombo, settings, isEditMode);
 
-    -- Handle visibility animation for modes that can hide the crossbar
+    -- Resolve activeOnly visibility BEFORE any SetNextWindow* calls: when hidden we
+    -- skip imgui.Begin, and a pending size/pos would leak onto the next window.
     local visibilityOpacity = 1.0;
     local isVisibilityManagedMode = (settings.displayMode == 'activeOnly' or settings.displayMode == 'combatOnly') and not isEditMode;
     if isVisibilityManagedMode then
@@ -1139,6 +1121,25 @@ function M.DrawWindow(settings, moduleSettings)
             return;
         end
     end
+
+    -- Check if anchor is currently being dragged - if so, force position
+    local anchorDragging = drawing.IsAnchorDragging(windowName);
+
+    if anchorDragging then
+        -- Use state position directly during drag for immediate response
+        imgui.SetNextWindowPos({state.windowX, state.windowY}, ImGuiCond_Always);
+    else
+        -- Apply saved position (once) or default
+        local hasSaved = gConfig.windowPositions and gConfig.windowPositions[windowName];
+
+        if hasSaved then
+            ApplyWindowPosition(windowName);
+        else
+            imgui.SetNextWindowPos({defaultX, defaultY}, ImGuiCond_FirstUseEver);
+        end
+    end
+
+    imgui.SetNextWindowSize({width, height}, ImGuiCond_Always);
 
     -- Determine which bar set to display based on active combo
     local targetLeftMode, targetRightMode, isExpanded, expandedSide = GetDisplayModes(activeCombo);

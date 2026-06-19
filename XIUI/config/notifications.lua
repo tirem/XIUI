@@ -141,6 +141,8 @@ local function DrawGroupSettings(groupNum)
             if imgui.Selectable(label, i == currentDirIndex) then
                 groupSettings.direction = stackDirectionValues[i];
                 notificationData.ClearGroupAnchor(groupNum);
+                groupSettings.anchorBottomY = nil;
+                groupSettings.anchorX = nil;
                 SaveSettingsOnly();
             end
         end

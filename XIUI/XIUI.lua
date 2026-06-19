@@ -1228,8 +1228,16 @@ ashita.events.register('command', 'command_cb', function (e)
             local jobId = hotbarData.jobId or 1;
             local subjobId = hotbarData.subjobId or 0;
 
+            -- Bare "/xiui palette" opens the palette manager; "help" shows usage.
             if #command_args < 3 then
+                require('config.palettemanager').Open();
+                return;
+            end
+
+            if command_args[3] == 'help' then
                 print('[XIUI] Palette commands:');
+                print('  /xiui palette                            - Open the palette manager');
+                print('  /xiui palette help                       - Show this help');
                 print('  /xiui palette <name> [bar|all|crossbar] - Switch to a named palette');
                 print('  /xiui palette next [crossbar]            - Cycle to next palette');
                 print('  /xiui palette prev [crossbar]            - Cycle to previous palette');

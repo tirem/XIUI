@@ -706,6 +706,7 @@ function M.Draw()
     local windowFlags = ImGuiWindowFlags_None;
     local isOpen = { windowState.isOpen };
 
+    components.PushWindowStyle();
     if imgui.Begin('Palette Manager##paletteManager', isOpen, windowFlags) then
         -- Type selector
         DrawPaletteTypeSelector();
@@ -730,6 +731,7 @@ function M.Draw()
         DrawUseSharedModal();
     end
     imgui.End();
+    components.PopWindowStyle();
 
     windowState.isOpen = isOpen[1];
 end
