@@ -14,6 +14,9 @@ function M.DrawSettings()
     components.DrawCheckbox('Override /satchel', 'satchelOverrideCommand');
     imgui.ShowHelp('Let XIUI handle the /satchel command (toggles this window). When off, /satchel is left for the game or other addons. /xiui satchel always works.');
 
+    components.DrawCheckbox('Close on ESC', 'satchelCloseOnEscape');
+    imgui.ShowHelp('When the satchel window is open, pressing ESC closes it. When off, ESC is left alone for the game.');
+
     if components.CollapsingSection('Layout##satchelModule') then
         components.SliderInt('Columns', gConfig, 'satchelColumns', 4, 18);
         components.SliderInt('Rows', gConfig, 'satchelRows', 4, 16);

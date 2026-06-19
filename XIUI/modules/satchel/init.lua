@@ -612,6 +612,11 @@ function M.HandleKey(e)
         return
     end
 
+    -- Only intercept ESC when the user has opted in; otherwise ESC behaves normally.
+    if not (gConfig and gConfig.satchelCloseOnEscape == true) then
+        return
+    end
+
     if e.wparam ~= 0x1B then
         return
     end

@@ -31,10 +31,6 @@ function settingslogic.create(ctx)
         end
 
         gConfig.satchelVisible = satchel.settings.visible == true
-
-        if SaveSettingsOnly then
-            SaveSettingsOnly()
-        end
     end
 
     function M.read_settings()
