@@ -112,6 +112,11 @@ function M.GetInventoryPosition()
     return x, y;
 end
 
+function M.GetSatchelPosition()
+    local ix, iy = M.GetInventoryPosition();
+    return ix + 40, iy - 40;
+end
+
 -- Notifications: center right
 function M.GetNotificationsPosition()
     local sw, sh = M.GetScreenSize();

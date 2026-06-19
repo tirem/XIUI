@@ -423,6 +423,17 @@ function M.createUserSettingsDefaults()
         wardrobeShowLabels = true,
         wardrobeTextUseThresholdColor = false,
 
+        showSatchelModule = true,
+        satchelVisible = false,
+        satchelHideDuringEvents = false,
+        satchelHideOnMenuFocus = false,
+        satchelHideMacroPalette = false,
+        satchelColumns = 10,
+        satchelRows = 10,
+        satchelSlotSize = 40,
+        satchelShowEmptySlots = true,
+        satchelIncludeContainers = T{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 },
+
         -- Mob Info settings
         showMobInfo = true,
         mobInfoSnapToTargetBar = true,

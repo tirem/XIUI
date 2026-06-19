@@ -18,6 +18,7 @@ local partylistModule = require('config.partylist');
 local expbarModule = require('config.expbar');
 local giltrackerModule = require('config.giltracker');
 local inventoryModule = require('config.inventory');
+local satchelModule = require('config.satchel');
 local castbarModule = require('config.castbar');
 local castcostModule = require('config.castcost');
 local petbarModule = require('config.petbar');
@@ -317,6 +318,7 @@ local categories = {
     { name = 'expBar', label = 'Exp Bar' },
     { name = 'gilTracker', label = 'Gil Tracker' },
     { name = 'inventory', label = 'Inventory' },
+    { name = 'satchel', label = 'Satchel' },
     { name = 'castBar', label = 'Cast Bar' },
     { name = 'castCost', label = 'Cast Cost' },
     { name = 'petBar', label = 'Pet Bar' },
@@ -410,6 +412,10 @@ local function DrawInventorySettings()
     applySettingsState(newState);
 end
 
+local function DrawSatchelSettings()
+    satchelModule.DrawSettings();
+end
+
 local function DrawCastBarSettings()
     castbarModule.DrawSettings();
 end
@@ -476,6 +482,10 @@ local function DrawInventoryColorSettings()
     applyColorState(newState);
 end
 
+local function DrawSatchelColorSettings()
+    satchelModule.DrawColorSettings();
+end
+
 local function DrawCastBarColorSettings()
     castbarModule.DrawColorSettings();
 end
@@ -516,6 +526,7 @@ local settingsDrawFunctions = {
     DrawExpBarSettings,
     DrawGilTrackerSettings,
     DrawInventorySettings,
+    DrawSatchelSettings,
     DrawCastBarSettings,
     DrawCastCostSettings,
     DrawPetBarSettings,
@@ -534,6 +545,7 @@ local colorSettingsDrawFunctions = {
     DrawExpBarColorSettings,
     DrawGilTrackerColorSettings,
     DrawInventoryColorSettings,
+    DrawSatchelColorSettings,
     DrawCastBarColorSettings,
     DrawCastCostColorSettings,
     DrawPetBarColorSettings,
