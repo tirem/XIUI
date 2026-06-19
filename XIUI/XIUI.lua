@@ -77,6 +77,7 @@ local notifications = uiMods.notifications;
 local treasurePool = uiMods.treasurepool;
 local hotbar = uiMods.hotbar;
 local readyCheck = uiMods.readycheck;
+local satchelModule = uiMods.satchel;
 local macropalette = require('modules.hotbar.macropalette');
 local palette = require('modules.hotbar.palette');
 local skillchainModule = require('modules.hotbar.skillchain');
@@ -312,6 +313,15 @@ uiModules.Register('readyCheck', {
     configKey = 'showReadyCheck',
     hasSetHidden = true,
 });
+uiModules.Register('satchel', {
+    module = satchelModule,
+    settingsKey = nil,
+    configKey = 'showSatchelModule',
+    hideOnEventKey = 'satchelHideDuringEvents',
+    hideOnMenuFocusKey = 'satchelHideOnMenuFocus',
+    hideMacroPaletteKey = 'satchelHideMacroPalette',
+    hasSetHidden = true,
+});
 
 -- Initialize settings from defaults
 gAdjustedSettings = deep_copy_table(settingsDefaults.default_settings);
@@ -524,6 +534,7 @@ local function GetDefaultWindowPositions()
     local ex, ey = defPos.GetExpBarPosition();
     local gx, gy = defPos.GetGilTrackerPosition();
     local ix, iy = defPos.GetInventoryPosition();
+    local sx, sy = defPos.GetSatchelPosition();
     local elx, ely = defPos.GetEnemyListPosition();
     local ccx, ccy = defPos.GetCastCostPosition();
 
@@ -544,6 +555,7 @@ local function GetDefaultWindowPositions()
         EnemyList = { x = elx, y = ely },
         CastCost = { x = ccx, y = ccy },
         InventoryTracker = { x = ix, y = iy },
+        Satchel = { x = sx, y = sy },
         SatchelTracker = { x = ix, y = iy + staggerY },
         SafeTracker = { x = ix, y = iy + staggerY * 2 },
         StorageTracker = { x = ix, y = iy + staggerY * 3 },
@@ -714,6 +726,7 @@ function ResetSettings()
     uiMods.petbar.ResetPositions();
     uiMods.notifications.ResetPositions();
     uiMods.treasurepool.ResetPositions();
+    uiMods.satchel.ResetPositions();
     hotbar.ResetPositions();
 
     -- Persist + defer the heavy visual update cascade. ResetSettings is called
@@ -1477,6 +1490,11 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
+        -- Standalone satchel command passthrough: /xiui satchel [config]
+        if satchelModule.HandleXiuiCommand and satchelModule.HandleXiuiCommand(command_args) then
+            return;
+        end
+
         -- ============================================
         -- Profile Commands
         -- ============================================
@@ -1637,6 +1655,10 @@ ashita.events.register('command', 'command_cb', function (e)
         e.blocked = true;
         return;
     end
+
+    if satchelModule.HandleCommand and satchelModule.HandleCommand(e) then
+        return;
+    end
 end);
 
 ashita.events.register('text_in', 'readycheck_text_in_cb', function (e)
@@ -1646,6 +1668,10 @@ ashita.events.register('text_in', 'readycheck_text_in_cb', function (e)
 end);
 
 ashita.events.register('packet_in', 'packet_in_cb', function (e)
+    if satchelModule.HandlePacketIn then
+        satchelModule.HandlePacketIn(e);
+    end
+
     expBar.HandlePacket(e)
 
     -- Pet bar packet handling (0x0028 Action, 0x0068 Pet Sync)
@@ -1826,6 +1852,10 @@ end);
 -- ============================================
 
 ashita.events.register('packet_out', 'packet_out_cb', function (e)
+    if satchelModule.HandlePacketOut then
+        satchelModule.HandlePacketOut(e);
+    end
+
     if (e.id == 0x0074) then
         -- Party invite response (accept/decline)
         if gConfig.showNotifications then
@@ -1859,6 +1889,9 @@ end);
         in-game button handling for things such as movement, menu interactions, etc.
 --]]
 ashita.events.register('key', 'key_cb', function (event)
+    if satchelModule.HandleKey then
+        satchelModule.HandleKey(event);
+    end
     hotbar.HandleKey(event);
 end);
 
