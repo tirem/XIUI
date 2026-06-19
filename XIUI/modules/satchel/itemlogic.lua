@@ -158,9 +158,8 @@ local function create_item_logic(ctx)
             return cached
         end
 
-        local ok, item = pcall(function()
-            return AshitaCore:GetResourceManager():GetItemById(item_id)
-        end)
+        local rm = AshitaCore:GetResourceManager()
+        local ok, item = pcall(rm.GetItemById, rm, item_id)
 
         local name = ('Item #%d'):format(item_id)
         if ok and item and item.Name and item.Name[1] and item.Name[1] ~= '' then
@@ -182,9 +181,8 @@ local function create_item_logic(ctx)
         end
 
         local kind = 0
-        local ok, item = pcall(function()
-            return AshitaCore:GetResourceManager():GetItemById(item_id)
-        end)
+        local rm = AshitaCore:GetResourceManager()
+        local ok, item = pcall(rm.GetItemById, rm, item_id)
         if ok and item and item.Type then
             kind = tonumber(item.Type) or 0
         end
@@ -249,9 +247,8 @@ local function create_item_logic(ctx)
             return nil
         end
 
-        local ok, item = pcall(function()
-            return AshitaCore:GetResourceManager():GetItemById(item_id)
-        end)
+        local rm = AshitaCore:GetResourceManager()
+        local ok, item = pcall(rm.GetItemById, rm, item_id)
         if ok and item then
             return item
         end

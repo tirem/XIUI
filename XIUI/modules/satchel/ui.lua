@@ -191,7 +191,9 @@ local function draw_slot(slot, index, key_prefix, ctx)
     end
 end
 
-function ui.render_slot_grid(slots, key_prefix, stat, ctx)
+-- Build the display order: non-empty items sorted by category/name, then (optionally)
+-- the empty slots appended in their original order.
+local function prepare_slot_order(slots, ctx)
     local packed = {}
     local packed_count = 0
     local empties = {}
@@ -250,6 +252,33 @@ function ui.render_slot_grid(slots, key_prefix, stat, ctx)
             packed_count = packed_count + 1
             packed[packed_count] = empties[i]
         end
+    end
+
+    return packed, packed_count
+end
+
+-- Memoized sorted layout per container. build_slot_data hands us a fresh `slots`
+-- table on every cache rebuild (~6x/sec), so reuse the sort while that table and the
+-- show-empty toggle are unchanged instead of re-sorting every frame (~60x/sec).
+local sort_cache = {}
+
+function ui.render_slot_grid(slots, key_prefix, stat, ctx)
+    local cache_key = tostring(key_prefix)
+    local show_empty = ctx.settings.show_empty_slots and true or false
+    local cached = sort_cache[cache_key]
+
+    local packed, packed_count
+    if cached and cached.slots == slots and cached.show_empty == show_empty then
+        packed = cached.packed
+        packed_count = cached.packed_count
+    else
+        packed, packed_count = prepare_slot_order(slots, ctx)
+        sort_cache[cache_key] = {
+            slots = slots,
+            show_empty = show_empty,
+            packed = packed,
+            packed_count = packed_count,
+        }
     end
 
     local columns = math.max(4, tonumber(ctx.settings.columns) or 10)

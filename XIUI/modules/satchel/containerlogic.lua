@@ -107,9 +107,7 @@ function containerlogic.build_slot_data(satchel)
 
         local sample_count = math.min(total, 3)
         for slot_index = 1, sample_count do
-            local ok, item = pcall(function()
-                return inv:GetContainerItem(cid, slot_index)
-            end)
+            local ok, item = pcall(inv.GetContainerItem, inv, cid, slot_index)
             if not ok then
                 if cache_root then
                     cache_root[cid] = { checked_at = now, value = false }
@@ -176,9 +174,7 @@ function containerlogic.build_slot_data(satchel)
             local item_count = 0
             local property_index = memory_slot_index
 
-            local ok, item = pcall(function()
-                return inv:GetContainerItem(container_id, memory_slot_index)
-            end)
+            local ok, item = pcall(inv.GetContainerItem, inv, container_id, memory_slot_index)
 
             if ok and item and item.Id and item.Id > 0 and item.Id ~= 65535 then
                 item_id = tonumber(item.Id) or 0

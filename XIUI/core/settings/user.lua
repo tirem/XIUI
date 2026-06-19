@@ -425,7 +425,7 @@ function M.createUserSettingsDefaults()
 
         showSatchelModule = true,
         satchelVisible = false,
-        satchelOverrideCommand = false,
+        satchelOverrideCommand = true,
         satchelHideDuringEvents = false,
         satchelHideOnMenuFocus = false,
         satchelHideMacroPalette = false,
