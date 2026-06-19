@@ -557,6 +557,12 @@ function M.HandleCommand(e)
         return false
     end
 
+    -- Only hijack the global /satchel command when the user has opted in; otherwise
+    -- leave it for the game/other addons. /xiui satchel always works regardless.
+    if not (gConfig and gConfig.satchelOverrideCommand) then
+        return false
+    end
+
     e.blocked = true
 
     if not is_module_enabled() then

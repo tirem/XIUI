@@ -11,6 +11,9 @@ local M = {};
 function M.DrawSettings()
     components.DrawCheckbox('Enabled', 'showSatchelModule', CheckVisibility);
 
+    components.DrawCheckbox('Override /satchel', 'satchelOverrideCommand');
+    imgui.ShowHelp('Let XIUI handle the /satchel command (toggles this window). When off, /satchel is left for the game or other addons. /xiui satchel always works.');
+
     if components.CollapsingSection('Layout##satchelModule') then
         components.SliderInt('Columns', gConfig, 'satchelColumns', 4, 18);
         components.SliderInt('Rows', gConfig, 'satchelRows', 4, 16);
