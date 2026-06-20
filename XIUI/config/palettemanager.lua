@@ -178,6 +178,29 @@ local function DrawSubjobSelector()
     return changed;
 end
 
+-- Activate a palette on the live bars, but only when the manager is viewing the
+-- job/subjob the player is currently on (same guard as the create flow). Selecting
+-- a palette for a job you aren't playing must not change your live bar.
+local function ActivateSelectedPalette(paletteName)
+    if not paletteName then
+        return;
+    end
+
+    local currentJobId = data.jobId;
+    local currentSubjobId = data.subjobId or 0;
+    local viewingShared = (windowState.selectedSubjobId == 0);
+    local viewingCurrentJob = (windowState.selectedJobId == currentJobId);
+    local viewingCurrentSubjob = (windowState.selectedSubjobId == currentSubjobId);
+
+    if viewingCurrentJob and (viewingShared or viewingCurrentSubjob) then
+        if windowState.selectedPaletteType == 'hotbar' then
+            palette.SetActivePalette(1, paletteName, currentJobId, currentSubjobId);
+        else
+            palette.SetActivePaletteForCombo('L2', paletteName);
+        end
+    end
+end
+
 -- Helper: Draw palette list
 local function DrawPaletteList()
     local palettes;
@@ -229,6 +252,8 @@ local function DrawPaletteList()
 
             if imgui.Selectable(paletteName .. '##palette' .. i, isSelected) then
                 windowState.selectedPaletteName = paletteName;
+                -- Switch the live bar to this palette (when on the viewed job/subjob).
+                ActivateSelectedPalette(paletteName);
             end
 
             if isSelected then
@@ -436,20 +461,7 @@ local function DrawCreateRenameModal()
 
                     -- Activate the newly created palette if viewing current job's palettes
                     if modalState.mode == 'create' then
-                        local currentJobId = data.jobId;
-                        local currentSubjobId = data.subjobId or 0;
-                        local viewingShared = (windowState.selectedSubjobId == 0);
-                        local viewingCurrentJob = (windowState.selectedJobId == currentJobId);
-                        local viewingCurrentSubjob = (windowState.selectedSubjobId == currentSubjobId);
-
-                        -- Activate if: viewing this job's shared library OR viewing exact job/subjob match
-                        if viewingCurrentJob and (viewingShared or viewingCurrentSubjob) then
-                            if windowState.selectedPaletteType == 'hotbar' then
-                                palette.SetActivePalette(1, newName, currentJobId, currentSubjobId);
-                            else
-                                palette.SetActivePaletteForCombo('L2', newName);
-                            end
-                        end
+                        ActivateSelectedPalette(newName);
                     end
 
                     modalState.isOpen = false;
