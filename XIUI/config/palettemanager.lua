@@ -58,13 +58,26 @@ end
 -- Open the palette manager window
 function M.Open()
     windowState.isOpen = true;
-    -- Initialize with current job if not set
-    if not windowState.selectedJobId then
-        windowState.selectedJobId = data.jobId or 1;
+
+    -- Always open on the player's CURRENT job, not the last-used selection.
+    windowState.selectedJobId = data.jobId or 1;
+
+    -- Default the subjob selector to the current subjob only if it has its own
+    -- palettes; otherwise show the Shared library (subjob 0). This mirrors what's
+    -- actually active for the current job.
+    local currentSubjob = data.subjobId or 0;
+    windowState.selectedSubjobId = 0;
+    if currentSubjob ~= 0 then
+        for _, sid in ipairs(palette.GetSubjobsWithPalettes(windowState.selectedJobId)) do
+            if sid == currentSubjob then
+                windowState.selectedSubjobId = currentSubjob;
+                break;
+            end
+        end
     end
-    if not windowState.selectedSubjobId then
-        windowState.selectedSubjobId = data.subjobId or 0;
-    end
+
+    -- Re-resolve the palette list for the (possibly changed) job/subjob.
+    windowState.selectedPaletteName = nil;
 end
 
 -- Close the palette manager window
@@ -681,6 +694,12 @@ local function DrawUseSharedModal()
                 windowState.selectedPaletteName = nil;
                 modalState.isOpen = false;
                 imgui.CloseCurrentPopup();
+                -- Apply to the live bars immediately (no addon reload needed).
+                -- Lazy require avoids a load-time cycle: hotbar.init requires this module.
+                local hotbar = require('modules.hotbar.init');
+                if hotbar.RefreshForCurrentJob then
+                    hotbar.RefreshForCurrentJob();
+                end
             else
                 modalState.errorMessage = 'Failed to delete palettes';
             end

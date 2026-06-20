@@ -475,6 +475,26 @@ function M.HandleJobChangePacket(e)
     end);
 end
 
+-- Reapply the current job's palettes to the live bars without an addon reload.
+-- Used after palette-library edits (e.g. "Use Shared Library") so the active
+-- hotbar/crossbar immediately reflect the new palette set. Synchronous: the job
+-- is already known here, so there's no need for the packet retry loop.
+function M.RefreshForCurrentJob()
+    if not data.SetPlayerJob() then
+        return false;
+    end
+    macropalette.SyncToCurrentJob();
+    palette.ValidatePalettesForJob(data.jobId, data.subjobId);
+    display.ClearIconCache();
+    actions.ClearNoIconCache();
+    if crossbarInitialized then
+        crossbar.ClearIconCache();
+    end
+    slotrenderer.ClearAvailabilityCache();
+    petpalette.CheckPetState();
+    return true;
+end
+
 -- Handle pet sync packet (0x0068)
 -- Called from main XIUI.lua packet handler
 function M.HandlePetSyncPacket()
