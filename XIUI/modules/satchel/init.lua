@@ -551,6 +551,7 @@ function M.ResetPositions()
     -- Position is managed by ImGui window state for the standalone-style satchel window.
 end
 
+--@cmd /satchel : Toggle the satchel window
 function M.HandleCommand(e)
     local args = e.command:args()
     if #args == 0 or args[1]:lower() ~= '/satchel' then

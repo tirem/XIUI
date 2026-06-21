@@ -83,6 +83,7 @@ local palette = require('modules.hotbar.palette');
 local skillchainModule = require('modules.hotbar.skillchain');
 local slotrenderer = require('modules.hotbar.slotrenderer');
 local configMenu = require('config');
+local commandHelp = require('libs.help');
 local debuffHandler = require('handlers.debuffhandler');
 local petBuffHandler = require('handlers.petbuffhandler');
 local actionTracker = require('handlers.actiontracker');
@@ -1056,6 +1057,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
             end
 
             configMenu.DrawWindow();
+            commandHelp.Draw();
 
             -- Render deferred hotbar tooltip after all modules (correct z-order)
             slotrenderer.FlushTooltip();
@@ -1139,24 +1141,32 @@ ashita.events.register('command', 'command_cb', function (e)
     if table.contains({'/xiui', '/hui', '/hxui', '/horizonxiui'}, command_args[1]) then
         e.blocked = true;
 
+        --@cmd /xiui : Toggle the config menu
         if (#command_args == 1) then
             showConfig[1] = not showConfig[1];
             return;
         end
 
+        --@cmd /xiui help : List all XIUI commands (also: commands, cmds, ?)
+        if (#command_args == 2 and command_args[2]:any('help', 'commands', 'cmds', '?')) then
+            commandHelp.Toggle();
+            return;
+        end
+
+        --@cmd /xiui partylist : Toggle party list visibility
         if (#command_args == 2 and command_args[2]:any('partylist')) then
             gConfig.showPartyList = not gConfig.showPartyList;
             CheckVisibility();
             return;
         end
 
-        -- Open macro palette: /xiui macro or /xiui macros
+        --@cmd /xiui macro : Toggle macro palette
         if (#command_args == 2 and command_args[2]:any('macro', 'macros')) then
             macropalette.TogglePalette();
             return;
         end
 
-        -- Open keybind editor: /xiui keybinds or /xiui binds [bar]
+        --@cmd /xiui keybinds [bar] : Open keybind editor
         if (#command_args >= 2 and command_args[2]:any('keybinds', 'keybind', 'binds', 'bind')) then
             local hotbarConfig = require('config.hotbar');
             local barIndex = tonumber(command_args[3]) or 1;
@@ -1164,25 +1174,25 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
-        -- Lot all unlotted items: /xiui lotall or /xiui lot
+        --@cmd /xiui lot : Lot all treasure pool items
         if (#command_args == 2 and command_args[2]:any('lotall', 'lot')) then
             treasurePool.LotAll();
             return;
         end
 
-        -- Pass all unlotted items: /xiui passall or /xiui pass
+        --@cmd /xiui pass : Pass all treasure pool items
         if (#command_args == 2 and command_args[2]:any('passall', 'pass')) then
             treasurePool.PassAll();
             return;
         end
 
-        -- Toggle treasure pool window: /xiui tp
+        --@cmd /xiui tp : Toggle treasure pool window
         if (#command_args == 2 and command_args[2]:any('tp', 'treasurepool', 'pool')) then
             treasurePool.ToggleForceShow();
             return;
         end
 
-        -- Test notification command: /xiui testnotif [type]
+        --@cmd /xiui testnotif [type] : Send a test notification
         if (command_args[2] == 'testnotif') then
             local testType = tonumber(command_args[3]) or 5;  -- default to ITEM_OBTAINED
             notifications.TestNotification(testType, {
@@ -1195,31 +1205,31 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
-        -- Test treasure pool with 10 items: /xiui testpool10
+        --@cmd /xiui testpool10 : Test treasure pool with 10 items
         if (command_args[2] == 'testpool10') then
             notifications.TestTreasurePool10();
             return;
         end
 
-        -- Stress test treasure pool with 25 items: /xiui testpool25
+        --@cmd /xiui testpool25 : Test treasure pool with 25 items
         if (command_args[2] == 'testpool25') then
             notifications.TestTreasurePool25();
             return;
         end
 
-        -- Test pool only (no toasts) - for crash isolation: /xiui testpoolonly
+        --@cmd /xiui testpoolonly : Test pool-only notifications
         if (command_args[2] == 'testpoolonly') then
             notifications.TestPoolOnly();
             return;
         end
 
-        -- Test toasts only (no pool) - for crash isolation: /xiui testtoastsonly
+        --@cmd /xiui testtoastsonly : Test toast-only notifications
         if (command_args[2] == 'testtoastsonly') then
             notifications.TestToastsOnly();
             return;
         end
 
-        -- Hotbar keybind execution: /xiui hotbar <bar> <slot>
+        --@cmd /xiui hotbar <bar> <slot> : Execute hotbar slot (used by keybinds)
         -- Called by Ashita /bind system to execute hotbar actions
         if (command_args[2] == 'hotbar' and #command_args >= 4) then
             local barIndex = tonumber(command_args[3]);
@@ -1235,6 +1245,13 @@ ashita.events.register('command', 'command_cb', function (e)
         -- Switch between named palettes. Hotbar palettes (bars 1-6) and the crossbar
         -- have separate palette pools; "all" applies across both, "crossbar"/"cb"/"xb"
         -- targets the crossbar only, a bar number targets a single hotbar.
+        --@cmd /xiui palette : Open the palette manager
+        --@cmd /xiui palette help : Show palette command usage
+        --@cmd /xiui palette next : Cycle to next palette
+        --@cmd /xiui palette prev : Cycle to previous palette
+        --@cmd /xiui palette list : List available palettes
+        --@cmd /xiui palette first : Switch to first palette
+        --@cmd /xiui palette <name> [bar|all] : Switch to a named palette
         if (command_args[2] == 'palette' or command_args[2] == 'pal') then
             local paletteModule = require('modules.hotbar.palette');
             local hotbarData = require('modules.hotbar.data');
@@ -1484,13 +1501,13 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
-        -- Reset gil tracking: /xiui gil reset (or legacy: /xiui resetgil)
+        --@cmd /xiui gil reset : Reset gil tracking session
         if (command_args[2] == 'gil' and command_args[3] == 'reset') or (command_args[2] == 'resetgil') then
             gilTracker.ResetTracking();
             return;
         end
 
-        -- Standalone satchel command passthrough: /xiui satchel [config]
+        --@cmd /xiui satchel [config] : Toggle the satchel window (or open its config)
         if satchelModule.HandleXiuiCommand and satchelModule.HandleXiuiCommand(command_args) then
             return;
         end
@@ -1499,6 +1516,12 @@ ashita.events.register('command', 'command_cb', function (e)
         -- Profile Commands
         -- ============================================
 
+        --@cmd /xiui profile <name> : Switch to a profile
+        --@cmd /xiui profile next : Cycle to next profile
+        --@cmd /xiui profile previous : Cycle to previous profile
+        --@cmd /xiui profile reset : Open the reset settings popup
+        --@cmd /xiui profile reset positions : Reset all UI positions to center
+        --@cmd /xiui profile sync : Sync profiles with disk
         if (command_args[2] == 'profile') then
             -- /xiui profile reset positions
             if (command_args[3] == 'reset' and command_args[4] == 'positions') then
@@ -1641,7 +1664,7 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
-        -- Manual save: /xiui save
+        --@cmd /xiui save : Manually save settings
         if (command_args[2] == 'save') then
             SaveSettingsToDisk();
             macropalette.ClearHotbarDirty();

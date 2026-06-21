@@ -325,6 +325,9 @@ function M.DrawWindow(_settings)
     end
 end
 
+--@cmd /readycheck : Send a ready check to your party
+--@cmd /readycheck sound <file> : Set the ready check sound file
+--@cmd /readycheck volume <0-150> : Set the ready check sound volume
 function M.HandleCommand(e)
     local args = e.command:args()
     if #args == 0 or args[1] ~= '/readycheck' then return false end
