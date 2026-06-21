@@ -368,6 +368,10 @@ local function render_left_tab_column(available_tabs, stats)
         on_drop_to_container = function(container_id)
             handle_drop_to_container(container_id)
         end,
+        is_container_full = function(container_id)
+            local s = stats[container_id]
+            return s ~= nil and (s.total or 0) > 0 and (s.used or 0) >= s.total
+        end,
     })
 end
 

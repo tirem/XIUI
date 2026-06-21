@@ -17,6 +17,7 @@ local COLOR_MISSING_ICON = { 0.9, 0.82, 0.50, 1.0 }
 local COLOR_EMPTY_TEXT = { 0.75, 0.75, 0.75, 1.0 }
 local COLOR_USED_TEXT = { 0.78, 0.78, 0.78, 1.0 }
 local COLOR_GIL_TEXT = { 0.98, 0.88, 0.48, 1.0 }
+local COLOR_FULL = { 0.92, 0.24, 0.20, 1.0 }
 
 local SLOT_CHILD_FLAGS = bor(ImGuiWindowFlags_NoScrollbar or 0, ImGuiWindowFlags_NoScrollWithMouse or 0)
 local DRAG_HOVER_FLAGS = ImGuiHoveredFlags_AllowWhenBlockedByActiveItem or 0
@@ -52,6 +53,22 @@ local function begin_child_compat(id, size, border, flags)
     end
 
     return false
+end
+
+-- Flag a full bag with a thin red accent stripe down the right edge of the
+-- button (the last drawn item's rect).
+local function draw_full_badge(max_x, min_y, max_y)
+    local draw_list = imgui.GetWindowDrawList()
+    if not draw_list then return end
+
+    local color = imgui.GetColorU32(COLOR_FULL)
+    local width = 3   -- stripe thickness
+    local inset = 3   -- gap from the button's right edge
+    local v_pad = 4   -- vertical padding so it doesn't touch the corners
+    local x2 = max_x - inset
+    local x1 = x2 - width
+
+    draw_list:AddRectFilled({ x1, min_y + v_pad }, { x2, max_y - v_pad }, color, 1.5)
 end
 
 function ui.render_left_tab_column(available_tabs, current_tab, format_tab_label, drag_ctx)
@@ -105,6 +122,10 @@ function ui.render_left_tab_column(available_tabs, current_tab, format_tab_label
             current_tab = container_id
         end
 
+        local _, btn_min_y = imgui.GetItemRectMin()
+        local btn_max_x, btn_max_y = imgui.GetItemRectMax()
+        local is_full = drag_ctx and drag_ctx.is_container_full and drag_ctx.is_container_full(container_id)
+
         local hovered_for_drop = imgui.IsItemHovered(DRAG_HOVER_FLAGS)
         if is_dragging and drag_ctx.on_drop_to_container and hovered_for_drop and imgui.IsMouseReleased(ImGuiMouseButton_Left) then
             drag_ctx.on_drop_to_container(container_id)
@@ -116,6 +137,10 @@ function ui.render_left_tab_column(available_tabs, current_tab, format_tab_label
             imgui.PopStyleColor(2)
         else
             imgui.PopStyleColor(1)
+        end
+
+        if is_full and not is_dragging then
+            draw_full_badge(btn_max_x, btn_min_y, btn_max_y)
         end
 
         if i < #available_tabs then
