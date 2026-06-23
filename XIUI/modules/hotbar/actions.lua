@@ -412,7 +412,10 @@ local function buildSpellByNameLookup()
     spellByNameLookup = {};
     for _, spell in pairs(horizonSpells) do
         if spell.en then
-            spellByNameLookup[spell.en] = spell;
+            local existing = spellByNameLookup[spell.en];
+            if not existing or (existing.unlearnable and not spell.unlearnable) then
+                spellByNameLookup[spell.en] = spell;
+            end
         end
     end
 end
