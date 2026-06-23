@@ -59,6 +59,9 @@ local NATIVE_MACRO_NUMBER_KEYS = {
     [53] = true, [54] = true, [55] = true, [56] = true, [57] = true,  -- 5-9
 };
 
+-- Actual level cap; Job Points unlock spells above this without raising job level
+local MAX_JOB_LEVEL = 99;
+
 -- Arrow keys for macro set switching
 local VK_UP = 0x26;
 local VK_DOWN = 0x28;
@@ -649,9 +652,9 @@ function M.IsActionAvailable(bind)
         local mainReqLevel = levels[mainJobId];
         local subReqLevel = subJobId and levels[subJobId] or nil;
 
-        -- Check main job first
+        -- Check main job first (Job Point spells report level > 99)
         if mainReqLevel then
-            if mainJobLevel >= mainReqLevel then
+            if mainJobLevel >= mainReqLevel or mainReqLevel > MAX_JOB_LEVEL then
                 return true, nil;  -- Can cast with main job
             end
         end
