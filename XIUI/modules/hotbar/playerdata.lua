@@ -19,6 +19,8 @@ local cachedItems = nil;
 local cacheJobId = nil;
 local cacheSubJobId = nil;
 
+local MAX_JOB_LEVEL = 99;
+
 -- ============================================
 -- Container Definitions
 -- ============================================
@@ -201,8 +203,8 @@ function M.GetPlayerSpells()
                     local validMainReq = mainReqLevel > 0 and mainReqLevel < 255;
                     local validSubReq = subReqLevel > 0 and subReqLevel < 255;
 
-                    -- Check if castable by main job
-                    local canCastMain = validMainReq and mainReqLevel <= mainJobLevel;
+                    -- Check if castable by main job (Job Point spells report level > 99)
+                    local canCastMain = validMainReq and (mainReqLevel <= mainJobLevel or mainReqLevel > MAX_JOB_LEVEL);
                     -- Check if castable by sub job
                     local canCastSub = validSubReq and subReqLevel <= subJobLevel;
 
