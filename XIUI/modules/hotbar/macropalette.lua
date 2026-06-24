@@ -836,6 +836,12 @@ local function GetEditorPetCommands()
             viewedJobId = playerdata.GetCacheJobId() or 0;
         end
 
+        -- Fall back to a pet subjob (e.g. WAR/BST) so its commands still populate.
+        if not petregistry.IsPetJob(viewedJobId) then
+            local player = AshitaCore:GetMemoryManager():GetPlayer();
+            viewedJobId = petregistry.ResolvePetJob(viewedJobId, player and player:GetSubJob()) or viewedJobId;
+        end
+
         local avatarName = nil;
         local activePetName = nil;
         local avatarList = petregistry.GetAvatarList();

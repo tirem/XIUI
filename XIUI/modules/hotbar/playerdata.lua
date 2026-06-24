@@ -736,11 +736,12 @@ function M.IsPetCommandAvailable(commandName)
     local player = AshitaCore:GetMemoryManager():GetPlayer();
     if not player then return true; end
 
-    local jobId = player:GetMainJob();
     local petregistry = require('modules.hotbar.petregistry');
     local petpalette = require('modules.hotbar.petpalette');
 
-    if not petregistry.IsPetJob(jobId) then
+    -- Resolve the pet job from main OR subjob (e.g. WAR/BST grants Fight/Sic/etc.).
+    local jobId = petregistry.ResolvePetJob(player:GetMainJob(), player:GetSubJob());
+    if not jobId then
         return false;
     end
 
