@@ -23,6 +23,9 @@ local SLOT_CHILD_FLAGS = bor(ImGuiWindowFlags_NoScrollbar or 0, ImGuiWindowFlags
 local DRAG_HOVER_FLAGS = ImGuiHoveredFlags_AllowWhenBlockedByActiveItem or 0
 local DRAG_START_THRESHOLD = 4
 
+-- Anchors a drag to the slot the press landed on, not wherever the cursor drifts.
+local pending_drag = nil
+
 -- Ashita 4.3 adjusted BeginChild overloads; try multiple signatures for compatibility.
 local begin_child_signature = 0
 local function begin_child_compat(id, size, border, flags)
@@ -200,13 +203,9 @@ local function draw_slot(slot, index, key_prefix, ctx)
         ctx.on_slot_right_click(slot)
     end
 
-    -- Start dragging only after the mouse moves past a small threshold (not on a bare
-    -- click), so a click/double-click doesn't flash the drop-target colors.
-    if slot.id and slot.id > 0 and ctx.on_slot_drag_start then
-        local hovered_for_drag = imgui.IsItemHovered(DRAG_HOVER_FLAGS)
-        if hovered_for_drag and imgui.IsMouseDragging(ImGuiMouseButton_Left, DRAG_START_THRESHOLD) then
-            ctx.on_slot_drag_start(slot, tex)
-        end
+    -- IsItemClicked fires on mouse-down, capturing the true press target.
+    if slot.id and slot.id > 0 and imgui.IsItemClicked(ImGuiMouseButton_Left) then
+        pending_drag = { slot = slot, tex = tex }
     end
 
     -- After the drag block: a double-click transfers and cancels the drag it started.
@@ -339,6 +338,14 @@ function ui.render_slot_grid(slots, key_prefix, stat, ctx)
     end
     imgui.EndChild()
     imgui.PopStyleVar(1)
+
+    if pending_drag and ctx.on_slot_drag_start
+        and imgui.IsMouseDragging(ImGuiMouseButton_Left, DRAG_START_THRESHOLD) then
+        ctx.on_slot_drag_start(pending_drag.slot, pending_drag.tex)
+    end
+    if not imgui.IsMouseDown(ImGuiMouseButton_Left) then
+        pending_drag = nil
+    end
 
     local used = (stat and stat.used) or 0
     local total = (stat and stat.total) or 0

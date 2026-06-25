@@ -281,16 +281,24 @@ local function handle_drop_to_container(target_container_id)
     clear_drag_state()
 end
 
--- Double-click quick transfer: Inventory <-> Satchel (both always accessible everywhere).
-local QUICK_TRANSFER = { [0] = 5, [5] = 0 }
+-- Double-click quick transfer: Inventory sends to Satchel; any other container
+-- sends back to Inventory. can_drop_slot_to_container gates inaccessible moves.
+local INVENTORY_CONTAINER = 0
+local SATCHEL_CONTAINER = 5
 
 local function handle_double_click_transfer(slot)
     if not slot or not slot.id or slot.id <= 0 then
         return
     end
 
-    local target_container_id = QUICK_TRANSFER[tonumber(slot.container_id)]
-    if target_container_id == nil then
+    local source_container_id = tonumber(slot.container_id)
+    if source_container_id == nil then
+        return
+    end
+
+    local target_container_id = (source_container_id == INVENTORY_CONTAINER)
+        and SATCHEL_CONTAINER or INVENTORY_CONTAINER
+    if target_container_id == source_container_id then
         return
     end
 
