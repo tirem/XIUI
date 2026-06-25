@@ -158,6 +158,20 @@ function packets.create(ctx)
         })
     end
 
+    -- Native FFXI sort (0x3A): asks the server to merge/stack items in one bag.
+    -- Byte 0 of the payload is the container id; the rest is padding.
+    function M.send_sort_packet(container_id)
+        local pm = AshitaCore:GetPacketManager()
+        if not pm then return end
+
+        local bag = math.max(0, math.floor(tonumber(container_id) or 0))
+        pm:AddOutgoingPacket(0x03A, {
+            0x00, 0x00, 0x00, 0x00,
+            band(bag, 0xFF),
+            0x00, 0x00, 0x00,
+        })
+    end
+
     function M.queue_split_command(slot, qty)
         if not slot or not slot.id or slot.id <= 0 then return end
         local source_index = tonumber(slot.property_index)

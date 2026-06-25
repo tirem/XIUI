@@ -5,6 +5,7 @@ function contextmenu.create(ctx)
     local imgui = ctx.imgui
     local items = ctx.items
     local packets = ctx.packets
+    local on_sort = ctx.on_sort
 
     local M = {}
 
@@ -77,6 +78,14 @@ function contextmenu.create(ctx)
                                 imgui.SetTooltip(action.tooltip)
                             end
                         end
+                    end
+                end
+
+                if on_sort then
+                    imgui.Separator()
+                    if imgui.MenuItem('Sort Bag') then
+                        on_sort(slot)
+                        imgui.CloseCurrentPopup()
                     end
                 end
             end

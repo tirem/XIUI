@@ -111,11 +111,18 @@ local mog = mogstate.create({
     satchel = satchel,
 })
 
+-- Forward-declared so the context menu's "Sort Bag" entry can reuse the same
+-- cooldown/guard logic defined further down.
+local handle_sort_container
+
 local menus = contextmenu.create({
     satchel = satchel,
     imgui = imgui,
     items = items,
     packets = packets,
+    on_sort = function(slot)
+        handle_sort_container(slot)
+    end,
 })
 
 local is_module_enabled = settings.is_module_enabled
@@ -219,6 +226,21 @@ end
 
 local send_item_move_packet = packets.send_item_move_packet
 local find_first_empty_slot_index = packets.find_first_empty_slot_index
+local send_sort_packet = packets.send_sort_packet
+
+function handle_sort_container(slot)
+    local container_id = slot and tonumber(slot.container_id)
+    if not container_id then
+        return
+    end
+
+    if mog_house_bags[container_id] and not is_mog_house_context() then
+        return
+    end
+
+    send_sort_packet(container_id)
+    invalidate_slot_cache()
+end
 
 local function queue_commands(commands_to_run)
     if not commands_to_run or #commands_to_run == 0 then
