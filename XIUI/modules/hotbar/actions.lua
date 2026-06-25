@@ -971,7 +971,14 @@ function M.GetBindIcon(bind)
             icon = textures:Get(otherIconKey);
             if icon then return icon, iconId; end
         end
-        -- No further icon source for generic job abilities; abbreviation fallback handles display.
+        -- Fall back to the native game ability icon (abilities/<id>.png), keyed by the
+        -- ability's resource Id, so any JA without a curated icon still shows real art.
+        local abilityId = actiondb.GetAbilityId(bind.action);
+        if abilityId then
+            icon = textures:Get('abilities' .. string.format('%05d', abilityId));
+            if icon then return icon, abilityId; end
+        end
+        -- No icon source left for this job ability; abbreviation fallback handles display.
     elseif bind.actionType == 'pet' then
         -- Check for pet command icons first
         local petIconKey = petCommandToIconKey[bind.action];
