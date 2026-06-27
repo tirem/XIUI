@@ -59,6 +59,8 @@ local NATIVE_MACRO_NUMBER_KEYS = {
     [53] = true, [54] = true, [55] = true, [56] = true, [57] = true,  -- 5-9
 };
 
+local MAX_JOB_LEVEL = 99;
+
 -- Arrow keys for macro set switching
 local VK_UP = 0x26;
 local VK_DOWN = 0x28;
@@ -409,7 +411,10 @@ local function buildSpellByNameLookup()
     spellByNameLookup = {};
     for _, spell in pairs(horizonSpells) do
         if spell.en then
-            spellByNameLookup[spell.en] = spell;
+            local existing = spellByNameLookup[spell.en];
+            if not existing or (existing.unlearnable and not spell.unlearnable) then
+                spellByNameLookup[spell.en] = spell;
+            end
         end
     end
 end
@@ -423,28 +428,60 @@ local function GetSpellByName(spellName)
     return spellByNameLookup[spellName];
 end
 
---- Get MP cost for an action (only applicable to magic spells)
+-- Ability MP cost cache (static resource data), keyed by ability name
+local abilityMpCostCache = {};
+
+--- MP cost for a job ability (e.g. SMN Blood Pacts), read from the resource
+--- manager so it stays correct for any ability without a curated table.
+---@param abilityName string|nil
+---@return number|nil mpCost
+local function GetAbilityMpCost(abilityName)
+    if not abilityName or abilityName == '' then return nil; end
+
+    local cached = abilityMpCostCache[abilityName];
+    if cached ~= nil then
+        return cached or nil;
+    end
+
+    local mpCost = false;
+    local abilityId = actiondb.GetAbilityId(abilityName);
+    if abilityId then
+        local ability = AshitaCore:GetResourceManager():GetAbilityById(abilityId);
+        if ability and ability.ManaCost and ability.ManaCost > 0 then
+            mpCost = ability.ManaCost;
+        end
+    end
+
+    abilityMpCostCache[abilityName] = mpCost;
+    return mpCost or nil;
+end
+
+--- Get MP cost for an action (magic spells and MP-costing job abilities)
 ---@param bind table The keybind data with actionType and action fields
 ---@return number|nil mpCost The MP cost, or nil if not applicable
 function M.GetMPCost(bind)
     if not bind then return nil; end
 
-    -- Macros with a magic recast source surface that spell's MP cost so the
-    -- slot shows the underlying spell's mana alongside its cooldown.
-    if bind.actionType == 'macro' and bind.recastSourceType == 'ma' and bind.recastSourceAction then
-        local spell = GetSpellByName(bind.recastSourceAction);
+    -- A macro surfaces its recast source's cost; a direct ma/ja bind uses its
+    -- own action.
+    local actionType, actionName = bind.actionType, bind.action;
+    if bind.actionType == 'macro' then
+        actionType, actionName = bind.recastSourceType, bind.recastSourceAction;
+    end
+
+    if actionType == 'ma' then
+        local spell = GetSpellByName(actionName);
         if spell and spell.mp_cost and spell.mp_cost > 0 then
             return spell.mp_cost;
         end
         return nil;
     end
 
-    if bind.actionType ~= 'ma' then return nil; end
-
-    local spell = GetSpellByName(bind.action);
-    if spell and spell.mp_cost and spell.mp_cost > 0 then
-        return spell.mp_cost;
+    -- Blood Pacts and similar pet commands are abilities behind a /pet prefix.
+    if actionType == 'ja' or actionType == 'pet' then
+        return GetAbilityMpCost(actionName);
     end
+
     return nil;
 end
 
@@ -602,7 +639,9 @@ function M.IsActionAvailable(bind)
     if bind.actionType == 'ma' then
         local spellId = actiondb.GetSpellId(bind.action);
         if spellId and not player:HasSpell(spellId) then
-            return false, "N/A";
+            -- Volatile: HasSpell reads false right after zone-in until the spell
+            -- list repopulates; don't cache or it sticks "N/A". See ja/ws.
+            return false, "N/A", false;
         end
 
         local spell = GetSpellByName(bind.action);
@@ -615,9 +654,9 @@ function M.IsActionAvailable(bind)
         local mainReqLevel = levels[mainJobId];
         local subReqLevel = subJobId and levels[subJobId] or nil;
 
-        -- Check main job first
+        -- Check main job first (Job Point spells report level > 99)
         if mainReqLevel then
-            if mainJobLevel >= mainReqLevel then
+            if mainJobLevel >= mainReqLevel or mainReqLevel > MAX_JOB_LEVEL then
                 return true, nil;  -- Can cast with main job
             end
         end
@@ -644,13 +683,15 @@ function M.IsActionAvailable(bind)
     -- Handle job abilities (live HasAbility reflects current job/gear state)
     elseif bind.actionType == 'ja' then
         if not PlayerHasNamedAbility(player, bind.action, playerdata.IsAbilityInCache) then
-            return false, "N/A";
+            -- Volatile: HasAbility reads false briefly after zoning until the
+            -- ability list repopulates; don't cache or it sticks "N/A".
+            return false, "N/A", false;
         end
 
     -- Handle weapon skills (HasAbility reflects currently equipped weapon types)
     elseif bind.actionType == 'ws' then
         if not PlayerHasNamedAbility(player, bind.action, playerdata.IsWeaponskillInCache) then
-            return false, "N/A";
+            return false, "N/A", false;
         end
 
     elseif bind.actionType == 'pet' then
@@ -806,6 +847,14 @@ function M.GetBindIcon(bind)
                             icon = textures:Get('spells' .. string.format('%05d', macro.customIconId));
                             iconId = macro.customIconId;
                             if icon then return icon, iconId; end
+                        elseif macro.customIconType == 'ability' and macro.customIconId then
+                            -- customIconId is the icon file stem (ability id); pad numbers.
+                            local key = type(macro.customIconId) == 'number'
+                                and string.format('%05d', macro.customIconId)
+                                or macro.customIconId;
+                            icon = textures:Get('abilities' .. key);
+                            iconId = macro.customIconId;
+                            if icon then return icon, iconId; end
                         elseif macro.customIconType == 'item' and macro.customIconId then
                             icon = LoadItemIconById(macro.customIconId);
                             iconId = macro.customIconId;
@@ -835,6 +884,14 @@ function M.GetBindIcon(bind)
     if bind.customIconType then
         if bind.customIconType == 'spell' and bind.customIconId then
             icon = textures:Get('spells' .. string.format('%05d', bind.customIconId));
+            iconId = bind.customIconId;
+            if icon then return icon, iconId; end
+        elseif bind.customIconType == 'ability' and bind.customIconId then
+            -- customIconId is the icon file stem (ability id); pad numbers.
+            local key = type(bind.customIconId) == 'number'
+                and string.format('%05d', bind.customIconId)
+                or bind.customIconId;
+            icon = textures:Get('abilities' .. key);
             iconId = bind.customIconId;
             if icon then return icon, iconId; end
         elseif bind.customIconType == 'item' and bind.customIconId then
@@ -914,7 +971,14 @@ function M.GetBindIcon(bind)
             icon = textures:Get(otherIconKey);
             if icon then return icon, iconId; end
         end
-        -- No further icon source for generic job abilities; abbreviation fallback handles display.
+        -- Fall back to the native game ability icon (abilities/<id>.png), keyed by the
+        -- ability's resource Id, so any JA without a curated icon still shows real art.
+        local abilityId = actiondb.GetAbilityId(bind.action);
+        if abilityId then
+            icon = textures:Get('abilities' .. string.format('%05d', abilityId));
+            if icon then return icon, abilityId; end
+        end
+        -- No icon source left for this job ability; abbreviation fallback handles display.
     elseif bind.actionType == 'pet' then
         -- Check for pet command icons first
         local petIconKey = petCommandToIconKey[bind.action];

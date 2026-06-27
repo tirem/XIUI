@@ -61,6 +61,14 @@ M.spellRecasts = {};
 local spellRecastExpiry = {};      -- spellId -> os.clock() at which entry is stale
 local SPELL_RECAST_TTL = 0.05;     -- 20 Hz refresh, matches old prescan cadence
 
+-- Ability/item recasts are far more expensive than spells (slot scans / inventory
+-- reads), so cache them at 20 Hz per id like spells, deduping slots that share one.
+local abilityRecastCache = {};     -- abilityId -> remaining seconds
+local abilityRecastExpiry = {};    -- abilityId -> os.clock() expiry
+local itemRecastCache = {};        -- itemId -> remaining seconds
+local itemRecastExpiry = {};       -- itemId -> os.clock() expiry
+local ACTION_RECAST_TTL = 0.05;
+
 -- Reusable result table for GetCooldownInfo to avoid GC pressure
 -- (Creating ~7200 tables/sec with 120 slots @ 60fps causes periodic GC hitches)
 local cooldownResult = {
@@ -100,7 +108,15 @@ end
 -- Returns: remaining seconds, or 0 if ready
 function M.GetAbilityRecast(abilityId)
     if not abilityId then return 0; end
-    return abilityRecast.GetAbilityRecastByAbilityId(abilityId);
+    local now = os.clock();
+    local exp = abilityRecastExpiry[abilityId];
+    if exp and now < exp then
+        return abilityRecastCache[abilityId] or 0;
+    end
+    local remaining = abilityRecast.GetAbilityRecastByAbilityId(abilityId);
+    abilityRecastCache[abilityId] = (remaining and remaining > 0) and remaining or nil;
+    abilityRecastExpiry[abilityId] = now + ACTION_RECAST_TTL;
+    return abilityRecastCache[abilityId] or 0;
 end
 
 -- Get item/equipment recast by item ID
@@ -108,8 +124,15 @@ end
 -- Returns: remaining seconds, or 0 if ready
 function M.GetItemRecast(itemId)
     if not itemId then return 0; end
-    local recast, count = itemRecast.GetRecast(itemId);
-    return recast or 0;
+    local now = os.clock();
+    local exp = itemRecastExpiry[itemId];
+    if exp and now < exp then
+        return itemRecastCache[itemId] or 0;
+    end
+    local recast = itemRecast.GetRecast(itemId);
+    itemRecastCache[itemId] = (recast and recast > 0) and recast or nil;
+    itemRecastExpiry[itemId] = now + ACTION_RECAST_TTL;
+    return itemRecastCache[itemId] or 0;
 end
 
 -- Format recast time for display

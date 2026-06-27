@@ -511,8 +511,9 @@ function M.createCrossbarDefaults()
         inactiveSlotDim = 0.5,              -- Dim multiplier for inactive side
 
         -- Display mode
-        displayMode = 'normal',             -- 'normal' or 'activeOnly'
-        fadeAnimationDuration = 0.15,       -- Fade in/out duration for activeOnly mode
+        displayMode = 'normal',             -- 'normal', 'activeOnly', or 'combatOnly'
+        fadeAnimationDuration = 0.15,       -- Fade in/out duration for visibility-managed modes
+        combatTriggerReleaseDelay = 5.0,    -- Seconds to keep combatOnly visible after L2/R2 release
 
         -- Window colors
         bgColor = 0xFFFFFFFF,

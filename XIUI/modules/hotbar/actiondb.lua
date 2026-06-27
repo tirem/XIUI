@@ -22,7 +22,11 @@ local function BuildSpellLookup()
         local spell = resourceMgr:GetSpellById(id);
         if spell and spell.Name and spell.Name[1] then
             local name = spell.Name[1]:lower();
-            M.spellNameToId[name] = id;
+            -- Keep the lowest id for duplicate names: some spells (e.g. Sleepga)
+            -- have an unlearnable higher-id variant that HasSpell never matches.
+            if not M.spellNameToId[name] then
+                M.spellNameToId[name] = id;
+            end
         end
     end
 end
@@ -35,11 +39,16 @@ local function BuildAbilityLookup()
     local resourceMgr = AshitaCore:GetResourceManager();
     if not resourceMgr then return; end
 
-    for id = 0, 1024 do
+    -- Up to 2048: Blood Pacts live at 1024+ (e.g. Healing Ruby II, Whispering Wind).
+    for id = 0, 2048 do
         local ability = resourceMgr:GetAbilityById(id);
         if ability and ability.Name and ability.Name[1] then
             local name = ability.Name[1]:lower();
-            M.abilityNameToId[name] = id;
+            -- Keep the lowest id for duplicate names (same as spells): some abilities
+            -- have a higher-id variant that HasAbility never matches.
+            if not M.abilityNameToId[name] then
+                M.abilityNameToId[name] = id;
+            end
         end
     end
 end

@@ -479,7 +479,9 @@ function data.GetMemberInformation(memIdx)
                 hpMaxFromParty = math.floor((memberInfo.hp * 100) / hpPercentParty + 0.5);
             end
 
-            memberInfo.maxhp = hpMaxPlayer;
+            -- Floor at current HP: GetHPMax() can read stale after a level-up
+            -- (esp. under level sync). Party-derived max is always >= current HP.
+            memberInfo.maxhp = math.max(hpMaxPlayer, memberInfo.hp or 0);
             if hpMaxFromParty > 0 then
                 if hpMaxPlayer == 0 or math.abs(hpMaxFromParty - hpMaxPlayer) > 50 then
                     memberInfo.maxhp = hpMaxFromParty;
@@ -495,7 +497,8 @@ function data.GetMemberInformation(memIdx)
                 mpMaxFromParty = math.floor((memberInfo.mp * 100) / mpPercentParty + 0.5);
             end
 
-            memberInfo.maxmp = mpMaxPlayer;
+            -- Floor at current MP up front (same staleness guard as HP).
+            memberInfo.maxmp = math.max(mpMaxPlayer, memberInfo.mp or 0);
             if mpMaxFromParty > 0 then
                 if mpMaxPlayer == 0 or math.abs(mpMaxFromParty - mpMaxPlayer) > 20 then
                     memberInfo.maxmp = mpMaxFromParty;

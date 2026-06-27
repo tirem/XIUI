@@ -46,6 +46,7 @@ local crossbar = require('modules.hotbar.crossbar');
 local controller = require('modules.hotbar.controller');
 local textures = require('modules.hotbar.textures');
 local hotbarConfig = require('config.hotbar');
+local paletteManager = require('config.palettemanager');
 local slotrenderer = require('modules.hotbar.slotrenderer');
 local petpalette = require('modules.hotbar.petpalette');
 local palette = require('modules.hotbar.palette');
@@ -366,9 +367,11 @@ function M.DrawWindow(settings)
         crossbar.SetHidden(true);
     end
 
-    -- Always draw macro palette and keybind modal (regardless of mode)
+    -- Always draw macro palette, keybind modal and palette manager (regardless of
+    -- mode), so they render whether or not the config menu is open.
     macropalette.DrawPalette();
     hotbarConfig.DrawKeybindModal();
+    paletteManager.Draw();
 
     -- Render drag preview (must be called at end of frame, after all drop zones)
     dragdrop.Render();
@@ -470,6 +473,26 @@ function M.HandleJobChangePacket(e)
     ashita.tasks.once(0.5, function()
         TrySetJob(1);
     end);
+end
+
+-- Reapply the current job's palettes to the live bars without an addon reload.
+-- Used after palette-library edits (e.g. "Use Shared Library") so the active
+-- hotbar/crossbar immediately reflect the new palette set. Synchronous: the job
+-- is already known here, so there's no need for the packet retry loop.
+function M.RefreshForCurrentJob()
+    if not data.SetPlayerJob() then
+        return false;
+    end
+    macropalette.SyncToCurrentJob();
+    palette.ValidatePalettesForJob(data.jobId, data.subjobId);
+    display.ClearIconCache();
+    actions.ClearNoIconCache();
+    if crossbarInitialized then
+        crossbar.ClearIconCache();
+    end
+    slotrenderer.ClearAvailabilityCache();
+    petpalette.CheckPetState();
+    return true;
 end
 
 -- Handle pet sync packet (0x0068)

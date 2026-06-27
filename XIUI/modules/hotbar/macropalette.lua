@@ -348,9 +348,9 @@ local copyTargetIndex = { 1 };
 -- Icon picker state
 local iconPickerOpen = false;
 local iconPickerFilter = { '' };
-local iconPickerTab = 1;  -- 1 = Spells, 2 = Items, 3 = Custom
-local iconPickerPage = { 1, 1, 1 };  -- Current page for each tab [spells, items, custom]
-local iconPickerLastFilter = { '', '', '' };  -- Track filter changes to reset page
+local iconPickerTab = 1;  -- 1 = Spells, 2 = Items, 3 = Custom, 4 = Abilities
+local iconPickerPage = { 1, 1, 1, 1 };  -- Current page for each tab [spells, items, custom, abilities]
+local iconPickerLastFilter = { '', '', '', '' };  -- Track filter changes to reset page
 local iconPickerSpellType = 'All';  -- Current spell type filter
 
 -- Spell type display names and order
@@ -467,6 +467,8 @@ local filteredSpellsCache = nil;
 local filteredSpellsCacheKey = nil;  -- "filter:type" key for cache invalidation
 local filteredItemsCache = nil;
 local filteredItemsCacheKey = nil;  -- "filter" key for cache invalidation
+local filteredAbilitiesCache = nil;
+local filteredAbilitiesCacheKey = nil;  -- "filter" key for cache invalidation
 
 -- Icon picker grid constants
 local ICON_GRID_COLUMNS_DEFAULT = 12;  -- Default columns, recalculated based on window width
@@ -498,6 +500,10 @@ end
 
 -- Cached spell list for icon picker (all spells, not just player-known)
 local allSpellsCache = nil;
+
+-- Cached ability list for icon picker (all abilities with a native icon, not
+-- just player-known)
+local allAbilitiesCache = nil;
 
 -- Item icon loading state (for lazy loading)
 local itemIconLoadState = {
@@ -599,6 +605,68 @@ local function GetAllSpells()
     end);
 
     return allSpellsCache;
+end
+
+-- Native ability icon files are keyed by IAbility.Id (e.g. Mighty Strikes Id 528
+-- -> abilities/00528.png), one unique icon per ability, no lookups needed.
+local ABILITY_ID_MIN = 0x200;
+local ABILITY_ID_MAX = 0x600;
+
+-- IAbility.Type values kept out of the icon picker. PetCommands (Maneuvers,
+-- BST/DRG /pet) are allowed; only weapon skills, traits and mob moves are hidden.
+local NON_MENU_ABILITY_TYPES = {
+    [3]  = true,  -- WeaponSkill
+    [4]  = true,  -- Trait (passive)
+    [20] = true,  -- MonsterSkill (charmed-mob TP moves)
+};
+
+-- Resolve an ability's icon file stem from its id (e.g. Id 528 -> "00528").
+local function GetAbilityIconStem(ability)
+    local id = ability.Id;
+    if not id or id == 0 then return nil; end
+    return string.format('%05d', id);
+end
+
+-- Build cache of all abilities that have a native icon (for icon picker)
+local function GetAllAbilities()
+    if allAbilitiesCache then
+        return allAbilitiesCache;
+    end
+
+    allAbilitiesCache = {};
+    local resMgr = AshitaCore:GetResourceManager();
+    if not resMgr then return allAbilitiesCache; end
+
+    -- Ability resources are addressed by their canonical id (job abilities live
+    -- in the 0x200..0x600 range). The icon file is keyed by that same ability.Id.
+    local seenNames = {};
+    for id = ABILITY_ID_MIN, ABILITY_ID_MAX do
+        local ability = resMgr:GetAbilityById(id);
+        if ability and ability.Name and ability.Name[1] and ability.Name[1] ~= '' then
+            local abilityType = ability.Type or 0;
+            local name = ability.Name[1];
+            -- Skip non-menu abilities (mob/pet moves, WS, traits) and duplicates.
+            if not NON_MENU_ABILITY_TYPES[abilityType] and not seenNames[name]
+                and not playerdata.IsGarbageSpellName(name) then
+                local stem = GetAbilityIconStem(ability);
+                local iconKey = stem and ('abilities' .. stem);
+                if iconKey and textures:Get(iconKey) then
+                    seenNames[name] = true;
+                    table.insert(allAbilitiesCache, {
+                        id = stem,  -- icon file stem (ability id), e.g. "00528"
+                        name = name,
+                        iconKey = iconKey,
+                    });
+                end
+            end
+        end
+    end
+
+    table.sort(allAbilitiesCache, function(a, b)
+        return a.name:lower() < b.name:lower();
+    end);
+
+    return allAbilitiesCache;
 end
 
 -- Load a batch of item icons (for lazy loading)
@@ -766,6 +834,12 @@ local function GetEditorPetCommands()
         local viewedJobId = selectedPaletteType;
         if type(viewedJobId) ~= 'number' then
             viewedJobId = playerdata.GetCacheJobId() or 0;
+        end
+
+        -- Fall back to a pet subjob (e.g. WAR/BST) so its commands still populate.
+        if not petregistry.IsPetJob(viewedJobId) then
+            local player = AshitaCore:GetMemoryManager():GetPlayer();
+            viewedJobId = petregistry.ResolvePetJob(viewedJobId, player and player:GetSubJob()) or viewedJobId;
         end
 
         local avatarName = nil;
@@ -1878,39 +1952,9 @@ local function DrawMacroTile(macro, index, x, y, size)
     return isHovered;
 end
 
--- Apply XIUI window styling
-local function PushWindowStyle()
-    imgui.PushStyleColor(ImGuiCol_WindowBg, COLORS.bgDark);
-    imgui.PushStyleColor(ImGuiCol_TitleBg, COLORS.bgMedium);
-    imgui.PushStyleColor(ImGuiCol_TitleBgActive, COLORS.bgLight);
-    imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
-    imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgMedium);
-    imgui.PushStyleColor(ImGuiCol_ButtonHovered, COLORS.bgLight);
-    imgui.PushStyleColor(ImGuiCol_ButtonActive, COLORS.bgLighter);
-    imgui.PushStyleColor(ImGuiCol_FrameBg, COLORS.bgDark);
-    imgui.PushStyleColor(ImGuiCol_FrameBgHovered, COLORS.bgMedium);
-    imgui.PushStyleColor(ImGuiCol_FrameBgActive, COLORS.bgLight);
-    imgui.PushStyleColor(ImGuiCol_Header, COLORS.bgMedium);
-    imgui.PushStyleColor(ImGuiCol_HeaderHovered, COLORS.bgLight);
-    imgui.PushStyleColor(ImGuiCol_HeaderActive, COLORS.bgLighter);
-    imgui.PushStyleColor(ImGuiCol_Separator, COLORS.border);
-    imgui.PushStyleColor(ImGuiCol_Text, COLORS.text);
-    -- Scrollbar colors
-    imgui.PushStyleColor(ImGuiCol_ScrollbarBg, COLORS.bgDark);
-    imgui.PushStyleColor(ImGuiCol_ScrollbarGrab, COLORS.bgLight);
-    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabHovered, COLORS.bgLighter);
-    imgui.PushStyleColor(ImGuiCol_ScrollbarGrabActive, COLORS.gold);
-    imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, 4);
-    imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, 3);
-    imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {10, 10});
-    imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {6, 4});
-    imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {8, 6});
-end
-
-local function PopWindowStyle()
-    imgui.PopStyleVar(5);
-    imgui.PopStyleColor(19);  -- 15 base + 4 scrollbar colors
-end
+-- Window styling lives in config.components (shared with the palette manager).
+local PushWindowStyle = components.PushWindowStyle;
+local PopWindowStyle = components.PopWindowStyle;
 
 -- Build job list for dropdown
 local JOB_LIST = {};
@@ -2867,6 +2911,22 @@ local function DrawIconPicker()
 
         imgui.SameLine();
 
+        -- Abilities tab
+        if iconPickerTab == 4 then
+            imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
+            imgui.PushStyleColor(ImGuiCol_Border, COLORS.gold);
+        else
+            imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgDark);
+            imgui.PushStyleColor(ImGuiCol_Border, COLORS.border);
+        end
+        if imgui.Button('Abilities', {tabWidth + 12, 24}) then
+            iconPickerTab = 4;
+            -- Keep filter text, don't reset - reduces lag from cache rebuilds
+        end
+        imgui.PopStyleColor(2);
+
+        imgui.SameLine();
+
         -- Items tab
         if iconPickerTab == 2 then
             imgui.PushStyleColor(ImGuiCol_Button, COLORS.bgLight);
@@ -3130,6 +3190,8 @@ local function DrawIconPicker()
             cacheKey = filter .. ':item:' .. tostring(iconPickerItemType);
         elseif iconPickerTab == 3 then
             cacheKey = filter .. ':custom:' .. customIconCategory;
+        elseif iconPickerTab == 4 then
+            cacheKey = filter .. ':ability';
         end
 
         -- Reset page and invalidate cache if filter/type changed
@@ -3152,6 +3214,13 @@ local function DrawIconPicker()
                 iconPickerPage[3] = 1;
                 currentPage = 1;
                 customIconsCacheKey = cacheKey;
+            end
+        elseif iconPickerTab == 4 then
+            if cacheKey ~= filteredAbilitiesCacheKey then
+                iconPickerPage[4] = 1;
+                currentPage = 1;
+                filteredAbilitiesCache = nil;
+                filteredAbilitiesCacheKey = cacheKey;
             end
         end
 
@@ -3213,6 +3282,19 @@ local function DrawIconPicker()
         elseif iconPickerTab == 3 then
             -- Custom icons - use pre-filtered category list
             filteredItems = GetCustomIconsFiltered(customIconCategory, filter);
+        elseif iconPickerTab == 4 then
+            if filteredAbilitiesCache then
+                filteredItems = filteredAbilitiesCache;
+            else
+                local allAbilities = GetAllAbilities();
+                for _, ability in ipairs(allAbilities) do
+                    local abilityName = ability.name or '';
+                    if filter == '' or abilityName:lower():find(filter, 1, true) then
+                        table.insert(filteredItems, ability);
+                    end
+                end
+                filteredAbilitiesCache = filteredItems;
+            end
         end
 
         local totalItems = #filteredItems;
@@ -3226,6 +3308,9 @@ local function DrawIconPicker()
                 countText = countText .. ' (' .. (SPELL_TYPE_LABELS[iconPickerSpellType] or iconPickerSpellType) .. ')';
             end
             imgui.TextColored(COLORS.textMuted, countText);
+        elseif iconPickerTab == 4 then
+            local allAbilities = GetAllAbilities();
+            imgui.TextColored(COLORS.textMuted, string.format('%d of %d abilities', totalItems, #allAbilities));
         elseif iconPickerTab == 3 then
             local allCustom = LoadCustomIcons();
             local countText = string.format('%d of %d custom icons', totalItems, #allCustom);
@@ -3428,6 +3513,34 @@ local function DrawIconPicker()
                             if DrawIconButton('##spell' .. spell.id, icon, ICON_GRID_SIZE, isSelected, tooltipText) then
                                 editingMacro.customIconType = 'spell';
                                 editingMacro.customIconId = spell.id;
+                                iconPickerOpen = false;
+                            end
+
+                            displayedCount = displayedCount + 1;
+                        end
+                    end
+                end
+            end
+
+        elseif iconPickerTab == 4 then
+            -- Ability icons - render current page from filtered list
+            if totalItems == 0 then
+                imgui.TextColored(COLORS.textMuted, 'No matching abilities found');
+            else
+                for i = startIdx, endIdx do
+                    local ability = filteredItems[i];
+                    if ability then
+                        local icon = textures:Get(ability.iconKey);
+                        if icon and icon.image then
+                            local col = displayedCount % iconGridColumns;
+                            if col > 0 then
+                                imgui.SameLine(0, ICON_GRID_GAP);
+                            end
+
+                            local isSelected = editingMacro.customIconType == 'ability' and editingMacro.customIconId == ability.id;
+                            if DrawIconButton('##ability' .. i, icon, ICON_GRID_SIZE, isSelected, ability.name) then
+                                editingMacro.customIconType = 'ability';
+                                editingMacro.customIconId = ability.id;
                                 iconPickerOpen = false;
                             end
 
@@ -3646,8 +3759,8 @@ local function DrawIconPicker()
     if not isOpen[1] then
         iconPickerOpen = false;
         iconPickerFilter[1] = '';
-        iconPickerPage = { 1, 1, 1 };  -- Reset pages
-        iconPickerLastFilter = { '', '', '' };
+        iconPickerPage = { 1, 1, 1, 1 };  -- Reset pages
+        iconPickerLastFilter = { '', '', '', '' };
         iconPickerSpellType = 'All';  -- Reset spell type filter
         iconPickerItemType = 0;  -- Reset item type filter (0 = All)
         customIconCategory = 'all';  -- Reset custom category filter
@@ -3656,6 +3769,8 @@ local function DrawIconPicker()
         filteredSpellsCacheKey = nil;
         filteredItemsCache = nil;
         filteredItemsCacheKey = nil;
+        filteredAbilitiesCache = nil;
+        filteredAbilitiesCacheKey = nil;
         customIconsCacheKey = nil;
         -- Reset progressive icon loading
         ResetIconLoading();

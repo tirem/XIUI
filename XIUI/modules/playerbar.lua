@@ -85,7 +85,9 @@ playerbar.DrawWindow = function(settings)
 	if SelfHPPercentParty and SelfHPPercentParty > 0 then
 		SelfHPMaxFromParty = math.floor((SelfHP * 100) / SelfHPPercentParty + 0.5);
 	end
-	local SelfHPMax = SelfHPMaxPlayer;
+	-- Floor at current HP: GetHPMax() can read stale after a level-up (esp. under
+	-- level sync). Party-derived max is always >= current HP, so the floor holds.
+	local SelfHPMax = math.max(SelfHPMaxPlayer, SelfHP or 0);
 	if SelfHPMaxFromParty > 0 then
 		if SelfHPMaxPlayer == 0 or math.abs(SelfHPMaxFromParty - SelfHPMaxPlayer) > 50 then
 			SelfHPMax = SelfHPMaxFromParty;
@@ -99,7 +101,9 @@ playerbar.DrawWindow = function(settings)
 	if SelfMPPercentParty and SelfMPPercentParty > 0 then
 		SelfMPMaxFromParty = math.floor((SelfMP * 100) / SelfMPPercentParty + 0.5);
 	end
-	local SelfMPMax = SelfMPMaxPlayer;
+	-- Floor at current MP up front (GetMPMax() can read stale; see HP). Party-
+	-- derived max is always >= current MP, so the floor holds.
+	local SelfMPMax = math.max(SelfMPMaxPlayer, SelfMP or 0);
 	if SelfMPMaxFromParty > 0 then
 		if SelfMPMaxPlayer == 0 or math.abs(SelfMPMaxFromParty - SelfMPMaxPlayer) > 20 then
 			SelfMPMax = SelfMPMaxFromParty;

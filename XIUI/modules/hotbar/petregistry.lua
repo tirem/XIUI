@@ -135,6 +135,14 @@ function M.IsPetJob(jobId)
     return M.jobPetCategories[jobId] ~= nil;
 end
 
+-- Resolve the pet job from main or subjob (e.g. WAR/BST), since a pet subjob also
+-- grants pet commands. Returns a pet job id, or nil if neither qualifies.
+function M.ResolvePetJob(mainJobId, subJobId)
+    if M.IsPetJob(mainJobId) then return mainJobId; end
+    if subJobId and M.IsPetJob(subJobId) then return subJobId; end
+    return nil;
+end
+
 -- Get pet categories for a job
 function M.GetPetCategories(jobId)
     return M.jobPetCategories[jobId] or {};

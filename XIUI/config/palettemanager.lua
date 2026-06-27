@@ -58,13 +58,26 @@ end
 -- Open the palette manager window
 function M.Open()
     windowState.isOpen = true;
-    -- Initialize with current job if not set
-    if not windowState.selectedJobId then
-        windowState.selectedJobId = data.jobId or 1;
+
+    -- Always open on the player's CURRENT job, not the last-used selection.
+    windowState.selectedJobId = data.jobId or 1;
+
+    -- Default the subjob selector to the current subjob only if it has its own
+    -- palettes; otherwise show the Shared library (subjob 0). This mirrors what's
+    -- actually active for the current job.
+    local currentSubjob = data.subjobId or 0;
+    windowState.selectedSubjobId = 0;
+    if currentSubjob ~= 0 then
+        for _, sid in ipairs(palette.GetSubjobsWithPalettes(windowState.selectedJobId)) do
+            if sid == currentSubjob then
+                windowState.selectedSubjobId = currentSubjob;
+                break;
+            end
+        end
     end
-    if not windowState.selectedSubjobId then
-        windowState.selectedSubjobId = data.subjobId or 0;
-    end
+
+    -- Re-resolve the palette list for the (possibly changed) job/subjob.
+    windowState.selectedPaletteName = nil;
 end
 
 -- Close the palette manager window
@@ -165,6 +178,29 @@ local function DrawSubjobSelector()
     return changed;
 end
 
+-- Activate a palette on the live bars, but only when the manager is viewing the
+-- job/subjob the player is currently on (same guard as the create flow). Selecting
+-- a palette for a job you aren't playing must not change your live bar.
+local function ActivateSelectedPalette(paletteName)
+    if not paletteName then
+        return;
+    end
+
+    local currentJobId = data.jobId;
+    local currentSubjobId = data.subjobId or 0;
+    local viewingShared = (windowState.selectedSubjobId == 0);
+    local viewingCurrentJob = (windowState.selectedJobId == currentJobId);
+    local viewingCurrentSubjob = (windowState.selectedSubjobId == currentSubjobId);
+
+    if viewingCurrentJob and (viewingShared or viewingCurrentSubjob) then
+        if windowState.selectedPaletteType == 'hotbar' then
+            palette.SetActivePalette(1, paletteName, currentJobId, currentSubjobId);
+        else
+            palette.SetActivePaletteForCombo('L2', paletteName);
+        end
+    end
+end
+
 -- Helper: Draw palette list
 local function DrawPaletteList()
     local palettes;
@@ -216,6 +252,8 @@ local function DrawPaletteList()
 
             if imgui.Selectable(paletteName .. '##palette' .. i, isSelected) then
                 windowState.selectedPaletteName = paletteName;
+                -- Switch the live bar to this palette (when on the viewed job/subjob).
+                ActivateSelectedPalette(paletteName);
             end
 
             if isSelected then
@@ -423,20 +461,7 @@ local function DrawCreateRenameModal()
 
                     -- Activate the newly created palette if viewing current job's palettes
                     if modalState.mode == 'create' then
-                        local currentJobId = data.jobId;
-                        local currentSubjobId = data.subjobId or 0;
-                        local viewingShared = (windowState.selectedSubjobId == 0);
-                        local viewingCurrentJob = (windowState.selectedJobId == currentJobId);
-                        local viewingCurrentSubjob = (windowState.selectedSubjobId == currentSubjobId);
-
-                        -- Activate if: viewing this job's shared library OR viewing exact job/subjob match
-                        if viewingCurrentJob and (viewingShared or viewingCurrentSubjob) then
-                            if windowState.selectedPaletteType == 'hotbar' then
-                                palette.SetActivePalette(1, newName, currentJobId, currentSubjobId);
-                            else
-                                palette.SetActivePaletteForCombo('L2', newName);
-                            end
-                        end
+                        ActivateSelectedPalette(newName);
                     end
 
                     modalState.isOpen = false;
@@ -681,6 +706,12 @@ local function DrawUseSharedModal()
                 windowState.selectedPaletteName = nil;
                 modalState.isOpen = false;
                 imgui.CloseCurrentPopup();
+                -- Apply to the live bars immediately (no addon reload needed).
+                -- Lazy require avoids a load-time cycle: hotbar.init requires this module.
+                local hotbar = require('modules.hotbar.init');
+                if hotbar.RefreshForCurrentJob then
+                    hotbar.RefreshForCurrentJob();
+                end
             else
                 modalState.errorMessage = 'Failed to delete palettes';
             end
@@ -706,6 +737,7 @@ function M.Draw()
     local windowFlags = ImGuiWindowFlags_None;
     local isOpen = { windowState.isOpen };
 
+    components.PushWindowStyle();
     if imgui.Begin('Palette Manager##paletteManager', isOpen, windowFlags) then
         -- Type selector
         DrawPaletteTypeSelector();
@@ -730,6 +762,7 @@ function M.Draw()
         DrawUseSharedModal();
     end
     imgui.End();
+    components.PopWindowStyle();
 
     windowState.isOpen = isOpen[1];
 end

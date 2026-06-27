@@ -122,6 +122,7 @@ expbar.DrawWindow = function(settings)
     else
         progressBarProgress = expPointsProgress
     end
+    progressBarProgress = math.max(0, math.min(progressBarProgress, 1.0));
 
     local inlineMode = gConfig.expBarInlineMode;
     local expBarTextMargin = 10;
@@ -359,14 +360,16 @@ expbar.HandlePacket = function(e)
 
             if msgId == 371 or msgId == 372 then
                 expbar.limitPoints[1] = expbar.limitPoints[1] + val;
-                if (expbar.limitPoints[1] > expbar.limitPoints[2]) then
-                    expbar.limitPoints[1] = expbar.limitPoints[1] - expbar.limitPoints[2];
+                -- Wrap with modulo: a single gain can exceed a full bar.
+                if (expbar.limitPoints[1] >= expbar.limitPoints[2]) then
+                    expbar.limitPoints[1] = expbar.limitPoints[1] % expbar.limitPoints[2];
                 end
                 -- print('Limit points A: ' .. expbar.limitPoints[1] .. ' / ' .. expbar.limitPoints[2] .. ' #' .. msgId);
             elseif msgId == 718 or msgId == 735 then
                 expbar.capacityPoints[1] = expbar.capacityPoints[1] + val;
-                if (expbar.capacityPoints[1] > expbar.capacityPoints[2]) then
-                    expbar.capacityPoints[1] = expbar.capacityPoints[1] - expbar.capacityPoints[2];
+                -- Wrap with modulo: a single kill can grant more than a full 30k bar.
+                if (expbar.capacityPoints[1] >= expbar.capacityPoints[2]) then
+                    expbar.capacityPoints[1] = expbar.capacityPoints[1] % expbar.capacityPoints[2];
                 end
             elseif msgId == 50 or msgId == 368 then
                 expbar.meritPoints[1] = val;

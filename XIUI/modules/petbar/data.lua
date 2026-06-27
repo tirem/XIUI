@@ -394,32 +394,31 @@ function data.TrackPetSummon(petName, petJob)
 
     -- Determine pet type and calculate expiration
     local jugInfo = data.GetJugPetInfo(petName);
+    local player = GetPlayerSafe();
+    local subJob = player and player:GetSubJob() or 0;
+    -- Charm detection: BST main has no native pet (any non-jug = charm); a pet-job
+    -- main + /BST uses charmTarget (only Charm sets it) to tell wyvern from charm.
+    local isCharm = false;
+    if not jugInfo then
+        if petJob == data.JOB_BST then
+            isCharm = true;
+        elseif subJob == data.JOB_BST then
+            isCharm = data.charmTarget ~= nil;
+        end
+    end
+
     if jugInfo then
         data.petType = 'jug';
         data.petExpireTime = data.petSummonTime + (jugInfo.duration * 60);
         data.charmExpireTime = nil;
-    elseif petJob == data.JOB_BST and not data.petImageMap[petName] then
-        -- BST pet that isn't an avatar = charmed pet
+    elseif isCharm then
+        -- charmExpireTime is set via charm packet interception (calculateCharmTime).
         data.petType = 'charm';
         data.petExpireTime = nil;
-        -- data.charmExpireTime set via packet interception (calculateCharmTime)
-        -- If we missed the packet (e.g. reload), we might not have a timer.
-        if data.charmExpireTime == nil then
-             -- Fallback or indicate unknown?
-        end
     elseif petJob == data.JOB_SMN then
-        -- SMN/BST charm: if sub is BST and pet is not an avatar, use charm bar
-        local player = GetPlayerSafe();
-        local subJob = player and player:GetSubJob() or 0;
-        if subJob == data.JOB_BST and not data.petImageMap[petName] then
-            data.petType = 'charm';
-            data.petExpireTime = nil;
-            -- charmExpireTime set via packet interception
-        else
-            data.petType = 'avatar';
-            data.petExpireTime = nil;
-            data.charmExpireTime = nil;
-        end
+        data.petType = 'avatar';
+        data.petExpireTime = nil;
+        data.charmExpireTime = nil;
     elseif petJob == data.JOB_DRG then
         data.petType = 'wyvern';
         data.petExpireTime = nil;  -- Wyverns don't expire on timer
@@ -939,8 +938,9 @@ function data.GetPetRecasts()
     local petJob = data.GetPetJob();
     if not petJob then return timers; end
 
-    -- SMN/BST charm: use BST ability list (Sic, Reward) instead of SMN (blood pacts)
-    if petJob == data.JOB_SMN and data.GetPetTypeKey() == 'charm' then
+    -- Charmed pet: show BST ability timers (Ready/Reward) regardless of the pet-job
+    -- main (DRG/BST, SMN/BST, etc.) instead of that main's native pet timers.
+    if data.GetPetTypeKey() == 'charm' then
         petJob = data.JOB_BST;
     end
 

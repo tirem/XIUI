@@ -62,6 +62,11 @@ local mpCostCache = {};
 -- Structure: { isAvailable = bool, reason = string|nil }
 local availabilityCache = {};
 
+-- Throttle (keyed by bindKey) so the expensive availability key build doesn't run
+-- every slot every frame. Refreshed ~1 Hz; job/gear/zone changes clear it.
+local availabilityStateMemo = {};
+local AVAIL_MEMO_TTL = 1.0;
+
 -- Cache for item quantity lookups (keyed by itemId or itemName)
 -- Structure: { quantity = number, timestamp = number }
 -- CRITICAL: Without this cache, item quantity lookups scan ALL inventory slots EVERY FRAME
@@ -387,6 +392,7 @@ end
 -- Clear all cached state
 function M.ClearAllCache()
     availabilityCache = {};
+    availabilityStateMemo = {};
     mpCostCache = {};
     equipmentCheckCache = {};
     ninjutsuCache = {};
@@ -406,6 +412,7 @@ end
 -- Clear availability cache (call on job change, level sync, etc.)
 function M.ClearAvailabilityCache()
     availabilityCache = {};
+    availabilityStateMemo = {};
 end
 
 -- Clear MP cost cache (call when a slot's action/spell may have changed, e.g. macro edits).
@@ -460,19 +467,33 @@ local function GetAvailabilityState(bind, bindKey)
         return false, nil;
     end
 
+    local now = os.clock();
+    local memo = availabilityStateMemo[bindKey];
+    if memo and (now - memo.ts) < AVAIL_MEMO_TTL then
+        return memo.isUnavailable, memo.reason;
+    end
+
     local availKey = BuildAvailabilityCacheKey(bind, bindKey);
     local cached = availabilityCache[availKey];
     if cached == nil then
-        local available, reason = actions.IsActionAvailable(bind);
-        if reason ~= 'pending' then
+        local available, reason, cacheable = actions.IsActionAvailable(bind);
+        if reason == 'pending' then
+            -- Transient (e.g. job data invalid while zoning): use this frame's
+            -- value, drop the reason, and don't cache.
+            cached = { isAvailable = available, reason = nil };
+        elseif cacheable == false then
+            -- Volatile negative (list not loaded yet post-zone): use it this frame
+            -- but don't cache, so it self-heals once the list loads.
+            cached = { isAvailable = available, reason = reason };
+        else
             availabilityCache[availKey] = { isAvailable = available, reason = reason };
             cached = availabilityCache[availKey];
-        else
-            cached = { isAvailable = available, reason = nil };
         end
     end
 
-    return not cached.isAvailable, cached.reason;
+    local isUnavailable = not cached.isAvailable;
+    availabilityStateMemo[bindKey] = { ts = now, isUnavailable = isUnavailable, reason = cached.reason };
+    return isUnavailable, cached.reason;
 end
 
 local function GetAssetsPath()
@@ -752,7 +773,10 @@ function M.DrawSlot(params)
     local bindKey = bind and ((bind.actionType or '') .. ':' .. (bind.action or '')) or '';
     local hasMpCost = bind and (
         bind.actionType == 'ma'
-        or (bind.actionType == 'macro' and bind.recastSourceType == 'ma' and bind.recastSourceAction)
+        or bind.actionType == 'ja'
+        or (bind.actionType == 'macro'
+            and (bind.recastSourceType == 'ma' or bind.recastSourceType == 'ja')
+            and bind.recastSourceAction)
     );
     if hasMpCost then
         local mpCost = mpCostCache[bindKey];
