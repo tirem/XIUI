@@ -33,6 +33,10 @@ addon.link      = 'https://github.com/tirem/XIUI'
 _G._XIUI_USE_ASHITA_4_3 = nil;
 require('handlers.imgui_compat');
 
+-- Global switch to hard-disable functionality that is limited on HX servers.
+-- Set before module requires so load-time checks (e.g. petbar data) see the correct value.
+HzLimitedMode = true;
+
 -- =================
 -- = XIUI DEV ONLY =
 -- =================
@@ -94,9 +98,6 @@ local diagnostics = require('libs.diagnostics');
 local TextureManager = require('libs.texturemanager');
 local imtext = require('libs.imtext');
 local components = require('config.components');
-
--- Global switch to hard-disable functionality that is limited on HX servers
-HzLimitedMode = true;
 
 -- Flag to skip settings_update callback during internal saves
 local bInternalSave = false;

@@ -15,7 +15,7 @@ function M.DrawSettings()
     imgui.ShowHelp('Let XIUI handle the /satchel command (toggles this window). When off, /satchel is left for the game or other addons. /xiui satchel always works.');
 
     components.DrawCheckbox('Close on ESC', 'satchelCloseOnEscape');
-    imgui.ShowHelp('When the satchel window is open, pressing ESC closes it. When off, ESC is left alone for the game.');
+    imgui.ShowHelp('When any Satchel window is open, pressing ESC closes the most recently opened Satchel window first (slip viewers, pickers, alt inventories, then the main window). Does not close the XIUI config. Window and search state are not saved between sessions.');
 
     if components.CollapsingSection('Layout##satchelModule') then
         components.SliderInt('Columns', gConfig, 'satchelColumns', 4, 18);
@@ -28,7 +28,7 @@ function M.DrawSettings()
         imgui.TextWrapped('Reset satchel settings to defaults for the current profile.');
         if imgui.Button('Reset Satchel Settings') then
             gConfig.satchelColumns = 10;
-            gConfig.satchelRows = 10;
+            gConfig.satchelRows = 8;
             gConfig.satchelSlotSize = 40;
             gConfig.satchelShowEmptySlots = true;
             SaveSettingsOnly();

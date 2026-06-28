@@ -1174,6 +1174,139 @@ local function create_item_logic(ctx)
         return nil
     end
 
+    local function item_has_slot(item, mask)
+        if not item then
+            return false
+        end
+        local slots = tonumber(item.Slots) or 0
+        return bit.band(slots, mask) ~= 0
+    end
+
+    local function is_crystal_item_name(item_name)
+        local name = (item_name or ''):lower()
+        return name:find(' crystal', 1, true) ~= nil
+    end
+
+    local function is_cluster_item_name(item_name)
+        local name = (item_name or ''):lower()
+        return name:find('cluster', 1, true) ~= nil
+    end
+
+    local function is_inventory_key_item(item_id, item_resource, item_name)
+        local item_type = M.get_item_type(item_id)
+        if item_type == 2 then
+            return true
+        end
+        local name = (item_name or ''):lower()
+        return name:find('key item', 1, true) ~= nil
+    end
+
+    local function normalize_search_query(query)
+        if type(query) ~= 'string' then
+            return ''
+        end
+        return trim_text(query):lower()
+    end
+
+    local function compact_search_query(query)
+        return normalize_search_query(query):gsub('%s+', '')
+    end
+
+    function M.matches_search(item_id, query)
+        if not item_id or item_id <= 0 then
+            return false
+        end
+
+        local normalized = normalize_search_query(query)
+        if normalized == '' then
+            return true
+        end
+
+        local compact = compact_search_query(query)
+        local item_name = M.get_item_name(item_id)
+        local lowered_name = item_name:lower()
+
+        if lowered_name:find(normalized, 1, true) then
+            return true
+        end
+
+        local item_type = M.get_item_type(item_id)
+        local item_resource = M.get_item_resource(item_id)
+
+        local function query_is(...)
+            for i = 1, select('#', ...) do
+                local candidate = select(i, ...)
+                if normalized == candidate or compact == candidate then
+                    return true
+                end
+            end
+            return false
+        end
+
+        if query_is('crystal', 'crystals') then
+            return is_crystal_item_name(item_name)
+        end
+        if query_is('cluster', 'clusters') then
+            return is_cluster_item_name(item_name)
+        end
+        if query_is('usable') then
+            return item_type == 7
+        end
+        if query_is('weapon', 'weapons') then
+            return item_type == 4
+        end
+        if query_is('armor') then
+            return item_type == 5
+        end
+        if query_is('key item', 'key items', 'keyitem', 'keyitems') then
+            return is_inventory_key_item(item_id, item_resource, item_name)
+        end
+        if query_is('main') then
+            return item_has_slot(item_resource, weapon_slot_masks.main)
+        end
+        if query_is('sub') then
+            return item_has_slot(item_resource, weapon_slot_masks.sub)
+        end
+        if query_is('range') then
+            return item_has_slot(item_resource, weapon_slot_masks.range)
+        end
+        if query_is('ammo') then
+            return item_has_slot(item_resource, weapon_slot_masks.ammo)
+        end
+        if query_is('head') then
+            return item_has_slot(item_resource, armor_slot_masks.head)
+        end
+        if query_is('body') then
+            return item_has_slot(item_resource, armor_slot_masks.body)
+        end
+        if query_is('hand', 'hands') then
+            return item_has_slot(item_resource, armor_slot_masks.hands)
+        end
+        if query_is('leg', 'legs') then
+            return item_has_slot(item_resource, armor_slot_masks.legs)
+        end
+        if query_is('foot', 'feet') then
+            return item_has_slot(item_resource, armor_slot_masks.feet)
+        end
+        if query_is('neck') then
+            return item_has_slot(item_resource, armor_slot_masks.neck)
+        end
+        if query_is('waist') then
+            return item_has_slot(item_resource, armor_slot_masks.waist)
+        end
+        if query_is('back') then
+            return item_has_slot(item_resource, armor_slot_masks.back)
+        end
+        if query_is('ear', 'ears') then
+            return item_has_slot(item_resource, armor_slot_masks.ear)
+        end
+        if query_is('ring', 'rings') then
+            return item_has_slot(item_resource, armor_slot_masks.ring)
+        end
+
+        return false
+    end
+
     return M
 end
 

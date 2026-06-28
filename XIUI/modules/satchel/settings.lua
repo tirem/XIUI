@@ -5,7 +5,7 @@ local settingslogic = {}
 settingslogic.default_settings = T{
     visible = false,
     columns = 10,
-    rows = 10,
+    rows = 8,
     slot_size = 40,
     show_empty_slots = true,
     include_containers = T{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 },
@@ -22,28 +22,10 @@ function settingslogic.create(ctx)
         return gConfig == nil or gConfig.showSatchelModule ~= false
     end
 
-    -- The satchel window only owns its visibility. Columns/rows/size/empty-slots/
-    -- containers are owned by the config UI (written to gConfig directly); persisting
-    -- them from this stale cache would clobber config changes on open/close.
-    function M.persist_settings()
-        if not gConfig then
-            return
-        end
-
-        gConfig.satchelVisible = satchel.settings.visible == true
-    end
-
     function M.read_settings()
-        local visible_setting = nil
-        if gConfig then
-            visible_setting = gConfig.satchelVisible
-            if visible_setting == nil then
-                visible_setting = false
-            end
-        end
-
+        -- Window visibility is session-only; layout fields live in gConfig.
         satchel.settings = T{
-            visible = visible_setting ~= nil and (visible_setting == true) or default_settings.visible,
+            visible = false,
             columns = gConfig and gConfig.satchelColumns or default_settings.columns,
             rows = gConfig and gConfig.satchelRows or default_settings.rows,
             slot_size = gConfig and gConfig.satchelSlotSize or default_settings.slot_size,
@@ -58,8 +40,8 @@ function settingslogic.create(ctx)
         satchel.settings.rows = math.max(4, math.min(16, tonumber(satchel.settings.rows) or default_settings.rows))
         satchel.settings.slot_size = math.max(24, math.min(96, tonumber(satchel.settings.slot_size) or default_settings.slot_size))
 
-        satchel.visible[1] = satchel.settings.visible == true
-        satchel.last_visible = satchel.visible[1]
+        satchel.visible[1] = false
+        satchel.last_visible = false
     end
 
     -- Re-sync config-owned display fields (not visibility) from gConfig when config
@@ -86,12 +68,6 @@ function settingslogic.create(ctx)
         return true
     end
 
-    function M.toggle_visible()
-        satchel.visible[1] = not satchel.visible[1]
-        satchel.settings.visible = satchel.visible[1]
-        M.persist_settings()
-    end
-
     function M.open_xiui_satchel_config()
         if showConfig then
             showConfig[1] = true
@@ -103,8 +79,8 @@ function settingslogic.create(ctx)
             print(chat.header('XIUI'):append(chat.error('Invalid satchel command syntax.')))
         end
         print(chat.header('XIUI'):append(chat.message('Satchel commands:')))
-        print(chat.header('XIUI'):append(chat.message('/satchel - Toggle satchel window')))
-        print(chat.header('XIUI'):append(chat.message('/xiui satchel - Toggle satchel window')))
+        print(chat.header('XIUI'):append(chat.message('/satchel - Toggle all satchel windows')))
+        print(chat.header('XIUI'):append(chat.message('/xiui satchel - Toggle all satchel windows')))
         print(chat.header('XIUI'):append(chat.message('/xiui satchel config - Open XIUI satchel settings')))
     end
 
