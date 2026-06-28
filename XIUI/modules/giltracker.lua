@@ -12,13 +12,15 @@ local gilTexture;
 -- Gil per hour tracking state
 local trackingStartGil = nil;      -- Gil amount when tracking started
 local trackingStartTime = nil;     -- os.clock() when tracking started
-local lastKnownGil = nil;          -- Last known gil (to detect login/character change)
 local lastPlayerName = nil;        -- Last known player name (to detect character switches)
 
--- Stabilization state (prevents false spikes on login)
-local stabilizationStartTime = nil;  -- When we first saw valid inventory data
-local stabilizationGil = nil;        -- Gil value when stabilization started
-local STABILIZATION_DELAY = 3;       -- Seconds to wait before initializing tracking
+-- Baseline capture (issues #111, #382): inventory often reads 0 on login before the real
+-- balance loads. Short stable 0s are treated as unread data; non-zero reads stabilize first.
+local zeroStableStartTime = nil;
+local STABILIZATION_DELAY = 3;
+local MIN_ZERO_BEFORE_GAIN = 5;
+local TRUE_ZERO_CONFIRM = 10;
+local LOGIN_LOAD_THRESHOLD = 10000;
 
 -- Gil/hr display throttling (avoid jittery updates every frame)
 local cachedGilPerHour = 0;          -- Cached calculated value
@@ -28,6 +30,65 @@ local GIL_PER_HOUR_UPDATE_INTERVAL = 3;  -- Recalculate every 3 seconds
 
 local giltracker = {};
 local pending_logout = false;  -- true if the last zone-out was a logout (should reset on next zone-in)
+
+local stabilizationStartTime = nil;
+local stabilizationGil = nil;
+
+local function ResetTrackingDisplay()
+	cachedGilPerHour = 0;
+	lastGilPerHourCalcTime = 0;
+	local perHour = (gConfig.gilTrackerDisplayMode or 1) == 2;
+	cachedGilPerHourStr = perHour and '+0/hr' or '+0';
+end
+
+local function ClearBaselineCapture()
+	stabilizationStartTime = nil;
+	stabilizationGil = nil;
+	zeroStableStartTime = nil;
+end
+
+local function SetTrackingBaseline(gil, now)
+	trackingStartGil = gil;
+	trackingStartTime = now;
+	ClearBaselineCapture();
+	ResetTrackingDisplay();
+end
+
+-- Returns once trackingStartGil is set; shows +0 until then.
+local function TryEstablishBaseline(currentGil, now)
+	if trackingStartGil ~= nil then
+		return;
+	end
+
+	if currentGil == 0 then
+		zeroStableStartTime = zeroStableStartTime or now;
+		if now - zeroStableStartTime >= TRUE_ZERO_CONFIRM then
+			SetTrackingBaseline(0, now);
+		else
+			stabilizationStartTime = nil;
+			stabilizationGil = nil;
+		end
+		return;
+	end
+
+	local zeroDuration = zeroStableStartTime and (now - zeroStableStartTime) or 0;
+	zeroStableStartTime = nil;
+
+	if zeroDuration > 0 and zeroDuration < MIN_ZERO_BEFORE_GAIN then
+		ClearBaselineCapture();
+	elseif zeroDuration >= MIN_ZERO_BEFORE_GAIN
+		and (zeroDuration >= TRUE_ZERO_CONFIRM or currentGil < LOGIN_LOAD_THRESHOLD) then
+		SetTrackingBaseline(0, now);
+		return;
+	end
+
+	if stabilizationStartTime == nil or currentGil ~= stabilizationGil then
+		stabilizationStartTime = now;
+		stabilizationGil = currentGil;
+	elseif now - stabilizationStartTime >= STABILIZATION_DELAY then
+		SetTrackingBaseline(currentGil, now);
+	end
+end
 
 local function GetLoggedInPlayerName()
     local playerIndex = AshitaCore:GetMemoryManager():GetParty():GetMemberTargetIndex(0);
@@ -115,36 +176,8 @@ giltracker.DrawWindow = function(settings)
 
 	local currentGil = gilAmount.Count;
 
-	-- Detect invalid reads: if gil changes by millions in a single frame, it's likely
-	-- garbage data from zoning - skip this frame but don't reset tracking
-	if lastKnownGil ~= nil and lastKnownGil > 0 then
-		local frameDiff = math.abs(currentGil - lastKnownGil);
-		-- If changed by more than 10 million in one frame, skip (likely zone garbage)
-		if frameDiff > 10000000 then
-			return;
-		end
-	end
-
-	-- Initialize tracking with stabilization delay (prevents false spikes on login)
-	-- Issue #111: During login, inventory may return garbage values initially
-	if trackingStartGil == nil then
-		local now = os.clock();
-		if stabilizationStartTime == nil then
-			-- First valid read - start stabilization period
-			stabilizationStartTime = now;
-			stabilizationGil = currentGil;
-		elseif now - stabilizationStartTime >= STABILIZATION_DELAY then
-			-- Stabilization period elapsed - now safe to initialize tracking
-			trackingStartGil = currentGil;
-			trackingStartTime = now;
-			stabilizationStartTime = nil;
-			stabilizationGil = nil;
-		end
-		-- During stabilization, don't show gil/hr (show 0)
-	end
-
-	-- Update last known gil with valid reads only
-	lastKnownGil = currentGil;
+	-- Establish session baseline once inventory data is stable (issues #111, #382)
+	TryEstablishBaseline(currentGil, os.clock());
 
 	-- Calculate tracking display (throttled to avoid jittery display)
 	-- Display modes: 1 = Session Net, 2 = Gil Per Hour
@@ -380,10 +413,10 @@ giltracker.Initialize = function(settings)
 	-- Reset tracking state on initialize (addon load = fresh session)
 	trackingStartGil = nil;
 	trackingStartTime = nil;
-	lastKnownGil = nil;
     lastPlayerName = nil;  -- nil triggers reset on first DrawWindow with valid player
 	stabilizationStartTime = nil;
 	stabilizationGil = nil;
+	zeroStableStartTime = nil;
 	cachedGilPerHour = 0;
 	cachedGilPerHourStr = '+0/hr';
 	lastGilPerHourCalcTime = 0;
@@ -400,10 +433,10 @@ giltracker.Cleanup = function()
 	-- Clear tracking state
 	trackingStartGil = nil;
 	trackingStartTime = nil;
-	lastKnownGil = nil;
     lastPlayerName = nil;
 	stabilizationStartTime = nil;
 	stabilizationGil = nil;
+	zeroStableStartTime = nil;
 	cachedGilPerHour = 0;
 	cachedGilPerHourStr = '+0/hr';
 	lastGilPerHourCalcTime = 0;
@@ -411,31 +444,10 @@ end
 
 -- Reset gil per hour tracking to start fresh
 giltracker.ResetTracking = function()
-	-- Reset cached display values
-	cachedGilPerHour = 0;
-	cachedGilPerHourStr = '+0/hr';
-	lastGilPerHourCalcTime = 0;
-
-	-- Get current gil amount
-	local inventory = GetInventorySafe();
-	if inventory then
-		local gilAmount = inventory:GetContainerItem(0, 0);
-		if gilAmount and gilAmount.Count > 0 then
-			trackingStartGil = gilAmount.Count;
-			trackingStartTime = os.clock();
-			lastKnownGil = gilAmount.Count;
-			stabilizationStartTime = nil;
-			stabilizationGil = nil;
-			return;
-		end
-	end
-	-- If we can't get current gil, just reset the tracking state
-	-- It will reinitialize on next DrawWindow call
+	ResetTrackingDisplay();
 	trackingStartGil = nil;
 	trackingStartTime = nil;
-	lastKnownGil = nil;
-	stabilizationStartTime = nil;
-	stabilizationGil = nil;
+	ClearBaselineCapture();
 end
 
 giltracker.ResetPositions = function()
