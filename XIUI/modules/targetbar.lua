@@ -887,6 +887,35 @@ targetbar.HandleActionPacket = function(actionPacket)
 		return;
 	end
 
+	-- Type 7 = Abillity
+	if (actionPacket.Type == 7) then
+		local abilityId = actionPacket.Targets[1].Actions[1].Param;
+		local actionMessage = actionPacket.Targets[1].Actions[1].Message
+
+		-- Handle interrupted ability
+		if (actionMessage == 0) then
+			targetbar.enemyCasts[actionPacket.UserId] = nil;
+			return; -- Don't create new cast data
+		end
+
+		local abilityNameRaw = nil;
+		if (abilityId < 256) then
+			local ability = AshitaCore:GetResourceManager():GetAbilityById(abilityId);
+			abilityNameRaw = ability.Name[1]
+		else
+			abilityNameRaw = AshitaCore:GetResourceManager():GetString('monsters.abilities', abilityId - 256);
+		end
+
+		local abilityName = encoding:ShiftJIS_To_UTF8(abilityNameRaw, true);
+		targetbar.enemyCasts[actionPacket.UserId] = T{
+			spellName = abilityName,
+			spellId = abilityId,
+			castTime = 1, -- Cast time varies by ability
+			startTime = os.clock(),  -- High precision timestamp
+			timestamp = os.time()    -- For cleanup
+		};
+	end
+
 	-- Type 8 = Magic (Start) - Enemy begins casting
 	if (actionPacket.Type == 8) then
 		-- According to XiPackets: interrupted casts send ANOTHER Type 8 with "sp" prefix (vs "ca" for normal start)
