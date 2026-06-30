@@ -19,7 +19,7 @@ local statusOnMes = {[101]=true, [127]=true, [160]=true, [164]=true, [166]=true,
 local statusOffMes = {[64]=true, [159]=true, [168]=true, [204]=true, [206]=true, [321]=true, [322]=true, [341]=true, [342]=true, [343]=true, [344]=true, [350]=true, [378]=true, [531]=true, [647]=true, [805]=true, [806]=true};
 local deathMes = {[6]=true, [20]=true, [97]=true, [113]=true, [406]=true, [605]=true, [646]=true};
 local spellDamageMes = {[2]=true, [252]=true, [264]=true, [265]=true};
-local additionalEffectJobAbilities = {[22]=true, [45]=true, [46]=true, [77]=true}; --energy drain, mug, shield bash, weapon bash
+local additionalEffectJobAbilities = {[22]=true, [45]=true, [46]=true, [77]=true, [170]=true}; --energy drain, mug, shield bash, weapon bash, angon
 local additionalEffectMes = {[160]=true, [164]=true};
 
 -- Spell duration lookup table for O(1) performance
@@ -129,6 +129,7 @@ local SPELL_DURATIONS = {
     [45] = {duration = 30, buffId = 448},  -- Mug - ???
     [46] = {duration = 6, buffId = 10},    -- Shield Bash - Stun
     [77] = {duration = 6, buffId = 10},    -- Weapon Bash - Stun
+    [170] = {duration = 30, buffId = 149}, -- Angon - Defense Down
 
     -- Additional effect debuffs
     [2] = {duration = 25, additionalEffect = true},   -- Sleep Bolt
