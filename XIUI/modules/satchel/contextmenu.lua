@@ -6,6 +6,9 @@ function contextmenu.create(ctx)
     local items = ctx.items
     local packets = ctx.packets
     local on_sort = ctx.on_sort
+    local components = require('config.components')
+    local slider_gold = components.TAB_STYLE.gold
+    local slider_gold_dark = components.TAB_STYLE.goldDark
 
     local M = {}
 
@@ -33,6 +36,25 @@ function contextmenu.create(ctx)
         imgui.PopStyleColor(1)
     end
 
+    local function draw_centered_outlined_text(draw_list, min_x, min_y, max_x, max_y, text)
+        if not draw_list or not text then
+            return
+        end
+
+        local text_w, text_h = imgui.CalcTextSize(text)
+        text_w = type(text_w) == 'number' and text_w or 0
+        text_h = type(text_h) == 'number' and text_h or 0
+        local x = min_x + ((max_x - min_x - text_w) * 0.5)
+        local y = min_y + ((max_y - min_y - text_h) * 0.5)
+        local outline = imgui.GetColorU32({ 0.0, 0.0, 0.0, 1.0 })
+        local fill = imgui.GetColorU32({ 1.0, 1.0, 1.0, 1.0 })
+
+        for _, offset in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
+            draw_list:AddText({ x + offset[1], y + offset[2] }, outline, text)
+        end
+        draw_list:AddText({ x, y }, fill, text)
+    end
+
     function M.render()
         open_pending_popup(satchel.context_menu, '##satchel_ctx')
         open_pending_popup(satchel.split_dialog, '##satchel_split')
@@ -42,50 +64,58 @@ function contextmenu.create(ctx)
         local slot = satchel.context_menu.slot
         if imgui.BeginPopup('##satchel_ctx') then
             if slot and slot.id and slot.id > 0 then
-                imgui.TextColored({ 1.0, 0.9, 0.55, 1.0 }, items.get_item_name(slot.id))
+                local item_name = items.get_item_name(slot.id) or '?'
+                imgui.TextColored(items.get_slot_border_color(slot), item_name)
                 imgui.Separator()
 
-                local actions = items.get_context_menu_actions(slot)
-                if actions then
-                    for _, action in ipairs(actions) do
-                        if action.separator then
-                            imgui.Separator()
-                        elseif action.enabled then
-                            if imgui.MenuItem(action.label) then
-                                if action.command then
-                                    local cm = AshitaCore:GetChatManager()
-                                    if cm then cm:QueueCommand(1, action.command) end
-                                elseif action.kind == 'split' then
-                                    local max_qty = math.max(1, (slot.count or 2) - 1)
-                                    satchel.split_dialog.slot = slot
-                                    satchel.split_dialog.quantity = { math.max(1, math.floor(max_qty / 2)) }
-                                    satchel.split_dialog.pending_open = true
-                                elseif action.kind == 'drop' then
-                                    satchel.drop_dialog.slot = slot
-                                    satchel.drop_dialog.pending_open = true
-                                elseif action.kind == 'bazaar_list' then
-                                    packets.send_bazaar_close()
-                                    satchel.bazaar_dialog.slot = slot
-                                    satchel.bazaar_dialog.price = { action.bazaar_price or 0 }
-                                    satchel.bazaar_dialog.is_modify = (action.bazaar_price or 0) > 0
-                                    satchel.bazaar_dialog.pending_open = true
+                if HzLimitedMode then
+                    if on_sort and imgui.MenuItem('Sort Bag') then
+                        on_sort(slot)
+                        imgui.CloseCurrentPopup()
+                    end
+                else
+                    local actions = items.get_context_menu_actions(slot)
+                    if actions then
+                        for _, action in ipairs(actions) do
+                            if action.separator then
+                                imgui.Separator()
+                            elseif action.enabled then
+                                if imgui.MenuItem(action.label) then
+                                    if action.command then
+                                        local cm = AshitaCore:GetChatManager()
+                                        if cm then cm:QueueCommand(1, action.command) end
+                                    elseif action.kind == 'split' then
+                                        local max_qty = math.max(1, (slot.count or 2) - 1)
+                                        satchel.split_dialog.slot = slot
+                                        satchel.split_dialog.quantity = { math.max(1, math.floor(max_qty / 2)) }
+                                        satchel.split_dialog.pending_open = true
+                                    elseif action.kind == 'drop' then
+                                        satchel.drop_dialog.slot = slot
+                                        satchel.drop_dialog.pending_open = true
+                                    elseif action.kind == 'bazaar_list' then
+                                        packets.send_bazaar_close()
+                                        satchel.bazaar_dialog.slot = slot
+                                        satchel.bazaar_dialog.price = { action.bazaar_price or 0 }
+                                        satchel.bazaar_dialog.is_modify = (action.bazaar_price or 0) > 0
+                                        satchel.bazaar_dialog.pending_open = true
+                                    end
+                                    imgui.CloseCurrentPopup()
                                 end
-                                imgui.CloseCurrentPopup()
-                            end
-                        else
-                            menu_item_disabled(action.label)
-                            if action.tooltip and imgui.IsItemHovered() then
-                                imgui.SetTooltip(action.tooltip)
+                            else
+                                menu_item_disabled(action.label)
+                                if action.tooltip and imgui.IsItemHovered() then
+                                    imgui.SetTooltip(action.tooltip)
+                                end
                             end
                         end
                     end
-                end
 
-                if on_sort then
-                    imgui.Separator()
-                    if imgui.MenuItem('Sort Bag') then
-                        on_sort(slot)
-                        imgui.CloseCurrentPopup()
+                    if on_sort then
+                        imgui.Separator()
+                        if imgui.MenuItem('Sort Bag') then
+                            on_sort(slot)
+                            imgui.CloseCurrentPopup()
+                        end
                     end
                 end
             end
@@ -109,7 +139,9 @@ function contextmenu.create(ctx)
                 end
                 imgui.Separator()
                 if imgui.Button('OK', { 80, 0 }) then
-                    packets.send_bazaar_set_and_open(bd.slot.property_index, bd.price[1])
+                    if not HzLimitedMode then
+                        packets.send_bazaar_set_and_open(bd.slot.property_index, bd.price[1])
+                    end
                     imgui.CloseCurrentPopup()
                     clear_bazaar_dialog()
                 end
@@ -139,7 +171,9 @@ function contextmenu.create(ctx)
                 end
                 imgui.Separator()
                 if imgui.Button('Drop', { 80, 0 }) then
-                    packets.send_drop_packet(dd.slot)
+                    if not HzLimitedMode then
+                        packets.send_drop_packet(dd.slot)
+                    end
                     imgui.CloseCurrentPopup()
                     clear_slot_dialog(satchel.drop_dialog)
                 end
@@ -164,10 +198,32 @@ function contextmenu.create(ctx)
                 imgui.Text(('Split "%s"  (stack of %d)'):format(name, stack_size))
                 imgui.Separator()
                 imgui.Text('Quantity to split off:')
-                imgui.SliderInt('##split_qty', sd.quantity, 1, max_qty)
+                imgui.PushStyleColor(ImGuiCol_SliderGrab, slider_gold)
+                imgui.PushStyleColor(ImGuiCol_SliderGrabActive, slider_gold_dark)
+                local slider_flags = ImGuiSliderFlags_AlwaysClamp or 0
+                imgui.SliderInt('##split_qty', sd.quantity, 1, max_qty, '', slider_flags)
+                imgui.PopStyleColor(2)
+
+                local draw_list = imgui.GetWindowDrawList()
+                if draw_list then
+                    local min_x, min_y = imgui.GetItemRectMin()
+                    local max_x, max_y = imgui.GetItemRectMax()
+                    if type(min_x) == 'number' and type(max_x) == 'number' then
+                        draw_centered_outlined_text(
+                            draw_list,
+                            min_x,
+                            min_y,
+                            max_x,
+                            max_y,
+                            tostring(sd.quantity[1])
+                        )
+                    end
+                end
                 imgui.Separator()
                 if imgui.Button('Split', { 80, 0 }) then
-                    packets.queue_split_command(sd.slot, sd.quantity[1])
+                    if not HzLimitedMode then
+                        packets.queue_split_command(sd.slot, sd.quantity[1])
+                    end
                     imgui.CloseCurrentPopup()
                     clear_slot_dialog(satchel.split_dialog)
                 end

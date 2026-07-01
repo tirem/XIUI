@@ -17,6 +17,8 @@ function M.createUserSettingsDefaults()
         globalScale = 1.0,
         hideDuringEvents = true,
 
+        settingsMigrationVersion = '1.8.3',
+
         showPlayerBar = true,
         showTargetBar = true,
         showEnemyList = true,
@@ -425,15 +427,19 @@ function M.createUserSettingsDefaults()
 
         showSatchelModule = true,
         satchelVisible = false,
-        satchelOverrideCommand = true,
+        satchelOverrideCommand = false,
         satchelCloseOnEscape = false,
+        satchelTooltipIconsAsWords = false,
+        satchelTooltipFontFamily = 'Agave',
+        satchelTooltipScale = 1.0,
+        satchelAutoSortBags = false,
         satchelHideDuringEvents = false,
         satchelHideOnMenuFocus = false,
         satchelHideMacroPalette = false,
         satchelColumns = 10,
-        satchelRows = 10,
+        satchelRows = 8,
         satchelSlotSize = 40,
-        satchelShowEmptySlots = true,
+        satchelHideEmptySlots = false,
         satchelIncludeContainers = T{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 },
 
         -- Mob Info settings

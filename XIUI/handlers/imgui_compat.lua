@@ -99,6 +99,15 @@ else
     if ImGuiCol_TabUnfocusedActive == nil then
         ImGuiCol_TabUnfocusedActive = ImGuiCol_HeaderActive or 0;
     end
+    if ImGuiCol_TitleBgCollapsed == nil then
+        ImGuiCol_TitleBgCollapsed = ImGuiCol_TitleBg or ImGuiCol_WindowBg or 0;
+    end
+    if ImGuiCol_SliderGrab == nil then
+        ImGuiCol_SliderGrab = ImGuiCol_ScrollbarGrab or ImGuiCol_Header or 0;
+    end
+    if ImGuiCol_SliderGrabActive == nil then
+        ImGuiCol_SliderGrabActive = ImGuiCol_ScrollbarGrabActive or ImGuiCol_HeaderActive or 0;
+    end
 
     -- BeginDisabled/EndDisabled shim for main branch
     -- These functions exist in ImGui 1.85+ (4.3) but not in older versions

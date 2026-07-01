@@ -105,6 +105,20 @@ function M.createColorCustomizationDefaults()
             usedSlotColorThreshold2 = T{ r = 1.0, g = 0, b = 0, a = 1 },    -- Critical (red)
         },
 
+        -- Satchel module window (XIUI theme + original item border palette)
+        satchelModule = T{
+            dragDropHighlightColor = 0x40F4DA97,
+            dragDropHighlightHoverColor = 0xFFC3AE79,
+            dragDropInvalidHighlightColor = 0x40B56C72,
+            dragDropInvalidHighlightHoverColor = 0xFF8F5358,
+            emptySlotBorderColor = 0xCC4C473D,
+            lockedSlotBorderColor = 0xBF615C51,
+            bazaarBorderColor = 0xFFF25252,
+            equipmentBorderColor = 0xFF59A1F2,
+            usableBorderColor = 0xFF94DB80,
+            itemBorderColor = 0xFFB89959,
+        },
+
         -- Satchel Tracker
         satchelTracker = T{
             textColor = 0xFFFFFFFF,

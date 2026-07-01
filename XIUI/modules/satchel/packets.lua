@@ -97,12 +97,7 @@ function packets.create(ctx)
     end
 
     function M.find_first_empty_slot_index(container_id)
-        local fixed_max = container_fixed_max[tonumber(container_id)]
-        if not fixed_max then
-            return nil
-        end
-
-        return fixed_max + 2
+        return 0x52
     end
 
     function M.send_bazaar_close()
