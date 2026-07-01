@@ -7,7 +7,7 @@ settingslogic.default_settings = T{
     columns = 10,
     rows = 8,
     slot_size = 40,
-    show_empty_slots = true,
+    hide_empty_slots = false,
     include_containers = T{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 },
 }
 
@@ -30,14 +30,14 @@ function settingslogic.create(ctx)
             rows = gConfig and gConfig.satchelRows or default_settings.rows,
             slot_size = gConfig and gConfig.satchelSlotSize or default_settings.slot_size,
             -- Default true; only false when explicitly unchecked (avoid the and/or-false trap).
-            show_empty_slots = not (gConfig and gConfig.satchelShowEmptySlots == false),
+            hide_empty_slots = gConfig and gConfig.satchelHideEmptySlots == true,
             include_containers = T{},
         }
 
         local include = gConfig and gConfig.satchelIncludeContainers or default_settings.include_containers
         satchel.settings.include_containers = containerlogic.normalize_include_containers(include)
-        satchel.settings.columns = math.max(4, math.min(18, tonumber(satchel.settings.columns) or default_settings.columns))
-        satchel.settings.rows = math.max(4, math.min(16, tonumber(satchel.settings.rows) or default_settings.rows))
+        satchel.settings.columns = math.max(5, math.min(18, tonumber(satchel.settings.columns) or default_settings.columns))
+        satchel.settings.rows = math.max(5, math.min(16, tonumber(satchel.settings.rows) or default_settings.rows))
         satchel.settings.slot_size = math.max(24, math.min(96, tonumber(satchel.settings.slot_size) or default_settings.slot_size))
 
         satchel.visible[1] = false
@@ -59,10 +59,10 @@ function settingslogic.create(ctx)
         end
         last_cfg_version = version
 
-        satchel.settings.columns = math.max(4, math.min(18, tonumber(gConfig.satchelColumns) or default_settings.columns))
-        satchel.settings.rows = math.max(4, math.min(16, tonumber(gConfig.satchelRows) or default_settings.rows))
+        satchel.settings.columns = math.max(5, math.min(18, tonumber(gConfig.satchelColumns) or default_settings.columns))
+        satchel.settings.rows = math.max(5, math.min(16, tonumber(gConfig.satchelRows) or default_settings.rows))
         satchel.settings.slot_size = math.max(24, math.min(96, tonumber(gConfig.satchelSlotSize) or default_settings.slot_size))
-        satchel.settings.show_empty_slots = not (gConfig.satchelShowEmptySlots == false)
+        satchel.settings.hide_empty_slots = gConfig.satchelHideEmptySlots == true
         satchel.settings.include_containers =
             containerlogic.normalize_include_containers(gConfig.satchelIncludeContainers or default_settings.include_containers)
         return true

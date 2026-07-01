@@ -163,6 +163,22 @@ components.available_fonts = {
     'Verdana',
 };
 
+components.available_tooltip_fonts = {
+    'Agave',
+    'Arial',
+    'Calibri',
+    'Consolas',
+    'Courier New',
+    'Georgia',
+    'Lucida Console',
+    'Microsoft Sans Serif',
+    'Segoe UI',
+    'Tahoma',
+    'Times New Roman',
+    'Trebuchet MS',
+    'Verdana',
+};
+
 -- Max width for config UI elements
 local SECTION_MAX_WIDTH = 500;
 local CONTENT_MAX_WIDTH = 200;
@@ -881,12 +897,13 @@ components.TAB_STYLE = {
     padding = 12,
     smallPadding = 8,
     gold = {0.957, 0.855, 0.592, 1.0},
+    goldDark = {0.765, 0.684, 0.474, 1.0},
     bgMedium = {0.098, 0.090, 0.075, 1.0},
     bgLight = {0.137, 0.125, 0.106, 1.0},
     bgLighter = {0.176, 0.161, 0.137, 1.0},
 };
 
-local WINDOW_STYLE_BG_DARK = {0.067, 0.063, 0.055, 0.95};
+local WINDOW_STYLE_BG_DARK = {0.051, 0.051, 0.051, 0.95};
 local WINDOW_STYLE_BORDER = {0.3, 0.28, 0.24, 0.8};
 local WINDOW_STYLE_TEXT = {0.9, 0.9, 0.9, 1.0};
 
@@ -898,6 +915,7 @@ function components.PushWindowStyle()
     imgui.PushStyleColor(ImGuiCol_PopupBg, WINDOW_STYLE_BG_DARK);
     imgui.PushStyleColor(ImGuiCol_TitleBg, s.bgMedium);
     imgui.PushStyleColor(ImGuiCol_TitleBgActive, s.bgLight);
+    imgui.PushStyleColor(ImGuiCol_TitleBgCollapsed, WINDOW_STYLE_BG_DARK);
     imgui.PushStyleColor(ImGuiCol_Border, WINDOW_STYLE_BORDER);
     imgui.PushStyleColor(ImGuiCol_Button, s.bgMedium);
     imgui.PushStyleColor(ImGuiCol_ButtonHovered, s.bgLight);
@@ -914,6 +932,8 @@ function components.PushWindowStyle()
     imgui.PushStyleColor(ImGuiCol_ScrollbarGrab, s.bgLight);
     imgui.PushStyleColor(ImGuiCol_ScrollbarGrabHovered, s.bgLighter);
     imgui.PushStyleColor(ImGuiCol_ScrollbarGrabActive, s.gold);
+    imgui.PushStyleColor(ImGuiCol_SliderGrab, s.gold);
+    imgui.PushStyleColor(ImGuiCol_SliderGrabActive, s.goldDark);
     imgui.PushStyleVar(ImGuiStyleVar_WindowRounding, 4);
     imgui.PushStyleVar(ImGuiStyleVar_FrameRounding, 3);
     imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {10, 10});
@@ -923,7 +943,7 @@ end
 
 function components.PopWindowStyle()
     imgui.PopStyleVar(5);
-    imgui.PopStyleColor(21);
+    imgui.PopStyleColor(24);
 end
 
 -- Helper: Draw a styled tab button with underline when selected

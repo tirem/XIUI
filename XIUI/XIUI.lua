@@ -24,7 +24,7 @@
 
 addon.name      = 'XIUI';
 addon.author    = 'Team XIUI';
-addon.version   = '1.8.2';
+addon.version   = '1.8.3';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/XIUI'
 
@@ -35,7 +35,7 @@ require('handlers.imgui_compat');
 
 -- Global switch to hard-disable functionality that is limited on HX servers.
 -- Set before module requires so load-time checks (e.g. petbar data) see the correct value.
-HzLimitedMode = true;
+HzLimitedMode = false;
 
 -- =================
 -- = XIUI DEV ONLY =
@@ -1093,12 +1093,19 @@ ashita.events.register('load', 'load_cb', function ()
     gConfig.appliedPositions = {};
     UpdateUserSettings();
 
-    -- Populate the ImGui font atlas now, before the first d3d_present, so
-    -- no font change in the config menu has to mutate the atlas mid-frame.
-    -- See libs/imtext.lua PrewarmFonts comment for the underlying constraint.
+    -- Satchel wave-dash: detect whether the default font already has U+301C.
+    -- Must not mutate the font atlas (see libs/imtext.lua).
+    pcall(function()
+        require('modules.satchel.tooltipfonts').prewarm_font_glyphs();
+    end);
+
     imtext.PrewarmFonts(components.available_fonts);
 
     uiModules.InitializeAll(gAdjustedSettings);
+
+    pcall(function()
+        require('modules.satchel.tooltipicons').preload_assets()
+    end);
 
     -- Load mob data for current zone
     local party = AshitaCore:GetMemoryManager():GetParty();
@@ -1508,7 +1515,7 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
-        --@cmd /xiui satchel [config] : Toggle the satchel window (or open its config)
+        --@cmd /xiui satchel [config] : Toggle all satchel windows (or open satchel settings)
         if satchelModule.HandleXiuiCommand and satchelModule.HandleXiuiCommand(command_args) then
             return;
         end
