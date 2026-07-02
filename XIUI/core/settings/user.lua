@@ -425,7 +425,8 @@ function M.createUserSettingsDefaults()
 
         showSatchelModule = true,
         satchelVisible = false,
-        satchelOverrideCommand = true,
+        -- Horizon (limited mode) leaves /satchel to the game by default.
+        satchelOverrideCommand = (not HzLimitedMode),
         satchelCloseOnEscape = false,
         satchelHideDuringEvents = false,
         satchelHideOnMenuFocus = false,

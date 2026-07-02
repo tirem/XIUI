@@ -422,13 +422,17 @@ local function render_slot_grid(slots, key_prefix, stat)
         get_slot_border_color = items.get_slot_border_color,
         render_item_detail_tooltip = items.render_item_detail_tooltip,
         on_slot_right_click = function(slot)
+            -- Horizon forbids addon-driven item moves, so the satchel is view-only there.
+            if HzLimitedMode then return end
             satchel.context_menu.slot = copy_slot_ref(slot)
             satchel.context_menu.pending_open = true
         end,
         on_slot_double_click = function(slot)
+            if HzLimitedMode then return end
             handle_double_click_transfer(copy_slot_ref(slot))
         end,
         on_slot_drag_start = function(slot, icon_texture)
+            if HzLimitedMode then return end
             if satchel.drag.active then
                 return
             end
