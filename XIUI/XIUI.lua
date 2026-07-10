@@ -1138,6 +1138,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
             end
 
             tryPresentDraw('config', slotrenderer.FlushTooltip);
+            tryPresentDraw('config', statusHandler.FlushTooltip);
         else
             uiModules.HideAll();
         end

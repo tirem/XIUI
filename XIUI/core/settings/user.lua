@@ -215,7 +215,7 @@ function M.createUserSettingsDefaults()
         jobIconTheme = 'FFXI',
         fontFamily = 'Tahoma',
         fontWeight = 'Bold', -- Options: 'Normal', 'Bold'
-        fontOutlineWidth = 2, -- Global outline width for all text (range: 0-5)
+        fontOutlineWidth = 1, -- Global outline width for all text (range: 0-5)
 
         showPartyListWhenSolo = false,
         maxEnemyListEntries = 8,  -- Legacy, now calculated from rows * columns

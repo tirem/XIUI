@@ -11,6 +11,15 @@ local TextureManager = require('libs.texturemanager');
 -- Party buffs table, populated by packet 0x076 via ReadPartyBuffsFromPacket()
 local partyBuffs = {};
 
+local TOOLTIP_OFFSET_X, TOOLTIP_OFFSET_Y = 16, 8;
+local TOOLTIP_PAD = 4;
+local TOOLTIP_BG_COLOR = 0xF0111111;
+local TOOLTIP_TEXT_COLOR = 0xFFFFFFFF;
+
+-- Icons share this same draw list, so paint order is submission order.
+-- Stash text and draw it last (FlushTooltip) so icons can't cover it.
+local pendingTooltipText = nil;
+
 -------------------------------------------------------------------------------
 -- exported functions
 -------------------------------------------------------------------------------
@@ -30,7 +39,6 @@ end
 
 -- render the tooltip for a specific status id
 ---@param status number the status id
----@param is_target boolean if true, don't show '(right click to cancel)' hint
 statusHandler.render_tooltip = function(status)
     if (status == nil or status < 1 or status > 0x3FF or status == 255) then
         return;
@@ -39,14 +47,31 @@ statusHandler.render_tooltip = function(status)
     local resMan = AshitaCore:GetResourceManager();
     local info = resMan:GetStatusIconByIndex(status);
     local name = resMan:GetString('buffs.names', status);
-    if (name ~= nil and info ~= nil) then
-        imgui.BeginTooltip();
-            imgui.Text(('%s (#%d)'):fmt(encoding:ShiftJIS_To_UTF8(name, true), status));
-            if (info.Description[1] ~= nil) then
-                imgui.Text(encoding:ShiftJIS_To_UTF8(info.Description[1], true));
-            end
-        imgui.EndTooltip();
+    if (name == nil or info == nil) then
+        return;
     end
+
+    pendingTooltipText = ('%s (#%d)'):fmt(encoding:ShiftJIS_To_UTF8(name, true), status);
+    if (info.Description[1] ~= nil) then
+        pendingTooltipText = pendingTooltipText .. '\n' .. encoding:ShiftJIS_To_UTF8(info.Description[1], true);
+    end
+end
+
+-- Call once per frame after all modules have drawn, so the tooltip paints
+-- last on the shared foreground draw list (see pendingTooltipText above).
+statusHandler.FlushTooltip = function()
+    if (pendingTooltipText == nil) then
+        return;
+    end
+
+    local mx, my = imgui.GetMousePos();
+    local x, y = mx + TOOLTIP_OFFSET_X, my + TOOLTIP_OFFSET_Y;
+    local tw, th = imgui.CalcTextSize(pendingTooltipText);
+
+    local drawList = imgui.GetForegroundDrawList();
+    drawList:AddRectFilled({x - TOOLTIP_PAD, y - TOOLTIP_PAD}, {x + tw + TOOLTIP_PAD, y + th + TOOLTIP_PAD}, TOOLTIP_BG_COLOR, 3);
+    drawList:AddText({x, y}, TOOLTIP_TEXT_COLOR, pendingTooltipText);
+    pendingTooltipText = nil;
 end
 
 -- return a list of all sub directories
