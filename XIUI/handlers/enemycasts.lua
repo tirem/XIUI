@@ -1,6 +1,6 @@
 --[[
 * XIUI Enemy Cast Tracker
-* Shared tracking of enemy spellcasting for the target bar and enemy list.
+* Shared tracking of enemy spellcasting / TP abilities for the target bar and enemy list.
 * Handles begin/finish/interrupt detection and the white "interrupted" flash.
 ]]--
 
@@ -14,7 +14,7 @@ local M = {};
 local INTERRUPT_MESSAGES = { [16] = true, [84] = true, [106] = true };
 
 -- How long the white "interrupted" flash lingers before the cast is removed.
-M.FLASH_DURATION = 0.5;
+M.FLASH_DURATION = 1;
 -- Grace period after cast time before a bar with no finish packet is dropped.
 local FINISH_GRACE = 2.0;
 -- Absolute stale-cast cleanup (seconds).
@@ -63,7 +63,7 @@ function M.GetRenderState(serverId)
             return false;
         end
         return true, cast.interruptProgress or 1.0,
-            {'#ffffff', 1.0 - (flashElapsed / M.FLASH_DURATION)}, cast.spellName, cast.targetId;
+            {'#ffffff', 1.0 - (flashElapsed / M.FLASH_DURATION)}, 'Interrupted', nil;
     end
 
     local elapsed = os.clock() - cast.startTime;
@@ -74,13 +74,47 @@ function M.GetRenderState(serverId)
     return true, math.min(elapsed / cast.castTime, 1.0), nil, cast.spellName, cast.targetId;
 end
 
--- 0x0028 action packets: Type 8 begins a cast, Type 4/11 finishes it.
+-- 0x0028 action packets: Type 7/8 begins a cast, Type 4/11 finishes it.
 M.HandleActionPacket = function(actionPacket)
     if actionPacket == nil or actionPacket.UserId == nil then
         return;
     end
 
-    if actionPacket.Type == 8 then
+    -- Type 7 = Ability / monster TP move (start)
+    if actionPacket.Type == 7 then
+        if actionPacket.Targets and #actionPacket.Targets > 0 and
+           actionPacket.Targets[1].Actions and #actionPacket.Targets[1].Actions > 0 then
+            local abilityId = actionPacket.Targets[1].Actions[1].Param;
+            local actionMessage = actionPacket.Targets[1].Actions[1].Message;
+
+            -- Interrupted ability (same signal as PR #396)
+            if actionMessage == 0 then
+                M.BeginInterruptFlash(actionPacket.UserId);
+                return;
+            end
+
+            local abilityNameRaw = nil;
+            if abilityId < 256 then
+                local ability = AshitaCore:GetResourceManager():GetAbilityById(abilityId);
+                if ability ~= nil and ability.Name ~= nil then
+                    abilityNameRaw = ability.Name[1];
+                end
+            else
+                abilityNameRaw = AshitaCore:GetResourceManager():GetString('monsters.abilities', abilityId - 256);
+            end
+
+            if abilityNameRaw ~= nil and abilityNameRaw ~= '' then
+                casts[actionPacket.UserId] = {
+                    spellName = encoding:ShiftJIS_To_UTF8(abilityNameRaw, true),
+                    spellId = abilityId,
+                    targetId = actionPacket.Targets[1].Id,
+                    castTime = 3, -- ability ready time isn't exposed; progress caps until Type 11
+                    startTime = os.clock(),
+                    timestamp = os.time(),
+                };
+            end
+        end
+    elseif actionPacket.Type == 8 then
         if actionPacket.Targets and #actionPacket.Targets > 0 and
            actionPacket.Targets[1].Actions and #actionPacket.Targets[1].Actions > 0 then
             local spellId = actionPacket.Targets[1].Actions[1].Param;
