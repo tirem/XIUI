@@ -78,8 +78,10 @@ function M.deep_copy_table(orig)
     return copy
 end
 
--- Deep merge target with defaults, preserving existing values
--- Missing keys get defaults; existing values kept; nested tables recursed
+-- Deep merge target with defaults, preserving existing values.
+-- Missing keys get defaults; existing values kept; nested dictionaries recursed.
+-- Array-style tables (sequences) are treated as leaves: a user-provided list is
+-- kept as-is so trimmed entries are not silently re-added element-by-element.
 function M.DeepMergeWithDefaults(target, defaults)
     if type(defaults) ~= 'table' then return target; end
     if type(target) ~= 'table' then return M.deep_copy_table(defaults); end
@@ -89,7 +91,8 @@ function M.DeepMergeWithDefaults(target, defaults)
 
         if targetValue == nil then
             target[key] = M.deep_copy_table(defaultValue);
-        elseif type(defaultValue) == 'table' and type(targetValue) == 'table' then
+        elseif type(defaultValue) == 'table' and type(targetValue) == 'table'
+            and #defaultValue == 0 then
             M.DeepMergeWithDefaults(targetValue, defaultValue);
         end
     end

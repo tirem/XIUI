@@ -43,7 +43,7 @@ function M.DrawSettings()
         components.SliderInt('Columns', gConfig, 'satchelColumns', 5, 18);
         components.SliderInt('Rows', gConfig, 'satchelRows', 5, 16);
         components.SliderInt('Cell Size', gConfig, 'satchelSlotSize', 24, 96);
-        components.DrawCheckbox('Hide Empty Slots', 'satchelHideEmptySlots');
+        components.DrawCheckboxInverted('Hide Empty Slots', 'satchelShowEmptySlots');
     end
 
     if components.CollapsingSection('Tooltips##satchelModuleTooltips') then
@@ -110,7 +110,7 @@ function M.DrawSettings()
             gConfig.satchelColumns = 10;
             gConfig.satchelRows = 8;
             gConfig.satchelSlotSize = 40;
-            gConfig.satchelHideEmptySlots = false;
+            gConfig.satchelShowEmptySlots = true;
             gConfig.satchelTooltipIconsAsWords = false;
             gConfig.satchelTooltipFontFamily = 'Consolas';
             gConfig.satchelTooltipFontSize = 14;

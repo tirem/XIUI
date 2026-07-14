@@ -6,113 +6,16 @@
 local M = {};
 local profileManager = require('core.profile_manager');
 
-M.SETTINGS_MIGRATION_VERSION = '1.8.5';
-
-local SATCHEL_PROFILE_KEYS = {
-    'showSatchelModule',
-    'satchelVisible',
-    'satchelOverrideCommand',
-    'satchelCloseOnEscape',
-    'satchelTooltipIconsAsWords',
-    'satchelTooltipFontFamily',
-    'satchelTooltipFontSize',
-    'satchelAutoSortBags',
-    'satchelHideDuringEvents',
-    'satchelHideOnMenuFocus',
-    'satchelHideMacroPalette',
-    'satchelColumns',
-    'satchelRows',
-    'satchelSlotSize',
-    'satchelHideEmptySlots',
-    'satchelIncludeContainers',
-};
-
--- Fill any missing profile keys (nil or absent) from defaults to avoid load errors.
+-- Fill any missing profile keys (nil or absent) from defaults to avoid load
+-- errors. DeepMergeWithDefaults recurses into nested dictionaries (including
+-- colorCustomization) and leaves user-provided arrays intact, so no per-key
+-- fill lists are needed here.
 function M.EnsureProfileHasAllDefaults(gConfig, defaults)
     if gConfig == nil or defaults == nil then
         return;
     end
 
     DeepMergeWithDefaults(gConfig, defaults);
-
-    for _, key in ipairs(SATCHEL_PROFILE_KEYS) do
-        if gConfig[key] == nil and defaults[key] ~= nil then
-            gConfig[key] = deep_copy_table(defaults[key]);
-        end
-    end
-
-    if defaults.colorCustomization then
-        if gConfig.colorCustomization == nil then
-            gConfig.colorCustomization = deep_copy_table(defaults.colorCustomization);
-        else
-            DeepMergeWithDefaults(gConfig.colorCustomization, defaults.colorCustomization);
-        end
-    end
-end
-
--- Versioned migrations for profile settings (gConfig).
--- Returns true when the profile was updated and should be saved.
-function M.MigrateSettingsVersion(gConfig, defaults)
-    if gConfig == nil or defaults == nil then
-        return false;
-    end
-
-    if gConfig.settingsMigrationVersion == M.SETTINGS_MIGRATION_VERSION then
-        return false;
-    end
-
-    if gConfig.satchelHideEmptySlots == nil then
-        if gConfig.satchelShowEmptySlots ~= nil then
-            gConfig.satchelHideEmptySlots = gConfig.satchelShowEmptySlots == false;
-            gConfig.satchelShowEmptySlots = nil;
-        else
-            gConfig.satchelHideEmptySlots = defaults.satchelHideEmptySlots == true;
-        end
-    end
-
-    if gConfig.satchelAutoSortBags == nil then
-        gConfig.satchelAutoSortBags = defaults.satchelAutoSortBags == true;
-    end
-
-    if gConfig.satchelTooltipIconsAsWords == nil then
-        gConfig.satchelTooltipIconsAsWords = defaults.satchelTooltipIconsAsWords == true;
-    end
-
-    if gConfig.satchelTooltipFontFamily == nil then
-        gConfig.satchelTooltipFontFamily = defaults.satchelTooltipFontFamily or 'Consolas';
-    end
-
-    do
-        local tooltiplayout = require('modules.satchel.tooltips');
-        if gConfig.satchelTooltipFontSize == nil then
-            if gConfig.satchelTooltipScale ~= nil then
-                gConfig.satchelTooltipFontSize =
-                    tooltiplayout.font_size_from_legacy_scale(gConfig.satchelTooltipScale);
-            else
-                gConfig.satchelTooltipFontSize = defaults.satchelTooltipFontSize or 14;
-            end
-        else
-            gConfig.satchelTooltipFontSize =
-                tooltiplayout.normalize_font_size(gConfig.satchelTooltipFontSize);
-        end
-        gConfig.satchelTooltipScale = nil;
-    end
-
-    if gConfig.satchelCloseOnEscape == nil then
-        gConfig.satchelCloseOnEscape = defaults.satchelCloseOnEscape == true;
-    end
-
-    if gConfig.satchelOverrideCommand == nil then
-        gConfig.satchelOverrideCommand = defaults.satchelOverrideCommand == true;
-    end
-
-    gConfig.settingsMigrationVersion = M.SETTINGS_MIGRATION_VERSION;
-
-    if config and config.currentProfile then
-        profileManager.SaveProfileSettings(config.currentProfile, gConfig);
-    end
-
-    return true;
 end
 
 -- Migrate settings from HXUI to XIUI (one-time migration for users upgrading from HXUI)
@@ -597,30 +500,8 @@ function M.MigrateIndividualSettings(gConfig, defaults)
         end
     end
 
-    if gConfig.satchelHideEmptySlots == nil then
-        gConfig.satchelHideEmptySlots = gConfig.satchelShowEmptySlots == false;
-        gConfig.satchelShowEmptySlots = nil;
-    end
-
-    if gConfig.satchelAutoSortBags == nil then
-        gConfig.satchelAutoSortBags = defaults.satchelAutoSortBags == true;
-    end
-
-    -- Ensure satchel module color keys exist when the table is partially populated.
-    if gConfig.colorCustomization and defaults.colorCustomization and defaults.colorCustomization.satchelModule then
-        if gConfig.colorCustomization.satchelModule == nil then
-            gConfig.colorCustomization.satchelModule =
-                deep_copy_table(defaults.colorCustomization.satchelModule);
-        else
-            local satchelColors = gConfig.colorCustomization.satchelModule;
-            local satchelDefaults = defaults.colorCustomization.satchelModule;
-            for key, value in pairs(satchelDefaults) do
-                if satchelColors[key] == nil then
-                    satchelColors[key] = value;
-                end
-            end
-        end
-    end
+    -- Satchel key fills and color-table population are handled by
+    -- EnsureProfileHasAllDefaults (DeepMergeWithDefaults).
 
     -- Add mobInfo color settings if missing
     if gConfig.colorCustomization and not gConfig.colorCustomization.mobInfo then
@@ -1227,7 +1108,6 @@ end
 -- These handle migrating old settings structures to new ones
 function M.RunStructureMigrations(gConfig, defaults)
     M.EnsureProfileHasAllDefaults(gConfig, defaults);
-    M.MigrateSettingsVersion(gConfig, defaults);
     M.MigratePartyListLayoutSettings(gConfig, defaults);
     M.MigratePerPartySettings(gConfig, defaults);
     M.MigratePerPetTypeSettings(gConfig, defaults);

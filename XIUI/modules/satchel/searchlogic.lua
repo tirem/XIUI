@@ -383,6 +383,10 @@ end
 
 -- Profile search (lua / xml gear profiles).
 local name_index = nil
+local name_index_ready = false
+local name_index_requested = false
+local name_index_cursor = 0
+local NAME_INDEX_MAX_ID = 65535
 local profile_cache = {} -- path -> { size, ids }
 local query_cache = {} -- cache_key -> { resolved, path, size, ids }
 
@@ -795,45 +799,78 @@ local function coerce_name(raw_name, item)
     return text
 end
 
-local function ensure_name_index()
-    if name_index then
-        return name_index
+-- Index a single id into name_index. Kept tiny so the incremental builder and
+-- any synchronous fallback share one code path.
+local function index_item_name(rm, item_id)
+    local ok, item = pcall(rm.GetItemById, rm, item_id)
+    if not (ok and item) then
+        return
     end
 
-    name_index = {}
-    local rm = AshitaCore and AshitaCore:GetResourceManager()
-    if not rm then
-        return name_index
+    local fields = {}
+    if item.Name and item.Name[1] then
+        fields[#fields + 1] = item.Name[1]
+    end
+    if item.LogNameSingular and item.LogNameSingular[1] then
+        fields[#fields + 1] = item.LogNameSingular[1]
+    end
+    if item.LogNamePlural and item.LogNamePlural[1] then
+        fields[#fields + 1] = item.LogNamePlural[1]
     end
 
-    -- Practical item id range for FFXI resources.
-    for item_id = 1, 65535 do
-        local ok, item = pcall(rm.GetItemById, rm, item_id)
-        if ok and item then
-            local fields = {}
-            if item.Name and item.Name[1] then
-                fields[#fields + 1] = item.Name[1]
-            end
-            if item.LogNameSingular and item.LogNameSingular[1] then
-                fields[#fields + 1] = item.LogNameSingular[1]
-            end
-            if item.LogNamePlural and item.LogNamePlural[1] then
-                fields[#fields + 1] = item.LogNamePlural[1]
-            end
-
-            for _, field in ipairs(fields) do
-                local name = coerce_name(field, item)
-                if name then
-                    local key = lower(name)
-                    if not name_index[key] then
-                        name_index[key] = item_id
-                    end
-                end
+    for _, field in ipairs(fields) do
+        local name = coerce_name(field, item)
+        if name then
+            local key = lower(name)
+            if not name_index[key] then
+                name_index[key] = item_id
             end
         end
     end
+end
 
+-- Returns the (possibly partial) name index and flags it as needed so the
+-- incremental builder starts running from tick_name_index.
+local function ensure_name_index()
+    name_index_requested = true
+    if not name_index then
+        name_index = {}
+    end
     return name_index
+end
+
+function M.is_name_index_ready()
+    return name_index_ready
+end
+
+-- Build the item-name index in chunks so the first gear-profile search never
+-- stalls the render thread. Returns true only on the frame the build completes,
+-- so the caller can invalidate any partial search results that were cached.
+function M.tick_name_index(budget)
+    if name_index_ready or not name_index_requested then
+        return false
+    end
+
+    local rm = AshitaCore and AshitaCore:GetResourceManager()
+    if not rm then
+        return false
+    end
+
+    if not name_index then
+        name_index = {}
+    end
+
+    local stop = math.min(name_index_cursor + (budget or 3000), NAME_INDEX_MAX_ID)
+    for item_id = name_index_cursor + 1, stop do
+        index_item_name(rm, item_id)
+    end
+    name_index_cursor = stop
+
+    if name_index_cursor >= NAME_INDEX_MAX_ID then
+        name_index_ready = true
+        return true
+    end
+    return false
 end
 
 local function resolve_names_to_ids(names)
@@ -848,7 +885,7 @@ local function resolve_names_to_ids(names)
     return ids
 end
 
-local function load_profile_ids(path)
+local function load_profile_ids(path, allow_cache)
     if not path then
         return {}
     end
@@ -858,9 +895,11 @@ local function load_profile_ids(path)
         return {}
     end
 
-    local cached = profile_cache[path]
-    if cached and cached.size == size and cached.ids then
-        return cached.ids
+    if allow_cache then
+        local cached = profile_cache[path]
+        if cached and cached.size == size and cached.ids then
+            return cached.ids
+        end
     end
 
     local data = read_file(path)
@@ -876,7 +915,9 @@ local function load_profile_ids(path)
     end
 
     local ids = resolve_names_to_ids(names)
-    profile_cache[path] = { size = size, ids = ids }
+    if allow_cache then
+        profile_cache[path] = { size = size, ids = ids }
+    end
     return ids
 end
 
@@ -914,6 +955,12 @@ function M.get_match_ids(query)
         return {}
     end
 
+    -- Profile resolution needs the full item-name index. Kick off the (chunked)
+    -- build and, while it is still running, resolve against the partial index but
+    -- skip caching so results refresh once the build completes.
+    ensure_name_index()
+    local allow_cache = name_index_ready
+
     local cache_key = table.concat({
         mode,
         arg or '',
@@ -922,9 +969,11 @@ function M.get_match_ids(query)
         player.job_abbr,
     }, '\0')
 
-    local cached_ids = lookup_query_cache(cache_key)
-    if cached_ids then
-        return cached_ids
+    if allow_cache then
+        local cached_ids = lookup_query_cache(cache_key)
+        if cached_ids then
+            return cached_ids
+        end
     end
 
     local path
@@ -934,8 +983,10 @@ function M.get_match_ids(query)
         path = resolve_xml_path(player, arg)
     end
 
-    local ids = load_profile_ids(path)
-    store_query_cache(cache_key, path, ids)
+    local ids = load_profile_ids(path, allow_cache)
+    if allow_cache then
+        store_query_cache(cache_key, path, ids)
+    end
     return ids
 end
 

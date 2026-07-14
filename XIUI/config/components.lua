@@ -474,6 +474,17 @@ function components.DrawCheckbox(label, configKey, callback)
     end
 end
 
+-- Checkbox whose visible state is the logical inverse of the stored value.
+-- Use when the label reads opposite to the persisted key (e.g. a "Hide X"
+-- checkbox backed by a "showX" setting).
+function components.DrawCheckboxInverted(label, configKey, callback)
+    if (imgui.Checkbox(label, { not gConfig[configKey] })) then
+        gConfig[configKey] = not gConfig[configKey];
+        SaveSettingsOnly();
+        if callback then callback() end
+    end
+end
+
 -- Draw "Hide When Menu Open" with optional indented sub-options
 -- @param hideOnMenuFocusKey: config key for hide when menu open
 -- @param hideMacroPaletteKey: optional config key for macro palette exception

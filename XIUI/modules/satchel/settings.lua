@@ -32,8 +32,8 @@ function settingslogic.create(ctx)
             columns = gConfig and gConfig.satchelColumns or default_settings.columns,
             rows = gConfig and gConfig.satchelRows or default_settings.rows,
             slot_size = gConfig and gConfig.satchelSlotSize or default_settings.slot_size,
-            -- Default true; only false when explicitly unchecked (avoid the and/or-false trap).
-            hide_empty_slots = gConfig and gConfig.satchelHideEmptySlots == true,
+            -- Backed by satchelShowEmptySlots (true = show); hide only when explicitly off.
+            hide_empty_slots = gConfig and gConfig.satchelShowEmptySlots == false,
             include_containers = T{},
         }
 
@@ -62,7 +62,7 @@ function settingslogic.create(ctx)
         satchel.settings.columns = math.max(5, math.min(18, tonumber(gConfig.satchelColumns) or default_settings.columns))
         satchel.settings.rows = math.max(5, math.min(16, tonumber(gConfig.satchelRows) or default_settings.rows))
         satchel.settings.slot_size = math.max(24, math.min(96, tonumber(gConfig.satchelSlotSize) or default_settings.slot_size))
-        satchel.settings.hide_empty_slots = gConfig.satchelHideEmptySlots == true
+        satchel.settings.hide_empty_slots = gConfig.satchelShowEmptySlots == false
         satchel.settings.include_containers =
             containerlogic.normalize_include_containers(gConfig.satchelIncludeContainers or default_settings.include_containers)
         return true

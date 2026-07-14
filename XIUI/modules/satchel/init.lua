@@ -16,6 +16,7 @@ local altcache = require('modules.satchel.altcache')
 local layoutstate = require('modules.satchel.layoutstate')
 local tooltips = require('modules.satchel.tooltips')
 local satchelfonts = require('modules.satchel.satchelfontcore')
+local searchlogic = require('modules.satchel.searchlogic')
 
 local M = {}
 
@@ -668,6 +669,36 @@ local function invalidate_slot_cache()
     satchel.search.match_inv_gen = (satchel.search.match_inv_gen or 0) + 1
 end
 
+-- Force any cached search index to rebuild without discarding slot data. Used
+-- when the item-name index finishes building so partial profile-search results
+-- get re-resolved against the complete index.
+local function bump_search_generation()
+    satchel.search.match_inv_gen = (satchel.search.match_inv_gen or 0) + 1
+end
+
+-- Equipping/unequipping through the game (or another addon) doesn't move items
+-- between bags, so nothing else bumps the inv generation. Poll the 16 equipped
+-- slots and bump on change so the equipped-item lookup and slot borders refresh.
+local last_equipped_signature = nil
+local function poll_equipment_changes()
+    local inv = AshitaCore:GetMemoryManager():GetInventory()
+    if not inv then
+        return
+    end
+
+    local parts = {}
+    for equip_slot = 0, 15 do
+        local equipped = inv:GetEquippedItem(equip_slot)
+        parts[equip_slot + 1] = (equipped and tostring(equipped.Index)) or '0'
+    end
+
+    local signature = table.concat(parts, ',')
+    if signature ~= last_equipped_signature then
+        last_equipped_signature = signature
+        bump_search_generation()
+    end
+end
+
 local function get_slot_data(force_refresh)
     local cache = satchel.slot_cache
     local now = os.clock()
@@ -754,16 +785,31 @@ function handle_sort_container(slot)
     invalidate_slot_cache()
 end
 
+-- Cache the sorted display order per source slots-table identity. build_slot_data
+-- allocates fresh slots tables on every slot_cache rebuild, so a weak-keyed cache
+-- self-invalidates and never needs manual clearing.
+local sort_cache = setmetatable({}, { __mode = 'k' })
+
+local function sort_key_for(item_id)
+    return items.get_item_sort_key(item_id)
+end
+
+local function sort_name_for(item_id)
+    return items.get_item_name(item_id) or ''
+end
+
 local function sort_slots_visually(slots)
-    return annotate_display_indices(containerlogic.sort_slots_for_display(
-        slots,
-        function(item_id)
-            return items.get_item_sort_key(item_id)
-        end,
-        function(item_id)
-            return items.get_item_name(item_id) or ''
-        end
-    ))
+    if slots == nil then
+        return annotate_display_indices({})
+    end
+    local sorted = sort_cache[slots]
+    if not sorted then
+        sorted = containerlogic.sort_slots_for_display(slots, sort_key_for, sort_name_for)
+        sort_cache[slots] = sorted
+    end
+    -- Re-annotate cheaply each frame so display_index stays correct even if the
+    -- shared slot refs were annotated by another view in between.
+    return annotate_display_indices(sorted)
 end
 
 local function get_alt_visual_slots(entry, container_id)
@@ -2363,6 +2409,11 @@ function M.DrawWindow()
 
     if is_module_enabled() then
         altcache.tick()
+        poll_equipment_changes()
+        -- Advance the chunked item-name index; refresh search once it completes.
+        if searchlogic.tick_name_index() then
+            bump_search_generation()
+        end
     end
 
     local scale = ui.get_global_scale()
