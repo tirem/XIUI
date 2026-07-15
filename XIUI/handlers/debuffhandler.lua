@@ -87,7 +87,6 @@ local SPELL_DURATIONS = {
     [252] = {duration = 5},   -- Stun
     [220] = {duration = 90},  -- Poison
     [221] = {duration = 120}, -- Poison II
-    [156] = { duration = 12 }, -- Flash
 
     -- Ninjutsu debuffs
     [341] = { duration = 180 }, -- Jubaku: Ichi
