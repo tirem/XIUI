@@ -1039,6 +1039,27 @@ local function LogPresentError(label, err)
     end
 end
 
+-- Ashita 4.3 (ImGui 1.92) bumped the default chrome font from 14px to 18px, which
+-- oversizes XIUI's config window and satchel. ImGui 1.92's PushFont takes a size
+-- arg, so we scope the base to 16 around our own draws (no global side effects and
+-- no per-frame fighting of Ashita's global FontSizeBase). On 4.16 PushFont has no
+-- size arg, so FontSizeBase's absence disables this.
+local XIUI_CHROME_FONT_SIZE = 16.0;
+local imguiLib = require('imgui');
+local CHROME_FONT_OVERRIDE = false;
+do
+    local ok, style = pcall(imguiLib.GetStyle);
+    CHROME_FONT_OVERRIDE = ok and style ~= nil and type(style.FontSizeBase) == 'number';
+end
+local function PushChromeFont()
+    if not CHROME_FONT_OVERRIDE then return false; end
+    imguiLib.PushFont(imguiLib.GetFont(), XIUI_CHROME_FONT_SIZE);
+    return true;
+end
+local function PopChromeFont(pushed)
+    if pushed then imguiLib.PopFont(); end
+end
+
 ashita.events.register('d3d_present', 'present_cb', function ()
     if not bInitialized then return; end
 
@@ -1121,6 +1142,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
             -- Draw config/help before modules so off-screen module draws cannot
             -- take down ImGui windows for this frame.
             local chromeVisible = showConfig[1] or commandHelp.IsOpen();
+            local chromeFontPushed = PushChromeFont();
             if chromeVisible then
                 tryPresentDraw('config', drawConfigChrome);
             end
@@ -1139,6 +1161,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 
             tryPresentDraw('config', slotrenderer.FlushTooltip);
             tryPresentDraw('config', statusHandler.FlushTooltip);
+            PopChromeFont(chromeFontPushed);
         else
             uiModules.HideAll();
         end
