@@ -426,7 +426,7 @@ function M.createUserSettingsDefaults()
 
         showSatchelModule = true,
         satchelVisible = false,
-        satchelOverrideCommand = false,
+        satchelOverrideCommand = (not HzLimitedMode),
         satchelCloseOnEscape = false,
         satchelTooltipIconsAsWords = false,
         satchelTooltipFontFamily = 'Consolas',
