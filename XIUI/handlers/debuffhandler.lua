@@ -89,12 +89,13 @@ local SPELL_DURATIONS = {
     [221] = {duration = 120}, -- Poison II
 
     -- Ninjutsu debuffs
-    [341] = {duration = 180}, -- Kurayami: Ichi
-    [344] = {duration = 180}, -- Hojo: Ichi
-    [347] = {duration = 180}, -- Dokumori: Ichi
-    [342] = {duration = 300}, -- Kurayami: Ni
-    [345] = {duration = 300}, -- Hojo: Ni
-    [348] = {duration = 300}, -- Dokumori: Ni
+    [341] = { duration = 180 }, -- Jubaku: Ichi
+    [342] = { duration = 300 }, -- Jubaku: Ni
+    [344] = { duration = 180 }, -- Hojo: Ichi
+    [345] = { duration = 300 }, -- Hojo: Ni
+    [347] = { duration = 180 }, -- Kurayami: Ichi
+    [348] = { duration = 300 }, -- Kurayami: Ni
+    [350] = { duration = 60 },  -- Dokumori: Ichi
 
     -- Elemental debuffs (Burn, Frost, Choke, Rasp, Shock, Drown)
     [235] = {duration = 120}, [236] = {duration = 120},
