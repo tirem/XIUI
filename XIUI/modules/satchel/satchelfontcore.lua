@@ -273,29 +273,8 @@ function M.capture_chrome_base_px()
     return chrome_base_px
 end
 
-function M.get_chrome_pixel_size(scale)
-    scale = scale or get_global_scale()
-    local base = M.capture_chrome_base_px()
-    return math.max(1, math.floor(base * scale + 0.5))
-end
-
-function M.get_chrome_metrics(scale)
-    scale = scale or get_global_scale()
-    local px = M.get_chrome_pixel_size(scale)
-    return {
-        family = 'agave',
-        scale = scale,
-        pixel_size = px,
-        line_height = px,
-    }
-end
-
 function M.prewarm_startup()
     M.capture_chrome_base_px()
-end
-
-function M.sync_chrome()
-    return false
 end
 
 -- Kept for callers that sync chrome each frame (no-op; Agave is always present).

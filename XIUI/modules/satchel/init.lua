@@ -509,24 +509,6 @@ local function get_active_drag_scope()
     return nil
 end
 
-local function slots_match_drag_source(drag_state, slot)
-    if not drag_state or not drag_state.source_slot or not slot then
-        return false
-    end
-
-    if tonumber(drag_state.source_slot.container_id) ~= tonumber(slot.container_id) then
-        return false
-    end
-
-    local source_display = tonumber(drag_state.source_slot.display_index)
-    local slot_display = tonumber(slot.display_index)
-    if source_display ~= nil and slot_display ~= nil then
-        return source_display == slot_display
-    end
-
-    return tonumber(drag_state.source_slot.slot_index) == tonumber(slot.slot_index)
-end
-
 local function is_slot_drag_source(drag_state, slot)
     if not drag_state or not drag_state.source_slot or not slot then
         return false

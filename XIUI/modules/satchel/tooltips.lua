@@ -63,11 +63,6 @@ function M.label_for_font_size(px)
     return M.FONT_SIZE_LABELS[px] or (tostring(px) .. 'px')
 end
 
-function M.font_size_from_legacy_scale(scale)
-    scale = tonumber(scale) or 1.0
-    return M.normalize_font_size(M.BASE_FONT_PX * scale)
-end
-
 function M.smaller_font_sizes(px)
     px = M.normalize_font_size(px)
     local result = {}
@@ -275,14 +270,6 @@ function M.layout_row_pack(units, wrap_width, font_family, pixel_size)
     return scratch_rows
 end
 
-function M.measure_layout_width(rows, font_family, pixel_size)
-    local max_w = 0
-    for _, row in ipairs(rows or {}) do
-        max_w = math.max(max_w, row.width or 0)
-    end
-    return max_w
-end
-
 function M.render_unit_parts(parts, color, element_colors, render_text_fn)
     for index, part in ipairs(parts or {}) do
         if index > 1 then
@@ -457,29 +444,6 @@ function M.get_metrics()
     return metrics
 end
 
-function M.is_font_loading()
-    return pending_load ~= nil
-end
-
-function M.is_size_loading()
-    return pending_load ~= nil
-end
-
-function M.is_catalog_ready()
-    return fontcore.is_cached(get_tooltip_family(), get_tooltip_font_size())
-end
-
-function M.is_catalog_loading()
-    return pending_load ~= nil
-end
-
-function M.queue_current_if_needed()
-    return queue_active_pair()
-end
-
-function M.begin_catalog_prewarm()
-end
-
 function M.notify_font_changed()
     queue_active_pair()
 end
@@ -494,33 +458,11 @@ function M.prewarm_startup()
     return load_pair_now(get_tooltip_family(), get_tooltip_font_size())
 end
 
--- Present-safe: never touches the atlas.
-function M.prewarm_current()
-    apply_settings_change(get_tooltip_family(), get_tooltip_font_size())
-    return M.is_catalog_ready()
-end
-
-function M.prewarm_font_glyphs()
-    return M.prewarm_startup()
-end
-
-function M.ensure_tooltip_font_glyphs()
-    return M.is_catalog_ready()
-end
-
 function M.on_satchel_config_hidden()
-end
-
-function M.on_settings_changed()
-    queue_active_pair()
 end
 
 function M.has_pending_load()
     return pending_load ~= nil
-end
-
-function M.has_idle_work()
-    return false
 end
 
 -- Call once at the top of d3d_present, before any module/config draw.
@@ -537,20 +479,8 @@ function M.tick_load()
     return true
 end
 
-function M.tick_idle_prewarm()
-    return false
-end
-
-function M.get_wave_dash_char()
-    return WAVE_DASH_CHAR
-end
-
 function M.get_wave_dash_marker()
     return WAVE_DASH_MARKER
-end
-
-function M.get_wave_font()
-    return nil
 end
 
 function M.push_tooltip_font()
@@ -567,20 +497,6 @@ function M.pop_tooltip_font()
         fontcore.pop_tooltip_font()
         push_depth = push_depth - 1
     end
-end
-
-function M.try_render_merged_glyph(color)
-    local metrics = M.get_metrics()
-    if M.font_has_glyph(metrics.family, metrics.pixel_size, WAVE_DASH_CHAR) then
-        imgui.TextColored(color, WAVE_DASH_CHAR)
-        return true
-    end
-    return false
-end
-
-function M.measure_wave_dash_width()
-    local metrics = M.get_metrics()
-    return M.wave_dash_width(metrics.family, metrics.pixel_size)
 end
 
 function M.calc_text_width(text)
@@ -1020,10 +936,6 @@ function M.preload_assets(_satchel, _addon_path)
 
     preload_state.complete = true
     return true
-end
-
-function M.get_asset_root(addon_path)
-    return (addon_path or '') .. '\\assets\\satchel\\'
 end
 
 function M.get_status_color(tag_key)

@@ -377,10 +377,6 @@ function M.draw_match_border_rect(draw_list, x, y, w, h, opacity)
     )
 end
 
-function M.draw_match_border(draw_list, x, y, size, opacity)
-    M.draw_match_border_rect(draw_list, x, y, size, size, opacity)
-end
-
 -- Profile search (lua / xml gear profiles).
 local name_index = nil
 local name_index_ready = false
@@ -837,10 +833,6 @@ local function ensure_name_index()
         name_index = {}
     end
     return name_index
-end
-
-function M.is_name_index_ready()
-    return name_index_ready
 end
 
 -- Build the item-name index in chunks so the first gear-profile search never

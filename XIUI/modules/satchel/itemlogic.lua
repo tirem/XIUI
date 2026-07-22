@@ -714,6 +714,10 @@ local function create_item_logic(ctx)
         return is_slot_currently_equipped(slot)
     end
 
+    -- Price a satchel list/unlist just applied; the game keeps the old Price until
+    -- the server confirms, so trust ours until memory catches up. property_index -> { id, price }.
+    local bazaar_pending = {}
+
     local function is_slot_in_bazaar(slot)
         if not slot or slot.container_id ~= 0 or not slot.id or slot.id <= 0 then
             return false
@@ -724,11 +728,29 @@ local function create_item_logic(ctx)
             return false
         end
 
-        return (tonumber(inv_item.Price) or 0) > 0
+        local price = tonumber(inv_item.Price) or 0
+        local pending = bazaar_pending[slot.property_index]
+        if pending and pending.id == slot.id then
+            if price == pending.price then
+                bazaar_pending[slot.property_index] = nil -- memory agrees; forget it
+            else
+                price = pending.price
+            end
+        end
+
+        return price > 0
     end
 
     function M.is_slot_in_bazaar(slot)
         return is_slot_in_bazaar(slot)
+    end
+
+    -- Optimistically apply a satchel list/unlist so the border updates immediately.
+    function M.set_bazaar_pending(slot, price)
+        if slot and slot.container_id == 0 and slot.property_index and slot.id then
+            bazaar_pending[slot.property_index] = { id = slot.id, price = math.max(0, tonumber(price) or 0) }
+            satchel.search.match_inv_gen = (satchel.search.match_inv_gen or 0) + 1
+        end
     end
 
     local function get_enchantment_info(slot, item, resource)
@@ -1957,14 +1979,6 @@ local function create_item_logic(ctx)
         render_element_word_tokens(build_element_word_tokens(line), nil, true)
     end
 
-    local function render_inline_text_with_element_words(text)
-        if type(text) ~= 'string' or text == '' then
-            return
-        end
-
-        render_element_word_tokens(build_element_word_tokens(text), nil, true)
-    end
-
     local function render_description_line_tokens_hybrid(tokens, color)
         color = color or { 0.88, 0.88, 0.88, 1.0 }
 
@@ -2067,21 +2081,6 @@ local function create_item_logic(ctx)
         end
 
         return tooltips.format_item_name(M.get_item_name(item_id))
-    end
-
-    local function coerce_resource_string(value)
-        if type(value) ~= 'string' or value == '' then
-            return nil
-        end
-
-        if encoding and encoding.ShiftJIS_To_UTF8 then
-            local ok, converted = pcall(encoding.ShiftJIS_To_UTF8, encoding, value, true)
-            if ok and type(converted) == 'string' and converted ~= '' then
-                return converted
-            end
-        end
-
-        return value
     end
 
     local function preprocess_description_raw(raw)
@@ -3174,49 +3173,6 @@ local function create_item_logic(ctx)
         }
     end
 
-    function M.build_right_click_command(slot)
-        if not slot or slot.container_id == nil or not slot.id or slot.id <= 0 then
-            return nil
-        end
-
-        if is_slot_in_bazaar(slot) then
-            return nil
-        end
-
-        local item_type = M.get_item_type(slot.id)
-        local item_resource = M.get_item_resource(slot.id)
-        local item_name = escape_command_text(M.get_item_name(slot.id))
-        if item_name == '' then
-            return nil
-        end
-
-        if item_type == 7 then
-            if slot.container_id == 0 then
-                return ('/item "%s" <me>'):format(item_name)
-            end
-            return nil
-        end
-
-        if item_type == 4 or item_type == 5 then
-            if slot.container_id == 0 or is_wardrobe_container(slot.container_id) then
-                local enchant_info = get_enchantment_info(slot, item_resource, item_resource)
-                local is_equipped = is_slot_currently_equipped(slot)
-                local is_ready_to_use = enchant_info and (tonumber(enchant_info.use_delay) or 0) <= 0
-
-                if is_equipped and is_ready_to_use then
-                    return ('/item "%s" <me>'):format(item_name)
-                end
-
-                local equip_slot = get_primary_equip_slot_name(item_resource)
-                if equip_slot then
-                    return ('/equip %s "%s"'):format(equip_slot, item_name)
-                end
-            end
-        end
-
-        return nil
-    end
-
     local function item_has_slot(item, mask)
         if not item then
             return false
@@ -3692,10 +3648,6 @@ local function create_item_logic(ctx)
             return true
         end
         return false
-    end
-
-    function M.matches_search(slot_or_id, query)
-        return matches_search_impl(slot_or_id, query)
     end
 
     return M

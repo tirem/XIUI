@@ -501,10 +501,6 @@ local function get_configured_rows(settings)
     return math.max(MIN_GRID_DIM, tonumber(settings.rows) or 8)
 end
 
-local function get_viewport_rows(settings)
-    return get_configured_rows(settings)
-end
-
 local function get_layout_rows(settings)
     return get_configured_rows(settings)
 end

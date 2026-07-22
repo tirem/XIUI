@@ -82,8 +82,4 @@ function M.get_item_border()
     return M.get_rgba('itemBorderColor')
 end
 
-function M.get_defaults()
-    return DEFAULTS
-end
-
 return M

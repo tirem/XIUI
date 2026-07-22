@@ -158,6 +158,7 @@ function contextmenu.create(ctx)
                 if imgui.Button('OK', { 80, 0 }) then
                     if not HzLimitedMode then
                         packets.send_bazaar_set_and_open(bd.slot.property_index, bd.price[1])
+                        items.set_bazaar_pending(bd.slot, bd.price[1])
                     end
                     imgui.CloseCurrentPopup()
                     clear_bazaar_dialog()
