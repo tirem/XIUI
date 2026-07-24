@@ -59,6 +59,12 @@ local function resolveFontPath(fontFamily, isBold)
     return 'C:\\Windows\\Fonts\\' .. fileName;
 end
 
+--- Resolve a Windows font-file path for a family/weight. Public so other
+--- modules (e.g. satchel tooltip fonts) reuse the shared map instead of duplicating it.
+function M.ResolveFontPath(fontFamily, isBold)
+    return resolveFontPath(fontFamily or 'Tahoma', isBold == true);
+end
+
 local function loadFont(fontFamily, isBold)
     local fontKey = (fontFamily or 'Tahoma') .. (isBold and ':bold' or ':regular');
     if fontKey == activeFontKey then return; end

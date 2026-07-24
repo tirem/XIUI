@@ -455,7 +455,14 @@ end
 -- Load-event only: active family + active size.
 function M.prewarm_startup()
     pending_load = nil
-    return load_pair_now(get_tooltip_family(), get_tooltip_font_size())
+    -- Bake every selectable size for the active family at the load event so runtime
+    -- size changes are a pure cache lookup (mid-frame atlas mutation is unsafe).
+    local family = get_tooltip_family()
+    for i = 1, #M.FONT_SIZES do
+        fontcore.load_font(family, M.FONT_SIZES[i], true)
+    end
+    -- Point sync_state/glyph cache at the active size (already baked above).
+    return load_pair_now(family, get_tooltip_font_size())
 end
 
 function M.on_satchel_config_hidden()

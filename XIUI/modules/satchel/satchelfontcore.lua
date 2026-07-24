@@ -11,26 +11,20 @@
 ]]--
 
 local imgui = require('imgui')
+local imtext = require('libs.imtext')
 
 local M = {}
 
 local fontCache = {}
 local tooltip_push_depth = 0
 
-local fontFamilyToFile = {
-    arial                    = { regular = 'arial.ttf' },
-    calibri                  = { regular = 'calibri.ttf' },
-    consolas                 = { regular = 'consola.ttf' },
-    ['courier new']          = { regular = 'cour.ttf' },
-    georgia                  = { regular = 'georgia.ttf' },
-    ['lucida console']       = { regular = 'lucon.ttf' },
-    ['microsoft sans serif'] = { regular = 'micross.ttf' },
-    ['segoe ui']             = { regular = 'segoeui.ttf' },
-    tahoma                   = { regular = 'tahoma.ttf' },
-    ['times new roman']      = { regular = 'times.ttf' },
-    ['trebuchet ms']         = { regular = 'trebuc.ttf' },
-    verdana                  = { regular = 'verdana.ttf' },
-}
+-- ImGui 1.92 (Ashita 4.3) needs the size passed to PushFont; 4.16 bakes it in
+-- the atlas, so PushFont(font) alone is correct there.
+local DYNAMIC_FONT_SIZE = false
+do
+    local ok, style = pcall(imgui.GetStyle)
+    DYNAMIC_FONT_SIZE = ok and style ~= nil and type(style.FontSizeBase) == 'number'
+end
 
 local AGAVE_FILE_NAMES = {
     'Agave-Regular.ttf',
@@ -80,9 +74,8 @@ function M.resolve_font_path(fontFamily)
         return nil
     end
 
-    local mapping = fontFamilyToFile[key]
-    local fileName = mapping and mapping.regular or (key .. '.ttf')
-    return 'C:\\Windows\\Fonts\\' .. fileName
+    -- Windows fonts share imtext's family->file map (regular weight).
+    return imtext.ResolveFontPath(fontFamily, false)
 end
 
 local function cache_key(fontFamily, pixelSize)
@@ -191,7 +184,12 @@ function M.push_font(fontFamily, pixelSize, allowLoad)
     if not font then
         return false
     end
-    local ok = pcall(imgui.PushFont, font)
+    local ok
+    if DYNAMIC_FONT_SIZE then
+        ok = pcall(imgui.PushFont, font, quantize_pixel_size(pixelSize))
+    else
+        ok = pcall(imgui.PushFont, font)
+    end
     return ok == true
 end
 
