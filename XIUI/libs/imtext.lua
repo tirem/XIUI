@@ -127,17 +127,6 @@ function M.GetFont()
     return activeFont or imgui.GetFont();
 end
 
---- Return a pre-warmed ImFont for a family without switching the active renderer font.
---- nil when the family was not loaded via PrewarmFonts (or load failed).
-function M.GetCachedFont(fontFamily, isBold)
-    local fontKey = (fontFamily or 'Tahoma') .. ((isBold == true) and ':bold' or ':regular');
-    local cached = fontCache[fontKey];
-    if cached and cached ~= false then
-        return cached;
-    end
-    return nil;
-end
-
 M.BAKE_PIXEL_SIZE = 20.0;
 
 --- Configure the text renderer from individual parameters.

@@ -3,7 +3,6 @@ require('handlers.helpers');
 local imgui = require('imgui');
 local imtext = require('libs.imtext');
 local debuffHandler = require('handlers.debuffhandler');
-local statusHandler = require('handlers.statushandler');
 local actionTracker = require('handlers.actiontracker');
 local enemyCasts = require('handlers.enemycasts');
 local progressbar = require('libs.progressbar');

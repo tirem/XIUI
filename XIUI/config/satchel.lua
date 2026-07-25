@@ -51,8 +51,8 @@ function M.DrawSettings()
 
         imgui.SetNextItemWidth(components.CONTENT_MAX_WIDTH);
         if imgui.BeginCombo('Tooltip Font', font_preview) then
-            for i = 1, #components.available_tooltip_fonts do
-                local font_name = components.available_tooltip_fonts[i];
+            for i = 1, #components.available_fonts do
+                local font_name = components.available_fonts[i];
                 local label = tooltips.font_display_name(font_name);
                 local is_selected = font_name == gConfig.satchelTooltipFontFamily;
                 if imgui.Selectable(label, is_selected) and not is_selected then

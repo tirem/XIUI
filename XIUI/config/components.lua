@@ -163,21 +163,6 @@ components.available_fonts = {
     'Verdana',
 };
 
-components.available_tooltip_fonts = {
-    'Arial',
-    'Calibri',
-    'Consolas',
-    'Courier New',
-    'Georgia',
-    'Lucida Console',
-    'Microsoft Sans Serif',
-    'Segoe UI',
-    'Tahoma',
-    'Times New Roman',
-    'Trebuchet MS',
-    'Verdana',
-};
-
 -- Max width for config UI elements
 local SECTION_MAX_WIDTH = 500;
 local CONTENT_MAX_WIDTH = 200;

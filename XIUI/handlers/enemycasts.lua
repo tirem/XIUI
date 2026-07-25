@@ -28,12 +28,6 @@ function M.GetCast(serverId)
     return serverId ~= nil and casts[serverId] or nil;
 end
 
-function M.ClearCast(serverId)
-    if serverId ~= nil then
-        casts[serverId] = nil;
-    end
-end
-
 -- Mark a tracked cast interrupted so consumers flash it white, freezing the
 -- fill where it stopped. No-op if nothing is tracked for this actor.
 function M.BeginInterruptFlash(serverId)
@@ -130,7 +124,7 @@ M.HandleActionPacket = function(actionPacket)
             end
 
             local spell = AshitaCore:GetResourceManager():GetSpellById(spellId);
-            if spell ~= nil and spell.Name[1] ~= nil then
+            if spell ~= nil and spell.Name ~= nil and spell.Name[1] ~= nil then
                 casts[actionPacket.UserId] = {
                     spellName = encoding:ShiftJIS_To_UTF8(spell.Name[1], true),
                     spellId = spellId,

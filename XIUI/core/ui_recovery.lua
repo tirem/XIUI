@@ -82,11 +82,9 @@ local MODULE_REGISTRY = {
     },
 };
 
-local registryByKey = {};
 local registryByAlias = {};
 
 for _, entry in ipairs(MODULE_REGISTRY) do
-    registryByKey[entry.key] = entry;
     for _, alias in ipairs(entry.aliases) do
         registryByAlias[alias] = entry;
     end
@@ -173,15 +171,6 @@ end
 local function runRecovery(entry)
     recoverEntry(entry);
     persist();
-end
-
-function M.RecoverModulePositions(moduleKey)
-    local entry = registryByKey[moduleKey];
-    if not entry then
-        return false;
-    end
-    runRecovery(entry);
-    return true;
 end
 
 function M.RecoverModulePositionsByAlias(alias)

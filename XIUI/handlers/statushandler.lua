@@ -3,7 +3,6 @@
 -------------------------------------------------------------------------------
 -- imports
 -------------------------------------------------------------------------------
-local ffi = require('ffi');
 local imgui = require('imgui');
 local encoding = require('libs.encoding');
 local TextureManager = require('libs.texturemanager');

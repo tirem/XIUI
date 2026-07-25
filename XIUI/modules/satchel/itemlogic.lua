@@ -7,6 +7,7 @@ local satchelcolors = require('modules.satchel.colors')
 local searchlogic = require('modules.satchel.searchlogic')
 local augmentlogic = require('modules.satchel.augmentlogic')
 local layoutstate = require('modules.satchel.layoutstate')
+local jobs = require('libs.jobs')
 local encoding = nil
 do
     local ok_encoding, encoding_lib = pcall(require, 'libs.encoding')
@@ -42,30 +43,7 @@ local function create_item_logic(ctx)
     local load_gil_icon = ctx.load_gil_icon
     local get_gil_icon_ptr = ctx.get_gil_icon_ptr
 
-    local job_abbr = {
-        [1] = 'WAR',
-        [2] = 'MNK',
-        [3] = 'WHM',
-        [4] = 'BLM',
-        [5] = 'RDM',
-        [6] = 'THF',
-        [7] = 'PLD',
-        [8] = 'DRK',
-        [9] = 'BST',
-        [10] = 'BRD',
-        [11] = 'RNG',
-        [12] = 'SAM',
-        [13] = 'NIN',
-        [14] = 'DRG',
-        [15] = 'SMN',
-        [16] = 'BLU',
-        [17] = 'COR',
-        [18] = 'PUP',
-        [19] = 'DNC',
-        [20] = 'SCH',
-        [21] = 'GEO',
-        [22] = 'RUN',
-    }
+    local job_abbr = jobs
 
     local job_full_names = {
         [1] = 'warrior',
@@ -144,15 +122,12 @@ local function create_item_logic(ctx)
         { mask = armor_slot_masks.back, name = 'back' },
     }
 
+    local WARDROBE_CONTAINERS = {
+        [8] = true, [10] = true, [11] = true, [12] = true,
+        [13] = true, [14] = true, [15] = true, [16] = true,
+    }
     local function is_wardrobe_container(container_id)
-        return container_id == 8
-            or container_id == 10
-            or container_id == 11
-            or container_id == 12
-            or container_id == 13
-            or container_id == 14
-            or container_id == 15
-            or container_id == 16
+        return WARDROBE_CONTAINERS[container_id] == true
     end
 
     local M = {}
@@ -284,7 +259,8 @@ local function create_item_logic(ctx)
 
     local AUTO_EMPTY_SLOT_INDEX = 0x52
 
-    local function get_live_container_item(slot)
+    -- Raw live inventory item for a slot (no id validation); callers filter.
+    local function fetch_live_container_item(slot)
         if not slot or slot.container_id == nil or slot.slot_index == nil then
             return nil
         end
@@ -297,7 +273,15 @@ local function create_item_logic(ctx)
         local ok, item = pcall(function()
             return inv:GetContainerItem(slot.container_id, (tonumber(slot.slot_index) or 0) + 1)
         end)
-        if ok and item and item.Id and tonumber(item.Id) > 0 and tonumber(item.Id) ~= 65535 then
+        if ok then
+            return item
+        end
+        return nil
+    end
+
+    local function get_live_container_item(slot)
+        local item = fetch_live_container_item(slot)
+        if item and item.Id and tonumber(item.Id) > 0 and tonumber(item.Id) ~= 65535 then
             return item
         end
         return nil
@@ -667,19 +651,8 @@ local function create_item_logic(ctx)
     end
 
     local function get_inventory_item(slot)
-        if not slot or slot.container_id == nil or slot.slot_index == nil then
-            return nil
-        end
-
-        local inv = AshitaCore:GetMemoryManager():GetInventory()
-        if not inv then
-            return nil
-        end
-
-        local ok, item = pcall(function()
-            return inv:GetContainerItem(slot.container_id, (slot.slot_index or 0) + 1)
-        end)
-        if ok and item and item.Id and tonumber(item.Id) == tonumber(slot.id) then
+        local item = fetch_live_container_item(slot)
+        if item and item.Id and tonumber(item.Id) == tonumber(slot.id) then
             return item
         end
         return nil
@@ -1129,40 +1102,15 @@ local function create_item_logic(ctx)
         return flags_val
     end
 
+    -- Forward-declared; defined later and shared with get_equip_jobs_text.
+    local get_item_job_mask
+
     local function get_equip_jobs_text(item)
         if not item then
             return ''
         end
 
-        local mask = nil
-        local mask_fields = { 'Jobs', 'JobMask', 'EquipJobs', 'JobsMask' }
-        for _, field_name in ipairs(mask_fields) do
-            local n = read_number_field(item, field_name)
-            if n then
-                mask = n
-                break
-            end
-        end
-
-        if not mask then
-            local probes = {
-                function() return item.Jobs and item.Jobs[1] end,
-                function() return item.Jobs and item.Jobs[0] end,
-                function() return item.EquipJobs and item.EquipJobs[1] end,
-                function() return item.EquipJobs and item.EquipJobs[0] end,
-            }
-            for _, probe in ipairs(probes) do
-                local ok, val = pcall(probe)
-                if ok then
-                    local n = tonumber(val)
-                    if n and n > 0 then
-                        mask = n
-                        break
-                    end
-                end
-            end
-        end
-
+        local mask = get_item_job_mask(item)
         if not mask then
             return ''
         end
@@ -1344,14 +1292,18 @@ local function create_item_logic(ctx)
         return (text:gsub('%%', '%%%%'))
     end
 
-    local function measure_tooltip_text_width(text)
-        local display_text = escape_imgui_format(text)
+    local function measure_display_text_width(display_text)
         local metrics = tooltips.get_metrics()
         local width = satchelfontcore.calc_text_width(display_text, metrics.family, metrics.pixel_size)
         if not width or width <= 0 then
             width = tonumber(select(1, imgui.CalcTextSize(display_text))) or 0
         end
-        return display_text, width
+        return width
+    end
+
+    local function measure_tooltip_text_width(text)
+        local display_text = escape_imgui_format(text)
+        return display_text, measure_display_text_width(display_text)
     end
 
     local function render_tooltip_name_separator(color, sep_padding, line_width, start_x)
@@ -2661,12 +2613,7 @@ local function create_item_logic(ctx)
 
     local function measure_footer_text_width(text)
         local display_text = escape_imgui_format(normalize_footer_display_text(text))
-        local metrics = tooltips.get_metrics()
-        local width = satchelfontcore.calc_text_width(display_text, metrics.family, metrics.pixel_size)
-        if not width or width <= 0 then
-            width = tonumber(imgui.CalcTextSize(display_text)) or 0
-        end
-        return display_text, width
+        return display_text, measure_display_text_width(display_text)
     end
 
     local function get_description_footer_lines(slot, item_id)
@@ -3236,7 +3183,7 @@ local function create_item_logic(ctx)
         return false
     end
 
-    local function get_item_job_mask(item)
+    function get_item_job_mask(item)
         if not item then
             return nil
         end

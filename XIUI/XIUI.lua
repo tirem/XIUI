@@ -1197,10 +1197,6 @@ ashita.events.register('load', 'load_cb', function ()
 
     uiModules.InitializeAll(gAdjustedSettings);
 
-    pcall(function()
-        require('modules.satchel.tooltips').preload_assets()
-    end);
-
     -- Load mob data for current zone
     local party = AshitaCore:GetMemoryManager():GetParty();
     if party then

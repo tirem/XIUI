@@ -500,9 +500,6 @@ function M.MigrateIndividualSettings(gConfig, defaults)
         end
     end
 
-    -- Satchel key fills and color-table population are handled by
-    -- EnsureProfileHasAllDefaults (DeepMergeWithDefaults).
-
     -- Add mobInfo color settings if missing
     if gConfig.colorCustomization and not gConfig.colorCustomization.mobInfo then
         gConfig.colorCustomization.mobInfo = deep_copy_table(defaults.colorCustomization.mobInfo);
@@ -1121,13 +1118,6 @@ function M.RunStructureMigrations(gConfig, defaults)
     M.MigrateCrossbarComboModeSettings(gConfig, defaults);
     M.MigrateLegacyPositionFields(gConfig);
     M.MigrateSlotMacroRefs(gConfig);
-end
-
--- Legacy function for backward compatibility (if any external code calls it)
-function M.RunAllMigrations(gConfig, defaults)
-    -- NOTE: MigrateFromHXUI should be called separately BEFORE settings.load()
-    -- This function now only runs structure migrations
-    M.RunStructureMigrations(gConfig, defaults);
 end
 
 return M;

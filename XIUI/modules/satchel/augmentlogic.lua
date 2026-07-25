@@ -893,6 +893,11 @@ local function augments_to_table(sys, str, augment_values)
     return augments
 end
 
+-- Extdata flag byte 2 encodes the augment system in its high bits.
+local function flag2_is_system2(flag_2) return flag_2 % 64 / 32 >= 1 end
+local function flag2_is_system3(flag_2) return flag_2 / 128 >= 1 end
+local function flag2_has_trial(flag_2) return flag_2 % 128 / 64 >= 1 end
+
 local function decode_augmented_local(str)
     if type(str) ~= 'string' or #str < 12 then
         return nil
@@ -906,7 +911,7 @@ local function decode_augmented_local(str)
     local flag_2 = str:byte(2)
     local rettab = { type = 'Augmented Equipment' }
 
-    if flag_2 % 64 / 32 >= 1 then
+    if flag2_is_system2(flag_2) then
         rettab.augment_system = 2
         rettab.augments = augments_to_table(2, str:sub(7, 12), augmentdata)
         return rettab
@@ -916,7 +921,7 @@ local function decode_augmented_local(str)
         return rettab
     end
 
-    if flag_2 / 128 >= 1 then
+    if flag2_is_system3(flag_2) then
         rettab.augment_system = 3
         rettab.augments = augments_to_table(3, str:sub(3, 8), augmentdata)
         rettab.slots = {
@@ -928,12 +933,7 @@ local function decode_augmented_local(str)
     end
 
     rettab.augment_system = 1
-    local trial_number = nil
-    if flag_2 % 128 / 64 >= 1 then
-        trial_number = (str:byte(12) % 128) * 256 + str:byte(11)
-    end
-
-    if trial_number then
+    if flag2_has_trial(flag_2) then
         rettab.augments = augments_to_table(1, str:sub(3, 10), augmentdata)
     else
         rettab.augments = augments_to_table(1, str:sub(3, 12), augmentdata)
@@ -1055,20 +1055,15 @@ local function get_augment_pair_region(decoded, str)
     end
 
     local flag_2 = str:byte(2) or 0
-    if decoded.augment_system == 2 or flag_2 % 64 / 32 >= 1 then
+    if decoded.augment_system == 2 or flag2_is_system2(flag_2) then
         return str:sub(7, 12), 3
     end
 
-    if decoded.augment_system == 3 or flag_2 / 128 >= 1 then
+    if decoded.augment_system == 3 or flag2_is_system3(flag_2) then
         return str:sub(3, 8), 3
     end
 
-    local trial_number = nil
-    if flag_2 % 128 / 64 >= 1 then
-        trial_number = (str:byte(12) % 128) * 256 + str:byte(11)
-    end
-
-    if trial_number then
+    if flag2_has_trial(flag_2) then
         return str:sub(3, 10), 4
     end
 
@@ -1123,14 +1118,17 @@ local function inscription_element_index(id)
     return nil
 end
 
+local function augment_entry_potency(entry, val)
+    return (val + (entry.offset or 0)) * (entry.multiplier or 1)
+end
+
 local function inscription_display_value(id, val)
     local entry = augmentdata[id] and augmentdata[id][1]
     if not entry then
         return math.abs(val)
     end
 
-    local potency = ((val + (entry.offset or 0)) * (entry.multiplier or 1))
-    return math.max(0, math.abs(math.floor(potency + 0.5)))
+    return math.max(0, math.abs(math.floor(augment_entry_potency(entry, val) + 0.5)))
 end
 
 local function augment_has_negative_potency(sys, id, val)
@@ -1140,11 +1138,8 @@ local function augment_has_negative_potency(sys, id, val)
     end
 
     for _, entry in ipairs(augment_table) do
-        if entry.stat ~= 'none' then
-            local potency = ((val + (entry.offset or 0)) * (entry.multiplier or 1))
-            if potency < 0 then
-                return true
-            end
+        if entry.stat ~= 'none' and augment_entry_potency(entry, val) < 0 then
+            return true
         end
     end
 

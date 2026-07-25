@@ -72,13 +72,6 @@ local reusablePos2 = {0, 0};
 local reusableUV1 = {0, 0};
 local reusableUV2 = {1, 1};
 
--- Helper to set position table values (avoids creating new tables)
-local function setPos(tbl, x, y)
-	tbl[1] = x;
-	tbl[2] = y;
-	return tbl;
-end
-
 local function deferRelease(entry)
 	if entry ~= nil then
 		pendingReleases[#pendingReleases + 1] = entry;
