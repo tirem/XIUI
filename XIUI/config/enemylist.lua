@@ -64,6 +64,7 @@ function M.DrawSettings()
 
     if components.CollapsingSection('Debuffs##enemyList') then
         components.DrawCheckbox('Show Debuffs', 'showEnemyListDebuffs');
+        components.DrawCheckbox('Show Debuff Timers', 'showEnemyListDebuffTimers');
         if (gConfig.showEnemyListDebuffs) then
             components.DrawLeftRightAnchorDropdown('Debuff Anchor', gConfig, 'enemyListDebuffsAnchor',
                 'Which side of the enemy entry to anchor debuff icons.');

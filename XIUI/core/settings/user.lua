@@ -228,6 +228,7 @@ function M.createUserSettingsDefaults()
         showEnemyListTargets = true,
         enableEnemyListClickTarget = true,
         enemyListPreview = true,
+        showEnemyListDebuffTimers = false,
 
         playerBarScaleX = 1,
         playerBarScaleY = 1,
