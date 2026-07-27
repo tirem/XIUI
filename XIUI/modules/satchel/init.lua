@@ -2690,6 +2690,13 @@ function M.HandlePacketIn(e)
         close_all_satchel_windows()
         invalidate_slot_cache()
         altcache.invalidate()
+    elseif id == 0x01D then
+        -- State at 0x04: 1 = AllLoaded, sent once the containers are populated
+        -- after a zone and after every inventory mutation.
+        local ok, state = pcall(struct.unpack, 'B', e.data_modified or e.data, 0x04 + 1)
+        if ok and state == 1 then
+            altcache.mark_dirty()
+        end
     elseif id == 0x096 then
         set_mog_house(true)
         invalidate_slot_cache()

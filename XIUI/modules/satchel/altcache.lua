@@ -6,11 +6,12 @@ local altcache = {}
 local CACHE_CONTAINERS = containerlogic.SCAN_CONTAINERS
 local DISPLAY_SLOTS = containerlogic.DISPLAY_SLOTS
 local SAVE_DEBOUNCE_SECONDS = 5.0
-local SCAN_INTERVAL_SECONDS = 1.0
+local REBUILD_DEBOUNCE_SECONDS = 1.0
 
 local pending_save_at = 0
-local last_scan_at = 0
-local last_hash = nil
+-- 0 = no rebuild pending. Armed here because a mid-session /addon load sees no
+-- zone or item packet, so the first snapshot has to be self-scheduled.
+local rebuild_at = os.clock() + REBUILD_DEBOUNCE_SECONDS
 
 local function get_player_identity()
     local mm = AshitaCore:GetMemoryManager()
@@ -96,41 +97,6 @@ local function build_slip_snapshot()
     return slips
 end
 
-local function hash_slips(slips)
-    local parts = {}
-    for _, entry in ipairs(slips or {}) do
-        parts[#parts + 1] = tostring(entry.slip_id or 0) .. ':' .. tostring(entry.extra or '')
-    end
-    return table.concat(parts, '|')
-end
-
-local function hash_snapshot(snapshot, slips, gil)
-    if not snapshot then
-        return ''
-    end
-
-    local parts = {}
-    for _, container_id in ipairs(CACHE_CONTAINERS) do
-        local key = tostring(container_id)
-        local slots = snapshot[key]
-        if slots then
-            for slot_index = 1, DISPLAY_SLOTS do
-                local entry = slots[slot_index]
-                if type(entry) == 'table' then
-                    parts[#parts + 1] = tostring(entry.id or 0) .. 'x' .. tostring(entry.count or 1)
-                else
-                    parts[#parts + 1] = tostring(entry or 0)
-                end
-            end
-        end
-    end
-
-    parts[#parts + 1] = hash_slips(slips)
-    parts[#parts + 1] = tostring(tonumber(gil) or 0)
-
-    return table.concat(parts, ',')
-end
-
 local function write_cache_to_character_settings(cache_entry)
     if not config then
         return
@@ -142,6 +108,12 @@ local function write_cache_to_character_settings(cache_entry)
     end
 end
 
+-- Called on 0x01D AllLoaded, which the server sends after the zone-in container
+-- sync and after every inventory mutation. Debounced so a bag sort rebuilds once.
+function altcache.mark_dirty()
+    rebuild_at = os.clock() + REBUILD_DEBOUNCE_SECONDS
+end
+
 function altcache.tick()
     local now = os.clock()
     if pending_save_at > 0 and now >= pending_save_at then
@@ -151,39 +123,27 @@ function altcache.tick()
         end
     end
 
-    if (now - last_scan_at) < SCAN_INTERVAL_SECONDS then
+    if rebuild_at == 0 or now < rebuild_at then
         return
     end
-    last_scan_at = now
 
     local name, server_id = get_player_identity()
-    if not name or not server_id then
-        return
-    end
-
-    local snapshot = build_live_snapshot()
+    local snapshot = name and server_id and build_live_snapshot() or nil
     if not snapshot then
+        -- Not logged in or mid-zone; retry instead of dropping the request.
+        rebuild_at = now + REBUILD_DEBOUNCE_SECONDS
         return
     end
-
-    local slips = build_slip_snapshot()
-    local gil = get_live_gil_amount()
-    local hash = hash_snapshot(snapshot, slips, gil)
-    if hash == last_hash then
-        return
-    end
-    last_hash = hash
-
-    local cache_entry = {
-        name = name,
-        serverId = server_id,
-        containers = snapshot,
-        slips = slips,
-        gil = gil,
-    }
+    rebuild_at = 0
 
     if config then
-        config.satchelInventoryCache = cache_entry
+        config.satchelInventoryCache = {
+            name = name,
+            serverId = server_id,
+            containers = snapshot,
+            slips = build_slip_snapshot(),
+            gil = get_live_gil_amount(),
+        }
     end
 
     pending_save_at = now + SAVE_DEBOUNCE_SECONDS
@@ -288,9 +248,10 @@ function altcache.build_slots_from_cache(cache_entry, container_id)
     return slots
 end
 
+-- Zone teardown: drop any pending rebuild so we never snapshot a half-loaded
+-- inventory. The 0x01D AllLoaded that closes the zone-in sync re-arms it.
 function altcache.invalidate()
-    last_hash = nil
-    last_scan_at = 0
+    rebuild_at = 0
 end
 
 return altcache
