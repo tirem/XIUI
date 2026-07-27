@@ -2123,7 +2123,7 @@ end
 local function get_alt_available_tabs(entry)
     local available_tabs = {}
     for _, container_id in ipairs(tab_order) do
-        if container_id ~= 3 and not (container_id == 9 and HzLimitedMode) then
+        if container_id ~= 3 then
             if altcache.container_has_items(entry, container_id) then
                 available_tabs[#available_tabs + 1] = container_id
             end

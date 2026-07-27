@@ -80,12 +80,14 @@ function containerlogic.build_slot_data(satchel)
 
     for _, container_id in ipairs(satchel.settings.include_containers) do
         local cid = tonumber(container_id)
-        if cid == nil or (cid == 9 and HzLimitedMode) then
+        if cid == nil then
             goto continue
         end
 
         local memory_max = tonumber(inv:GetContainerCountMax(cid) or 0) or 0
-        if cid == 3 then
+        -- Temporary (3) and Safe2 (9) can report a nonzero size while unusable (Safe2
+        -- locked, or Horizon), so only surface them when they actually hold items.
+        if cid == 3 or cid == 9 then
             local used_count = memory_max > 0 and (tonumber(inv:GetContainerCount(cid) or 0) or 0) or 0
             if used_count <= 0 then
                 goto continue
@@ -270,10 +272,6 @@ function containerlogic.format_tab_label(container_id)
 end
 
 function containerlogic.is_tab_available(container_id, stats)
-    if tonumber(container_id) == 9 and HzLimitedMode then
-        return false
-    end
-
     local s = stats[container_id]
     if not s then
         return false
