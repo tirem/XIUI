@@ -487,7 +487,11 @@ function data.GetMemberInformation(memIdx)
                     memberInfo.maxhp = hpMaxFromParty;
                 end
             end
-            memberInfo.hpp = (memberInfo.maxhp > 0) and math.clamp(memberInfo.hp / memberInfo.maxhp, 0, 1) or ((hpPercentParty or 0) / 100);
+            -- Percent from the server-derived max (self-consistent with exact HP, so
+            -- full HP reads 100%); GetHPMax() can read stale-high after gear/buff
+            -- changes and otherwise pins full HP near 98% until a client refresh.
+            local hpMaxForPct = (hpMaxFromParty > 0) and hpMaxFromParty or memberInfo.maxhp;
+            memberInfo.hpp = (hpMaxForPct > 0) and math.clamp(memberInfo.hp / hpMaxForPct, 0, 1) or ((hpPercentParty or 0) / 100);
 
             -- MP Calculation with sync/weakness fix
             local mpPercentParty = party:GetMemberMPPercent(0);
@@ -504,7 +508,9 @@ function data.GetMemberInformation(memIdx)
                     memberInfo.maxmp = mpMaxFromParty;
                 end
             end
-            memberInfo.mpp = (memberInfo.maxmp > 0) and math.clamp(memberInfo.mp / memberInfo.maxmp, 0, 1) or ((mpPercentParty or 0) / 100);
+            -- Percent from the server-derived max, same rationale as HP above.
+            local mpMaxForPct = (mpMaxFromParty > 0) and mpMaxFromParty or memberInfo.maxmp;
+            memberInfo.mpp = (mpMaxForPct > 0) and math.clamp(memberInfo.mp / mpMaxForPct, 0, 1) or ((mpPercentParty or 0) / 100);
         else
             memberInfo.hpp = party:GetMemberHPPercent(memIdx) / 100;
             memberInfo.mpp = party:GetMemberMPPercent(memIdx) / 100;

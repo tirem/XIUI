@@ -93,7 +93,11 @@ playerbar.DrawWindow = function(settings)
 			SelfHPMax = SelfHPMaxFromParty;
 		end
 	end
-	local SelfHPPercent = (SelfHPMax > 0) and math.clamp((SelfHP / SelfHPMax) * 100, 0, 100) or (SelfHPPercentParty or 0);
+	-- Percent from the server-derived max (self-consistent with exact HP, so full
+	-- HP reads 100%); GetHPMax() can read stale-high after gear/buff changes and
+	-- otherwise pins full HP near 98% until a client refresh.
+	local SelfHPMaxForPct = (SelfHPMaxFromParty > 0) and SelfHPMaxFromParty or SelfHPMax;
+	local SelfHPPercent = (SelfHPMaxForPct > 0) and math.clamp((SelfHP / SelfHPMaxForPct) * 100, 0, 100) or (SelfHPPercentParty or 0);
 	local SelfMP = party:GetMemberMP(0);
 	local SelfMPPercentParty = party:GetMemberMPPercent(0);
 	local SelfMPMaxPlayer = player:GetMPMax();
@@ -109,7 +113,9 @@ playerbar.DrawWindow = function(settings)
 			SelfMPMax = SelfMPMaxFromParty;
 		end
 	end
-	local SelfMPPercent = (SelfMPMax > 0) and math.clamp((SelfMP / SelfMPMax) * 100, 0, 100) or (SelfMPPercentParty or 0);
+	-- Percent from the server-derived max, same rationale as HP above.
+	local SelfMPMaxForPct = (SelfMPMaxFromParty > 0) and SelfMPMaxFromParty or SelfMPMax;
+	local SelfMPPercent = (SelfMPMaxForPct > 0) and math.clamp((SelfMP / SelfMPMaxForPct) * 100, 0, 100) or (SelfMPPercentParty or 0);
 	local SelfTP = party:GetMemberTP(0);
 
 	local currentTime = os.clock();
