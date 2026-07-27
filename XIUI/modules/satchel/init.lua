@@ -27,7 +27,8 @@ local GIL_ICON_PATH = addon.path .. '..\\satchel\\assets\\gil.png'
 
 local WINDOW_FLAGS = bor(
     ImGuiWindowFlags_NoResize or 0,
-    ImGuiWindowFlags_NoSavedSettings or 0
+    ImGuiWindowFlags_NoSavedSettings or 0,
+    ImGuiWindowFlags_NoDocking or 0
 )
 local INVENTORY_CONTAINER = 0
 local FIELD_BAGS = { [0] = true, [5] = true, [6] = true, [7] = true }
