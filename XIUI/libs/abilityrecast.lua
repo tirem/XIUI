@@ -7,6 +7,8 @@
 * recast tracking of pet commands and job abilities.
 ]]--
 
+local abilityRecastIds = require('libs.abilityrecastids');
+
 local M = {};
 
 -- Memory pointer for ability recasts (initialized on first use)
@@ -103,10 +105,9 @@ function M.IsInitialized()
     return AbilityRecastPointer ~= nil;
 end
 
--- Find timer ID for an ability by scanning active recast slots
--- Uses GetAbilityByTimerId to match ability IDs
+-- Find timer ID for an ability and read its current recast.
 -- Returns: timerId, currentRecast (raw 1/60th seconds), or nil if not found
--- @param abilityId: The ability ID to find
+-- @param abilityId: The ability ID to find (as this server's resource manager knows it)
 function M.FindAbilityRecast(abilityId)
     if abilityId == nil then return nil, 0; end
     if not InitAbilityRecastPointer() then
@@ -115,16 +116,42 @@ function M.FindAbilityRecast(abilityId)
 
     local resourceMgr = AshitaCore:GetResourceManager();
 
-    -- Scan all recast slots to find matching ability
+    -- Preferred path: resolve THIS ability's name via this server's own
+    -- resource manager (so it's correct no matter what numeric ID this
+    -- particular server happens to assign), then look up its real
+    -- recast/timer ID by name. Many abilities SHARE one timer with other,
+    -- differently-named abilities (all DNC Steps share timer 220, Flourish I
+    -- abilities share 221, Sic and Ready are on separate BST timers despite
+    -- looking related, etc). Resolving by name sidesteps that entirely,
+    -- unlike resolving a timer ID back to "the" ability via
+    -- GetAbilityByTimerId, which can only ever return one canonical ability
+    -- per timer.
+    local ability = resourceMgr:GetAbilityById(abilityId);
+    local knownTimerId = nil;
+    if ability and ability.Name and ability.Name[1] then
+        knownTimerId = abilityRecastIds.abilityNameToRecastId[ability.Name[1]:lower()];
+    end
+
+    if knownTimerId ~= nil and knownTimerId > 0 then
+        for i = 0, 31 do
+            local slotTimerId = ashita.memory.read_uint8(AbilityRecastPointer + (i * 8) + 3);
+            if slotTimerId == knownTimerId then
+                local recast = ashita.memory.read_uint32(AbilityRecastPointer + (i * 4) + 0xF8);
+                return slotTimerId, recast;
+            end
+        end
+        return knownTimerId, 0; -- Known timer, but not currently on cooldown
+    end
+
+    -- Fallback: reverse-lookup scan, for any ability not covered by the table
+    -- (e.g. brand new content the table hasn't been updated for yet).
     for i = 0, 31 do
         local slotTimerId = ashita.memory.read_uint8(AbilityRecastPointer + (i * 8) + 3);
 
         -- Skip empty slots (timer ID 0, except slot 0 which is 2-hour)
         if slotTimerId > 0 or i == 0 then
-            -- Look up what ability uses this timer ID
             local slotAbility = resourceMgr:GetAbilityByTimerId(slotTimerId);
             if slotAbility and slotAbility.Id == abilityId then
-                -- Found matching ability - get its recast
                 local recast = ashita.memory.read_uint32(AbilityRecastPointer + (i * 4) + 0xF8);
                 return slotTimerId, recast;
             end
@@ -141,6 +168,39 @@ function M.GetAbilityRecastByAbilityId(abilityId)
     local timerId, rawTimer = M.FindAbilityRecast(abilityId);
     if rawTimer <= 0 then return 0; end
     return rawTimer / 60;
+end
+
+-- Scan ALL recast slots and return every ability currently on cooldown.
+-- Unlike FindAbilityRecast, this doesn't require knowing the ability ID in
+-- advance - it reads whatever the game currently has active in the recast
+-- slots and resolves each one back to its ability resource.
+-- Returns: array of { timerId, abilityId, currentRecast (seconds), recastDelay (raw, 1/4 sec units) }
+function M.GetAllActiveRecasts()
+    local results = {};
+    if not InitAbilityRecastPointer() then
+        return results;
+    end
+
+    local resourceMgr = AshitaCore:GetResourceManager();
+
+    for i = 0, 31 do
+        local slotTimerId = ashita.memory.read_uint8(AbilityRecastPointer + (i * 8) + 3);
+        local rawRecast = ashita.memory.read_uint32(AbilityRecastPointer + (i * 4) + 0xF8);
+
+        if slotTimerId > 0 and rawRecast > 0 then
+            local ability = resourceMgr:GetAbilityByTimerId(slotTimerId);
+            if ability then
+                table.insert(results, {
+                    timerId = slotTimerId,
+                    abilityId = ability.Id,
+                    currentRecast = rawRecast / 60,
+                    recastDelay = ability.RecastDelay or 0,
+                });
+            end
+        end
+    end
+
+    return results;
 end
 
 return M;
