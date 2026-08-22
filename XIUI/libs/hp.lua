@@ -296,7 +296,7 @@ function M.GetHpColors(hpPercent)
     if (hpPercent < .25) then
         hpNameColor = 0xFFFF0000;
         hpGradient = {"#ec3232", "#f16161"};
-    elseif (hpPercent < .50) then;
+    elseif (hpPercent < .50) then
         hpNameColor = 0xFFFFA500;
         hpGradient = {"#ee9c06", "#ecb44e"};
     elseif (hpPercent < .75) then
