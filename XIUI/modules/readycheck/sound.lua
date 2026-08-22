@@ -45,12 +45,18 @@ ffi.cdef[[
     MMRESULT waveOutClose(HWAVEOUT hwo);
 ]];
 
-local winmm = ffi.load('winmm');
-
 local WAVE_FORMAT_PCM = 1;
 local WAVE_MAPPER     = 0xFFFFFFFF;
 local CALLBACK_NULL   = 0;
 local WHDR_DONE       = 0x00000001;
+local WAVEOUT_SYMBOLS = {
+    'waveOutOpen',
+    'waveOutPrepareHeader',
+    'waveOutWrite',
+    'waveOutUnprepareHeader',
+    'waveOutReset',
+    'waveOutClose',
+};
 
 local active = nil;
 
@@ -60,11 +66,11 @@ local function cleanup_active()
     if not active then return; end
 
     if active.hwo ~= nil then
-        winmm.waveOutReset(active.hwo);
+        active.winmm.waveOutReset(active.hwo);
         if active.header then
-            winmm.waveOutUnprepareHeader(active.hwo, active.header, ffi.sizeof('WAVEHDR'));
+            active.winmm.waveOutUnprepareHeader(active.hwo, active.header, ffi.sizeof('WAVEHDR'));
         end
-        winmm.waveOutClose(active.hwo);
+        active.winmm.waveOutClose(active.hwo);
     end
 
     active = nil;
@@ -161,6 +167,20 @@ local function scale_pcm16(pcm, multiplier)
     return dst, #pcm;
 end
 
+local function acquire_winmm()
+    local loaded, winmm = pcall(ffi.load, 'winmm');
+    if not loaded then return nil; end
+
+    for _, symbol in ipairs(WAVEOUT_SYMBOLS) do
+        local available, fn = pcall(function() return winmm[symbol]; end);
+        if not available or fn == nil then
+            return nil;
+        end
+    end
+
+    return winmm;
+end
+
 local function play_scaled(path, volumePercent)
     local fmt, pcm = parse_wav_pcm(path);
     if not fmt or not pcm then
@@ -169,6 +189,12 @@ local function play_scaled(path, volumePercent)
     end
 
     cleanup_active();
+
+    local winmm = acquire_winmm();
+    if not winmm then
+        ashita.misc.play_sound(path);
+        return;
+    end
 
     local multiplier = volumePercent / 100;
     local buffer, length = scale_pcm16(pcm, multiplier);
@@ -211,6 +237,7 @@ local function play_scaled(path, volumePercent)
     end
 
     active = {
+        winmm  = winmm,
         hwo    = hwo[0],
         header = header,
         buffer = buffer,
