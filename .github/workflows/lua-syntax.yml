@@ -16,7 +16,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
-      MOONJIT_BIN: ${{ runner.temp }}/moonjit/src/luajit
       MOONJIT_COMMIT: a2a39ea7184f3c8cab9474c6e41f6541265fb362
 
     steps:
@@ -35,7 +34,9 @@ jobs:
           make -C "${RUNNER_TEMP}/moonjit" -j2 XCFLAGS=-DLUAJIT_ENABLE_LUA52COMPAT
 
       - name: Test syntax checker
-        run: tests/lua-syntax/check-changed-test.sh "${MOONJIT_BIN}"
+        run: >-
+          tests/lua-syntax/check-changed-test.sh
+          "${RUNNER_TEMP}/moonjit/src/luajit"
 
       - name: Check changed Lua syntax
         env:
@@ -43,7 +44,7 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: >-
           tests/lua-syntax/check-changed.sh
-          "${MOONJIT_BIN}"
+          "${RUNNER_TEMP}/moonjit/src/luajit"
           "${GITHUB_WORKSPACE}"
           "${BASE_SHA}"
           "${HEAD_SHA}"
