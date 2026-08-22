@@ -1,0 +1,37 @@
+name: Startup smoke
+
+on:
+  pull_request:
+    paths:
+      - 'XIUI/**/*.lua'
+      - 'tests/startup/**'
+      - '.github/workflows/startup-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Startup smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      MOONJIT_COMMIT: a2a39ea7184f3c8cab9474c6e41f6541265fb362
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Build Ashita-compatible MoonJIT
+        run: |
+          git init --quiet "${RUNNER_TEMP}/moonjit"
+          git -C "${RUNNER_TEMP}/moonjit" remote add origin https://github.com/moonjit/moonjit.git
+          git -C "${RUNNER_TEMP}/moonjit" fetch --quiet --depth=1 origin "${MOONJIT_COMMIT}"
+          git -C "${RUNNER_TEMP}/moonjit" checkout --quiet --detach FETCH_HEAD
+          make -C "${RUNNER_TEMP}/moonjit" -j2 XCFLAGS=-DLUAJIT_ENABLE_LUA52COMPAT
+
+      - name: Test XIUI startup
+        run: >-
+          "${RUNNER_TEMP}/moonjit/src/luajit" tests/startup/run.lua
