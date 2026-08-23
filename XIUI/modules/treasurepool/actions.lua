@@ -19,6 +19,10 @@ local M = {};
 -- Lot on a specific treasure pool item by slot
 -- Returns: success (boolean), errorMessage (string or nil)
 function M.LotItem(slot)
+    if data.IsPreviewActive() then
+        return false, nil;
+    end
+
     -- Validate slot
     if slot == nil or slot < 0 or slot >= data.MAX_POOL_SLOTS then
         return false, nil;
@@ -53,6 +57,10 @@ end
 
 -- Pass on a specific treasure pool item by slot
 function M.PassItem(slot)
+    if data.IsPreviewActive() then
+        return false;
+    end
+
     -- Validate slot
     if slot == nil or slot < 0 or slot >= data.MAX_POOL_SLOTS then
         return false;
@@ -86,6 +94,10 @@ end
 -- Lot on all items that player has NOT already lotted/passed on
 -- Validates each item before lotting (skips Rare items already owned, skips if inventory full)
 function M.LotAll()
+    if data.IsPreviewActive() then
+        return 0;
+    end
+
     local inventory = AshitaCore:GetMemoryManager():GetInventory();
     if not inventory then
         return 0;
@@ -133,6 +145,10 @@ end
 
 -- Pass on all items that player has NOT already lotted/passed on
 function M.PassAll()
+    if data.IsPreviewActive() then
+        return 0;
+    end
+
     local inventory = AshitaCore:GetMemoryManager():GetInventory();
     if not inventory then
         return 0;

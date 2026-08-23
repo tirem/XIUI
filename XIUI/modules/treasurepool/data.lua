@@ -43,6 +43,7 @@ M.sortedCacheDirty = true;
 -- Preview mode state
 M.previewEnabled = false;
 M.previewItems = {};
+M.previewLotHistory = {};
 
 -- Lot history per slot (tracked from 0x00D3 packets)
 -- Structure: lotHistory[slot] = { lotters = {}, passers = {}, winner = {} }
@@ -78,6 +79,13 @@ end
 -- Mark sorted cache as needing rebuild
 local function markCacheDirty()
     M.sortedCacheDirty = true;
+end
+
+local function getDisplayedLotHistory(slot)
+    if M.previewEnabled then
+        return M.previewLotHistory[slot];
+    end
+    return M.lotHistory[slot];
 end
 
 -- ============================================
@@ -431,7 +439,7 @@ local function ensurePreviewItems()
 
         -- Generate mock lot history for this slot
         local history = generateMockLotHistory(slot);
-        M.lotHistory[slot] = history;
+        M.previewLotHistory[slot] = history;
 
         -- Get winner info from history
         local winningLot = history.winner and history.winner.lot or 0;
@@ -461,11 +469,8 @@ function M.SetPreview(enabled)
         M.previewWonHistory = generateMockWonHistory();
     else
         M.previewItems = {};
+        M.previewLotHistory = {};
         M.previewWonHistory = {};
-        -- Clear mock lot history
-        for slot = 0, M.MAX_POOL_SLOTS - 1 do
-            M.lotHistory[slot] = nil;
-        end
     end
     markCacheDirty();
 end
@@ -474,11 +479,8 @@ end
 function M.ClearPreview()
     M.previewEnabled = false;
     M.previewItems = {};
+    M.previewLotHistory = {};
     M.previewWonHistory = {};
-    -- Clear mock lot history
-    for slot = 0, M.MAX_POOL_SLOTS - 1 do
-        M.lotHistory[slot] = nil;
-    end
     markCacheDirty();
 end
 
@@ -580,9 +582,10 @@ end
 
 -- Get all lotters for a slot (sorted by lot value, highest first)
 function M.GetLotters(slot)
-    if not M.lotHistory[slot] then return {}; end
+    local history = getDisplayedLotHistory(slot);
+    if not history then return {}; end
     local result = {};
-    for serverId, data in pairs(M.lotHistory[slot].lotters) do
+    for serverId, data in pairs(history.lotters) do
         table.insert(result, { serverId = serverId, name = data.name, lot = data.lot });
     end
     table.sort(result, function(a, b) return (a.lot or 0) > (b.lot or 0); end);
@@ -591,9 +594,10 @@ end
 
 -- Get all passers for a slot
 function M.GetPassers(slot)
-    if not M.lotHistory[slot] then return {}; end
+    local history = getDisplayedLotHistory(slot);
+    if not history then return {}; end
     local result = {};
-    for serverId, data in pairs(M.lotHistory[slot].passers) do
+    for serverId, data in pairs(history.passers) do
         table.insert(result, { serverId = serverId, name = data.name });
     end
     return result;
@@ -604,8 +608,9 @@ function M.GetPending(slot)
     local result = {};
 
     -- In preview mode, use mock pending data
-    if M.previewEnabled and M.lotHistory[slot] and M.lotHistory[slot].pending then
-        for serverId, data in pairs(M.lotHistory[slot].pending) do
+    local previewHistory = M.previewLotHistory[slot];
+    if M.previewEnabled and previewHistory and previewHistory.pending then
+        for serverId, data in pairs(previewHistory.pending) do
             table.insert(result, { serverId = serverId, name = data.name });
         end
         return result;
@@ -642,8 +647,9 @@ end
 
 -- Get winner for a slot (from lot history, may have more detail than memory)
 function M.GetWinner(slot)
-    if not M.lotHistory[slot] then return nil; end
-    return M.lotHistory[slot].winner;
+    local history = getDisplayedLotHistory(slot);
+    if not history then return nil; end
+    return history.winner;
 end
 
 -- Get all party members organized by party with their status for a slot
@@ -657,8 +663,8 @@ function M.GetMembersByParty(slot)
     };
 
     -- In preview mode, use mock data (put all in party A for simplicity)
-    if M.previewEnabled and M.lotHistory[slot] then
-        local history = M.lotHistory[slot];
+    if M.previewEnabled and M.previewLotHistory[slot] then
+        local history = M.previewLotHistory[slot];
         local idx = 1;
         for serverId, data in pairs(history.lotters or {}) do
             if idx <= 6 then
@@ -781,8 +787,8 @@ end
 
 -- Check if we have any lot history for a slot
 function M.HasLotHistory(slot)
-    if not M.lotHistory[slot] then return false; end
-    local history = M.lotHistory[slot];
+    local history = getDisplayedLotHistory(slot);
+    if not history then return false; end
     return next(history.lotters) ~= nil or next(history.passers) ~= nil or history.winner ~= nil;
 end
 
@@ -1042,6 +1048,7 @@ function M.Initialize()
     M.sortedCacheDirty = true;
     M.previewEnabled = false;
     M.previewItems = {};
+    M.previewLotHistory = {};
     M.lotHistory = {};
     M.missingFrameCount = {};
     -- Note: wonHistory is NOT cleared on init to preserve history across reloads
@@ -1053,6 +1060,10 @@ function M.Clear()
     M.timestampCache = {};
     M.sortedCache = {};
     M.sortedCacheDirty = true;
+    M.previewEnabled = false;
+    M.previewItems = {};
+    M.previewLotHistory = {};
+    M.previewWonHistory = {};
     M.lotHistory = {};
     M.missingFrameCount = {};
     M.ClearError();
