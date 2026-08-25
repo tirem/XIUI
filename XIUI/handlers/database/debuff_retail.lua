@@ -14,7 +14,7 @@ durations.spells = {
     [25] = {duration = 180, kind = 'enfeeble'},  -- Dia III
     [232] = {duration = 180, kind = 'enfeeble'}, -- Bio III
 
-    -- Helix spells (278-285 and 885-892)
+    -- Helix: LSB base 30 +60 at lvl 60+ (=90). Dark Arts JP added in ResolveDuration.
     [278] = {duration = 90, buffId = 186, kind = 'helix'}, [279] = {duration = 90, buffId = 186, kind = 'helix'},
     [280] = {duration = 90, buffId = 186, kind = 'helix'}, [281] = {duration = 90, buffId = 186, kind = 'helix'},
     [282] = {duration = 90, buffId = 186, kind = 'helix'}, [283] = {duration = 90, buffId = 186, kind = 'helix'},
@@ -42,10 +42,8 @@ durations.spells = {
     [359] = {duration = 120, kind = 'enfeeble'}, -- Silencega
     [253] = {duration = 60, kind = 'enfeeble'},  -- Sleep
     [273] = {duration = 60, kind = 'enfeeble'},  -- Sleepga
-    [363] = {duration = 60, kind = 'enfeeble'},  -- Sleepga II
     [259] = {duration = 90, buffId = 19, clearsBuffs = {2, 193}, kind = 'enfeeble'}, -- Sleep II
     [274] = {duration = 90, buffId = 19, clearsBuffs = {2, 193}, kind = 'enfeeble'}, -- Sleepga II
-    [364] = {duration = 90, buffId = 19, clearsBuffs = {2, 193}, kind = 'enfeeble'}, -- Sleepga III
     [258] = {duration = 60, kind = 'enfeeble'},  -- Bind
     [362] = {duration = 60, kind = 'enfeeble'},  -- Bindga
     [252] = {duration = 5, kind = 'enfeeble'},   -- Stun
@@ -56,6 +54,10 @@ durations.spells = {
     [226] = {duration = 120, kind = 'enfeeble'}, -- Poisonga II
     [227] = {duration = 150, kind = 'enfeeble'}, -- Poisonga III
     [286] = {duration = 180, kind = 'enfeeble'}, -- Addle
+    [884] = {duration = 180, kind = 'enfeeble'}, -- Addle II
+    [256] = {duration = 60, kind = 'enfeeble'},  -- Virus - Plague
+    [257] = {duration = 300, kind = 'enfeeble'}, -- Curse
+    [98] = {duration = 90, buffId = 19, clearsBuffs = {2, 193}, kind = 'enfeeble'}, -- Repose (Sleep II icon)
     [841] = {duration = 120, kind = 'enfeeble'}, -- Distract
     [842] = {duration = 120, kind = 'enfeeble'}, -- Distract II
     [843] = {duration = 120, kind = 'enfeeble'}, -- Distract III
@@ -66,7 +68,8 @@ durations.spells = {
     [365] = {duration = 30, kind = 'enfeeble'},  -- Breakga
     [879] = {duration = 300, kind = 'enfeeble'}, -- Inundation
 
-    -- Ninjutsu debuffs
+    -- Ninjutsu debuffs (LSB enfeebling_spell.lua base durations)
+    [319] = { duration = 120, buffId = 147 }, -- Aisha: Ichi - Attack Down
     [341] = { duration = 180 }, -- Jubaku: Ichi
     [342] = { duration = 300 }, -- Jubaku: Ni
     [343] = { duration = 420 }, -- Jubaku: San
@@ -79,7 +82,7 @@ durations.spells = {
     [350] = { duration = 60 },  -- Dokumori: Ichi
     [351] = { duration = 120 }, -- Dokumori: Ni
     [352] = { duration = 360 }, -- Dokumori: San
-
+    [508] = { duration = 180, buffId = 168 }, -- Yurin: Ichi - Inhibit TP
     -- Elemental debuffs (Burn, Frost, Choke, Rasp, Shock, Drown)
     [235] = {duration = 90, kind = 'elemental'}, [236] = {duration = 90, kind = 'elemental'},
     [237] = {duration = 90, kind = 'elemental'}, [238] = {duration = 90, kind = 'elemental'},
@@ -182,13 +185,13 @@ durations.spells = {
     [675] = {duration = 60, buffId = 5, onDamage = true}, -- Thermal Pulse - Blind
     [678] = {duration = 90, buffId = 2}, -- Dream Flower - Sleep
     [682] = {duration = 30, buffId = 31, onDamage = true}, -- Delta Thrust - Plague
-    [687] = {duration = 60, buffId = 6}, -- Water Bomb - Silence (no LSB script)
+    [687] = {duration = 90, buffId = 6}, -- Water Bomb - Silence (BG: 60~90)
     [692] = {duration = 5, buffId = 10, onDamage = true}, -- Sudden Lunge - Stun
-    [699] = {duration = 60, buffId = 146, onDamage = true}, -- Barbed Crescent - Accuracy Down
+    [699] = {duration = 120, buffId = 146, onDamage = true}, -- Barbed Crescent - Accuracy Down
     [703] = {duration = 180, buffId = 13}, -- Embalming Earth - Slow
     [704] = {duration = 60, buffId = 4, onDamage = true}, -- Paralyzing Triad - Paralyze
-    [705] = {duration = 60, buffId = 133}, -- Foul Waters - Drown
-    [707] = {duration = 12, buffId = 156}, -- Retinal Glare - Flash
+    [705] = {duration = 180, buffId = 133}, -- Foul Waters - Drown
+    [707] = {duration = 15, buffId = 156}, -- Retinal Glare - Flash
 };
 
 -- Type 3 weapon skills with debuffs (separate from spells to avoid id collisions).
@@ -216,12 +219,12 @@ durations.weaponSkills = {
     [89] = {buffId = 149, duration = 120}, -- Metatron Torment - Defense Down
     [92] = {buffId = 13, duration = 60}, -- Ukko's Fury - Slow
     [102] = {buffId = 6, tpDuration = {base = 30, per100Tp = 3}}, -- Guillotine - Silence
-    [107] = {buffId = 147, tpDuration = {per100Tp = 6}}, -- Infernal Scythe - Attack Down
+    [107] = {buffId = 147, tpDuration = {per100Tp = 18}}, -- Infernal Scythe - Attack Down
     [115] = {buffId = 10, duration = 4}, -- Leg Sweep - Stun
     [125] = {buffId = 298, duration = 60}, -- Stardiver - Crit Hit Evasion Down
     [129] = {buffId = 4, tpFTP = {30, 60, 120}}, -- Blade: Retsu - Paralyze
     [137] = {buffId = 4, duration = 60}, -- Blade: Metsu - Paralyze
-    [138] = {buffId = 146, tpDuration = {per1000Tp = 6}}, -- Blade: Kamu - Accuracy Down
+    [138] = {buffId = 146, tpDuration = {per100Tp = 6}}, -- Blade: Kamu - Accuracy Down
     [139] = {buffId = 3, tpDuration = {base = 75, per1000Tp = 15}}, -- Blade: Yu - Poison
     [145] = {buffId = 10, duration = 3}, -- Tachi: Hobaku - Stun
     [150] = {buffId = 5, duration = 60}, -- Tachi: Yukikaze - Blind
@@ -242,6 +245,7 @@ durations.weaponSkills = {
     [224] = {buffId = 146, tpDuration = {base = 45, per1000Tp = 45}}, -- Exenterator - Accuracy Down
     [238] = {buffId = 156, duration = 15}, -- Uriel Blade - Flash
     [239] = {buffId = 10, tpPer500 = 1}, -- Glory Slash - Stun
+    [99] = {buffId = 5, tpDuration = {per100Tp = 6}}, -- Nightmare Scythe - Blind
 };
 
 -- Job abilities that apply a debuff on the next melee/ranged hit (not on use).
@@ -250,24 +254,48 @@ durations.onHit = {
 };
 
 -- Type 3 job abilities that land like a weaponskill.
+-- uncertain = true: effect can resist after the physical hit connects.
+-- certainOnHit = true: effect always lands when the hit connects (no resist roll).
 durations.jaPhysical = {
-    [46] = {duration = 8, buffId = 10},    -- Shield Bash - Stun (LSB 2-8)
-    [77] = {duration = 8, buffId = 10},    -- Weapon Bash - Stun
-    [170] = {duration = 30, buffId = 149, certainOnHit = true}, -- Angon - Defense Down (no resist roll)
+    [46] = {duration = 8, buffId = 10, uncertain = true}, -- Shield Bash - Stun
+    [77] = {duration = 8, buffId = 10, uncertain = true}, -- Weapon Bash - Stun
+    [168] = {duration = 30, buffId = 31, buffIds = {10, 31}, uncertain = true}, -- Blade Bash - Stun (~6s) + Plague (15+merits); resist each
+    [170] = {duration = 30, buffId = 149, certainOnHit = true}, -- Angon - Defense Down (15+merit; 30 at 1)
 };
 
--- Type 6 / 14 job abilities. 16-23 are packet JA ids; 688-695 are mob-skill ids
--- (type 11). Keep 688-695 out of spells so they do not collide with BLU.
+-- Type 6 / 14 job abilities. Keys are ability IDs (action Param), not buff IDs.
+-- buffId is the status effect on the enemy.
+-- uncertain = true only when the effect can fail after a hit (resist / chance / conditional),
+-- not for miss-only abilities (missMes already skips those).
+-- Ability IDs verified against LandSandBoat scripts/enum/job_ability.lua (GitHub base).
 durations.ja = {
+    [46] = {duration = 8, buffId = 10, uncertain = true}, -- Shield Bash (also type 3 / jaPhysical)
     [57] = {duration = 30, buffId = 11}, -- Shadowbind - Bind
-    [139] = {duration = 30, buffId = 149}, -- Tomahawk - Defense Down
-    [201] = {duration = 30, buffId = 386}, -- Quickstep - Lethargic Daze
-    [202] = {duration = 30, buffId = 396}, -- Stutter Step - Weakened Daze
-    [220] = {duration = 30, buffId = 391}, -- Box Step - Sluggish Daze
-    [221] = {duration = 8, buffId = 10}, -- Violent Flourish - Stun
-    [312] = {duration = 30, buffId = 448}, -- Feather Step - Bewildered Daze
-    [321] = {duration = 60}, -- Bully
-    [354] = {duration = 180, buffId = 463}, -- Sepulcher
+    [77] = {duration = 8, buffId = 10, uncertain = true}, -- Weapon Bash (also type 3 / jaPhysical)
+    [82] = {duration = 100, buffId = 168, uncertain = true}, -- Chi Blast - Inhibit TP only with Penance
+    [131] = {duration = 90, buffId = 2, uncertain = true}, -- Light Shot - Sleep
+    [150] = {duration = 30, buffId = 805}, -- Tomahawk (silent client icon; not Defense Down 149)
+    [161] = {duration = 10, buffId = 28, uncertain = true}, -- Feral Howl - Terror
+    [168] = {duration = 30, buffId = 31, buffIds = {10, 31}, uncertain = true}, -- Blade Bash (also type 3 / jaPhysical)
+    [170] = {duration = 30, buffId = 149, certainOnHit = true}, -- Angon (also type 3 / jaPhysical)
+    [201] = {duration = 60, buffId = 386}, -- Quickstep - Lethargic Daze
+    [202] = {duration = 60, buffId = 391}, -- Box Step - Sluggish Daze
+    [203] = {duration = 60, buffId = 396}, -- Stutter Step - Weakened Daze
+    [205] = {duration = 60, buffId = 12, uncertain = true}, -- Desperate Flourish - Weight
+    [207] = {duration = 2, buffId = 10, uncertain = true}, -- Violent Flourish - Stun
+    [209] = {duration = 10, buffId = 798}, -- Wild Flourish - Chainbound
+    [228] = {duration = 90, uncertain = true}, -- Despoil - only on successful steal (buff id from packet)
+    [277] = {duration = 180, buffId = 463}, -- Sepulcher
+    [279] = {duration = 180, buffId = 464}, -- Arcane Crest
+    [287] = {duration = 180, buffId = 465}, -- Hamanoha
+    [292] = {duration = 180, buffId = 466}, -- Dragon Breaker
+    [312] = {duration = 60, buffId = 448}, -- Feather Step - Bewildered Daze
+    [320] = {duration = 10, buffId = 798}, -- Konzen-Ittai - Chainbound
+    [321] = {duration = 30, buffId = 576}, -- Bully - Doubt
+    [329] = {duration = 30, buffId = 496}, -- Intervene
+    [372] = {duration = 60, buffId = 536}, -- Gambit
+    [375] = {duration = 30, buffId = 571}, -- Rayke (27 + merits; 30 at 1)
+    [378] = {duration = 30, buffId = 509}, -- Odyllic Subterfuge
     [16] = {duration = 45, buffId = 44}, -- Mighty Strikes
     [17] = {duration = 45, buffId = 46}, -- Hundred Fists
     [19] = {duration = 60, buffId = 47}, -- Manafont
@@ -284,8 +312,34 @@ durations.ja = {
     [695] = {duration = 30, buffId = 51}, -- Blood Weapon
 };
 
+-- Pet / blood pact ids (ability id). Always treated uncertain by the handler.
 durations.pet = {
-    [1908] = {duration = 60, buffId = 2}, -- Nightmare
+    [513] = {duration = 90, buffId = 3}, -- Poison Nails - Poison
+    [522] = {duration = 90, buffId = 2}, -- Mewing Lullaby - Sleep
+    [523] = {duration = 30, buffId = 6, buffIds = {6, 16}}, -- Eerie Eye - Silence (+ Amnesia)-- Silence 30s; Amnesia is 15s in LSB (shared timer uses Silence).
+    [528] = {duration = 60, buffId = 5}, -- Moonlit Charge - Blind
+    [529] = {duration = 60, buffId = 4}, -- Crescent Fang - Paralyze
+    [530] = {duration = 180, buffId = 146, buffIds = {146, 148}}, -- Lunar Cry - Acc/Eva Down
+    [560] = {duration = 120, buffId = 13}, -- Rock Throw - Slow
+    [562] = {duration = 120, buffId = 11}, -- Rock Buster - Bind
+    [563] = {duration = 120, buffId = 13}, -- Megalith Throw - Slow
+    [566] = {duration = 60, buffId = 11}, -- Mountain Buster - Bind
+    [567] = {duration = 4, buffId = 10}, -- Geocrush - Stun
+    [578] = {duration = 120, buffId = 12}, -- Tail Whip - Weight
+    [580] = {duration = 180, buffId = 13}, -- Slowga
+    [585] = {duration = 60, buffId = 147}, -- Tidal Roar - Attack Down
+    [611] = {duration = 90, buffId = 2}, -- Sleepga
+    [624] = {duration = 12, buffId = 10}, -- Shock Strike - Stun
+    [627] = {duration = 60, buffId = 4}, -- Thunderspark - Paralyze
+    [630] = {duration = 12, buffId = 10}, -- Chaotic Strike - Stun
+    [657] = {duration = 120, buffId = 12}, -- Somnolence - Weight
+    [658] = {duration = 90, buffId = 2, buffIds = {2, 135}}, -- Nightmare - Sleep + Bio
+    [1947] = {duration = 12, buffId = 156}, -- Flashbulb - Flash
+    [2066] = {duration = 4, buffId = 10}, -- Daze - Stun
+    [2067] = {duration = 30, buffId = 148}, -- Knockout - Evasion Down
+    [2299] = {duration = 4, buffId = 10}, -- Bone Crusher - Stun
+    [2744] = {duration = 150, buffId = 149}, -- Armor Shatterer - Defense Down
+    [1908] = {duration = 90, buffId = 2, buffIds = {2, 135}}, -- Nightmare (mob-skill id form)
 };
 
 -- Additional-effect procs keyed by the landed buff id (not spell/WS id).
@@ -299,6 +353,8 @@ durations.additionalEffect = {
     [11] = {duration = 30},  -- Bind
     [12] = {duration = 30},  -- Weight / Gravity
     [13] = {duration = 180}, -- Slow
+    [16] = {duration = 30},  -- Amnesia
+    [28] = {duration = 10},  -- Terror
     [31] = {duration = 60},  -- Plague
     [130] = {duration = 90}, -- Choke
     [136] = {duration = 60}, -- STR Down
@@ -309,9 +365,25 @@ durations.additionalEffect = {
     [149] = {duration = 60}, -- Defense Down / Acid Bolt
     [156] = {duration = 12}, -- Flash
     [167] = {duration = 120}, -- Magic Def Down
+    [168] = {duration = 100}, -- Inhibit TP
     [175] = {duration = 120}, -- Magic Atk Down
     [298] = {duration = 60}, -- Crit Hit Evasion Down
+    [378] = {duration = 10}, -- Drain Daze (Drain Samba hits)
+    [379] = {duration = 10}, -- Aspir Daze (Aspir Samba hits)
+    [380] = {duration = 10}, -- Haste Daze (Haste Samba hits)
     [404] = {duration = 60}, -- Magic Evasion Down
+    [448] = {duration = 60}, -- Bewildered Daze
+    [463] = {duration = 180}, -- Sepulcher
+    [464] = {duration = 180}, -- Arcane Crest
+    [465] = {duration = 180}, -- Hamanoha
+    [466] = {duration = 180}, -- Dragon Breaker
+    [496] = {duration = 30}, -- Intervene
+    [509] = {duration = 30}, -- Odyllic Subterfuge
+    [536] = {duration = 60}, -- Gambit
+    [571] = {duration = 30}, -- Rayke
+    [576] = {duration = 30}, -- Doubt / Bully
+    [798] = {duration = 10}, -- Chainbound
+    [805] = {duration = 30}, -- Tomahawk
 };
 
 return durations;

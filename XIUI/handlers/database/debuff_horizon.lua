@@ -1,6 +1,8 @@
 -- Horizon debuff overlay on handlers/database/debuff_retail.lua.
--- Only duration fields that differ from retail. Names and kinds stay on the base table.
+-- Only fields that differ from retail. Names and kinds stay on the base table.
 -- Field value `false` clears a retail field during merge (e.g. fixed duration -> TP formula).
+-- IDs / buffIds / land rules verified against horizonffxi.wiki (Mug, Energy Drain, Gale Axe,
+-- Geirskogul, Blast Arrow/Shot, Nightmare Scythe). Duration and tpTier are Horizon-specific.
 
 local overlay = {};
 
@@ -16,22 +18,23 @@ overlay.spells = {
 };
 
 overlay.jaPhysical = {
-    [46] = {duration = 6}, -- Shield Bash
-    [77] = {duration = 6}, -- Weapon Bash
+    [46] = {duration = 6}, -- Shield Bash (type 3 path; keep in sync with ja)
+    [77] = {duration = 6}, -- Weapon Bash (type 3 path; keep in sync with ja)
 };
 
 overlay.ja = {
-    [45] = {duration = 30, buffId = 448}, -- Mug - Bewildered Daze (crit hit rate bonus)
+    [46] = {duration = 6}, -- Shield Bash (type 6 path; keep in sync with jaPhysical)
+    [77] = {duration = 6}, -- Weapon Bash (type 6 path; keep in sync with jaPhysical)
+    [45] = {duration = 30, buffId = 448}, -- Mug - Bewildered Daze (always applies, even if gil steal fails)
 };
 
--- Horizon WS debuffs (see horizonffxi.wiki). Energy Drain Slow durations at 1k/2k/3k TP.
 overlay.weaponSkills = {
-    -- Enemy gets Slow; player Haste is a self-buff (not tracked here).
-    [22] = {buffId = 13, tpTier = {{1000, 90}, {2000, 150}, {3000, 210}}}, -- Energy Drain - Slow
-    [66] = {buffId = 12, duration = false, tpTier = {{1000, 20}, {2000, 40}, {3000, 60}}}, -- Gale Axe - Weight (replaces Choke)
-    [121] = {duration = 30, buffId = 149}, -- Geirskogul - Defense Down (matches Angon)
-    [197] = {duration = 5, buffId = 10}, -- Blast Arrow - Stun (duration unknown; common stun)
-    [213] = {duration = 5, buffId = 10}, -- Blast Shot - Stun (duration unknown; common stun)
+    [22] = {buffId = 13, uncertain = true, tpTier = {{1000, 90}, {2000, 150}, {3000, 210}}}, -- Energy Drain - Slow (Uncertain: strong Haste can block Slow with no reliable signal)
+    [66] = {buffId = 12, duration = false, uncertain = true, tpTier = {{1000, 20}, {2000, 40}, {3000, 60}}}, -- Gale Axe - Weight (Replaces retail Choke)
+    [121] = {duration = 30, buffId = 149, certainOnHit = true}, -- Geirskogul - Defense Down (Matches effect of Angon)
+    [197] = {duration = 5, buffId = 10, uncertain = true}, -- Blast Arrow - Stun
+    [213] = {duration = 5, buffId = 10, uncertain = true}, -- Blast Shot - Stun
+    [99] = {buffId = 28, uncertain = true}, -- Nightmare Scythe - Terror (Replaces retail Blind)
 };
 
 return overlay;

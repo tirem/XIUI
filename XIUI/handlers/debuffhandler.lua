@@ -25,10 +25,14 @@ local spellDamageMes = {[2]=true, [252]=true, [264]=true, [265]=true};
 -- Physical/ability hits (110 = bash/jump, 185 = WS). Not a per-ability list.
 local physicalHitMes = {[103]=true, [110]=true, [185]=true, [187]=true, [238]=true, [242]=true, [317]=true, [802]=true};
 local additionalEffectMes = {[160]=true, [164]=true};
+-- Ability / WS miss — do not infer a debuff from the action alone.
+-- 158 = JA_MISS, 324 = JA_MISS_2 (Light Shot / Feral Howl etc.)
+local missMes = {[15]=true, [63]=true, [158]=true, [188]=true, [213]=true, [324]=true, [354]=true};
 -- "No effect" confirms a matching uncertain debuff is already present (do not refresh timer).
 -- Distinct from complete resist / immunity (655), which means the effect is not present.
-local noEffectMes = {[75]=true, [189]=true, [283]=true, [323]=true};
-local immuneMes = {[655]=true}; -- MagicCompleteResist — target immune / cannot take the effect
+-- 75 MAGIC_NO_EFFECT, 156 JA_NO_EFFECT, 189 SKILL_NO_EFFECT, 283 NO_EFFECT, 323 JA_NO_EFFECT_2
+local noEffectMes = {[75]=true, [156]=true, [189]=true, [283]=true, [323]=true};
+local immuneMes = {[655]=true}; -- MAGIC_COMPLETE_RESIST — target immune / cannot take the effect
 local MAX_TP = 3000;
 local ALLIANCE_MEMBER_SLOTS = 18;
 
@@ -277,16 +281,27 @@ local function ResolveActionBuffIds(actionType, spellId, abilityParam)
         end
         return ids;
     end
+    spellId = PacketParamId(spellId);
+    local jaId = JobAbilityId(spellId);
+    local data = nil;
     if actionType == 3 then
-        local wsData = WEAPON_SKILL_DURATIONS[spellId];
-        if wsData then
-            if wsData.buffIds then
-                for _, id in ipairs(wsData.buffIds) do
-                    ids[#ids + 1] = id;
-                end
-            elseif wsData.buffId then
-                ids[#ids + 1] = wsData.buffId;
+        data = WEAPON_SKILL_DURATIONS[spellId] or JA_PHYSICAL_DURATIONS[jaId];
+    elseif actionType == 6 or actionType == 14 then
+        data = JA_DURATIONS[jaId] or JA_DURATIONS[spellId];
+    elseif actionType == 13 then
+        data = PET_DURATIONS[spellId] or PET_DURATIONS[jaId];
+    else
+        data = JA_DURATIONS[spellId] or JA_PHYSICAL_DURATIONS[spellId] or PET_DURATIONS[spellId]
+            or JA_DURATIONS[jaId] or JA_PHYSICAL_DURATIONS[jaId] or PET_DURATIONS[jaId]
+            or WEAPON_SKILL_DURATIONS[spellId];
+    end
+    if data then
+        if data.buffIds then
+            for _, id in ipairs(data.buffIds) do
+                ids[#ids + 1] = id;
             end
+        elseif data.buffId then
+            ids[#ids + 1] = data.buffId;
         end
     end
     return ids;
@@ -368,14 +383,19 @@ local function UsesTpDuration(data)
     return data.tpTier ~= nil or data.tpDuration ~= nil or data.tpFTP ~= nil or data.tpPer500 ~= nil;
 end
 
--- uncertain: true when land is inferred (WS hit) or TP is unknown (non-party actor).
+-- uncertain: true when land is inferred (WS hit) or TP is unknown for a TP-scaled duration.
 local function ApplyWeaponSkillData(targetDebuffs, wsData, actorId, now, uncertain)
     local duration, tpKnown = ResolveWeaponSkillDuration(wsData, actorId);
     if uncertain == nil then
         uncertain = true;
     end
-    if not tpKnown then
+    -- Unknown TP only matters when duration depends on TP.
+    if not tpKnown and UsesTpDuration(wsData) then
         uncertain = true;
+    end
+    -- Guaranteed land (e.g. Angon-like) stays certain even if TP was assumed.
+    if wsData.certainOnHit then
+        uncertain = false;
     end
     local entry = CloneDurationEntry(wsData);
     entry.duration = duration;
@@ -388,7 +408,7 @@ local function LookupNonSpell(id, actionType)
         return WEAPON_SKILL_DURATIONS[id] or JA_PHYSICAL_DURATIONS[id];
     end
     if actionType == 6 or actionType == 14 then
-        return JA_DURATIONS[id];
+        return JA_DURATIONS[id] or JA_PHYSICAL_DURATIONS[id];
     end
     return JA_DURATIONS[id] or JA_PHYSICAL_DURATIONS[id] or PET_DURATIONS[id];
 end
@@ -418,7 +438,9 @@ local function GetDurationData(actionType, id)
         return WEAPON_SKILL_DURATIONS[id] or JA_PHYSICAL_DURATIONS[jaId];
     end
     if actionType == 6 or actionType == 14 then
-        return JA_DURATIONS[jaId] or JA_DURATIONS[id];
+        -- Physical JAs (Angon/Shield Bash) may arrive as type 6; keep out of WS id collisions.
+        return JA_DURATIONS[jaId] or JA_DURATIONS[id]
+            or JA_PHYSICAL_DURATIONS[jaId] or JA_PHYSICAL_DURATIONS[id];
     end
     if actionType == 13 then
         return PET_DURATIONS[id] or PET_DURATIONS[jaId];
@@ -491,11 +513,19 @@ local function ApplyMessage(debuffs, action)
                 end
             -- Type 3 WS or physical JA on a hit
             elseif action.Type == 3 and physicalHitMes[message] then
-                local wsData = WEAPON_SKILL_DURATIONS[spell];
-                if wsData then
-                    ApplyWeaponSkillData(targetDebuffs, wsData, actorId, now, true);
+                local jaId = JobAbilityId(spell);
+                -- Ashita JA params are often 512+id; prefer jaPhysical to avoid WS id collisions
+                -- (e.g. Angon 170 vs Randgrith 170, Shield Bash 46 vs Expiacion 46).
+                local jaPhys = (spell ~= jaId) and JA_PHYSICAL_DURATIONS[jaId] or nil;
+                local wsData = (not jaPhys) and WEAPON_SKILL_DURATIONS[spell] or nil;
+                if jaPhys then
+                    local uncertain = jaPhys.certainOnHit ~= true;
+                    ApplySpellData(targetDebuffs, jaPhys, isOwnActor, now, nil, uncertain);
+                elseif wsData then
+                    -- certainOnHit (e.g. Horizon Geirskogul) lands whenever the WS hits.
+                    local uncertain = wsData.certainOnHit ~= true;
+                    ApplyWeaponSkillData(targetDebuffs, wsData, actorId, now, uncertain);
                 elseif spellData then
-                    -- Angon etc.: certainOnHit when land is guaranteed on connecting hit.
                     local uncertain = spellData.certainOnHit ~= true;
                     ApplySpellData(targetDebuffs, spellData, isOwnActor, now, nil, uncertain);
                 end
@@ -543,13 +573,14 @@ local function ApplyMessage(debuffs, action)
                     ClearTrackedDebuff(targetDebuffs, buffId);
                 end
             -- Type 11: ja/jaPhysical/pet only (spell ids collide with WS/BLU).
-            elseif action.Type == 11 then
+            elseif action.Type == 11 and not missMes[message] then
                 local nonSpell = LookupNonSpell(spell, action.Type);
                 if nonSpell then
-                    ApplySpellData(targetDebuffs, nonSpell, isOwnActor, now, ability.Param, false);
+                    local uncertain = nonSpell.uncertain == true;
+                    ApplySpellData(targetDebuffs, nonSpell, isOwnActor, now, ability.Param, uncertain);
                 end
             -- Type 6 / 14: job abilities (512-normalized in GetDurationData).
-            elseif action.Type == 6 or action.Type == 14 then
+            elseif (action.Type == 6 or action.Type == 14) and not missMes[message] then
                 local jaId = JobAbilityId(spell);
                 local onHitData = ON_HIT_DURATIONS[jaId];
                 if onHitData then
@@ -559,7 +590,12 @@ local function ApplyMessage(debuffs, action)
                         expires = now + (onHitData.window or 60),
                     };
                 elseif spellData then
-                    ApplySpellData(targetDebuffs, spellData, isOwnActor, now, ability.Param, false);
+                    -- uncertain flag, or certainOnHit for guaranteed lands (Angon).
+                    local uncertain = spellData.uncertain == true;
+                    if spellData.certainOnHit == true then
+                        uncertain = false;
+                    end
+                    ApplySpellData(targetDebuffs, spellData, isOwnActor, now, ability.Param, uncertain);
                 end
             end
 
