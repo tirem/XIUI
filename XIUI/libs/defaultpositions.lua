@@ -148,7 +148,7 @@ local BLU_REF_W, BLU_REF_H = 1920, 1080;
 local BLU_BOX_W, BLU_BOX_H = 720, 200;
 local BLU_BOX_X = (BLU_REF_W - BLU_BOX_W) / 2;
 local BLU_BOX_Y = 200;
-local BLU_ART_W, BLU_ART_H = 1983, 793;
+local BLU_ART_W, BLU_ART_H = 1800, 900;
 
 local function GetBlueMagicLearnedBox(userScale)
     userScale = userScale or 1;
