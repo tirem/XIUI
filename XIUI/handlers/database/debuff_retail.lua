@@ -131,7 +131,6 @@ durations.spells = {
     [472] = {duration = 120, songFamily = 'songPlusNocturne'}, -- Pining Nocturne
 
     -- Blue Magic. onDamage = status is an additional effect of a damaging spell.
-    -- Remaining duration is resist-scaled (handler marks those rows uncertain).
     [513] = {duration = 60, buffId = 3}, -- Venom Shell - Poison
     [515] = {duration = 60, buffId = 136, onDamage = true}, -- Maelstrom - STR Down
     [524] = {duration = 60, buffId = 146, onDamage = true}, -- Sandspin - Accuracy Down
@@ -195,7 +194,7 @@ durations.spells = {
     [707] = {duration = 15, buffId = 156, onDamage = true}, -- Retinal Glare - Flash
 };
 
--- Type 3 weapon skills with debuffs (separate from spells to avoid id collisions).
+-- Type 3 WS secondaries (same pattern as BLU onDamage). ? unless certainOnHit.
 durations.weaponSkills = {
     [2] = {buffId = 10, tpPer500 = 1}, -- Shoulder Tackle - Stun
     [15] = {buffId = 31, tpDuration = {base = 15, per1000Tp = 3}}, -- Shijin Spiral - Plague
@@ -254,10 +253,7 @@ durations.onHit = {
     [156] = {buffId = 148, duration = 30, window = 60}, -- Feint -> Evasion Down
 };
 
--- Type 3 job abilities that land like a weaponskill.
--- Physical JAs sometimes show up as type 6 in packets, but are mainly a type 3.
--- uncertain = true: effect can resist after the physical hit connects.
--- certainOnHit = true: effect always lands when the hit connects (no resist roll).
+-- Type 3 physical JAs (sometimes type 6). uncertain = hidden second roll (?); certainOnHit = absolute.
 durations.jaPhysical = {
     [57] = {duration = 30, buffId = 11},   -- Shadowbind - Bind (msg 203)
     [46] = {duration = 8, buffId = 10, uncertain = true}, -- Shield Bash - Stun
@@ -267,10 +263,7 @@ durations.jaPhysical = {
 };
 
 -- Type 6 / 14 job abilities. Keys are ability IDs (action Param), not buff IDs.
--- buffId is the status effect on the enemy.
--- uncertain = true only when the effect can fail after a hit (resist / chance / conditional),
--- not for miss-only abilities (missMes already skips those).
--- Ability IDs verified against LandSandBoat scripts/enum/job_ability.lua (GitHub base).
+-- Applied from status-on (127 etc.), not from "uses". Bash-style hits live in jaPhysical.
 durations.ja = {
     [57] = {duration = 30, buffId = 11}, -- Shadowbind - Bind (also type 3 / jaPhysical)
     [46] = {duration = 8, buffId = 10, uncertain = true}, -- Shield Bash - Stun (also type 3 / jaPhysical)
@@ -278,7 +271,7 @@ durations.ja = {
     [168] = {duration = 30, buffId = 31, buffIds = {10, 31}, uncertain = true}, -- Blade Bash - Stun (~6s) + Plague (15+merits); resist each (also type 3 / jaPhysical)
     [170] = {duration = 30, buffId = 149, certainOnHit = true}, -- Angon (also type 3 / jaPhysical)
     [82] = {duration = 100, buffId = 168, uncertain = true}, -- Chi Blast - Inhibit TP only with Penance
-    [131] = {duration = 90, buffId = 2, uncertain = true}, -- Light Shot - Sleep
+    [131] = {duration = 90, buffId = 2}, -- Light Shot - Sleep
     [150] = {duration = 30, buffId = 805}, -- Tomahawk (silent client icon; not Defense Down 149)
     [161] = {duration = 10, buffId = 28, uncertain = true}, -- Feral Howl - Terror    
     [201] = {duration = 60, buffId = 386}, -- Quickstep - Lethargic Daze
@@ -315,7 +308,8 @@ durations.ja = {
     [695] = {duration = 30, buffId = 51}, -- Blood Weapon
 };
 
--- Pet / blood pact ids (ability id). Always treated uncertain by the handler.
+-- Pet / blood pact ids (ability id). Damaging pacts land the secondary silently
+-- (resist-scaled), so the handler infers them as ? on the hit (like BLU onDamage).
 durations.pet = {
     [513] = {duration = 90, buffId = 3}, -- Poison Nails - Poison
     [522] = {duration = 90, buffId = 2}, -- Mewing Lullaby - Sleep
@@ -345,7 +339,7 @@ durations.pet = {
     [1908] = {duration = 90, buffId = 2, buffIds = {2, 135}}, -- Nightmare (mob-skill id form)
 };
 
--- Additional-effect procs keyed by landed buff id. Max duration for that status; handler applies as uncertain.
+-- Additional-effect procs keyed by landed buff id. Max duration for that status.
 durations.additionalEffect = {
     [2] = {duration = 25},   -- Sleep
     [3] = {duration = 90},   -- Poison

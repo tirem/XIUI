@@ -86,17 +86,17 @@ local ROLLS = {
 ]]--
 local HORIZON = {
     rolls = {
-        ['Chaos'] = { unit = FLAT, perLevel = true,
+        ['Chaos'] = { unit = FLAT, perLevel = true, pctStep = 0.095, -- measured: Phantom Roll+ adds ~9.5% of native lv75 power per rank
           powers = { 29, 36, 39, 92, 45, 54, 61, 21, 64, 71, 111, -15 } },
         ["Gallant's"] = { unit = FLAT, stat = 'DEF', scale = 1, step = 4,
           powers = { 48, 60, 200, 72, 88, 104, 32, 120, 140, 160, 240, -120 } },
-        ["Healer's"] = { unit = FLAT, stat = 'hMP',
+        ["Healer's"] = { unit = FLAT, stat = 'hMP', step = 1, -- measured: Phantom Roll+1 gear adds +1
           powers = { 2, 3, 10, 4, 4, 5, 1, 6, 6, 7, 12, -3 } },
         ["Evoker's"] = {
           powers = { 1, 1, 1, 1, 3, 2, 2, 2, 1, 2, 4, -1 } },
         ['Ninja'] = {
           powers = { 10, 13, 15, 40, 18, 20, 25, 5, 27, 30, 50, -15 } },
-        ["Hunter's"] = {
+        ["Hunter's"] = { step = 3, -- measured in-game: Phantom Roll+1 gear adds +3, not retail's +5
           powers = { 10, 13, 15, 40, 18, 20, 25, 5, 27, 30, 50, -15 } },
         ["Magus's"] = {
           powers = { 5, 20, 6, 8, 9, 3, 10, 13, 14, 15, 25, -5 } },
@@ -235,12 +235,22 @@ M.Potency = function(roll, total, context)
     if total <= M.MAX_TOTAL then
         local partyJobs = context.partyJobs or {};
         if partyJobs[roll.job] then power = power + roll.bonus; end
-        power = power + roll.step * (context.gear or 0);
+
+        local nativePower = power;
+        if not roll.noGearBonus and roll.pctStep == nil then
+            power = power + roll.step * (context.gear or 0);
+        end
 
         if roll.perLevel then
             local level = context.level or 0;
             if level < 1 then level = 75; end
             power = math.floor(power * level / 75);
+        end
+
+        -- Percentage Phantom Roll+ (e.g. Chaos): a fraction of the native lv75
+        -- power per rank, added after level scaling. Measured ~9.5% per rank.
+        if not roll.noGearBonus and roll.pctStep ~= nil then
+            power = power + math.floor(nativePower * roll.pctStep * (context.gear or 0));
         end
     end
 

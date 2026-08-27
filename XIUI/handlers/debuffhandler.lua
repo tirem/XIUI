@@ -17,8 +17,9 @@ local reusableDebuffIds = {};
 local reusableDebuffTimes = {};
 local reusableDebuffUncertain = {};
 
--- Message type hash tables for O(1) lookup (converted from T{} arrays)
-local statusOnMes = {[101]=true, [127]=true, [160]=true, [164]=true, [166]=true, [186]=true, [194]=true, [203]=true, [205]=true, [230]=true, [236]=true, [266]=true, [267]=true, [268]=true, [269]=true, [237]=true, [271]=true, [272]=true, [277]=true, [278]=true, [279]=true, [280]=true, [319]=true, [320]=true, [375]=true, [412]=true, [645]=true, [754]=true, [755]=true, [804]=true};
+-- Status-on = the server said the effect is on the target (no ?).
+-- 101 USES is only "entity uses", not a land — keep it out.
+local statusOnMes = {[127]=true, [160]=true, [164]=true, [166]=true, [186]=true, [194]=true, [203]=true, [205]=true, [230]=true, [236]=true, [266]=true, [267]=true, [268]=true, [269]=true, [237]=true, [271]=true, [272]=true, [277]=true, [278]=true, [279]=true, [280]=true, [319]=true, [320]=true, [375]=true, [412]=true, [645]=true, [754]=true, [755]=true, [804]=true};
 local statusOffMes = {[64]=true, [159]=true, [168]=true, [204]=true, [206]=true, [321]=true, [322]=true, [341]=true, [342]=true, [343]=true, [344]=true, [350]=true, [378]=true, [531]=true, [647]=true, [805]=true, [806]=true};
 local deathMes = {[6]=true, [20]=true, [97]=true, [113]=true, [406]=true, [605]=true, [646]=true};
 local spellDamageMes = {[2]=true, [252]=true, [264]=true, [265]=true};
@@ -35,9 +36,6 @@ local damageHitMes = {
     [352]=true, [353]=true, [379]=true, [576]=true, [577]=true, [802]=true,
 };
 local SLEEP_BUFF_IDS = { 2, 19, 193 };
--- Type 4 spell ids 513-760 are Blue Magic (511 is Haste II, 841 is Distract).
-local BLU_SPELL_ID_MIN = 513;
-local BLU_SPELL_ID_MAX = 760;
 -- "No effect" confirms a matching uncertain debuff is already present (do not refresh timer).
 -- Distinct from complete resist / immunity (655), which means the effect is not present.
 -- 75 MAGIC_NO_EFFECT, 156 JA_NO_EFFECT, 189 SKILL_NO_EFFECT, 283 NO_EFFECT, 323 JA_NO_EFFECT_2
@@ -126,19 +124,47 @@ if HzLimitedMode then
 end
 
 local SPELL_DURATIONS = durations.spells;
--- BLU remaining duration is resist-scaled; always show ?.
-for id = BLU_SPELL_ID_MIN, BLU_SPELL_ID_MAX do
-    local row = SPELL_DURATIONS[id];
-    if row then
-        row.uncertain = true;
-    end
-end
 local WEAPON_SKILL_DURATIONS = durations.weaponSkills or {};
 local JA_PHYSICAL_DURATIONS = durations.jaPhysical;
 local JA_DURATIONS = durations.ja;
 local PET_DURATIONS = durations.pet;
 local ADDITIONAL_EFFECT_DURATIONS = durations.additionalEffect;
 local ON_HIT_DURATIONS = durations.onHit or {};
+
+-- Longest known duration per buff (spells/JA/WS/pets). Unknown status-on uses this, not bolt AE times.
+local STATUS_MAX_DURATIONS = {};
+local function RecordMaxDuration(data)
+    if type(data) ~= 'table' or type(data.duration) ~= 'number' then return; end
+    local function consider(buffId)
+        if buffId ~= nil and (STATUS_MAX_DURATIONS[buffId] == nil or data.duration > STATUS_MAX_DURATIONS[buffId]) then
+            STATUS_MAX_DURATIONS[buffId] = data.duration;
+        end
+    end
+    consider(data.buffId);
+    if data.buffIds then
+        for i = 1, #data.buffIds do
+            consider(data.buffIds[i]);
+        end
+    end
+end
+local function RecordTableMax(tbl)
+    if not tbl then return; end
+    for _, data in pairs(tbl) do
+        RecordMaxDuration(data);
+    end
+end
+RecordTableMax(SPELL_DURATIONS);
+RecordTableMax(WEAPON_SKILL_DURATIONS);
+RecordTableMax(JA_PHYSICAL_DURATIONS);
+RecordTableMax(JA_DURATIONS);
+RecordTableMax(PET_DURATIONS);
+
+local function UnknownStatusDuration(buffId)
+    local maxDur = STATUS_MAX_DURATIONS[buffId];
+    if maxDur then return maxDur; end
+    local aeData = ADDITIONAL_EFFECT_DURATIONS[buffId];
+    return aeData and aeData.duration or 30;
+end
 
 local function ClampSongPlus(value)
     value = tonumber(value) or 0;
@@ -481,10 +507,18 @@ local function GetDurationData(actionType, id)
     return SPELL_DURATIONS[id] or LookupNonSpell(id, actionType) or LookupNonSpell(jaId, actionType);
 end
 
+-- Hidden second roll after a connecting hit (BLU onDamage / bash / resistable WS).
+-- Returns the ? flag, or nil to skip (visible AE or wait for status-on).
+local function HiddenSecondaryMarker(data, additionalEffect, defaultHidden)
+    if not data then return nil; end
+    if data.certainOnHit then return false; end
+    if additionalEffect ~= nil then return nil; end
+    if defaultHidden or data.uncertain or data.onDamage then return true; end
+    return nil;
+end
+
+-- uncertain is only "inferred from a hit". Confirmed lands pass false.
 local function ApplySpellData(targetDebuffs, spellData, isOwnActor, now, packetBuffId, uncertain)
-    if spellData.uncertain then
-        uncertain = true;
-    end
     local expiry = now + ResolveDuration(spellData, isOwnActor);
     if spellData.clearsBuffs then
         for _, clearBuffId in ipairs(spellData.clearsBuffs) do
@@ -505,19 +539,13 @@ local function ApplySpellData(targetDebuffs, spellData, isOwnActor, now, packetB
     ApplyBuffExpiry(targetDebuffs, buffId, expiry, uncertain);
 end
 
--- uncertain: true when land is inferred (WS hit) or TP is unknown for a TP-scaled duration.
+-- uncertain: true when the WS secondary is inferred (no land message).
 local function ApplyWeaponSkillData(targetDebuffs, wsData, actorId, now, uncertain)
-    local duration, tpKnown = ResolveWeaponSkillDuration(wsData, actorId);
-    if uncertain == nil then
-        uncertain = true;
-    end
-    -- Unknown TP only matters when duration depends on TP.
-    if not tpKnown and UsesTpDuration(wsData) then
-        uncertain = true;
-    end
-    -- Guaranteed land (e.g. Angon-like) stays certain even if TP was assumed.
+    local duration = ResolveWeaponSkillDuration(wsData, actorId);
     if wsData.certainOnHit then
         uncertain = false;
+    elseif uncertain == nil then
+        uncertain = true;
     end
     local entry = CloneDurationEntry(wsData);
     entry.duration = duration;
@@ -544,7 +572,7 @@ local function ApplyPacketAdditionalEffect(targetDebuffs, spellData, isOwnActor,
         local landed = CloneDurationEntry(spellData);
         landed.buffIds = nil;
         landed.buffId = buffId;
-        ApplySpellData(targetDebuffs, landed, isOwnActor, now, buffId, true);
+        ApplySpellData(targetDebuffs, landed, isOwnActor, now, buffId, false);
         return;
     end
     local prev = targetDebuffs[buffId];
@@ -552,9 +580,10 @@ local function ApplyPacketAdditionalEffect(targetDebuffs, spellData, isOwnActor,
     local prevCertain = prev and prevExpiry and prevExpiry >= now and not prev.uncertain;
     local aeData = ADDITIONAL_EFFECT_DURATIONS[buffId];
     local newExpiry = now + (aeData and aeData.duration or 30);
-    if not prevCertain and (prevExpiry == nil or prevExpiry < now or newExpiry > prevExpiry) then
-        ApplyBuffExpiry(targetDebuffs, buffId, newExpiry, true);
-    end
+    if prevCertain and prevExpiry >= newExpiry then return; end
+    local expiry = newExpiry;
+    if prevExpiry and prevExpiry > expiry then expiry = prevExpiry; end
+    ApplyBuffExpiry(targetDebuffs, buffId, expiry, false);
 end
 
 local function ApplyMessage(debuffs, action)
@@ -591,13 +620,8 @@ local function ApplyMessage(debuffs, action)
                 ClearSleepDebuffs(targetDebuffs);
             end
 
-            -- Handle pet abilities (Type 13)
-            if action.Type == 13 then
-                if spellData then
-                    ApplySpellData(targetDebuffs, spellData, isOwnActor, now, 2, true);
-                end
             -- Type 1 melee only: Feint applies on regular melee hits (not ranged, not WS).
-            elseif action.Type == 1 and physicalHitMes[message] then
+            if action.Type == 1 and physicalHitMes[message] then
                 local pending = debuffHandler.pendingOnHit[actorId];
                 if pending and pending.expires > now then
                     -- Guaranteed on connecting melee hit (including 0 dmg / countered).
@@ -612,15 +636,28 @@ local function ApplyMessage(debuffs, action)
                 local jaPhys = (spell ~= jaId) and JA_PHYSICAL_DURATIONS[jaId] or nil;
                 local wsData = (not jaPhys) and WEAPON_SKILL_DURATIONS[spell] or nil;
                 if jaPhys then
-                    local uncertain = jaPhys.certainOnHit ~= true;
-                    ApplySpellData(targetDebuffs, jaPhys, isOwnActor, now, nil, uncertain);
+                    local marker = HiddenSecondaryMarker(jaPhys, additionalEffect, false);
+                    if marker ~= nil then
+                        ApplySpellData(targetDebuffs, jaPhys, isOwnActor, now, nil, marker);
+                    end
                 elseif wsData then
-                    -- certainOnHit (e.g. Horizon Geirskogul) lands whenever the WS hits.
-                    local uncertain = wsData.certainOnHit ~= true;
-                    ApplyWeaponSkillData(targetDebuffs, wsData, actorId, now, uncertain);
+                    local marker = HiddenSecondaryMarker(wsData, additionalEffect, true);
+                    if marker ~= nil then
+                        ApplyWeaponSkillData(targetDebuffs, wsData, actorId, now, marker);
+                    end
                 elseif spellData then
-                    local uncertain = spellData.certainOnHit ~= true;
-                    ApplySpellData(targetDebuffs, spellData, isOwnActor, now, nil, uncertain);
+                    local marker = HiddenSecondaryMarker(spellData, additionalEffect, false);
+                    if marker ~= nil then
+                        ApplySpellData(targetDebuffs, spellData, isOwnActor, now, nil, marker);
+                    end
+                end
+            -- Type 13 pet/blood pact damage: hidden secondary (e.g. Poison Nails)
+            -- lands silently (messageBypass) with resist-scaled duration. Confirmed
+            -- lands (Nightmare msg 266) fall through to the status-on branch below.
+            elseif action.Type == 13 and physicalHitMes[message] then
+                local marker = HiddenSecondaryMarker(spellData, additionalEffect, true);
+                if marker ~= nil then
+                    ApplySpellData(targetDebuffs, spellData, isOwnActor, now, nil, marker);
                 end
             elseif action.Type == 4 and spellDamageMes[message] then
                 ApplyType4Damage(targetDebuffs, spellData, isOwnActor, now, ability.Param, additionalEffect);
@@ -632,8 +669,7 @@ local function ApplyMessage(debuffs, action)
                 elseif spellData then
                     ApplySpellData(targetDebuffs, spellData, isOwnActor, now, buffId, false);
                 elseif buffId ~= nil then
-                    local aeData = ADDITIONAL_EFFECT_DURATIONS[buffId];
-                    ApplyBuffExpiry(targetDebuffs, buffId, now + (aeData and aeData.duration or 30), true);
+                    ApplyBuffExpiry(targetDebuffs, buffId, now + UnknownStatusDuration(buffId), false);
                 end
             elseif statusOffMes[message] then
                 if ability.Param ~= nil then
@@ -650,14 +686,8 @@ local function ApplyMessage(debuffs, action)
                 for _, buffId in ipairs(ResolveActionBuffIds(action.Type, spell, ability.Param)) do
                     ClearTrackedDebuff(targetDebuffs, buffId);
                 end
-            -- Type 11: ja/jaPhysical/pet only (spell ids collide with WS/BLU).
-            elseif action.Type == 11 and not missMes[message] then
-                local nonSpell = LookupNonSpell(spell, action.Type);
-                if nonSpell then
-                    local uncertain = nonSpell.uncertain == true;
-                    ApplySpellData(targetDebuffs, nonSpell, isOwnActor, now, ability.Param, uncertain);
-                end
-            -- Type 6 / 14: job abilities (512-normalized in GetDurationData).
+            -- Type 6 / 14: Feint pending, or bash-style physical JA inferred from a hit.
+            -- Do not apply ja[] on "uses" — lands are status-on (e.g. Light Shot 127).
             elseif (action.Type == 6 or action.Type == 14) and not missMes[message] then
                 local jaId = JobAbilityId(spell);
                 local onHitData = ON_HIT_DURATIONS[jaId];
@@ -667,13 +697,12 @@ local function ApplyMessage(debuffs, action)
                         duration = onHitData.duration,
                         expires = now + (onHitData.window or 60),
                     };
-                elseif spellData then
-                    -- uncertain flag, or certainOnHit for guaranteed lands (Angon).
-                    local uncertain = spellData.uncertain == true;
-                    if spellData.certainOnHit == true then
-                        uncertain = false;
+                elseif physicalHitMes[message] then
+                    local jaPhys = JA_PHYSICAL_DURATIONS[jaId] or JA_PHYSICAL_DURATIONS[spell];
+                    local marker = HiddenSecondaryMarker(jaPhys, additionalEffect, false);
+                    if marker ~= nil then
+                        ApplySpellData(targetDebuffs, jaPhys, isOwnActor, now, nil, marker);
                     end
-                    ApplySpellData(targetDebuffs, spellData, isOwnActor, now, ability.Param, uncertain);
                 end
             end
 
