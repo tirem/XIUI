@@ -118,14 +118,13 @@ local function DrawBar(drawList, x, y, width, height, column)
         dice.Color(BAR_BACKDROP), rounding);
 
     if column.fraction > 0 then
-        -- Inset fill so AA stays in the track (bar 2's left sits in the gap).
+        -- No PushClipRect: Ashita 4.16 mishandles clip pushes on the shared
+        -- background draw list and the whole UI runs away. Partial-width fill.
         local inset = 1;
         local innerRounding = math.max(0, rounding - inset);
-        local fillRight = x + math.max(inset, width * column.fraction - inset);
-        drawList:PushClipRect({ x + inset, y + inset }, { fillRight, y + height - inset }, true);
-        drawList:AddRectFilled({ x + inset, y + inset }, { x + width - inset, y + height - inset },
-            dice.Color(column.fill), innerRounding);
-        drawList:PopClipRect();
+        local fillRight = x + math.max(inset * 2, width * column.fraction);
+        drawList:AddRectFilled({ x + inset, y + inset }, { fillRight - inset, y + height - inset },
+            dice.Color(column.fill), innerRounding, ImDrawCornerFlags_Left);
     end
 
     -- Same idea as player/target bars: a thin stroke around the fill.
