@@ -112,19 +112,30 @@ local function BuildColumn(entry, horizonMode, canDoubleUp, doubleUpSeconds)
     };
 end
 
+-- 4.3+ handles clip pushes on the shared draw list fine; older builds (4.16)
+-- run the whole UI away, so they use a clip-free fill (accepts a tiny bleed).
+local IS_ASHITA_43 = (ashita.interface_version or 0) >= 4.3;
+
 local function DrawBar(drawList, x, y, width, height, column)
     local rounding = height * 0.45;
     drawList:AddRectFilled({ x, y }, { x + width, y + height },
         dice.Color(BAR_BACKDROP), rounding);
 
     if column.fraction > 0 then
-        -- No PushClipRect: Ashita 4.16 mishandles clip pushes on the shared
-        -- background draw list and the whole UI runs away. Partial-width fill.
         local inset = 1;
         local innerRounding = math.max(0, rounding - inset);
-        local fillRight = x + math.max(inset * 2, width * column.fraction);
-        drawList:AddRectFilled({ x + inset, y + inset }, { fillRight - inset, y + height - inset },
-            dice.Color(column.fill), innerRounding, ImDrawCornerFlags_Left);
+        if IS_ASHITA_43 then
+            -- Clip so the fill stays inside the track at start/finish.
+            local fillRight = x + math.max(inset, width * column.fraction - inset);
+            drawList:PushClipRect({ x + inset, y + inset }, { fillRight, y + height - inset }, true);
+            drawList:AddRectFilled({ x + inset, y + inset }, { x + width - inset, y + height - inset },
+                dice.Color(column.fill), innerRounding);
+            drawList:PopClipRect();
+        else
+            local fillRight = x + math.max(inset * 2, width * column.fraction);
+            drawList:AddRectFilled({ x + inset, y + inset }, { fillRight - inset, y + height - inset },
+                dice.Color(column.fill), innerRounding, ImDrawCornerFlags_Left);
+        end
     end
 
     -- Same idea as player/target bars: a thin stroke around the fill.
