@@ -306,6 +306,9 @@ durations.ja = {
     [693] = {duration = 30, buffId = 49}, -- Perfect Dodge
     [694] = {duration = 30, buffId = 50}, -- Invincible
     [695] = {duration = 30, buffId = 51}, -- Blood Weapon
+    [696] = {duration = 180, buffId = 52}, -- Soul Voice (mob skill)
+    [730] = {duration = 30, buffId = 54}, -- Meikyo Shisui (mob skill)
+    [1933] = {duration = 45, buffId = 163}, -- Azure Lore (mob skill)
 };
 
 -- Pet / blood pact ids (ability id). Damaging pacts land the secondary silently
@@ -381,6 +384,42 @@ durations.additionalEffect = {
     [576] = {duration = 30}, -- Doubt / Bully
     [798] = {duration = 10}, -- Chainbound
     [805] = {duration = 30}, -- Tomahawk
+};
+
+-- Mob self-buffs applied by mob skills, keyed by the landed status id (packet
+-- Param). Any mob skill that grants status X shows this duration, so we don't
+-- need to map every skill id. Durations are the max seen across LSB mobskills.
+durations.mobBuff = {
+    [33] = 180,   -- Haste
+    [34] = 180,   -- Blaze Spikes
+    [35] = 180,   -- Ice Spikes
+    [36] = 180,   -- Blink
+    [37] = 300,   -- Stoneskin
+    [38] = 180,   -- Shock Spikes
+    [40] = 300,   -- Protect
+    [41] = 180,   -- Shell
+    [42] = 300,   -- Regen
+    [43] = 198,   -- Refresh
+    [45] = 180,   -- Boost
+    [56] = 180,   -- Berserk
+    [61] = 300,   -- Counterstance
+    [68] = 180,   -- Warcry
+    [90] = 60,    -- Accuracy Boost
+    [92] = 180,   -- Evasion Boost
+    [93] = 300,   -- Defense Boost
+    [94] = 1800,  -- Enfire
+    [95] = 1800,  -- Enblizzard
+    [96] = 1800,  -- Enaero
+    [97] = 1800,  -- Enstone
+    [98] = 1800,  -- Enthunder
+    [99] = 1800,  -- Enwater
+    [116] = 120,  -- Phalanx
+    [150] = 60,   -- Physical Shield
+    [151] = 60,   -- Arrow Shield
+    [152] = 300,  -- Magic Shield
+    [170] = 60,   -- Regain
+    [190] = 300,  -- Magic Atk Boost
+    [191] = 180,  -- Magic Def Boost
 };
 
 return durations;

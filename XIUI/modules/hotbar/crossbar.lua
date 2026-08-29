@@ -233,7 +233,8 @@ local function BuildCrossbarBindKey(slotData)
     if slotData.customIconType or slotData.customIconId or slotData.customIconPath then
         iconPart = ':icon:' .. (slotData.customIconType or '') .. ':' .. tostring(slotData.customIconId or '') .. ':' .. (slotData.customIconPath or '');
     end
-    return (slotData.actionType or '') .. ':' .. (slotData.action or '') .. ':' .. (slotData.target or '') .. iconPart;
+    return (slotData.actionType or '') .. ':' .. (slotData.action or '') .. ':' .. (slotData.target or '')
+        .. ':' .. (slotData.displayName or '') .. ':' .. (slotData.macroText or '') .. iconPart;
 end
 
 -- Get cached icon (and precomputed abbreviation, when no icon) for a crossbar slot.

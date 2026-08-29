@@ -130,6 +130,7 @@ local JA_DURATIONS = durations.ja;
 local PET_DURATIONS = durations.pet;
 local ADDITIONAL_EFFECT_DURATIONS = durations.additionalEffect;
 local ON_HIT_DURATIONS = durations.onHit or {};
+local MOB_BUFF_DURATIONS = durations.mobBuff or {};
 
 -- Longest known duration per buff (spells/JA/WS/pets). Unknown status-on uses this, not bolt AE times.
 local STATUS_MAX_DURATIONS = {};
@@ -162,6 +163,7 @@ RecordTableMax(PET_DURATIONS);
 local function UnknownStatusDuration(buffId)
     local maxDur = STATUS_MAX_DURATIONS[buffId];
     if maxDur then return maxDur; end
+    if MOB_BUFF_DURATIONS[buffId] then return MOB_BUFF_DURATIONS[buffId]; end
     local aeData = ADDITIONAL_EFFECT_DURATIONS[buffId];
     return aeData and aeData.duration or 30;
 end
@@ -685,6 +687,20 @@ local function ApplyMessage(debuffs, action)
             elseif immuneMes[message] then
                 for _, buffId in ipairs(ResolveActionBuffIds(action.Type, spell, ability.Param)) do
                     ClearTrackedDebuff(targetDebuffs, buffId);
+                end
+            -- Type 11: mob skills (self-buff 2hrs like Mighty Strikes land here with
+            -- the USES message, and enemy debuff mob skills). Applied as certain.
+            -- Unknown skills still show via the packet's status id + a best-guess
+            -- duration, so a 2hr we haven't mapped shows *something* rather than nothing.
+            elseif action.Type == 11 and not missMes[message] then
+                if spellData then
+                    ApplySpellData(targetDebuffs, spellData, isOwnActor, now, ability.Param, false);
+                elseif ability.Param ~= nil and ability.Param ~= 0 then
+                    -- Unmapped mob skill: use a known/mob-buff duration for this status
+                    -- id if we have one, else assume a long buff (likely a 2hr).
+                    local dur = STATUS_MAX_DURATIONS[ability.Param]
+                        or MOB_BUFF_DURATIONS[ability.Param] or 300;
+                    ApplyBuffExpiry(targetDebuffs, ability.Param, now + dur, false);
                 end
             -- Type 6 / 14: Feint pending, or bash-style physical JA inferred from a hit.
             -- Do not apply ja[] on "uses" — lands are status-on (e.g. Light Shot 127).

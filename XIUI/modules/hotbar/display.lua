@@ -161,7 +161,7 @@ local function OnPaletteChanged(barIndex, oldPalette, newPalette)
     StartPaletteAnimation(barIndex);
 end
 
--- Build a cache key that includes all fields that affect the icon
+-- Build a cache key that includes all fields that affect the icon/label
 local function BuildBindKey(bind)
     if not bind then return 'nil'; end
     -- Include customIconType, customIconId, and customIconPath so icon changes invalidate the cache
@@ -169,7 +169,10 @@ local function BuildBindKey(bind)
     if bind.customIconType or bind.customIconId or bind.customIconPath then
         iconPart = ':icon:' .. (bind.customIconType or '') .. ':' .. tostring(bind.customIconId or '') .. ':' .. (bind.customIconPath or '');
     end
-    return (bind.actionType or '') .. ':' .. (bind.action or '') .. ':' .. (bind.target or '') .. iconPart;
+    -- macroText + displayName so editing a macro (which keeps actionType/action) still
+    -- changes the key and forces the icon/abbreviation to recompute.
+    return (bind.actionType or '') .. ':' .. (bind.action or '') .. ':' .. (bind.target or '')
+        .. ':' .. (bind.displayName or '') .. ':' .. (bind.macroText or '') .. iconPart;
 end
 
 -- Get cached icon (and precomputed abbreviation) for a slot, recompute only if bind changed.
