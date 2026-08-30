@@ -447,6 +447,14 @@ end
 function data.RestoreTimersFromConfig()
     if gConfig == nil then return; end
 
+    local function clearPersistedTimers()
+        gConfig.petBarPetSummonTime = nil;
+        gConfig.petBarPetExpireTime = nil;
+        gConfig.petBarPetType = nil;
+        gConfig.petBarPetName = nil;
+        gConfig.petBarCharmExpireTime = nil;
+    end
+
     -- Check if we have persisted timer data
     if gConfig.petBarPetSummonTime and gConfig.petBarPetName then
         local now = os.time();
@@ -461,12 +469,7 @@ function data.RestoreTimersFromConfig()
                 data.lastTrackedPetName = gConfig.petBarPetName;
                 data.charmExpireTime = gConfig.petBarCharmExpireTime;
             else
-                -- Timer expired, clear persisted data
-                gConfig.petBarPetSummonTime = nil;
-                gConfig.petBarPetExpireTime = nil;
-                gConfig.petBarPetType = nil;
-                gConfig.petBarPetName = nil;
-                gConfig.petBarCharmExpireTime = nil;
+                clearPersistedTimers();
             end
         elseif gConfig.petBarCharmExpireTime then
             -- Charm timer - restore if valid
@@ -476,12 +479,7 @@ function data.RestoreTimersFromConfig()
                 data.lastTrackedPetName = gConfig.petBarPetName;
                 data.charmExpireTime = gConfig.petBarCharmExpireTime;
             else
-                 -- Too old, clear
-                gConfig.petBarPetSummonTime = nil;
-                gConfig.petBarPetExpireTime = nil;
-                gConfig.petBarPetType = nil;
-                gConfig.petBarPetName = nil;
-                gConfig.petBarCharmExpireTime = nil;
+                clearPersistedTimers();
             end
         end
     end
@@ -772,13 +770,13 @@ function data.GetPetData()
     local party = GetPartySafe();
     local playerEnt = GetPlayerEntity();
 
-    if player.isZoning or player:GetMainJob() == 0 then
-        return nil;
-    end
-
     if player == nil or party == nil or playerEnt == nil then
         -- No pet - clear tracking
         data.TrackPetSummon(nil, nil);
+        return nil;
+    end
+
+    if player.isZoning or player:GetMainJob() == 0 then
         return nil;
     end
 
@@ -810,17 +808,16 @@ function data.GetPetData()
     local jugTimeRemaining = data.GetJugTimeRemaining();
     local charmElapsed = data.GetCharmElapsedTime();
 
+    -- TP: clamp to 0-3000; values above 3000 are treated as garbage (0) per user request.
+    local petTp = player:GetPetTP() or 0;
+    if petTp > 3000 or petTp < 0 then petTp = 0; end
+
     return {
         name = petName,
         hpPercent = pet.HPPercent or 0,
         distance = math.sqrt(pet.Distance),
         mpPercent = player:GetPetMPPercent() or 0,
-        -- TP: Clamp to 0-3000, but if value is > 3000 treat as garbage (0) per user request
-        tp = (function()
-            local rawTp = player:GetPetTP() or 0;
-            if rawTp > 3000 then return 0; end
-            return math.max(0, rawTp);
-        end)(),
+        tp = petTp,
         job = petJob,
         showMp = showMp,
         -- New fields

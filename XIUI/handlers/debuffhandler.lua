@@ -160,12 +160,12 @@ RecordTableMax(JA_PHYSICAL_DURATIONS);
 RecordTableMax(JA_DURATIONS);
 RecordTableMax(PET_DURATIONS);
 
-local function UnknownStatusDuration(buffId)
+local function UnknownStatusDuration(buffId, default)
     local maxDur = STATUS_MAX_DURATIONS[buffId];
     if maxDur then return maxDur; end
     if MOB_BUFF_DURATIONS[buffId] then return MOB_BUFF_DURATIONS[buffId]; end
     local aeData = ADDITIONAL_EFFECT_DURATIONS[buffId];
-    return aeData and aeData.duration or 30;
+    return aeData and aeData.duration or default or 30;
 end
 
 local function ClampSongPlus(value)
@@ -462,12 +462,8 @@ local function ResolveTpDuration(wsData, tp)
 end
 
 local function ResolveWeaponSkillDuration(wsData, actorId)
-    local tp = GetActorTp(actorId);
-    local tpKnown = tp ~= nil;
-    if not tpKnown then
-        tp = MAX_TP;
-    end
-    return ResolveTpDuration(wsData, tp), tpKnown;
+    local tp = GetActorTp(actorId) or MAX_TP;
+    return ResolveTpDuration(wsData, tp);
 end
 
 local function UsesTpDuration(data)
@@ -653,9 +649,9 @@ local function ApplyMessage(debuffs, action)
                         ApplySpellData(targetDebuffs, spellData, isOwnActor, now, nil, marker);
                     end
                 end
-            -- Type 13 pet/blood pact damage: hidden secondary (e.g. Poison Nails)
-            -- lands silently (messageBypass) with resist-scaled duration. Confirmed
-            -- lands (Nightmare msg 266) fall through to the status-on branch below.
+            -- Type 13 pet/blood pact damage: damaging pacts (e.g. Poison Nails)
+            -- apply their secondary silently, so we infer it as ? on the hit.
+            -- Confirmed lands (Nightmare msg 266) fall through to status-on below.
             elseif action.Type == 13 and physicalHitMes[message] then
                 local marker = HiddenSecondaryMarker(spellData, additionalEffect, true);
                 if marker ~= nil then
@@ -696,10 +692,9 @@ local function ApplyMessage(debuffs, action)
                 if spellData then
                     ApplySpellData(targetDebuffs, spellData, isOwnActor, now, ability.Param, false);
                 elseif ability.Param ~= nil and ability.Param ~= 0 then
-                    -- Unmapped mob skill: use a known/mob-buff duration for this status
-                    -- id if we have one, else assume a long buff (likely a 2hr).
-                    local dur = STATUS_MAX_DURATIONS[ability.Param]
-                        or MOB_BUFF_DURATIONS[ability.Param] or 300;
+                    -- Unmapped mob skill: known/mob-buff duration for this status id,
+                    -- else assume a long buff (most unmapped ones are 2hrs).
+                    local dur = UnknownStatusDuration(ability.Param, 300);
                     ApplyBuffExpiry(targetDebuffs, ability.Param, now + dur, false);
                 end
             -- Type 6 / 14: Feint pending, or bash-style physical JA inferred from a hit.

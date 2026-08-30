@@ -425,17 +425,32 @@ local function GetIndexFromId(id)
     return 0;
 end
 
-local function PlayerHasBuff(buffId)
+-- Per-frame snapshot of the player's buff array. SlotPassesGates can query buffs
+-- for many spell slots each frame while a skillchain window is open; rebuilding
+-- the lookup once per frame avoids a 32-iteration scan per slot per buff id.
+local buffSnapshot = {};
+local buffSnapshotClock = -1;
+
+local function RefreshBuffSnapshot()
+    local now = os.clock();
+    if now == buffSnapshotClock then return; end
+    buffSnapshotClock = now;
+    for k in pairs(buffSnapshot) do buffSnapshot[k] = nil; end
     local player = AshitaCore:GetMemoryManager():GetPlayer();
-    if not player or not player.GetBuffs then return false; end
+    if not player or not player.GetBuffs then return; end
     local buffs = player:GetBuffs();
-    if not buffs then return false; end
-    for i = 0, 63 do
-        if buffs[i] == buffId then
-            return true;
+    if not buffs then return; end
+    for i = 0, 31 do
+        local id = buffs[i];
+        if id and id ~= 0 and id ~= 255 then
+            buffSnapshot[id] = true;
         end
     end
-    return false;
+end
+
+local function PlayerHasBuff(buffId)
+    RefreshBuffSnapshot();
+    return buffSnapshot[buffId] == true;
 end
 
 local function GetLocalServerId()
@@ -527,6 +542,29 @@ local function GetPetRegistry()
     return petregistry;
 end
 
+-- Per-frame cache of the current pet's normalized ready-move name set, so a bar
+-- full of pet slots doesn't re-fetch + re-normalize the move list per slot.
+local petMovesClock = -1;
+local petMovesName = nil;
+local petMovesSet = nil;
+
+local function GetCurrentPetReadyMoveSet()
+    local now = os.clock();
+    if now ~= petMovesClock then
+        petMovesClock = now;
+        petMovesName = GetPetPalette().GetCurrentPetEntityName();
+        petMovesSet = nil;
+        local moves = petMovesName and GetPetRegistry().GetReadyMovesForPet(petMovesName);
+        if moves then
+            petMovesSet = {};
+            for _, move in ipairs(moves) do
+                petMovesSet[NormalizeName(move.name)] = true;
+            end
+        end
+    end
+    return petMovesSet, petMovesName;
+end
+
 local function SlotPassesGates(skill, actionType)
     if not skill then return false; end
 
@@ -561,18 +599,10 @@ local function SlotPassesGates(skill, actionType)
                 end
             end
         elseif skill._cat == 11 then
-            local petName = GetPetPalette().GetCurrentPetEntityName();
-            local moves = GetPetRegistry().GetReadyMovesForPet(petName);
-            if not moves then return false; end
-            local want = NormalizeName(skill.en);
-            local ok = false;
-            for _, move in ipairs(moves) do
-                if NormalizeName(move.name) == want then
-                    ok = true;
-                    break;
-                end
+            local moveSet = GetCurrentPetReadyMoveSet();
+            if not moveSet or not moveSet[NormalizeName(skill.en)] then
+                return false;
             end
-            if not ok then return false; end
         end
     end
 

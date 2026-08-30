@@ -92,7 +92,7 @@ local HORIZON = {
           powers = { 48, 60, 200, 72, 88, 104, 32, 120, 140, 160, 240, -120 } },
         ["Healer's"] = { unit = FLAT, stat = 'hMP', step = 1, -- measured: Phantom Roll+1 gear adds +1
           powers = { 2, 3, 10, 4, 4, 5, 1, 6, 6, 7, 12, -3 } },
-        ["Evoker's"] = {
+        ["Evoker's"] = { noGearBonus = true, -- measured: Phantom Roll+ gear adds nothing to Evoker's
           powers = { 1, 1, 1, 1, 3, 2, 2, 2, 1, 2, 4, -1 } },
         ['Ninja'] = {
           powers = { 10, 13, 15, 40, 18, 20, 25, 5, 27, 30, 50, -15 } },
@@ -233,10 +233,13 @@ M.Potency = function(roll, total, context)
     if power == nil then return nil; end
 
     if total <= M.MAX_TOTAL then
+        -- Gear % bonus (pctStep) is a fraction of the base lv75 power, before the
+        -- party-job bonus and level scaling.
+        local nativePower = power;
+
         local partyJobs = context.partyJobs or {};
         if partyJobs[roll.job] then power = power + roll.bonus; end
 
-        local nativePower = power;
         if not roll.noGearBonus and roll.pctStep == nil then
             power = power + roll.step * (context.gear or 0);
         end
@@ -247,8 +250,8 @@ M.Potency = function(roll, total, context)
             power = math.floor(power * level / 75);
         end
 
-        -- Percentage Phantom Roll+ (e.g. Chaos): a fraction of the native lv75
-        -- power per rank, added after level scaling. Measured ~9.5% per rank.
+        -- Percentage Phantom Roll+ (e.g. Chaos): added after level scaling.
+        -- Measured ~9.5% of native power per rank.
         if not roll.noGearBonus and roll.pctStep ~= nil then
             power = power + math.floor(nativePower * roll.pctStep * (context.gear or 0));
         end

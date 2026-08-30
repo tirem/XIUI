@@ -575,6 +575,12 @@ local function GetAvailabilityState(bind, bindKey)
         return false, nil;
     end
 
+    -- Build the memo key here (only for binds that actually need a check) instead
+    -- of every slot every frame at the call site.
+    if bindKey == nil then
+        bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
+    end
+
     local now = os.clock();
     local memo = availabilityStateMemo[bindKey];
     if memo and (now - memo.ts) < AVAIL_MEMO_TTL then
@@ -869,7 +875,6 @@ function M.DrawSlot(params)
 
     -- Resource cost (MP / TP / charges / finishing moves)
     local costKind, costLabel, costMet = 'none', nil, true;
-    local bindKey = bind and ((bind.actionType or '') .. ':' .. (bind.action or '')) or '';
     if bind then
         costKind, costLabel, costMet = actions.GetActionCostInfo(bind);
     end
@@ -878,7 +883,7 @@ function M.DrawSlot(params)
     -- Check if action is available (job/level/gear/pet/inventory requirements)
     local isUnavailable = false;
     if bind then
-        isUnavailable = select(1, GetAvailabilityState(bind, bindKey));
+        isUnavailable = select(1, GetAvailabilityState(bind));
     end
 
     -- ========================================
@@ -1407,8 +1412,7 @@ function M.DrawTooltip(bind)
     -- Check if action is unavailable for current job/subjob/gear (cached lookup)
     local isUnavailable = false;
     if bind and actions.NeedsAvailabilityCheck(bind) then
-        local bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
-        isUnavailable = select(1, GetAvailabilityState(bind, bindKey));
+        isUnavailable = select(1, GetAvailabilityState(bind));
     end
 
     -- Ensure custom font is configured for measuring/drawing
