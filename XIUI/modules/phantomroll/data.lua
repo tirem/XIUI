@@ -104,7 +104,7 @@ local HORIZON = {
           powers = { -13, -55, -17, -20, -25, -8, -30, -35, -40, -45, -65, 25 } },
         ["Monk's"] = {
           powers = { 8, 10, 32, 12, 14, 16, 4, 20, 22, 24, 40, -11 } },
-        ['Samurai'] = {
+        ['Samurai'] = { step = 2, -- measured: Phantom Roll+1 gear adds +2 STP, not retail's +4
           powers = { 8, 32, 10, 12, 14, 4, 16, 20, 22, 24, 40, -5 } },
         ["Rogue's"] = {
           powers = { 2, 2, 3, 4, 12, 5, 6, 6, 1, 8, 19, -6 } },

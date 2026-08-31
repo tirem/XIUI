@@ -530,7 +530,9 @@ local function ApplySpellData(targetDebuffs, spellData, isOwnActor, now, packetB
         end
         return;
     end
-    local buffId = packetBuffId;
+    -- displayBuffId overrides the packet effect id (e.g. Sleep II reports effect 2
+    -- but shows the Sleep II icon 19).
+    local buffId = spellData.displayBuffId or packetBuffId;
     if buffId == nil or buffId == 0 then
         buffId = spellData.buffId;
     end
@@ -550,11 +552,13 @@ local function ApplyWeaponSkillData(targetDebuffs, wsData, actorId, now, uncerta
     ApplySpellData(targetDebuffs, entry, false, now, nil, uncertain);
 end
 
--- applyOnDamage: certain land on the damage message. onDamage: infer when the packet has no AE block.
-local function ApplyType4Damage(targetDebuffs, spellData, isOwnActor, now, damage, additionalEffect)
+-- applyOnDamage: certain land on the damage message.
+-- onDamage: BLU secondary lands silently, so infer it whenever damage landed.
+-- An AE block on the same packet is an unrelated proc, handled separately.
+local function ApplyType4Damage(targetDebuffs, spellData, isOwnActor, now, damage)
     if not spellData then return; end
     if spellData.onDamage then
-        if (damage or 0) > 0 and additionalEffect == nil then
+        if (damage or 0) > 0 then
             ApplySpellData(targetDebuffs, spellData, isOwnActor, now, nil, true);
         end
         return;
@@ -649,16 +653,15 @@ local function ApplyMessage(debuffs, action)
                         ApplySpellData(targetDebuffs, spellData, isOwnActor, now, nil, marker);
                     end
                 end
-            -- Type 13 pet/blood pact damage: damaging pacts (e.g. Poison Nails)
-            -- apply their secondary silently, so we infer it as ? on the hit.
-            -- Confirmed lands (Nightmare msg 266) fall through to status-on below.
+            -- Type 13 pet/blood pact: damaging pacts apply the secondary silently,
+            -- so infer it on the hit. Confirmed lands go through status-on below.
             elseif action.Type == 13 and physicalHitMes[message] then
                 local marker = HiddenSecondaryMarker(spellData, additionalEffect, true);
                 if marker ~= nil then
                     ApplySpellData(targetDebuffs, spellData, isOwnActor, now, nil, marker);
                 end
             elseif action.Type == 4 and spellDamageMes[message] then
-                ApplyType4Damage(targetDebuffs, spellData, isOwnActor, now, ability.Param, additionalEffect);
+                ApplyType4Damage(targetDebuffs, spellData, isOwnActor, now, ability.Param);
             elseif statusOnMes[message] then
                 local buffId = ability.Param or (action.Type == 4 and buffTable.GetBuffIdBySpellId(spell) or nil);
                 local wsData = action.Type == 3 and WEAPON_SKILL_DURATIONS[spell] or nil;
@@ -684,16 +687,12 @@ local function ApplyMessage(debuffs, action)
                 for _, buffId in ipairs(ResolveActionBuffIds(action.Type, spell, ability.Param)) do
                     ClearTrackedDebuff(targetDebuffs, buffId);
                 end
-            -- Type 11: mob skills (self-buff 2hrs like Mighty Strikes land here with
-            -- the USES message, and enemy debuff mob skills). Applied as certain.
-            -- Unknown skills still show via the packet's status id + a best-guess
-            -- duration, so a 2hr we haven't mapped shows *something* rather than nothing.
+            -- Type 11: mob skills (self-buff 2hrs, enemy debuffs). Unmapped skills
+            -- still show via the packet status id + a best-guess duration.
             elseif action.Type == 11 and not missMes[message] then
                 if spellData then
                     ApplySpellData(targetDebuffs, spellData, isOwnActor, now, ability.Param, false);
                 elseif ability.Param ~= nil and ability.Param ~= 0 then
-                    -- Unmapped mob skill: known/mob-buff duration for this status id,
-                    -- else assume a long buff (most unmapped ones are 2hrs).
                     local dur = UnknownStatusDuration(ability.Param, 300);
                     ApplyBuffExpiry(targetDebuffs, ability.Param, now + dur, false);
                 end
