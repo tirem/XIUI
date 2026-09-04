@@ -538,12 +538,10 @@ local function ApplySpellData(targetDebuffs, spellData, isOwnActor, now, packetB
         end
         return;
     end
-    -- displayBuffId overrides the packet effect id (e.g. Sleep II reports effect 2
-    -- but shows the Sleep II icon 19).
-    local buffId = spellData.displayBuffId or packetBuffId;
-    if buffId == nil or buffId == 0 then
-        buffId = spellData.buffId;
-    end
+    -- Prefer the data table's buffId (the intended status) over the packet param,
+    -- which can carry unrelated values. displayBuffId forces a specific icon
+    -- (e.g. Sleep II reports effect 2 but shows the Sleep II icon 19).
+    local buffId = spellData.displayBuffId or spellData.buffId or packetBuffId;
     ApplyBuffExpiry(targetDebuffs, buffId, expiry, uncertain);
 end
 
@@ -608,6 +606,9 @@ local function ApplyMessage(debuffs, action)
     local isOwnActor = IsOwnActor(actorId);
 
     for _, target in pairs(action.Targets) do
+        -- Only track effects landing on enemies. Buffs/rolls/songs on alliance
+        -- members (or self) are not enemy debuffs and must not pollute this table.
+        if not IsAllianceActor(target.Id) then
         for _, ability in pairs(target.Actions) do
 
             local spell = PacketParamId(action.Param);
@@ -725,6 +726,7 @@ local function ApplyMessage(debuffs, action)
             if additionalEffect ~= nil and additionalEffectMes[additionalEffect] then
                 ApplyPacketAdditionalEffect(targetDebuffs, spellData, isOwnActor, now, ability.AdditionalEffect.Param);
             end
+        end
         end
     end
 end
