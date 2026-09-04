@@ -160,12 +160,12 @@ RecordTableMax(JA_PHYSICAL_DURATIONS);
 RecordTableMax(JA_DURATIONS);
 RecordTableMax(PET_DURATIONS);
 
-local function UnknownStatusDuration(buffId, default)
+local function UnknownStatusDuration(buffId)
     local maxDur = STATUS_MAX_DURATIONS[buffId];
     if maxDur then return maxDur; end
     if MOB_BUFF_DURATIONS[buffId] then return MOB_BUFF_DURATIONS[buffId]; end
     local aeData = ADDITIONAL_EFFECT_DURATIONS[buffId];
-    return aeData and aeData.duration or default or 30;
+    return aeData and aeData.duration or 30;
 end
 
 local function ClampSongPlus(value)
@@ -304,6 +304,14 @@ end
 
 local function ApplyBuffExpiry(targetDebuffs, buffId, expiry, uncertain)
     if buffId == nil then return; end
+    -- Sleep I/II/Lullaby share one server slot (mutually exclusive). Clear the
+    -- other sleep icons so a target only ever shows the active one.
+    if buffId == 2 or buffId == 19 or buffId == 193 then
+        for i = 1, #SLEEP_BUFF_IDS do
+            local sid = SLEEP_BUFF_IDS[i];
+            if sid ~= buffId then targetDebuffs[sid] = nil; end
+        end
+    end
     targetDebuffs[buffId] = { expiry = expiry, uncertain = uncertain == true };
 end
 
@@ -687,14 +695,12 @@ local function ApplyMessage(debuffs, action)
                 for _, buffId in ipairs(ResolveActionBuffIds(action.Type, spell, ability.Param)) do
                     ClearTrackedDebuff(targetDebuffs, buffId);
                 end
-            -- Type 11: mob skills (self-buff 2hrs, enemy debuffs). Unmapped skills
-            -- still show via the packet status id + a best-guess duration.
+            -- Type 11: mob skills. Only apply when we have mapped data for the
+            -- skill; the packet Param is a status id for buffs but a damage value
+            -- for attacks, so we can't safely infer unmapped skills.
             elseif action.Type == 11 and not missMes[message] then
                 if spellData then
                     ApplySpellData(targetDebuffs, spellData, isOwnActor, now, ability.Param, false);
-                elseif ability.Param ~= nil and ability.Param ~= 0 then
-                    local dur = UnknownStatusDuration(ability.Param, 300);
-                    ApplyBuffExpiry(targetDebuffs, ability.Param, now + dur, false);
                 end
             -- Type 6 / 14: Feint pending, or bash-style physical JA inferred from a hit.
             -- Do not apply ja[] on "uses" — lands are status-on (e.g. Light Shot 127).

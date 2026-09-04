@@ -425,9 +425,8 @@ local function GetIndexFromId(id)
     return 0;
 end
 
--- Per-frame snapshot of the player's buff array. SlotPassesGates can query buffs
--- for many spell slots each frame while a skillchain window is open; rebuilding
--- the lookup once per frame avoids a 32-iteration scan per slot per buff id.
+-- Per-frame snapshot of the player's buff array; avoids a 32-entry scan per
+-- slot per buff id while a skillchain window is open.
 local buffSnapshot = {};
 local buffSnapshotClock = -1;
 
@@ -542,8 +541,7 @@ local function GetPetRegistry()
     return petregistry;
 end
 
--- Per-frame cache of the current pet's normalized ready-move name set, so a bar
--- full of pet slots doesn't re-fetch + re-normalize the move list per slot.
+-- Per-frame cache of the current pet's normalized ready-move name set.
 local petMovesClock = -1;
 local petMovesName = nil;
 local petMovesSet = nil;

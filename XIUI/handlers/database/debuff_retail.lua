@@ -40,10 +40,10 @@ durations.spells = {
     [112] = {duration = 12, kind = 'enfeeble'},  -- Flash
     [59] = {duration = 120, kind = 'enfeeble'},  -- Silence
     [359] = {duration = 120, kind = 'enfeeble'}, -- Silencega
-    [253] = {duration = 60, buffId = 2, clearsBuffs = {19}, kind = 'enfeeble'},  -- Sleep
-    [273] = {duration = 60, buffId = 2, clearsBuffs = {19}, kind = 'enfeeble'},  -- Sleepga
-    [259] = {duration = 90, displayBuffId = 19, clearsBuffs = {2, 193}, kind = 'enfeeble'}, -- Sleep II
-    [274] = {duration = 90, displayBuffId = 19, clearsBuffs = {2, 193}, kind = 'enfeeble'}, -- Sleepga II
+    [253] = {duration = 60, buffId = 2, kind = 'enfeeble'},  -- Sleep
+    [273] = {duration = 60, buffId = 2, kind = 'enfeeble'},  -- Sleepga
+    [259] = {duration = 90, displayBuffId = 19, kind = 'enfeeble'}, -- Sleep II
+    [274] = {duration = 90, displayBuffId = 19, kind = 'enfeeble'}, -- Sleepga II
     [258] = {duration = 60, kind = 'enfeeble'},  -- Bind
     [362] = {duration = 60, kind = 'enfeeble'},  -- Bindga
     [252] = {duration = 5, kind = 'enfeeble'},   -- Stun
@@ -57,7 +57,7 @@ durations.spells = {
     [884] = {duration = 180, kind = 'enfeeble'}, -- Addle II
     [256] = {duration = 60, kind = 'enfeeble'},  -- Virus - Plague
     [257] = {duration = 300, kind = 'enfeeble'}, -- Curse
-    [98] = {duration = 90, displayBuffId = 19, clearsBuffs = {2, 193}, kind = 'enfeeble'}, -- Repose
+    [98] = {duration = 90, displayBuffId = 19, kind = 'enfeeble'}, -- Repose
     [841] = {duration = 120, kind = 'enfeeble'}, -- Distract
     [842] = {duration = 120, kind = 'enfeeble'}, -- Distract II
     [843] = {duration = 120, kind = 'enfeeble'}, -- Distract III
