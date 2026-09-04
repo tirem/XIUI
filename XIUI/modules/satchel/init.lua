@@ -2,6 +2,7 @@ require('common')
 local imgui = require('imgui')
 local struct = require('struct')
 local persistedWindow = require('libs.persisted_window')
+local drawing = require('libs.drawing')
 
 local ui = require('modules.satchel.ui')
 local itemlogic = require('modules.satchel.itemlogic')
@@ -2348,6 +2349,8 @@ function M.DrawWindow()
         return
     end
 
+    drawing.SetOverlayBlocker('satchel', not satchel.hidden and any_satchel_window_visible())
+
     if satchel.hidden then
         return
     end
@@ -2566,6 +2569,7 @@ function M.SetHidden(hidden)
     satchel.hidden = hidden == true
     if satchel.hidden then
         clear_drag_state()
+        drawing.SetOverlayBlocker('satchel', false)
     end
 end
 
@@ -2577,6 +2581,7 @@ function M.Cleanup()
     items.clear_caches()
     invalidate_slot_cache()
     altcache.invalidate()
+    drawing.SetOverlayBlocker('satchel', false)
     satchel.initialized = false
 end
 

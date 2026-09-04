@@ -622,12 +622,10 @@ function display.DrawWindow(settings)
     local typeSettings = GetPetTypeSettings();
     local alwaysVisible = typeSettings.alwaysVisible;
 
-    -- Special handling for BST: Check Charm settings if Jug (default) is not visible
-    if not alwaysVisible and data.GetPetJob() == data.JOB_BST then
-        local charmSettings = gConfig.petBarCharm or {};
-        if charmSettings.alwaysVisible then
-            alwaysVisible = true;
-        end
+    -- No pet: stay visible only if a usable current-job pet type has Always Visible
+    -- (never leaks other jobs' AV — e.g. DRG/BST ignores Avatar AV).
+    if petData == nil then
+        alwaysVisible = data.HasAnyAlwaysVisiblePetType();
     end
 
     if petData == nil and not alwaysVisible then

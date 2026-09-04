@@ -8,13 +8,10 @@
 * - Offset 9: Equip timestamp (for items with Flags == 5)
 ]]--
 
-local ffi = require('ffi');
 local struct = require('struct');
+local vanatime = require('libs.vanatime');
 
 local M = {};
-
--- Memory pointer for UTC time (initialized on first use)
-local TimePointer = nil;
 
 -- VanaOffset constant for timestamp conversion
 local VANA_OFFSET = 0x3C307D70;
@@ -25,33 +22,8 @@ local EQUIPMENT_CONTAINERS = { 0, 8, 10, 11, 12, 13, 14, 15, 16 };  -- Inventory
 -- Container IDs to scan for consumable items
 local ITEM_CONTAINERS = { 0, 3 };  -- Inventory, Temp items
 
--- Initialize the UTC time pointer by scanning memory
-local function InitTimePointer()
-    if TimePointer ~= nil then return true; end
-
-    -- Memory pattern from tCrossBar
-    local pointer = ashita.memory.find('FFXiMain.dll', 0,
-        '8B0D????????8B410C8B49108D04808D04808D04808D04C1C3', 0x02, 0);
-
-    if pointer == 0 then
-        return false;
-    end
-
-    -- Dereference twice to get actual time pointer
-    local ptr = ashita.memory.read_uint32(pointer);
-    if ptr == 0 then return false; end
-
-    ptr = ashita.memory.read_uint32(ptr);
-    if ptr == 0 then return false; end
-
-    TimePointer = ptr;
-    return true;
-end
-
--- Get current UTC time from memory
 local function GetCurrentTime()
-    if not InitTimePointer() then return 0; end
-    return ashita.memory.read_uint32(TimePointer + 0x0C);
+    return vanatime.Utc() or 0;
 end
 
 -- Parse 4-byte unsigned int from item.Extra at given offset (1-indexed)
@@ -192,9 +164,9 @@ function M.FormatRecast(seconds)
     end
 end
 
--- Check if memory pointer is initialized (for debugging)
+-- Check if the shared game-clock pointer resolved (for debugging)
 function M.IsInitialized()
-    return TimePointer ~= nil;
+    return vanatime.Utc() ~= nil;
 end
 
 return M;

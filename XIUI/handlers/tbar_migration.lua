@@ -8,6 +8,7 @@ local jobs = require('libs.jobs');
 local petregistry = require('modules.hotbar.petregistry');
 local factories = require('core.settings.factories');
 local actiondb = require('modules.hotbar.actiondb');
+local hotbarData = require('modules.hotbar.data');
 
 local M = {};
 
@@ -865,17 +866,9 @@ local function CreateMacroInPalette(macroData, paletteKey)
 
     local db = gConfig.macroDB[paletteKey];
 
-    -- Generate unique ID (find max ID and add 1)
-    local maxId = 0;
-    for _, macro in ipairs(db) do
-        if macro.id and macro.id > maxId then
-            maxId = macro.id;
-        end
-    end
-
     -- Create the macro
     local newMacro = {
-        id = maxId + 1,
+        id = hotbarData.AllocateUniqueMacroId(),
         actionType = macroData.actionType,
         action = macroData.action,
         target = macroData.target,

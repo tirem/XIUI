@@ -216,8 +216,8 @@ shiftGradient = colorLib.shiftGradient;
 
 -- Status Icons (from statusicons.lua)
 -- Wrapper that injects dependencies
-function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset, buffTimes, settings)
-    return statusIconsLib.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset, buffTimes, settings, statusHandler, buffTable);
+function DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset, buffTimes, settings, uncertainFlags)
+    return statusIconsLib.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset, buffTimes, settings, statusHandler, buffTable, uncertainFlags);
 end
 
 

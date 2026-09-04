@@ -23,7 +23,7 @@ data.JOB_BST = 9;
 data.JOB_DRG = 14;
 data.JOB_PUP = 18;
 
-data.MAX_RECAST_SLOTS = 6;
+data.MAX_RECAST_SLOTS = 12;
 data.RECAST_ICON_SIZE = 24;
 
 -- Ready charge system constants
@@ -447,6 +447,14 @@ end
 function data.RestoreTimersFromConfig()
     if gConfig == nil then return; end
 
+    local function clearPersistedTimers()
+        gConfig.petBarPetSummonTime = nil;
+        gConfig.petBarPetExpireTime = nil;
+        gConfig.petBarPetType = nil;
+        gConfig.petBarPetName = nil;
+        gConfig.petBarCharmExpireTime = nil;
+    end
+
     -- Check if we have persisted timer data
     if gConfig.petBarPetSummonTime and gConfig.petBarPetName then
         local now = os.time();
@@ -459,15 +467,9 @@ function data.RestoreTimersFromConfig()
                 data.petExpireTime = gConfig.petBarPetExpireTime;
                 data.petType = gConfig.petBarPetType;
                 data.lastTrackedPetName = gConfig.petBarPetName;
-                data.lastTrackedPetName = gConfig.petBarPetName;
                 data.charmExpireTime = gConfig.petBarCharmExpireTime;
             else
-                -- Timer expired, clear persisted data
-                gConfig.petBarPetSummonTime = nil;
-                gConfig.petBarPetExpireTime = nil;
-                gConfig.petBarPetType = nil;
-                gConfig.petBarPetName = nil;
-                gConfig.petBarCharmExpireTime = nil;
+                clearPersistedTimers();
             end
         elseif gConfig.petBarCharmExpireTime then
             -- Charm timer - restore if valid
@@ -477,12 +479,7 @@ function data.RestoreTimersFromConfig()
                 data.lastTrackedPetName = gConfig.petBarPetName;
                 data.charmExpireTime = gConfig.petBarCharmExpireTime;
             else
-                 -- Too old, clear
-                gConfig.petBarPetSummonTime = nil;
-                gConfig.petBarPetExpireTime = nil;
-                gConfig.petBarPetType = nil;
-                gConfig.petBarPetName = nil;
-                gConfig.petBarCharmExpireTime = nil;
+                clearPersistedTimers();
             end
         end
     end
@@ -504,14 +501,6 @@ function data.GetCharmTimeRemaining()
     end
     local remaining = data.charmExpireTime - os.time();
     return math.max(0, remaining);
-end
-
--- Format seconds to MM:SS string
-function data.FormatTimeMMSS(seconds)
-    if seconds == nil then return nil; end
-    local mins = math.floor(seconds / 60);
-    local secs = math.floor(seconds % 60);
-    return string.format('%d:%02d', mins, secs);
 end
 
 -- Get settings key for a pet name (converts to lowercase, removes spaces)
@@ -608,20 +597,111 @@ function data.GetEntityByServerId(sid)
     return GetEntity(index);
 end
 
--- Get primary pet job (main takes precedence)
+-- Get primary pet job (main takes precedence among usable pet jobs)
 function data.GetPetJob()
-    local player = GetPlayerSafe();
-    if player == nil then return nil; end
+    local jobs = data.GetPetJobs();
+    return jobs[1];
+end
 
-    local mainJob = player:GetMainJob();
-    local subJob = player:GetSubJob();
+-- Usable pet jobs from main/sub (main first, unique).
+-- SMN/BST work as main or sub. DRG/PUP only as main (/drg /pup cannot summon).
+-- Result depends only on main/sub job, so it's cached and rebuilt only when
+-- those change (this is called several times per frame from the render path).
+local petJobsCache = nil;
+local petJobsCacheKey = nil;
 
-    if mainJob == data.JOB_SMN or mainJob == data.JOB_BST or mainJob == data.JOB_DRG or mainJob == data.JOB_PUP then
-        return mainJob;
-    elseif subJob == data.JOB_SMN or subJob == data.JOB_BST or subJob == data.JOB_DRG or subJob == data.JOB_PUP then
-        return subJob;
+local function IsPetCapableJob(jobId, allowSub)
+    if allowSub then
+        return jobId == data.JOB_SMN or jobId == data.JOB_BST;
     end
-    return nil;
+    return jobId == data.JOB_SMN or jobId == data.JOB_BST
+        or jobId == data.JOB_DRG or jobId == data.JOB_PUP;
+end
+
+---@return number[]
+function data.GetPetJobs()
+    local player = GetPlayerSafe();
+    if player == nil then return {}; end
+
+    local mainJob = player:GetMainJob() or 0;
+    local subJob = player:GetSubJob() or 0;
+    local key = mainJob * 100 + subJob;
+    if petJobsCache and petJobsCacheKey == key then
+        return petJobsCache;
+    end
+
+    local jobs = {};
+    if IsPetCapableJob(mainJob, false) then
+        jobs[#jobs + 1] = mainJob;
+    end
+    -- Sub: only SMN/BST, and not already added as main
+    if IsPetCapableJob(subJob, true) and subJob ~= mainJob then
+        jobs[#jobs + 1] = subJob;
+    end
+
+    petJobsCache = jobs;
+    petJobsCacheKey = key;
+    return jobs;
+end
+
+local PET_TYPE_SETTINGS_KEYS = {
+    avatar = 'petBarAvatar',
+    charm = 'petBarCharm',
+    jug = 'petBarJug',
+    automaton = 'petBarAutomaton',
+    wyvern = 'petBarWyvern',
+};
+
+local PET_JOB_TYPE_KEYS = {
+    [data.JOB_SMN] = { 'avatar' },
+    [data.JOB_DRG] = { 'wyvern' },
+    [data.JOB_PUP] = { 'automaton' },
+    [data.JOB_BST] = { 'jug', 'charm' },
+};
+
+--- Whether a pet-type settings block has Always Visible enabled.
+---@param typeKey string
+---@return boolean
+function data.IsPetTypeAlwaysVisible(typeKey)
+    local settingsKey = PET_TYPE_SETTINGS_KEYS[typeKey];
+    if not settingsKey then return false; end
+    local settings = gConfig[settingsKey] or {};
+    return settings.alwaysVisible == true;
+end
+
+--- True if this pet job has at least one Always Visible type the player can use.
+---@param jobId number
+---@return boolean
+function data.IsPetJobAlwaysVisible(jobId)
+    for _, typeKey in ipairs(PET_JOB_TYPE_KEYS[jobId] or {}) do
+        if data.IsPetTypeAlwaysVisible(typeKey) then
+            return true;
+        end
+    end
+    return false;
+end
+
+--- True if any usable pet job (current main/sub rules) has Always Visible on.
+---@return boolean
+function data.HasAnyAlwaysVisiblePetType()
+    for _, jobId in ipairs(data.GetPetJobs()) do
+        if data.IsPetJobAlwaysVisible(jobId) then
+            return true;
+        end
+    end
+    return false;
+end
+
+--- Pet jobs that should contribute timers when no pet is out (each needs its own AV).
+---@return number[]
+function data.GetAlwaysVisiblePetJobs()
+    local jobs = {};
+    for _, jobId in ipairs(data.GetPetJobs()) do
+        if data.IsPetJobAlwaysVisible(jobId) then
+            table.insert(jobs, jobId);
+        end
+    end
+    return jobs;
 end
 
 -- Get pet type key for per-type settings lookup
@@ -690,13 +770,13 @@ function data.GetPetData()
     local party = GetPartySafe();
     local playerEnt = GetPlayerEntity();
 
-    if player.isZoning or player:GetMainJob() == 0 then
-        return nil;
-    end
-
     if player == nil or party == nil or playerEnt == nil then
         -- No pet - clear tracking
         data.TrackPetSummon(nil, nil);
+        return nil;
+    end
+
+    if player.isZoning or player:GetMainJob() == 0 then
         return nil;
     end
 
@@ -728,17 +808,16 @@ function data.GetPetData()
     local jugTimeRemaining = data.GetJugTimeRemaining();
     local charmElapsed = data.GetCharmElapsedTime();
 
+    -- TP: clamp to 0-3000; values above 3000 are treated as garbage (0) per user request.
+    local petTp = player:GetPetTP() or 0;
+    if petTp > 3000 or petTp < 0 then petTp = 0; end
+
     return {
         name = petName,
         hpPercent = pet.HPPercent or 0,
         distance = math.sqrt(pet.Distance),
         mpPercent = player:GetPetMPPercent() or 0,
-        -- TP: Clamp to 0-3000, but if value is > 3000 treat as garbage (0) per user request
-        tp = (function()
-            local rawTp = player:GetPetTP() or 0;
-            if rawTp > 3000 then return 0; end
-            return math.max(0, rawTp);
-        end)(),
+        tp = petTp,
         job = petJob,
         showMp = showMp,
         -- New fields
@@ -888,6 +967,178 @@ local function GetPreviewJob(previewType)
     end
 end
 
+-- Pet ability IDs for direct memory reading (static; hoisted so it isn't rebuilt per frame)
+local petAbilityIds = {
+    [data.JOB_SMN] = {
+        {id = 173, name = 'Blood Pact: Rage', maxTimer = 3600},
+        {id = 174, name = 'Blood Pact: Ward', maxTimer = 3600},
+        {id = 108, name = 'Apogee', maxTimer = 3600},
+        {id = 71, name = 'Mana Cede', maxTimer = 3600},
+    },
+    [data.JOB_BST] = {
+        {id = 102, name = 'Ready', maxTimer = 1800},
+        {id = 103, name = 'Reward', maxTimer = 5400},
+        {id = 104, name = 'Call Beast', maxTimer = 3600},
+        {id = 104, name = 'Bestial Loyalty', maxTimer = 3600},
+    },
+    [data.JOB_DRG] = {
+        {id = 163, name = 'Call Wyvern', maxTimer = 72000},
+        {id = 162, name = 'Spirit Link', maxTimer = 7200},
+        {id = 164, name = 'Deep Breathing', maxTimer = 3600},
+        {id = 70, name = 'Steady Wing', maxTimer = 7200},
+    },
+    [data.JOB_PUP] = {
+        {id = 205, name = 'Activate', maxTimer = 3600},
+        {id = 206, name = 'Repair', maxTimer = 10800},
+        {id = 207, name = 'Deploy', maxTimer = 3600},
+        {id = 208, name = 'Deactivate', maxTimer = 3600},
+        {id = 209, name = 'Retrieve', maxTimer = 3600},
+        {id = 115, name = 'Deus Ex Automata', maxTimer = 3600},
+    },
+};
+
+local function GetTimerEntry(abilityInfo, nameOverride)
+    local name = nameOverride or abilityInfo.name;
+    local timer = GetAbilityTimerById(abilityInfo.id);
+
+    if timer ~= nil then
+        local maxTimer = abilityInfo.maxTimer;
+        if timer > 0 then
+            if data.recastMaxTimers[name] == nil or timer > data.recastMaxTimers[name] then
+                data.recastMaxTimers[name] = timer;
+            end
+            maxTimer = data.recastMaxTimers[name] or maxTimer;
+        else
+            data.recastMaxTimers[name] = nil;
+        end
+
+        local timerEntry = {
+            name = name,
+            timer = timer,
+            maxTimer = maxTimer,
+            formatted = data.FormatTimer(timer),
+            isReady = timer <= 0,
+        };
+
+        if name == 'Ready' then
+            timerEntry.isChargeAbility = true;
+            timerEntry.maxCharges = data.READY_MAX_CHARGES;
+
+            local timerData = abilityRecast.GetAbilityTimerDataByTimerId(abilityInfo.id);
+            local modifier = timerData.Modifier or 0;
+            local configBasePerCharge = gConfig.petBarReadyBaseRecast or data.READY_DEFAULT_BASE_SECONDS;
+            local totalBaseSeconds = configBasePerCharge * data.READY_MAX_CHARGES;
+            local baseRecast = 60 * (totalBaseSeconds + modifier);
+            local chargeValue = baseRecast / data.READY_MAX_CHARGES;
+            timerEntry.chargeValue = chargeValue;
+
+            if timer <= 0 then
+                timerEntry.charges = data.READY_MAX_CHARGES;
+                timerEntry.nextChargeTimer = 0;
+            else
+                local chargesRecharging = math.ceil(timer / chargeValue);
+                timerEntry.charges = math.max(0, data.READY_MAX_CHARGES - chargesRecharging);
+                timerEntry.nextChargeTimer = ((timer - 1) % chargeValue) + 1;
+            end
+        end
+
+        return timerEntry;
+    end
+    return nil;
+end
+
+local function AppendJobTimers(petJob, timers, activePetType)
+    local abilityList = petAbilityIds[petJob];
+    if not abilityList then return; end
+
+    for _, abilityInfo in ipairs(abilityList) do
+        local name = abilityInfo.name;
+        local processStandard = true;
+
+        if petJob == data.JOB_BST then
+            local jugSettings = gConfig.petBarJug or {};
+            local charmSettings = gConfig.petBarCharm or {};
+            local jugVisible = jugSettings.alwaysVisible;
+            local charmVisible = charmSettings.alwaysVisible;
+
+            if activePetType == 'charm' and abilityInfo.id == 102 then
+                name = 'Sic';
+            end
+
+            if activePetType == 'jug' then
+                -- Active jug: Ready / Reward / Call Beast / Bestial Loyalty
+                processStandard = false;
+                if name == 'Ready' and gConfig.petBarBstShowReady ~= false then
+                    local entry = GetTimerEntry(abilityInfo, name);
+                    if entry then table.insert(timers, entry); end
+                elseif name == 'Reward' and gConfig.petBarBstShowReward ~= false then
+                    local entry = GetTimerEntry(abilityInfo, name);
+                    if entry then table.insert(timers, entry); end
+                elseif name == 'Call Beast' and gConfig.petBarBstShowCallBeast ~= false then
+                    local entry = GetTimerEntry(abilityInfo, name);
+                    if entry then table.insert(timers, entry); end
+                elseif name == 'Bestial Loyalty' and gConfig.petBarBstShowBestialLoyalty ~= false then
+                    local entry = GetTimerEntry(abilityInfo, name);
+                    if entry then table.insert(timers, entry); end
+                end
+            elseif activePetType == 'charm' then
+                -- Active charm: Sic / Reward only (no wyvern / jug Call Beast)
+                processStandard = false;
+                if name == 'Sic' and gConfig.petBarBstShowSic ~= false then
+                    local entry = GetTimerEntry(abilityInfo, name);
+                    if entry then table.insert(timers, entry); end
+                elseif name == 'Reward' and gConfig.petBarBstShowRewardCharm ~= false then
+                    local entry = GetTimerEntry(abilityInfo, name);
+                    if entry then table.insert(timers, entry); end
+                end
+            elseif activePetType == nil then
+                -- No pet: only Jug and/or Charm sides whose Always Visible is on
+                processStandard = false;
+                if not jugVisible and not charmVisible then
+                    -- Job was included by mistake; skip BST entries
+                elseif abilityInfo.id == 102 then
+                    if jugVisible and gConfig.petBarBstShowReady ~= false then
+                        local entry = GetTimerEntry(abilityInfo, 'Ready');
+                        if entry then table.insert(timers, entry); end
+                    end
+                    if charmVisible and gConfig.petBarBstShowSic ~= false then
+                        local entry = GetTimerEntry(abilityInfo, 'Sic');
+                        if entry then table.insert(timers, entry); end
+                    end
+                elseif abilityInfo.name == 'Reward' then
+                    local shown = false;
+                    if jugVisible and gConfig.petBarBstShowReward ~= false then
+                        local entry = GetTimerEntry(abilityInfo, 'Reward');
+                        if entry then
+                            table.insert(timers, entry);
+                            shown = true;
+                        end
+                    end
+                    if not shown and charmVisible and gConfig.petBarBstShowRewardCharm ~= false then
+                        local entry = GetTimerEntry(abilityInfo, 'Reward');
+                        if entry then table.insert(timers, entry); end
+                    end
+                elseif abilityInfo.name == 'Call Beast' or abilityInfo.name == 'Bestial Loyalty' then
+                    if jugVisible then
+                        if name == 'Call Beast' and gConfig.petBarBstShowCallBeast ~= false then
+                            local entry = GetTimerEntry(abilityInfo, name);
+                            if entry then table.insert(timers, entry); end
+                        elseif name == 'Bestial Loyalty' and gConfig.petBarBstShowBestialLoyalty ~= false then
+                            local entry = GetTimerEntry(abilityInfo, name);
+                            if entry then table.insert(timers, entry); end
+                        end
+                    end
+                end
+            end
+        end
+
+        if processStandard and ShouldShowAbility(name, petJob) then
+            local entry = GetTimerEntry(abilityInfo, name);
+            if entry then table.insert(timers, entry); end
+        end
+    end
+end
+
 -- Get pet recasts - single entry point for both preview and real data
 -- This follows the partylist pattern where preview is handled inside the data function
 function data.GetPetRecasts()
@@ -934,231 +1185,45 @@ function data.GetPetRecasts()
         return timers;
     end
 
-    -- Real mode: get actual pet job
-    local petJob = data.GetPetJob();
-    if not petJob then return timers; end
+    -- Real mode
+    local petJobs = data.GetPetJobs();
+    if #petJobs == 0 then return timers; end
 
-    -- Charmed pet: show BST ability timers (Ready/Reward) regardless of the pet-job
-    -- main (DRG/BST, SMN/BST, etc.) instead of that main's native pet timers.
-    if data.GetPetTypeKey() == 'charm' then
-        petJob = data.JOB_BST;
+    local hasPet = data.GetPetEntity() ~= nil;
+    local activePetType = hasPet and (data.petType or data.GetPetTypeKey()) or nil;
+
+    -- With a pet out: only that pet's job timers.
+    -- No pet: only jobs whose own Always Visible type(s) are on
+    -- (e.g. DRG/BST with Wyvern AV but not Charm AV -> wyvern only).
+    local jobsToShow = {};
+    if hasPet then
+        local activeJob = nil;
+        if activePetType == 'charm' or activePetType == 'jug' then
+            activeJob = data.JOB_BST;
+        elseif activePetType == 'wyvern' then
+            activeJob = data.JOB_DRG;
+        elseif activePetType == 'avatar' then
+            activeJob = data.JOB_SMN;
+        elseif activePetType == 'automaton' then
+            activeJob = data.JOB_PUP;
+        end
+        -- Only show if this pet job is actually usable on current main/sub
+        if activeJob then
+            for _, jobId in ipairs(petJobs) do
+                if jobId == activeJob then
+                    table.insert(jobsToShow, activeJob);
+                    break;
+                end
+            end
+        end
+    else
+        jobsToShow = data.GetAlwaysVisiblePetJobs();
     end
 
-    -- Pet ability IDs for direct memory reading
-    -- These are the ability recast timer IDs used by the game
-    -- Reference: Windower Resources ability_recasts.lua
-    local petAbilityIds = {
-        [data.JOB_SMN] = {
-            {id = 173, name = 'Blood Pact: Rage', maxTimer = 3600},  -- Timer ID 173
-            {id = 174, name = 'Blood Pact: Ward', maxTimer = 3600},  -- Timer ID 174
-            {id = 108, name = 'Apogee', maxTimer = 3600},           -- Timer ID 108
-            {id = 71, name = 'Mana Cede', maxTimer = 3600},         -- Timer ID 71
-        },
-        [data.JOB_BST] = {
-            {id = 102, name = 'Ready', maxTimer = 1800},            -- Timer ID 102 (Ready/Sic share timer)
-            {id = 103, name = 'Reward', maxTimer = 5400},           -- Timer ID 103
-            {id = 104, name = 'Call Beast', maxTimer = 3600},       -- Timer ID 104
-            {id = 104, name = 'Bestial Loyalty', maxTimer = 3600},  -- Timer ID 104 (shares with Call Beast)
-        },
-        [data.JOB_DRG] = {
-            {id = 163, name = 'Call Wyvern', maxTimer = 72000},     -- Timer ID 163
-            {id = 162, name = 'Spirit Link', maxTimer = 7200},      -- Timer ID 162
-            {id = 164, name = 'Deep Breathing', maxTimer = 3600},   -- Timer ID 164
-            {id = 70, name = 'Steady Wing', maxTimer = 7200},       -- Timer ID 70
-        },
-        [data.JOB_PUP] = {
-            {id = 205, name = 'Activate', maxTimer = 3600},         -- Timer ID 205
-            {id = 206, name = 'Repair', maxTimer = 10800},          -- Timer ID 206
-            {id = 207, name = 'Deploy', maxTimer = 3600},           -- Timer ID 207
-            {id = 208, name = 'Deactivate', maxTimer = 3600},       -- Timer ID 208
-            {id = 209, name = 'Retrieve', maxTimer = 3600},         -- Timer ID 209
-            {id = 115, name = 'Deus Ex Automata', maxTimer = 3600}, -- Timer ID 115
-        },
-    };
+    if #jobsToShow == 0 then return timers; end
 
-    local abilityList = petAbilityIds[petJob];
-    if not abilityList then return timers; end
-
-    -- Helper to create timer entry (extracted for BST dual-display logic)
-    local function GetTimerEntry(abilityInfo, nameOverride)
-        local name = nameOverride or abilityInfo.name;
-        local timer = GetAbilityTimerById(abilityInfo.id);
-        
-        if timer ~= nil then
-            local maxTimer = abilityInfo.maxTimer;
-            if timer > 0 then
-                if data.recastMaxTimers[name] == nil or timer > data.recastMaxTimers[name] then
-                    data.recastMaxTimers[name] = timer;
-                end
-                maxTimer = data.recastMaxTimers[name] or maxTimer;
-            else
-                data.recastMaxTimers[name] = nil;
-            end
-
-            local timerEntry = {
-                name = name,
-                timer = timer,
-                maxTimer = maxTimer,
-                formatted = data.FormatTimer(timer),
-                isReady = timer <= 0,
-            };
-
-            -- Add charge info for Ready ability
-            if name == 'Ready' then
-                timerEntry.isChargeAbility = true;
-                timerEntry.maxCharges = data.READY_MAX_CHARGES;
-
-                -- Get timer data with modifier for accurate charge calculation
-                local timerData = abilityRecast.GetAbilityTimerDataByTimerId(abilityInfo.id);
-                local modifier = timerData.Modifier or 0;
-
-                -- Calculate base recast using config value and modifier (like PetMe)
-                -- Formula: baseRecast = 60 * (totalBaseSeconds + modifier) where totalBaseSeconds = perChargeSeconds * 3
-                local configBasePerCharge = gConfig.petBarReadyBaseRecast or data.READY_DEFAULT_BASE_SECONDS;
-                local totalBaseSeconds = configBasePerCharge * data.READY_MAX_CHARGES;
-                local baseRecast = 60 * (totalBaseSeconds + modifier);  -- In 1/60ths, modifier-adjusted
-                local chargeValue = baseRecast / data.READY_MAX_CHARGES;  -- Per-charge time in 1/60ths
-
-                -- Store chargeValue for progress bar calculations in display.lua
-                timerEntry.chargeValue = chargeValue;
-
-                -- Calculate current charges from timer
-                if timer <= 0 then
-                    timerEntry.charges = data.READY_MAX_CHARGES;
-                    timerEntry.nextChargeTimer = 0;
-                else
-                    -- Charges available = max - ceil(timer / chargeValue)
-                    local chargesRecharging = math.ceil(timer / chargeValue);
-                    timerEntry.charges = math.max(0, data.READY_MAX_CHARGES - chargesRecharging);
-                    -- Time until next charge = timer mod chargeValue (or timer if less than chargeValue)
-                    timerEntry.nextChargeTimer = ((timer - 1) % chargeValue) + 1;
-                end
-            end
-            
-            return timerEntry;
-        end
-        return nil;
-    end
-
-    -- Use direct memory reading to get ability timers (like PetMe)
-    for _, abilityInfo in ipairs(abilityList) do
-        local name = abilityInfo.name;
-        local processStandard = true;
-
-        -- Handle BST Special Logic
-        if petJob == data.JOB_BST then
-            local jugSettings = gConfig.petBarJug or {};
-            local charmSettings = gConfig.petBarCharm or {};
-            local jugVisible = jugSettings.alwaysVisible;
-            local charmVisible = charmSettings.alwaysVisible;
-
-            -- Handle Ready vs Sic name change for Charmed pets
-            if data.petType == 'charm' and abilityInfo.id == 102 then
-                name = 'Sic';
-            end
-
-            if data.petType == 'jug' then
-                -- JUG PET ACTIVE
-                -- Show: Ready, Reward (Jug config), Call Beast, Bestial Loyalty
-                -- Hide: Sic, Reward (Charm config)
-                
-                if jugVisible then
-                    processStandard = false; -- Handle everything manually
-                    
-                    if name == 'Ready' then
-                        if gConfig.petBarBstShowReady ~= false then
-                            local entry = GetTimerEntry(abilityInfo, name);
-                            if entry then table.insert(timers, entry); end
-                        end
-                    elseif name == 'Reward' then
-                        if gConfig.petBarBstShowReward ~= false then
-                            local entry = GetTimerEntry(abilityInfo, name);
-                            if entry then table.insert(timers, entry); end
-                        end
-                    elseif name == 'Call Beast' then
-                        if gConfig.petBarBstShowCallBeast ~= false then
-                            local entry = GetTimerEntry(abilityInfo, name);
-                            if entry then table.insert(timers, entry); end
-                        end
-                    elseif name == 'Bestial Loyalty' then
-                        if gConfig.petBarBstShowBestialLoyalty ~= false then
-                            local entry = GetTimerEntry(abilityInfo, name);
-                            if entry then table.insert(timers, entry); end
-                        end
-                    end
-                end
-            elseif data.petType == 'charm' then
-                -- CHARMED PET ACTIVE
-                -- Show: Sic, Reward (Charm config)
-                -- Hide: Ready, Call Beast, Bestial Loyalty
-                
-                if charmVisible then
-                    processStandard = false; -- Handle everything manually
-                    
-                    if name == 'Sic' then
-                        if gConfig.petBarBstShowSic ~= false then
-                            local entry = GetTimerEntry(abilityInfo, name);
-                            if entry then table.insert(timers, entry); end
-                        end
-                    elseif name == 'Reward' then
-                        if gConfig.petBarBstShowRewardCharm ~= false then
-                            local entry = GetTimerEntry(abilityInfo, name);
-                            if entry then table.insert(timers, entry); end
-                        end
-                    end
-                    -- Call Beast and Bestial Loyalty are implicitly ignored here
-                end
-            elseif data.petType == nil then
-                -- NO PET (Always Visible mode)
-                processStandard = false; -- Handle everything manually
-
-                -- Handle Ready/Sic (ID 102)
-                if abilityInfo.id == 102 then
-                    if jugVisible and gConfig.petBarBstShowReady ~= false then
-                        local entry = GetTimerEntry(abilityInfo, 'Ready');
-                        if entry then table.insert(timers, entry); end
-                    end
-                    if charmVisible and gConfig.petBarBstShowSic ~= false then
-                        local entry = GetTimerEntry(abilityInfo, 'Sic');
-                        if entry then table.insert(timers, entry); end
-                    end
-                
-                -- Handle Reward (ID 103)
-                elseif abilityInfo.name == 'Reward' then
-                    local shown = false;
-                    -- Jug Reward
-                    if jugVisible and gConfig.petBarBstShowReward ~= false then
-                        local entry = GetTimerEntry(abilityInfo, 'Reward');
-                        if entry then 
-                            table.insert(timers, entry); 
-                            shown = true;
-                        end
-                    end
-                    -- Charm Reward (only if not already shown)
-                    if not shown and charmVisible and gConfig.petBarBstShowRewardCharm ~= false then
-                        local entry = GetTimerEntry(abilityInfo, 'Reward');
-                        if entry then table.insert(timers, entry); end
-                    end
-
-                -- Handle Call Beast / Bestial Loyalty (Jug only)
-                elseif abilityInfo.name == 'Call Beast' or abilityInfo.name == 'Bestial Loyalty' then
-                    if jugVisible then
-                        if name == 'Call Beast' and gConfig.petBarBstShowCallBeast ~= false then
-                            local entry = GetTimerEntry(abilityInfo, name);
-                            if entry then table.insert(timers, entry); end
-                        elseif name == 'Bestial Loyalty' and gConfig.petBarBstShowBestialLoyalty ~= false then
-                            local entry = GetTimerEntry(abilityInfo, name);
-                            if entry then table.insert(timers, entry); end
-                        end
-                    end
-                end
-            end
-        end
-
-        if processStandard and ShouldShowAbility(name, petJob) then
-            local entry = GetTimerEntry(abilityInfo, name);
-            if entry then table.insert(timers, entry); end
-        end
+    for _, jobId in ipairs(jobsToShow) do
+        AppendJobTimers(jobId, timers, activePetType);
     end
 
     return timers;
@@ -1453,7 +1518,9 @@ function data.calculateCharmTime(mobLevel)
     -- Set base values
     local player = AshitaCore:GetMemoryManager():GetPlayer();
     local playerLvl = player:GetMainJobLevel();
-    local baseChr   = player:GetStat(6);
+    local baseChr = player:GetStat(6);
+    local bonusChr = (gConfig and gConfig.petBarBonusCharisma) or 0;
+    local modChr = baseChr + bonusChr;
 
     -- calculate level difference between player & pet
     local levelDifference = playerLvl - mobLevel;
@@ -1471,11 +1538,12 @@ function data.calculateCharmTime(mobLevel)
         end
     end
 
-    --Base Charm Duration (seconds) = floor(1.25 × CHR + 150 )
-    local baseCharmDuration = math.floor(1.25 * baseChr + 150);
-    --Pre-Gear Charm Duration = Base Charm Duration × % Change
+    -- Base Charm Duration (seconds) = floor(1.25 × Modified CHR + 150)
+    -- Modified Charisma = Base Charisma + Bonus Charisma
+    local baseCharmDuration = math.floor(1.25 * modChr + 150);
+    -- Pre-Gear Charm Duration = Base Charm Duration × % Change
     local preGearDuration = baseCharmDuration * lvlModifier;
-    --Charm Duration = Pre-gear Charm Duration × ( 1 + 0.05×(Charm+ in gear) )
+    -- Charm Duration = Pre-gear Charm Duration × ( 1 + 0.05×(Charm+ in gear) )
     local charmDuration = preGearDuration * (1 + (0.05 * data.getCharmEquipValue()));
 
     return os.time() + charmDuration;

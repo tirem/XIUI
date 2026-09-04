@@ -20,7 +20,7 @@ local zoneData = {
 -- Get the base path for mob data files
 local function GetMobDataPath()
     local path = string.gsub(addon.path, '\\\\', '\\');
-    return path .. '/submodules/mobdb/addons/mobdb/data/';
+    return path .. '/submodules/mobdb/data/';
 end
 
 -- Horizon-specific mob data overrides (Dynamis zone name/job changes for the
@@ -54,10 +54,10 @@ mobdata.LoadZone = function(zoneId)
         return false;
     end
 
-    -- Construct file path. On Horizon, prefer the Dynamis override data if it
-    -- exists for this zone; otherwise fall back to the base MobDB data.
+    -- Prefer the Horizon Dynamis overlay when the setting is on and that zone
+    -- file exists; otherwise use the base MobDB data.
     local filePath = GetMobDataPath() .. tostring(zoneId) .. '.lua';
-    if HzLimitedMode then
+    if gConfig and gConfig.mobInfoUseHorizonData then
         local hzPath = GetHorizonMobDataPath() .. tostring(zoneId) .. '.lua';
         local hzFile = io.open(hzPath, 'r');
         if hzFile ~= nil then
@@ -185,6 +185,21 @@ mobdata.Cleanup = function()
     zoneData.Names = {};
     zoneData.Indices = {};
     currentZoneId = 0;
+end
+
+-- Force-reload the current zone (used when Horizon overlay is toggled).
+mobdata.ReloadCurrentZone = function()
+    local zoneId = currentZoneId;
+    if zoneId == 0 then
+        local party = AshitaCore:GetMemoryManager():GetParty();
+        if party then
+            zoneId = party:GetMemberZone(0) or 0;
+        end
+    end
+    currentZoneId = 0;
+    if zoneId and zoneId > 0 then
+        mobdata.LoadZone(zoneId);
+    end
 end
 
 --[[

@@ -11,6 +11,11 @@ local notificationData = require('modules.notifications.data');
 
 local M = {};
 
+-- Sub-tabs within Notifications settings
+local TAB_GENERAL = 1;
+local TAB_BLUE_MAGIC = 2;
+local selectedNotificationsTab = TAB_GENERAL;
+
 -- Test notification data for each type
 -- Item IDs from FFXI resources (loaded via GetItemById)
 local testData = {
@@ -220,8 +225,7 @@ local function DrawGroupSettings(groupNum)
     imgui.ShowHelp('Opacity of the window borders (Window themes only).');
 end
 
--- Section: Notifications Settings
-function M.DrawSettings()
+local function DrawGeneralSettings()
     components.DrawCheckbox('Enabled', 'showNotifications', CheckVisibility);
     components.DrawHideWhenMenuOpenOptions('notificationsHideOnMenuFocus', 'notificationsHideMacroPalette');
     components.DrawCheckbox('Hide During Events', 'notificationsHideDuringEvents');
@@ -347,6 +351,43 @@ function M.DrawSettings()
             DrawTypeGroupDropdown('treasurePool', 'Treasure Pool');
             imgui.Unindent(indentAmount);
         end
+    end
+end
+
+local function DrawBlueMagicSettings()
+    components.DrawCheckbox('Enabled##blueMagicLearned', 'blueMagicLearnedEnabled', CheckVisibility);
+    imgui.ShowHelp('Show a banner and play a sound when you learn a Blue Magic spell.');
+
+    if gConfig.blueMagicLearnedEnabled == false then
+        return;
+    end
+
+    components.DrawCheckbox('Live Preview##blueMagicLearned', 'blueMagicLearnedPreview');
+    imgui.ShowHelp('Loop the banner while this config page is open so you can place it. Locked when UI lock is on.');
+    components.DrawSlider('Duration##blueMagicLearned', 'blueMagicLearnedDuration', 1, 10);
+    imgui.ShowHelp('How long the banner stays on screen after it slides in (1-10 seconds).');
+    components.DrawSlider('Scale##blueMagicLearned', 'blueMagicLearnedScale', 0.1, 3.0, '%.1f');
+    imgui.ShowHelp('Banner size. Combined with Global Scale. Default 1.0 matches 1920x1080.');
+end
+
+-- Section: Notifications Settings
+function M.DrawSettings()
+    if components.DrawStyledTab('General', 'notificationsSubTab', selectedNotificationsTab == TAB_GENERAL) then
+        selectedNotificationsTab = TAB_GENERAL;
+    end
+    imgui.SameLine();
+    if components.DrawStyledTab('Blue Magic', 'notificationsSubTab', selectedNotificationsTab == TAB_BLUE_MAGIC) then
+        selectedNotificationsTab = TAB_BLUE_MAGIC;
+    end
+
+    imgui.Spacing();
+    imgui.Separator();
+    imgui.Spacing();
+
+    if selectedNotificationsTab == TAB_GENERAL then
+        DrawGeneralSettings();
+    else
+        DrawBlueMagicSettings();
     end
 end
 

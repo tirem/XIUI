@@ -1319,8 +1319,19 @@ function display.DrawPartyWindow(settings, party, partyIndex)
             if (partyListState ~= nil) then
                 if (menuHeight ~= partyListState.height) then
                     local newPosY = partyListState.y + partyListState.height - menuHeight;
+                    -- Keep the anchored top on screen. ImGui re-clamps an off-screen
+                    -- window next frame, which fights this and jitters the whole list.
+                    local _, screenH = defaultPositions.GetScreenSize();
+                    newPosY = math.min(math.max(newPosY, 0), math.max(screenH - menuHeight, 0));
                     imguiPosY = newPosY;
                     imgui.SetWindowPos(windowName, { imguiPosX, imguiPosY });
+                    -- Mirror the move into windowPositions now: SaveWindowPosition only samples
+                    -- next frame, so a settings flush in between would persist a stale Y.
+                    local savedPos = gConfig.windowPositions and gConfig.windowPositions[windowName];
+                    if (savedPos ~= nil) then
+                        savedPos.x = imguiPosX;
+                        savedPos.y = imguiPosY;
+                    end
                 end
             end
 

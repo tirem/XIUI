@@ -589,6 +589,7 @@ targetbar.DrawWindow = function(settings)
 		local preBuffX, preBuffY = imgui.GetCursorScreenPos();
 		local buffIds;
         local buffTimes = nil;
+        local buffUncertain = nil;
 		if (targetEntity == playerEnt) then
 			buffIds = player:GetBuffs();
 		elseif (IsMemberOfParty(targetIndex)) then
@@ -596,12 +597,13 @@ targetbar.DrawWindow = function(settings)
 			-- because targetIndex may have been swapped by GetTargets() for subtargets
 			buffIds = statusHandler.get_member_status(targetEntity.ServerId);
 		elseif (isMonster) then
-			buffIds, buffTimes = debuffHandler.GetActiveDebuffs(targetEntity.ServerId);
+			buffIds, buffTimes, buffUncertain = debuffHandler.GetActiveDebuffs(targetEntity.ServerId);
 		end
 		-- Preview: inject dummy debuffs with timers when config is open
 		if showConfig[1] then
 			buffIds = {2, 3, 4, 5, 6};
 			buffTimes = {45, 120, 8, 210, 30};
+			buffUncertain = { [2] = true, [4] = true };
 		end
 		imgui.NewLine();
 		-- Apply buffs offset Y
@@ -612,7 +614,7 @@ targetbar.DrawWindow = function(settings)
 		-- Reorder to show debuffs first for easier identification
 		-- Pass buffTimes so they get reordered in tandem with buffIds
 		local reorderedBuffs, reorderedTimes = statusIcons.ReorderDebuffsFirst(buffIds, buffTable, buffTimes);
-		DrawStatusIcons(reorderedBuffs, settings.iconSize, settings.maxIconColumns, 3, false, settings.barHeight/2, reorderedTimes, nil);
+		DrawStatusIcons(reorderedBuffs, settings.iconSize, settings.maxIconColumns, 3, false, settings.barHeight/2, reorderedTimes, nil, buffUncertain);
 		imgui.PopStyleVar(1);
 
 		-- Obtain our target of target using action-based tracking (more reliable)

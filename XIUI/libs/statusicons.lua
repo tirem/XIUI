@@ -220,7 +220,7 @@ local debuff_font_settings = T{
 -- Status Icon Drawing
 -- ========================================
 
--- Draw status icons with optional backgrounds and timers
+-- Draw status icons with optional backgrounds, timers, and uncertain markers
 -- @param statusIds: array of status IDs to draw
 -- @param iconSize: size of each icon in pixels
 -- @param maxColumns: max icons per row
@@ -231,7 +231,8 @@ local debuff_font_settings = T{
 -- @param settings: optional font settings override
 -- @param statusHandler: the statushandler module
 -- @param buffTable: the bufftable module
-function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset, buffTimes, settings, statusHandler, buffTableLib)
+-- @param uncertainFlags: optional map [buffId]=true for inferred (hit, hidden resist) debuffs
+function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOffset, buffTimes, settings, statusHandler, buffTableLib, uncertainFlags)
     if (statusIds ~= nil and #statusIds > 0) then
         -- Draw onto the same list as window bgs so icons aren't hidden behind them.
         local drawList = GetUIDrawList();
@@ -258,7 +259,24 @@ function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOf
                         {bgX, bgY}, {bgX + bgSize + 1, bgY + bgSize / 0.75});
                 end
                 local iconPosX, iconPosY = imgui.GetCursorScreenPos();
-                drawList:AddImage(icon, {iconPosX, iconPosY}, {iconPosX + iconSize, iconPosY + iconSize});
+                drawList:AddImage(icon, {iconPosX, iconPosY}, {iconPosX + iconSize, iconPosY + iconSize}, {0, 0}, {1, 1}, 0xFFFFFFFF);
+                local isUncertain = gConfig.showUncertainDebuffMarker and uncertainFlags and uncertainFlags[statusIds[i]];
+                if isUncertain then
+                    local r = math.max(5, iconSize * 0.26);
+                    local cx = iconPosX + iconSize - r * 0.45;
+                    local cy = iconPosY + r * 0.45;
+                    drawList:AddCircleFilled({cx, cy}, r + 1, imgui.GetColorU32({0, 0, 0, 0.85}), 16);
+                    drawList:AddCircleFilled({cx, cy}, r, imgui.GetColorU32({1.0, 0.78, 0.12, 0.95}), 16);
+                    local mark = '?';
+                    local markSize = math.max(8, r * 1.55);
+                    imtext.SetConfig(gConfig.fontFamily, true, 0);
+                    local markW, markH = imtext.Measure(mark, markSize);
+                    local markX = cx - markW / 2;
+                    local markY = cy - markH * 0.58;
+                    local markCol = 0xF2181408;
+                    imtext.DrawSimple(drawList, mark, markX + 1, markY, markCol, markSize);
+                    imtext.DrawSimple(drawList, mark, markX, markY, markCol, markSize);
+                end
                 imgui.Dummy({iconSize, iconSize});
                 if buffTimes ~= nil and buffTimes[i] ~= nil then
                     local font_base = settings or debuff_font_settings;

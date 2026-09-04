@@ -274,12 +274,14 @@ end
 -- Preview Mode
 -- ============================================
 
--- Test item IDs for preview (8 items)
+-- Test item IDs for preview (10 items, one per pool slot)
 -- Item IDs verified from FFXIAH.com
 local PREVIEW_ITEMS = {
     { itemId = 13014, name = 'Leaping Boots' },     -- https://www.ffxiah.com/item/13014
     { itemId = 17440, name = 'Kraken Club' },       -- https://www.ffxiah.com/item/17440
     { itemId = 12579, name = 'Scorpion Harness' },  -- https://www.ffxiah.com/item/12579
+    { itemId = 1051, name = 'Kuftal Coffer Key' },  -- https://www.ffxiah.com/item/1051
+    { itemId = 1456, name = '100 Byne Bill' },      -- https://www.ffxiah.com/item/1456
     { itemId = 4116, name = 'Hi-Potion' },          -- https://www.ffxiah.com/item/4116
     { itemId = 4145, name = 'Elixir' },             -- https://www.ffxiah.com/item/4145
     { itemId = 644, name = 'Mythril Ore' },         -- https://www.ffxiah.com/item/644
@@ -312,9 +314,11 @@ local PREVIEW_MEMBERS = {
     { serverId = 3006, name = 'Ravencrest' },
 };
 
--- Mock won history items for preview (15 items to test scrolling)
+-- Mock won history items for preview (17 items to test scrolling)
 -- Item IDs verified from FFXIAH.com
 local PREVIEW_WON_HISTORY = {
+    { itemId = 1051, name = 'Kuftal Coffer Key', winner = 'Aetherius', lot = 998 },  -- https://www.ffxiah.com/item/1051
+    { itemId = 1456, name = '100 Byne Bill', winner = 'Brutalix', lot = 512 },       -- https://www.ffxiah.com/item/1456
     { itemId = 17440, name = 'Kraken Club', winner = 'Aetherius', lot = 987 },       -- https://www.ffxiah.com/item/17440
     { itemId = 13014, name = 'Leaping Boots', winner = 'Brutalix', lot = 876 },      -- https://www.ffxiah.com/item/13014
     { itemId = 12579, name = 'Scorpion Harness', winner = 'Celestine', lot = 765 },  -- https://www.ffxiah.com/item/12579
@@ -438,7 +442,7 @@ local function ensurePreviewItems()
             itemId = item.itemId,
             itemName = item.name,
             count = 1,
-            expiresAt = now + (300 - (i * 30)),  -- Stagger expiration times (30s apart)
+            expiresAt = now + (300 - ((i - 1) * 25)),  -- Stagger expiration times (25s apart)
             dropTime = 0,
             playerLot = 0,
             winningLot = winningLot,
@@ -870,6 +874,71 @@ function M.IsItemRare(itemId)
     end
 
     return bit.band(item.Flags, ITEM_FLAG_RARE) == ITEM_FLAG_RARE;
+end
+
+-- ============================================
+-- Loot Categories (for name coloring)
+-- ============================================
+
+-- Currency shares its type and flags with ordinary junk, so the item id is the
+-- only thing that separates a 1 Byne Bill from a 100 Byne Bill.
+local CURRENCY_ITEM_IDS = {
+    [1449] = true,  -- Tukuku Whiteshell
+    [1450] = true,  -- Lungo-Nango Jadeshell
+    [1451] = true,  -- Rimilala Stripeshell
+    [1452] = true,  -- Ordelle Bronzepiece
+    [1453] = true,  -- Montiont Silverpiece
+    [1454] = true,  -- Ranperre Goldpiece
+    [1455] = true,  -- One Byne Bill
+    [1456] = true,  -- One Hundred Byne Bill
+    [1457] = true,  -- Ten Thousand Byne Bill
+    [1875] = true,  -- Ancient Beastcoin
+    [2488] = true,  -- Alexandrite (mythic weapons)
+};
+
+local TYPE_CATEGORY = {
+    [4] = 'equipment',  -- Weapon
+    [5] = 'equipment',  -- Armor
+    [7] = 'usable',     -- Food, medicine
+    [8] = 'crystal',
+};
+
+local categoryCache = {};
+
+-- Loot category key for an item, used to pick its name color. Gear stays gear even when
+-- it is Rare/Ex, so the Rare/Ex color marks the notable non-gear drops instead.
+function M.GetItemCategory(itemId)
+    if itemId == nil or itemId == 0 or itemId == 65535 then
+        return 'other';
+    end
+
+    local cached = categoryCache[itemId];
+    if cached ~= nil then
+        return cached;
+    end
+
+    local category = 'other';
+    if CURRENCY_ITEM_IDS[itemId] then
+        category = 'currency';
+    else
+        local item = AshitaCore:GetResourceManager():GetItemById(itemId);
+        if item ~= nil then
+            local typeCategory = TYPE_CATEGORY[item.Type or 0];
+            local flags = item.Flags or 0;
+            local isRareEx = bit.band(flags, ITEM_FLAG_RARE) ~= 0 or bit.band(flags, ITEM_FLAG_EX) ~= 0;
+
+            if typeCategory == 'equipment' then
+                category = 'equipment';
+            elseif isRareEx then
+                category = 'rareEx';
+            else
+                category = typeCategory or 'other';
+            end
+        end
+    end
+
+    categoryCache[itemId] = category;
+    return category;
 end
 
 -- Check if player already has an item in main inventory (container 0)

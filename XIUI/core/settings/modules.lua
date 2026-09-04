@@ -238,6 +238,37 @@ function M.createModuleDefaults()
             },
         },
 
+        -- settings for the magic burst notification
+        magicBurstSettings = T{
+            imageSize = 200,
+            showTimer = true,
+            font_settings = T{
+                font_family = 'Consolas',
+                font_height = 34,
+                font_color = 0xFFFFFFFF,
+                font_flags = fontconst.FLAG_BOLD,
+                outline_color = 0xFF000000,
+                outline_width = 3,
+            },
+        },
+
+        phantomRollSettings = T{
+            dieSize = 54,
+            nameSize = 18,
+            potencySize = 15,
+            oddsSize = 12,
+            barHeight = 14,
+            horizonMode = HzLimitedMode == true,
+            font_settings = T{
+                font_family = 'Tahoma',
+                font_height = 15,
+                font_color = 0xFFFFFFFF,
+                font_flags = fontconst.FLAG_BOLD,
+                outline_color = 0xFF000000,
+                outline_width = 1,
+            },
+        },
+
         inventoryTrackerSettings = T{
             columnCount = 5,
             rowCount = 6,

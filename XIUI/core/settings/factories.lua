@@ -306,6 +306,7 @@ function M.createHotbarGlobalDefaults()
         showActionLabels = false,
         actionLabelOffsetX = 0,
         actionLabelOffsetY = 0,
+        actionLabelWordWrap = true,
         hideEmptySlots = false, -- Hide slots with no action assigned
 
         -- Slot padding (gap between slots)
@@ -314,7 +315,7 @@ function M.createHotbarGlobalDefaults()
 
         -- Bar positioning (hotbar only; crossbar unchanged)
         positionMode = 'absolute',  -- 'absolute' or 'anchored'
-        hotbarSpacing = 0,        -- Vertical gap between anchored hotbars
+        hotbarSpacing = 0,        -- Vertical gap between anchored hotbars and multi-row slots
 
         -- Gap between window background edge and slot grid
         backgroundPaddingX = 0,
@@ -353,11 +354,13 @@ function M.createHotbarGlobalDefaults()
         hotbarNumberOffsetY = 0,
 
         -- Skillchain highlight settings
-        skillchainHighlightEnabled = true,      -- Show skillchain highlight on WS slots
+        skillchainHighlightEnabled = true,      -- Show skillchain highlight on closer slots
         skillchainHighlightColor = 0xFFD4AA44,  -- Gold color for highlight border (ARGB)
         skillchainIconScale = 1.0,              -- Scale multiplier for icon (0.5-2.0)
         skillchainIconOffsetX = 0,              -- X offset in pixels
         skillchainIconOffsetY = 0,              -- Y offset in pixels
+        skillchainRequireAbility = false,       -- BLU/SCH spells need CA, AL, or Immanence
+        skillchainHighlightAllBloodPacts = false, -- Off: only the summoned avatar's blood pacts
     
         -- Cooldown timer settings
         recastTimerFontSize = 11,               -- Font size for cooldown timer display
@@ -368,7 +371,7 @@ function M.createHotbarGlobalDefaults()
 end
 
 -- Factory function to create per-hotbar settings with overrides
--- Each hotbar (1-6) can have independent layout and visual settings
+-- Each hotbar (1-10) can have independent layout and visual settings
 function M.createHotbarBarDefaults(overrides)
     local defaults = T{
         -- Global settings toggle (when true, uses hotbarGlobal settings for visuals)
@@ -401,6 +404,7 @@ function M.createHotbarBarDefaults(overrides)
         showActionLabels = false,
         actionLabelOffsetX = 0,     -- X offset for action labels
         actionLabelOffsetY = 0,     -- Y offset for action labels
+        actionLabelWordWrap = true, -- Wrap labels up to 2 lines within slot width
         hideEmptySlots = false,     -- Hide slots with no action assigned
 
         -- Slot padding (gap between slots)
@@ -533,6 +537,10 @@ function M.createCrossbarDefaults()
         keybindFontSize = 8,
         keybindFontColor = 0xFFFFFFFF,
         labelFontSize = 10,
+        showActionLabels = false,
+        actionLabelOffsetX = 0,
+        actionLabelOffsetY = 0,
+        actionLabelWordWrap = true,
         triggerLabelFontSize = 14,
         triggerLabelColor = 0xFFFFCC00,     -- Gold color for trigger labels
 

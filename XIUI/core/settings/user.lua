@@ -30,6 +30,24 @@ function M.createUserSettingsDefaults()
         showNotifications = true,
         showReadyCheck = true,
 
+        -- Blue Magic learned banner (Notifications > Blue Magic)
+        blueMagicLearnedEnabled = true,
+        blueMagicLearnedPreview = false,
+        blueMagicLearnedDuration = 3,
+        blueMagicLearnedScale = 1.0,
+
+        -- Magic burst notification (checkbox lives under Hotbar > Skillchain)
+        magicBurstEnabled = false,
+        magicBurstScale = 1.0,
+        magicBurstShowTimer = true,
+
+        -- Corsair Phantom Roll tracker
+        showPhantomRoll = false,
+        phantomRollScale = 1.0,
+        phantomRollHorizonMode = HzLimitedMode == true,
+        phantomRollHideOnMenuFocus = false,
+        phantomRollHideMacroPalette = false,
+
         -- Ready Check module settings (per profile)
         readyCheckSoundFile = 'ffxiv-notification.wav',
         readyCheckSoundOnChecker = true,
@@ -93,8 +111,8 @@ function M.createUserSettingsDefaults()
         -- Global hotbar visual settings (used when bar's useGlobalSettings = true)
         hotbarGlobal = factories.createHotbarGlobalDefaults(),
 
-        -- Per-bar hotbar settings (Bar 1-6 each have independent configurations)
-        -- Bars 1-3 enabled by default, bars 4-6 disabled by default
+        -- Per-bar hotbar settings (Bar 1-10 each have independent configurations)
+        -- Bars 1-3 enabled by default, bars 4-10 disabled by default
         -- By default, useGlobalSettings = true, so bars use hotbarGlobal for visuals
         -- Default keybindings (bottom to top): Bar1=Alt+1-0, Bar2=Ctrl+1-0, Bar3=1-0
         hotbarBar1 = factories.createHotbarBarDefaults({
@@ -112,6 +130,10 @@ function M.createUserSettingsDefaults()
         hotbarBar4 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
         hotbarBar5 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
         hotbarBar6 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
+        hotbarBar7 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
+        hotbarBar8 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
+        hotbarBar9 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
+        hotbarBar10 = factories.createHotbarBarDefaults({ rows = 1, columns = 12, enabled = false }),
 
         -- Crossbar settings (controller-based hotbar mode)
         -- When enabled, replaces the standard hotbar with a controller-friendly layout
@@ -228,6 +250,9 @@ function M.createUserSettingsDefaults()
         showEnemyListTargets = true,
         enableEnemyListClickTarget = true,
         enemyListPreview = true,
+        showEnemyListDebuffTimers = false,
+        enemyListDebuffTimersCCOnly = true,
+        showUncertainDebuffMarker = true,
 
         playerBarScaleX = 1,
         playerBarScaleY = 1,
@@ -266,6 +291,12 @@ function M.createUserSettingsDefaults()
         targetBarIconScale = 1,
         targetBarIconFontSize = 10,
         targetBarBuffsOffsetY = 4,
+        songPlusLullaby = 0,
+        songPlusRequiem = 0,
+        songPlusElegy = 0,
+        songPlusThrenody = 0,
+        songPlusNocturne = 0,
+        songPlusVirelai = 0,
         targetBarCastBarOffsetY = 6,
         targetBarCastBarScaleX = 0.4,
         targetBarCastBarScaleY = 1,
@@ -461,6 +492,8 @@ function M.createUserSettingsDefaults()
         mobInfoSeparatorStyle = 'space', -- separator style: 'space', 'pipe', 'dot'
         mobInfoShowServerId = false, -- show target's server ID
         mobInfoServerIdHex = true, -- true = hex format (0x1C0), false = decimal
+        -- Horizon Dynamis overlay (Mr-Sithel). Default on for the Horizon build.
+        mobInfoUseHorizonData = HzLimitedMode == true,
 
         -- Party List global settings (shared across all parties)
         partyListTitleFontSize = 12,
@@ -727,6 +760,7 @@ function M.createUserSettingsDefaults()
         -- BST Charm indicator settings (absolute positioned relative to window)
         petBarShowCharmIndicator = true,
         petBarShowJugTimer = true,
+        petBarBonusCharisma = 0,
         petBarCharmIconSize = 16,
         petBarCharmTimerFontSize = 12,
         petBarCharmOffsetX = 0,

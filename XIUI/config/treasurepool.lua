@@ -46,6 +46,7 @@ local function ensureDefaults()
     if gConfig.treasurePoolExpanded == nil then gConfig.treasurePoolExpanded = false; end
     if gConfig.treasurePoolShowButtonsInCollapsed == nil then gConfig.treasurePoolShowButtonsInCollapsed = true; end
     if gConfig.treasurePoolAutoHideWhenEmpty == nil then gConfig.treasurePoolAutoHideWhenEmpty = true; end
+    if gConfig.treasurePoolLootColors == nil then gConfig.treasurePoolLootColors = false; end
 end
 
 -- Get available background themes
@@ -86,6 +87,9 @@ function M.DrawSettings()
             components.DrawCheckbox('Auto-Hide When Empty', 'treasurePoolAutoHideWhenEmpty');
             imgui.ShowHelp('Hide the treasure pool window when there are no items in the pool');
 
+            components.DrawCheckbox('Enable Loot Colors', 'treasurePoolLootColors');
+            imgui.ShowHelp('Color item names by category. Set the colors under the Colors tab');
+
             -- Size settings
             components.DrawSlider('Text Size', 'treasurePoolFontSize', 8, 16);
             imgui.ShowHelp('Font size for item names, timers, and lot info');
@@ -117,8 +121,18 @@ end
 
 -- Section: Treasure Pool Color Settings
 function M.DrawColorSettings()
-    if components.CollapsingSection('Treasure Pool Colors') then
-        imgui.TextDisabled('Color settings coming soon');
+    if components.CollapsingSection('Loot Colors##treasurePoolColor') then
+        if not gConfig.treasurePoolLootColors then
+            imgui.TextDisabled('Enable Loot Colors under Treasure Pool settings');
+        end
+
+        local colors = gConfig.colorCustomization.treasurePool;
+        components.DrawTextColorPicker('Rare / Ex', colors, 'rareExColor', 'Rare or Ex items that are not gear, such as coffer keys and seals');
+        components.DrawTextColorPicker('Currency', colors, 'currencyColor', 'Dynamis currency, Ancient Beastcoins and Alexandrite');
+        components.DrawTextColorPicker('Equipment', colors, 'equipmentColor', 'Weapons and armor, including Rare or Ex pieces');
+        components.DrawTextColorPicker('Usable', colors, 'usableColor', 'Food, medicine and other usable items');
+        components.DrawTextColorPicker('Crystal', colors, 'crystalColor', 'Crystals and clusters');
+        components.DrawTextColorPicker('Other', colors, 'otherColor', 'Everything else');
     end
 end
 

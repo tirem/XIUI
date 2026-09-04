@@ -99,6 +99,16 @@ function M.createColorCustomizationDefaults()
             negativeColor = 0xFFFF4444,  -- Red for negative gil/hr
         },
 
+        -- Treasure Pool loot name colors, keyed by the categories in treasurepool/data.lua
+        treasurePool = T{
+            rareExColor = 0xFFFFD24A,     -- Gold, notable non-gear such as keys and seals
+            currencyColor = 0xFFB48CFF,   -- Purple
+            equipmentColor = 0xFF6FB7FF,  -- Blue
+            usableColor = 0xFF7FE08F,     -- Green
+            crystalColor = 0xFF9AD8E0,    -- Pale cyan
+            otherColor = 0xFFFFFFFF,
+        },
+
         -- Inventory Tracker
         inventoryTracker = T{
             textColor = 0xFFFFFFFF,

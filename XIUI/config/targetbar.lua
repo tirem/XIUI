@@ -127,6 +127,18 @@ local function DrawTargetBarSettingsContent()
         imgui.ShowHelp('Vertical offset for buffs/debuffs below the HP bar (in pixels).');
         components.DrawSlider('Icon Scale', 'targetBarIconScale', 0.1, 3.0, '%.1f');
         components.DrawSlider('Icon Text Size', 'targetBarIconFontSize', 8, 36);
+        components.DrawCheckbox('Uncertain Debuff Marker', 'showUncertainDebuffMarker');
+        imgui.ShowHelp('Show a ? on debuffs inferred from a hit (BLU additional effects, Weapon Bash, stun WS).\nThe second resist roll is hidden. Spells that report resist are unmarked.');
+    end
+
+    if components.CollapsingSection('Bard Song Settings##targetBar') then
+        imgui.Text('Adjust sliders for each +song equipment you have:');
+        components.DrawSlider('Lullaby', 'songPlusLullaby', 0, 9);
+        components.DrawSlider('Requiem', 'songPlusRequiem', 0, 9);
+        components.DrawSlider('Elegy', 'songPlusElegy', 0, 9);
+        components.DrawSlider('Threnody', 'songPlusThrenody', 0, 9);
+        components.DrawSlider('Nocturne', 'songPlusNocturne', 0, 9);
+        components.DrawSlider('Virelai', 'songPlusVirelai', 0, 9);
     end
 
     -- Target of Target Bar settings (only show when split is enabled)
@@ -300,6 +312,14 @@ local function DrawMobInfoSettingsContent(githubTexture)
 
         components.DrawCheckbox('Hide When Engaged', 'mobInfoHideWhenEngaged');
         imgui.ShowHelp('Hide mob info when you are engaged in combat.');
+
+        components.DrawCheckbox('Horizon Mob Data', 'mobInfoUseHorizonData', function()
+            local mobdata = require('modules.mobinfo.data');
+            if mobdata.ReloadCurrentZone then
+                mobdata.ReloadCurrentZone();
+            end
+        end);
+        imgui.ShowHelp('Use HorizonXI Dynamis names and jobs from the Horizon mobdb overlay. On by default in the Horizon build.');
     end
 
     if components.CollapsingSection('Scale & Position##mobInfo') then

@@ -12,6 +12,7 @@ local imgui = require('imgui');
 local recast = require('modules.hotbar.recast');
 local actions = require('modules.hotbar.actions');
 local playerdata = require('modules.hotbar.playerdata');
+local petpalette = require('modules.hotbar.petpalette');
 local dragdrop = require('libs.dragdrop');
 local textures = require('modules.hotbar.textures');
 local skillchain = require('modules.hotbar.skillchain');
@@ -21,6 +22,11 @@ local imtext = require('libs.imtext');
 -- Deferred tooltip: stored during render, drawn after all windows to ensure z-order
 local pendingTooltipBind = nil;
 local tooltipFontSettings = nil;
+
+-- Action names hang below the slot and overlap the bar underneath. Queue them
+-- and draw after every bar so later icons cannot cover earlier labels.
+local pendingLabels = {};
+local pendingLabelCount = 0;
 
 -- Tooltip constants (ARGB for text colors used with imtext, ABGR/U32 for rect colors)
 local TOOLTIP_FONT_SIZE = 12;
@@ -40,23 +46,120 @@ local DIM_UNAVAILABLE_ALPHA = 0.7;
 
 ---@return number colorMult
 ---@return boolean applyGreyTint
-local function GetSlotColorMult(isUnavailable, isOnCooldown, notEnoughMp, notEnoughTp)
+local function GetSlotColorMult(isUnavailable, isOnCooldown, notEnoughCost)
     if isUnavailable then
         return DIM_UNAVAILABLE, true;
     end
-    if isOnCooldown or notEnoughMp or notEnoughTp then
+    if isOnCooldown or notEnoughCost then
         return DIM_RESTRICTED, false;
     end
     return 1.0, false;
+end
+
+-- Label width: slot size + even portion of spacing so adjacent labels meet in the gap, not overlap.
+local function GetActionLabelMaxWidth(slotSize, slotSpacing)
+    local spacing = slotSpacing or 0;
+    local evenExtra = math.floor(spacing / 2) * 2;
+    return slotSize + evenExtra;
+end
+
+-- Truncate text to fit maxWidth (no ellipsis).
+local function TruncateLabelToWidth(text, fontSize, maxWidth)
+    if not text or text == '' then return ''; end
+    local w = imtext.Measure(text, fontSize);
+    if w <= maxWidth then return text; end
+    local lo, hi = 0, #text;
+    while lo < hi do
+        local mid = math.floor((lo + hi + 1) / 2);
+        if imtext.Measure(text:sub(1, mid), fontSize) <= maxWidth then
+            lo = mid;
+        else
+            hi = mid - 1;
+        end
+    end
+    if lo <= 0 then return ''; end
+    return text:sub(1, lo);
+end
+
+-- Wrap at whole words into at most 2 lines; oversize words are cut (no ellipsis / no remainder carry).
+local function WrapActionLabel(text, fontSize, maxWidth)
+    local lines = {};
+    if not text or text == '' or maxWidth <= 0 then return lines; end
+
+    local words = {};
+    for word in string.gmatch(text, '%S+') do
+        words[#words + 1] = word;
+    end
+    if #words == 0 then return lines; end
+
+    local current = '';
+    for _, word in ipairs(words) do
+        if #lines >= 2 then break; end
+        local candidate = (current == '') and word or (current .. ' ' .. word);
+        if imtext.Measure(candidate, fontSize) <= maxWidth then
+            current = candidate;
+        elseif current ~= '' then
+            lines[#lines + 1] = current;
+            current = '';
+            if #lines >= 2 then break; end
+            if imtext.Measure(word, fontSize) <= maxWidth then
+                current = word;
+            else
+                local truncated = TruncateLabelToWidth(word, fontSize, maxWidth);
+                if truncated ~= '' then
+                    lines[#lines + 1] = truncated;
+                end
+            end
+        else
+            local truncated = TruncateLabelToWidth(word, fontSize, maxWidth);
+            if truncated ~= '' then
+                lines[#lines + 1] = truncated;
+            end
+        end
+    end
+    if current ~= '' and #lines < 2 then
+        lines[#lines + 1] = current;
+    end
+    return lines;
+end
+
+-- Memoized label layout: resolves wrapped/truncated lines and their widths so
+-- the per-slot per-frame draw path does zero imtext.Measure calls on a cache hit.
+-- Keyed on (fontKey, text, fontSize, maxWidth, wordWrap); cleared when the font changes.
+local labelLayoutCache = {};
+local labelLayoutFontKey = nil;
+
+local function GetLabelLayout(text, fontSize, maxWidth, wordWrap)
+    local fontKey = imtext.GetFontKey();
+    if fontKey ~= labelLayoutFontKey then
+        labelLayoutCache = {};
+        labelLayoutFontKey = fontKey;
+    end
+
+    local key = string.format('%d|%d|%s|%s', fontSize, maxWidth, wordWrap and '1' or '0', text);
+    local cached = labelLayoutCache[key];
+    if cached then return cached; end
+
+    local lines = {};
+    if wordWrap then
+        for _, line in ipairs(WrapActionLabel(text, fontSize, maxWidth)) do
+            lines[#lines + 1] = { text = line, width = imtext.Measure(line, fontSize) };
+        end
+    else
+        local truncated = TruncateLabelToWidth(text, fontSize, maxWidth);
+        if truncated ~= '' then
+            lines[1] = { text = truncated, width = imtext.Measure(truncated, fontSize) };
+        end
+    end
+
+    labelLayoutCache[key] = lines;
+    return lines;
 end
 
 local ACTION_TYPE_LABELS = {
     ma = 'Spell (ma)', ja = 'Ability (ja)', ws = 'Weaponskill (ws)',
     item = 'Item', equip = 'Equip', macro = 'Macro', pet = 'Pet Command',
 };
-
--- Cache for MP cost lookups (keyed by action key string)
-local mpCostCache = {};
 
 -- Cache for action availability checks (keyed by action key string)
 -- Structure: { isAvailable = bool, reason = string|nil }
@@ -366,6 +469,18 @@ local imgP1 = {0, 0};
 local imgP2 = {0, 0};
 local UV0 = {0, 0};
 local UV1 = {1, 1};
+local triA = {0, 0};
+local triB = {0, 0};
+local triC = {0, 0};
+
+-- Lower-right half of the icon (split top-left → bottom-right) while extra charges refill.
+local function DrawRechargingHalf(drawList, ix, iy, iw, ih, animOpacity)
+    triA[1] = ix + iw; triA[2] = iy;
+    triB[1] = ix;      triB[2] = iy + ih;
+    triC[1] = ix + iw; triC[2] = iy + ih;
+    local a = math.floor(128 * animOpacity);
+    drawList:AddTriangleFilled(triA, triB, triC, bit.bor(bit.lshift(a, 24), 0x000000));
+end
 
 -- Texture cache: keeps texture tables alive (prevents GC release of D3D textures)
 -- and stores the derived uint32 pointer for fast AddImage calls.
@@ -393,7 +508,6 @@ end
 function M.ClearAllCache()
     availabilityCache = {};
     availabilityStateMemo = {};
-    mpCostCache = {};
     equipmentCheckCache = {};
     ninjutsuCache = {};
     itemQuantityCache = {};
@@ -403,8 +517,7 @@ function M.ClearAllCache()
 end
 
 -- Clear slot texture pointer cache
--- Does NOT clear availability, MP cost, or item quantity caches
--- OPTIMIZED: Use this for palette changes to avoid unnecessary recalculation cascade
+-- Does NOT clear availability or item quantity caches
 function M.ClearSlotRenderingCache()
     texturePtrCache = {};
 end
@@ -413,13 +526,6 @@ end
 function M.ClearAvailabilityCache()
     availabilityCache = {};
     availabilityStateMemo = {};
-end
-
--- Clear MP cost cache (call when a slot's action/spell may have changed, e.g. macro edits).
--- Without this, edited macros keep showing the old action's MP cost / no-MP indicator
--- until the addon reloads.
-function M.ClearMPCostCache()
-    mpCostCache = {};
 end
 
 -- Clear item quantity cache (call on inventory changes)
@@ -459,12 +565,20 @@ local function BuildAvailabilityCacheKey(bind, bindKey)
     local player = AshitaCore:GetMemoryManager():GetPlayer();
     local jobId = player and player:GetMainJob() or 0;
     local subjobId = player and player:GetSubJob() or 0;
-    return key .. ':' .. jobId .. ':' .. subjobId .. ':' .. playerdata.GetEquipmentSignature();
+    -- Pet presence affects HasAbility for BPs, maneuvers, ready moves, etc.
+    local petKey = petpalette.GetCurrentPetKey() or 'none';
+    return key .. ':' .. jobId .. ':' .. subjobId .. ':' .. petKey .. ':' .. playerdata.GetEquipmentSignature();
 end
 
 local function GetAvailabilityState(bind, bindKey)
     if not bind or not actions.NeedsAvailabilityCheck(bind) then
         return false, nil;
+    end
+
+    -- Build the memo key here (only for binds that actually need a check) instead
+    -- of every slot every frame at the call site.
+    if bindKey == nil then
+        bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
     end
 
     local now = os.clock();
@@ -546,8 +660,6 @@ end
 -- Skillchain Highlight Rendering
 -- ============================================
 
--- Skillchain icon cache (loaded on first use)
-local skillchainIconCache = {};
 local skillchainIconsPath = nil;
 
 local function GetSkillchainIconsPath()
@@ -640,27 +752,20 @@ local function DrawSkillchainHighlight(drawList, x, y, size, scName, color, opac
     local iconX = x + size - iconSize - 2 + offsetX;
     local iconY = y + 2 + offsetY;
 
-    -- Get or load icon texture
+    -- Get or load icon texture (cached ptr; failed loads cached as false so we
+    -- don't retry the load every frame while the highlight is active)
     local iconPath = GetSkillchainIconsPath() .. scName .. '.png';
-    if not skillchainIconCache[scName] then
-        local tex = textures:LoadTextureFromPath(iconPath);
-        skillchainIconCache[scName] = tex;
-    end
-
-    local iconTex = skillchainIconCache[scName];
-    if iconTex and iconTex.image then
-        local iconPtr = tonumber(ffi.cast("uint32_t", iconTex.image));
-        if iconPtr then
-            local iconAlpha = math.floor(255 * opacity);
-            local iconTint = bit.bor(bit.lshift(iconAlpha, 24), 0x00FFFFFF);
-            drawList:AddImage(
-                iconPtr,
-                {iconX, iconY},
-                {iconX + iconSize, iconY + iconSize},
-                {0, 0}, {1, 1},
-                iconTint
-            );
-        end
+    local iconPtr = GetCachedTexturePtr(iconPath);
+    if iconPtr then
+        local iconAlpha = math.floor(255 * opacity);
+        local iconTint = bit.bor(bit.lshift(iconAlpha, 24), 0x00FFFFFF);
+        drawList:AddImage(
+            iconPtr,
+            {iconX, iconY},
+            {iconX + iconSize, iconY + iconSize},
+            {0, 0}, {1, 1},
+            iconTint
+        );
     end
 end
 
@@ -766,47 +871,26 @@ function M.DrawSlot(params)
     local cooldown = recast.GetCooldownInfo(bind);
     local isOnCooldown = cooldown.isOnCooldown;
     local recastText = cooldown.recastText;
+    local rechargingExtra = cooldown.rechargingExtra == true;
 
-    -- Check if player has enough MP for spells (also includes macros whose
-    -- recast source is a spell — they show the source spell's MP cost).
-    local notEnoughMp = false;
-    local bindKey = bind and ((bind.actionType or '') .. ':' .. (bind.action or '')) or '';
-    local hasMpCost = bind and (
-        bind.actionType == 'ma'
-        or bind.actionType == 'ja'
-        or (bind.actionType == 'macro'
-            and (bind.recastSourceType == 'ma' or bind.recastSourceType == 'ja')
-            and bind.recastSourceAction)
-    );
-    if hasMpCost then
-        local mpCost = mpCostCache[bindKey];
-        if mpCost == nil then
-            mpCost = actions.GetMPCost(bind) or false;
-            mpCostCache[bindKey] = mpCost;
-        end
-        if mpCost and mpCost ~= false then
-            local party = AshitaCore:GetMemoryManager():GetParty();
-            local playerMp = party and party:GetMemberMP(0) or 0;
-            notEnoughMp = playerMp < mpCost;
-        end
+    -- Resource cost (MP / TP / charges / finishing moves)
+    local costKind, costLabel, costMet = 'none', nil, true;
+    if bind then
+        costKind, costLabel, costMet = actions.GetActionCostInfo(bind);
     end
+    local notEnoughCost = (costKind ~= 'none') and not costMet;
 
     -- Check if action is available (job/level/gear/pet/inventory requirements)
     local isUnavailable = false;
     if bind then
-        isUnavailable = select(1, GetAvailabilityState(bind, bindKey));
-    end
-
-    -- Weaponskills (and WS recast-source macros) dim when TP is below the WS cost
-    local notEnoughTp = false;
-    if bind and actions.NeedsTpCheck(bind) and not isUnavailable then
-        notEnoughTp = not actions.HasEnoughTpForBind(bind);
+        isUnavailable = select(1, GetAvailabilityState(bind));
     end
 
     -- ========================================
     -- 4. Icon Rendering (unified ImGui AddImage path)
     -- ========================================
     local iconRendered = false;
+    local iconX, iconY, renderedWidth, renderedHeight;
 
     if icon and icon.image and drawList then
         local iconPtr = tonumber(ffi.cast("uint32_t", icon.image));
@@ -816,16 +900,16 @@ function M.DrawSlot(params)
 
             -- Calculate scale to fit icon within slot with padding
             local scale = targetIconSize / math.max(texWidth, texHeight);
-            local renderedWidth = texWidth * scale;
-            local renderedHeight = texHeight * scale;
+            renderedWidth = texWidth * scale;
+            renderedHeight = texHeight * scale;
 
             -- Center the icon within the slot
-            local iconX = x + (size - renderedWidth) / 2;
-            local iconY = y + (size - renderedHeight) / 2;
+            iconX = x + (size - renderedWidth) / 2;
+            iconY = y + (size - renderedHeight) / 2;
 
             -- Calculate color: unavailable/cooldown/noMP darkening + dim factor + animation opacity
             local colorMult, applyGreyTint = GetSlotColorMult(
-                isUnavailable, isOnCooldown, notEnoughMp, notEnoughTp
+                isUnavailable, isOnCooldown, notEnoughCost
             );
             colorMult = colorMult * dimFactor;
 
@@ -852,6 +936,14 @@ function M.DrawSlot(params)
             imgP2[1] = iconX + renderedWidth; imgP2[2] = iconY + renderedHeight;
             drawList:AddImage(iconPtr, imgP1, imgP2, UV0, UV1, tintColor);
             iconRendered = true;
+        end
+    end
+
+    if rechargingExtra and not isUnavailable and not isOnCooldown and animOpacity > 0.01 and drawList then
+        if iconRendered then
+            DrawRechargingHalf(drawList, iconX, iconY, renderedWidth, renderedHeight, animOpacity);
+        else
+            DrawRechargingHalf(drawList, x + iconPadding, y + iconPadding, targetIconSize, targetIconSize, animOpacity);
         end
     end
 
@@ -893,7 +985,7 @@ function M.DrawSlot(params)
             abbrW = imtext.Measure(abbr, 12);
         end
 
-        local colorMult = select(1, GetSlotColorMult(isUnavailable, isOnCooldown, notEnoughMp, notEnoughTp));
+        local colorMult = select(1, GetSlotColorMult(isUnavailable, isOnCooldown, notEnoughCost));
         colorMult = colorMult * dimFactor;
         -- Gold base: R=244, G=218, B=151 (0xF4DA97)
         local r = math.floor(244 * colorMult);
@@ -949,23 +1041,38 @@ function M.DrawSlot(params)
     if params.showLabel and params.labelText and params.labelText ~= '' and animOpacity > 0.5 and drawList then
         local lblFontSize = params.labelFontSize or 10;
         local labelColor = params.labelFontColor or 0xFFFFFFFF;
-        -- Priority: Unavailable (grey) > Cooldown (grey) > Not enough MP/TP (red) > Normal
+        -- Priority: Unavailable (grey) > Cooldown (grey) > Not enough cost (red) > Normal
         if isUnavailable then
             labelColor = 0xFF888888;
         elseif isOnCooldown then
             labelColor = params.labelCooldownColor or 0xFF888888;
-        elseif notEnoughMp or notEnoughTp then
+        elseif notEnoughCost then
             labelColor = params.labelNoMpColor or 0xFFFF4444;
         end
-        local lblW = imtext.Measure(params.labelText, lblFontSize);
-        local labelX = x + (size - lblW) / 2 + (params.labelOffsetX or 0);
+        local labelOffsetX = params.labelOffsetX or 0;
         local labelY = y + size + 2 + (params.labelOffsetY or 0);
-        imtext.Draw(drawList, params.labelText, labelX, labelY, labelColor, lblFontSize);
+        local maxW = GetActionLabelMaxWidth(size, params.labelSlotSpacing or 0);
+        local lines = GetLabelLayout(params.labelText, lblFontSize, maxW, params.labelWordWrap);
+        for i = 1, #lines do
+            local line = lines[i];
+            pendingLabelCount = pendingLabelCount + 1;
+            local entry = pendingLabels[pendingLabelCount];
+            if not entry then
+                entry = {};
+                pendingLabels[pendingLabelCount] = entry;
+            end
+            entry.drawList = drawList;
+            entry.text = line.text;
+            entry.x = x + (size - line.width) / 2 + labelOffsetX;
+            entry.y = labelY + (i - 1) * lblFontSize;
+            entry.color = labelColor;
+            entry.fontSize = lblFontSize;
+        end
     end
 
     -- ========================================
-    -- 10. MP Cost Text (anchored position)
-    -- Shows "X" when action is unavailable, otherwise shows MP cost
+    -- 10. Cost Text (MP / TP / charges / finishing moves)
+    -- Shows "X" when action is unavailable, otherwise shows cost amount
     -- ========================================
     do
         local showMpCost = params.showMpCost ~= false;
@@ -983,24 +1090,16 @@ function M.DrawSlot(params)
                     mpX = mpX - w;
                 end
                 imtext.Draw(drawList, xText, mpX, mpY, xColor, mpFontSize);
-            else
-                local mpCost = mpCostCache[bindKey];
-                if mpCost == nil then
-                    mpCost = actions.GetMPCost(bind) or false;
-                    mpCostCache[bindKey] = mpCost;
+            elseif costLabel then
+                local mpCostColor = params.mpCostFontColor or 0xFFD4FF97;
+                if notEnoughCost then
+                    mpCostColor = params.mpCostNoMpColor or 0xFFFF4444;
                 end
-                if mpCost and mpCost ~= false then
-                    local mpText = tostring(mpCost);
-                    local mpCostColor = params.mpCostFontColor or 0xFFD4FF97;
-                    if notEnoughMp then
-                        mpCostColor = params.mpCostNoMpColor or 0xFFFF4444;
-                    end
-                    if mpAnchor == 'topRight' or mpAnchor == 'bottomRight' then
-                        local w = imtext.Measure(mpText, mpFontSize);
-                        mpX = mpX - w;
-                    end
-                    imtext.Draw(drawList, mpText, mpX, mpY, mpCostColor, mpFontSize);
+                if mpAnchor == 'topRight' or mpAnchor == 'bottomRight' then
+                    local w = imtext.Measure(costLabel, mpFontSize);
+                    mpX = mpX - w;
                 end
+                imtext.Draw(drawList, costLabel, mpX, mpY, mpCostColor, mpFontSize);
             end
         end
     end
@@ -1313,8 +1412,7 @@ function M.DrawTooltip(bind)
     -- Check if action is unavailable for current job/subjob/gear (cached lookup)
     local isUnavailable = false;
     if bind and actions.NeedsAvailabilityCheck(bind) then
-        local bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
-        isUnavailable = select(1, GetAvailabilityState(bind, bindKey));
+        isUnavailable = select(1, GetAvailabilityState(bind));
     end
 
     -- Ensure custom font is configured for measuring/drawing
@@ -1383,10 +1481,23 @@ function M.DrawTooltip(bind)
 end
 
 
--- Call at the start of each frame to reset deferred tooltip state
+-- Call at the start of each frame to reset deferred tooltip / label state
 function M.BeginFrame(fontSettings)
     pendingTooltipBind = nil;
     tooltipFontSettings = fontSettings;
+    pendingLabelCount = 0;
+end
+
+-- Draw queued action names after all bars so they sit on top of overlapping slots.
+function M.FlushLabels()
+    if pendingLabelCount == 0 then return; end
+    for i = 1, pendingLabelCount do
+        local entry = pendingLabels[i];
+        imtext.Draw(entry.drawList, entry.text, entry.x, entry.y, entry.color, entry.fontSize);
+        entry.drawList = nil;
+        entry.text = nil;
+    end
+    pendingLabelCount = 0;
 end
 
 -- Size of the abbreviation "pick-up" tile that follows the cursor on icon-less drags.

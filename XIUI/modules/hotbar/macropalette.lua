@@ -142,12 +142,6 @@ local function ClearAllIconCaches()
     if slotrenderer and slotrenderer.ClearSlotRenderingCache then
         slotrenderer.ClearSlotRenderingCache();
     end
-    -- Edits that change a macro's action leave the old actionType:action entry
-    -- orphaned in mpCostCache / availabilityCache. Functionally fine (the new key
-    -- naturally misses), but bounds memory across many edits.
-    if slotrenderer and slotrenderer.ClearMPCostCache then
-        slotrenderer.ClearMPCostCache();
-    end
     if slotrenderer and slotrenderer.ClearAvailabilityCache then
         slotrenderer.ClearAvailabilityCache();
     end
@@ -331,7 +325,6 @@ local selectedAvatarPalette = nil;  -- For SMN: nil = base, or avatar name like 
 
 -- Cached pet commands (managed locally, not in shared module)
 local cachedPetCommands = nil;
-local petAvatarFilter = 1;  -- 1 = All, 2+ = specific avatar index
 
 -- Search filter for dropdowns
 local searchFilter = { '' };
@@ -561,11 +554,6 @@ end
 
 local function GetCachedItems()
     return playerdata.GetCachedItems();
-end
-
--- Get pet commands for the current job
-local function GetPetCommandsForJob(jobId, avatarName, activePetName)
-    return petregistry.GetPetCommandsForJob(jobId, avatarName, activePetName);
 end
 
 -- Spell type sort order lookup for grouping
@@ -828,41 +816,14 @@ local function InvalidateBrowsingIconCache()
     browsingIconCache.generation = browsingIconCache.generation + 1;
 end
 
--- Build/return pet commands for the macro editor dropdown.
+-- Pet command dropdown: known pet-typed abilities (HasAbility, 0x200..0x600).
 local function GetEditorPetCommands()
     if not cachedPetCommands then
-        local viewedJobId = selectedPaletteType;
-        if type(viewedJobId) ~= 'number' then
-            viewedJobId = playerdata.GetCacheJobId() or 0;
-        end
-
-        -- Fall back to a pet subjob (e.g. WAR/BST) so its commands still populate.
-        if not petregistry.IsPetJob(viewedJobId) then
-            local player = AshitaCore:GetMemoryManager():GetPlayer();
-            viewedJobId = petregistry.ResolvePetJob(viewedJobId, player and player:GetSubJob()) or viewedJobId;
-        end
-
-        local avatarName = nil;
-        local activePetName = nil;
-        local avatarList = petregistry.GetAvatarList();
-
-        if viewedJobId == petregistry.JOB_SMN then
-            if selectedAvatarPalette then
-                avatarName = selectedAvatarPalette;
-            elseif petAvatarFilter > 1 then
-                avatarName = avatarList[petAvatarFilter - 1];
-            end
-        elseif viewedJobId == petregistry.JOB_BST then
-            activePetName = petpalette.GetCurrentPetEntityName();
-        end
-
-        cachedPetCommands = GetPetCommandsForJob(viewedJobId, avatarName, activePetName);
+        cachedPetCommands = playerdata.ForceRefreshPetCommands() or {};
     end
-
-    return cachedPetCommands or {};
+    return cachedPetCommands;
 end
 
--- Eagerly rebuild pet command cache (matches playerdata ForceRefresh* pattern)
 local function ForceRefreshPetCommands()
     cachedPetCommands = nil;
     return GetEditorPetCommands();
@@ -1386,16 +1347,16 @@ end
 -- ============================================
 
 -- Get current effective type for the palette (selected type or player's current job)
--- Returns GLOBAL_MACRO_KEY for global macros, a job ID, or a composite key like "15:avatar:ifrit"
+-- Returns GLOBAL_MACRO_KEY for global macros, a job ID, 'other', or a composite key like "15:avatar:ifrit"
 local function GetEffectivePaletteType()
     if selectedPaletteType then
-        -- If Global is selected, return the global key
         if selectedPaletteType == GLOBAL_MACRO_KEY then
             return GLOBAL_MACRO_KEY;
         end
-        -- If a valid job ID is selected
+        if selectedPaletteType == jobs.OTHER_MACRO_KEY or selectedPaletteType == jobs.OTHER_JOB_ID then
+            return jobs.OTHER_MACRO_KEY;
+        end
         if type(selectedPaletteType) == 'number' and selectedPaletteType > 0 then
-            -- Check for SMN avatar-specific palette
             if selectedPaletteType == petregistry.JOB_SMN and selectedAvatarPalette then
                 local avatarKey = petregistry.avatars[selectedAvatarPalette];
                 if avatarKey then
@@ -1406,7 +1367,7 @@ local function GetEffectivePaletteType()
         end
     end
     -- Default to current player job
-    return data.jobId or 1;
+    return jobs.ResolveJobCategory(data.jobId);
 end
 
 -- Get display name for a palette type key
@@ -1414,14 +1375,15 @@ local function GetPaletteDisplayName(typeKey)
     if typeKey == GLOBAL_MACRO_KEY then
         return 'Global';
     end
-    if type(typeKey) == 'number' then
-        return jobs[typeKey] or 'Unknown';
+    if typeKey == jobs.OTHER_MACRO_KEY or typeKey == jobs.OTHER_JOB_ID then
+        return jobs.OTHER_LABEL;
     end
-    -- Composite key like "15:avatar:ifrit"
+    if type(typeKey) == 'number' then
+        return jobs.GetDisplayName(typeKey);
+    end
     if type(typeKey) == 'string' then
         local jobId, petType, petId = typeKey:match('^(%d+):([^:]+):(.+)$');
         if jobId and petType == 'avatar' and petId then
-            -- Find avatar display name
             for name, key in pairs(petregistry.avatars) do
                 if key == petId then
                     return string.format('%s (%s)', jobs[tonumber(jobId)] or 'SMN', name);
@@ -1434,26 +1396,20 @@ end
 
 -- Sync palette to current player job (call on job change)
 function M.SyncToCurrentJob()
-    -- Only sync if not viewing Global - preserve Global selection across job changes
     if selectedPaletteType ~= GLOBAL_MACRO_KEY then
-        selectedPaletteType = data.jobId or 1;
+        selectedPaletteType = jobs.ResolveJobCategory(data.jobId);
     end
-    -- Clear spell/ability/item caches so they rebuild for new job
     playerdata.ClearCache();
     InvalidateBrowsingIconCache();
     cachedPetCommands = nil;
-    petAvatarFilter = 1;
     selectedAvatarPalette = nil;
-    -- Close editor window if open (spells/abilities are job-specific)
     if editingMacro then
         editingMacro = nil;
         isCreatingNew = false;
         searchFilter[1] = '';
         iconPickerOpen = false;
     end
-    -- Clear macro selection (macros are per-type)
     selectedMacroIndex = nil;
-    -- If palette is open, immediately refresh the caches
     if paletteOpen then
         RefreshCachedLists();
     end
@@ -1483,15 +1439,7 @@ end
 function M.AddMacro(macroData)
     local db, _ = M.GetMacroDatabase();
 
-    -- Generate unique ID
-    local maxId = 0;
-    for _, macro in ipairs(db) do
-        if macro.id and macro.id > maxId then
-            maxId = macro.id;
-        end
-    end
-
-    macroData.id = maxId + 1;
+    macroData.id = data.AllocateUniqueMacroId();
     table.insert(db, macroData);
     MarkHotbarDirty();
     data.MarkMacroLookupDirty();
@@ -1531,15 +1479,8 @@ local function AddMacroToTypeKey(typeKey, macroData)
     end
 
     local db = gConfig.macroDB[typeKey];
-    local maxId = 0;
-    for _, macro in ipairs(db) do
-        if macro.id and macro.id > maxId then
-            maxId = macro.id;
-        end
-    end
-
     local copy = deep_copy_table(macroData);
-    copy.id = maxId + 1;
+    copy.id = data.AllocateUniqueMacroId();
     table.insert(db, copy);
     SaveSettingsToDisk();
     data.MarkMacroLookupDirty();
@@ -1572,8 +1513,8 @@ end
 local function ClearSlotsReferencingMacro(macroId, typeKey)
     local isGlobalMacro = (typeKey == GLOBAL_MACRO_KEY);
 
-    -- Clear from all hotbars (1-6)
-    for barIndex = 1, 6 do
+    -- Clear from all hotbars
+    for barIndex = 1, data.NUM_BARS do
         local configKey = 'hotbarBar' .. barIndex;
         if gConfig[configKey] and gConfig[configKey].slotActions then
             local barSettings = gConfig[configKey];
@@ -1815,7 +1756,7 @@ function M.OpenPalette()
 
     -- Sync to current player job when opening (unless Global was selected)
     if selectedPaletteType ~= GLOBAL_MACRO_KEY then
-        selectedPaletteType = data.jobId or 1;
+        selectedPaletteType = jobs.ResolveJobCategory(data.jobId);
     end
 
     -- Refresh spell/ability/weaponskill caches
@@ -1956,36 +1897,27 @@ end
 local PushWindowStyle = components.PushWindowStyle;
 local PopWindowStyle = components.PopWindowStyle;
 
--- Build job list for dropdown
-local JOB_LIST = {};
-local JOB_ID_MAP = {};
-for jobId, jobName in pairs(jobs) do
-    table.insert(JOB_LIST, { id = jobId, name = jobName });
-end
-table.sort(JOB_LIST, function(a, b) return a.id < b.id; end);
-for i, job in ipairs(JOB_LIST) do
-    JOB_ID_MAP[job.id] = i;
-end
-
--- Build destination options for the copy macro dialog
-local copyTargetOptions = nil;
-local function GetCopyTargetOptions()
-    if copyTargetOptions then
-        return copyTargetOptions;
+local function GetJobDropdownEntries()
+    local entries = {};
+    local ids = jobs.GetUnlockedJobIds(data.jobId, data.subjobId);
+    for _, jobId in ipairs(ids) do
+        entries[#entries + 1] = { id = jobId, name = jobs.GetDisplayName(jobId) };
     end
+    entries[#entries + 1] = { id = jobs.OTHER_JOB_ID, name = jobs.GetDisplayName(jobs.OTHER_JOB_ID) };
+    return entries;
+end
 
-    copyTargetOptions = {
+local function GetCopyTargetOptions()
+    local options = {
         { key = GLOBAL_MACRO_KEY, label = 'Global' },
     };
-
-    for _, job in ipairs(JOB_LIST) do
-        copyTargetOptions[#copyTargetOptions + 1] = {
+    for _, job in ipairs(GetJobDropdownEntries()) do
+        options[#options + 1] = {
             key = job.id,
             label = job.name,
         };
     end
-
-    return copyTargetOptions;
+    return options;
 end
 
 local function DrawCopyMacroDialog()
@@ -2077,16 +2009,22 @@ function M.DrawPalette()
 
     -- Initialize selectedPaletteType to current job if not set
     if not selectedPaletteType then
-        selectedPaletteType = data.jobId or 1;
+        selectedPaletteType = jobs.ResolveJobCategory(data.jobId);
     end
 
     local db, typeKey = M.GetMacroDatabase();
     local isGlobal = (typeKey == GLOBAL_MACRO_KEY);
+    local isOther = (typeKey == jobs.OTHER_MACRO_KEY or typeKey == jobs.OTHER_JOB_ID);
     local typeName = GetPaletteDisplayName(typeKey);
-    local currentPlayerJob = data.jobId or 1;
+    local currentPlayerJob = data.jobId;
+    local currentMacroKey = jobs.ResolveMacroPaletteKey(data.jobId);
     -- For SMN with avatar selected, check base job ID
     local baseJobId = type(typeKey) == 'number' and typeKey or tonumber(tostring(typeKey):match('^(%d+)'));
-    local isViewingCurrentJob = (not isGlobal and baseJobId == currentPlayerJob);
+    local isViewingCurrentJob = (not isGlobal) and (
+        (isOther and currentMacroKey == jobs.OTHER_MACRO_KEY)
+        or (baseJobId ~= nil and baseJobId == currentPlayerJob)
+        or (typeKey == currentMacroKey)
+    );
 
     -- Calculate pagination
     local totalMacros = #db;
@@ -2173,7 +2111,6 @@ function M.DrawPalette()
                 playerdata.ClearCache();
                 InvalidateBrowsingIconCache();
                 cachedPetCommands = nil;
-                petAvatarFilter = 1;
             end
             imgui.PopStyleColor();
 
@@ -2184,8 +2121,8 @@ function M.DrawPalette()
             -- Separator between Global and jobs
             imgui.Separator();
 
-            -- Job options
-            for i, job in ipairs(JOB_LIST) do
+            -- Unlocked jobs (plus Other when the current job is non-standard)
+            for _, job in ipairs(GetJobDropdownEntries()) do
                 local isSelected = (not isGlobal and job.id == typeKey);
                 local jobMacroCount = getMacroCount(job.id);
 
@@ -2198,12 +2135,12 @@ function M.DrawPalette()
                 end
 
                 -- Add main job indicator
-                if job.id == currentPlayerJob then
+                if job.id == currentMacroKey or (job.id == currentPlayerJob) then
                     label = label .. '  *';
                 end
 
-                -- Add subjob indicator
-                if job.id == data.subjobId then
+                -- Add subjob indicator (standard jobs only)
+                if type(job.id) == 'number' and job.id == data.subjobId then
                     label = label .. '  /sub';
                 end
 
@@ -2225,7 +2162,6 @@ function M.DrawPalette()
                     playerdata.ClearCache();
                     InvalidateBrowsingIconCache();
                     cachedPetCommands = nil;
-                    petAvatarFilter = 1;
                 end
 
                 imgui.PopStyleColor();
@@ -4169,48 +4105,7 @@ function M.DrawMacroEditor()
             end
 
         elseif currentType == 'pet' then
-            -- For SMN, show avatar filter dropdown
-            -- Use the VIEWED palette's job, not necessarily the player's current job
-            local viewedJobId = selectedPaletteType;
-            if type(viewedJobId) ~= 'number' then
-                viewedJobId = playerdata.GetCacheJobId() or 0;
-            end
-            local avatarList = petregistry.GetAvatarList();
-
-            if viewedJobId == petregistry.JOB_SMN then
-                imgui.TextColored(COLORS.goldDim, 'Avatar Filter');
-                PushComboStyle();
-                imgui.SetNextItemWidth(240);
-                local filterLabel = petAvatarFilter == 1 and 'All Avatars' or avatarList[petAvatarFilter - 1];
-                if imgui.BeginCombo('##avatarFilter', filterLabel) then
-                    -- "All" option
-                    local isAllSelected = petAvatarFilter == 1;
-                    if isAllSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
-                    if imgui.Selectable('All Avatars', isAllSelected) then
-                        petAvatarFilter = 1;
-                        cachedPetCommands = nil;  -- Clear cache to rebuild
-                    end
-                    if isAllSelected then imgui.PopStyleColor(); end
-
-                    imgui.Separator();
-
-                    -- Individual avatars
-                    for i, avatar in ipairs(avatarList) do
-                        local isSelected = petAvatarFilter == i + 1;
-                        if isSelected then imgui.PushStyleColor(ImGuiCol_Text, COLORS.gold); end
-                        if imgui.Selectable(avatar, isSelected) then
-                            petAvatarFilter = i + 1;
-                            cachedPetCommands = nil;  -- Clear cache to rebuild
-                        end
-                        if isSelected then imgui.PopStyleColor(); end
-                    end
-                    imgui.EndCombo();
-                end
-                PopComboStyle();
-                imgui.Spacing();
-            end
-
-            -- Pet command dropdown
+            -- Pet command dropdown (HasAbility scan for currently known /pet actions)
             imgui.TextColored(COLORS.goldDim, 'Pet Command');
             DrawSearchableCombo('##petCommandCombo', GetEditorPetCommands, editingMacro.action or '', function(cmd)
                 editingMacro.action = cmd.name;
@@ -4219,7 +4114,7 @@ function M.DrawMacroEditor()
                     editingMacro.displayName = cmd.name;
                     editorFields.displayName[1] = cmd.name;
                 end
-            end, false, nil, 'pet', 'No pet commands available for this job');
+            end, false, nil, 'pet', 'No pet commands available (need a pet / known abilities)');
 
             -- Manual input fallback
             imgui.Spacing();

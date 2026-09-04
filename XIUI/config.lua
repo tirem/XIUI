@@ -27,6 +27,7 @@ local notificationsModule = require('config.notifications');
 local treasurepoolModule = require('config.treasurepool');
 local hotbarModule = require('config.hotbar');
 local readycheckModule = require('config.readycheck');
+local phantomrollModule = require('config.phantomroll');
 
 local treasurePool = require('modules.treasurepool.init');
 local tooltipfonts = require('modules.satchel.tooltips');
@@ -333,6 +334,7 @@ local categories = {
     { name = 'castBar', label = 'Cast Bar' },
     { name = 'castCost', label = 'Cast Cost' },
     { name = 'petBar', label = 'Pet Bar' },
+    { name = 'phantomRoll', label = 'Phantom Roll' },
     { name = 'notifications', label = 'Notifications' },
     { name = 'treasurePool', label = 'Treasure Pool' },
     { name = 'hotbar', label = 'Hotbar' },
@@ -572,6 +574,10 @@ local function DrawPetBarSettings()
     applySettingsState(newState);
 end
 
+local function DrawPhantomRollSettings()
+    phantomrollModule.DrawSettings();
+end
+
 local function DrawNotificationsSettings()
     notificationsModule.DrawSettings();
 end
@@ -642,6 +648,10 @@ local function DrawPetBarColorSettings()
     applyColorState(newState);
 end
 
+local function DrawPhantomRollColorSettings()
+    phantomrollModule.DrawColorSettings();
+end
+
 local function DrawNotificationsColorSettings()
     notificationsModule.DrawColorSettings();
 end
@@ -673,6 +683,7 @@ local settingsDrawFunctions = {
     DrawCastBarSettings,
     DrawCastCostSettings,
     DrawPetBarSettings,
+    DrawPhantomRollSettings,
     DrawNotificationsSettings,
     DrawTreasurePoolSettings,
     DrawHotbarSettings,
@@ -692,6 +703,7 @@ local colorSettingsDrawFunctions = {
     DrawCastBarColorSettings,
     DrawCastCostColorSettings,
     DrawPetBarColorSettings,
+    DrawPhantomRollColorSettings,
     DrawNotificationsColorSettings,
     DrawTreasurePoolColorSettings,
     DrawHotbarColorSettings,

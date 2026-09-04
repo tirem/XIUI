@@ -10,6 +10,7 @@ local ffi = require('ffi');
 local gamestate = require('core.gamestate');
 local encoding = require('libs.encoding');
 local abilityRecast = require('libs.abilityrecast');
+local hotbarRecast = require('modules.hotbar.recast');
 
 local M = {};
 
@@ -184,6 +185,12 @@ local trackedMaxRecasts = {};
 -- Returns: timerId, currentRecast (seconds), maxRecast (seconds)
 local function GetAbilityRecastInfo(ability, abilityId)
     local name = encoding:ShiftJIS_To_UTF8(ability.Name[1], true);
+
+    -- Charge pools (Quick Draw, Ready, Stratagems): per-charge remaining vs charge length.
+    local charge = hotbarRecast.GetChargeDisplayByAbilityId(abilityId);
+    if charge then
+        return ability.RecastTimerId or ability.TimerId, charge.nextCharge, charge.chargeDuration;
+    end
 
     -- First check our lookup table (for known pet commands with specific timer IDs)
     local lookup = name and abilityLookup[name];

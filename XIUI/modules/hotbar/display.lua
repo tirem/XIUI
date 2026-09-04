@@ -1,6 +1,6 @@
 --[[
 * XIUI hotbar - Display Module
-* Renders 6 independent hotbar windows with primitives and imtext
+* Renders independent hotbar windows with primitives and imtext
 ]]--
 
 require('common');
@@ -69,7 +69,8 @@ end
 local function GetBackgroundPadding(barSettings)
     local gs = (gConfig and gConfig.globalScale) or 1.0;
     local padX = (barSettings and barSettings.backgroundPaddingX) or 0;
-    local padY = (barSettings and barSettings.backgroundPaddingY) or 0;
+    -- Internal +4 so slider 0 still leaves a small vertical inset after flush bar/row spacing.
+    local padY = ((barSettings and barSettings.backgroundPaddingY) or 0) + 4;
     return padX * gs, padY * gs;
 end
 
@@ -160,7 +161,7 @@ local function OnPaletteChanged(barIndex, oldPalette, newPalette)
     StartPaletteAnimation(barIndex);
 end
 
--- Build a cache key that includes all fields that affect the icon
+-- Build a cache key that includes all fields that affect the icon/label
 local function BuildBindKey(bind)
     if not bind then return 'nil'; end
     -- Include customIconType, customIconId, and customIconPath so icon changes invalidate the cache
@@ -168,7 +169,10 @@ local function BuildBindKey(bind)
     if bind.customIconType or bind.customIconId or bind.customIconPath then
         iconPart = ':icon:' .. (bind.customIconType or '') .. ':' .. tostring(bind.customIconId or '') .. ':' .. (bind.customIconPath or '');
     end
-    return (bind.actionType or '') .. ':' .. (bind.action or '') .. ':' .. (bind.target or '') .. iconPart;
+    -- macroText + displayName so editing a macro (which keeps actionType/action) still
+    -- changes the key and forces the icon/abbreviation to recompute.
+    return (bind.actionType or '') .. ':' .. (bind.action or '') .. ':' .. (bind.target or '')
+        .. ':' .. (bind.displayName or '') .. ':' .. (bind.macroText or '') .. iconPart;
 end
 
 -- Get cached icon (and precomputed abbreviation) for a slot, recompute only if bind changed.
@@ -252,27 +256,32 @@ local function GetDefaultBarPosition(barIndex)
 end
 
 -- Calculate bar dimensions using per-bar settings
-local function GetBarDimensions(barIndex)
+-- inAnchoredStack: omit per-bar vertical padding so stacked bars/rows can sit flush
+-- when Hotbar/Row Spacing is 0 (outer stack background still uses bg padding).
+local function GetBarDimensions(barIndex, inAnchoredStack)
     local barSettings = data.GetBarSettings(barIndex);
     local gs = (gConfig and gConfig.globalScale) or 1.0;
     local slotSize = (barSettings.slotSize or 32) * gs;
-    -- Use per-bar slot padding settings
     local slotGap = (barSettings.slotXPadding or data.BUTTON_GAP) * gs;
     local padding = data.PADDING * gs;
-    local rowGap = (barSettings.slotYPadding or data.ROW_GAP) * gs;
+    local globalSettings = gConfig.hotbarGlobal or {};
+    local rowGap = (globalSettings.hotbarSpacing or 0) * gs;
+    local padX = padding;
+    local padY = inAnchoredStack and 0 or padding;
 
     local layout = data.GetBarLayout(barIndex);
 
-    -- Calculate dimensions based on rows and columns
-    local width = (slotSize * layout.columns) + (slotGap * (layout.columns - 1)) + (padding * 2);
-    local height = (slotSize * layout.rows) + (rowGap * (layout.rows - 1)) + (padding * 2);
+    -- Size from visible grid only (layout.rows is ceil(slots/columns), not configured rows)
+    local width = (slotSize * layout.columns) + (slotGap * (layout.columns - 1)) + (padX * 2);
+    local height = (slotSize * layout.rows) + (rowGap * math.max(0, layout.rows - 1)) + (padY * 2);
 
-    return width, height, slotSize, slotGap, rowGap, layout;
+    return width, height, slotSize, slotGap, rowGap, layout, padX, padY;
 end
 
 GetBarMetrics = function(barIndex, inAnchoredStack)
     local barSettings = data.GetBarSettings(barIndex);
-    local contentW, contentH, buttonSize, buttonGap, rowGap, layout = GetBarDimensions(barIndex);
+    local contentW, contentH, buttonSize, buttonGap, rowGap, layout, padX, padY =
+        GetBarDimensions(barIndex, inAnchoredStack);
     local gs = (gConfig and gConfig.globalScale) or 1.0;
 
     if inAnchoredStack then
@@ -287,7 +296,8 @@ GetBarMetrics = function(barIndex, inAnchoredStack)
             buttonGap = buttonGap,
             rowGap = rowGap,
             layout = layout,
-            slotPadding = data.PADDING * gs,
+            slotPaddingX = padX,
+            slotPaddingY = padY,
         };
     end
 
@@ -304,7 +314,8 @@ GetBarMetrics = function(barIndex, inAnchoredStack)
         buttonGap = buttonGap,
         rowGap = rowGap,
         layout = layout,
-        slotPadding = data.PADDING * gs,
+        slotPaddingX = padX,
+        slotPaddingY = padY,
     };
 end
 
@@ -321,24 +332,32 @@ ComputeAnchoredLayout = function(stack)
     local bgPadX, bgPadY = GetBackgroundPadding(globalSettings);
     local gs = (gConfig and gConfig.globalScale) or 1.0;
     local stackSpacing = (globalSettings.hotbarSpacing or 0) * gs;
-    local currentY = anchorY;
     local maxContentW = 0;
     local topBarY = anchorY;
+    local prevTop = nil;
 
+    -- Stack bottom-up. ImGui Y is the window TOP, so each bar above the
+    -- previous must be placed at prevTop - spacing - height. The old math
+    -- subtracted the lower bar's height before placing the next top, which
+    -- only works when every bar is the same height (extra gap = height delta).
     for i, barIndex in ipairs(stack) do
-        if i > 1 then
-            currentY = currentY - stackSpacing;
-        end
-
         local metrics = GetBarMetrics(barIndex, true);
         maxContentW = math.max(maxContentW, metrics.contentW);
+
+        local y;
+        if i == 1 then
+            y = anchorY;
+        else
+            y = prevTop - stackSpacing - metrics.contentH;
+        end
+
         layout[barIndex] = {
             x = anchorX,
-            y = currentY,
+            y = y,
             metrics = metrics,
         };
-        topBarY = currentY;
-        currentY = currentY - metrics.contentH;
+        topBarY = y;
+        prevTop = y;
     end
 
     local bottomEntry = layout[anchorBar];
@@ -470,6 +489,8 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
     p.labelOffsetX = (barSettings and barSettings.actionLabelOffsetX or 0) * gs;
     p.labelOffsetY = ((barSettings and barSettings.actionLabelOffsetY or 0) + data.LABEL_GAP) * gs;
     p.labelFontSize = (barSettings and barSettings.labelFontSize or 10) * gs;
+    p.labelWordWrap = barSettings == nil or barSettings.actionLabelWordWrap ~= false;
+    p.labelSlotSpacing = (barSettings and barSettings.slotXPadding or 0) * gs;
     p.recastTimerFontSize = (barSettings and barSettings.recastTimerFontSize or 11) * gs;
     p.recastTimerFontColor = barSettings and barSettings.recastTimerFontColor or 0xFFFFFFFF;
     p.flashCooldownUnder5 = barSettings and barSettings.flashCooldownUnder5 or false;
@@ -535,7 +556,8 @@ local function DrawBarWindow(barIndex, settings, drawContext)
     local layout = metrics.layout;
     local bgPadX = metrics.bgPadX;
     local bgPadY = metrics.bgPadY;
-    local slotPadding = metrics.slotPadding;
+    local slotPaddingX = metrics.slotPaddingX or metrics.slotPadding or 0;
+    local slotPaddingY = metrics.slotPaddingY or metrics.slotPadding or 0;
 
     local defaultX, defaultY = GetDefaultBarPosition(barIndex);
     local windowName = string.format('Hotbar%d', barIndex);
@@ -610,37 +632,44 @@ local function DrawBarWindow(barIndex, settings, drawContext)
         local keybindEditorOpen = hotbarConfig.IsKeybindModalOpen();
         local isDragging = dragdrop.IsDragging() or dragdrop.IsDragPending();
 
-        local targetServerId = nil;
+        -- Skip per-slot SC work unless a window is open; pass the entity index
+        -- we already have (no ServerId reverse-lookup on the draw path).
+        local skillchainTargetIndex = nil;
         local skillchainEnabled = gConfig.hotbarGlobal.skillchainHighlightEnabled ~= false;
-        if skillchainEnabled then
+        if skillchainEnabled and skillchain.IsWindowOpen() then
             local mainTargetIdx = targetLib.GetTargets();
             if mainTargetIdx and mainTargetIdx ~= 0 then
-                local targetEntity = GetEntity(mainTargetIdx);
-                if targetEntity then
-                    targetServerId = targetEntity.ServerId;
-                end
+                skillchainTargetIndex = mainTargetIdx;
             end
         end
 
         for row = 1, layout.rows do
             for col = 1, layout.columns do
-                if slotIndex <= slotCount then
-                    local slotX = windowPosX + bgPadX + slotPadding + (col - 1) * (buttonSize + buttonGap);
-                    local slotY = windowPosY + bgPadY + slotPadding + (row - 1) * (buttonSize + rowGap);
+                if slotIndex > slotCount then
+                    break;
+                end
 
-                    local bind = data.GetKeybindForSlot(barIndex, slotIndex);
+                local slotX = windowPosX + bgPadX + slotPaddingX + (col - 1) * (buttonSize + buttonGap);
+                local slotY = windowPosY + bgPadY + slotPaddingY + (row - 1) * (buttonSize + rowGap);
 
-                    if hideEmptySlots and not paletteOpen and not keybindEditorOpen and not isDragging and not bind then
-                        -- Empty slot: skip rendering
-                    else
-                        local slotSkillchainName = nil;
-                        if skillchainEnabled and bind and bind.actionType == 'ws' and bind.action then
-                            slotSkillchainName = skillchain.GetSkillchainForSlot(targetServerId, bind.action);
+                local bind = data.GetKeybindForSlot(barIndex, slotIndex);
+
+                if hideEmptySlots and not paletteOpen and not keybindEditorOpen and not isDragging and not bind then
+                    -- Empty slot: skip rendering
+                else
+                    local slotSkillchainName = nil;
+                    if skillchainTargetIndex and bind and bind.action then
+                        local at = bind.actionType;
+                        if at == 'ws' or at == 'ma' or at == 'pet' or at == 'ja' then
+                            slotSkillchainName = skillchain.GetSkillchainForSlot(skillchainTargetIndex, at, bind.action);
                         end
-                        DrawSlot(barIndex, slotIndex, slotX, slotY, buttonSize, bind, barSettings, animOpacity, slotSkillchainName);
                     end
+                    DrawSlot(barIndex, slotIndex, slotX, slotY, buttonSize, bind, barSettings, animOpacity, slotSkillchainName);
                 end
                 slotIndex = slotIndex + 1;
+            end
+            if slotIndex > slotCount then
+                break;
             end
         end
 

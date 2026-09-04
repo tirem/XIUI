@@ -24,7 +24,7 @@
 
 addon.name      = 'XIUI';
 addon.author    = 'Team XIUI';
-addon.version   = '1.8.3';
+addon.version   = '1.8.4';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/XIUI'
 
@@ -83,6 +83,9 @@ local treasurePool = uiMods.treasurepool;
 local hotbar = uiMods.hotbar;
 local readyCheck = uiMods.readycheck;
 local satchelModule = uiMods.satchel;
+local magicBurst = uiMods.magicburst;
+local blueMagicLearned = uiMods.bluemagiclearned;
+local phantomRoll = uiMods.phantomroll;
 local macropalette = require('modules.hotbar.macropalette');
 local palette = require('modules.hotbar.palette');
 local skillchainModule = require('modules.hotbar.skillchain');
@@ -186,6 +189,27 @@ uiModules.Register('expBar', {
     configKey = 'showExpBar',
     hideOnMenuFocusKey = 'expBarHideOnMenuFocus',
     hideMacroPaletteKey = 'expBarHideMacroPalette',
+    hasSetHidden = true,
+});
+uiModules.Register('magicBurst', {
+    module = magicBurst,
+    settingsKey = 'magicBurstSettings',
+    configKey = 'magicBurstEnabled',
+    hideOnEventKey = 'hideDuringEvents',
+    hasSetHidden = true,
+});
+uiModules.Register('blueMagicLearned', {
+    module = blueMagicLearned,
+    settingsKey = nil,
+    configKey = 'blueMagicLearnedEnabled',
+    hasSetHidden = true,
+});
+uiModules.Register('phantomRoll', {
+    module = phantomRoll,
+    settingsKey = 'phantomRollSettings',
+    configKey = 'showPhantomRoll',
+    hideOnMenuFocusKey = 'phantomRollHideOnMenuFocus',
+    hideMacroPaletteKey = 'phantomRollHideMacroPalette',
     hasSetHidden = true,
 });
 uiModules.Register('gilTracker', {
@@ -543,6 +567,9 @@ local function GetDefaultWindowPositions()
     local sx, sy = defPos.GetSatchelPosition();
     local elx, ely = defPos.GetEnemyListPosition();
     local ccx, ccy = defPos.GetCastCostPosition();
+    local mbx, mby = defPos.GetMagicBurstPosition();
+    local blux, bluy = defPos.GetBlueMagicLearnedPosition();
+    local prx, pry = defPos.GetPhantomRollPosition();
 
     local staggerY = 35;
     return {
@@ -560,6 +587,9 @@ local function GetDefaultWindowPositions()
         GilTracker = { x = gx, y = gy },
         EnemyList = { x = elx, y = ely },
         CastCost = { x = ccx, y = ccy },
+        MagicBurst = { x = mbx, y = mby },
+        BlueMagicLearned = { x = blux, y = bluy },
+        PhantomRoll = { x = prx, y = pry },
         InventoryTracker = { x = ix, y = iy },
         Satchel = { x = sx, y = sy },
         SatchelTracker = { x = ix, y = iy + staggerY },
@@ -573,6 +603,11 @@ end
 -- Inject default positions if profile has none (brand new profile)
 if (not gConfig.windowPositions or next(gConfig.windowPositions) == nil) then
     gConfig.windowPositions = GetDefaultWindowPositions();
+end
+
+-- Seed Blue Magic learned position for existing profiles that predate it
+if gConfig.windowPositions and not gConfig.windowPositions.BlueMagicLearned then
+    gConfig.windowPositions.BlueMagicLearned = GetDefaultWindowPositions().BlueMagicLearned;
 end
 
 gConfigVersion = 0;
@@ -689,6 +724,7 @@ function ChangeProfile(name)
 
     settingsMigration.RunStructureMigrations(gConfig, defaultUserSettings);
     UpdateSettings();
+    hotbar.HandleProfileChange();
     return true;
 end
 
@@ -733,6 +769,8 @@ function ResetSettings()
     uiMods.notifications.ResetPositions();
     uiMods.treasurepool.ResetPositions();
     uiMods.satchel.ResetPositions();
+    uiMods.magicburst.ResetPositions();
+    uiMods.bluemagiclearned.ResetPositions();
     hotbar.ResetPositions();
 
     -- Persist + defer the heavy visual update cascade. ResetSettings is called
@@ -1013,6 +1051,10 @@ settings.register('settings', 'settings_update', function (s)
 
         -- Update visuals
         UpdateSettings();
+
+        -- Character login swaps gConfig under the hotbar; rebind it to the
+        -- new profile or the bars stay blank until a job change or reload.
+        hotbar.HandleProfileChange();
 
         print(chat.header(addon.name):append(chat.message('Loaded profile: ')):append(chat.success(currentProfileName)));
     end
@@ -1373,7 +1415,7 @@ ashita.events.register('command', 'command_cb', function (e)
                 print('  /xiui palette first [crossbar]           - Switch to first palette');
                 print('');
                 print('Target: omit for hotbars + crossbar, "crossbar"/"cb"/"xb" for crossbar only,');
-                print('or a bar number 1-6 to target a single hotbar.');
+                print('or a bar number 1-10 to target a single hotbar.');
                 print('Keybinds: Ctrl+Up/Down (configure in Hotbar > Palette Cycling)');
                 print('Controller: RB + Dpad Up/Down cycles palettes');
                 return;
@@ -1446,7 +1488,7 @@ ashita.events.register('command', 'command_cb', function (e)
                 if not affectCrossbar then
                     local palettes = paletteModule.GetAvailablePalettes(1, jobId, subjobId);
                     if #palettes > 0 then
-                        for i = 1, 6 do
+                        for i = 1, 10 do
                             paletteModule.SetActivePalette(i, palettes[1]);
                         end
                         table.insert(firstNames, 'Hotbar: ' .. palettes[1]);
@@ -1516,7 +1558,7 @@ ashita.events.register('command', 'command_cb', function (e)
                 elseif targetIsAll then
                     -- Apply across all hotbars and the crossbar
                     local anyFound = false;
-                    for i = 1, 6 do
+                    for i = 1, 10 do
                         if paletteModule.PaletteExists(i, paletteName, jobId, subjobId) then
                             paletteModule.SetActivePalette(i, paletteName);
                             anyFound = true;
@@ -1796,12 +1838,18 @@ local function enemyCastTrackingEnabled()
         or (gConfig.showEnemyList and gConfig.showEnemyListCastBar));
 end
 
+-- Shared by hotbar/crossbar WS highlighting and the magic burst overlay.
+local function skillchainTrackingEnabled()
+    return gConfig.hotbarEnabled or gConfig.magicBurstEnabled;
+end
+
 ashita.events.register('packet_in', 'packet_in_cb', function (e)
     if satchelModule.HandlePacketIn then
         satchelModule.HandlePacketIn(e);
     end
 
     expBar.HandlePacket(e)
+    debuffHandler.HandleIncomingPacket(e);
 
     -- Pet bar packet handling (0x0028 Action, 0x0068 Pet Sync)
     if gConfig.showPetBar then
@@ -1824,11 +1872,13 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
             petBuffHandler.HandleActionPacket(actionPacket);
             actionTracker.HandleActionPacket(actionPacket);
             if gConfig.showNotifications then notifications.HandleActionPacket(actionPacket); end
-            -- Skillchain tracking for hotbar/crossbar WS highlighting
-            if gConfig.hotbarEnabled then
+            if gConfig.showPhantomRoll then phantomRoll.HandleActionPacket(actionPacket); end
+            if skillchainTrackingEnabled() then
                 skillchainModule.HandleActionPacket(actionPacket);
             end
         end
+    elseif (e.id == 0x063) then
+        if gConfig.showPhantomRoll then phantomRoll.HandleBuffPacket(e); end
     elseif (e.id == 0x00E) then
         local mobUpdatePacket = ParseMobUpdatePacket(e);
         if gConfig.showEnemyList then enemyList.HandleMobUpdatePacket(mobUpdatePacket); end
@@ -1843,6 +1893,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         debuffHandler.HandleZonePacket(e);
         petBuffHandler.HandleZonePacket();
         actionTracker.HandleZonePacket();
+        phantomRoll.HandleZonePacket();
         mobInfo.data.HandleZonePacket(e);
         statusHandler.clear_zone_cache();  -- Clear status icon cache to prevent accumulation
         gilTracker.HandleZoneInPacket(e);  -- Only reset on fresh login, not zone changes (issue #111)
@@ -1851,9 +1902,11 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         ClearEntityCache();
         ResetD3D8Device();
         bLoggedIn = true;
-        -- Initialize hotbar job on zone-in (handles initial login and job change during zone)
+        -- Job from zone-in packet (login and zoning). Do not poll memory.
         if gConfig.hotbarEnabled then
-            hotbar.HandleJobChangePacket(e);
+            local mainJob = struct.unpack('B', e.data, 0xB4 + 1);
+            local subJob = struct.unpack('B', e.data, 0xB7 + 1);
+            hotbar.ApplyJobAndRefresh(mainJob, subJob);
         end
     elseif (e.id == 0x0029) then
         local messagePacket = ParseMessagePacket(e.data);
@@ -1861,6 +1914,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
             debuffHandler.HandleMessagePacket(messagePacket);
             petBuffHandler.HandleMessagePacket(messagePacket);
             if enemyCastTrackingEnabled() then enemyCasts.HandleMessagePacket(messagePacket); end
+            blueMagicLearned.HandleMessagePacket(messagePacket);
             if gConfig.showNotifications then
                 notifications.HandleMessagePacket(e, messagePacket, 0x0029);
             end
@@ -1903,12 +1957,23 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         -- Also notify hotbar of zone (clears state)
         if gConfig.hotbarEnabled then
             hotbar.HandleZonePacket();
+        end
+        if skillchainTrackingEnabled() then
             skillchainModule.ClearState();  -- Clear skillchain tracking on zone
         end
     elseif (e.id == 0x001B) then
-        -- Job change packet - update hotbar to show new job's actions
+        -- Job change packet
         if gConfig.hotbarEnabled then
-            hotbar.HandleJobChangePacket(e);
+            local mainJob = struct.unpack('B', e.data, 0x08 + 1);
+            local subJob = struct.unpack('B', e.data, 0x0B + 1);
+            hotbar.ApplyJobAndRefresh(mainJob, subJob);
+        end
+    elseif (e.id == 0x061) then
+        -- Character stats (covers late job assign after a slow login)
+        if gConfig.hotbarEnabled then
+            local mainJob = struct.unpack('B', e.data, 0x0C + 1);
+            local subJob = struct.unpack('B', e.data, 0x0E + 1);
+            hotbar.ApplyJobAndRefresh(mainJob, subJob);
         end
     elseif (e.id == 0x076) then
         statusHandler.ReadPartyBuffsFromPacket(e);
