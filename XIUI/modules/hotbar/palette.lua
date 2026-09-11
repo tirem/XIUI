@@ -19,6 +19,8 @@
 require('common');
 require('handlers.helpers');
 
+local hotbarData = require('modules.hotbar.data');
+
 local M = {};
 
 -- ============================================
@@ -198,7 +200,7 @@ local function RunPaletteMigration()
     local totalMigrated = 0;
 
     -- Migrate hotbar slotActions
-    for barIdx = 1, 6 do
+    for barIdx = 1, hotbarData.NUM_BARS do
         local configKey = 'hotbarBar' .. barIdx;
         local barSettings = gConfig[configKey];
         if barSettings and barSettings.slotActions then
@@ -377,7 +379,7 @@ function M.SetActivePalette(barIndex, paletteName, jobId, subjobId)
     end
 
     -- Fire callbacks for ALL bars (they all share the same palette now)
-    for i = 1, 6 do
+    for i = 1, hotbarData.NUM_BARS do
         M.FirePaletteChangedCallbacks(i, oldPalette, paletteName);
     end
 
@@ -407,7 +409,7 @@ end
 local function ScanForPalettes(patternPrefix)
     local existingPalettes = {};
 
-    for barIdx = 1, 6 do
+    for barIdx = 1, hotbarData.NUM_BARS do
         local configKey = 'hotbarBar' .. barIdx;
         local barSettings = gConfig and gConfig[configKey];
         if barSettings and barSettings.slotActions then
@@ -592,7 +594,7 @@ end
 -- Falls back to shared key '{jobId}:0:palette:{name}' if subjob-specific not found
 -- Returns storageKey or nil if not found
 --
--- Searches ALL bars (1-6): palettes can drift out of sync (a key present on some
+-- Searches ALL bars: palettes can drift out of sync (a key present on some
 -- bars but missing on others), so checking one bar broke delete/rename/copy.
 local function FindPaletteStorageKey(barIndex, paletteName, jobId, subjobId)
     local normalizedJobId = jobId or 1;
@@ -604,7 +606,7 @@ local function FindPaletteStorageKey(barIndex, paletteName, jobId, subjobId)
         or nil;
 
     local foundShared = nil;
-    for barIdx = 1, 6 do
+    for barIdx = 1, hotbarData.NUM_BARS do
         local barSettings = gConfig and gConfig['hotbarBar' .. barIdx];
         local slotActions = barSettings and barSettings.slotActions;
         if slotActions then
@@ -636,7 +638,7 @@ function M.CreatePalette(barIndex, paletteName, jobId, subjobId)
     local newStorageKey = M.BuildPaletteStorageKey(normalizedJobId, normalizedSubjobId, paletteName);
 
     -- Check if palette already exists on any bar
-    for barIdx = 1, 6 do
+    for barIdx = 1, hotbarData.NUM_BARS do
         local configKey = 'hotbarBar' .. barIdx;
         local barSettings = gConfig and gConfig[configKey];
         if barSettings and barSettings.slotActions and barSettings.slotActions[newStorageKey] then
@@ -645,7 +647,7 @@ function M.CreatePalette(barIndex, paletteName, jobId, subjobId)
     end
 
     -- Create empty palette entry on ALL bars
-    for barIdx = 1, 6 do
+    for barIdx = 1, hotbarData.NUM_BARS do
         local configKey = 'hotbarBar' .. barIdx;
         local barSettings = gConfig and gConfig[configKey];
         if barSettings then
@@ -735,7 +737,7 @@ function M.DeletePalette(barIndex, paletteName, jobId, subjobId)
 
     -- Delete palette from ALL bars
     local found = false;
-    for barIdx = 1, 6 do
+    for barIdx = 1, hotbarData.NUM_BARS do
         local configKey = 'hotbarBar' .. barIdx;
         local barSettings = gConfig and gConfig[configKey];
         if barSettings and barSettings.slotActions then
@@ -817,7 +819,7 @@ function M.RenamePalette(barIndex, oldName, newName, jobId, subjobId)
     local newStorageKey = M.BuildPaletteStorageKey(normalizedJobId, effectiveSubjobId, newName);
 
     -- Check if new name already exists on any bar
-    for barIdx = 1, 6 do
+    for barIdx = 1, hotbarData.NUM_BARS do
         local configKey = 'hotbarBar' .. barIdx;
         local barSettings = gConfig and gConfig[configKey];
         if barSettings and barSettings.slotActions and barSettings.slotActions[newStorageKey] then
@@ -827,7 +829,7 @@ function M.RenamePalette(barIndex, oldName, newName, jobId, subjobId)
 
     -- Rename palette on ALL bars
     local found = false;
-    for barIdx = 1, 6 do
+    for barIdx = 1, hotbarData.NUM_BARS do
         local configKey = 'hotbarBar' .. barIdx;
         local barSettings = gConfig and gConfig[configKey];
         if barSettings and barSettings.slotActions then
@@ -1200,7 +1202,7 @@ function M.GetAllAvailablePalettes(jobId, subjobId)
     local seen = {};
 
     -- Scan all 6 hotbar bars only (NOT crossbar - they are separate now)
-    for barIndex = 1, 6 do
+    for barIndex = 1, hotbarData.NUM_BARS do
         local barPalettes = M.GetAvailablePalettes(barIndex, jobId, subjobId);
         for _, paletteName in ipairs(barPalettes) do
             if not seen[paletteName] then
@@ -1711,7 +1713,7 @@ function M.ValidatePalettesForJob(jobId, subjobId)
 
             state.activePalette = newPalette or firstPalette;
             -- Fire callbacks for all bars
-            for i = 1, 6 do
+            for i = 1, hotbarData.NUM_BARS do
                 M.FirePaletteChangedCallbacks(i, oldPalette, state.activePalette);
             end
         end
@@ -1731,7 +1733,7 @@ function M.ValidatePalettesForJob(jobId, subjobId)
 
         state.activePalette = newPalette or firstPalette;
         -- Fire callbacks for all bars
-        for i = 1, 6 do
+        for i = 1, hotbarData.NUM_BARS do
             M.FirePaletteChangedCallbacks(i, nil, state.activePalette);
         end
     end
@@ -1823,7 +1825,7 @@ function M.CopyPalette(paletteName, fromJobId, fromSubjobId, toJobId, toSubjobId
     local destKey = M.BuildPaletteStorageKey(toJobId, toSubjobId, destName);
 
     -- Check if destination already exists
-    for barIdx = 1, 6 do
+    for barIdx = 1, hotbarData.NUM_BARS do
         local configKey = 'hotbarBar' .. barIdx;
         local barSettings = gConfig and gConfig[configKey];
         if barSettings and barSettings.slotActions and barSettings.slotActions[destKey] then
@@ -1832,7 +1834,7 @@ function M.CopyPalette(paletteName, fromJobId, fromSubjobId, toJobId, toSubjobId
     end
 
     -- Copy palette data to all bars
-    for barIdx = 1, 6 do
+    for barIdx = 1, hotbarData.NUM_BARS do
         local configKey = 'hotbarBar' .. barIdx;
         local barSettings = gConfig and gConfig[configKey];
         if barSettings then
@@ -1959,7 +1961,7 @@ function M.GetJobsWithPalettes()
     local seenJobs = {};
 
     -- Scan hotbar palettes
-    for barIdx = 1, 6 do
+    for barIdx = 1, hotbarData.NUM_BARS do
         local configKey = 'hotbarBar' .. barIdx;
         local barSettings = gConfig and gConfig[configKey];
         if barSettings and barSettings.slotActions then
@@ -1990,7 +1992,7 @@ function M.GetSubjobsWithPalettes(jobId)
     local normalizedJobId = jobId or 1;
 
     -- Scan hotbar palettes
-    for barIdx = 1, 6 do
+    for barIdx = 1, hotbarData.NUM_BARS do
         local configKey = 'hotbarBar' .. barIdx;
         local barSettings = gConfig and gConfig[configKey];
         if barSettings and barSettings.slotActions then
@@ -2031,7 +2033,7 @@ function M.DeleteAllSubjobPalettes(jobId, subjobId)
     local deletedCount = 0;
 
     -- Delete from all hotbars
-    for barIdx = 1, 6 do
+    for barIdx = 1, hotbarData.NUM_BARS do
         local configKey = 'hotbarBar' .. barIdx;
         local barSettings = gConfig and gConfig[configKey];
         if barSettings and barSettings.slotActions then
@@ -2064,7 +2066,7 @@ function M.DeleteAllSubjobPalettes(jobId, subjobId)
         local oldPalette = state.activePalette;
         state.activePalette = nil;
         -- The next call to ValidatePalettesForJob will set up shared library
-        for i = 1, 6 do
+        for i = 1, hotbarData.NUM_BARS do
             M.FirePaletteChangedCallbacks(i, oldPalette, nil);
         end
     end

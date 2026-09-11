@@ -378,32 +378,48 @@ function M.getStatusIcon(statusId, theme)
     end, 'status_icons');
 end
 
+local FALLBACK_JOB_THEME = 'Classic';
+local JOB_ABBRS = {
+    'WAR', 'MNK', 'WHM', 'BLM', 'RDM', 'THF',
+    'PLD', 'DRK', 'BST', 'BRD', 'RNG', 'SAM',
+    'NIN', 'DRG', 'SMN', 'BLU', 'COR', 'PUP',
+    'DNC', 'SCH', 'GEO', 'RUN'
+};
+local badJobThemes = {};
+
+local function loadJobIcon(theme, jobStr)
+    return getOrCreate('job_' .. jobStr .. '_' .. theme, function()
+        return loadTextureFromFile(string.format('jobs/%s/%s', theme, jobStr));
+    end, 'job_icons');
+end
+
 -- Get job icon by job index
 -- @param jobIdx number - The job index (1-22)
--- @param theme string - Theme folder name (e.g., "Classic", "FFXI", "FFXIV")
+-- @param theme string - Theme folder name (e.g., "Classic", "FFXI", "FFXIV-1")
 -- @return table|nil - Texture table with .image field, or nil
 function M.getJobIcon(jobIdx, theme)
     if jobIdx == nil or type(jobIdx) ~= 'number' or jobIdx < 1 or jobIdx > 22 then
         return nil;
     end
 
-    theme = theme or 'Classic';
-    local jobAbbrs = {
-        'WAR', 'MNK', 'WHM', 'BLM', 'RDM', 'THF',
-        'PLD', 'DRK', 'BST', 'BRD', 'RNG', 'SAM',
-        'NIN', 'DRG', 'SMN', 'BLU', 'COR', 'PUP',
-        'DNC', 'SCH', 'GEO', 'RUN'
-    };
+    theme = theme or FALLBACK_JOB_THEME;
 
-    local jobStr = jobAbbrs[jobIdx];
+    local jobStr = JOB_ABBRS[jobIdx];
     if jobStr == nil then return nil; end
 
-    local key = 'job_' .. jobStr .. '_' .. theme;
+    -- A profile can name a theme folder that was renamed or removed; once anything in it
+    -- fails, use Classic for that theme instead of retrying the missing file every frame.
+    if badJobThemes[theme] then
+        theme = FALLBACK_JOB_THEME;
+    end
 
-    return getOrCreate(key, function()
-        local path = string.format('jobs/%s/%s', theme, jobStr);
-        return loadTextureFromFile(path);
-    end, 'job_icons');
+    local texture = loadJobIcon(theme, jobStr);
+    if texture == nil and theme ~= FALLBACK_JOB_THEME then
+        badJobThemes[theme] = true;
+        texture = loadJobIcon(FALLBACK_JOB_THEME, jobStr);
+    end
+
+    return texture;
 end
 
 -- Get texture from file path (relative to assets/ or absolute)
@@ -541,6 +557,7 @@ function M.clear()
 
     -- Clear all tables
     texturesByKey = {};
+    badJobThemes = {};
     for category, _ in pairs(categoryEntries) do
         categoryEntries[category] = {};
     end

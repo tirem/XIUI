@@ -7,7 +7,6 @@
 local abilityRecast = require('libs.abilityrecast');
 local itemRecast = require('libs.itemrecast');
 local actiondb = require('modules.hotbar.actiondb');
-local petregistry = require('modules.hotbar.petregistry');
 
 local M = {};
 
@@ -19,33 +18,7 @@ function M.SetHHMMFormat(enabled)
     useHHMMFormat = enabled or false;
 end
 
--- Blood Pact timer IDs
-local BP_RAGE_TIMER_ID = 173;
-local BP_WARD_TIMER_ID = 174;
-
--- Get Blood Pact timer ID by command name
--- Returns timer ID (173 for Rage, 174 for Ward) or nil if not a blood pact
-local function GetBloodPactTimerId(commandName)
-    if not commandName then return nil; end
-
-    -- Check if it's a Rage pact
-    for _, pact in ipairs(petregistry.bloodPactsRage or {}) do
-        if pact.name == commandName then
-            return BP_RAGE_TIMER_ID;
-        end
-    end
-
-    -- Check if it's a Ward pact
-    for _, pact in ipairs(petregistry.bloodPactsWard or {}) do
-        if pact.name == commandName then
-            return BP_WARD_TIMER_ID;
-        end
-    end
-
-    return nil;
-end
-
--- Get pet command recast by timer ID
+-- Get pet command recast by timer ID (shared pools: BP 173/174, Heel/Stay/Leave 101, etc.)
 -- Returns: remaining seconds, or 0 if ready
 function M.GetPetCommandRecast(timerId)
     if not timerId then return 0; end
@@ -78,6 +51,7 @@ local cooldownResult = {
     spellId = nil,
     abilityId = nil,
     itemId = nil,
+    rechargingExtra = false,
 };
 
 -- Get spell recast by ID. Fetches from Ashita memory on cache miss / expiry,
@@ -117,6 +91,147 @@ function M.GetAbilityRecast(abilityId)
     abilityRecastCache[abilityId] = (remaining and remaining > 0) and remaining or nil;
     abilityRecastExpiry[abilityId] = now + ACTION_RECAST_TTL;
     return abilityRecastCache[abilityId] or 0;
+end
+
+-- Shared timer-id lookup (PUP maneuvers, etc. share one RecastTimerId)
+---@param timerId number
+---@return number remainingSeconds
+function M.GetRecastByTimerId(timerId)
+    if not timerId then return 0; end
+    return abilityRecast.GetAbilityRecastSeconds(timerId) or 0;
+end
+
+-- Charge-based ability pools keyed by RecastTimerId.
+-- baseSeconds is the full-pool recast (Quick Draw 2x60s = 120).
+local CHARGE_TIMER = {
+    READY = 102,
+    QUICK_DRAW = 195,
+    STRATAGEM = 231,
+};
+local CHARGE_POOL = {
+    [102] = { maxCharges = 3, baseSeconds = 90 },
+    [195] = { maxCharges = 2, baseSeconds = 120 },
+};
+
+local function RecastRawToDisplaySeconds(raw)
+    if not raw or raw <= 0 then return 0; end
+    return raw / 60;
+end
+
+-- Every slot sharing a pool (all stratagems, all ready moves) asks for the same
+-- timer, so cache at 20 Hz like the other recasts instead of rescanning per slot.
+local chargeCount = {};            -- timerId -> remaining charges
+local chargeNext = {};             -- timerId -> seconds until the next charge
+local chargeDur = {};              -- timerId -> seconds per charge
+local chargeExpiry = {};           -- timerId -> os.clock() expiry
+
+local function ComputeChargePool(timerId, maxCharges, baseSeconds)
+    if maxCharges <= 0 then
+        return 0, 0, 0;
+    end
+    local data = abilityRecast.GetAbilityTimerDataByTimerId(timerId);
+    local modifier = (data and data.Modifier) or 0;
+    local baseRecast = 60 * (baseSeconds + modifier);
+    if baseRecast <= 0 then
+        return 0, RecastRawToDisplaySeconds(data and data.Recast), 0;
+    end
+    local chargeValue = baseRecast / maxCharges;
+    local duration = RecastRawToDisplaySeconds(chargeValue);
+    if not data or not data.Recast or data.Recast == 0 then
+        return maxCharges, 0, duration;
+    end
+    local remainingCharges = maxCharges - math.ceil(data.Recast / chargeValue);
+    if remainingCharges < 0 then remainingCharges = 0; end
+    if remainingCharges > maxCharges then remainingCharges = maxCharges; end
+    -- Wrap so an exact multiple is a full charge window, not 0s.
+    local timeUntilNext = ((data.Recast - 1) % chargeValue) + 1;
+    return remainingCharges, RecastRawToDisplaySeconds(timeUntilNext), duration;
+end
+
+--- Remaining charges + seconds until next charge for a charge pool
+---@param timerId number
+---@param maxCharges number
+---@param baseSeconds number Base full-pool recast in seconds (before modifier)
+---@return number charges
+---@return number nextChargeSeconds
+---@return number chargeDurationSeconds
+local function GetChargePool(timerId, maxCharges, baseSeconds)
+    local now = os.clock();
+    local exp = chargeExpiry[timerId];
+    if exp and now < exp then
+        return chargeCount[timerId], chargeNext[timerId], chargeDur[timerId];
+    end
+
+    local charges, nextCharge, duration = ComputeChargePool(timerId, maxCharges, baseSeconds);
+    chargeCount[timerId], chargeNext[timerId], chargeDur[timerId] = charges, nextCharge, duration;
+    chargeExpiry[timerId] = now + ACTION_RECAST_TTL;
+    return charges, nextCharge, duration;
+end
+
+function M.GetReadyCharges()
+    local pool = CHARGE_POOL[CHARGE_TIMER.READY];
+    return GetChargePool(CHARGE_TIMER.READY, pool.maxCharges, pool.baseSeconds);
+end
+
+function M.GetQuickDrawCharges()
+    local pool = CHARGE_POOL[CHARGE_TIMER.QUICK_DRAW];
+    return GetChargePool(CHARGE_TIMER.QUICK_DRAW, pool.maxCharges, pool.baseSeconds);
+end
+
+--- SCH stratagem charges (level-scaled max)
+---@return number charges
+---@return number nextChargeSeconds
+---@return number maxCharges
+function M.GetStratagemCharges()
+    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    if not player then return 0, 0, 0; end
+
+    local lvl = 0;
+    if player:GetMainJob() == 20 then
+        lvl = player:GetMainJobLevel();
+    elseif player:GetSubJob() == 20 then
+        lvl = player:GetSubJobLevel();
+    else
+        return 0, 0, 0;
+    end
+
+    local maxCharges = math.floor((lvl - 10) / 20) + 1;
+    if maxCharges < 1 then maxCharges = 0; end
+    local charges, nextCharge = GetChargePool(CHARGE_TIMER.STRATAGEM, maxCharges, 240);
+    return charges, nextCharge, maxCharges;
+end
+
+M.CHARGE_TIMER = CHARGE_TIMER;
+
+--- Per-charge recast for overlay/bar display (not the full pool timer).
+---@return table|nil { charges, nextCharge, maxCharges, chargeDuration }
+function M.GetChargeDisplayByTimerId(timerId)
+    if not timerId then return nil; end
+    if timerId == CHARGE_TIMER.STRATAGEM then
+        local charges, nextCharge, maxCharges = M.GetStratagemCharges();
+        if maxCharges < 1 then return nil; end
+        local _, _, duration = GetChargePool(CHARGE_TIMER.STRATAGEM, maxCharges, 240);
+        return { charges = charges, nextCharge = nextCharge, maxCharges = maxCharges, chargeDuration = duration or 0 };
+    end
+    local pool = CHARGE_POOL[timerId];
+    if not pool then return nil; end
+    local charges, nextCharge, duration = GetChargePool(timerId, pool.maxCharges, pool.baseSeconds);
+    return { charges = charges, nextCharge = nextCharge, maxCharges = pool.maxCharges, chargeDuration = duration or 0 };
+end
+
+function M.GetChargeDisplayByAbilityId(abilityId)
+    if not abilityId then return nil; end
+    local resourceMgr = AshitaCore:GetResourceManager();
+    if not resourceMgr then return nil; end
+    local ability = resourceMgr:GetAbilityById(abilityId);
+    local display = M.GetChargeDisplayByTimerId(ability and (ability.RecastTimerId or ability.TimerId));
+    if display then return display; end
+    -- Menu/hotbar may bind the low stub id; JA RecastTimerId lives on id+512.
+    if abilityId < 512 then
+        ability = resourceMgr:GetAbilityById(abilityId + 512);
+        display = M.GetChargeDisplayByTimerId(ability and (ability.RecastTimerId or ability.TimerId));
+    end
+    return display;
 end
 
 -- Get item/equipment recast by item ID
@@ -207,6 +322,7 @@ function M.GetCooldownInfo(actionData)
         cooldownResult.spellId = nil;
         cooldownResult.abilityId = nil;
         cooldownResult.itemId = nil;
+        cooldownResult.rechargingExtra = false;
         return cooldownResult;
     end
 
@@ -228,25 +344,24 @@ function M.GetCooldownInfo(actionData)
     local itemId = nil;
     local remaining = 0;
     local recastText = nil;
+    local rechargingExtra = false;
+
+    local onCooldown = false;
 
     if actionData.actionType == 'ma' then
         spellId = actiondb.GetSpellId(actionData.action);
         remaining, recastText = M.GetActionRecast(actionData.actionType, spellId, nil, nil);
+        onCooldown = remaining > 0;
     elseif actionData.actionType == 'pet' then
-        -- Pet commands (Blood Pacts, Ready, etc.) - check for known timer IDs
-        local bpTimerId = GetBloodPactTimerId(actionData.action);
-        if bpTimerId then
-            -- Blood Pact - use timer ID directly
-            remaining = M.GetPetCommandRecast(bpTimerId);
-            recastText = M.FormatRecast(remaining);
-        else
-            -- Other pet commands - try ability lookup
-            abilityId = actiondb.GetAbilityId(actionData.action);
-            remaining, recastText = M.GetActionRecast(actionData.actionType, nil, abilityId, nil);
-        end
+        -- Prefer pet-typed resource so shared RecastTimerId pools match
+        -- (Heel/Stay/Leave = 101, BP Rage = 173, BP Ward = 174, Ready = 102).
+        abilityId = actiondb.GetPetAbilityId(actionData.action);
+        remaining, recastText = M.GetActionRecast(actionData.actionType, nil, abilityId, nil);
+        onCooldown = remaining > 0;
     elseif actionData.actionType == 'ja' then
         abilityId = actiondb.GetAbilityId(actionData.action);
         remaining, recastText = M.GetActionRecast(actionData.actionType, nil, abilityId, nil);
+        onCooldown = remaining > 0;
     elseif actionData.actionType == 'item' or actionData.actionType == 'equip' then
         -- itemId should already be stored in the action data
         itemId = actionData.itemId;
@@ -255,15 +370,28 @@ function M.GetCooldownInfo(actionData)
             itemId = actiondb.GetItemId(actionData.action);
         end
         remaining, recastText = M.GetActionRecast(actionData.actionType, nil, nil, itemId);
+        onCooldown = remaining > 0;
+    end
+
+    -- Charge pools: show time until the next charge, not the full remaining pool.
+    if abilityId then
+        local charge = M.GetChargeDisplayByAbilityId(abilityId);
+        if charge then
+            remaining = charge.nextCharge;
+            recastText = M.FormatRecast(remaining);
+            onCooldown = charge.charges < 1;
+            rechargingExtra = charge.charges >= 1 and remaining > 0;
+        end
     end
 
     -- Reuse result table to avoid GC pressure
-    cooldownResult.isOnCooldown = remaining > 0;
+    cooldownResult.isOnCooldown = onCooldown;
     cooldownResult.recastText = recastText;
     cooldownResult.remaining = remaining;
     cooldownResult.spellId = spellId;
     cooldownResult.abilityId = abilityId;
     cooldownResult.itemId = itemId;
+    cooldownResult.rechargingExtra = rechargingExtra;
     return cooldownResult;
 end
 

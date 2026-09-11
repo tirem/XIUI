@@ -86,7 +86,7 @@ local function LoadMobInfoTexture(name)
         return nil;
     end
 
-    local path = string.format('%s/submodules/mobdb/addons/mobdb/icons/%s.png', addon.path, name);
+    local path = string.format('%s/submodules/mobdb/icons/%s.png', addon.path, name);
     local res = ffi.C.D3DXCreateTextureFromFileA(device, path, texture_ptr);
 
     if res ~= 0 then

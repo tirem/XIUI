@@ -131,6 +131,11 @@ function M.GetFont()
     return activeFont or imgui.GetFont();
 end
 
+--- Identity of the active font, for callers that memoize measurements.
+function M.GetFontKey()
+    return activeFontKey;
+end
+
 M.BAKE_PIXEL_SIZE = 20.0;
 
 --- Configure the text renderer from individual parameters.

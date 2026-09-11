@@ -618,6 +618,11 @@ local function DrawPetTypeVisualSettings(configKey, petTypeLabel)
 
             imgui.Spacing();
 
+            components.DrawSlider('Bonus Charisma##petBarCharm', 'petBarBonusCharisma', 0, 999);
+            imgui.ShowHelp('Extra Charisma added to your base Charisma when estimating Charm duration.');
+
+            imgui.Spacing();
+
             -- Icon size
             components.DrawSlider('Icon Size##petBarCharm', 'petBarCharmIconSize', 8, 32);
             imgui.ShowHelp('Size of the heart icon.');

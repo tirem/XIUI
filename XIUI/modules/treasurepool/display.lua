@@ -49,6 +49,30 @@ local ICON_SIZE = 24;
 local ROW_HEIGHT = 32;  -- Icon (24) + top offset (2) + gap (4) + bar (3) - 1
 local PADDING = 8;
 local ICON_TEXT_GAP = 6;
+
+local DEFAULT_NAME_COLOR = 0xFFFFFFFF;
+local CATEGORY_COLOR_KEYS = {
+    rareEx = 'rareExColor',
+    currency = 'currencyColor',
+    equipment = 'equipmentColor',
+    usable = 'usableColor',
+    crystal = 'crystalColor',
+    other = 'otherColor',
+};
+
+local function GetLootColor(itemId)
+    if not gConfig.treasurePoolLootColors then
+        return DEFAULT_NAME_COLOR;
+    end
+
+    local colors = gConfig.colorCustomization and gConfig.colorCustomization.treasurePool;
+    if colors == nil then
+        return DEFAULT_NAME_COLOR;
+    end
+
+    local key = CATEGORY_COLOR_KEYS[data.GetItemCategory(itemId)];
+    return (key and colors[key]) or DEFAULT_NAME_COLOR;
+end
 local ROW_SPACING = 4;
 local BAR_HEIGHT = 3;
 
@@ -710,8 +734,8 @@ function M.DrawWindow(settings)
                     -- Add warning indicator to name if validation fails
                         displayName = '[!] ' .. displayName;
                     end
-                    -- Color: orange/yellow if validation issue, white otherwise
-                    local nameColor = hasValidationIssue and 0xFFFFAA44 or 0xFFFFFFFF;
+                    -- Validation warnings outrank loot colors so the issue stays visible.
+                    local nameColor = hasValidationIssue and 0xFFFFAA44 or GetLootColor(item.itemId);
                     imtext.Draw(uiDrawList, displayName, textStartX, textY, nameColor, fontSize);
 
                     -- Draw tooltip for item name area showing validation error
@@ -1068,7 +1092,8 @@ function M.DrawWindow(settings)
                         local textX = iconX + historyIconSize + iconTextGap;
                         local textY = rowY + 2;
 
-                        imtext.Draw(uiDrawList, histItem.itemName or 'Unknown', textX, textY, 0xFFFFFFFF, fontSize);
+                        imtext.Draw(uiDrawList, histItem.itemName or 'Unknown', textX, textY,
+                            GetLootColor(histItem.itemId), fontSize);
 
                         -- Draw winner info (right-aligned, with scrollbar accommodation)
                         local winnerText = string.format('%s: %d', histItem.winnerName or '?', histItem.winnerLot or 0);

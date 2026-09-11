@@ -576,6 +576,9 @@ function M.MigrateIndividualSettings(gConfig, defaults)
     if gConfig.mobInfoGroupModifiers == nil then
         gConfig.mobInfoGroupModifiers = defaults.mobInfoGroupModifiers;
     end
+    if gConfig.mobInfoUseHorizonData == nil then
+        gConfig.mobInfoUseHorizonData = defaults.mobInfoUseHorizonData;
+    end
 
     -- Migrate party text position offsets (add to all parties if missing)
     local partyTables = { gConfig.partyA, gConfig.partyB, gConfig.partyC };
@@ -642,9 +645,15 @@ function M.MigrateHotbarLayoutSettings(gConfig, defaults)
         end
     end
 
-    for barIndex = 1, 6 do
-        local barCfg = gConfig['hotbarBar' .. barIndex];
-        local barDefaults = defaults['hotbarBar' .. barIndex] or {};
+    -- Ensure bars 1-10 exist (adds 7-10 for configs created before the expansion)
+    for barIndex = 1, 10 do
+        local key = 'hotbarBar' .. barIndex;
+        if gConfig[key] == nil and defaults[key] ~= nil then
+            gConfig[key] = deep_copy_table(defaults[key]);
+        end
+
+        local barCfg = gConfig[key];
+        local barDefaults = defaults[key] or {};
         if barCfg then
             if barCfg.anchoredInStack == nil then
                 barCfg.anchoredInStack = barDefaults.anchoredInStack ~= false;
@@ -1070,7 +1079,7 @@ function M.MigrateSlotMacroRefs(gConfig)
     end
 
     -- Hotbar slots: gConfig.hotbarBarN.slotActions[storageKey][slotIndex]
-    for barIndex = 1, 6 do
+    for barIndex = 1, 10 do
         local barCfg = gConfig['hotbarBar' .. barIndex];
         if barCfg and type(barCfg.slotActions) == 'table' then
             for storageKey, slots in pairs(barCfg.slotActions) do
@@ -1101,6 +1110,152 @@ function M.MigrateSlotMacroRefs(gConfig)
     return keysAdded, fieldsStripped;
 end
 
+--- Rewrite colliding per-palette macro ids into globally unique ids and
+--- retarget every slotActions / crossbar macroRef that pointed at them.
+--- Idempotent when ids are already unique.
+---@param gConfig table
+---@return number rewrittenMacros
+---@return number rewrittenSlots
+function M.MigrateUniqueMacroIds(gConfig)
+    if not gConfig or not gConfig.macroDB then
+        return 0, 0;
+    end
+
+    local seen = {};
+    local remaps = {}; -- [paletteKey] = { [oldId] = newId }
+    local nextId = gConfig.macroIdSeq or 0;
+    local rewrittenMacros = 0;
+
+    -- First pass: discover max id
+    for _, macros in pairs(gConfig.macroDB) do
+        if type(macros) == 'table' then
+            for _, macro in ipairs(macros) do
+                if macro and macro.id and macro.id > nextId then
+                    nextId = macro.id;
+                end
+            end
+        end
+    end
+
+    -- Second pass: rewrite collisions (same id in multiple palettes) and record
+    -- which final ids each palette owns, so slots can be resolved without guessing.
+    local ownedIds = {};
+    for paletteKey, macros in pairs(gConfig.macroDB) do
+        if type(macros) == 'table' then
+            local owned = {};
+            ownedIds[paletteKey] = owned;
+            for _, macro in ipairs(macros) do
+                if macro and macro.id then
+                    local oldId = macro.id;
+                    if seen[oldId] then
+                        nextId = nextId + 1;
+                        if not remaps[paletteKey] then
+                            remaps[paletteKey] = {};
+                        end
+                        remaps[paletteKey][oldId] = nextId;
+                        macro.id = nextId;
+                        rewrittenMacros = rewrittenMacros + 1;
+                        seen[nextId] = true;
+                    else
+                        seen[oldId] = true;
+                    end
+                    owned[macro.id] = true;
+                end
+            end
+        end
+    end
+
+    gConfig.macroIdSeq = nextId;
+
+    if rewrittenMacros == 0 then
+        return 0, 0;
+    end
+
+    -- Storage keys ("15:0:avatar:ifrit", "14:3:palette:drg/whm") drop the subjob
+    -- to form the macroDB key; fall back to the bare job id when none matches.
+    local function PaletteHintFor(storageKey)
+        local key = tostring(storageKey);
+        local jobId, suffix = key:match('^(%d+):%d+:(.+)$');
+        if jobId and suffix and gConfig.macroDB[jobId .. ':' .. suffix] ~= nil then
+            return jobId .. ':' .. suffix;
+        end
+        return tonumber(key:match('^(%d+)'));
+    end
+
+    local function RemapSlot(slot, contextPaletteHint)
+        if type(slot) ~= 'table' or not slot.macroRef then
+            return false;
+        end
+
+        local paletteKey = slot.macroPaletteKey or contextPaletteHint;
+        if paletteKey ~= nil then
+            local newId = remaps[paletteKey] and remaps[paletteKey][slot.macroRef];
+            if newId then
+                slot.macroRef = newId;
+                slot.macroPaletteKey = paletteKey;
+                return true;
+            end
+            -- The palette kept this id, so the slot is already correct. Guessing
+            -- here would retarget it at another palette's macro.
+            if ownedIds[paletteKey] and ownedIds[paletteKey][slot.macroRef] then
+                return false;
+            end
+        end
+
+        -- Palette unknown or it does not own the id (composite/avatar keys, slots
+        -- referencing global macros): only safe when exactly one palette remapped it.
+        local matchNew, matchKey, matchCount = nil, nil, 0;
+        for pKey, pMap in pairs(remaps) do
+            if pMap[slot.macroRef] then
+                matchCount = matchCount + 1;
+                matchNew, matchKey = pMap[slot.macroRef], pKey;
+            end
+        end
+        if matchCount == 1 then
+            slot.macroRef = matchNew;
+            slot.macroPaletteKey = slot.macroPaletteKey or matchKey;
+            return true;
+        end
+        return false;
+    end
+
+    local rewrittenSlots = 0;
+    for barIdx = 1, 10 do
+        local bar = gConfig['hotbarBar' .. barIdx];
+        if bar and bar.slotActions then
+            for storageKey, slots in pairs(bar.slotActions) do
+                if type(slots) == 'table' then
+                    local jobHint = PaletteHintFor(storageKey);
+                    for _, slot in pairs(slots) do
+                        if RemapSlot(slot, jobHint) then
+                            rewrittenSlots = rewrittenSlots + 1;
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.slotActions then
+        for storageKey, combos in pairs(gConfig.hotbarCrossbar.slotActions) do
+            if type(combos) == 'table' then
+                local jobHint = PaletteHintFor(storageKey);
+                for _, slots in pairs(combos) do
+                    if type(slots) == 'table' then
+                        for _, slot in pairs(slots) do
+                            if RemapSlot(slot, jobHint) then
+                                rewrittenSlots = rewrittenSlots + 1;
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return rewrittenMacros, rewrittenSlots;
+end
+
 -- Run structure migrations (called AFTER settings.load())
 -- These handle migrating old settings structures to new ones
 function M.RunStructureMigrations(gConfig, defaults)
@@ -1117,6 +1272,7 @@ function M.RunStructureMigrations(gConfig, defaults)
     M.MigrateNotificationGroups(gConfig, defaults);
     M.MigrateCrossbarComboModeSettings(gConfig, defaults);
     M.MigrateLegacyPositionFields(gConfig);
+    M.MigrateUniqueMacroIds(gConfig);
     M.MigrateSlotMacroRefs(gConfig);
 end
 

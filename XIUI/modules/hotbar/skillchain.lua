@@ -1,10 +1,13 @@
 --[[
 * XIUI Hotbar - Skillchain Prediction Module
 * Based on tHotBar's skillchain implementation by Thorny
-* Tracks weapon skill usage and predicts resulting skillchains
+* Property tables: Chains-Horizon (HzLimitedMode) or LandSandBoat retail port
 ]]--
 
 require('common');
+
+local ffi = require('ffi');
+local actiondb = require('modules.hotbar.actiondb');
 
 local M = {};
 
@@ -31,7 +34,6 @@ local Resonation = {
     Umbra = 18
 };
 
--- Resonation names for display (index = resonation ID)
 local resonationNames = {
     'Liquefaction',
     'Induration',
@@ -47,13 +49,42 @@ local resonationNames = {
     'Fragmentation',
     'Light',
     'Darkness',
-    'Light',      -- Light2
-    'Darkness',   -- Darkness2
-    'Light',      -- Radiance
-    'Darkness',   -- Umbra
+    'Light',
+    'Darkness',
+    'Light',
+    'Darkness',
 };
 
--- Possible skillchain combinations: {result, opening, closing}
+-- Inverse of Resonation (name -> id); None is not a real skillchain.
+local nameToResonation = {};
+for name, id in pairs(Resonation) do
+    if name ~= 'None' then
+        nameToResonation[name] = id;
+    end
+end
+
+-- Elements each burst can hit. Light and Darkness use a single orb.
+local resonationBurstElements = {
+    [Resonation.Transfixion]   = { 'light' },
+    [Resonation.Compression]   = { 'dark' },
+    [Resonation.Liquefaction]  = { 'fire' },
+    [Resonation.Scission]      = { 'earth' },
+    [Resonation.Reverberation] = { 'water' },
+    [Resonation.Detonation]    = { 'wind' },
+    [Resonation.Induration]    = { 'ice' },
+    [Resonation.Impaction]     = { 'lightning' },
+    [Resonation.Gravitation]   = { 'dark', 'earth' },
+    [Resonation.Distortion]    = { 'water', 'ice' },
+    [Resonation.Fusion]        = { 'light', 'fire' },
+    [Resonation.Fragmentation] = { 'wind', 'lightning' },
+    [Resonation.Light]         = { 'light' },
+    [Resonation.Light2]        = { 'light' },
+    [Resonation.Darkness]      = { 'dark' },
+    [Resonation.Darkness2]     = { 'dark' },
+    [Resonation.Radiance]      = { 'light' },
+    [Resonation.Umbra]         = { 'dark' },
+};
+
 local possibleSkillchains = {
     { Resonation.Light, Resonation.Light, Resonation.Light },
     { Resonation.Light, Resonation.Fragmentation, Resonation.Fusion },
@@ -86,7 +117,6 @@ local possibleSkillchains = {
     { Resonation.Compression, Resonation.Induration, Resonation.Compression }
 };
 
--- Message IDs that indicate a skillchain occurred
 local skillchainMessageIds = {
     [288] = Resonation.Light,
     [289] = Resonation.Darkness,
@@ -122,314 +152,248 @@ local skillchainMessageIds = {
     [770] = Resonation.Umbra
 };
 
--- Message IDs that indicate a weapon skill hit
-local weaponskillMessageIds = {
-    [103] = true, -- WS recovers HP
-    [185] = true, -- WS deals damage
-    [187] = true, -- WS drains HP
-    [238] = true, -- WS recovers HP (alt)
+local hitMessageIds = {
+    [2] = true,
+    [103] = true,
+    [110] = true,
+    [185] = true,
+    [187] = true,
+    [238] = true,
+    [317] = true,
+    [802] = true,
 };
 
--- Weapon skill resonation attributes (wsId -> table of resonation types)
-local weaponskillResonationMap = {
-    [1] = { Resonation.Impaction }, --Combo
-    [2] = { Resonation.Reverberation, Resonation.Impaction }, --Shoulder Tackle
-    [3] = { Resonation.Compression }, --One Inch Punch
-    [4] = { Resonation.Detonation }, --Backhand Blow
-    [5] = { Resonation.Impaction }, --Raging Fists
-    [6] = { Resonation.Liquefaction, Resonation.Impaction }, --Spinning Attack
-    [7] = { Resonation.Transfixion, Resonation.Impaction }, --Howling Fist
-    [8] = { Resonation.Fragmentation }, --Dragon Kick
-    [9] = { Resonation.Gravitation, Resonation.Liquefaction }, --Asuran Fists
-    [10] = { Resonation.Light, Resonation.Fusion }, --Final Heaven
-    [11] = { Resonation.Fusion, Resonation.Transfixion }, --Ascetic's Fury
-    [12] = { Resonation.Gravitation, Resonation.Liquefaction }, --Stringing Pummel
-    [13] = { Resonation.Induration, Resonation.Detonation, Resonation.Impaction }, --Tornado Kick
-    [14] = { Resonation.Light, Resonation.Fragmentation }, --Victory Smite
-    [15] = { Resonation.Fusion, Resonation.Reverberation }, --Shijin Spiral
-    [16] = { Resonation.Scission }, --Wasp Sting
-    [17] = { Resonation.Scission }, --Viper Bite
-    [18] = { Resonation.Reverberation }, --Shadowstitch
-    [19] = { Resonation.Detonation }, --Gust Slash
-    [20] = { Resonation.Detonation, Resonation.Impaction }, --Cyclone
-    [23] = { Resonation.Scission, Resonation.Detonation }, --Dancing Edge
-    [24] = { Resonation.Fragmentation }, --Shark Bite
-    [25] = { Resonation.Gravitation, Resonation.Transfixion }, --Evisceration
-    [26] = { Resonation.Darkness, Resonation.Gravitation }, --Mercy Stroke
-    [27] = { Resonation.Fusion, Resonation.Compression }, --Mandalic Stab
-    [28] = { Resonation.Fragmentation, Resonation.Distortion }, --Mordant Rime
-    [29] = { Resonation.Distortion, Resonation.Scission }, --Pyrrhic Kleos
-    [30] = { Resonation.Scission, Resonation.Detonation, Resonation.Impaction }, --Aeolian Edge
-    [31] = { Resonation.Darkness, Resonation.Distortion }, --Rudra's Storm
-    [32] = { Resonation.Scission }, --Fast Blade
-    [33] = { Resonation.Liquefaction }, --Burning Blade
-    [34] = { Resonation.Liquefaction, Resonation.Detonation }, --Red Lotus Blade
-    [35] = { Resonation.Impaction }, --Flat Blade
-    [36] = { Resonation.Scission }, --Shining Blade
-    [37] = { Resonation.Scission }, --Seraph Blade
-    [38] = { Resonation.Reverberation, Resonation.Impaction }, --Circle Blade
-    [40] = { Resonation.Scission, Resonation.Impaction }, --Vorpal Blade
-    [41] = { Resonation.Gravitation }, --Swift Blade
-    [42] = { Resonation.Fragmentation, Resonation.Scission }, --Savage Blade
-    [43] = { Resonation.Light, Resonation.Fusion }, --Knights of Round
-    [44] = { Resonation.Fragmentation, Resonation.Distortion }, --Death Blossom
-    [45] = { Resonation.Fusion, Resonation.Reverberation }, --Atonement
-    [46] = { Resonation.Distortion, Resonation.Scission }, --Expiacion
-    [48] = { Resonation.Scission }, --Hard Slash
-    [49] = { Resonation.Transfixion }, --Power Slash
-    [50] = { Resonation.Induration }, --Frostbite
-    [51] = { Resonation.Induration, Resonation.Detonation }, --Freezebite
-    [52] = { Resonation.Reverberation }, --Shockwave
-    [53] = { Resonation.Scission }, --Crescent Moon
-    [54] = { Resonation.Scission, Resonation.Impaction }, --Sickle Moon
-    [55] = { Resonation.Fragmentation }, --Spinning Slash
-    [56] = { Resonation.Fragmentation, Resonation.Distortion }, --Ground Strike
-    [57] = { Resonation.Light, Resonation.Fusion }, --Scourge
-    [58] = { Resonation.Induration, Resonation.Detonation, Resonation.Impaction }, --Herculean Slash
-    [59] = { Resonation.Light, Resonation.Distortion }, --Torcleaver
-    [60] = { Resonation.Fragmentation, Resonation.Scission }, --Resolution
-    [61] = { Resonation.Light, Resonation.Fragmentation }, --Dimidiation
-    [64] = { Resonation.Detonation, Resonation.Impaction }, --Raging Axe
-    [65] = { Resonation.Induration, Resonation.Reverberation }, --Smash Axe
-    [66] = { Resonation.Detonation }, --Gale Axe
-    [67] = { Resonation.Scission, Resonation.Impaction }, --Avalanche Axe
-    [68] = { Resonation.Liquefaction, Resonation.Scission, Resonation.Impaction }, --Spinning Axe
-    [69] = { Resonation.Scission }, --Rampage
-    [70] = { Resonation.Scission, Resonation.Impaction }, --Calamity
-    [71] = { Resonation.Fusion }, --Mistral Axe
-    [72] = { Resonation.Fusion, Resonation.Reverberation }, --Decimation
-    [73] = { Resonation.Darkness, Resonation.Gravitation }, --Onslaught
-    [74] = { Resonation.Gravitation, Resonation.Reverberation }, --Primal Rend
-    [75] = { Resonation.Scission, Resonation.Detonation }, --Bora Axe
-    [76] = { Resonation.Darkness, Resonation.Fragmentation }, --Cloudsplitter
-    [77] = { Resonation.Distortion, Resonation.Detonation }, --Ruinator
-    [80] = { Resonation.Impaction }, --Shield Break
-    [81] = { Resonation.Scission }, --Iron Tempest
-    [82] = { Resonation.Reverberation, Resonation.Scission }, --Sturmwind
-    [83] = { Resonation.Impaction }, --Armor Break
-    [84] = { Resonation.Compression }, --Keen Edge
-    [85] = { Resonation.Impaction }, --Weapon Break
-    [86] = { Resonation.Induration, Resonation.Reverberation }, --Raging Rush
-    [87] = { Resonation.Distortion }, --Full Break
-    [88] = { Resonation.Distortion, Resonation.Detonation }, --Steel Cyclone
-    [89] = { Resonation.Light, Resonation.Fusion }, --Metatron Torment
-    [90] = { Resonation.Fragmentation, Resonation.Scission }, --King's Justice
-    [91] = { Resonation.Scission, Resonation.Detonation, Resonation.Impaction }, --Fell Cleave
-    [92] = { Resonation.Light, Resonation.Fragmentation }, --Ukko's Fury
-    [93] = { Resonation.Fusion, Resonation.Compression }, --Upheaval
-    [96] = { Resonation.Scission }, --Slice
-    [97] = { Resonation.Reverberation }, --Dark Harvest
-    [98] = { Resonation.Induration, Resonation.Reverberation }, --Shadow of Death
-    [99] = { Resonation.Compression, Resonation.Scission }, --Nightmare Scythe
-    [100] = { Resonation.Reverberation, Resonation.Scission }, --Spinning Scythe
-    [101] = { Resonation.Transfixion, Resonation.Scission }, --Vorpal Scythe
-    [102] = { Resonation.Induration }, --Guillotine
-    [103] = { Resonation.Distortion }, --Cross Reaper
-    [104] = { Resonation.Distortion, Resonation.Scission }, --Spiral Hell
-    [105] = { Resonation.Darkness, Resonation.Gravitation }, --Catastrophe
-    [106] = { Resonation.Fusion, Resonation.Compression }, --Insurgency
-    [107] = { Resonation.Compression, Resonation.Reverberation }, --Infernal Scythe
-    [108] = { Resonation.Darkness, Resonation.Distortion }, --Quietus
-    [109] = { Resonation.Gravitation, Resonation.Reverberation }, --Entropy
-    [112] = { Resonation.Transfixion }, --Double Thrust
-    [113] = { Resonation.Transfixion, Resonation.Impaction }, --Thunder Thrust
-    [114] = { Resonation.Transfixion, Resonation.Impaction }, --Raiden Thrust
-    [115] = { Resonation.Impaction }, --Leg Sweep
-    [116] = { Resonation.Compression }, --Penta Thrust
-    [117] = { Resonation.Reverberation, Resonation.Transfixion }, --Vorpal Thrust
-    [118] = { Resonation.Transfixion, Resonation.Impaction }, --Skewer
-    [119] = { Resonation.Fusion }, --Wheeling Thrust
-    [120] = { Resonation.Gravitation, Resonation.Induration }, --Impulse Drive
-    [121] = { Resonation.Light, Resonation.Distortion }, --Geirskogul
-    [122] = { Resonation.Fusion, Resonation.Transfixion }, --Drakesbane
-    [123] = { Resonation.Transfixion, Resonation.Scission }, --Sonic Thrust
-    [124] = { Resonation.Light, Resonation.Fragmentation }, --Camlann's Torment
-    [125] = { Resonation.Gravitation, Resonation.Transfixion }, --Stardiver
-    [128] = { Resonation.Transfixion }, --Blade: Rin
-    [129] = { Resonation.Scission }, --Blade: Retsu
-    [130] = { Resonation.Reverberation }, --Blade: Teki
-    [131] = { Resonation.Induration, Resonation.Detonation }, --Blade: To
-    [132] = { Resonation.Transfixion, Resonation.Impaction }, --Blade: Chi
-    [133] = { Resonation.Compression }, --Blade: Ei
-    [134] = { Resonation.Detonation, Resonation.Impaction }, --Blade: Jin
-    [135] = { Resonation.Gravitation }, --Blade: Ten
-    [136] = { Resonation.Gravitation, Resonation.Transfixion }, --Blade: Ku
-    [137] = { Resonation.Darkness, Resonation.Fragmentation }, --Blade: Metsu
-    [138] = { Resonation.Fragmentation, Resonation.Compression }, --Blade: Kamu
-    [139] = { Resonation.Reverberation, Resonation.Scission }, --Blade: Yu
-    [140] = { Resonation.Darkness, Resonation.Gravitation }, --Blade: Hi
-    [141] = { Resonation.Fusion, Resonation.Impaction }, --Blade: Shun
-    [144] = { Resonation.Transfixion, Resonation.Scission }, --Tachi: Enpi
-    [145] = { Resonation.Induration }, --Tachi: Hobaku
-    [146] = { Resonation.Transfixion, Resonation.Impaction }, --Tachi: Goten
-    [147] = { Resonation.Liquefaction }, --Tachi: Kagero
-    [148] = { Resonation.Scission, Resonation.Detonation }, --Tachi: Jinpu
-    [149] = { Resonation.Reverberation, Resonation.Impaction }, --Tachi: Koki
-    [150] = { Resonation.Induration, Resonation.Detonation }, --Tachi: Yukikaze
-    [151] = { Resonation.Distortion, Resonation.Reverberation }, --Tachi: Gekko
-    [152] = { Resonation.Fusion, Resonation.Compression }, --Tachi: Kasha
-    [153] = { Resonation.Light, Resonation.Fragmentation }, --Tachi: Kaiten
-    [154] = { Resonation.Gravitation, Resonation.Induration }, --Tachi: Rana
-    [155] = { Resonation.Compression, Resonation.Scission }, --Tachi: Ageha
-    [156] = { Resonation.Light, Resonation.Distortion }, --Tachi: Fudo
-    [157] = { Resonation.Fragmentation, Resonation.Compression }, --Tachi: Shoha
-    [160] = { Resonation.Impaction }, --Shining Strike
-    [161] = { Resonation.Impaction }, --Seraph Strike
-    [162] = { Resonation.Reverberation }, --Brainshaker
-    [165] = { Resonation.Induration, Resonation.Reverberation }, --Skullbreaker
-    [166] = { Resonation.Detonation, Resonation.Impaction }, --True Strike
-    [167] = { Resonation.Impaction }, --Judgment
-    [168] = { Resonation.Fusion }, --Hexa Strike
-    [169] = { Resonation.Fragmentation, Resonation.Compression }, --Black Halo
-    [170] = { Resonation.Light, Resonation.Fragmentation }, --Randgrith
-    [172] = { Resonation.Induration, Resonation.Reverberation }, --Flash Nova
-    [174] = { Resonation.Fusion, Resonation.Impaction }, --Realmrazer
-    [175] = { Resonation.Darkness, Resonation.Fragmentation }, --Exudation
-    [176] = { Resonation.Impaction }, --Heavy Swing
-    [177] = { Resonation.Impaction }, --Rock Crusher
-    [178] = { Resonation.Detonation, Resonation.Impaction }, --Earth Crusher
-    [179] = { Resonation.Compression, Resonation.Reverberation }, --Starburst
-    [180] = { Resonation.Compression, Resonation.Reverberation }, --Sunburst
-    [181] = { Resonation.Detonation }, --Shell Crusher
-    [182] = { Resonation.Liquefaction, Resonation.Impaction }, --Full Swing
-    [184] = { Resonation.Gravitation, Resonation.Reverberation }, --Retribution
-    [185] = { Resonation.Darkness, Resonation.Distortion }, --Gate of Tartarus
-    [186] = { Resonation.Fragmentation, Resonation.Distortion }, --Vidohunir
-    [187] = { Resonation.Fusion, Resonation.Reverberation }, --Garland of Bliss
-    [188] = { Resonation.Gravitation, Resonation.Transfixion }, --Omniscience
-    [189] = { Resonation.Compression, Resonation.Reverberation }, --Cataclysm
-    [191] = { Resonation.Gravitation, Resonation.Induration }, --Shattersoul
-    [192] = { Resonation.Liquefaction, Resonation.Transfixion }, --Flaming Arrow
-    [193] = { Resonation.Reverberation, Resonation.Transfixion }, --Piercing Arrow
-    [194] = { Resonation.Liquefaction, Resonation.Transfixion }, --Dulling Arrow
-    [196] = { Resonation.Reverberation, Resonation.Transfixion, Resonation.Detonation }, --Sidewinder
-    [197] = { Resonation.Induration, Resonation.Transfixion }, --Blast Arrow
-    [198] = { Resonation.Fusion }, --Arching Arrow
-    [199] = { Resonation.Fusion, Resonation.Transfixion }, --Empyreal Arrow
-    [200] = { Resonation.Light, Resonation.Distortion }, --Namas Arrow
-    [201] = { Resonation.Reverberation, Resonation.Transfixion }, --Refulgent Arrow
-    [202] = { Resonation.Light, Resonation.Fusion }, --Jishnu's Radiance
-    [203] = { Resonation.Fragmentation, Resonation.Transfixion }, --Apex Arrow
-    [208] = { Resonation.Liquefaction, Resonation.Transfixion }, --Hot Shot
-    [209] = { Resonation.Reverberation, Resonation.Transfixion }, --Split Shot
-    [210] = { Resonation.Liquefaction, Resonation.Transfixion }, --Sniper Shot
-    [212] = { Resonation.Reverberation, Resonation.Transfixion, Resonation.Detonation }, --Slug Shot
-    [213] = { Resonation.Induration, Resonation.Transfixion }, --Blast Shot
-    [214] = { Resonation.Fusion }, --Heavy Shot
-    [215] = { Resonation.Fusion, Resonation.Transfixion }, --Detonator
-    [216] = { Resonation.Darkness, Resonation.Fragmentation }, --Coronach
-    [217] = { Resonation.Fragmentation, Resonation.Scission }, --Trueflight
-    [218] = { Resonation.Gravitation, Resonation.Transfixion }, --Leaden Salute
-    [219] = { Resonation.Induration, Resonation.Detonation, Resonation.Impaction }, --Numbing Shot
-    [220] = { Resonation.Darkness, Resonation.Gravitation }, --Wildfire
-    [221] = { Resonation.Fusion, Resonation.Reverberation }, --Last Stand
-    [224] = { Resonation.Fragmentation, Resonation.Scission }, --Exenterator
-    [225] = { Resonation.Light, Resonation.Distortion }, --Chant du Cygne
-    [226] = { Resonation.Gravitation, Resonation.Scission }, --Requiescat
+local petDamageMessageIds = {
+    [110] = true,
+    [317] = true,
 };
 
--- Per-target resonation state (keyed by entity index, NOT server ID)
--- state = { Attributes = {}, Depth = number, WindowOpen = time, WindowClose = time }
+local TRACK_TYPES = {
+    [3] = true,
+    [4] = true,
+    [6] = true,
+    [11] = true,
+    [13] = true,
+    [14] = true,
+};
+
+local BUFF_AZURE_LORE = 163;
+local BUFF_CHAIN_AFFINITY = 164;
+local BUFF_IMMANENCE = 470;
+local CHAIN_BUFF_DURATION = {
+    [BUFF_AZURE_LORE] = 30,
+    [BUFF_CHAIN_AFFINITY] = 30,
+    [BUFF_IMMANENCE] = 60,
+};
+
 local resonationMap = {};
+local chainBuffs = {};
+local attrCache = {};
+local nameIndex = {};
 
--- Hardcoded WS name -> ID map (resource manager lookup is unreliable)
-local wsNameToIdMap = {
-    -- Hand-to-Hand
-    ['Combo'] = 1, ['Shoulder Tackle'] = 2, ['One Inch Punch'] = 3, ['Backhand Blow'] = 4,
-    ['Raging Fists'] = 5, ['Spinning Attack'] = 6, ['Howling Fist'] = 7, ['Dragon Kick'] = 8,
-    ['Asuran Fists'] = 9, ['Final Heaven'] = 10, ["Ascetic's Fury"] = 11, ['Stringing Pummel'] = 12,
-    ['Tornado Kick'] = 13, ['Victory Smite'] = 14, ['Shijin Spiral'] = 15,
-    -- Dagger
-    ['Wasp Sting'] = 16, ['Viper Bite'] = 17, ['Shadowstitch'] = 18, ['Gust Slash'] = 19,
-    ['Cyclone'] = 20, ['Dancing Edge'] = 23, ['Shark Bite'] = 24, ['Evisceration'] = 25,
-    ['Mercy Stroke'] = 26, ['Mandalic Stab'] = 27, ['Mordant Rime'] = 28, ['Pyrrhic Kleos'] = 29,
-    ['Aeolian Edge'] = 30, ["Rudra's Storm"] = 31,
-    -- Sword
-    ['Fast Blade'] = 32, ['Burning Blade'] = 33, ['Red Lotus Blade'] = 34, ['Flat Blade'] = 35,
-    ['Shining Blade'] = 36, ['Seraph Blade'] = 37, ['Circle Blade'] = 38, ['Vorpal Blade'] = 40,
-    ['Swift Blade'] = 41, ['Savage Blade'] = 42, ['Knights of Round'] = 43, ['Death Blossom'] = 44,
-    ['Atonement'] = 45, ['Expiacion'] = 46,
-    -- Great Sword
-    ['Hard Slash'] = 48, ['Power Slash'] = 49, ['Frostbite'] = 50, ['Freezebite'] = 51,
-    ['Shockwave'] = 52, ['Crescent Moon'] = 53, ['Sickle Moon'] = 54, ['Spinning Slash'] = 55,
-    ['Ground Strike'] = 56, ['Scourge'] = 57, ['Herculean Slash'] = 58, ['Torcleaver'] = 59,
-    ['Resolution'] = 60, ['Dimidiation'] = 61,
-    -- Axe
-    ['Raging Axe'] = 64, ['Smash Axe'] = 65, ['Gale Axe'] = 66, ['Avalanche Axe'] = 67,
-    ['Spinning Axe'] = 68, ['Rampage'] = 69, ['Calamity'] = 70, ['Mistral Axe'] = 71,
-    ['Decimation'] = 72, ['Onslaught'] = 73, ['Primal Rend'] = 74, ['Bora Axe'] = 75,
-    ['Cloudsplitter'] = 76, ['Ruinator'] = 77,
-    -- Great Axe
-    ['Shield Break'] = 80, ['Iron Tempest'] = 81, ['Sturmwind'] = 82, ['Armor Break'] = 83,
-    ['Keen Edge'] = 84, ['Weapon Break'] = 85, ['Raging Rush'] = 86, ['Full Break'] = 87,
-    ['Steel Cyclone'] = 88, ['Metatron Torment'] = 89, ["King's Justice"] = 90, ['Fell Cleave'] = 91,
-    ["Ukko's Fury"] = 92, ['Upheaval'] = 93,
-    -- Scythe
-    ['Slice'] = 96, ['Dark Harvest'] = 97, ['Shadow of Death'] = 98, ['Nightmare Scythe'] = 99,
-    ['Spinning Scythe'] = 100, ['Vorpal Scythe'] = 101, ['Guillotine'] = 102, ['Cross Reaper'] = 103,
-    ['Spiral Hell'] = 104, ['Catastrophe'] = 105, ['Insurgency'] = 106, ['Infernal Scythe'] = 107,
-    ['Quietus'] = 108, ['Entropy'] = 109,
-    -- Polearm
-    ['Double Thrust'] = 112, ['Thunder Thrust'] = 113, ['Raiden Thrust'] = 114, ['Leg Sweep'] = 115,
-    ['Penta Thrust'] = 116, ['Vorpal Thrust'] = 117, ['Skewer'] = 118, ['Wheeling Thrust'] = 119,
-    ['Impulse Drive'] = 120, ['Geirskogul'] = 121, ['Drakesbane'] = 122, ['Sonic Thrust'] = 123,
-    ["Camlann's Torment"] = 124, ['Stardiver'] = 125,
-    -- Katana
-    ['Blade: Rin'] = 128, ['Blade: Retsu'] = 129, ['Blade: Teki'] = 130, ['Blade: To'] = 131,
-    ['Blade: Chi'] = 132, ['Blade: Ei'] = 133, ['Blade: Jin'] = 134, ['Blade: Ten'] = 135,
-    ['Blade: Ku'] = 136, ['Blade: Metsu'] = 137, ['Blade: Kamu'] = 138, ['Blade: Yu'] = 139,
-    ['Blade: Hi'] = 140, ['Blade: Shun'] = 141,
-    -- Great Katana
-    ['Tachi: Enpi'] = 144, ['Tachi: Hobaku'] = 145, ['Tachi: Goten'] = 146, ['Tachi: Kagero'] = 147,
-    ['Tachi: Jinpu'] = 148, ['Tachi: Koki'] = 149, ['Tachi: Yukikaze'] = 150, ['Tachi: Gekko'] = 151,
-    ['Tachi: Kasha'] = 152, ['Tachi: Kaiten'] = 153, ['Tachi: Rana'] = 154, ['Tachi: Ageha'] = 155,
-    ['Tachi: Fudo'] = 156, ['Tachi: Shoha'] = 157,
-    -- Club
-    ['Shining Strike'] = 160, ['Seraph Strike'] = 161, ['Brainshaker'] = 162, ['Skullbreaker'] = 165,
-    ['True Strike'] = 166, ['Judgment'] = 167, ['Hexa Strike'] = 168, ['Black Halo'] = 169,
-    ['Randgrith'] = 170, ['Flash Nova'] = 172, ['Realmrazer'] = 174, ['Exudation'] = 175,
-    -- Staff
-    ['Heavy Swing'] = 176, ['Rock Crusher'] = 177, ['Earth Crusher'] = 178, ['Starburst'] = 179,
-    ['Sunburst'] = 180, ['Shell Crusher'] = 181, ['Full Swing'] = 182, ['Retribution'] = 184,
-    ['Gate of Tartarus'] = 185, ['Vidohunir'] = 186, ['Garland of Bliss'] = 187, ['Omniscience'] = 188,
-    ['Cataclysm'] = 189, ['Shattersoul'] = 191,
-    -- Archery
-    ['Flaming Arrow'] = 192, ['Piercing Arrow'] = 193, ['Dulling Arrow'] = 194, ['Sidewinder'] = 196,
-    ['Blast Arrow'] = 197, ['Arching Arrow'] = 198, ['Empyreal Arrow'] = 199, ['Namas Arrow'] = 200,
-    ['Refulgent Arrow'] = 201, ["Jishnu's Radiance"] = 202, ['Apex Arrow'] = 203,
-    -- Marksmanship
-    ['Hot Shot'] = 208, ['Split Shot'] = 209, ['Sniper Shot'] = 210, ['Slug Shot'] = 212,
-    ['Blast Shot'] = 213, ['Heavy Shot'] = 214, ['Detonator'] = 215, ['Coronach'] = 216,
-    ['Trueflight'] = 217, ['Leaden Salute'] = 218, ['Numbing Shot'] = 219, ['Wildfire'] = 220,
-    ['Last Stand'] = 221, ['Exenterator'] = 224, ['Chant du Cygne'] = 225, ['Requiescat'] = 226,
-};
-
--- Debug function to dump skillchain state (call with /xiui scdebug)
-function M.DebugDumpState()
-    print('[XIUI SC] Current resonation state:');
-    local now = os.clock();
-    local found = false;
-    for idx, state in pairs(resonationMap or {}) do
-        found = true;
-        local attrs = {};
-        for _, a in ipairs(state.Attributes or {}) do
-            table.insert(attrs, tostring(a));
+local function CopySkillTables(src)
+    local dst = {};
+    for cat, entries in pairs(src) do
+        if type(entries) == 'table' then
+            local copy = {};
+            for id, skill in pairs(entries) do
+                copy[id] = skill;
+            end
+            dst[cat] = copy;
+        else
+            dst[cat] = entries;
         end
-        local windowStatus = (now >= state.WindowOpen and now <= state.WindowClose) and 'OPEN' or 'closed';
-        print(string.format('  Target %d: attrs={%s}, %s', idx, table.concat(attrs, ','), windowStatus));
     end
-    if not found then
-        print('  (no targets tracked)');
+    return dst;
+end
+
+local function CloneSkill(skill)
+    if type(skill) ~= 'table' then
+        return skill;
+    end
+    local copy = {};
+    for k, v in pairs(skill) do
+        copy[k] = v;
+    end
+    return copy;
+end
+
+local function ResolveSkillRef(base, skill, depth)
+    if type(skill) ~= 'table' then
+        return skill;
+    end
+    if skill.ref == nil or skill.id == nil then
+        return skill;
+    end
+    if depth > 8 then
+        return nil;
+    end
+    local cat = base[skill.ref];
+    local target = cat and cat[skill.id];
+    return ResolveSkillRef(base, target, depth + 1);
+end
+
+local function ApplyHorizonOverlay(base, overlay)
+    for cat, entries in pairs(overlay) do
+        if type(entries) == 'table' then
+            if base[cat] == nil then
+                base[cat] = {};
+            end
+            for id, skill in pairs(entries) do
+                if skill == false then
+                    base[cat][id] = nil;
+                elseif type(skill) == 'table' and skill.ref ~= nil then
+                    base[cat][id] = skill;
+                elseif type(skill) == 'table' and skill.skillchain ~= nil and skill.en == nil then
+                    local existing = base[cat][id];
+                    if type(existing) == 'table' then
+                        local merged = CloneSkill(existing);
+                        merged.skillchain = skill.skillchain;
+                        base[cat][id] = merged;
+                    else
+                        base[cat][id] = CloneSkill(skill);
+                    end
+                else
+                    base[cat][id] = skill;
+                end
+            end
+        end
+    end
+
+    for _, entries in pairs(base) do
+        if type(entries) == 'table' then
+            for id, skill in pairs(entries) do
+                if type(skill) == 'table' and skill.ref ~= nil then
+                    local resolved = ResolveSkillRef(base, skill, 0);
+                    entries[id] = resolved and CloneSkill(resolved) or nil;
+                end
+            end
+        end
+    end
+    return base;
+end
+
+local skills = CopySkillTables(require('modules.hotbar.database.skillchain_retail'));
+if HzLimitedMode then
+    skills = ApplyHorizonOverlay(skills, require('modules.hotbar.database.skillchain_horizon'));
+end
+
+local function NormalizeName(name)
+    if not name then return nil; end
+    return string.lower(tostring(name)):gsub('[^%w]', '');
+end
+
+local function IndexCategory(catKey, cat)
+    if not cat then return; end
+    local bucket = {};
+    nameIndex[catKey] = bucket;
+    for id, skill in pairs(cat) do
+        if type(skill) == 'table' and skill.en then
+            bucket[NormalizeName(skill.en)] = skill;
+            skill._id = id;
+            skill._cat = catKey;
+        end
     end
 end
 
--- Get WS ID from name (simple lookup in hardcoded table)
-local function GetWSIdFromName(wsName)
-    if not wsName then return nil; end
-    return wsNameToIdMap[wsName];
+IndexCategory(3, skills[3]);
+IndexCategory(4, skills[4]);
+IndexCategory(11, skills[11]);
+IndexCategory(13, skills[13]);
+IndexCategory(14, skills[14]);
+IndexCategory('pup', skills.pup);
+IndexCategory('immanence', skills.immanence);
+
+local function GetAttrIds(skill)
+    if not skill then return nil; end
+    local cached = attrCache[skill];
+    if cached then return cached; end
+    local ids = {};
+    for _, name in ipairs(skill.skillchain or {}) do
+        local id = nameToResonation[name];
+        if id then
+            ids[#ids + 1] = id;
+        end
+    end
+    if #ids == 0 then
+        attrCache[skill] = nil;
+        return nil;
+    end
+    attrCache[skill] = ids;
+    return ids;
 end
 
--- Check if a table contains a value
+local function FindSkillById(actionType, skillId)
+    if not skillId or skillId == 0 then return nil; end
+
+    local skill = skills[actionType] and skills[actionType][skillId];
+    if skill then return skill; end
+
+    if actionType == 11 then
+        return (skills[11] and skills[11][skillId]) or (skills.pup and skills.pup[skillId]);
+    end
+    if actionType == 6 or actionType == 14 then
+        return skills[14] and skills[14][skillId];
+    end
+    if actionType == 13 then
+        return skills[13] and skills[13][skillId];
+    end
+    return nil;
+end
+
+local function FindSkillByName(catKey, actionName)
+    local bucket = nameIndex[catKey];
+    if not bucket then return nil; end
+    return bucket[NormalizeName(actionName)];
+end
+
+local function FindSlotSkillUncached(actionType, actionName)
+    if not actionName then return nil; end
+    if actionType == 'ws' then
+        if type(actionName) == 'number' then
+            return skills[3] and skills[3][actionName];
+        end
+        return FindSkillByName(3, actionName);
+    end
+    if actionType == 'ma' then
+        local spellId = type(actionName) == 'number' and actionName or actiondb.GetSpellId(actionName);
+        if spellId and skills[4] then
+            return skills[4][spellId];
+        end
+        return FindSkillByName(4, actionName);
+    end
+    if actionType == 'pet' then
+        return FindSkillByName(13, actionName)
+            or FindSkillByName(11, actionName)
+            or FindSkillByName('pup', actionName);
+    end
+    if actionType == 'ja' then
+        return FindSkillByName(14, actionName);
+    end
+    return nil;
+end
+
+-- Memoize (actionType, actionName) -> skill. Skill tables are static after load,
+-- so this avoids the per-slot per-frame string normalization/lookups. NO_SKILL is a
+-- negative sentinel so misses are cached too.
+local slotSkillCache = {};
+local NO_SKILL = {};
+local function FindSlotSkill(actionType, actionName)
+    if not actionName then return nil; end
+    local bucket = slotSkillCache[actionType];
+    if not bucket then
+        bucket = {};
+        slotSkillCache[actionType] = bucket;
+    end
+    local cached = bucket[actionName];
+    if cached ~= nil then
+        return cached ~= NO_SKILL and cached or nil;
+    end
+    local skill = FindSlotSkillUncached(actionType, actionName);
+    bucket[actionName] = skill or NO_SKILL;
+    return skill;
+end
+
 local function tableContains(tbl, val)
     if not tbl then return false; end
     for _, v in ipairs(tbl) do
@@ -438,12 +402,10 @@ local function tableContains(tbl, val)
     return false;
 end
 
--- Convert server ID to entity index
 local function GetIndexFromId(id)
     local entMgr = AshitaCore:GetMemoryManager():GetEntity();
     if not entMgr then return 0; end
 
-    -- Shortcut for monsters/static npcs
     if bit.band(id, 0x1000000) ~= 0 then
         local index = bit.band(id, 0xFFF);
         if index >= 0x900 then
@@ -463,33 +425,191 @@ local function GetIndexFromId(id)
     return 0;
 end
 
--- Get skillchain result for a WS against current target state
--- targetServerId: server ID of the target
--- wsIdOrName: weapon skill ID (number) or name (string)
--- Returns skillchain name or nil
-function M.GetSkillchainForSlot(targetServerId, wsIdOrName)
-    if not wsIdOrName then return nil; end
+-- Per-frame snapshot of the player's buff array; avoids a 32-entry scan per
+-- slot per buff id while a skillchain window is open.
+local buffSnapshot = {};
+local buffSnapshotClock = -1;
 
-    -- Convert name to ID if needed
-    local wsId = wsIdOrName;
-    if type(wsIdOrName) == 'string' then
-        wsId = GetWSIdFromName(wsIdOrName);
-        if not wsId then return nil; end
+local function RefreshBuffSnapshot()
+    local now = os.clock();
+    if now == buffSnapshotClock then return; end
+    buffSnapshotClock = now;
+    for k in pairs(buffSnapshot) do buffSnapshot[k] = nil; end
+    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    if not player or not player.GetBuffs then return; end
+    local buffs = player:GetBuffs();
+    if not buffs then return; end
+    for i = 0, 31 do
+        local id = buffs[i];
+        if id and id ~= 0 and id ~= 255 then
+            buffSnapshot[id] = true;
+        end
+    end
+end
+
+local function PlayerHasBuff(buffId)
+    RefreshBuffSnapshot();
+    return buffSnapshot[buffId] == true;
+end
+
+local function GetLocalServerId()
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    if not party then return nil; end
+    return party:GetMemberServerId(0);
+end
+
+local function ActorHasSpellChainBuff(actorId)
+    local now = os.clock();
+    local t = chainBuffs[actorId];
+    if t then
+        for _, exp in pairs(t) do
+            if exp > now then
+                return true;
+            end
+        end
+    end
+    if actorId == GetLocalServerId() then
+        return PlayerHasBuff(BUFF_AZURE_LORE)
+            or PlayerHasBuff(BUFF_CHAIN_AFFINITY)
+            or PlayerHasBuff(BUFF_IMMANENCE);
+    end
+    return false;
+end
+
+local bluSetCache = nil;
+local bluSetCacheTime = 0;
+local bluOffset = nil;
+local bluOffsetTried = false;
+
+local function GetBluSetIds()
+    local now = os.clock();
+    if bluSetCache and (now - bluSetCacheTime) < 0.25 then
+        return bluSetCache;
     end
 
-    -- Get WS attributes early (needed for all checks)
-    local wsAttributes = weaponskillResonationMap[wsId];
-    if not wsAttributes then return nil; end
-
-    -- Convert server ID to entity index if provided
-    local targetIndex = nil;
-    if targetServerId and targetServerId > 0x8FF then
-        targetIndex = GetIndexFromId(targetServerId);
-    elseif targetServerId and targetServerId > 0 and targetServerId <= 0x8FF then
-        targetIndex = targetServerId;  -- Already an entity index
+    local set = {};
+    local ok = pcall(function()
+        if not bluOffsetTried then
+            bluOffsetTried = true;
+            local found = ashita.memory.find('FFXiMain.dll', 0, 'C1E1032BC8B0018D????????????B9????????F3A55F5E5B', 10, 0);
+            if found and found ~= 0 then
+                bluOffset = ffi.cast('uint32_t*', found);
+            end
+        end
+        if not bluOffset then return; end
+        local ptr = ashita.memory.read_uint32(AshitaCore:GetPointerManager():Get('inventory'));
+        if ptr == 0 then return; end
+        ptr = ashita.memory.read_uint32(ptr);
+        if ptr == 0 then return; end
+        local bytes = ashita.memory.read_array((ptr + bluOffset[0]) + 0x04, 0x14);
+        if not bytes then return; end
+        for i = 1, #bytes do
+            local v = bytes[i];
+            if v and v ~= 0 then
+                set[v + 512] = true;
+            end
+        end
+    end);
+    if not ok then
+        set = {};
     end
 
-    -- Only check the player's current target
+    bluSetCache = set;
+    bluSetCacheTime = now;
+    return set;
+end
+
+local function IsBluSpellSet(spellId)
+    if not spellId or spellId < 512 then
+        return true;
+    end
+    return GetBluSetIds()[spellId] == true;
+end
+
+local petpalette;
+local petregistry;
+local function GetPetPalette()
+    if not petpalette then
+        petpalette = require('modules.hotbar.petpalette');
+    end
+    return petpalette;
+end
+local function GetPetRegistry()
+    if not petregistry then
+        petregistry = require('modules.hotbar.petregistry');
+    end
+    return petregistry;
+end
+
+-- Per-frame cache of the current pet's normalized ready-move name set.
+local petMovesClock = -1;
+local petMovesName = nil;
+local petMovesSet = nil;
+
+local function GetCurrentPetReadyMoveSet()
+    local now = os.clock();
+    if now ~= petMovesClock then
+        petMovesClock = now;
+        petMovesName = GetPetPalette().GetCurrentPetEntityName();
+        petMovesSet = nil;
+        local moves = petMovesName and GetPetRegistry().GetReadyMovesForPet(petMovesName);
+        if moves then
+            petMovesSet = {};
+            for _, move in ipairs(moves) do
+                petMovesSet[NormalizeName(move.name)] = true;
+            end
+        end
+    end
+    return petMovesSet, petMovesName;
+end
+
+local function SlotPassesGates(skill, actionType)
+    if not skill then return false; end
+
+    local cfg = gConfig and gConfig.hotbarGlobal or {};
+
+    if actionType == 'ma' then
+        local spellId = skill._id;
+        if spellId and spellId >= 512 and not IsBluSpellSet(spellId) then
+            return false;
+        end
+        if cfg.skillchainRequireAbility then
+            if spellId and spellId >= 512 then
+                if not (PlayerHasBuff(BUFF_AZURE_LORE) or PlayerHasBuff(BUFF_CHAIN_AFFINITY)) then
+                    return false;
+                end
+            else
+                if not PlayerHasBuff(BUFF_IMMANENCE) then
+                    return false;
+                end
+            end
+        end
+    end
+
+    if actionType == 'pet' then
+        if skill.avatar then
+            local highlightAll = cfg.skillchainHighlightAllBloodPacts == true
+                or (cfg.skillchainHighlightAllBloodPacts == nil and cfg.skillchainRequireSummonedAvatar == false);
+            if not highlightAll then
+                local petName = GetPetPalette().GetCurrentPetEntityName();
+                if not petName or string.lower(petName) ~= string.lower(skill.avatar) then
+                    return false;
+                end
+            end
+        elseif skill._cat == 11 then
+            local moveSet = GetCurrentPetReadyMoveSet();
+            if not moveSet or not moveSet[NormalizeName(skill.en)] then
+                return false;
+            end
+        end
+    end
+
+    return true;
+end
+
+-- Target's open resonation, or nil. Callers pass the entity index from
+-- targetLib.GetTargets(); do not reverse-map ServerId on the draw path.
+local function ResolveOpenResonation(targetIndex)
     if not targetIndex or targetIndex == 0 then
         return nil;
     end
@@ -500,19 +620,20 @@ function M.GetSkillchainForSlot(targetServerId, wsIdOrName)
     end
 
     local now = os.clock();
-
-    -- Check if window expired
     if now > resonation.WindowClose then
         resonationMap[targetIndex] = nil;
         return nil;
     end
-
-    -- Check if window is open
     if now < resonation.WindowOpen then
         return nil;
     end
 
-    -- Check for skillchain match
+    return resonation;
+end
+
+local function MatchCloser(wsAttributes, resonation)
+    if not wsAttributes or not resonation then return nil; end
+
     for _, sc in ipairs(possibleSkillchains) do
         local result, opening, closing = sc[1], sc[2], sc[3];
         if tableContains(resonation.Attributes, opening) then
@@ -521,47 +642,90 @@ function M.GetSkillchainForSlot(targetServerId, wsIdOrName)
             end
         end
     end
-
     return nil;
 end
 
--- Handle action packet (0x0028)
--- XIUI's ParseActionPacket stores WS ID in .Param (not .Id like tHotBar)
+function M.DebugDumpState()
+    print('[XIUI SC] Current resonation state:');
+    local now = os.clock();
+    local found = false;
+    for idx, state in pairs(resonationMap or {}) do
+        found = true;
+        local attrs = {};
+        for _, a in ipairs(state.Attributes or {}) do
+            table.insert(attrs, tostring(a));
+        end
+        local windowStatus = (now >= state.WindowOpen and now <= state.WindowClose) and 'OPEN' or 'closed';
+        print(string.format('  Target %d: attrs={%s}, %s', idx, table.concat(attrs, ','), windowStatus));
+    end
+    if not found then
+        print('  (no targets tracked)');
+    end
+end
+
+function M.GetSkillchainForSlot(targetIndex, actionType, actionName)
+    if not actionType then return nil; end
+    -- Legacy: GetSkillchainForSlot(target, wsIdOrName)
+    if actionName == nil then
+        actionName = actionType;
+        actionType = 'ws';
+    end
+
+    local resonation = ResolveOpenResonation(targetIndex);
+    if not resonation then return nil; end
+
+    local skill = FindSlotSkill(actionType, actionName);
+    local attrs = GetAttrIds(skill);
+    if not attrs then return nil; end
+    if not SlotPassesGates(skill, actionType) then return nil; end
+
+    return MatchCloser(attrs, resonation);
+end
+
 function M.HandleActionPacket(actionPacket)
     if not actionPacket then return; end
+    local actionType = actionPacket.Type;
+    if not TRACK_TYPES[actionType] then return; end
 
-    -- Only process weapon skill actions (Type 3)
-    if actionPacket.Type ~= 3 then return; end
+    local skillId = actionPacket.Param;
+    if type(skillId) == 'number' then
+        skillId = bit.band(skillId, 0xFFFF);
+    end
 
-    -- WS ID is stored in Param field by XIUI's packet parser
-    local wsId = actionPacket.Param;
-    if not wsId or wsId == 0 then return; end
+    if actionType == 6 and skillId and CHAIN_BUFF_DURATION[skillId] then
+        local actor = actionPacket.UserId;
+        chainBuffs[actor] = chainBuffs[actor] or {};
+        chainBuffs[actor][skillId] = os.clock() + CHAIN_BUFF_DURATION[skillId];
+    end
 
-    -- Process each target
     for _, target in ipairs(actionPacket.Targets or {}) do
         local targetIndex = GetIndexFromId(target.Id);
         if targetIndex ~= 0 then
             for _, action in ipairs(target.Actions or {}) do
-                -- Check for skillchain message
+                local lookupType = actionType;
+                if petDamageMessageIds[action.Message] then
+                    lookupType = 13;
+                end
+                local skill = FindSkillById(lookupType, skillId);
+                if not skill then
+                    skill = FindSkillById(actionType, skillId);
+                end
+                local attributes = GetAttrIds(skill);
+
                 local skillchain = nil;
                 if action.AdditionalEffect then
                     skillchain = skillchainMessageIds[action.AdditionalEffect.Message];
                 end
 
                 if skillchain == Resonation.None then
-                    -- Skillchain interrupted
                     resonationMap[targetIndex] = nil;
 
                 elseif skillchain then
-                    -- Skillchain occurred - update state
                     local resonation = resonationMap[targetIndex];
                     local now = os.clock();
 
                     if resonation and (now + 1) > resonation.WindowOpen and (now - 1) < resonation.WindowClose then
-                        -- Continuing existing chain
                         resonation.Depth = resonation.Depth + 1;
-
-                        -- Handle Light/Darkness level escalation
                         if skillchain == Resonation.Light and tableContains(resonation.Attributes, Resonation.Light) then
                             resonation.Attributes = { Resonation.Light2 };
                         elseif skillchain == Resonation.Darkness and tableContains(resonation.Attributes, Resonation.Darkness) then
@@ -569,11 +733,9 @@ function M.HandleActionPacket(actionPacket)
                         else
                             resonation.Attributes = { skillchain };
                         end
-
                         resonation.WindowOpen = now + 3.5;
                         resonation.WindowClose = now + (9.8 - resonation.Depth);
                     else
-                        -- New chain from skillchain
                         resonation = {
                             Depth = 1,
                             Attributes = { skillchain },
@@ -583,19 +745,36 @@ function M.HandleActionPacket(actionPacket)
                         resonationMap[targetIndex] = resonation;
                     end
 
-                elseif weaponskillMessageIds[action.Message] then
-                    -- WS hit without skillchain - set up new resonation
-                    local attributes = weaponskillResonationMap[wsId];
-                    if attributes then
+                    resonation.BurstElements = resonationBurstElements[resonation.Attributes[1]];
+                    resonation.BurstStart = now;
+
+                elseif attributes and (hitMessageIds[action.Message] or action.Message == 529) then
+                    local allowOpener = true;
+                    if actionType == 4 then
+                        allowOpener = ActorHasSpellChainBuff(actionPacket.UserId);
+                    elseif actionType == 11 and HzLimitedMode then
+                        -- Horizon: NPC/PUP only. BST ready IDs are not in the Horizon table.
+                        allowOpener = skill and (skill._cat == 11 or skill._cat == 'pup');
+                    end
+
+                    if allowOpener then
                         local now = os.clock();
                         resonationMap[targetIndex] = {
                             Depth = 0,
                             Attributes = attributes,
-                            -- For UI prediction, show immediately (window opens now)
-                            -- Actual skillchain can land ~3-10 seconds after opener
                             WindowOpen = now,
                             WindowClose = now + 10.0,
                         };
+                    end
+                elseif hitMessageIds[action.Message] and actionType == 3 then
+                    resonationMap[targetIndex] = nil;
+                end
+
+                if skill and actionType == 4 then
+                    local actor = actionPacket.UserId;
+                    if chainBuffs[actor] then
+                        chainBuffs[actor][BUFF_CHAIN_AFFINITY] = nil;
+                        chainBuffs[actor][BUFF_IMMANENCE] = nil;
                     end
                 end
             end
@@ -603,12 +782,12 @@ function M.HandleActionPacket(actionPacket)
     end
 end
 
--- Clear all state (call on zone change)
 function M.ClearState()
     resonationMap = {};
+    chainBuffs = {};
+    bluSetCache = nil;
 end
 
--- Clear state for a specific target
 function M.ClearTargetState(targetServerId)
     if targetServerId then
         local targetIndex = GetIndexFromId(targetServerId);
@@ -618,7 +797,6 @@ function M.ClearTargetState(targetServerId)
     end
 end
 
--- Check if skillchain window is open for any target
 function M.IsWindowOpen()
     local now = os.clock();
     for _, state in pairs(resonationMap) do
@@ -629,7 +807,26 @@ function M.IsWindowOpen()
     return false;
 end
 
--- Animation helper for marching ants effect
+-- Active magic burst window, newest chain wins when several mobs are chained.
+-- Returns element name list, seconds remaining, total window length -- or nil.
+function M.GetActiveBurst()
+    local now = os.clock();
+    local newest, newestStart = nil, -1;
+
+    for _, state in pairs(resonationMap) do
+        if state.BurstElements and state.BurstStart and now < state.WindowClose
+            and state.BurstStart > newestStart then
+            newest, newestStart = state, state.BurstStart;
+        end
+    end
+
+    if not newest then
+        return nil;
+    end
+
+    return newest.BurstElements, newest.WindowClose - now, newest.WindowClose - newest.BurstStart;
+end
+
 local lastClockRead = 0;
 local cachedAnimOffset = 0;
 
@@ -642,7 +839,6 @@ function M.GetAnimationOffset()
     return cachedAnimOffset;
 end
 
--- Get list of all skillchain names (for icon preloading)
 function M.GetSkillchainNames()
     return {
         'Compression', 'Darkness', 'Detonation', 'Distortion',
@@ -652,11 +848,10 @@ function M.GetSkillchainNames()
     };
 end
 
--- Legacy compatibility
 function M.GetWSAttributesByName(wsName)
-    local wsId = GetWSIdFromName(wsName);
-    if wsId then
-        return weaponskillResonationMap[wsId], wsId;
+    local skill = FindSkillByName(3, wsName);
+    if skill then
+        return GetAttrIds(skill), skill._id;
     end
     return nil, nil;
 end

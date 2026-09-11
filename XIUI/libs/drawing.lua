@@ -145,12 +145,18 @@ end
 -- Draw List Selection
 -- ========================================
 
--- Get the appropriate draw list for UI rendering
--- Returns WindowDrawList when config is open (so config stays on top)
--- Returns ForegroundDrawList otherwise (so UI elements render on top of game)
--- Note: showConfig is a global from XIUI.lua
+-- Modules owning a real ImGui window register here while it is open: the foreground
+-- list paints over every window, so overlay content must drop below it to stay clear.
+local overlayBlockers = {};
+
+function M.SetOverlayBlocker(key, active)
+    overlayBlockers[key] = active and true or nil;
+end
+
+-- Background list while config or a registered window is open (so those stay on top),
+-- foreground otherwise. Note: showConfig is a global from XIUI.lua.
 function M.GetUIDrawList()
-    if showConfig and showConfig[1] then
+    if (showConfig and showConfig[1]) or next(overlayBlockers) ~= nil then
         return imgui.GetBackgroundDrawList();
     else
         return imgui.GetForegroundDrawList();

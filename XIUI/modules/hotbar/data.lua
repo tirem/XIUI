@@ -6,6 +6,7 @@
 require('common');
 
 local gameState = require('core.gamestate');
+local jobs = require('libs.jobs');
 
 local M = {};
 
@@ -46,6 +47,7 @@ end
 -- With 197 macros and 72 slots, this reduces from ~14,184 iterations/frame to 72 lookups
 
 local macroIdLookup = {};  -- macroIdLookup[paletteKey][macroId] = macro
+local macroIdGlobalLookup = {}; -- macroId -> macro (unique across all palettes after migration)
 local macroIdLookupDirty = true;
 -- Identity reference of the macroDB the lookup was built against. If gConfig
 -- gets reassigned (profile switch / character swap), this will no longer
@@ -57,6 +59,7 @@ local macroIdLookupSource = nil;
 
 local function RebuildMacroLookup()
     macroIdLookup = {};
+    macroIdGlobalLookup = {};
     macroIdLookupSource = (gConfig and gConfig.macroDB) or nil;
     if gConfig and gConfig.macroDB then
         for paletteKey, macros in pairs(gConfig.macroDB) do
@@ -65,6 +68,8 @@ local function RebuildMacroLookup()
                 for _, macro in ipairs(macros) do
                     if macro.id then
                         macroIdLookup[paletteKey][macro.id] = macro;
+                        -- Last write wins on legacy collisions; migration removes them
+                        macroIdGlobalLookup[macro.id] = macro;
                     end
                 end
             end
@@ -79,11 +84,38 @@ local function GetMacroFromLookup(macroId, paletteKey)
     if macroIdLookupDirty or macroIdLookupSource ~= (gConfig and gConfig.macroDB) then
         RebuildMacroLookup();
     end
-    local paletteLookup = macroIdLookup[paletteKey];
-    if paletteLookup then
-        return paletteLookup[macroId];
+    if paletteKey ~= nil and macroIdLookup[paletteKey] then
+        local macro = macroIdLookup[paletteKey][macroId];
+        if macro then return macro; end
     end
     return nil;
+end
+
+--- Allocate a macro id unique across every palette. All writers must use this;
+--- per-palette numbering leaves slots pointing at the wrong macro.
+---@return number
+function M.AllocateUniqueMacroId()
+    if not gConfig then return 1; end
+
+    local nextId = (gConfig.macroIdSeq or 0) + 1;
+    if gConfig.macroDB then
+        local used = {};
+        for _, macros in pairs(gConfig.macroDB) do
+            if type(macros) == 'table' then
+                for _, macro in ipairs(macros) do
+                    if macro and macro.id then
+                        used[macro.id] = true;
+                    end
+                end
+            end
+        end
+        while used[nextId] do
+            nextId = nextId + 1;
+        end
+    end
+
+    gConfig.macroIdSeq = nextId;
+    return nextId;
 end
 
 -- ============================================
@@ -103,7 +135,7 @@ local storageKeyCacheSource = nil;
 -- Constants
 -- ============================================
 
-M.NUM_BARS = 6;                    -- Total number of hotbars
+M.NUM_BARS = 10;                   -- Total number of hotbars
 M.SLOTS_PER_BAR = 12;              -- Default slots per hotbar
 M.MAX_SLOTS_PER_BAR = 12;          -- Maximum slots per hotbar
 
@@ -118,6 +150,7 @@ M.ROW_GAP = 6;
 -- ============================================
 
 M.jobId = nil;
+M.rawJobId = nil;
 M.subjobId = nil;
 
 -- ============================================
@@ -148,8 +181,18 @@ local function getStorageKey(barSettings, jobId, subjobId)
 end
 
 
+-- Helper to deep copy a table (for migrating slot data)
+local function deepCopyTable(tbl)
+    if type(tbl) ~= 'table' then return tbl; end
+    local copy = {};
+    for k, v in pairs(tbl) do
+        copy[k] = deepCopyTable(v);
+    end
+    return copy;
+end
+
 -- Helper to get slotActions with storage key
--- Handles: 'global' and composite keys ('15:10', '15:10:avatar:ifrit', '15:10:palette:name')
+-- Handles: 'global', job keys ('15:10'), pet names ('Fenrir'), and palette keys ('15:10:palette:name')
 -- Falls back to base job key (jobId:0) or base palette key (jobId:0:palette:name) if exact key doesn't exist
 local function getSlotActionsForJob(slotActions, storageKey)
     if not slotActions then return nil; end
@@ -163,7 +206,7 @@ local function getSlotActionsForJob(slotActions, storageKey)
         return result;
     end
     -- Fallback: try base job key (jobId:0) for imported data without subjob
-    -- This handles tHotBar imports which don't track subjobs
+    -- Fallback for imported bindings that omit subjob in the storage key
     local jobId, subjobId, suffix = storageKey:match('^(%d+):(%d+)(.*)$');
     if jobId and subjobId ~= '0' then
         -- Build fallback key with subjob=0, preserving any suffix (palette, avatar, etc.)
@@ -176,19 +219,9 @@ local function getSlotActionsForJob(slotActions, storageKey)
     return nil;
 end
 
--- Helper to deep copy a table (for migrating slot data)
-local function deepCopyTable(tbl)
-    if type(tbl) ~= 'table' then return tbl; end
-    local copy = {};
-    for k, v in pairs(tbl) do
-        copy[k] = deepCopyTable(v);
-    end
-    return copy;
-end
-
 -- Helper to ensure slotActions structure exists for a storage key
--- Handles: 'global' and composite keys ('15:10', '15:10:avatar:ifrit')
--- IMPORTANT: When creating a new key, copies data from fallback keys to preserve slot data
+-- Handles: 'global', job keys ('15:10'), and pet names ('Fenrir')
+-- IMPORTANT: When creating a new job:subjob key, copies data from fallback keys to preserve slot data
 local function ensureSlotActionsStructure(barSettings, storageKey)
     if not barSettings.slotActions then
         barSettings.slotActions = {};
@@ -242,9 +275,10 @@ local PER_BAR_ONLY_KEYS = {
 -- ============================================
 
 -- Build full storage key for a bar, considering job, subjob, pet awareness, and general palettes
--- Returns: 'global', '{jobId}:{subjobId}' (base), '{jobId}:{subjobId}:{petKey}' (pet), or '{jobId}:{subjobId}:palette:{name}' (palette)
+-- Returns: 'global', '{jobId}:{subjobId}' (base), pet name (e.g. 'Fenrir'), or '{jobId}:{subjobId}:palette:{name}'
 -- Priority: global > pet-aware > general palette > base
--- NOTE: Palettes can be subjob-specific or shared (subjob 0), with fallback to shared if no subjob-specific exist
+-- NOTE: Named palettes can be subjob-specific or shared (subjob 0), with fallback to shared if no subjob-specific exist
+-- NOTE: Pet palettes use the pet name only (no job/subjob) so the same pet always shares one palette
 -- OPTIMIZED: Results are cached to avoid 72+ string allocations per frame
 function M.GetStorageKeyForBar(barIndex)
     -- If gConfig was swapped out (profile change), invalidate.
@@ -292,7 +326,8 @@ function M.GetStorageKeyForBar(barIndex)
         end
 
         if petKey then
-            result = string.format('%s:%s', baseKey, petKey);
+            -- Pet palettes are keyed by pet name only (shared across all jobs/subjobs)
+            result = petKey;
         else
             -- Check for general palette (user-defined named palettes)
             -- Palettes use subjob-aware keys with fallback to shared (subjob 0) if no subjob-specific exist
@@ -433,7 +468,7 @@ M.GetEffectiveComboModeForStorage = GetEffectiveComboModeForStorage;
 
 -- Build full storage key for a crossbar combo mode, considering job, subjob, pet awareness, and palettes
 -- NOTE: Crossbar now uses a SINGLE global palette for all combo modes (not per-combo-mode)
--- Returns: 'global', '{jobId}:{subjobId}' (base), '{jobId}:{subjobId}:{petKey}' (pet), or '{jobId}:{subjobId}:palette:{name}' (palette)
+-- Returns: 'global', '{jobId}:{subjobId}' (base), pet name (e.g. 'Fenrir'), or '{jobId}:{subjobId}:palette:{name}'
 function M.GetCrossbarStorageKeyForCombo(comboMode)
     local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
     if not crossbarSettings then
@@ -462,7 +497,8 @@ function M.GetCrossbarStorageKeyForCombo(comboMode)
         if pp then
             local effectivePetKey = pp.GetEffectivePetKeyForCombo(comboMode);
             if effectivePetKey then
-                return string.format('%s:%s', baseKey, effectivePetKey);
+                -- Pet palettes are keyed by pet name only (shared across all jobs/subjobs)
+                return effectivePetKey;
             end
         end
     end
@@ -549,6 +585,7 @@ function M.GetBarSettings(barIndex)
             showActionLabels = false,
             actionLabelOffsetX = 0,
             actionLabelOffsetY = 0,
+            actionLabelWordWrap = true,
             slotXPadding = 8,
             slotYPadding = 6,
             slotBackgroundColor = 0x55000000,
@@ -590,21 +627,23 @@ function M.GetBarSettings(barIndex)
 end
 
 -- Get bar layout info (reads from per-bar settings)
+-- Configured rows×columns is a capacity grid, capped at MAX_SLOTS_PER_BAR (12).
+-- Visible rows are derived from how many slots actually fit — e.g. 3×12 still
+-- shows one row of 12; 3×5 shows three rows (5+5+2). Extra capacity beyond
+-- the slot cap is never drawn.
 function M.GetBarLayout(barIndex)
     local barSettings = M.GetBarSettings(barIndex);
-    local rows = barSettings.rows or 1;
-    local columns = barSettings.columns or 12;
+    local configuredRows = math.max(1, barSettings.rows or 1);
+    local columns = math.max(1, math.min(M.MAX_SLOTS_PER_BAR, barSettings.columns or 12));
 
-    -- Always calculate slots from rows * columns (ignore stored slots value)
-    local slots = rows * columns;
-
-    -- Ensure slots doesn't exceed max
-    slots = math.min(slots, M.MAX_SLOTS_PER_BAR);
+    local slots = math.min(configuredRows * columns, M.MAX_SLOTS_PER_BAR);
+    local visibleRows = math.max(1, math.ceil(slots / columns));
 
     return {
-        isVertical = rows > 1,
+        isVertical = visibleRows > 1,
         columns = columns,
-        rows = rows,
+        rows = visibleRows,
+        configuredRows = configuredRows,
         slots = slots,
     };
 end
@@ -672,7 +711,7 @@ end
 -- Helper to look up a macro from macroDB by id
 -- paletteKey can be a job ID (number) or composite key (string like "15:avatar:ifrit")
 -- OPTIMIZED: Uses O(1) lookup map instead of linear search
--- Falls back to scanning all palettes for legacy slots that don't have macroPaletteKey set
+-- Falls back to global unique-id map, then scanning all palettes for legacy slots
 local function GetMacroById(macroId, paletteKey)
     if not gConfig or not gConfig.macroDB then return nil; end
 
@@ -692,24 +731,19 @@ local function GetMacroById(macroId, paletteKey)
                     return macro;
                 end
             end
-        end
-    end
-
-    -- Fallback for legacy slots missing macroPaletteKey: scan all palettes
-    -- (rebuild lookup if dirty OR if gConfig.macroDB was swapped under us)
-    if macroIdLookupDirty or macroIdLookupSource ~= (gConfig and gConfig.macroDB) then
-        RebuildMacroLookup();
-    end
-    for key, paletteLookup in pairs(macroIdLookup) do
-        if key ~= paletteKey then
-            local macro = paletteLookup[macroId];
-            if macro then
-                return macro;
+            if paletteKey:match('^other') then
+                macro = GetMacroFromLookup(macroId, 'other');
+                if macro then return macro; end
             end
         end
     end
 
-    return nil;
+    -- Covers legacy slots with no macroPaletteKey. Holds every id in macroDB, so
+    -- a miss here means the macro is gone; no per-palette scan can beat it.
+    if macroIdLookupDirty or macroIdLookupSource ~= (gConfig and gConfig.macroDB) then
+        RebuildMacroLookup();
+    end
+    return macroIdGlobalLookup[macroId];
 end
 
 -- Get action assignment for a specific bar and slot
@@ -794,7 +828,7 @@ local function getCrossbarStorageKey(crossbarSettings, jobId, subjobId)
 end
 
 -- Helper to get crossbar slotActions with storage key
--- Handles: 'global' and composite keys ('15:10', '15:10:palette:Stuns', '15:10:avatar:ifrit')
+-- Handles: 'global' and composite keys ('15:10', '15:10:palette:Stuns', '15:0:avatar:ifrit')
 -- Falls back to base job key (jobId:0) preserving any suffix if full job:subjob key doesn't exist
 local function getCrossbarSlotActionsForJob(slotActions, storageKey)
     if not slotActions then return nil; end
@@ -1089,20 +1123,36 @@ function M.SetPlayerJob()
     end
 
     local player = AshitaCore:GetMemoryManager():GetPlayer()
-    local currentJobId = player:GetMainJob();
-    if currentJobId == 0 then
+    local rawJobId = player:GetMainJob();
+    if rawJobId == 0 then
         return false;
     end
-    local currentSubjobId = player:GetSubJob();
+    return M.ApplyJobFromPacket(rawJobId, player:GetSubJob());
+end
 
-    -- Invalidate caches if job changed
-    if M.jobId ~= currentJobId or M.subjobId ~= currentSubjobId then
+-- Set job from an incoming packet. Does not wait for memory or login flags.
+-- Returns applied, changed.
+function M.ApplyJobFromPacket(mainJob, subJob)
+    if not mainJob or mainJob == 0 then
+        return false, false;
+    end
+    -- Main job collapses into the Other category; subjob keeps its real id only
+    -- when standard, matching the storage keys built from M.jobId/M.subjobId.
+    local jobId = jobs.ResolveJobCategory(mainJob);
+    local subjobId = subJob or 0;
+    if subjobId ~= 0 then
+        subjobId = jobs.IsStandardJob(subjobId) and subjobId or 0;
+    end
+
+    local changed = (M.jobId ~= jobId or M.subjobId ~= subjobId);
+    if changed then
         M.InvalidateStorageKeyCache();
     end
 
-    M.jobId = currentJobId;
-    M.subjobId = currentSubjobId;
-    return true;
+    M.jobId = jobId;
+    M.rawJobId = mainJob;
+    M.subjobId = subjobId;
+    return true, changed;
 end
 
 -- Clear all state (call on zone change)

@@ -303,6 +303,22 @@ function M.UpdateUserSettings(gAdjustedSettings, default_settings, gConfig)
     gAdjustedSettings.gilTrackerSettings.gilPerHourOffsetX = (us.gilTrackerGilPerHourOffsetX or 0) * gs;
     gAdjustedSettings.gilTrackerSettings.gilPerHourOffsetY = (us.gilTrackerGilPerHourOffsetY or 0) * gs;
 
+    -- Magic Burst
+    local magicBurstScale = (us.magicBurstScale or 1.0) * gs;
+    gAdjustedSettings.magicBurstSettings.imageSize = ds.magicBurstSettings.imageSize * magicBurstScale;
+    gAdjustedSettings.magicBurstSettings.font_settings.font_height = ds.magicBurstSettings.font_settings.font_height * magicBurstScale;
+    gAdjustedSettings.magicBurstSettings.showTimer = us.magicBurstShowTimer ~= false;
+
+    -- Phantom Roll
+    applyGlobalFontSettings(gAdjustedSettings.phantomRollSettings.font_settings, us.fontFamily, fontWeightFlags, us.fontOutlineWidth);
+    local phantomRollScale = (us.phantomRollScale or 1.0) * gs;
+    gAdjustedSettings.phantomRollSettings.dieSize = ds.phantomRollSettings.dieSize * phantomRollScale;
+    gAdjustedSettings.phantomRollSettings.nameSize = ds.phantomRollSettings.nameSize * phantomRollScale;
+    gAdjustedSettings.phantomRollSettings.potencySize = ds.phantomRollSettings.potencySize * phantomRollScale;
+    gAdjustedSettings.phantomRollSettings.oddsSize = ds.phantomRollSettings.oddsSize * phantomRollScale;
+    gAdjustedSettings.phantomRollSettings.barHeight = ds.phantomRollSettings.barHeight * phantomRollScale;
+    gAdjustedSettings.phantomRollSettings.horizonMode = us.phantomRollHorizonMode == true;
+
     -- Inventory Tracker
     gAdjustedSettings.inventoryTrackerSettings.dotRadius = ds.inventoryTrackerSettings.dotRadius * us.inventoryTrackerScale * gs;
     gAdjustedSettings.inventoryTrackerSettings.dotSpacing = ds.inventoryTrackerSettings.dotSpacing * us.inventoryTrackerScale * gs;

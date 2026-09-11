@@ -63,37 +63,47 @@ M.spirits = {
 
 -- ============================================
 -- Jug Pet Names (for BST)
--- Note: Jug pets share a common "jug" palette (too many for individual palettes)
+-- Each jug pet gets its own palette keyed by entity name.
+-- Lists match server availability (Horizon vs retail).
 -- ============================================
 
-M.jugPets = {
-    -- Low level (23-75)
-    'Homunculus', 'HareFamiliar', 'KeenearedSteffi', 'CrabFamiliar',
-    'CourierCarrie', 'SheepFamiliar', 'LullabyMelodia', 'TigerFamiliar',
-    'SaberSiravarde', 'MayflyFamiliar', 'ShellbusterOrob', 'LizardFamiliar',
-    'ColdbloodComo', 'EftFamiliar', 'AmbusherAllie', 'FunguarFamiliar',
-    'FlytrapFamiliar', 'VoraciousAudrey', 'FlowerpotBill', 'FlowerpotBen',
-    'AntlionFamiliar', 'ChopsueyChucky', 'BeetleFamiliar', 'PanzerGalahad',
-    'MiteFamiliar', 'LifedrinkerLars', 'TurbidToloi', 'AmigoSabotender',
-    -- High level (76-119)
-    'DapperMac', 'CraftyClyvonne', 'NurseryNazuna', 'LuckyLulush',
-    'FlowerpotMerle', 'DipperYuly', 'DiscreetLouise', 'FatsoFargann',
-    'PrestoJulio', 'AudaciousAnna', 'MailbusterCetas', 'FaithfulFalcorr',
-    'SwiftSieghard', 'BloodclawShasra', 'BugeyedBroncha', 'GorefangHobs',
-    'GooeyGerard', 'CrudeRaphie', 'AmiableRoche', 'SweetCaroline',
-    'HeadbreakerKen', 'AnklebiterJedd', 'CursedAnnabelle', 'BrainyWaluis',
-    'RedolentCandi', 'AlluringHoney', 'CaringKiyomaro', 'VivaciousVickie',
-    'SuspiciousAlice', 'SurgingStorm', 'SubmergedIyo', 'WarlikePatrick',
-    'RhymingShizuna', 'BlackbeardRandy', 'ThreestarLynn', 'HurlerPercival',
-    'AcuexFamiliar', 'FluffyBredo', 'SlimeFamiliar', 'SultryPatrice',
-    'GenerousArthur', 'DaringRoland', 'AttentiveIbuki', 'SwoopingZhivago',
-    'ChoralLeera', 'ColibriFamiliar', 'HippogrypFamiliar', 'SunburstMalfik',
-    'AgedAngus', 'HeraldHenry', 'BraveHeroGlenn', 'PorterCrabFamiliar',
-    'JovialEdwin', 'ScissorlegXerin',
-    -- Legacy/alternate names (kept for backwards compatibility)
-    'BouncingBertha', 'SharpwitHermes', 'FleetReinhard', 'DroopyDortwin',
-    'PonderingPeter', 'MosquitoFamilia', 'Left-HandedYoko',
-};
+if HzLimitedMode then
+    M.jugPets = {
+        'HareFamiliar', 'SheepFamiliar', 'FlowerpotBill', 'FlytrapFamiliar',
+        'TigerFamiliar', 'BeetleFamiliar', 'EftFamiliar', 'LizardFamiliar',
+        'MayflyFamiliar', 'AntlionFamiliar', 'CrabFamiliar', 'MiteFamiliar',
+        'FunguarFamiliar', 'AmbusherAllie', 'AmigoSabotender', 'ChopsueyChucky',
+        'ColdbloodComo', 'CourierCarrie', 'FlowerpotBen', 'Homunculus',
+        'KeenearedSteffi', 'LifedrinkerLars', 'LullabyMelodia', 'PanzerGalahad',
+        'SaberSiravarde', 'ShellbusterOrob', 'VoraciousAudrey',
+    };
+else
+    M.jugPets = {
+        'Homunculus', 'HareFamiliar', 'KeenearedSteffi', 'CrabFamiliar',
+        'CourierCarrie', 'SheepFamiliar', 'LullabyMelodia', 'TigerFamiliar',
+        'SaberSiravarde', 'MayflyFamiliar', 'ShellbusterOrob', 'LizardFamiliar',
+        'ColdbloodComo', 'EftFamiliar', 'AmbusherAllie', 'FunguarFamiliar',
+        'FlytrapFamiliar', 'VoraciousAudrey', 'FlowerpotBill', 'FlowerpotBen',
+        'AntlionFamiliar', 'ChopsueyChucky', 'BeetleFamiliar', 'PanzerGalahad',
+        'MiteFamiliar', 'LifedrinkerLars', 'TurbidToloi', 'AmigoSabotender',
+        'SlipperySilas', 'DapperMac', 'CraftyClyvonne', 'NurseryNazuna',
+        'LuckyLulush', 'FlowerpotMerle', 'DipperYuly', 'DiscreetLouise',
+        'FatsoFargann', 'PrestoJulio', 'AudaciousAnna', 'MailbusterCetas',
+        'FaithfulFalcorr', 'SwiftSieghard', 'BloodclawShasra', 'BugeyedBroncha',
+        'GorefangHobs', 'GooeyGerard', 'CrudeRaphie', 'AmiableRoche',
+        'SweetCaroline', 'HeadbreakerKen', 'AnklebiterJedd', 'CursedAnnabelle',
+        'BrainyWaluis', 'RedolentCandi', 'AlluringHoney', 'CaringKiyomaro',
+        'VivaciousVickie', 'SuspiciousAlice', 'SurgingStorm', 'SubmergedIyo',
+        'WarlikePatrick', 'RhymingShizuna', 'BlackbeardRandy', 'ThreestarLynn',
+        'HurlerPercival', 'AcuexFamiliar', 'FluffyBredo', 'SlimeFamiliar',
+        'SultryPatrice', 'GenerousArthur', 'DaringRoland', 'AttentiveIbuki',
+        'SwoopingZhivago', 'ChoralLeera', 'ColibriFamiliar', 'HippogrypFamiliar',
+        'SunburstMalfik', 'AgedAngus', 'HeraldHenry', 'BraveHeroGlenn',
+        'PorterCrabFamiliar', 'JovialEdwin', 'ScissorlegXerin',
+        'BouncingBertha', 'SharpwitHermes', 'FleetReinhard', 'DroopyDortwin',
+        'PonderingPeter', 'MosquitoFamilia', 'Left-HandedYoko',
+    };
+end
 
 -- Build lookup table for jug pets
 M.jugPetLookup = {};
@@ -113,6 +123,12 @@ M.jobPetCategories = {
     [M.JOB_BST] = { M.PET_TYPE_JUG, M.PET_TYPE_CHARM },
 };
 
+-- Canonical pet-palette keys for pets that share one palette regardless of
+-- custom entity name (renamed wyvern, automaton nickname, any charmed mob).
+M.PET_KEY_WYVERN = 'Wyvern';
+M.PET_KEY_AUTOMATON = 'Automaton';
+M.PET_KEY_CHARMED = 'Charmed';
+
 -- ============================================
 -- Display Names for Pet Types
 -- ============================================
@@ -120,10 +136,10 @@ M.jobPetCategories = {
 M.petTypeDisplayNames = {
     [M.PET_TYPE_AVATAR] = 'Avatar',
     [M.PET_TYPE_SPIRIT] = 'Spirit',
-    [M.PET_TYPE_WYVERN] = 'Wyvern',
-    [M.PET_TYPE_AUTOMATON] = 'Automaton',
+    [M.PET_TYPE_WYVERN] = M.PET_KEY_WYVERN,
+    [M.PET_TYPE_AUTOMATON] = M.PET_KEY_AUTOMATON,
     [M.PET_TYPE_JUG] = 'Jug Pet',
-    [M.PET_TYPE_CHARM] = 'Charmed',
+    [M.PET_TYPE_CHARM] = M.PET_KEY_CHARMED,
 };
 
 -- ============================================
@@ -133,19 +149,6 @@ M.petTypeDisplayNames = {
 -- Check if a job is a pet job
 function M.IsPetJob(jobId)
     return M.jobPetCategories[jobId] ~= nil;
-end
-
--- Resolve the pet job from main or subjob (e.g. WAR/BST), since a pet subjob also
--- grants pet commands. Returns a pet job id, or nil if neither qualifies.
-function M.ResolvePetJob(mainJobId, subJobId)
-    if M.IsPetJob(mainJobId) then return mainJobId; end
-    if subJobId and M.IsPetJob(subJobId) then return subJobId; end
-    return nil;
-end
-
--- Get pet categories for a job
-function M.GetPetCategories(jobId)
-    return M.jobPetCategories[jobId] or {};
 end
 
 -- Check if a pet name is a jug pet
@@ -191,86 +194,84 @@ function M.GetPetType(petName, jobId)
     return nil;
 end
 
--- Get the storage key suffix for a pet
--- Returns: string like "avatar:ifrit", "wyvern", "jug", "automaton", etc.
--- For SMN avatars/spirits, returns per-entity keys
--- For other jobs, returns per-type keys
+-- Get the pet palette storage key for a live pet entity name.
+-- Keys are the pet name itself (no job/subjob): "Fenrir", "HareFamiliar", etc.
+-- Shared exceptions: Wyvern, Automaton, and all charmed pets -> "Charmed".
 function M.GetPetKey(petName, jobId)
     if petName == nil then return nil; end
 
     local petType = M.GetPetType(petName, jobId);
     if not petType then return nil; end
 
-    -- SMN: Per-avatar/spirit palettes
-    if petType == M.PET_TYPE_AVATAR then
-        local avatarKey = M.avatars[petName];
-        if avatarKey then
-            return M.PET_TYPE_AVATAR .. ':' .. avatarKey;
-        end
-    elseif petType == M.PET_TYPE_SPIRIT then
-        local spiritKey = M.spirits[petName];
-        if spiritKey then
-            return M.PET_TYPE_SPIRIT .. ':' .. spiritKey;
-        end
+    if petType == M.PET_TYPE_CHARM then
+        return M.PET_KEY_CHARMED;
+    elseif petType == M.PET_TYPE_WYVERN then
+        return M.PET_KEY_WYVERN;
+    elseif petType == M.PET_TYPE_AUTOMATON then
+        return M.PET_KEY_AUTOMATON;
     end
 
-    -- Other jobs: Per-type palettes (wyvern, automaton, jug, charm)
-    return petType;
+    -- Avatars, spirits, and jug pets: one palette per entity name
+    return petName;
 end
 
--- Get display name for a pet key
--- Input: "avatar:ifrit", "wyvern", etc.
--- Output: "Ifrit", "Wyvern", etc.
+-- Display label for a pet palette key (keys are already human-readable names)
 function M.GetDisplayNameForKey(petKey)
     if not petKey then return 'Base'; end
-
-    -- Check for avatar/spirit format
-    local petType, petId = petKey:match('^([^:]+):(.+)$');
-    if petType and petId then
-        if petType == M.PET_TYPE_AVATAR then
-            -- Find avatar name
-            for name, key in pairs(M.avatars) do
-                if key == petId then return name; end
-            end
-        elseif petType == M.PET_TYPE_SPIRIT then
-            -- Find spirit name
-            for name, key in pairs(M.spirits) do
-                if key == petId then return name; end
-            end
-        end
-    end
-
-    -- Check for simple type keys
-    local displayName = M.petTypeDisplayNames[petKey];
-    if displayName then return displayName; end
-
     return petKey;
 end
 
--- Get all available pet keys for a job (for cycling)
--- Returns a table of pet keys that can be used for that job
+-- Get all available pet keys for a job (for cycling / dropdowns)
 function M.GetAvailablePetKeys(jobId)
     local keys = {};
 
     if jobId == M.JOB_SMN then
-        -- All avatars
-        for _, key in pairs(M.avatars) do
-            table.insert(keys, M.PET_TYPE_AVATAR .. ':' .. key);
+        for _, name in ipairs(M.GetAvatarList()) do
+            table.insert(keys, name);
         end
-        -- All spirits
-        for _, key in pairs(M.spirits) do
-            table.insert(keys, M.PET_TYPE_SPIRIT .. ':' .. key);
+        for _, name in ipairs(M.GetSpiritList()) do
+            table.insert(keys, name);
         end
     elseif jobId == M.JOB_DRG then
-        table.insert(keys, M.PET_TYPE_WYVERN);
+        table.insert(keys, M.PET_KEY_WYVERN);
     elseif jobId == M.JOB_PUP then
-        table.insert(keys, M.PET_TYPE_AUTOMATON);
+        table.insert(keys, M.PET_KEY_AUTOMATON);
     elseif jobId == M.JOB_BST then
-        table.insert(keys, M.PET_TYPE_JUG);
-        table.insert(keys, M.PET_TYPE_CHARM);
+        for _, petName in ipairs(M.jugPets) do
+            table.insert(keys, petName);
+        end
+        table.insert(keys, M.PET_KEY_CHARMED);
     end
 
     return keys;
+end
+
+-- Insert spaces before capitals for jug dropdown labels (CourierCarrie -> Courier Carrie).
+-- Storage keys stay as the raw entity name.
+function M.FormatJugPetDisplayName(petName)
+    if petName == nil or petName == '' then
+        return '';
+    end
+    return (tostring(petName):gsub('(%l)(%u)', '%1 %2'):gsub('(%d)(%u)', '%1 %2'));
+end
+
+-- Ordered jug pet list for dropdowns (key = entity name, displayName = spaced label)
+function M.GetJugPetList()
+    local list = {};
+    for _, petName in ipairs(M.jugPets) do
+        table.insert(list, {
+            name = petName,
+            key = petName,
+            displayName = M.FormatJugPetDisplayName(petName),
+        });
+    end
+    return list;
+end
+
+-- Get pet key for a known jug entity name
+function M.GetPetKeyForJug(petName)
+    if not M.IsJugPet(petName) then return nil; end
+    return petName;
 end
 
 -- Get ordered list of avatar names (for dropdowns, etc.)
@@ -290,14 +291,42 @@ function M.GetSpiritList()
     };
 end
 
--- Get combined list of all summons (avatars + spirits)
+local function CopyAndSortNames(names)
+    local list = {};
+    for _, name in ipairs(names) do
+        table.insert(list, name);
+    end
+    table.sort(list, function(a, b)
+        return string.lower(a) < string.lower(b);
+    end);
+    return list;
+end
+
+-- Alphabetical avatar names for UI lists
+function M.GetSortedAvatarList()
+    return CopyAndSortNames(M.GetAvatarList());
+end
+
+-- Alphabetical spirit names for UI lists
+function M.GetSortedSpiritList()
+    return CopyAndSortNames(M.GetSpiritList());
+end
+
+-- Alphabetical jug pet list for UI (sorted by spaced display name)
+function M.GetSortedJugPetList()
+    local list = M.GetJugPetList();
+    table.sort(list, function(a, b)
+        return string.lower(a.displayName) < string.lower(b.displayName);
+    end);
+    return list;
+end
+
+-- Combined list of all summons (avatars + spirits)
 function M.GetAllSummonsList()
     local list = {};
-    -- Avatars first
     for _, avatar in ipairs(M.GetAvatarList()) do
         table.insert(list, { name = avatar, category = 'avatar' });
     end
-    -- Then spirits
     for _, spirit in ipairs(M.GetSpiritList()) do
         table.insert(list, { name = spirit, category = 'spirit' });
     end
@@ -306,201 +335,46 @@ end
 
 -- Get the pet key for a summon name (avatar or spirit)
 function M.GetPetKeyForSummon(summonName)
-    -- Check avatars
-    if M.avatars[summonName] then
-        return 'avatar:' .. M.avatars[summonName];
-    end
-    -- Check spirits
-    if M.spirits[summonName] then
-        return 'spirit:' .. M.spirits[summonName];
+    if M.avatars[summonName] or M.spirits[summonName] then
+        return summonName;
     end
     return nil;
 end
 
+-- DRG/PUP pets cannot be active when the job is only subbed.
+function M.IsMainOnlyPetJob(jobId)
+    return jobId == M.JOB_DRG or jobId == M.JOB_PUP;
+end
+
+-- Which pet jobs should appear in the macro-palette pet dropdown.
+-- Includes the job being edited, plus live main/sub (sub skips DRG/PUP).
+-- Returns a set: { [jobId] = true }
+function M.GetPetJobsForPaletteEditor(selectedJobId, mainJobId, subJobId)
+    local jobs = {};
+
+    local function addJob(jobId, isSub)
+        if type(jobId) ~= 'number' or not M.IsPetJob(jobId) then
+            return;
+        end
+        if isSub and M.IsMainOnlyPetJob(jobId) then
+            return;
+        end
+        jobs[jobId] = true;
+    end
+
+    addJob(selectedJobId, false);
+    addJob(mainJobId, false);
+    addJob(subJobId, true);
+
+    return jobs;
+end
+
 -- ============================================
--- Pet Commands Data
+-- Pet ability menus
 -- ============================================
-
--- Generic pet commands (all pet jobs)
-M.genericPetCommands = {
-    { name = 'Assault', category = 'Command' },
-    { name = 'Retreat', category = 'Command' },
-    { name = 'Stay', category = 'Command' },
-    { name = 'Heel', category = 'Command' },
-    { name = 'Release', category = 'Command' },
-};
-
--- SMN Blood Pacts - Rage (offensive)
-M.bloodPactsRage = {
-    -- Shared
-    { name = 'Punch', avatars = {'Ifrit'} },
-    { name = 'Fire II', avatars = {'Ifrit'} },
-    { name = 'Burning Strike', avatars = {'Ifrit'} },
-    { name = 'Double Punch', avatars = {'Ifrit'} },
-    { name = 'Flaming Crush', avatars = {'Ifrit'} },
-    { name = 'Meteor Strike', avatars = {'Ifrit'} },
-    { name = 'Conflag Strike', avatars = {'Ifrit'} },
-    { name = 'Fire IV', avatars = {'Ifrit'} },
-    -- Shiva
-    { name = 'Axe Kick', avatars = {'Shiva'} },
-    { name = 'Blizzard II', avatars = {'Shiva'} },
-    { name = 'Double Slap', avatars = {'Shiva'} },
-    { name = 'Blizzard IV', avatars = {'Shiva'} },
-    { name = 'Rush', avatars = {'Shiva'} },
-    { name = 'Heavenly Strike', avatars = {'Shiva'} },
-    -- Garuda
-    { name = 'Claw', avatars = {'Garuda'} },
-    { name = 'Aero II', avatars = {'Garuda'} },
-    { name = 'Aero IV', avatars = {'Garuda'} },
-    { name = 'Predator Claws', avatars = {'Garuda'} },
-    { name = 'Wind Blade', avatars = {'Garuda'} },
-    -- Titan
-    { name = 'Rock Throw', avatars = {'Titan'} },
-    { name = 'Stone II', avatars = {'Titan'} },
-    { name = 'Stone IV', avatars = {'Titan'} },
-    { name = 'Rock Buster', avatars = {'Titan'} },
-    { name = 'Megalith Throw', avatars = {'Titan'} },
-    { name = 'Mountain Buster', avatars = {'Titan'} },
-    { name = 'Geocrush', avatars = {'Titan'} },
-    { name = 'Crag Throw', avatars = {'Titan'} },
-    -- Ramuh
-    { name = 'Shock Strike', avatars = {'Ramuh'} },
-    { name = 'Thunder II', avatars = {'Ramuh'} },
-    { name = 'Thunder IV', avatars = {'Ramuh'} },
-    { name = 'Chaotic Strike', avatars = {'Ramuh'} },
-    { name = 'Thunderstorm', avatars = {'Ramuh'} },
-    { name = 'Thunderspark', avatars = {'Ramuh'} },
-    { name = 'Volt Strike', avatars = {'Ramuh'} },
-    -- Leviathan
-    { name = 'Barracuda Dive', avatars = {'Leviathan'} },
-    { name = 'Water II', avatars = {'Leviathan'} },
-    { name = 'Water IV', avatars = {'Leviathan'} },
-    { name = 'Tail Whip', avatars = {'Leviathan'} },
-    { name = 'Spinning Dive', avatars = {'Leviathan'} },
-    { name = 'Grand Fall', avatars = {'Leviathan'} },
-    -- Fenrir
-    { name = 'Moonlit Charge', avatars = {'Fenrir'} },
-    { name = 'Crescent Fang', avatars = {'Fenrir'} },
-    { name = 'Eclipse Bite', avatars = {'Fenrir'} },
-    { name = 'Howling Moon', avatars = {'Fenrir'} },
-    { name = 'Impact', avatars = {'Fenrir'} },
-    -- Diabolos
-    { name = 'Camisado', avatars = {'Diabolos'} },
-    { name = 'Nether Blast', avatars = {'Diabolos'} },
-    { name = 'Night Terror', avatars = {'Diabolos'} },
-    -- Carbuncle
-    { name = 'Poison Nails', avatars = {'Carbuncle'} },
-    { name = 'Holy Mist', avatars = {'Carbuncle'} },
-    { name = 'Meteorite', avatars = {'Carbuncle'} },
-    -- Odin
-    { name = 'Zantetsuken', avatars = {'Odin'} },
-    -- Cait Sith
-    { name = 'Regal Scratch', avatars = {'Cait Sith'} },
-    { name = 'Level ? Holy', avatars = {'Cait Sith'} },
-    { name = 'Regal Gash', avatars = {'Cait Sith'} },
-    -- Siren
-    { name = 'Clarsach Call', avatars = {'Siren'} },
-    { name = 'Sonic Buffet', avatars = {'Siren'} },
-    { name = 'Tornado II', avatars = {'Siren'} },
-    { name = 'Hysteric Assault', avatars = {'Siren'} },
-    { name = 'Welt', avatars = {'Siren'} },
-    { name = 'Katabatic Blades', avatars = {'Siren'} },
-};
-
--- SMN Blood Pacts - Ward (support)
-M.bloodPactsWard = {
-    -- Carbuncle
-    { name = 'Soothing Ruby', avatars = {'Carbuncle'} },
-    { name = 'Healing Ruby', avatars = {'Carbuncle'} },
-    { name = 'Shining Ruby', avatars = {'Carbuncle'} },
-    { name = 'Glittering Ruby', avatars = {'Carbuncle'} },
-    { name = 'Healing Ruby II', avatars = {'Carbuncle'} },
-    { name = 'Pacifying Ruby', avatars = {'Carbuncle'} },
-    -- Ifrit
-    { name = 'Crimson Howl', avatars = {'Ifrit'} },
-    { name = 'Inferno Howl', avatars = {'Ifrit'} },
-    -- Shiva
-    { name = 'Frost Armor', avatars = {'Shiva'} },
-    { name = 'Sleepga', avatars = {'Shiva'} },
-    { name = 'Diamond Storm', avatars = {'Shiva'} },
-    { name = 'Crystal Blessing', avatars = {'Shiva'} },
-    -- Garuda
-    { name = 'Aerial Armor', avatars = {'Garuda'} },
-    { name = 'Whispering Wind', avatars = {'Garuda'} },
-    { name = 'Hastega', avatars = {'Garuda'} },
-    { name = 'Fleet Wind', avatars = {'Garuda'} },
-    -- Titan
-    { name = 'Earthen Ward', avatars = {'Titan'} },
-    { name = 'Earthen Armor', avatars = {'Titan'} },
-    -- Ramuh
-    { name = 'Rolling Thunder', avatars = {'Ramuh'} },
-    { name = 'Lightning Armor', avatars = {'Ramuh'} },
-    { name = 'Shock Squall', avatars = {'Ramuh'} },
-    -- Leviathan
-    { name = 'Slowga', avatars = {'Leviathan'} },
-    { name = 'Spring Water', avatars = {'Leviathan'} },
-    { name = 'Tidal Roar', avatars = {'Leviathan'} },
-    -- Fenrir
-    { name = 'Ecliptic Growl', avatars = {'Fenrir'} },
-    { name = 'Ecliptic Howl', avatars = {'Fenrir'} },
-    { name = 'Lunar Cry', avatars = {'Fenrir'} },
-    { name = 'Lunar Roar', avatars = {'Fenrir'} },
-    -- Diabolos
-    { name = 'Pavor Nocturnus', avatars = {'Diabolos'} },
-    { name = 'Somnolence', avatars = {'Diabolos'} },
-    { name = 'Nightmare', avatars = {'Diabolos'} },
-    { name = 'Ultimate Terror', avatars = {'Diabolos'} },
-    { name = 'Noctoshield', avatars = {'Diabolos'} },
-    { name = 'Dream Shroud', avatars = {'Diabolos'} },
-    -- Cait Sith
-    { name = 'Mewing Lullaby', avatars = {'Cait Sith'} },
-    { name = 'Eerie Eye', avatars = {'Cait Sith'} },
-    { name = 'Altana\'s Favor', avatars = {'Cait Sith'} },
-    { name = 'Raise II', avatars = {'Cait Sith'} },
-    { name = 'Reraise II', avatars = {'Cait Sith'} },
-    -- Alexander
-    { name = 'Perfect Defense', avatars = {'Alexander'} },
-    -- Atomos
-    { name = 'Chronoshift', avatars = {'Atomos'} },
-    -- Siren
-    { name = 'Lunatic Voice', avatars = {'Siren'} },
-    { name = 'Chinook', avatars = {'Siren'} },
-    { name = 'Bitter Elegy', avatars = {'Siren'} },
-};
-
--- DRG Wyvern abilities
-M.wyvernCommands = {
-    { name = 'Steady Wing', category = 'Ability' },
-    { name = 'Spirit Bond', category = 'Ability' },
-    { name = 'Dragon Breaker', category = 'Ability' },
-    { name = 'Spirit Jump', category = 'Ability' },
-    { name = 'Soul Jump', category = 'Ability' },
-};
-
--- PUP Automaton commands
-M.automatonCommands = {
-    { name = 'Deploy', category = 'Command' },
-    { name = 'Retrieve', category = 'Command' },
-    { name = 'Activate', category = 'Ability' },
-    { name = 'Deactivate', category = 'Ability' },
-    { name = 'Deus Ex Automata', category = 'Ability' },
-    { name = 'Repair', category = 'Ability' },
-    { name = 'Maintenance', category = 'Ability' },
-    { name = 'Role Reversal', category = 'Ability' },
-    { name = 'Ventriloquy', category = 'Ability' },
-    { name = 'Cooldown', category = 'Ability' },
-    { name = 'Overdrive', category = 'Ability' },
-    { name = 'Tactical Switch', category = 'Ability' },
-    { name = 'Heady Artifice', category = 'Ability' },
-};
-
--- BST pet commands (not job abilities - those go in Ability section)
-M.bstReadyCommands = {
-    { name = 'Fight', category = 'Command' },
-    { name = 'Sic', category = 'Command' },
-    { name = 'Ready', category = 'Command' },
-    { name = 'Reward', category = 'Command' },
-};
+-- Macro editor / hotbar pet dropdowns use a HasAbility scan for known
+-- pet-typed resources. No static SMN/BST/DRG/PUP command lists here.
+-- Ready-move family data below is only for skillchain highlighting.
 
 -- ============================================
 -- BST Jug Pet Ready Moves by Family
@@ -736,146 +610,13 @@ function M.GetJugPetFamily(petName)
     return M.jugPetFamilies[petName];
 end
 
--- Get ready moves for a jug pet by name
+-- Get ready moves for a jug pet by name (skillchain highlighting)
 function M.GetReadyMovesForPet(petName)
     local family = M.GetJugPetFamily(petName);
     if family and M.petFamilyReadyMoves[family] then
         return M.petFamilyReadyMoves[family];
     end
     return nil;
-end
-
--- Get all ready moves (for when no specific pet selected)
-function M.GetAllReadyMoves()
-    local moves = {};
-    local seen = {};
-    for _, familyMoves in pairs(M.petFamilyReadyMoves) do
-        for _, move in ipairs(familyMoves) do
-            if not seen[move.name] then
-                table.insert(moves, { name = move.name, category = 'Ready' });
-                seen[move.name] = true;
-            end
-        end
-    end
-    -- Sort alphabetically
-    table.sort(moves, function(a, b) return a.name < b.name; end);
-    return moves;
-end
-
--- ============================================
--- Pet Command Functions
--- ============================================
-
--- Get blood pacts for a specific avatar (both Rage and Ward)
-function M.GetBloodPactsForAvatar(avatarName)
-    local pacts = {};
-
-    -- Add Rage pacts
-    for _, pact in ipairs(M.bloodPactsRage) do
-        for _, avatar in ipairs(pact.avatars) do
-            if avatar == avatarName then
-                table.insert(pacts, { name = pact.name, category = 'BP: Rage' });
-                break;
-            end
-        end
-    end
-
-    -- Add Ward pacts
-    for _, pact in ipairs(M.bloodPactsWard) do
-        for _, avatar in ipairs(pact.avatars) do
-            if avatar == avatarName then
-                table.insert(pacts, { name = pact.name, category = 'BP: Ward' });
-                break;
-            end
-        end
-    end
-
-    return pacts;
-end
-
--- Get all blood pacts (for when no specific avatar selected)
-function M.GetAllBloodPacts()
-    local pacts = {};
-    local seen = {};
-
-    -- Add all Rage pacts
-    for _, pact in ipairs(M.bloodPactsRage) do
-        if not seen[pact.name] then
-            table.insert(pacts, { name = pact.name, category = 'BP: Rage' });
-            seen[pact.name] = true;
-        end
-    end
-
-    -- Add all Ward pacts
-    for _, pact in ipairs(M.bloodPactsWard) do
-        if not seen[pact.name] then
-            table.insert(pacts, { name = pact.name, category = 'BP: Ward' });
-            seen[pact.name] = true;
-        end
-    end
-
-    return pacts;
-end
-
--- Get pet commands for a specific job
--- avatarName is optional, for SMN to filter by specific avatar
--- activePetName is optional, for BST to include ready moves for the active pet
-function M.GetPetCommandsForJob(jobId, avatarName, activePetName)
-    local commands = {};
-
-    -- Add generic commands first
-    for _, cmd in ipairs(M.genericPetCommands) do
-        table.insert(commands, { name = cmd.name, category = cmd.category });
-    end
-
-    if jobId == M.JOB_SMN then
-        -- SMN: Blood Pacts
-        if avatarName and M.avatars[avatarName] then
-            -- Specific avatar - add only their pacts
-            local avatarPacts = M.GetBloodPactsForAvatar(avatarName);
-            for _, pact in ipairs(avatarPacts) do
-                table.insert(commands, pact);
-            end
-        else
-            -- No specific avatar - add all pacts
-            local allPacts = M.GetAllBloodPacts();
-            for _, pact in ipairs(allPacts) do
-                table.insert(commands, pact);
-            end
-        end
-    elseif jobId == M.JOB_DRG then
-        -- DRG: Wyvern commands
-        for _, cmd in ipairs(M.wyvernCommands) do
-            table.insert(commands, { name = cmd.name, category = cmd.category });
-        end
-    elseif jobId == M.JOB_PUP then
-        -- PUP: Automaton commands
-        for _, cmd in ipairs(M.automatonCommands) do
-            table.insert(commands, { name = cmd.name, category = cmd.category });
-        end
-    elseif jobId == M.JOB_BST then
-        -- BST: Ready commands (abilities)
-        for _, cmd in ipairs(M.bstReadyCommands) do
-            table.insert(commands, { name = cmd.name, category = cmd.category });
-        end
-        -- BST: Ready moves for the active pet
-        if activePetName then
-            local readyMoves = M.GetReadyMovesForPet(activePetName);
-            if readyMoves then
-                for _, move in ipairs(readyMoves) do
-                    table.insert(commands, { name = move.name, category = move.category });
-                end
-            end
-        else
-            -- No specific pet - add all ready moves
-            local allMoves = M.GetAllReadyMoves();
-            for _, move in ipairs(allMoves) do
-                table.insert(commands, move);
-            end
-        end
-    end
-
-    return commands;
 end
 
 return M;

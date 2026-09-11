@@ -14,7 +14,7 @@ local M = {};
 -- ============================================
 
 local state = {
-    -- Current detected pet key (e.g., "avatar:ifrit", "wyvern", nil)
+    -- Current detected pet key (e.g., "Fenrir", "Wyvern", "Charmed", nil)
     currentPetKey = nil,
 
     -- Last known pet name (for change detection)
@@ -170,7 +170,8 @@ end
 
 -- Get available palettes for a bar (includes base job + all pet palettes)
 -- Returns: { { key = storageKey, displayName = "Name" }, ... }
--- Note: subjobId parameter is accepted but not used (pet keys don't depend on subjob)
+-- Note: subjobId is accepted for API compatibility but unused —
+-- pet storage keys are the pet name only (no job/subjob).
 function M.GetAvailablePalettes(barIndex, jobId, subjobId)
     local palettes = {};
 
@@ -193,7 +194,7 @@ function M.GetAvailablePalettes(barIndex, jobId, subjobId)
 end
 
 -- Set a specific palette for a bar (by pet key)
--- petKey: The pet key to set (e.g., 'avatar:ifrit', 'spirit:fire'), or nil for Auto
+-- petKey: The pet key to set (e.g., 'Fenrir', 'Wyvern'), or nil for Auto
 function M.SetPalette(barIndex, petKey)
     if petKey == nil then
         -- Clear override (Auto mode)
@@ -282,7 +283,7 @@ function M.ClearAllCrossbarOverrides()
 end
 
 -- Set a specific palette for a crossbar combo mode (by pet key)
--- petKey: The pet key to set (e.g., 'avatar:ifrit'), or nil for Auto
+-- petKey: The pet key to set (e.g., 'Fenrir'), or nil for Auto
 function M.SetCrossbarPalette(comboMode, petKey)
     if petKey == nil then
         -- Clear override (Auto mode)

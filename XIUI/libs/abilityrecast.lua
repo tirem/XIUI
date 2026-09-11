@@ -134,10 +134,21 @@ function M.FindAbilityRecast(abilityId)
     return nil, 0;  -- Not found (ability may be ready or not tracked)
 end
 
--- Get ability recast by ability ID (scans slots to find it)
+-- Get ability recast by ability ID
+-- Uses the ability's RecastTimerId so shared timers (e.g. PUP maneuvers) all show cooldown
 -- Returns: remaining recast time in seconds, or 0 if ready/not found
 -- @param abilityId: The ability ID (not timer ID)
 function M.GetAbilityRecastByAbilityId(abilityId)
+    if abilityId == nil then return 0; end
+
+    local resourceMgr = AshitaCore:GetResourceManager();
+    local ability = resourceMgr and resourceMgr:GetAbilityById(abilityId);
+    -- Timer 0 is the 2-hour ability slot; prefer RecastTimerId for shared pools (maneuvers, etc.)
+    if ability and ability.RecastTimerId and ability.RecastTimerId > 0 then
+        return M.GetAbilityRecastSeconds(ability.RecastTimerId);
+    end
+
+    -- Fallback: scan slots for a matching ability id (covers 2hr / unmapped)
     local timerId, rawTimer = M.FindAbilityRecast(abilityId);
     if rawTimer <= 0 then return 0; end
     return rawTimer / 60;

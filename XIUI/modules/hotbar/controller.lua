@@ -621,7 +621,7 @@ function Controller.HandleXInputState(e)
                 if logPaletteName == nil then logPaletteName = true; end
 
                 -- Cycle hotbar palettes
-                for i = 1, 6 do
+                for i = 1, data.NUM_BARS do
                     palette.CyclePalette(i, direction, jobId, subjobId);
                 end
 
@@ -808,7 +808,7 @@ function Controller.HandleXInputButton(e)
                     if logPaletteName == nil then logPaletteName = true; end
 
                     -- Cycle hotbar palettes
-                    for i = 1, 6 do
+                    for i = 1, data.NUM_BARS do
                         palette.CyclePalette(i, direction, jobId, subjobId);
                     end
 
@@ -919,7 +919,7 @@ function Controller.HandleDInputButton(e)
 
                 if cycleButtonHeld then
                     -- Cycle hotbar palettes
-                    for i = 1, 6 do
+                    for i = 1, data.NUM_BARS do
                         palette.CyclePalette(i, direction, jobId, subjobId);
                     end
 

@@ -7,6 +7,7 @@ require('common');
 require('handlers.helpers');
 local components = require('config.components');
 local imgui = require('imgui');
+local jobs = require('libs.jobs');
 
 local M = {};
 
@@ -66,8 +67,7 @@ function M.DrawSettings()
             imgui.Spacing();
             imgui.Text('Per-Job Fast Cast:');
             -- Job-specific fast cast sliders (using helper function)
-            local jobs = { 'WAR', 'MNK', 'WHM', 'BLM', 'RDM', 'THF', 'PLD', 'DRK', 'BST', 'BRD', 'RNG', 'SAM', 'NIN', 'DRG', 'SMN', 'BLU', 'COR', 'PUP', 'DNC', 'SCH', 'GEO', 'RUN' };
-            for i = 1, #jobs do
+            for i = 1, jobs.STANDARD_MAX do
                 DrawFastCastSlider(jobs[i], i);
             end
         end

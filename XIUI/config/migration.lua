@@ -162,7 +162,7 @@ local function BuildConflictList()
                         if paletteBindings then
                             -- paletteBindings is { [barIndex] = { [slotIndex] = binding } }
                             for barIndex, barSlots in pairs(paletteBindings) do
-                                if barIndex >= 1 and barIndex <= 6 then
+                                if barIndex >= 1 and barIndex <= 10 then
                                     for slotIndex, binding in pairs(barSlots) do
                                         if tbarMigration.HasExistingHotbarSlot(barIndex, slotIndex, storageKey) then
                                             local convertedAction = tbarMigration.ConvertBinding(binding);
@@ -296,7 +296,7 @@ local function ExecuteImport()
                         local paletteBindings = tbarMigration.GetPaletteBindings(parsedData, paletteName);
                         if paletteBindings then
                             for barIndex, barSlots in pairs(paletteBindings) do
-                                if barIndex >= 1 and barIndex <= 6 then
+                                if barIndex >= 1 and barIndex <= 10 then
                                     for slotIndex, binding in pairs(barSlots) do
                                         local convertedAction = tbarMigration.ConvertBinding(binding);
                                         if convertedAction then
@@ -404,7 +404,7 @@ local function ExecuteImport()
                             local paletteCount = 0;
                             -- paletteBindings is { [barIndex] = { [slotIndex] = binding } }
                             for barIndex, barSlots in pairs(paletteBindings) do
-                                if barIndex >= 1 and barIndex <= 6 then
+                                if barIndex >= 1 and barIndex <= 10 then
                                     for slotIndex, binding in pairs(barSlots) do
                                         local convertedAction = tbarMigration.ConvertBinding(binding);
                                         if convertedAction then

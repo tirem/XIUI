@@ -20,11 +20,9 @@ local defaultPositions = require('libs.defaultpositions');
 
 local display = {};
 
--- Window state for bottom alignment + previous-frame size cache (used for bg layering)
+-- Previous-frame size cache (used for bg layering). Align-bottom tracking lives in
+-- gConfig.petBarAlignState so it survives login (same idea as partyListState).
 local windowState = {
-    x = nil,
-    y = nil,
-    height = nil,
     cachedWidth = nil,
     cachedHeight = nil,
 };
@@ -622,20 +620,14 @@ function display.DrawWindow(settings)
     local typeSettings = GetPetTypeSettings();
     local alwaysVisible = typeSettings.alwaysVisible;
 
-    -- Special handling for BST: Check Charm settings if Jug (default) is not visible
-    if not alwaysVisible and data.GetPetJob() == data.JOB_BST then
-        local charmSettings = gConfig.petBarCharm or {};
-        if charmSettings.alwaysVisible then
-            alwaysVisible = true;
-        end
+    -- No pet: stay visible only if a usable current-job pet type has Always Visible
+    -- (never leaks other jobs' AV — e.g. DRG/BST ignores Avatar AV).
+    if petData == nil then
+        alwaysVisible = data.HasAnyAlwaysVisiblePetType();
     end
 
     if petData == nil and not alwaysVisible then
         data.currentPetName = nil;
-        -- Reset window state when hidden so bottom alignment starts fresh
-        windowState.x = nil;
-        windowState.y = nil;
-        windowState.height = nil;
         return false;
     end
 
@@ -730,7 +722,7 @@ function display.DrawWindow(settings)
 
     local windowPosX, windowPosY = 0, 0;
 
-    local positionJustApplied = ApplyWindowPosition('PetBar');
+    ApplyWindowPosition('PetBar');
     if imgui.Begin('PetBar', true, windowFlags) then
         local drawList = drawing.GetUIDrawList();
         imtext.SetConfigFromSettings(settings.name_font_settings);
@@ -1175,29 +1167,58 @@ function display.DrawWindow(settings)
         -- Get final window size for background
         local windowWidth, windowHeight = imgui.GetWindowSize();
 
-        -- Handle bottom alignment
+        -- Keep the bottom edge fixed when height changes. Persist align state in the
+        -- profile (like partyListState) so login/settle frames don't crawl Y upward
+        -- and then SaveWindowPosition that crept top forever.
         if typeSettings.alignBottom then
-            -- Detect external position change (forced reset, user drag, etc.)
-            local positionChanged = windowState.y ~= nil and windowState.y ~= windowPosY;
+            local alignState = gConfig.petBarAlignState;
+            -- User drag / recover / external move: imgui Y no longer matches tracked Y.
+            -- Do not treat ApplyWindowPosition as a reset — that runs every login and
+            -- would wipe the height we need to restore the bottom edge.
+            local positionChanged = alignState ~= nil and alignState.y ~= nil and alignState.y ~= windowPosY;
 
-            if positionJustApplied or positionChanged then
-                -- Position was externally moved; clear tracking so height adjustment
-                -- doesn't fire until state is re-established on the next frame
-                windowState.x = nil;
-                windowState.y = nil;
-                windowState.height = nil;
-            elseif windowState.height ~= nil and windowState.height ~= windowHeight then
-                -- Height changed, adjust Y to keep bottom edge fixed
-                local newPosY = windowState.y + windowState.height - windowHeight;
-                imgui.SetWindowPos('PetBar', { windowPosX, newPosY });
-                windowPosY = newPosY;
-                windowState.x = windowPosX;
-                windowState.y = windowPosY;
-                windowState.height = windowHeight;
+            if positionChanged then
+                gConfig.petBarAlignState = {
+                    x = windowPosX,
+                    y = windowPosY,
+                    width = windowWidth,
+                    height = windowHeight,
+                };
             else
-                windowState.x = windowPosX;
-                windowState.y = windowPosY;
-                windowState.height = windowHeight;
+                if alignState ~= nil and alignState.height ~= nil and alignState.height ~= windowHeight then
+                    local newPosY = alignState.y + alignState.height - windowHeight;
+                    local _, screenH = defaultPositions.GetScreenSize();
+                    newPosY = math.min(math.max(newPosY, 0), math.max(screenH - windowHeight, 0));
+                    imgui.SetWindowPos('PetBar', { windowPosX, newPosY });
+                    windowPosY = newPosY;
+
+                    -- Mirror now: SaveWindowPosition only samples next frame, so a
+                    -- settings flush in between would persist a stale top Y.
+                    if not gConfig.windowPositions then
+                        gConfig.windowPositions = {};
+                    end
+                    local savedPos = gConfig.windowPositions['PetBar'];
+                    if savedPos ~= nil then
+                        savedPos.x = windowPosX;
+                        savedPos.y = windowPosY;
+                    else
+                        gConfig.windowPositions['PetBar'] = { x = windowPosX, y = windowPosY };
+                    end
+                end
+
+                if alignState == nil
+                    or alignState.x ~= windowPosX
+                    or alignState.y ~= windowPosY
+                    or alignState.width ~= windowWidth
+                    or alignState.height ~= windowHeight
+                then
+                    gConfig.petBarAlignState = {
+                        x = windowPosX,
+                        y = windowPosY,
+                        width = windowWidth,
+                        height = windowHeight,
+                    };
+                end
             end
         end
 
@@ -1226,6 +1247,7 @@ display.ResetPositions = function()
     if gConfig.appliedPositions then
         gConfig.appliedPositions['PetBar'] = nil;
     end
+    gConfig.petBarAlignState = nil;
 end
 
 return display;

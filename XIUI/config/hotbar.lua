@@ -44,52 +44,6 @@ local buttonDetectionState = {
     progress = 0,
 };
 
--- ============================================
--- Unified Palette Modal System
--- Shared between hotbar and crossbar palettes
--- ============================================
-
--- Single modal state for all palette operations
-local paletteModal = {
-    isOpen = false,
-    mode = nil,           -- 'create' or 'rename'
-    paletteType = nil,    -- 'hotbar' or 'crossbar'
-    paletteName = nil,    -- For rename: current name
-    inputBuffer = { '' },
-    errorMessage = nil,
-};
-
--- Helper: Open palette create modal
-local function OpenPaletteCreateModal(paletteType)
-    paletteModal.isOpen = true;
-    paletteModal.mode = 'create';
-    paletteModal.paletteType = paletteType;
-    paletteModal.paletteName = nil;
-    paletteModal.inputBuffer[1] = '';
-    paletteModal.errorMessage = nil;
-end
-
--- Helper: Open palette rename modal
-local function OpenPaletteRenameModal(paletteType, currentName)
-    paletteModal.isOpen = true;
-    paletteModal.mode = 'rename';
-    paletteModal.paletteType = paletteType;
-    paletteModal.paletteName = currentName;
-    paletteModal.inputBuffer[1] = currentName;
-    paletteModal.errorMessage = nil;
-end
-
--- Helper: Close palette modal
-local function ClosePaletteModal()
-    paletteModal.isOpen = false;
-    paletteModal.mode = nil;
-    paletteModal.paletteType = nil;
-    paletteModal.paletteName = nil;
-    paletteModal.inputBuffer[1] = '';
-    paletteModal.errorMessage = nil;
-end
-
--- Helper function to draw the job-specific confirmation popup
 local function DrawJobSpecificConfirmPopup()
     if jobSpecificConfirmState.showPopup then
         imgui.OpenPopup('Confirm Action Storage Change##jobSpecificConfirm');
@@ -155,122 +109,6 @@ local function DrawJobSpecificConfirmPopup()
 
         if imgui.Button('Cancel', {buttonWidth, 28}) then
             jobSpecificConfirmState.showPopup = false;
-            imgui.CloseCurrentPopup();
-        end
-
-        imgui.EndPopup();
-    end
-end
-
--- Unified palette modal - handles create/rename for both hotbar and crossbar
-local function DrawPaletteModal()
-    if not paletteModal.isOpen then
-        return;
-    end
-
-    -- Determine popup title based on mode and type
-    local typeLabel = paletteModal.paletteType == 'crossbar' and 'Crossbar ' or '';
-    local popupId = paletteModal.mode == 'create'
-        and (typeLabel .. 'Create Palette##paletteModal')
-        or (typeLabel .. 'Rename Palette##paletteModal');
-
-    imgui.OpenPopup(popupId);
-
-    if imgui.BeginPopupModal(popupId, nil, ImGuiWindowFlags_AlwaysAutoResize) then
-        -- Warning when creating will break away from shared palettes
-        local jobId = data.jobId or 1;
-        local subjobId = data.subjobId or 0;
-        if paletteModal.mode == 'create' and subjobId ~= 0 then
-            local usingFallback = palette.IsUsingFallback(jobId, subjobId, paletteModal.paletteType);
-            if usingFallback then
-                local jobName = jobs[jobId] or ('Job ' .. jobId);
-                local subjobName = jobs[subjobId] or ('Job ' .. subjobId);
-                imgui.TextColored({1.0, 0.7, 0.3, 1.0}, 'Warning: Creating this palette will stop');
-                imgui.TextColored({1.0, 0.7, 0.3, 1.0}, 'using shared palettes for ' .. jobName .. '/' .. subjobName .. '.');
-                imgui.Spacing();
-            end
-        end
-
-        local promptText = paletteModal.mode == 'create'
-            and 'Enter name for new palette:'
-            or 'Enter new name for palette:';
-        imgui.Text(promptText);
-        imgui.Spacing();
-
-        imgui.SetNextItemWidth(200);
-        imgui.InputText('##paletteModalInput', paletteModal.inputBuffer, 32);
-
-        -- Show error message if any
-        if paletteModal.errorMessage then
-            imgui.Spacing();
-            imgui.TextColored({1.0, 0.4, 0.4, 1.0}, paletteModal.errorMessage);
-        end
-
-        imgui.Spacing();
-        imgui.Separator();
-        imgui.Spacing();
-
-        -- Center the buttons
-        local buttonWidth = 80;
-        local spacing = 20;
-        local totalWidth = buttonWidth * 2 + spacing;
-        local windowWidth = imgui.GetWindowWidth();
-        imgui.SetCursorPosX((windowWidth - totalWidth) / 2);
-
-        -- Action button (Create or Rename)
-        local isCreateMode = paletteModal.mode == 'create';
-        local actionLabel = isCreateMode and 'Create' or 'Rename';
-        if isCreateMode then
-            imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.5, 0.2, 1.0});
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.6, 0.3, 1.0});
-        end
-
-        if imgui.Button(actionLabel .. '##paletteAction', {buttonWidth, 28}) then
-            local newName = paletteModal.inputBuffer[1];
-            if newName and newName ~= '' then
-                local jobId = data.jobId or 1;
-                local subjobId = data.subjobId or 0;
-                local success, err;
-
-                if isCreateMode then
-                    -- Create palette
-                    if paletteModal.paletteType == 'crossbar' then
-                        success, err = palette.CreateCrossbarPalette(newName, jobId, subjobId);
-                    else
-                        success, err = palette.CreatePalette(1, newName, jobId, subjobId);
-                        if success then
-                            palette.SetActivePalette(1, newName);
-                        end
-                    end
-                else
-                    -- Rename palette
-                    local oldName = paletteModal.paletteName;
-                    if paletteModal.paletteType == 'crossbar' then
-                        success, err = palette.RenameCrossbarPalette(oldName, newName, jobId, subjobId);
-                    else
-                        success, err = palette.RenamePalette(1, oldName, newName, jobId, subjobId);
-                    end
-                end
-
-                if success then
-                    ClosePaletteModal();
-                    imgui.CloseCurrentPopup();
-                else
-                    paletteModal.errorMessage = err or ('Failed to ' .. paletteModal.mode .. ' palette');
-                end
-            else
-                paletteModal.errorMessage = 'Name cannot be empty';
-            end
-        end
-
-        if isCreateMode then
-            imgui.PopStyleColor(2);
-        end
-
-        imgui.SameLine(0, spacing);
-
-        if imgui.Button('Cancel##paletteCancel', {buttonWidth, 28}) then
-            ClosePaletteModal();
             imgui.CloseCurrentPopup();
         end
 
@@ -351,357 +189,6 @@ end
 
 local function GetCachedWeaponskills()
     return playerdata.GetCachedWeaponskills();
-end
-
--- General palette creation state
-local paletteCreateState = {
-    inputBuffer = {},  -- Per-bar input buffers for creating palettes
-    errorMessage = nil,
-    errorBarIndex = nil,
-};
-
--- Initialize palette input buffers
-for i = 1, 6 do
-    paletteCreateState.inputBuffer[i] = { '' };
-end
-
--- ============================================
--- Global Palettes UI Section
--- ============================================
-
--- Global palette error state (not tied to bar index anymore)
-local globalPaletteErrorMessage = nil;
-
--- Draw the global palettes management section
--- Palettes are now GLOBAL - one palette switch changes all hotbars
-local function DrawGlobalPalettesSection()
-    local jobId = data.jobId or 1;
-    local subjobId = data.subjobId or 0;
-
-    -- Get available palettes (global - scans all bars)
-    -- Ensure at least one palette exists for this job
-    palette.EnsureDefaultPaletteExists(jobId, subjobId);
-    local availablePalettes = palette.GetAvailablePalettes(1, jobId, subjobId);
-    local currentPalette = palette.GetActivePalette(1);  -- Same for all bars
-
-    -- OPTIMIZED: Cache palette count and index for reuse within this frame
-    local paletteCount = #availablePalettes;
-    local currentPaletteIndex = nil;
-    if currentPalette then
-        for i, name in ipairs(availablePalettes) do
-            if name == currentPalette then
-                currentPaletteIndex = i;
-                break;
-            end
-        end
-    end
-
-    -- Check if using fallback (shared library) palettes
-    local usingFallback = palette.IsUsingFallback(jobId, subjobId, 'hotbar');
-
-    -- Ensure active palette is set if we have palettes but none active
-    if paletteCount > 0 and not currentPalette then
-        currentPalette = availablePalettes[1];
-        currentPaletteIndex = 1;
-        palette.SetActivePalette(1, currentPalette);
-    end
-
-    imgui.TextColored(components.TAB_STYLE.gold, 'Palettes');
-    if imgui.SmallButton('Palette Manager##hotbar') then
-        paletteManager.Open();
-    end
-    if usingFallback then
-        imgui.SameLine();
-        imgui.TextColored({0.4, 0.8, 1.0, 1.0}, '(Shared Library)');
-        imgui.ShowHelp('These palettes are from your Shared Library.\nOpen Palette Manager to create subjob-specific palettes.');
-    end
-    imgui.Spacing();
-
-    -- Header with count
-    imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Palettes:');
-    imgui.SameLine();
-    imgui.TextColored({0.5, 1.0, 0.5, 1.0}, tostring(paletteCount) .. ' palette(s)');
-    imgui.ShowHelp('Create named palettes to quickly switch between different hotbar configurations.\nPalettes are GLOBAL - switching changes all 6 hotbars at once.\nUse keybind cycling or /xiui palette <name> to switch.');
-
-    -- Current palette selector with inline buttons
-    -- Get display name with number prefix for the closed dropdown
-    local currentDisplayName = currentPalette or 'Select palette';
-    if currentPalette and currentPaletteIndex then
-        currentDisplayName = currentPaletteIndex .. '. ' .. currentPalette;
-    end
-
-    imgui.SetNextItemWidth(150);
-    if imgui.BeginCombo('##globalPalette', currentDisplayName) then
-        for i, paletteName in ipairs(availablePalettes) do
-            local isSelected = (paletteName == currentPalette);
-            -- Show number prefix for all palettes
-            local displayName = i .. '. ' .. paletteName;
-            if imgui.Selectable(displayName .. '##globalPal', isSelected) then
-                palette.SetActivePalette(1, paletteName);  -- Sets global palette
-            end
-            if isSelected then
-                imgui.SetItemDefaultFocus();
-            end
-        end
-        imgui.EndCombo();
-    end
-
-    -- Rename button (for any palette)
-    if currentPalette then
-        imgui.SameLine();
-        if imgui.Button('Rename##globalPalette', {55, 0}) then
-            OpenPaletteRenameModal('hotbar', currentPalette);
-        end
-    end
-
-    -- New button (always visible, green)
-    imgui.SameLine();
-    imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.5, 0.2, 1.0});
-    imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.6, 0.3, 1.0});
-    if imgui.Button('New##globalPalette', {40, 0}) then
-        OpenPaletteCreateModal('hotbar');
-    end
-    imgui.PopStyleColor(2);
-
-    -- Delete button (only if more than 1 palette exists - can't delete the last one)
-    -- OPTIMIZED: Using cached paletteCount instead of calling GetPaletteCount again
-    if currentPalette and paletteCount > 1 then
-        imgui.SameLine();
-        imgui.PushStyleColor(ImGuiCol_Button, {0.6, 0.2, 0.2, 1.0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.8, 0.3, 0.3, 1.0});
-        if imgui.Button('Delete##globalPalette', {50, 0}) then
-            local success, err = palette.DeletePalette(1, currentPalette, jobId, subjobId);
-            if not success then
-                globalPaletteErrorMessage = err or 'Failed to delete palette';
-            else
-                globalPaletteErrorMessage = nil;
-            end
-        end
-        imgui.PopStyleColor(2);
-    end
-
-    -- Arrow key reordering (for palettes with multiple items)
-    if currentPalette and paletteCount > 1 then
-        imgui.SameLine();
-        imgui.TextColored({0.5, 0.5, 0.5, 1.0}, '|');
-        imgui.SameLine();
-
-        -- Up arrow button
-        -- OPTIMIZED: Using cached currentPaletteIndex instead of calling GetPaletteIndex again
-        local canMoveUp = currentPaletteIndex and currentPaletteIndex > 1;
-        local canMoveDown = currentPaletteIndex and currentPaletteIndex < paletteCount;
-
-        if not canMoveUp then
-            imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.2, 0.2, 0.5});
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.2, 0.2, 0.2, 0.5});
-            imgui.PushStyleColor(ImGuiCol_Text, {0.4, 0.4, 0.4, 1.0});
-        end
-        if imgui.Button('^##globalPaletteUp', {20, 0}) and canMoveUp then
-            palette.MovePalette(1, currentPalette, -1, jobId, subjobId);
-        end
-        if not canMoveUp then
-            imgui.PopStyleColor(3);
-        end
-
-        imgui.SameLine();
-
-        -- Down arrow button
-        if not canMoveDown then
-            imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.2, 0.2, 0.5});
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.2, 0.2, 0.2, 0.5});
-            imgui.PushStyleColor(ImGuiCol_Text, {0.4, 0.4, 0.4, 1.0});
-        end
-        if imgui.Button('v##globalPaletteDown', {20, 0}) and canMoveDown then
-            palette.MovePalette(1, currentPalette, 1, jobId, subjobId);
-        end
-        if not canMoveDown then
-            imgui.PopStyleColor(3);
-        end
-    end
-
-    -- Show error message (for delete failures)
-    if globalPaletteErrorMessage then
-        imgui.TextColored({1.0, 0.4, 0.4, 1.0}, globalPaletteErrorMessage);
-    end
-
-    imgui.Spacing();
-end
-
--- DEPRECATED: Per-bar palette section - now redirects to global
--- Kept for backwards compatibility but shows a message pointing to global settings
-local function DrawGeneralPalettesSection(configKey, barSettings, barIndex)
-    local currentPalette = palette.GetActivePalette(barIndex);
-
-    if currentPalette then
-        imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Palette: ' .. currentPalette);
-    else
-        imgui.TextColored({0.6, 0.6, 0.6, 1.0}, 'Palette: (none)');
-    end
-    imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'Manage palettes in Global tab.');
-end
-
--- ============================================
--- Crossbar Global Palettes UI Section
--- ============================================
-
--- Global crossbar palette error state
-local crossbarGlobalPaletteErrorMessage = nil;
-
--- Draw the global crossbar palettes management section
--- Crossbar palettes are GLOBAL - one palette switch changes all combo modes
-local function DrawCrossbarGlobalPalettesSection()
-    local crossbarSettings = gConfig.hotbarCrossbar;
-    if not crossbarSettings then
-        return;
-    end
-
-    local jobId = data.jobId or 1;
-    local subjobId = data.subjobId or 0;
-
-    -- Ensure at least one palette exists for this job
-    palette.EnsureCrossbarDefaultPaletteExists(jobId, subjobId);
-    local availablePalettes = palette.GetCrossbarAvailablePalettes(jobId, subjobId);
-    local currentPalette = palette.GetActivePaletteForCombo('L2');  -- Global for all combos
-
-    -- OPTIMIZED: Cache palette count and index for reuse within this frame
-    local paletteCount = #availablePalettes;
-    local currentPaletteIndex = nil;
-    if currentPalette then
-        for i, name in ipairs(availablePalettes) do
-            if name == currentPalette then
-                currentPaletteIndex = i;
-                break;
-            end
-        end
-    end
-
-    -- Check if using fallback (shared library) palettes
-    local usingFallback = palette.IsUsingFallback(jobId, subjobId, 'crossbar');
-
-    -- Ensure active palette is set if we have palettes but none active
-    if paletteCount > 0 and not currentPalette then
-        currentPalette = availablePalettes[1];
-        currentPaletteIndex = 1;
-        palette.SetActivePaletteForCombo('L2', currentPalette);
-    end
-
-    imgui.TextColored(components.TAB_STYLE.gold, 'Crossbar Palettes');
-    if imgui.SmallButton('Palette Manager##crossbar') then
-        paletteManager.Open();
-    end
-    if usingFallback then
-        imgui.SameLine();
-        imgui.TextColored({0.4, 0.8, 1.0, 1.0}, '(Shared Library)');
-        imgui.ShowHelp('These palettes are from your Shared Library.\nOpen Palette Manager to create subjob-specific palettes.');
-    end
-    imgui.Spacing();
-
-    -- Header with count
-    imgui.TextColored({0.8, 0.8, 0.8, 1.0}, 'Palettes:');
-    imgui.SameLine();
-    imgui.TextColored({0.5, 1.0, 0.5, 1.0}, tostring(paletteCount) .. ' palette(s)');
-    imgui.ShowHelp('Create named palettes to quickly switch between crossbar configurations.\nPalettes are GLOBAL - switching changes all combo modes (L2, R2, L2+R2, etc.) at once.');
-
-    -- Current palette selector with inline buttons
-    -- Get display name with number prefix for the closed dropdown
-    local currentDisplayName = currentPalette or 'Select palette';
-    if currentPalette and currentPaletteIndex then
-        currentDisplayName = currentPaletteIndex .. '. ' .. currentPalette;
-    end
-
-    imgui.SetNextItemWidth(150);
-    if imgui.BeginCombo('##crossbarGlobalPalette', currentDisplayName) then
-        for i, paletteName in ipairs(availablePalettes) do
-            local isSelected = (paletteName == currentPalette);
-            -- Show number prefix for all palettes
-            local displayName = i .. '. ' .. paletteName;
-            if imgui.Selectable(displayName .. '##cbGlobalPal' .. i, isSelected) then
-                palette.SetActivePaletteForCombo('L2', paletteName);
-            end
-            if isSelected then
-                imgui.SetItemDefaultFocus();
-            end
-        end
-        imgui.EndCombo();
-    end
-
-    -- Rename button (for any palette)
-    if currentPalette then
-        imgui.SameLine();
-        if imgui.Button('Rename##cbGlobalPalette', {55, 0}) then
-            OpenPaletteRenameModal('crossbar', currentPalette);
-        end
-    end
-
-    -- New button (always visible, green)
-    imgui.SameLine();
-    imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.5, 0.2, 1.0});
-    imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.3, 0.6, 0.3, 1.0});
-    if imgui.Button('New##cbGlobalPalette', {40, 0}) then
-        OpenPaletteCreateModal('crossbar');
-    end
-    imgui.PopStyleColor(2);
-
-    -- Delete button (only if more than 1 palette exists - can't delete the last one)
-    -- OPTIMIZED: Using cached paletteCount instead of calling GetCrossbarPaletteCount again
-    if currentPalette and paletteCount > 1 then
-        imgui.SameLine();
-        imgui.PushStyleColor(ImGuiCol_Button, {0.6, 0.2, 0.2, 1.0});
-        imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.8, 0.3, 0.3, 1.0});
-        if imgui.Button('Delete##cbGlobalPalette', {50, 0}) then
-            local success, err = palette.DeleteCrossbarPalette(currentPalette, jobId, subjobId);
-            if not success then
-                crossbarGlobalPaletteErrorMessage = err or 'Failed to delete palette';
-            else
-                crossbarGlobalPaletteErrorMessage = nil;
-            end
-        end
-        imgui.PopStyleColor(2);
-    end
-
-    -- Arrow key reordering (for palettes with multiple items)
-    if currentPalette and paletteCount > 1 then
-        imgui.SameLine();
-        imgui.TextColored({0.5, 0.5, 0.5, 1.0}, '|');
-        imgui.SameLine();
-
-        -- OPTIMIZED: Using cached currentPaletteIndex instead of recalculating
-        local canMoveUp = currentPaletteIndex and currentPaletteIndex > 1;
-        local canMoveDown = currentPaletteIndex and currentPaletteIndex < paletteCount;
-
-        if not canMoveUp then
-            imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.2, 0.2, 0.5});
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.2, 0.2, 0.2, 0.5});
-            imgui.PushStyleColor(ImGuiCol_Text, {0.4, 0.4, 0.4, 1.0});
-        end
-        if imgui.Button('^##cbGlobalPaletteUp', {20, 0}) and canMoveUp then
-            palette.MoveCrossbarPalette(currentPalette, -1, jobId, subjobId);
-        end
-        if not canMoveUp then
-            imgui.PopStyleColor(3);
-        end
-
-        imgui.SameLine();
-
-        if not canMoveDown then
-            imgui.PushStyleColor(ImGuiCol_Button, {0.2, 0.2, 0.2, 0.5});
-            imgui.PushStyleColor(ImGuiCol_ButtonHovered, {0.2, 0.2, 0.2, 0.5});
-            imgui.PushStyleColor(ImGuiCol_Text, {0.4, 0.4, 0.4, 1.0});
-        end
-        if imgui.Button('v##cbGlobalPaletteDown', {20, 0}) and canMoveDown then
-            palette.MoveCrossbarPalette(currentPalette, 1, jobId, subjobId);
-        end
-        if not canMoveDown then
-            imgui.PopStyleColor(3);
-        end
-    end
-
-    -- Show error message (for delete failures)
-    if crossbarGlobalPaletteErrorMessage then
-        imgui.TextColored({1.0, 0.4, 0.4, 1.0}, crossbarGlobalPaletteErrorMessage);
-    end
-
-    imgui.Spacing();
 end
 
 -- Keybind editor modal state
@@ -858,7 +345,7 @@ local function ApplyKeybind(keyCode, ctrl, alt, shift)
     local altVal = alt or false;
     local shiftVal = shift or false;
 
-    for barNum = 1, 6 do
+    for barNum = 1, data.NUM_BARS do
         local checkConfigKey = 'hotbarBar' .. barNum;
         local checkBarSettings = gConfig[checkConfigKey];
         if checkBarSettings and checkBarSettings.keyBindings then
@@ -976,7 +463,45 @@ local BAR_TYPES = {
     { key = 'Bar4', configKey = 'hotbarBar4', label = 'Bar 4' },
     { key = 'Bar5', configKey = 'hotbarBar5', label = 'Bar 5' },
     { key = 'Bar6', configKey = 'hotbarBar6', label = 'Bar 6' },
+    { key = 'Bar7', configKey = 'hotbarBar7', label = 'Bar 7' },
+    { key = 'Bar8', configKey = 'hotbarBar8', label = 'Bar 8' },
+    { key = 'Bar9', configKey = 'hotbarBar9', label = 'Bar 9' },
+    { key = 'Bar10', configKey = 'hotbarBar10', label = 'Bar 10' },
 };
+
+-- Draw Global + Bar tabs on two rows: Global & Bars 1-5, then Bars 6-10
+local function DrawHotbarBarTabs(idPrefix, selectedBarTab)
+    local newSelected = selectedBarTab;
+
+    local function DrawTabRange(fromIdx, toIdx)
+        for i = fromIdx, toIdx do
+            local barType = BAR_TYPES[i];
+            if barType then
+                local clicked = components.DrawStyledTab(
+                    barType.label,
+                    idPrefix .. i,
+                    newSelected == i,
+                    nil,
+                    components.TAB_STYLE.smallHeight,
+                    components.TAB_STYLE.smallPadding
+                );
+                if clicked then
+                    newSelected = i;
+                end
+                if i < toIdx then
+                    imgui.SameLine();
+                end
+            end
+        end
+    end
+
+    -- Row 1: Global + Bar 1-5 (indices 1-6)
+    DrawTabRange(1, 6);
+    -- Row 2: Bar 6-10 (indices 7-11)
+    DrawTabRange(7, #BAR_TYPES);
+
+    return newSelected;
+end
 
 -- Crossbar bar type definitions (each combo mode is a separate bar)
 local CROSSBAR_TYPES = {
@@ -1234,7 +759,7 @@ function M.DrawKeybindModal()
 
     if imgui.Begin(modalTitle, isOpen, windowFlags) then
         -- Bar selector using styled tabs (like the bar tabs in hotbar settings)
-        for i = 1, 6 do
+        for i = 1, data.NUM_BARS do
             local clicked, _ = components.DrawStyledTab(
                 'Bar ' .. i,
                 'keybindBar' .. i,
@@ -1249,7 +774,7 @@ function M.DrawKeybindModal()
                 keybindModal.selectedSlot = nil;
                 keybindModal.waitingForKey = false;
             end
-            if i < 6 then
+            if i < data.NUM_BARS then
                 imgui.SameLine();
             end
         end
@@ -1551,20 +1076,28 @@ local function DrawHotbarPositionSettings(configKey)
     imgui.TextColored({0.75, 0.75, 0.75, 1.0}, 'Bars to anchor (stacked bottom-up):');
 
     local columnStartX = imgui.GetCursorPosX();
-    for row = 1, 3 do
+    -- Left column: Bars 1-5, right column: Bars 6-10
+    for row = 1, 5 do
         imgui.SetCursorPosX(columnStartX);
         DrawAnchoredBarCheckbox(gConfig['hotbarBar' .. row], row, 'hotbarBar' .. row);
 
         imgui.SameLine();
         imgui.SetCursorPosX(columnStartX + ANCHORED_CHECKBOX_COLUMN_WIDTH);
-        local rightBar = row + 3;
+        local rightBar = row + 5;
         DrawAnchoredBarCheckbox(gConfig['hotbarBar' .. rightBar], rightBar, 'hotbarBar' .. rightBar);
     end
 
     imgui.Spacing();
-    components.DrawPartySliderInt(globalSettings, 'Hotbar Spacing##' .. configKey, 'hotbarSpacing', 0, 32, '%d', DeferredUpdateVisuals, 0);
-    imgui.ShowHelp('Vertical gap between hotbars when anchored.');
-    imgui.Spacing();
+end
+
+local function DrawHotbarSpacingSlider(configKey)
+    if configKey ~= 'hotbarGlobal' then
+        return;
+    end
+
+    local globalSettings = gConfig.hotbarGlobal;
+    components.DrawPartySliderInt(globalSettings, 'Hotbar/Row Spacing##' .. configKey, 'hotbarSpacing', 0, 32, '%d', DeferredUpdateVisuals, 0);
+    imgui.ShowHelp('Vertical gap between stacked hotbars and between rows in a multi-row bar. 0 = flush.');
 end
 
 local function DrawVisualSettingsContent(settings, configKey)
@@ -1595,17 +1128,13 @@ local function DrawVisualSettingsContent(settings, configKey)
     if components.CollapsingSection('Slot Settings##' .. configKey, false) then
         DrawHotbarPositionSettings(configKey);
 
+        DrawHotbarSpacingSlider(configKey);
+
         components.DrawPartySliderInt(settings, 'Slot Size (px)##' .. configKey, 'slotSize', 16, 64, '%d', nil, 48);
         imgui.ShowHelp('Size of each slot in pixels.');
 
-        components.DrawPartySliderInt(settings, 'Slot X Padding##' .. configKey, 'slotXPadding', 0, 32, '%d', nil, 8);
-        imgui.ShowHelp('Horizontal gap between slots.');
-
-        -- Slot Y Padding slider removed: each hotbar is now positioned
-        -- independently, so bar-to-bar spacing is handled by drag-positioning.
-        -- The setting still exists on the data side and controls the row gap
-        -- inside multi-row bars; we keep the saved value but hide the slider
-        -- to avoid misleading users.
+        components.DrawPartySliderInt(settings, 'Slot Spacing##' .. configKey, 'slotXPadding', 0, 32, '%d', nil, 8);
+        imgui.ShowHelp('Horizontal gap between slots. 0 = flush.');
 
         -- Show Hotbar Number with inline offsets
         components.DrawPartyCheckbox(settings, 'Show Hotbar Number##' .. configKey, 'showHotbarNumber');
@@ -1613,7 +1142,7 @@ local function DrawVisualSettingsContent(settings, configKey)
             imgui.SameLine();
             components.DrawInlineOffsets(settings, configKey .. 'hbn', 'hotbarNumberOffsetX', 'hotbarNumberOffsetY', 35);
         end
-        imgui.ShowHelp('Show the bar number (1-6) on the left side of the hotbar. X/Y offsets adjust position.');
+        imgui.ShowHelp('Show the bar number (1-10) on the left side of the hotbar. X/Y offsets adjust position.');
 
         -- Show Keybinds with anchor and offsets
         components.DrawPartyCheckbox(settings, 'Show Keybinds##' .. configKey, 'showKeybinds');
@@ -1656,6 +1185,15 @@ local function DrawVisualSettingsContent(settings, configKey)
             components.DrawInlineOffsets(settings, configKey .. 'lbl', 'actionLabelOffsetX', 'actionLabelOffsetY', 35);
         end
         imgui.ShowHelp('Show spell/ability names below slots. X/Y offsets adjust position.');
+        if settings.showActionLabels then
+            imgui.Indent(20);
+            if settings.actionLabelWordWrap == nil then
+                settings.actionLabelWordWrap = true;
+            end
+            components.DrawPartyCheckbox(settings, 'Word Wrap##' .. configKey, 'actionLabelWordWrap');
+            imgui.ShowHelp('Wrap labels onto up to 2 lines within the slot width.');
+            imgui.Unindent(20);
+        end
 
         components.DrawPartyCheckbox(settings, 'Show Slot Frame##' .. configKey, 'showSlotFrame');
         
@@ -1754,10 +1292,6 @@ local function DrawGlobalVisualSettings()
         return;
     end
 
-    -- Global Palettes section first (most commonly used)
-    DrawGlobalPalettesSection();
-    imgui.Separator();
-
     imgui.TextColored(components.TAB_STYLE.gold, 'Global Visual Settings');
     imgui.TextColored({0.7, 0.7, 0.7, 1.0}, 'These settings apply to all bars with "Use Global Settings" enabled.');
     imgui.Spacing();
@@ -1774,7 +1308,7 @@ local function DrawBarVisualSettings(configKey, barLabel)
         return;
     end
 
-    -- Extract bar index from config key (used for palette functions)
+    -- Extract bar index from config key
     local barIndex = tonumber(configKey:match('hotbarBar(%d+)'));
 
     -- Enabled checkbox at top
@@ -1854,12 +1388,6 @@ local function DrawBarVisualSettings(configKey, barLabel)
 
     imgui.Spacing();
 
-    -- General Palettes section (user-defined named palettes)
-    if jobSpecific then
-        DrawGeneralPalettesSection(configKey, barSettings, barIndex);
-        imgui.Spacing();
-    end
-
     -- Layout section (always per-bar)
     if components.CollapsingSection('Layout##' .. configKey, true) then
         -- Rows slider
@@ -1873,7 +1401,7 @@ local function DrawBarVisualSettings(configKey, barLabel)
             SaveSettingsToDisk();
             DeferredUpdateVisuals();
         end
-        imgui.ShowHelp('Number of rows (1-12).');
+        imgui.ShowHelp('Max row capacity (1-12). Visible rows are only added when columns force buttons to wrap (max 12 buttons per bar).');
 
         -- Columns slider
         local columns = { barSettings.columns or 12 };
@@ -1886,7 +1414,7 @@ local function DrawBarVisualSettings(configKey, barLabel)
             SaveSettingsToDisk();
             DeferredUpdateVisuals();
         end
-        imgui.ShowHelp('Number of columns (1-12).');
+        imgui.ShowHelp('Buttons per row (1-12). Buttons that do not fit in rows×columns are hidden (cap 12).');
     end
 
     -- Visual settings: Show message if using global, otherwise show per-bar settings
@@ -1947,19 +1475,6 @@ local function DrawCrossbarBarSettings(crossbarSettings, barType, comboMode)
     end
     imgui.PopStyleColor(3);
     imgui.ShowHelp('Pet Palettes: Each summoned pet can have its own crossbar configuration.\nSMN: Per-avatar palettes\nDRG: Wyvern palette\nBST: Jug pet / Charm palettes\nPUP: Automaton palette\n\nClick to toggle.');
-
-    imgui.Spacing();
-    imgui.Separator();
-    imgui.Spacing();
-
-    -- Crossbar Palettes - redirect to Global tab (mirrors hotbar pattern)
-    local currentPalette = palette.GetActivePaletteForCombo(comboMode);
-    if currentPalette then
-        imgui.TextColored({0.4, 0.8, 1.0, 1.0}, 'Palette: ' .. currentPalette);
-    else
-        imgui.TextColored({0.6, 0.6, 0.6, 1.0}, 'Palette: (none)');
-    end
-    imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'Manage palettes in Global tab.');
 end
 
 local function DrawCrossbarSettings(selectedCrossbarTab)
@@ -2296,10 +1811,6 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
     local currentCrossbar = CROSSBAR_TYPES[selectedCrossbarTab];
     if currentCrossbar then
         if currentCrossbar.isGlobal then
-            -- Global Crossbar Palettes section first (most commonly used)
-            DrawCrossbarGlobalPalettesSection();
-            imgui.Separator();
-
             -- Global Visual Settings
             imgui.TextColored(components.TAB_STYLE.gold, 'Global Visual Settings');
             imgui.Spacing();
@@ -2366,6 +1877,15 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
                     components.DrawInlineOffsets(crossbarSettings, 'crossbarlbl', 'actionLabelOffsetX', 'actionLabelOffsetY', 35);
                 end
                 imgui.ShowHelp('Show spell/ability names below slots. X/Y offsets adjust position.');
+                if crossbarSettings.showActionLabels then
+                    imgui.Indent(20);
+                    if crossbarSettings.actionLabelWordWrap == nil then
+                        crossbarSettings.actionLabelWordWrap = true;
+                    end
+                    components.DrawPartyCheckbox(crossbarSettings, 'Word Wrap##crossbar', 'actionLabelWordWrap');
+                    imgui.ShowHelp('Wrap labels onto up to 2 lines within the slot width.');
+                    imgui.Unindent(20);
+                end
             end
 
             -- Background section
@@ -2487,12 +2007,6 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
     -- Draw confirmation popup for job-specific toggle
     DrawJobSpecificConfirmPopup();
 
-    -- Draw palette modal (unified for both hotbar and crossbar)
-    DrawPaletteModal();
-
-    -- Palette manager window is drawn by the hotbar module render (always-on),
-    -- so it shows whether or not this config menu is open.
-
     return selectedCrossbarTab;
 end
 
@@ -2610,7 +2124,7 @@ function M.DrawSettings(state)
     components.DrawCheckbox('Lock Movement', 'hotbarLockMovement', function()
         -- Only reset anchors when lock is being ENABLED
         if gConfig.hotbarLockMovement then
-            for i = 1, 6 do
+            for i = 1, data.NUM_BARS do
                 drawing.ResetAnchorState('Hotbar' .. tostring(i));
             end
             drawing.ResetAnchorState('Crossbar');
@@ -2747,15 +2261,48 @@ function M.DrawSettings(state)
         gConfig.hotbarGlobal.skillchainHighlightEnabled = skillchainHighlight[1];
         SaveSettingsOnly();
     end
-    imgui.ShowHelp('Show animated border and skillchain icon on weapon skill slots when a skillchain window is open.');
+    imgui.ShowHelp('Show an animated border and skillchain icon on slots that can close the current window (weapon skills, spells, blood pacts, and BST Ready). Icons only appear while a window is open.');
 
     if gConfig.hotbarGlobal.skillchainHighlightEnabled ~= false then
+        imgui.Indent(20);
+
+        local requireAbility = { gConfig.hotbarGlobal.skillchainRequireAbility == true };
+        if imgui.Checkbox('Require Chain Affinity / Azure Lore / Immanence', requireAbility) then
+            gConfig.hotbarGlobal.skillchainRequireAbility = requireAbility[1];
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('When enabled, Blue Mage and Scholar spell slots only highlight if Chain Affinity, Azure Lore, or Immanence is active.');
+
+        local highlightAllPacts = gConfig.hotbarGlobal.skillchainHighlightAllBloodPacts == true
+            or (gConfig.hotbarGlobal.skillchainHighlightAllBloodPacts == nil and gConfig.hotbarGlobal.skillchainRequireSummonedAvatar == false);
+        local highlightAllPactsBox = { highlightAllPacts };
+        if imgui.Checkbox('Highlight All Blood Pacts', highlightAllPactsBox) then
+            gConfig.hotbarGlobal.skillchainHighlightAllBloodPacts = highlightAllPactsBox[1];
+            gConfig.hotbarGlobal.skillchainRequireSummonedAvatar = nil;
+            SaveSettingsOnly();
+        end
+        imgui.ShowHelp('When enabled, every blood pact that would close the window is highlighted, even if that avatar is not summoned. When disabled, only blood pacts for the avatar you currently have out are highlighted.');
+
+        imgui.Unindent(20);
+
         components.DrawPartySlider(gConfig.hotbarGlobal, 'Icon Scale##skillchain', 'skillchainIconScale', 0.5, 2.0, '%.1f', nil, 1.0);
         imgui.ShowHelp('Scale of the skillchain icon (default 1.0).');
         components.DrawPartySliderInt(gConfig.hotbarGlobal, 'Icon Offset X##skillchain', 'skillchainIconOffsetX', -50, 50, '%d', nil, 0);
         imgui.ShowHelp('Horizontal offset for skillchain icon position.');
         components.DrawPartySliderInt(gConfig.hotbarGlobal, 'Icon Offset Y##skillchain', 'skillchainIconOffsetY', -50, 50, '%d', nil, 0);
         imgui.ShowHelp('Vertical offset for skillchain icon position.');
+
+        components.DrawCheckbox('Magic Burst Notification', 'magicBurstEnabled');
+        imgui.ShowHelp('Show a large elemental image with a countdown while a skillchain\'s magic burst window is open.');
+
+        if gConfig.magicBurstEnabled then
+            imgui.Indent(20);
+            components.DrawCheckbox('Show Countdown##magicburst', 'magicBurstShowTimer', UpdateUserSettings);
+            imgui.ShowHelp('Show the seconds remaining in the center of the image.');
+            imgui.Unindent(20);
+            components.DrawSlider('Size##magicburst', 'magicBurstScale', 0.2, 3.0, '%.1f', UpdateUserSettings);
+            imgui.ShowHelp('Size of the elemental image (default 1.0).');
+        end
     end
 
     imgui.Spacing();
@@ -2771,7 +2318,7 @@ function M.DrawSettings(state)
         macropalette.OpenPalette();
     end
     imgui.SameLine();
-    if imgui.Button('Palette Manager', {120, 0}) then
+    if imgui.Button('Palette Manager', {140, 0}) then
         paletteManager.Open();
     end
     imgui.SameLine();
@@ -2828,7 +2375,7 @@ function M.DrawSettings(state)
         end
         imgui.EndCombo();
     end
-    imgui.ShowHelp('Hotbar: Standard keyboard hotbars (Bars 1-6)\nCrossbar: Controller layout with L2/R2 triggers\nBoth: Show both hotbar and crossbar');
+    imgui.ShowHelp('Hotbar: Standard keyboard hotbars (Bars 1-10)\nCrossbar: Controller layout with L2/R2 triggers\nBoth: Show both hotbar and crossbar');
 
     -- Conditional: KB Palette Cycle (show if mode is hotbar or both)
     if currentMode == 'hotbar' or currentMode == 'both' then
@@ -3065,23 +2612,8 @@ function M.DrawSettings(state)
     imgui.ShowHelp('Configure each hotbar independently. Each bar can have its own layout, theme, and button settings.');
     imgui.Spacing();
 
-    -- Draw Bar 1-6 tabs
-    for i, barType in ipairs(BAR_TYPES) do
-        local clicked, tabWidth = components.DrawStyledTab(
-            barType.label,
-            'hotbarBarTab' .. i,
-            selectedBarTab == i,
-            nil,
-            components.TAB_STYLE.smallHeight,
-            components.TAB_STYLE.smallPadding
-        );
-        if clicked then
-            selectedBarTab = i;
-        end
-        if i < #BAR_TYPES then
-            imgui.SameLine();
-        end
-    end
+    -- Draw Bar tabs (two rows: Global+1-5, then 6-10)
+    selectedBarTab = DrawHotbarBarTabs('hotbarBarTab', selectedBarTab);
 
     imgui.Spacing();
     imgui.Separator();
@@ -3099,12 +2631,6 @@ function M.DrawSettings(state)
 
     -- Draw confirmation popup for job-specific toggle
     DrawJobSpecificConfirmPopup();
-
-    -- Draw palette modal (unified for both hotbar and crossbar)
-    DrawPaletteModal();
-
-    -- Palette manager window is drawn by the hotbar module render (always-on),
-    -- so it shows whether or not this config menu is open.
 
     return { selectedHotbarTab = selectedBarTab, selectedModeTab = selectedModeTab, selectedCrossbarTab = selectedCrossbarTab };
 end
@@ -3305,23 +2831,8 @@ function M.DrawColorSettings(state)
     imgui.TextColored(components.TAB_STYLE.gold, 'Per-Bar Color Settings');
     imgui.Spacing();
 
-    -- Draw Bar 1-6 tabs (same as visual settings)
-    for i, barType in ipairs(BAR_TYPES) do
-        local clicked, tabWidth = components.DrawStyledTab(
-            barType.label,
-            'hotbarColorTab' .. i,
-            selectedBarTab == i,
-            nil,
-            components.TAB_STYLE.smallHeight,
-            components.TAB_STYLE.smallPadding
-        );
-        if clicked then
-            selectedBarTab = i;
-        end
-        if i < #BAR_TYPES then
-            imgui.SameLine();
-        end
-    end
+    -- Draw Bar tabs (two rows: Global+1-5, then 6-10)
+    selectedBarTab = DrawHotbarBarTabs('hotbarColorTab', selectedBarTab);
 
     imgui.Spacing();
     imgui.Separator();

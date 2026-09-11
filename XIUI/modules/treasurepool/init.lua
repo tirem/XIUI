@@ -85,6 +85,7 @@ function M.Initialize(settings)
         if gConfig.treasurePoolMinimized == nil then gConfig.treasurePoolMinimized = false; end
         if gConfig.treasurePoolShowButtonsInCollapsed == nil then gConfig.treasurePoolShowButtonsInCollapsed = true; end
         if gConfig.treasurePoolAutoHideWhenEmpty == nil then gConfig.treasurePoolAutoHideWhenEmpty = true; end
+        if gConfig.treasurePoolLootColors == nil then gConfig.treasurePoolLootColors = false; end
     end
 
     -- Initialize data layer first
