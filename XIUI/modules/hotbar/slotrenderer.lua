@@ -564,10 +564,15 @@ local function BuildAvailabilityCacheKey(bind, bindKey)
 
     local player = AshitaCore:GetMemoryManager():GetPlayer();
     local jobId = player and player:GetMainJob() or 0;
+    local jobLevel = player and player:GetMainJobLevel() or 0;
     local subjobId = player and player:GetSubJob() or 0;
+    local subjobLevel = player and player:GetSubJobLevel() or 0;
+    -- Current levels change during level sync without changing either job ID.
+    -- Include them so level-gated spell availability cannot remain cached after sync ends.
     -- Pet presence affects HasAbility for BPs, maneuvers, ready moves, etc.
     local petKey = petpalette.GetCurrentPetKey() or 'none';
-    return key .. ':' .. jobId .. ':' .. subjobId .. ':' .. petKey .. ':' .. playerdata.GetEquipmentSignature();
+    return key .. ':' .. jobId .. ':' .. jobLevel .. ':' .. subjobId .. ':' .. subjobLevel
+        .. ':' .. petKey .. ':' .. playerdata.GetEquipmentSignature();
 end
 
 local function GetAvailabilityState(bind, bindKey)
