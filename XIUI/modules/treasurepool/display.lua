@@ -525,8 +525,7 @@ function M.DrawWindow(settings)
                     SaveSettingsToDisk();
                 end
 
-                -- Only show Lot All / Pass All buttons if there are pool items
-                if hasPoolItems then
+                if hasPoolItems and not data.IsPreviewActive() then
                     -- Draw Pass All button
                     local passAllClicked = button.DrawPrim('tpPassAll', passAllX, btnY, textBtnWidth, btnHeight, {
                         colors = button.COLORS_NEGATIVE,
@@ -563,7 +562,6 @@ function M.DrawWindow(settings)
                         button.HidePrim('tpLotAll');
                     end
                 else
-                    -- No pool items - hide Lot All / Pass All buttons
                     button.HidePrim('tpLotAll');
                     button.HidePrim('tpPassAll');
                 end
@@ -761,7 +759,7 @@ function M.DrawWindow(settings)
                     end
 
                     -- 4. Draw per-item Lot/Pass buttons (expanded view or explicitly enabled)
-                    local showButtons = isExpanded or gConfig.treasurePoolShowButtonsInCollapsed;
+                    local showButtons = (isExpanded or gConfig.treasurePoolShowButtonsInCollapsed) and not data.IsPreviewActive();
                     if showButtons then
                         local itemBtnHeight = fontSize + 4;
                         local itemBtnWidth = fontSize * 2.5;
