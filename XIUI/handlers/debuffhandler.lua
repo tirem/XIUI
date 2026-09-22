@@ -39,6 +39,7 @@ local damageHitMes = {
     [352]=true, [353]=true, [379]=true, [576]=true, [577]=true, [802]=true,
 };
 local SLEEP_BUFF_IDS = { 2, 19, 193 };
+local BIND_BUFF_ID = 11;
 -- "No effect" confirms a matching uncertain debuff is already present (do not refresh timer).
 -- Distinct from complete resist / immunity (655), which means the effect is not present.
 -- 75 MAGIC_NO_EFFECT, 156 JA_NO_EFFECT, 189 SKILL_NO_EFFECT, 283 NO_EFFECT, 323 JA_NO_EFFECT_2
@@ -667,10 +668,12 @@ local function ApplyMessage(debuffs, action)
             local isJobAbility = jaOnlyMes[message];
             local spellData = GetDurationData(action.Type, spell, isJobAbility);
 
-            -- Damage wakes Sleep; this action may re-apply it afterward. A blocked
-            -- or 0-damage hit does not wake, so require actual damage.
+            -- Damage wakes Sleep and usually breaks Bind; this action may re-apply
+            -- either effect afterward. A blocked or 0-damage hit does not trigger
+            -- this inference, so require actual damage.
             if damageHitMes[message] and (ability.Param or 0) > 0 then
                 ClearSleepDebuffs(targetDebuffs);
+                ClearTrackedDebuff(targetDebuffs, BIND_BUFF_ID);
             end
 
             -- Type 1 melee only: Feint applies on regular melee hits (not ranged, not WS).
