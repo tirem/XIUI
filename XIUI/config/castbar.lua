@@ -63,6 +63,12 @@ function M.DrawSettings()
                 gConfig.castBarFastCastBRDSingSpeed = castBarFCBRDSingSpeed[1];
             end
             if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
+            
+            local castBarFCSMNAvatarSpeed = { gConfig.castBarFastCastSMNAvatarSpeed };
+            if (imgui.SliderFloat('SMN Avatar Speed', castBarFCSMNAvatarSpeed, 0.00, 1.00, '%.2f')) then
+                gConfig.castBarFastCastSMNAvatarSpeed = castBarFCSMNAvatarSpeed[1];
+            end
+            if (imgui.IsItemDeactivatedAfterEdit()) then SaveSettingsOnly(); end
 
             imgui.Spacing();
             imgui.Text('Per-Job Fast Cast:');

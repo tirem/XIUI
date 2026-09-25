@@ -708,6 +708,7 @@ function M.createUserSettingsDefaults()
         castBarFastCastRDMSJ = 0.17,
         castBarFastCastWHMCureSpeed = 0.15,
         castBarFastCastBRDSingSpeed = 0.37,
+        castBarFastCastSMNAvatarSpeed = 0.50,
         castBarFastCast = {
             [1] = 0.02, -- WAR
             [2] = 0.02, -- MNK
