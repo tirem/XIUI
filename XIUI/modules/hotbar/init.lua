@@ -99,6 +99,86 @@ local function AnyBarIsPetAware()
 end
 
 -- ============================================
+-- Zone settling
+-- ============================================
+-- Zone-in (0x00A) arrives while the client is still loading. Reading player,
+-- inventory and recast state before that finishes crashes the client under
+-- Wine/DXVK (#216, #451). So after a zone-out the hotbar draws nothing and
+-- ignores input until the client's own zone-entered packet (outgoing 0x0011)
+-- is seen, the zoning flag is clear, the player entity exists and the
+-- configurable zone-in delay has passed; deferred job/pet/profile refreshes
+-- then replay once. If 0x0011 never shows, a
+-- fallback timer releases it. The timer runs from the zoning flag clearing,
+-- not from zone-in, so long loading screens are fine.
+local zoneSettling = false;
+local zoneInAt = nil;
+local zoneEntered = false;
+local zoneNotZoningSince = nil;
+local pendingJob = nil;
+local pendingPetSync = false;
+local pendingJobRefresh = false;  -- profile/palette change made while settling
+local ZONE_SETTLE_FALLBACK_SECONDS = 15.0;  -- after the zoning flag clears, if 0x0011 is never seen
+local ZONE_SETTLE_DEFAULT_SECONDS = 3;      -- matches createHotbarGlobalDefaults().zoneSettleSeconds
+
+-- User-configurable delay after zone-in (Hotbar settings > Zone-In Delay).
+local function ZoneSettleSeconds()
+    local value = gConfig and gConfig.hotbarGlobal and tonumber(gConfig.hotbarGlobal.zoneSettleSeconds);
+    return value or ZONE_SETTLE_DEFAULT_SECONDS;
+end
+
+-- GetIsZoning is missing on older Ashita builds; treat that as not zoning.
+local function IsZoning()
+    local ok, zoning = pcall(function()
+        return AshitaCore:GetMemoryManager():GetPlayer():GetIsZoning();
+    end);
+    return ok and zoning ~= nil and zoning ~= 0;
+end
+
+local function BeginZoneSettling()
+    zoneSettling = true;
+    zoneInAt = nil;
+    zoneEntered = false;
+    zoneNotZoningSince = nil;
+end
+
+local function ZoneReady()
+    if not zoneInAt then return false; end
+    if IsZoning() then
+        zoneNotZoningSince = nil;
+        return false;
+    end
+    local now = os.clock();
+    zoneNotZoningSince = zoneNotZoningSince or now;
+    if (now - zoneInAt) < ZoneSettleSeconds() then
+        return false;
+    end
+    if not zoneEntered and (now - zoneNotZoningSince) < ZONE_SETTLE_FALLBACK_SECONDS then
+        return false;
+    end
+    return GetPlayerEntity() ~= nil;
+end
+
+local function FinishZoneSettling()
+    zoneSettling = false;
+    zoneInAt = nil;
+    zoneEntered = false;
+    zoneNotZoningSince = nil;
+    if pendingJob then
+        local job = pendingJob;
+        pendingJob = nil;
+        M.ApplyJobAndRefresh(job[1], job[2]);
+    end
+    if pendingPetSync then
+        pendingPetSync = false;
+        M.HandlePetSyncPacket();
+    end
+    if pendingJobRefresh then
+        pendingJobRefresh = false;
+        M.RefreshForCurrentJob();
+    end
+end
+
+-- ============================================
 -- Module Lifecycle
 -- ============================================
 
@@ -223,6 +303,12 @@ function M.Initialize(settings)
     wasHotbarEnabled = (gConfig.hotbarEnabled ~= false);
 
     M.initialized = true;
+
+    -- Loaded mid-zone (e.g. /addon reload): settle first.
+    if IsZoning() then
+        BeginZoneSettling();
+        zoneInAt = os.clock();
+    end
 end
 
 -- Update visual elements when settings change
@@ -302,6 +388,11 @@ end
 function M.DrawWindow(settings)
     if not M.initialized then return; end
     if not M.visible then return; end
+
+    if zoneSettling then
+        if not ZoneReady() then return; end
+        FinishZoneSettling();
+    end
 
     imtext.SetConfigFromSettings(settings and settings.font_settings);
 
@@ -415,12 +506,25 @@ end
 -- ============================================
 
 function M.HandleZonePacket()
+    BeginZoneSettling();
     -- Flush any pending macro/slot saves before zone transition
     macropalette.FlushPendingSave();
     data.Clear();
     petpalette.ClearPetState();
     -- Clear availability cache since player state is invalid during zone
     slotrenderer.ClearAvailabilityCache();
+end
+
+-- Zone-in (0x00A): starts the settle clock.
+function M.HandleZoneInPacket()
+    if not zoneSettling then return; end
+    zoneInAt = os.clock();
+end
+
+-- Outgoing 0x0011: the client has finished loading the zone.
+function M.HandleZoneEnteredPacket()
+    if not zoneSettling then return; end
+    zoneEntered = true;
 end
 
 local function RefreshJobPalettes()
@@ -441,6 +545,11 @@ function M.ApplyJobAndRefresh(mainJob, subJob)
     if not mainJob or mainJob == 0 then
         return false;
     end
+    if zoneSettling then
+        -- Deferred; replayed by FinishZoneSettling.
+        pendingJob = { mainJob, subJob };
+        return true;
+    end
     local hadJob = data.jobId and data.jobId ~= 0;
     local applied, changed = data.ApplyJobFromPacket(mainJob, subJob);
     if not applied then
@@ -459,6 +568,10 @@ function M.HandleProfileChange()
     if not M.initialized then return; end
     data.InvalidateStorageKeyCache();
     data.MarkMacroLookupDirty();
+    if zoneSettling then
+        pendingJobRefresh = true;  -- config window is usable while a zone loads
+        return;
+    end
     data.SetPlayerJob();
     if data.jobId and data.jobId ~= 0 then
         RefreshJobPalettes();
@@ -469,6 +582,10 @@ end
 -- Used after palette-library edits (e.g. "Use Shared Library") so the active
 -- hotbar/crossbar immediately reflect the new palette set.
 function M.RefreshForCurrentJob()
+    if zoneSettling then
+        pendingJobRefresh = true;
+        return true;
+    end
     if not data.SetPlayerJob() then
         return false;
     end
@@ -479,6 +596,10 @@ end
 -- Handle pet sync packet (0x0068)
 -- Called from main XIUI.lua packet handler
 function M.HandlePetSyncPacket()
+    if zoneSettling then
+        pendingPetSync = true;
+        return;
+    end
     -- Use delayed check to ensure entity is available
     ashita.tasks.once(0.3, function()
         petpalette.CheckPetState();
@@ -526,6 +647,7 @@ function M.HasPetPaletteOverride(barIndex)
 end
 
 function M.HandleKey(event)
+    if zoneSettling then return; end
     if gConfig and gConfig.hotbarEnabled == false then
         return;
     end
@@ -533,6 +655,7 @@ function M.HandleKey(event)
 end
 
 function M.HandleXInputState(e)
+    if zoneSettling then return; end
     if not crossbarInitialized then return; end
     if gConfig and gConfig.hotbarEnabled == false then return; end
     local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
@@ -543,6 +666,7 @@ end
 -- Handle xinput_button event for blocking game macros
 -- Returns true if the button should be blocked
 function M.HandleXInputButton(e)
+    if zoneSettling then return false; end
     if not crossbarInitialized then return false; end
     if gConfig and gConfig.hotbarEnabled == false then return false; end
     local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
@@ -553,6 +677,7 @@ end
 -- Handle DirectInput button event for blocking game macros
 -- Returns true if the button should be blocked
 function M.HandleDInputButton(e)
+    if zoneSettling then return false; end
     if not crossbarInitialized then return false; end
     if gConfig and gConfig.hotbarEnabled == false then return false; end
     local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';
@@ -562,6 +687,7 @@ end
 
 -- Handle DirectInput state event (for D-pad POV)
 function M.HandleDInputState(e)
+    if zoneSettling then return; end
     if not crossbarInitialized then return; end
     if gConfig and gConfig.hotbarEnabled == false then return; end
     local crossbarMode = gConfig and gConfig.hotbarCrossbar and gConfig.hotbarCrossbar.mode or 'hotbar';

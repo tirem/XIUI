@@ -2134,6 +2134,10 @@ function M.DrawSettings(state)
     imgui.ShowHelp('When enabled, prevents dragging/dropping and swapping of hotbar and crossbar slots.');
     components.DrawHideWhenMenuOpenOptions('hotbarHideOnMenuFocus', 'hotbarHideMacroPalette');
 
+    -- Zone-in delay (stored in hotbarGlobal)
+    components.DrawPartySliderInt(gConfig.hotbarGlobal, 'Zone-In Delay', 'zoneSettleSeconds', 0, 15, '%d s', nil, 3);
+    imgui.ShowHelp('Seconds the hotbar waits after the client reports a zone loaded before it\nstarts reading game data again. Raise this if zoning crashes the game.');
+
     -- Disable XI macros checkbox (stored in hotbarGlobal)
     local disableMacroBars = { gConfig.hotbarGlobal.disableMacroBars or false };
     if imgui.Checkbox('Disable XI Macros', disableMacroBars) then
