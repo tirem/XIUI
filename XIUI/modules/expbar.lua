@@ -139,19 +139,19 @@ expbar.DrawWindow = function(settings)
     if inlineMode then
         if jobString then
             imtext.SetConfigFromSettings(settings.job_font_settings);
-            local jobWidth = imtext.Measure(jobString, settings.job_font_settings.font_height);
+            local jobWidth = imtext.MeasureCached(jobString, settings.job_font_settings.font_height);
             actualTextWidth = actualTextWidth + jobWidth;
         end
 
         if expString then
             imtext.SetConfigFromSettings(settings.exp_font_settings);
-            local expWidth = imtext.Measure(expString, settings.exp_font_settings.font_height);
+            local expWidth = imtext.MeasureCached(expString, settings.exp_font_settings.font_height);
             actualTextWidth = actualTextWidth + expWidth + expBarTextMargin;
         end
 
         if percentString then
             imtext.SetConfigFromSettings(settings.percent_font_settings);
-            local percentWidth = imtext.Measure(percentString, settings.percent_font_settings.font_height);
+            local percentWidth = imtext.MeasureCached(percentString, settings.percent_font_settings.font_height);
             -- Add spacing between exp text and percent text
             actualTextWidth = actualTextWidth + percentWidth + expBarTextMargin;
         end
@@ -213,7 +213,7 @@ expbar.DrawWindow = function(settings)
         end
         -- Let progressbar handle its own Dummy for sizing (includes border extent)
         -- Use GetBackgroundDrawList to avoid clipping issues with large scales (window clipping)
-        progressbar.ProgressBar({{progressBarProgress, expGradient}}, {progressBarWidth, settings.barHeight}, {decorate = gConfig.showExpBarBookends, drawList = imgui.GetBackgroundDrawList()});
+        progressbar.ProgressBar(progressbar.Pct(progressBarProgress, expGradient), progressbar.Dims(progressBarWidth, settings.barHeight), progressbar.Opts(gConfig.showExpBarBookends, imgui.GetBackgroundDrawList()));
 
         -- Calculate text padding
         local bookendWidth = gConfig.showExpBarBookends and (settings.barHeight / 2) or 0;
@@ -245,7 +245,7 @@ expbar.DrawWindow = function(settings)
         local percentTextWidth = 0;
         if percentString then
             imtext.SetConfigFromSettings(settings.percent_font_settings);
-            percentTextWidth = imtext.Measure(percentString, settings.percent_font_settings.font_height);
+            percentTextWidth = imtext.MeasureCached(percentString, settings.percent_font_settings.font_height);
         end
 
         -- Declare width variables in wider scope for use in percent text positioning
@@ -263,14 +263,14 @@ expbar.DrawWindow = function(settings)
         if jobString then
             -- Job Text (left-aligned)
             imtext.SetConfigFromSettings(settings.job_font_settings);
-            textWidth, textHeight = imtext.Measure(jobString, settings.job_font_settings.font_height);
+            textWidth, textHeight = imtext.MeasureCached(jobString, settings.job_font_settings.font_height);
             local jobBaseX = leftTextX;
             local jobBaseY = inlineMode and textY + (settings.barHeight - textHeight) / 2 - 1 or textY;
             imtext.Draw(drawList, jobString, jobBaseX + jobOffsetX, jobBaseY + jobOffsetY, gConfig.colorCustomization.expBar.jobTextColor, settings.job_font_settings.font_height);
 
             -- Exp Text (right-aligned: position is right edge, draw at rightEdge - width)
             imtext.SetConfigFromSettings(settings.exp_font_settings);
-            expTextWidth, expTextHeight = imtext.Measure(expString, settings.exp_font_settings.font_height);
+            expTextWidth, expTextHeight = imtext.MeasureCached(expString, settings.exp_font_settings.font_height);
 
             -- Position exp text after job text in inline mode, or at right edge in non-inline mode
             local expBaseX;
@@ -294,7 +294,7 @@ expbar.DrawWindow = function(settings)
         if percentString then
             imtext.SetConfigFromSettings(settings.percent_font_settings);
             -- percentString and percentTextWidth already calculated above for layout purposes
-            local _, percentTextHeight = imtext.Measure(percentString, settings.percent_font_settings.font_height);
+            local _, percentTextHeight = imtext.MeasureCached(percentString, settings.percent_font_settings.font_height);
 
             -- Position percent text
             local percentTextX, percentTextY;

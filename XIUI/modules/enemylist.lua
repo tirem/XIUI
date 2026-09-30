@@ -1,6 +1,11 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
+
+-- Reused draw arguments.
+local _p1, _p2 = {0, 0}, {0, 0};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
+local function _P2(x, y) _p2[1] = x; _p2[2] = y; return _p2; end
 local imtext = require('libs.imtext');
 local debuffHandler = require('handlers.debuffhandler');
 local actionTracker = require('handlers.actiontracker');
@@ -159,7 +164,7 @@ end
 -- Truncates text to fit within maxWidth using binary search for optimal performance
 local function TruncateTextToFit(text, maxWidth, fontSize)
 	-- First check if text fits without truncation
-	local width, _ = imtext.Measure(text, fontSize);
+	local width, _ = imtext.MeasureCached(text, fontSize);
 	if width <= maxWidth then return text; end
 	-- Text is too long, use binary search to find optimal truncation point
 	local ellipsis = "...";
@@ -169,7 +174,7 @@ local function TruncateTextToFit(text, maxWidth, fontSize)
 	while left <= right do
 		local mid = math.floor((left + right) / 2);
 		local truncated = text:sub(1, mid) .. ellipsis;
-		width, _ = imtext.Measure(truncated, fontSize);
+		width, _ = imtext.MeasureCached(truncated, fontSize);
 		if width <= maxWidth then
 			-- This length fits, try a longer one
 			bestLength = mid;
@@ -211,7 +216,7 @@ enemylist.DrawWindow = function(settings)
 	if (imgui.Begin('EnemyList', true, windowFlags)) then
 		SaveWindowPosition('EnemyList');
 		-- Add top margin
-		imgui.Dummy({0, windowMargin});
+		imgui.Dummy(_P1(0, windowMargin));
 		local winStartX, winStartY = imgui.GetWindowPos();
 		local playerTarget = GetTargetSafe();
 		local targetIndex;
@@ -287,7 +292,7 @@ enemylist.DrawWindow = function(settings)
 				local entryStartY = columnBaseY + currentColumnHeight + entrySpacingY;
 
 				-- Set ImGui cursor for this entry
-				imgui.SetCursorScreenPos({entryStartX - windowMargin, entryStartY});
+				imgui.SetCursorScreenPos(_P1(entryStartX - windowMargin, entryStartY));
 
 				-- Entry width is the content area (barWidth), not including window margins
 				local entryWidth = settings.barWidth;
@@ -377,8 +382,7 @@ enemylist.DrawWindow = function(settings)
 					bgColor = ApplyOpacityToColor(bgColor, bgOpacity);
 				end
 				drawList:AddRectFilled(
-					{entryStartX, entryStartY},
-					{entryStartX + entryWidth, entryStartY + entryHeight},
+					_P1(entryStartX, entryStartY), _P2(entryStartX + entryWidth, entryStartY + entryHeight),
 					imgui.GetColorU32(ARGBToRGBA(bgColor)),
 					bgRadius,
 					ImDrawCornerFlags_All
@@ -399,8 +403,7 @@ enemylist.DrawWindow = function(settings)
 					end
 
 					drawList:AddRect(
-						{entryStartX, entryStartY},
-						{entryStartX + entryWidth, entryStartY + entryHeight},
+						_P1(entryStartX, entryStartY), _P2(entryStartX + entryWidth, entryStartY + entryHeight),
 						borderColor,
 						bgRadius,
 						ImDrawCornerFlags_All,
@@ -432,13 +435,13 @@ enemylist.DrawWindow = function(settings)
 				-- ROW 2: HP Bar (full width)
 				local row2Y = nameY + nameHeight + nameToBarGap;
 				local barX = entryStartX + padding;
-				imgui.SetCursorScreenPos({barX, row2Y});
+				imgui.SetCursorScreenPos(_P1(barX, row2Y));
 
 				local enemyGradient = GetCustomGradient(gConfig.colorCustomization.enemyList, 'hpGradient') or {'#e16c6c', '#fb9494'};
 				progressbar.ProgressBar(
-					{{ent.HPPercent / 100, enemyGradient}},
-					{barWidth, settings.barHeight},
-					{decorate = gConfig.showEnemyListBookends}
+					progressbar.Pct(ent.HPPercent / 100, enemyGradient),
+					progressbar.Dims(barWidth, settings.barHeight),
+					progressbar.Opts(gConfig.showEnemyListBookends)
 				);
 
 				-- ROW 3: Distance (left aligned) and HP% (right aligned)
@@ -454,7 +457,7 @@ enemylist.DrawWindow = function(settings)
 					-- HP% text (right-aligned): measure width first, then position from right edge
 					if (gConfig.showEnemyHPPText) then
 						local hpColor = gConfig.colorCustomization.enemyList.percentTextColor;
-						local hpWidth, _ = imtext.Measure(hpText, settings.percent_font_settings.font_height);
+						local hpWidth, _ = imtext.MeasureCached(hpText, settings.percent_font_settings.font_height);
 						imtext.Draw(drawList, hpText, entryStartX + entryWidth - padding - hpWidth, row3Y, hpColor, settings.percent_font_settings.font_height);
 					end
 				end
@@ -467,12 +470,12 @@ enemylist.DrawWindow = function(settings)
 					end
 					local castBarY = contentBottomY + barToInfoGap;
 
-					imgui.SetCursorScreenPos({barX, castBarY});
+					imgui.SetCursorScreenPos(_P1(barX, castBarY));
 					local castGradient = GetCustomGradient(gConfig.colorCustomization.enemyList, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
 					progressbar.ProgressBar(
-						{{castProgress, castGradient, castOverlay}},
-						{barWidth, castBarHeight},
-						{decorate = gConfig.showEnemyListBookends}
+						progressbar.Pct(castProgress, castGradient, castOverlay),
+						progressbar.Dims(barWidth, castBarHeight),
+						progressbar.Opts(gConfig.showEnemyListBookends)
 					);
 
 					-- "<spell> - <target>" centered below the bar; target in its own color.
@@ -491,8 +494,8 @@ enemylist.DrawWindow = function(settings)
 					end
 
 					local suffix = castTargetName and (' - ' .. castTargetName) or nil;
-					local spellWidth = imtext.Measure(castSpellName, castTextHeight);
-					local suffixWidth = suffix and imtext.Measure(suffix, castTextHeight) or 0;
+					local spellWidth = imtext.MeasureCached(castSpellName, castTextHeight);
+					local suffixWidth = suffix and imtext.MeasureCached(suffix, castTextHeight) or 0;
 					local castTextX = barX + (barWidth / 2) - ((spellWidth + suffixWidth) / 2);
 					local castTextY = castBarY + castBarHeight + math.max(2 * scaleY, 1);
 
@@ -588,8 +591,7 @@ enemylist.DrawWindow = function(settings)
 							targetBgColor = ApplyOpacityToColor(targetBgColor, targetBgOpacity);
 						end
 						drawList:AddRectFilled(
-							{targetContainerX, targetContainerY},
-							{targetContainerX + targetWidth, targetContainerY + targetTotalHeight},
+							_P1(targetContainerX, targetContainerY), _P2(targetContainerX + targetWidth, targetContainerY + targetTotalHeight),
 							imgui.GetColorU32(ARGBToRGBA(targetBgColor)),
 							bgRadius,
 							ImDrawCornerFlags_All
@@ -617,7 +619,7 @@ enemylist.DrawWindow = function(settings)
 
 				-- Add a click target over the entire entry to /target that mob (disabled in limited mode, preview mode, config open, or by config)
 				if (not HzLimitedMode and not isPreviewMode and not showConfig[1] and gConfig.enableEnemyListClickTarget) then
-					imgui.SetCursorScreenPos({entryStartX, entryStartY});
+					imgui.SetCursorScreenPos(_P1(entryStartX, entryStartY));
 					if imgui.InvisibleButton('EnemyEntry' .. k, {entryWidth, entryHeight}) then
 						local clickEntityMgr = AshitaCore:GetMemoryManager():GetEntity();
 						if clickEntityMgr ~= nil then
@@ -654,8 +656,8 @@ enemylist.DrawWindow = function(settings)
 		-- Set cursor to ensure window encompasses all content (prevents clipping)
 		-- Position at bottom-right of content area to force proper window sizing
 		if (numTargets > 0) then
-			imgui.SetCursorScreenPos({winStartX, columnBaseY + maxColumnHeight + windowMargin});
-			imgui.Dummy({windowWidth, 0});
+			imgui.SetCursorScreenPos(_P1(winStartX, columnBaseY + maxColumnHeight + windowMargin));
+			imgui.Dummy(_P1(windowWidth, 0));
 		end
 
 	end

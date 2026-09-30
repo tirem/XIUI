@@ -2261,17 +2261,17 @@ function M.DrawSettings(state)
         gConfig.hotbarGlobal.skillchainHighlightEnabled = skillchainHighlight[1];
         SaveSettingsOnly();
     end
-    imgui.ShowHelp('Show an animated border and skillchain icon on slots that can close the current window (weapon skills, spells, blood pacts, and BST Ready). Icons only appear while a window is open.');
+    imgui.ShowHelp('Show an animated border and skillchain icon on slots that can close the current window. Elemental spells highlight for matching Magic Bursts after a skillchain, or as closers while Immanence is active.');
 
     if gConfig.hotbarGlobal.skillchainHighlightEnabled ~= false then
         imgui.Indent(20);
 
         local requireAbility = { gConfig.hotbarGlobal.skillchainRequireAbility == true };
-        if imgui.Checkbox('Require Chain Affinity / Azure Lore / Immanence', requireAbility) then
+        if imgui.Checkbox('Require Chain Affinity / Azure Lore', requireAbility) then
             gConfig.hotbarGlobal.skillchainRequireAbility = requireAbility[1];
             SaveSettingsOnly();
         end
-        imgui.ShowHelp('When enabled, Blue Mage and Scholar spell slots only highlight if Chain Affinity, Azure Lore, or Immanence is active.');
+        imgui.ShowHelp('When enabled, Blue Magic closer slots only highlight while Chain Affinity or Azure Lore is active. Elemental magic always requires Immanence to act as a skillchain closer.');
 
         local highlightAllPacts = gConfig.hotbarGlobal.skillchainHighlightAllBloodPacts == true
             or (gConfig.hotbarGlobal.skillchainHighlightAllBloodPacts == nil and gConfig.hotbarGlobal.skillchainRequireSummonedAvatar == false);

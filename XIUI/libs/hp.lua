@@ -8,6 +8,19 @@
 
 local M = {};
 
+-- Cached {a, b} pair per owner; read only.
+local pairCache = setmetatable({}, { __mode = 'k' });
+local function cachedPair(owner, a, b)
+    local c = pairCache[owner];
+    if c and c[1] == a and c[2] == b then
+        return c;
+    end
+    c = {a, b};
+    pairCache[owner] = c;
+    return c;
+end
+M.cachedPair = cachedPair;
+
 -- ========================================
 -- HP Interpolation Manager
 -- ========================================
@@ -337,9 +350,9 @@ function M.GetCustomHpColors(hppPercent, moduleColorSettings)
 
     -- Check if gradient is enabled, otherwise use static color
     if selectedSettings.enabled then
-        hpGradient = {selectedSettings.start, selectedSettings.stop};
+        hpGradient = cachedPair(selectedSettings, selectedSettings.start, selectedSettings.stop);
     else
-        hpGradient = {selectedSettings.start, selectedSettings.start};
+        hpGradient = cachedPair(selectedSettings, selectedSettings.start, selectedSettings.start);
     end
 
     -- Convert first gradient color to ARGB for text
@@ -360,9 +373,9 @@ function M.GetCustomGradient(moduleSettings, gradientName)
     end
 
     if gradient.enabled then
-        return {gradient.start, gradient.stop};
+        return cachedPair(gradient, gradient.start, gradient.stop);
     else
-        return {gradient.start, gradient.start};
+        return cachedPair(gradient, gradient.start, gradient.start);
     end
 end
 

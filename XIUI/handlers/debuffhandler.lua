@@ -521,7 +521,9 @@ local function GetDurationData(actionType, id, isJobAbility)
         return PET_DURATIONS[id] or PET_DURATIONS[jaId];
     end
     if actionType == 11 then
-        return LookupNonSpell(id, actionType) or SPELL_DURATIONS[id];
+        -- Monster-skill ids overlap spell ids (e.g. Arm Block 608 and Frost Breath 608).
+        -- Only use explicitly mapped non-spell data for this packet type.
+        return LookupNonSpell(id, actionType);
     end
     return SPELL_DURATIONS[id] or LookupNonSpell(id, actionType) or LookupNonSpell(jaId, actionType);
 end

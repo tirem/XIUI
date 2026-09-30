@@ -5,6 +5,11 @@
 
 require('common');
 local imgui = require('imgui');
+
+-- Reused draw arguments.
+local _p1, _p2, _UV0, _UV1 = {0, 0}, {0, 0}, {0, 0}, {1, 1};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
+local function _P2(x, y) _p2[1] = x; _p2[2] = y; return _p2; end
 local imtext = require('libs.imtext');
 
 local M = {};
@@ -256,17 +261,17 @@ function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOf
                     local bgX = resetX - ((bgSize - iconSize) / 1.5);
                     local bgY = resetY + yOffset;
                     drawList:AddImage(statusHandler.GetBackground(isBuff),
-                        {bgX, bgY}, {bgX + bgSize + 1, bgY + bgSize / 0.75});
+                        _P1(bgX, bgY), _P2(bgX + bgSize + 1, bgY + bgSize / 0.75));
                 end
                 local iconPosX, iconPosY = imgui.GetCursorScreenPos();
-                drawList:AddImage(icon, {iconPosX, iconPosY}, {iconPosX + iconSize, iconPosY + iconSize}, {0, 0}, {1, 1}, 0xFFFFFFFF);
+                drawList:AddImage(icon, _P1(iconPosX, iconPosY), _P2(iconPosX + iconSize, iconPosY + iconSize), _UV0, _UV1, 0xFFFFFFFF);
                 local isUncertain = gConfig.showUncertainDebuffMarker and uncertainFlags and uncertainFlags[statusIds[i]];
                 if isUncertain then
                     local r = math.max(5, iconSize * 0.26);
                     local cx = iconPosX + iconSize - r * 0.45;
                     local cy = iconPosY + r * 0.45;
-                    drawList:AddCircleFilled({cx, cy}, r + 1, imgui.GetColorU32({0, 0, 0, 0.85}), 16);
-                    drawList:AddCircleFilled({cx, cy}, r, imgui.GetColorU32({1.0, 0.78, 0.12, 0.95}), 16);
+                    drawList:AddCircleFilled(_P1(cx, cy), r + 1, imgui.GetColorU32({0, 0, 0, 0.85}), 16);
+                    drawList:AddCircleFilled(_P1(cx, cy), r, imgui.GetColorU32({1.0, 0.78, 0.12, 0.95}), 16);
                     local mark = '?';
                     local markSize = math.max(8, r * 1.55);
                     imtext.SetConfig(gConfig.fontFamily, true, 0);
@@ -277,7 +282,7 @@ function M.DrawStatusIcons(statusIds, iconSize, maxColumns, maxRows, drawBg, xOf
                     imtext.DrawSimple(drawList, mark, markX + 1, markY, markCol, markSize);
                     imtext.DrawSimple(drawList, mark, markX, markY, markCol, markSize);
                 end
-                imgui.Dummy({iconSize, iconSize});
+                imgui.Dummy(_P1(iconSize, iconSize));
                 if buffTimes ~= nil and buffTimes[i] ~= nil then
                     local font_base = settings or debuff_font_settings;
                     -- When no explicit font settings are provided (target bar buffs, pet bar buffs)

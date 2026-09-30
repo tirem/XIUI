@@ -20,6 +20,11 @@
 
 require('common');
 local imgui = require('imgui');
+
+-- Reused draw arguments.
+local _p1, _p2, _UV0, _UV1 = {0, 0}, {0, 0}, {0, 0}, {1, 1};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
+local function _P2(x, y) _p2[1] = x; _p2[2] = y; return _p2; end
 local TextureManager = require('libs.texturemanager');
 
 local M = {};
@@ -44,6 +49,10 @@ local DEFAULT_BG_OFFSET = 1;
 local SOURCE_CORNER_SIZE = 21;
 local SOURCE_FULL_SIZE = 491;
 local CORNER_UV = SOURCE_CORNER_SIZE / SOURCE_FULL_SIZE;
+-- Constant UV pairs.
+local _UV_CC, _UV_CO, _UV_CZ, _UV_OC, _UV_ZC = {CORNER_UV, CORNER_UV}, {CORNER_UV, 1}, {CORNER_UV, 0}, {1, CORNER_UV}, {0, CORNER_UV};
+local _uvm = {0, 0};
+local function _UVM(v) _uvm[1] = v; _uvm[2] = v; return _uvm; end
 
 -- ============================================
 -- Internal Helpers
@@ -99,7 +108,7 @@ local function DrawScaledBackground(drawList, ptr, bgX, bgY, bgW, bgH, bgScale, 
 
     if bgScale >= 1.0 then
         local uvMax = 1.0 / bgScale;
-        drawList:AddImage(ptr, {bgX, bgY}, {bgX + bgW, bgY + bgH}, {0, 0}, {uvMax, uvMax}, tint);
+        drawList:AddImage(ptr, _P1(bgX, bgY), _P2(bgX + bgW, bgY + bgH), _UV0, _UVM(uvMax), tint);
         return;
     end
 
@@ -117,7 +126,7 @@ local function DrawScaledBackground(drawList, ptr, bgX, bgY, bgW, bgH, bgScale, 
             local x = bgX + col * tileW;
             local tw = math.min(tileW, bgX + bgW - x);
             local uvMaxX = tw / tileW;
-            drawList:AddImage(ptr, {x, y}, {x + tw, y + th}, {0, 0}, {uvMaxX, uvMaxY}, tint);
+            drawList:AddImage(ptr, _P1(x, y), _P2(x + tw, y + th), _UV0, {uvMaxX, uvMaxY}, tint);
         end
     end
 end
@@ -184,7 +193,7 @@ function M.DrawBorders(drawList, x, y, w, h, options)
     local brY = bgY + bgH - math.floor(pieceSize - offset);
     local brPtr = LoadPiecePtr(theme, 'br');
     if brPtr ~= nil then
-        drawList:AddImage(brPtr, {brX, brY}, {brX + pieceSize, brY + pieceSize}, {0, 0}, {1, 1}, tint);
+        drawList:AddImage(brPtr, _P1(brX, brY), _P2(brX + pieceSize, brY + pieceSize), _UV0, _UV1, tint);
     end
 
     -- Top-right: rendered as two UV-sliced pieces. Some themes (Window1/3/5)
@@ -203,8 +212,8 @@ function M.DrawBorders(drawList, x, y, w, h, options)
         -- Top corner piece: top 21 rows of source -> pieceSize x pieceSize
         drawList:AddImage(
             trPtr,
-            {trX, trY}, {trX + pieceSize, trY + pieceSize},
-            {0, 0}, {1, CORNER_UV},
+            _P1(trX, trY), _P2(trX + pieceSize, trY + pieceSize),
+            _UV0, _UV_OC,
             tint
         );
         -- Right arm: rest of the source stretched along the long (vertical) axis
@@ -212,8 +221,8 @@ function M.DrawBorders(drawList, x, y, w, h, options)
         if armH > 0 then
             drawList:AddImage(
                 trPtr,
-                {trX, trY + pieceSize}, {trX + pieceSize, trY + trH},
-                {0, CORNER_UV}, {1, 1},
+                _P1(trX, trY + pieceSize), _P2(trX + pieceSize, trY + trH),
+                _UV_ZC, _UV1,
                 tint
             );
         end
@@ -231,8 +240,8 @@ function M.DrawBorders(drawList, x, y, w, h, options)
         -- Corner (top-left 21x21 of source -> pieceSize x pieceSize)
         drawList:AddImage(
             tlPtr,
-            {tlX, tlY}, {tlX + pieceSize, tlY + pieceSize},
-            {0, 0}, {CORNER_UV, CORNER_UV},
+            _P1(tlX, tlY), _P2(tlX + pieceSize, tlY + pieceSize),
+            _UV0, _UV_CC,
             tint
         );
         -- Top arm: source spans right past the corner, stretched horizontally only
@@ -240,8 +249,8 @@ function M.DrawBorders(drawList, x, y, w, h, options)
         if armW > 0 then
             drawList:AddImage(
                 tlPtr,
-                {tlX + pieceSize, tlY}, {tlX + tlW, tlY + pieceSize},
-                {CORNER_UV, 0}, {1, CORNER_UV},
+                _P1(tlX + pieceSize, tlY), _P2(tlX + tlW, tlY + pieceSize),
+                _UV_CZ, _UV_OC,
                 tint
             );
         end
@@ -250,8 +259,8 @@ function M.DrawBorders(drawList, x, y, w, h, options)
         if armH > 0 then
             drawList:AddImage(
                 tlPtr,
-                {tlX, tlY + pieceSize}, {tlX + pieceSize, tlY + trH},
-                {0, CORNER_UV}, {CORNER_UV, 1},
+                _P1(tlX, tlY + pieceSize), _P2(tlX + pieceSize, tlY + trH),
+                _UV_ZC, _UV_CO,
                 tint
             );
         end
@@ -270,8 +279,8 @@ function M.DrawBorders(drawList, x, y, w, h, options)
         -- Corner (left 21x21 of source -> pieceSize x pieceSize)
         drawList:AddImage(
             blPtr,
-            {blX, blY}, {blX + pieceSize, blY + pieceSize},
-            {0, 0}, {CORNER_UV, 1},
+            _P1(blX, blY), _P2(blX + pieceSize, blY + pieceSize),
+            _UV0, _UV_CO,
             tint
         );
         -- Bottom arm: source spans right past the corner, stretched horizontally only
@@ -279,8 +288,8 @@ function M.DrawBorders(drawList, x, y, w, h, options)
         if armW > 0 then
             drawList:AddImage(
                 blPtr,
-                {blX + pieceSize, blY}, {blX + tlW, blY + pieceSize},
-                {CORNER_UV, 0}, {1, 1},
+                _P1(blX + pieceSize, blY), _P2(blX + tlW, blY + pieceSize),
+                _UV_CZ, _UV1,
                 tint
             );
         end

@@ -292,7 +292,7 @@ function data.getBarBackgroundOverride(partyIndex)
         local override = colors.barBackgroundOverride;
         if override and override.active then
             local endColor = override.enabled and override.stop or override.start;
-            return {override.start, endColor};
+            return require('libs.hp').cachedPair(override, override.start, endColor);
         end
     end
     return nil;
@@ -313,9 +313,45 @@ end
 -- Member Information
 -- ============================================
 
+-- Preview constants; read only.
+local previewJobs = {
+    [0] = 3,   -- WHM (has MP)
+    [1] = 13,  -- NIN (no MP - will show cast bar when casting)
+    [2] = 4,   -- BLM (has MP)
+    [3] = 1,   -- WAR (no MP)
+    [4] = 5,   -- RDM (has MP)
+    [5] = 10,  -- BRD (has MP)
+};
+local previewSubJobs = {
+    [0] = 5,   -- /RDM
+    [1] = 1,   -- /WAR
+    [2] = 5,   -- /RDM
+    [3] = 13,  -- /NIN
+    [4] = 3,   -- /WHM
+    [5] = 3,   -- /WHM
+};
+local previewBuffs = {
+    [0] = {33, 43, 116, 40, 94},           -- Haste, Stoneskin, Phalanx, Blink, Reraise
+    [1] = {3, 13, 33, 43},                  -- Poison, Slow, Haste, Stoneskin
+    [2] = {2, 5, 6},                        -- Sleep, Blindness, Silence
+    [3] = {33, 94, 604, 180},               -- Haste, Reraise, Ionis, Multi Strikes
+    [4] = {4, 11, 12},                      -- Paralysis, Bind, Weight
+    [5] = {33, 40, 43, 116, 94, 187},       -- Lots of buffs
+};
+
+local memberInfoPool = {};
+local previewInfoPool = {};
+
 function data.GetMemberInformation(memIdx)
     if (showConfig[1] and gConfig.partyListPreview) then
-        local memInfo = {};
+        -- One record per slot, refilled each call.
+        local memInfo = previewInfoPool[memIdx];
+        if memInfo == nil then
+            memInfo = {};
+            previewInfoPool[memIdx] = memInfo;
+        else
+            for k in pairs(memInfo) do memInfo[k] = nil; end
+        end
         memInfo.hpp = memIdx == 4 and 0.1 or memIdx == 2 and 0.5 or memIdx == 0 and 0.75 or 1;
         memInfo.maxhp = 1250;
         memInfo.hp = math.floor(memInfo.maxhp * memInfo.hpp);
@@ -323,22 +359,6 @@ function data.GetMemberInformation(memIdx)
 
         -- Preview jobs: mix of MP jobs (WHM, BLM, RDM, BRD) and no-MP jobs (WAR, NIN)
         -- Job IDs: 1=WAR, 3=WHM, 4=BLM, 5=RDM, 10=BRD, 13=NIN
-        local previewJobs = {
-            [0] = 3,   -- WHM (has MP)
-            [1] = 13,  -- NIN (no MP - will show cast bar when casting)
-            [2] = 4,   -- BLM (has MP)
-            [3] = 1,   -- WAR (no MP)
-            [4] = 5,   -- RDM (has MP)
-            [5] = 10,  -- BRD (has MP)
-        };
-        local previewSubJobs = {
-            [0] = 5,   -- /RDM
-            [1] = 1,   -- /WAR
-            [2] = 5,   -- /RDM
-            [3] = 13,  -- /NIN
-            [4] = 3,   -- /WHM
-            [5] = 3,   -- /WHM
-        };
         memInfo.job = previewJobs[memIdx % 6];
         memInfo.level = 99;
         memInfo.subjob = previewSubJobs[memIdx % 6];
@@ -360,14 +380,6 @@ function data.GetMemberInformation(memIdx)
         -- Common buff IDs: 1=KO, 2=Sleep, 3=Poison, 4=Paralysis, 5=Blindness, 6=Silence, 7=Petrification
         -- 10=Stun, 11=Bind, 12=Weight, 13=Slow, 33=Haste, 40=Blink, 43=Stoneskin, 94=Reraise
         -- 116=Phalanx, 180=Multi Strikes, 187=Enmity Boost, 604=Ionis
-        local previewBuffs = {
-            [0] = {33, 43, 116, 40, 94},           -- Haste, Stoneskin, Phalanx, Blink, Reraise
-            [1] = {3, 13, 33, 43},                  -- Poison, Slow, Haste, Stoneskin
-            [2] = {2, 5, 6},                        -- Sleep, Blindness, Silence
-            [3] = {33, 94, 604, 180},               -- Haste, Reraise, Ionis, Multi Strikes
-            [4] = {4, 11, 12},                      -- Paralysis, Bind, Weight
-            [5] = {33, 40, 43, 116, 94, 187},       -- Lots of buffs
-        };
         memInfo.buffs = previewBuffs[memIdx % 6];
         memInfo.sync = false;
         -- Preview: members 4,10,16 are targets (blue), members 2,8,14 are subtargets (yellow)
@@ -437,7 +449,14 @@ function data.GetMemberInformation(memIdx)
         partyLeaderId = party:GetAlliancePartyLeaderServerId1();
     end
 
-    local memberInfo = {};
+    -- Reused per slot; don't keep it.
+    local memberInfo = memberInfoPool[memIdx];
+    if memberInfo == nil then
+        memberInfo = {};
+        memberInfoPool[memIdx] = memberInfo;
+    else
+        for k in pairs(memberInfo) do memberInfo[k] = nil; end
+    end
     memberInfo.zone = party:GetMemberZone(memIdx);
     memberInfo.inzone = memberInfo.zone == party:GetMemberZone(0);
     memberInfo.name = party:GetMemberName(memIdx);

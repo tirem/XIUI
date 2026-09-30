@@ -83,13 +83,18 @@ end
 -- Public API: Circle Drawing
 -- ========================================
 
-function M.draw_circle(center, radius, color, segments, fill, shadowConfig, drawList)
+local u32Cache, u32CacheCount = {}, 0;
+local shadowCenter = {0, 0};
+
+-- colorU32 (optional): precomputed GetColorU32(color).
+function M.draw_circle(center, radius, color, segments, fill, shadowConfig, drawList, colorU32)
     drawList = drawList or imgui.GetWindowDrawList();
 
     -- Draw shadow first if configured
     local shadowOffsetX, shadowOffsetY, shadowColorU32 = processShadowConfig(shadowConfig);
     if shadowOffsetX then
-        local shadow_center = {center[1] + shadowOffsetX, center[2] + shadowOffsetY};
+        local shadow_center = shadowCenter;
+        shadow_center[1] = center[1] + shadowOffsetX; shadow_center[2] = center[2] + shadowOffsetY;
 
         if (fill == true) then
             drawList:AddCircleFilled(shadow_center, radius, shadowColorU32, segments);
@@ -98,8 +103,25 @@ function M.draw_circle(center, radius, color, segments, fill, shadowConfig, draw
         end
     end
 
-    -- Draw main circle
-    local colorU32 = imgui.GetColorU32(color);
+    -- Draw main circle (colour cached)
+    if colorU32 == nil then
+        local alpha = imgui.GetStyle().Alpha;
+        local r, g, b, a = color[1], color[2], color[3], color[4];
+        local k = u32Cache[r]; if k == nil then k = {}; u32Cache[r] = k; end
+        local kg = k[g]; if kg == nil then kg = {}; k[g] = kg; end
+        local kb = kg[b]; if kb == nil then kb = {}; kg[b] = kb; end
+        local ka = kb[a]; if ka == nil then ka = {}; kb[a] = ka; end
+        colorU32 = ka[alpha];
+        if colorU32 == nil then
+            colorU32 = imgui.GetColorU32(color);
+            ka[alpha] = colorU32;
+            -- Bounded: fades produce many alpha values.
+            u32CacheCount = u32CacheCount + 1;
+            if u32CacheCount > 4096 then
+                u32Cache, u32CacheCount = {}, 0;
+            end
+        end
+    end
 
     if (fill == true) then
         drawList:AddCircleFilled(center, radius, colorU32, segments);
@@ -132,12 +154,13 @@ function M.IsRectVisibleOnScreen(x, y, w, h, margin)
 end
 
 -- Clip a single draw list to the viewport (for modules with many off-screen primitives).
-function M.ClipDrawListToViewport(drawList, fn)
-    if drawList == nil then return; end
-
+local clipMin, clipMax = {0, 0}, {0, 0};
+function M.PushViewportClip(drawList)
     local sw, sh = GetViewportSize();
-    drawList:PushClipRect({0, 0}, {sw, sh}, true);
-    fn();
+    clipMax[1] = sw; clipMax[2] = sh;
+    drawList:PushClipRect(clipMin, clipMax, true);
+end
+function M.PopViewportClip(drawList)
     drawList:PopClipRect();
 end
 
@@ -164,10 +187,12 @@ function M.GetUIDrawList()
 end
 
 -- Clip both global draw lists to the viewport while fn runs.
+local screenClipMin, screenClipMax = {0, 0}, {0, 0};  -- reused; ImGui copies the rect
 function M.RunWithScreenClip(fn)
     local sw, sh = GetViewportSize();
-    local clipMin = {0, 0};
-    local clipMax = {sw, sh};
+    local clipMin = screenClipMin;
+    local clipMax = screenClipMax;
+    clipMax[1] = sw; clipMax[2] = sh;
 
     local bgList = imgui.GetBackgroundDrawList();
     local fgList = imgui.GetForegroundDrawList();

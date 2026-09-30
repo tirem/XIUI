@@ -252,13 +252,13 @@ giltracker.DrawWindow = function(settings)
 
 		-- Get text dimensions for positioning and draggable area
 		local gilStr = FormatInt(currentGil);
-		local textWidth, textHeight = imtext.Measure(gilStr, fontSize);
+		local textWidth, textHeight = imtext.MeasureCached(gilStr, fontSize);
 		local textPadding = 5; -- Standard spacing between icon and text
 
 		-- Prepare gil per hour text dimensions if enabled
 		local gphWidth, gphHeight = 0, 0;
 		if showGilPerHour then
-			gphWidth, gphHeight = imtext.Measure(gilPerHourText_str, fontSize);
+			gphWidth, gphHeight = imtext.MeasureCached(gilPerHourText_str, fontSize);
 		end
 
 		-- DEBUG: Set to true to visualize draggable areas

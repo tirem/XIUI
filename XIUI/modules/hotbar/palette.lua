@@ -61,6 +61,17 @@ local paletteListCache = {};  -- paletteListCache[cacheKey] = { palettes, timest
 local crossbarPaletteListCache = {};  -- crossbarPaletteListCache[cacheKey] = { palettes, timestamp }
 local PALETTE_CACHE_TTL = 0.5;  -- 500ms cache validity
 
+-- Written once at the end of validation.
+local saveDeferDepth, savePending = 0, false;
+local function SavePalettesToDisk()
+    if saveDeferDepth > 0 then
+        gConfigVersion = gConfigVersion + 1;
+        savePending = true;
+        return;
+    end
+    SaveSettingsToDisk();
+end
+
 local function BuildPaletteCacheKey(jobId, subjobId)
     return string.format('%d:%d', jobId or 1, subjobId or 0);
 end
@@ -236,7 +247,7 @@ local function RunPaletteMigration()
 
     if totalMigrated > 0 then
         print('[XIUI palette] Migrated ' .. totalMigrated .. ' palette entries to new subjob-aware format');
-        SaveSettingsToDisk();
+        SavePalettesToDisk();
     end
 end
 
@@ -676,7 +687,7 @@ function M.CreatePalette(barIndex, paletteName, jobId, subjobId)
     -- Invalidate cache since palettes changed
     InvalidatePaletteListCache();
 
-    SaveSettingsToDisk();
+    SavePalettesToDisk();
     return true;
 end
 
@@ -782,7 +793,7 @@ function M.DeletePalette(barIndex, paletteName, jobId, subjobId)
         M.SetActivePalette(1, newActive, normalizedJobId, normalizedSubjobId);
     end
 
-    SaveSettingsToDisk();
+    SavePalettesToDisk();
     return true;
 end
 
@@ -864,7 +875,7 @@ function M.RenamePalette(barIndex, oldName, newName, jobId, subjobId)
     -- Invalidate cache since palettes changed
     InvalidatePaletteListCache();
 
-    SaveSettingsToDisk();
+    SavePalettesToDisk();
     return true;
 end
 
@@ -935,7 +946,7 @@ function M.MovePalette(barIndex, paletteName, direction, jobId, subjobId)
     -- Invalidate cache since palette order changed
     InvalidatePaletteListCache();
 
-    SaveSettingsToDisk();
+    SavePalettesToDisk();
     return true;
 end
 
@@ -969,7 +980,7 @@ function M.SetPaletteOrder(barIndex, palettes, jobId, subjobId)
     -- Invalidate cache since palette order changed
     InvalidatePaletteListCache();
 
-    SaveSettingsToDisk();
+    SavePalettesToDisk();
     return true;
 end
 
@@ -1351,7 +1362,7 @@ function M.CreateCrossbarPalette(paletteName, jobId, subjobId)
     -- Invalidate cache since palettes changed
     InvalidatePaletteListCache();
 
-    SaveSettingsToDisk();
+    SavePalettesToDisk();
     return true;
 end
 
@@ -1471,7 +1482,7 @@ function M.DeleteCrossbarPalette(paletteName, jobId, subjobId)
     -- Invalidate cache since palettes changed
     InvalidatePaletteListCache();
 
-    SaveSettingsToDisk();
+    SavePalettesToDisk();
     return true;
 end
 
@@ -1541,7 +1552,7 @@ function M.RenameCrossbarPalette(oldName, newName, jobId, subjobId)
     -- Invalidate cache since palettes changed
     InvalidatePaletteListCache();
 
-    SaveSettingsToDisk();
+    SavePalettesToDisk();
     return true;
 end
 
@@ -1614,7 +1625,7 @@ function M.MoveCrossbarPalette(paletteName, direction, jobId, subjobId)
     -- Invalidate cache since palette order changed
     InvalidatePaletteListCache();
 
-    SaveSettingsToDisk();
+    SavePalettesToDisk();
     return true;
 end
 
@@ -1662,7 +1673,7 @@ end
 -- Validate active palettes against current job's available palettes
 -- Ensures at least one palette exists, and auto-selects the first palette if none is active
 -- Should be called on job change
-function M.ValidatePalettesForJob(jobId, subjobId)
+local function ValidatePalettesForJobInner(jobId, subjobId)
     -- Ensure gConfig.hotbar structure exists before any palette operations
     if not EnsureHotbarConfigExists() then
         print('[XIUI palette] Warning: gConfig not available, skipping palette validation');
@@ -1777,6 +1788,19 @@ function M.ValidatePalettesForJob(jobId, subjobId)
     end
 end
 
+function M.ValidatePalettesForJob(jobId, subjobId)
+    saveDeferDepth = saveDeferDepth + 1;
+    local ok, err = pcall(ValidatePalettesForJobInner, jobId, subjobId);
+    saveDeferDepth = saveDeferDepth - 1;
+    if saveDeferDepth == 0 and savePending then
+        savePending = false;
+        SaveSettingsToDisk();
+    end
+    if not ok then
+        error(err, 0);
+    end
+end
+
 -- Reset all state
 function M.Reset()
     state.activePalette = nil;
@@ -1875,7 +1899,7 @@ function M.CopyPalette(paletteName, fromJobId, fromSubjobId, toJobId, toSubjobId
     end
     table.insert(gConfig.hotbar.paletteOrder[destOrderKey], destName);
 
-    SaveSettingsToDisk();
+    SavePalettesToDisk();
     return true;
 end
 
@@ -1951,7 +1975,7 @@ function M.CopyCrossbarPalette(paletteName, fromJobId, fromSubjobId, toJobId, to
     end
     table.insert(crossbarSettings.crossbarPaletteOrder[destOrderKey], destName);
 
-    SaveSettingsToDisk();
+    SavePalettesToDisk();
     return true;
 end
 
@@ -2072,7 +2096,7 @@ function M.DeleteAllSubjobPalettes(jobId, subjobId)
     end
 
     if deletedCount > 0 then
-        SaveSettingsToDisk();
+        SavePalettesToDisk();
     end
 
     return true;
@@ -2121,7 +2145,7 @@ function M.DeleteAllCrossbarSubjobPalettes(jobId, subjobId)
     end
 
     if deletedCount > 0 then
-        SaveSettingsToDisk();
+        SavePalettesToDisk();
     end
 
     return true;
@@ -2144,7 +2168,7 @@ end
 -- Flush any pending save (call on unload)
 function M.FlushPendingSave()
     if paletteStateDirty then
-        SaveSettingsToDisk();
+        SavePalettesToDisk();
         paletteStateDirty = false;
     end
 end

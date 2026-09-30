@@ -237,6 +237,7 @@ end
 -- Get item/equipment recast by item ID
 -- Uses itemrecast.lua which reads from item.Extra data
 -- Returns: remaining seconds, or 0 if ready
+local batchIds, batchOut = {}, {};
 function M.GetItemRecast(itemId)
     if not itemId then return 0; end
     local now = os.clock();
@@ -244,9 +245,24 @@ function M.GetItemRecast(itemId)
     if exp and now < exp then
         return itemRecastCache[itemId] or 0;
     end
-    local recast = itemRecast.GetRecast(itemId);
-    itemRecastCache[itemId] = (recast and recast > 0) and recast or nil;
-    itemRecastExpiry[itemId] = now + ACTION_RECAST_TTL;
+    -- Refresh all expired items in one pass.
+    local n = 1;
+    batchIds[1] = itemId;
+    for id, e in pairs(itemRecastExpiry) do
+        if id ~= itemId and now >= e and now - e < 1.0 then  -- expired, but still being drawn
+            n = n + 1;
+            batchIds[n] = id;
+        end
+    end
+    for i = #batchIds, n + 1, -1 do batchIds[i] = nil; end
+    itemRecast.GetRecastMany(batchIds, batchOut);
+    for i = 1, n do
+        local id = batchIds[i];
+        local recast = batchOut[id];
+        itemRecastCache[id] = (recast and recast > 0) and recast or nil;
+        itemRecastExpiry[id] = now + ACTION_RECAST_TTL;
+        batchOut[id] = nil;
+    end
     return itemRecastCache[itemId] or 0;
 end
 

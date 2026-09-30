@@ -7,7 +7,24 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
+
+-- Reused draw arguments.
+local _p1, _p2, _UV0, _UV1 = {0, 0}, {0, 0}, {0, 0}, {1, 1};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
+local function _P2(x, y) _p2[1] = x; _p2[2] = y; return _p2; end
 local ffi = require('ffi');
+
+-- Reused options; no closure per call.
+local notifBgOptions = {};
+local function DrawNotificationIcon(drawList, image, iconX, iconY, iconSize, iconColor)
+    drawList:AddImage(
+        tonumber(ffi.cast("uint32_t", image)),
+        _P1(iconX, iconY),
+        _P2(iconX + iconSize, iconY + iconSize),
+        _UV0, _UV1,
+        iconColor
+    );
+end
 local notificationData = require('modules.notifications.data');
 local progressbar = require('libs.progressbar');
 local TextureManager = require('libs.texturemanager');
@@ -33,7 +50,7 @@ local truncatedTextCache = {};
 -- Truncates text to fit within maxWidth using binary search with imtext.Measure
 local function TruncateTextToFit(text, maxWidth, fontSize)
     -- First check if text fits without truncation
-    local width, _ = imtext.Measure(text, fontSize);
+    local width, _ = imtext.MeasureCached(text, fontSize);
     if width <= maxWidth then return text; end
 
     -- Text is too long, use binary search to find optimal truncation point
@@ -45,7 +62,7 @@ local function TruncateTextToFit(text, maxWidth, fontSize)
     while left <= right do
         local mid = math.floor((left + right) / 2);
         local truncated = text:sub(1, mid) .. ellipsis;
-        width, _ = imtext.Measure(truncated, fontSize);
+        width, _ = imtext.MeasureCached(truncated, fontSize);
         if width <= maxWidth then
             -- This length fits, try a longer one
             bestLength = mid;
@@ -210,16 +227,16 @@ local function drawNotification(slot, notification, x, y, width, height, setting
     local bgOpacity = alpha * configBgOpacity;
     local borderOpacity = alpha * configBorderOpacity;
 
-    windowBg.Draw(drawList, x, y, scaledWidth, scaledHeight, {
-        theme = bgTheme,
-        padding = 0,
-        bgScale = bgScale,
-        borderScale = borderScale,
-        bgOpacity = bgOpacity,
-        borderOpacity = borderOpacity,
-        bgColor = 0xFF1A1A1A,
-        borderColor = 0xFFFFFFFF,
-    });
+    local bgOpts = notifBgOptions;  -- every field rewritten per call
+    bgOpts.theme = bgTheme;
+    bgOpts.padding = 0;
+    bgOpts.bgScale = bgScale;
+    bgOpts.borderScale = borderScale;
+    bgOpts.bgOpacity = bgOpacity;
+    bgOpts.borderOpacity = borderOpacity;
+    bgOpts.bgColor = 0xFF1A1A1A;
+    bgOpts.borderColor = 0xFFFFFFFF;
+    windowBg.Draw(drawList, x, y, scaledWidth, scaledHeight, bgOpts);
 
     -- Draw pulsing dot for party/trade invites
     local nType = notification.type;
@@ -247,7 +264,7 @@ local function drawNotification(slot, notification, x, y, width, height, setting
         local dotX = x + scaledWidth - 10 * gs;
         local dotY = y + (scaledHeight / 2);
         local dotU32 = imgui.GetColorU32(dotColorTable);
-        drawList:AddCircleFilled({dotX, dotY}, dotRadius, dotU32, 12);
+        drawList:AddCircleFilled(_P1(dotX, dotY), dotRadius, dotU32, 12);
     end
 
     -- Check if notification is minified or minifying
@@ -638,7 +655,7 @@ local function drawNotificationWindow(windowName, notifications, settings, split
             local drawList = imgui.GetWindowDrawList();
 
             -- Set window size
-            imgui.Dummy({notificationWidth, totalHeight});
+            imgui.Dummy(_P1(notificationWidth, totalHeight));
 
             -- Update bottom anchor for "stack up" mode
             -- This captures the position when user drags the window
@@ -880,16 +897,16 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
     local bgOpacity = alpha * configBgOpacity;
     local borderOpacity = alpha * configBorderOpacity;
 
-    windowBg.Draw(drawList, x, y, scaledWidth, scaledHeight, {
-        theme = bgTheme,
-        padding = 0,
-        bgScale = bgScale,
-        borderScale = borderScale,
-        bgOpacity = bgOpacity,
-        borderOpacity = borderOpacity,
-        bgColor = 0xFF1A1A1A,
-        borderColor = 0xFFFFFFFF,
-    });
+    local bgOpts = notifBgOptions;  -- every field rewritten per call
+    bgOpts.theme = bgTheme;
+    bgOpts.padding = 0;
+    bgOpts.bgScale = bgScale;
+    bgOpts.borderScale = borderScale;
+    bgOpts.bgOpacity = bgOpacity;
+    bgOpts.borderOpacity = borderOpacity;
+    bgOpts.bgColor = 0xFF1A1A1A;
+    bgOpts.borderColor = 0xFFFFFFFF;
+    windowBg.Draw(drawList, x, y, scaledWidth, scaledHeight, bgOpts);
 
     -- Draw pulsing dot for party/trade invites
     local nType = notification.type;
@@ -910,7 +927,7 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
         local dotX = x + scaledWidth - 10 * gs;
         local dotY = y + (scaledHeight / 2);
         local dotU32 = imgui.GetColorU32(dotColorTable);
-        drawList:AddCircleFilled({dotX, dotY}, dotRadius, dotU32, 12);
+        drawList:AddCircleFilled(_P1(dotX, dotY), dotRadius, dotU32, 12);
     end
 
     local isMinified = notificationData.IsMinified(notification);
@@ -959,16 +976,7 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
         local iconAlphaByte = math.floor(alpha * 255);
         local iconColor = bit.bor(bit.lshift(iconAlphaByte, 24), 0x00FFFFFF);
 
-        pcall(function()
-            drawList:AddImage(
-                tonumber(ffi.cast("uint32_t", icon.image)),
-                {iconX, iconY},
-                {iconX + iconSize, iconY + iconSize},
-                {0, 0},
-                {1, 1},
-                iconColor
-            );
-        end);
+        pcall(DrawNotificationIcon, drawList, icon.image, iconX, iconY, iconSize, iconColor);
     end
 
     local maxTextWidth = (x + scaledWidth - contentPadding) - textX;
@@ -1086,13 +1094,9 @@ local function drawNotificationForGroup(groupNum, slot, notification, x, y, widt
         end
 
         progressbar.ProgressBar(
-            {{percent, {gradientStart, gradientEnd}}},
-            {progressBarWidth, progressBarHeight},
-            {
-                drawList = drawList,
-                decorate = false,
-                absolutePosition = {x, progressBarY}
-            }
+            progressbar.Pct(percent, progressbar.Grad(gradientStart, gradientEnd)),
+            progressbar.Dims(progressBarWidth, progressBarHeight),
+            progressbar.Opts(false, drawList, x, progressBarY)
         );
     end
 end
@@ -1191,7 +1195,7 @@ local function drawGroupWindow(groupNum, settings)
             local windowPosX, windowPosY = imgui.GetWindowPos();
             local drawList = imgui.GetWindowDrawList();
 
-            imgui.Dummy({notificationWidth, totalHeight});
+            imgui.Dummy(_P1(notificationWidth, totalHeight));
 
             -- Update bottom anchor for "stack up" mode
             if stackUp then

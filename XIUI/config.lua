@@ -216,12 +216,12 @@ local function DrawProfilesWindow()
 
 
         local currentProfile = GetCurrentProfileName();
-        local profiles = GetProfileNames();
 
         -- Profile List Dropdown
         imgui.Text("Active Profile:");
         imgui.SetNextItemWidth(-1);
         if (imgui.BeginCombo("##ProfileSelect", currentProfile)) then
+            local profiles = GetProfileNames();  -- reads disk; only while the combo is open
             for _, name in ipairs(profiles) do
                 local isSelected = (name == currentProfile);
                 if (imgui.Selectable(name, isSelected)) then
@@ -907,9 +907,10 @@ config.DrawWindow = function(us)
         imgui.SameLine();
         imgui.PushItemWidth(300); -- Increased width for profile select
         local currentProfile = GetCurrentProfileName();
-        local profiles = GetProfileNames();
         
         if (imgui.BeginCombo("##QuickProfileSelect", currentProfile)) then
+            -- Reads disk; only while the combo is open.
+            local profiles = GetProfileNames();
             for _, name in ipairs(profiles) do
                 local isSelected = (name == currentProfile);
                 if (imgui.Selectable(name, isSelected)) then

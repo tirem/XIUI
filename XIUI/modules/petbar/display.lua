@@ -6,6 +6,11 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
+
+-- Reused draw arguments.
+local _p1, _p2, _UV0, _UV1 = {0, 0}, {0, 0}, {0, 0}, {1, 1};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
+local function _P2(x, y) _p2[1] = x; _p2[2] = y; return _p2; end
 local ffi = require('ffi');
 local progressbar = require('libs.progressbar');
 local drawing = require('libs.drawing');
@@ -209,7 +214,7 @@ local function DrawRecastIcon(drawList, x, y, size, timerInfo, colorConfig, fill
         local innerRadius = radius - 2;
 
         -- Background circle
-        drawList:AddCircleFilled({centerX, centerY}, radius, bgColor, 32);
+        drawList:AddCircleFilled(_P1(centerX, centerY), radius, bgColor, 32);
 
         if isOnCooldown then
             if progress > 0 then
@@ -224,23 +229,23 @@ local function DrawRecastIcon(drawList, x, y, size, timerInfo, colorConfig, fill
                     drawList:PathFillConvex(fillColor);
                 else
                     -- Circle fill (fallback for clock on 4.0, or explicit circle style)
-                    drawList:AddCircleFilled({centerX, centerY}, innerRadius * progress, fillColor, 32);
+                    drawList:AddCircleFilled(_P1(centerX, centerY), innerRadius * progress, fillColor, 32);
                 end
             end
         else
             -- Ready state - full circle
-            drawList:AddCircleFilled({centerX, centerY}, innerRadius, fillColor, 32);
+            drawList:AddCircleFilled(_P1(centerX, centerY), innerRadius, fillColor, 32);
         end
 
         -- Border circle
-        drawList:AddCircle({centerX, centerY}, radius, borderColor, 32, 2);
+        drawList:AddCircle(_P1(centerX, centerY), radius, borderColor, 32, 2);
     else
         -- Square style (vertical fill from bottom to top)
         local rounding = 4;
         local padding = 2;
 
         -- Background
-        drawList:AddRectFilled({x, y}, {x + size, y + size}, bgColor, rounding);
+        drawList:AddRectFilled(_P1(x, y), _P2(x + size, y + size), bgColor, rounding);
 
         -- Inner area
         local innerX = x + padding;
@@ -251,15 +256,15 @@ local function DrawRecastIcon(drawList, x, y, size, timerInfo, colorConfig, fill
             if progress > 0 then
                 local fillHeight = innerSize * progress;
                 local fillTop = innerY + innerSize - fillHeight;
-                drawList:AddRectFilled({innerX, fillTop}, {innerX + innerSize, innerY + innerSize}, fillColor, rounding - 1);
+                drawList:AddRectFilled(_P1(innerX, fillTop), _P2(innerX + innerSize, innerY + innerSize), fillColor, rounding - 1);
             end
         else
             -- Ready state - full square
-            drawList:AddRectFilled({innerX, innerY}, {innerX + innerSize, innerY + innerSize}, fillColor, rounding - 1);
+            drawList:AddRectFilled(_P1(innerX, innerY), _P2(innerX + innerSize, innerY + innerSize), fillColor, rounding - 1);
         end
 
         -- Border
-        drawList:AddRect({x, y}, {x + size, y + size}, borderColor, rounding, nil, 1.5);
+        drawList:AddRect(_P1(x, y), _P2(x + size, y + size), borderColor, rounding, nil, 1.5);
     end
 end
 
@@ -301,11 +306,11 @@ local function DrawRecastIconCharged(drawList, x, y, size, timerInfo, colorConfi
             local innerRadius = radius - 2;
 
             -- Background circle
-            drawList:AddCircleFilled({centerX, centerY}, radius, bgColor, 24);
+            drawList:AddCircleFilled(_P1(centerX, centerY), radius, bgColor, 24);
 
             if i <= charges then
                 -- Full charge available
-                drawList:AddCircleFilled({centerX, centerY}, innerRadius, readyColor, 24);
+                drawList:AddCircleFilled(_P1(centerX, centerY), innerRadius, readyColor, 24);
             elseif i == charges + 1 and nextChargeTimer > 0 then
                 -- Recharging charge - show progress
                 local progress = 1.0 - (nextChargeTimer / chargeValue);
@@ -322,17 +327,17 @@ local function DrawRecastIconCharged(drawList, x, y, size, timerInfo, colorConfi
                     drawList:PathFillConvex(recastColor);
                 else
                     -- Circle fill
-                    drawList:AddCircleFilled({centerX, centerY}, innerRadius * progress, recastColor, 24);
+                    drawList:AddCircleFilled(_P1(centerX, centerY), innerRadius * progress, recastColor, 24);
                 end
             end
             -- Empty charges get no fill (just background)
 
             -- Border circle
-            drawList:AddCircle({centerX, centerY}, radius, borderColor, 24, 1.5);
+            drawList:AddCircle(_P1(centerX, centerY), radius, borderColor, 24, 1.5);
         else
             -- Square style for charges
             -- Background
-            drawList:AddRectFilled({chargeX, y}, {chargeX + chargeSize, y + chargeSize}, bgColor, rounding);
+            drawList:AddRectFilled(_P1(chargeX, y), _P2(chargeX + chargeSize, y + chargeSize), bgColor, rounding);
 
             -- Inner area
             local innerX = chargeX + padding;
@@ -341,7 +346,7 @@ local function DrawRecastIconCharged(drawList, x, y, size, timerInfo, colorConfi
 
             if i <= charges then
                 -- Full charge available
-                drawList:AddRectFilled({innerX, innerY}, {innerX + innerSize, innerY + innerSize}, readyColor, rounding - 1);
+                drawList:AddRectFilled(_P1(innerX, innerY), _P2(innerX + innerSize, innerY + innerSize), readyColor, rounding - 1);
             elseif i == charges + 1 and nextChargeTimer > 0 then
                 -- Recharging charge - show progress (vertical fill)
                 local progress = 1.0 - (nextChargeTimer / chargeValue);
@@ -350,13 +355,13 @@ local function DrawRecastIconCharged(drawList, x, y, size, timerInfo, colorConfi
                 if progress > 0 then
                     local fillHeight = innerSize * progress;
                     local fillTop = innerY + innerSize - fillHeight;
-                    drawList:AddRectFilled({innerX, fillTop}, {innerX + innerSize, innerY + innerSize}, recastColor, rounding - 1);
+                    drawList:AddRectFilled(_P1(innerX, fillTop), _P2(innerX + innerSize, innerY + innerSize), recastColor, rounding - 1);
                 end
             end
             -- Empty charges get no fill (just background)
 
             -- Border
-            drawList:AddRect({chargeX, y}, {chargeX + chargeSize, y + chargeSize}, borderColor, rounding, nil, 1.5);
+            drawList:AddRect(_P1(chargeX, y), _P2(chargeX + chargeSize, y + chargeSize), borderColor, rounding, nil, 1.5);
         end
     end
 
@@ -451,7 +456,7 @@ local function DrawRecastFull(drawList, x, y, timerInfo, colorConfig, fullSettin
 
     -- Recast timer - right-aligned at far right of progress bar
     if showRecast then
-        local recastW = imtext.Measure(recastText, recastFontSize);
+        local recastW = imtext.MeasureCached(recastText, recastFontSize);
         imtext.Draw(drawList, recastText, barStartX + barWidth - recastW, textY, textColorHex, recastFontSize);
     end
 
@@ -460,14 +465,9 @@ local function DrawRecastFull(drawList, x, y, timerInfo, colorConfig, fullSettin
     if showBookends == nil then showBookends = false; end
 
     progressbar.ProgressBar(
-        {{progress, barGradient}},
-        {barWidth, barHeight},
-        {
-            decorate = showBookends,
-            absolutePosition = {barStartX, barY},
-            drawList = drawList,
-            fillDirection = pbFill,
-        }
+        progressbar.Pct(progress, barGradient),
+        progressbar.Dims(barWidth, barHeight),
+        progressbar.Opts(showBookends, drawList, barStartX, barY, nil, pbFill)
     )
 
     -- Return the bar height for layout purposes
@@ -540,7 +540,7 @@ local function DrawRecastFullCharged(drawList, x, y, timerInfo, colorConfig, ful
 
     -- Recast timer - right-aligned at far right of progress bar
     if showRecast then
-        local recastW = imtext.Measure(recastText, recastFontSize);
+        local recastW = imtext.MeasureCached(recastText, recastFontSize);
         imtext.Draw(drawList, recastText, barStartX + barWidth - recastW, textY, textColorHex, recastFontSize);
     end
 
@@ -591,13 +591,9 @@ local function DrawRecastFullCharged(drawList, x, y, timerInfo, colorConfig, ful
         end
 
         progressbar.ProgressBar(
-            {{segmentProgress, segmentGradient}},
-            {segmentWidth, barHeight},
-            {
-                decorate = showBookends,
-                absolutePosition = {segmentX, barY},
-                drawList = drawList,
-            }
+            progressbar.Pct(segmentProgress, segmentGradient),
+            progressbar.Dims(segmentWidth, barHeight),
+            progressbar.Opts(showBookends, drawList, segmentX, barY)
         );
     end
 
@@ -614,7 +610,7 @@ function display.DrawWindow(settings)
     local gs = gConfig.globalScale or 1.0;
 
     -- Get pet data from data module (handles preview internally)
-    local petData = data.GetPetData();
+    local petData = data.GetPetDataThisFrame();
 
     -- Get per-pet-type settings early to check Always Visible
     local typeSettings = GetPetTypeSettings();
@@ -770,7 +766,7 @@ function display.DrawWindow(settings)
 
                 local distStr = string.format('%.1f', petDistance);
                 local distColor = colorConfig.distanceTextColor or 0xFFFFFFFF;
-                local distW = imtext.Measure(distStr, distanceFontSize);
+                local distW = imtext.MeasureCached(distStr, distanceFontSize);
                 imtext.Draw(drawList, distStr, startX + totalRowWidth + distanceOffsetX - distW, windowPosY - 13 + distanceOffsetY, distColor, distanceFontSize);
             end
 
@@ -786,11 +782,11 @@ function display.DrawWindow(settings)
             if showHP then
                 local hpStr = tostring(petHpPercent) .. '%';
                 local hpColor = colorConfig.hpTextColor or 0xFFFFFFFF;
-                local hpW = imtext.Measure(hpStr, hpFontSize);
+                local hpW = imtext.MeasureCached(hpStr, hpFontSize);
                 imtext.Draw(drawList, hpStr, startX + hpBarWidth - hpW, startY + (nameFontSize - hpFontSize) / 2, hpColor, hpFontSize);
             end
 
-            imgui.Dummy({totalRowWidth, nameFontSize + 4});
+            imgui.Dummy(_P1(totalRowWidth, nameFontSize + 4));
 
             -- Get bookends setting (shared across all bars)
             local showBookends = typeSettings.showBookends;
@@ -824,8 +820,8 @@ function display.DrawWindow(settings)
 
                 progressbar.ProgressBar(
                     hpPercentData,
-                    {hpBarWidth, hpBarHeight},
-                    {decorate = showBookends}
+                    progressbar.Dims(hpBarWidth, hpBarHeight),
+                    progressbar.Opts(showBookends)
                 );
 
                 -- Update position for next row
@@ -849,9 +845,9 @@ function display.DrawWindow(settings)
             if displayMpBar then
                 local mpGradient = GetCustomGradient(colorConfig, 'mpGradient') or {'#9abb5a', '#bfe07d'};
                 progressbar.ProgressBar(
-                    {{petMpPercent / 100, mpGradient}},
-                    {actualMpWidth, mpBarHeight},
-                    {decorate = showBookends}
+                    progressbar.Pct(petMpPercent / 100, mpGradient),
+                    progressbar.Dims(actualMpWidth, mpBarHeight),
+                    progressbar.Opts(showBookends)
                 );
 
                 if displayTpBar then
@@ -863,9 +859,9 @@ function display.DrawWindow(settings)
             if displayTpBar then
                 local tpGradient = GetCustomGradient(colorConfig, 'tpGradient') or {'#3898ce', '#78c4ee'};
                 progressbar.ProgressBar(
-                    {{petTpPercent, tpGradient}},
-                    {actualTpWidth, tpBarHeight},
-                    {decorate = showBookends}
+                    progressbar.Pct(petTpPercent, tpGradient),
+                    progressbar.Dims(actualTpWidth, tpBarHeight),
+                    progressbar.Opts(showBookends)
                 );
             end
 
@@ -892,7 +888,7 @@ function display.DrawWindow(settings)
                 -- Right-align MP text under MP bar
                 local mpStr = tostring(petMpPercent) .. '%';
                 local mpColor = colorConfig.mpTextColor or 0xFFFFFFFF;
-                local mpW = imtext.Measure(mpStr, mpFontSize);
+                local mpW = imtext.MeasureCached(mpStr, mpFontSize);
                 imtext.Draw(drawList, mpStr, mpBarX + actualMpWidth - mpW, mpTextRowY, mpColor, mpFontSize);
             end
 
@@ -901,7 +897,7 @@ function display.DrawWindow(settings)
                 -- Right-align TP text under TP bar
                 local tpStr = tostring(petTp);
                 local tpColor = colorConfig.tpTextColor or 0xFFFFFFFF;
-                local tpW = imtext.Measure(tpStr, tpFontSize);
+                local tpW = imtext.MeasureCached(tpStr, tpFontSize);
                 imtext.Draw(drawList, tpStr, tpBarX + actualTpWidth - tpW, tpTextRowY, tpColor, tpFontSize);
             end
 
@@ -936,7 +932,7 @@ function display.DrawWindow(settings)
                     local statusIconSize = math.max(8, tonumber(gConfig.petBarStatusIconSize) or 16) * gs;
 
                     -- Position icons at left side, same Y as MP/TP text
-                    imgui.SetCursorScreenPos({barsStartX, textRowY});
+                    imgui.SetCursorScreenPos(_P1(barsStartX, textRowY));
 
                     statusIcons.DrawStatusIcons(
                         effectIds,
@@ -952,7 +948,7 @@ function display.DrawWindow(settings)
                     );
 
                     -- Set cursor to fixed position after icons (icon + timer height)
-                    imgui.SetCursorScreenPos({barsStartX, textRowY + statusIconSize - 5});
+                    imgui.SetCursorScreenPos(_P1(barsStartX, textRowY + statusIconSize - 5));
                 end
             end
             -- Add spacing for text row if any vitals text is shown
@@ -960,7 +956,7 @@ function display.DrawWindow(settings)
             local recastTopSpacing = (typeSettings.recastTopSpacing or 2) * gs;
             if displayMpBar or displayTpBar then
                 local maxVitalsFontSize = math.max(displayMpBar and mpFontSize or 0, displayTpBar and tpFontSize or 0);
-                imgui.Dummy({totalRowWidth, maxVitalsFontSize + recastTopSpacing});
+                imgui.Dummy(_P1(totalRowWidth, maxVitalsFontSize + recastTopSpacing));
             end
         end
 
@@ -1051,7 +1047,7 @@ function display.DrawWindow(settings)
                     if not iconsAbsolute then
                         -- Only add spacing between rows, not after the last row
                         local totalHeight = #timers * contentHeight + math.max(0, #timers - 1) * iconSpacing;
-                        imgui.Dummy({totalRowWidth, totalHeight});
+                        imgui.Dummy(_P1(totalRowWidth, totalHeight));
                     end
                 else
                     -- Compact display: horizontal row of icons only
@@ -1073,7 +1069,7 @@ function display.DrawWindow(settings)
                     end
 
                     if not iconsAbsolute then
-                        imgui.Dummy({totalRowWidth, scaledIconSize});
+                        imgui.Dummy(_P1(totalRowWidth, scaledIconSize));
                     end
                 end
             end
@@ -1111,7 +1107,7 @@ function display.DrawWindow(settings)
                         tonumber(ffi.cast("uint32_t", data.jugIconTexture.image)),
                         {timerX, timerY},
                         {timerX + iconSize, timerY + iconSize},
-                        {0, 0}, {1, 1},
+                        _UV0, _UV1,
                         jugColor
                     );
                 end
@@ -1145,8 +1141,8 @@ function display.DrawWindow(settings)
                 -- Heart is made of two circles and a triangle
                 local circleRadius = halfSize * 0.5;
                 local circleY = centerY - circleRadius * 0.3;
-                drawList:AddCircleFilled({centerX - circleRadius * 0.6, circleY}, circleRadius, heartColor, 16);
-                drawList:AddCircleFilled({centerX + circleRadius * 0.6, circleY}, circleRadius, heartColor, 16);
+                drawList:AddCircleFilled(_P1(centerX - circleRadius * 0.6, circleY), circleRadius, heartColor, 16);
+                drawList:AddCircleFilled(_P1(centerX + circleRadius * 0.6, circleY), circleRadius, heartColor, 16);
                 -- Triangle for bottom of heart
                 drawList:AddTriangleFilled(
                     {centerX - halfSize * 0.9, centerY - circleRadius * 0.2},

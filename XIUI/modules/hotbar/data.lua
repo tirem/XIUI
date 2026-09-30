@@ -17,7 +17,9 @@ function M.SetSlotDataChangedCallback(callback)
     onSlotDataChanged = callback;
 end
 
+local ClearCrossbarKeyMemo;  -- defined with the crossbar key memo below
 local function NotifySlotDataChanged()
+    if ClearCrossbarKeyMemo then ClearCrossbarKeyMemo(); end
     if onSlotDataChanged then
         onSlotDataChanged();
     end
@@ -124,7 +126,9 @@ end
 -- Eliminates 72+ string allocations per frame from GetStorageKeyForBar
 
 local storageKeyCache = {};  -- storageKeyCache[barIndex] = storageKey
-local storageKeyCacheDirty = true;
+-- Versions the cache was built for.
+local storageKeyCacheVersion = nil;
+local storageKeyCacheOverrides = nil;
 -- Identity reference of the gConfig the storage key cache was built against.
 -- If gConfig is reassigned (profile switch) the cached keys could be stale
 -- (jobSpecific / petAware / palette names are profile-specific), so we
@@ -282,14 +286,17 @@ local PER_BAR_ONLY_KEYS = {
 -- OPTIMIZED: Results are cached to avoid 72+ string allocations per frame
 function M.GetStorageKeyForBar(barIndex)
     -- If gConfig was swapped out (profile change), invalidate.
-    if storageKeyCacheSource ~= gConfig then
+    local pp = package.loaded['modules.hotbar.petpalette'];
+    local overrides = type(pp) == 'table' and pp.overrideVersion or 0;
+    if storageKeyCacheSource ~= gConfig or storageKeyCacheVersion ~= gConfigVersion or storageKeyCacheOverrides ~= overrides then
         storageKeyCache = {};
-        storageKeyCacheDirty = true;
         storageKeyCacheSource = gConfig;
+        storageKeyCacheVersion = gConfigVersion;
+        storageKeyCacheOverrides = overrides;
     end
 
     -- Check cache first (major optimization for runtime rendering)
-    if not storageKeyCacheDirty and storageKeyCache[barIndex] then
+    if storageKeyCache[barIndex] then
         return storageKeyCache[barIndex];
     end
 
@@ -350,18 +357,6 @@ function M.GetStorageKeyForBar(barIndex)
 
     -- Cache the result
     storageKeyCache[barIndex] = result;
-
-    -- If we've cached all bars, mark cache as clean
-    local allCached = true;
-    for i = 1, M.NUM_BARS do
-        if not storageKeyCache[i] then
-            allCached = false;
-            break;
-        end
-    end
-    if allCached then
-        storageKeyCacheDirty = false;
-    end
 
     return result;
 end
@@ -469,7 +464,7 @@ M.GetEffectiveComboModeForStorage = GetEffectiveComboModeForStorage;
 -- Build full storage key for a crossbar combo mode, considering job, subjob, pet awareness, and palettes
 -- NOTE: Crossbar now uses a SINGLE global palette for all combo modes (not per-combo-mode)
 -- Returns: 'global', '{jobId}:{subjobId}' (base), pet name (e.g. 'Fenrir'), or '{jobId}:{subjobId}:palette:{name}'
-function M.GetCrossbarStorageKeyForCombo(comboMode)
+local function ComputeCrossbarStorageKeyForCombo(comboMode)
     local crossbarSettings = gConfig and gConfig.hotbarCrossbar;
     if not crossbarSettings then
         return string.format('%d:%d', M.jobId or 1, M.subjobId or 0);
@@ -529,6 +524,31 @@ function M.GetCrossbarStorageKeyForCombo(comboMode)
     return baseKey;
 end
 
+-- Combo key memo, crossbar draw only.
+local crossbarKeyMemo, crossbarKeyMemoActive = {}, false;
+function ClearCrossbarKeyMemo()
+    for k in pairs(crossbarKeyMemo) do crossbarKeyMemo[k] = nil; end
+end
+function M.BeginCrossbarKeyMemo()
+    ClearCrossbarKeyMemo();
+    crossbarKeyMemoActive = true;
+end
+function M.EndCrossbarKeyMemo()
+    crossbarKeyMemoActive = false;
+    ClearCrossbarKeyMemo();
+end
+function M.GetCrossbarStorageKeyForCombo(comboMode)
+    if not crossbarKeyMemoActive then
+        return ComputeCrossbarStorageKeyForCombo(comboMode);
+    end
+    local key = crossbarKeyMemo[comboMode];
+    if key == nil then
+        key = ComputeCrossbarStorageKeyForCombo(comboMode);
+        crossbarKeyMemo[comboMode] = key;
+    end
+    return key;
+end
+
 -- Get the current palette display name for a crossbar combo mode
 -- Returns: 'Base', pet name (e.g., 'Ifrit'), or general palette name (e.g., 'Stuns')
 -- NOTE: Now uses GLOBAL crossbar palette instead of per-combo-mode
@@ -561,6 +581,8 @@ function M.GetCrossbarPaletteDisplayName(comboMode)
 end
 
 -- Get per-bar settings from gConfig, merging with global if useGlobalSettings is true
+local mergedBarSettings = {};
+
 function M.GetBarSettings(barIndex)
     local configKey = 'hotbarBar' .. barIndex;
     local barConfig = gConfig and gConfig[configKey];
@@ -609,6 +631,11 @@ function M.GetBarSettings(barIndex)
 
     -- If useGlobalSettings is true, merge global visual settings
     if barConfig.useGlobalSettings and gConfig.hotbarGlobal then
+        -- Cached until gConfigVersion changes.
+        local c = mergedBarSettings[barIndex];
+        if c and c.version == gConfigVersion and c.bar == barConfig and c.global == gConfig.hotbarGlobal then
+            return c.merged;
+        end
         local merged = {};
         -- Start with global settings
         for k, v in pairs(gConfig.hotbarGlobal) do
@@ -620,6 +647,7 @@ function M.GetBarSettings(barIndex)
                 merged[k] = v;
             end
         end
+        mergedBarSettings[barIndex] = { version = gConfigVersion, bar = barConfig, global = gConfig.hotbarGlobal, merged = merged };
         return merged;
     end
 
@@ -631,6 +659,7 @@ end
 -- Visible rows are derived from how many slots actually fit — e.g. 3×12 still
 -- shows one row of 12; 3×5 shows three rows (5+5+2). Extra capacity beyond
 -- the slot cap is never drawn.
+local barLayouts = {};
 function M.GetBarLayout(barIndex)
     local barSettings = M.GetBarSettings(barIndex);
     local configuredRows = math.max(1, barSettings.rows or 1);
@@ -639,13 +668,18 @@ function M.GetBarLayout(barIndex)
     local slots = math.min(configuredRows * columns, M.MAX_SLOTS_PER_BAR);
     local visibleRows = math.max(1, math.ceil(slots / columns));
 
-    return {
-        isVertical = visibleRows > 1,
-        columns = columns,
-        rows = visibleRows,
-        configuredRows = configuredRows,
-        slots = slots,
-    };
+    -- One layout table per bar.
+    local layout = barLayouts[barIndex];
+    if not layout then
+        layout = {};
+        barLayouts[barIndex] = layout;
+    end
+    layout.isVertical = visibleRows > 1;
+    layout.columns = columns;
+    layout.rows = visibleRows;
+    layout.configuredRows = configuredRows;
+    layout.slots = slots;
+    return layout;
 end
 
 -- Get number of slots for a bar
@@ -747,6 +781,7 @@ local function GetMacroById(macroId, paletteKey)
 end
 
 -- Get action assignment for a specific bar and slot
+local bindCache = {};
 function M.GetKeybindForSlot(barIndex, slotIndex)
     -- First check for custom slot actions in per-bar settings
     local configKey = 'hotbarBar' .. barIndex;
@@ -784,15 +819,41 @@ function M.GetKeybindForSlot(barIndex, slotIndex)
                     macroData = slotAction;
                 end
 
+                -- Same table until a field changes.
+                local slotCache = bindCache[barIndex];
+                if not slotCache then
+                    slotCache = {};
+                    bindCache[barIndex] = slotCache;
+                end
+                local prev = slotCache[slotIndex];
+                local displayName = macroData.displayName or macroData.action;
+                if prev
+                    and prev.actionType == macroData.actionType
+                    and prev.action == macroData.action
+                    and prev.target == macroData.target
+                    and prev.displayName == displayName
+                    and prev.equipSlot == macroData.equipSlot
+                    and prev.macroText == macroData.macroText
+                    and prev.itemId == macroData.itemId
+                    and prev.customIconType == macroData.customIconType
+                    and prev.customIconId == macroData.customIconId
+                    and prev.customIconPath == macroData.customIconPath
+                    and prev.recastSourceType == macroData.recastSourceType
+                    and prev.recastSourceAction == macroData.recastSourceAction
+                    and prev.recastSourceItemId == macroData.recastSourceItemId
+                then
+                    return prev;
+                end
+
                 -- Return slot action in the same format as parsed keybinds
-                return {
+                local result = {
                     context = 'battle',
                     hotbar = barIndex,
                     slot = slotIndex,
                     actionType = macroData.actionType,
                     action = macroData.action,
                     target = macroData.target,
-                    displayName = macroData.displayName or macroData.action,
+                    displayName = displayName,
                     equipSlot = macroData.equipSlot,
                     macroText = macroData.macroText,
                     itemId = macroData.itemId,
@@ -804,6 +865,8 @@ function M.GetKeybindForSlot(barIndex, slotIndex)
                     recastSourceAction = macroData.recastSourceAction,
                     recastSourceItemId = macroData.recastSourceItemId,
                 };
+                slotCache[slotIndex] = result;
+                return result;
             end
         end
     end
@@ -1030,6 +1093,7 @@ end
 function M.ClearAllCrossbarSlotActions()
     if gConfig.hotbarCrossbar then
         gConfig.hotbarCrossbar.slotActions = {};
+        ClearCrossbarKeyMemo();
         SaveSettingsToDisk();
     end
 end
@@ -1090,8 +1154,8 @@ end
 
 -- Invalidate storage key cache (call on palette/pet/job changes)
 function M.InvalidateStorageKeyCache()
-    storageKeyCacheDirty = true;
     storageKeyCache = {};
+    ClearCrossbarKeyMemo();
 end
 
 -- ============================================

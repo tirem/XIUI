@@ -684,6 +684,12 @@ local function get_slot_data(force_refresh)
         return cache.all_slots or {}, cache.slots_by_container or {}, cache.stats
     end
 
+    -- Unchanged: keep the same tables.
+    if not force_refresh and cache.stats and containerlogic.slot_data_unchanged(satchel, cache.slots_by_container, cache.stats) then
+        cache.checked_at = now
+        return cache.all_slots or {}, cache.slots_by_container or {}, cache.stats
+    end
+
     local all_slots, slots_by_container, stats = containerlogic.build_slot_data(satchel)
     cache.checked_at = now
     cache.all_slots = all_slots
@@ -763,9 +769,7 @@ function handle_sort_container(slot)
     invalidate_slot_cache()
 end
 
--- Cache the sorted display order per source slots-table identity. build_slot_data
--- allocates fresh slots tables on every slot_cache rebuild, so a weak-keyed cache
--- self-invalidates and never needs manual clearing.
+-- Display order per slots table.
 local sort_cache = setmetatable({}, { __mode = 'k' })
 
 local function sort_key_for(item_id)
@@ -952,7 +956,7 @@ local function get_visual_slots_for_container(container_id, slots, stats)
     if layoutstate.uses_manual_layout(container_id, satchel.container_sorted)
         or layoutstate.has_custom_layout(container_id, slots, satchel.display_layouts) then
         return annotate_display_indices(
-            layoutstate.build_display_slots(container_id, slots, satchel.display_layouts)
+            layoutstate.build_display_slots_cached(container_id, slots, satchel.display_layouts)
         )
     end
 
@@ -1613,6 +1617,7 @@ local function format_slip_button_label(slip_id)
     return ('%s##slip_pick_%d'):format(slipslogic.format_slip_label(slip_id), slip_id)
 end
 
+local slipsMemo = { at = nil, show = false, ids = {} }
 local function get_slip_picker_ids(alt_entry)
     if alt_entry then
         return slipslogic.get_cached_slip_ids(alt_entry.slips)
@@ -2099,12 +2104,23 @@ local function draw_slip_content_window(scale)
     ui.pop_config_window_style()
 end
 
+-- Re-read on open and every 2 s.
+local altPickerList = { entries = nil, at = 0, open = false }
+local ALT_PICKER_REFRESH_SECONDS = 2.0
+
 local function draw_alt_picker_window(scale)
     if not satchel.alt_picker.visible[1] then
+        altPickerList.open = false
         return
     end
 
-    local entries = altcache.list_character_caches()
+    local now = os.clock()
+    if not altPickerList.open or altPickerList.entries == nil or (now - altPickerList.at) >= ALT_PICKER_REFRESH_SECONDS then
+        altPickerList.entries = altcache.list_character_caches()
+        altPickerList.at = now
+    end
+    altPickerList.open = true
+    local entries = altPickerList.entries
     ui.push_config_window_style()
     local picker_w = ui.scaled(220, scale)
     local picker_h = get_picker_window_height(math.max(1, #entries), scale)
@@ -2389,8 +2405,14 @@ function M.DrawWindow()
     tick_auto_sort_server(stats)
 
     local display_tabs = build_display_tabs(stats)
-    local show_slips_button = slipslogic.has_any_owned_slips()
-    local owned_slip_ids = show_slips_button and get_slip_picker_ids(nil) or {}
+    -- Refreshed with the slot grid, not every frame.
+    if slipsMemo.at ~= satchel.slot_cache.checked_at then
+        slipsMemo.at = satchel.slot_cache.checked_at
+        slipsMemo.show = slipslogic.has_any_owned_slips()
+        slipsMemo.ids = slipsMemo.show and get_slip_picker_ids(nil) or {}
+    end
+    local show_slips_button = slipsMemo.show
+    local owned_slip_ids = slipsMemo.ids
 
     if satchel.active_tab == nil or not tab_is_available(satchel.active_tab, display_tabs) then
         satchel.active_tab = resolve_default_active_tab(display_tabs)
@@ -2574,6 +2596,7 @@ function M.SetHidden(hidden)
 end
 
 function M.Cleanup()
+    altcache.flush()
     close_all_satchel_windows()
     satchel.icons = {}
     satchel.file_icons = {}
@@ -2696,7 +2719,11 @@ function M.HandlePacketIn(e)
         close_all_satchel_windows()
         invalidate_slot_cache()
         altcache.invalidate()
+    elseif id == 0x01E or id == 0x01F or id == 0x020 then
+        -- Inventory packets: refresh next frame.
+        satchel.slot_cache.checked_at = 0
     elseif id == 0x01D then
+        satchel.slot_cache.checked_at = 0
         -- State at 0x04: 1 = AllLoaded, sent once the containers are populated
         -- after a zone and after every inventory mutation.
         local ok, state = pcall(struct.unpack, 'B', e.data_modified or e.data, 0x04 + 1)

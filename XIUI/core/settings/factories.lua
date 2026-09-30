@@ -359,7 +359,7 @@ function M.createHotbarGlobalDefaults()
         skillchainIconScale = 1.0,              -- Scale multiplier for icon (0.5-2.0)
         skillchainIconOffsetX = 0,              -- X offset in pixels
         skillchainIconOffsetY = 0,              -- Y offset in pixels
-        skillchainRequireAbility = false,       -- BLU/SCH spells need CA, AL, or Immanence
+        skillchainRequireAbility = false,       -- BLU closer spells need Chain Affinity or Azure Lore
         skillchainHighlightAllBloodPacts = false, -- Off: only the summoned avatar's blood pacts
     
         -- Cooldown timer settings

@@ -148,6 +148,75 @@ function containerlogic.build_slot_data(satchel)
     return all_slots, slots_by_container, stats
 end
 
+-- True if build_slot_data would match (keep in step).
+function containerlogic.slot_data_unchanged(satchel, slots_by_container, stats)
+    if not slots_by_container or not stats then return false end
+    local inv = AshitaCore:GetMemoryManager():GetInventory()
+    if not inv then return false end
+
+    local seen = 0
+    for _, container_id in ipairs(satchel.settings.include_containers) do
+        local cid = tonumber(container_id)
+        if cid == nil then
+            goto continue
+        end
+
+        local memory_max = tonumber(inv:GetContainerCountMax(cid) or 0) or 0
+        if cid == 3 or cid == 9 then
+            local used_count = memory_max > 0 and (tonumber(inv:GetContainerCount(cid) or 0) or 0) or 0
+            if used_count <= 0 then
+                if slots_by_container[cid] ~= nil then return false end
+                goto continue
+            end
+        elseif memory_max <= 0 then
+            if slots_by_container[cid] ~= nil then return false end
+            goto continue
+        end
+
+        do
+            local container_slots = slots_by_container[cid]
+            local st = stats[cid]
+            if not container_slots or not st then return false end
+            seen = seen + 1
+            local accessible_slots = math.min(containerlogic.DISPLAY_SLOTS, memory_max)
+            local used_slots = tonumber(inv:GetContainerCount(cid) or 0) or 0
+            if st.used ~= used_slots or st.total ~= accessible_slots then return false end
+
+            for memory_slot_index = 1, containerlogic.DISPLAY_SLOTS do
+                local item_id = 0
+                local item_count = 0
+                local property_index = memory_slot_index
+                local locked = memory_slot_index > accessible_slots
+
+                if memory_slot_index <= memory_max then
+                    local ok, item = pcall(inv.GetContainerItem, inv, cid, memory_slot_index)
+                    if ok and item and item.Id and item.Id > 0 and item.Id ~= 65535 then
+                        item_id = tonumber(item.Id) or 0
+                        item_count = tonumber(item.Count) or 1
+                        local item_index = tonumber(item.Index)
+                        if item_index and item_index > 0 then
+                            property_index = item_index
+                        end
+                    end
+                end
+
+                local e = container_slots[memory_slot_index]
+                if not e or e.id ~= item_id or e.count ~= item_count or e.property_index ~= property_index
+                    or e.locked ~= locked or e.slot_index ~= memory_slot_index - 1 then
+                    return false
+                end
+            end
+        end
+
+        ::continue::
+    end
+
+    -- No container dropped out of the list either.
+    local cached = 0
+    for _ in pairs(slots_by_container) do cached = cached + 1 end
+    return cached == seen
+end
+
 -- True when an accessible empty slot appears before a later occupied slot.
 function containerlogic.has_internal_gap(slots)
     local saw_empty = false

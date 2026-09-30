@@ -24,7 +24,7 @@
 
 addon.name      = 'XIUI';
 addon.author    = 'Team XIUI';
-addon.version   = '1.8.4';
+addon.version   = '1.8.5';
 addon.desc      = 'Multiple UI elements with manager';
 addon.link      = 'https://github.com/tirem/XIUI'
 
@@ -848,15 +848,46 @@ function UpdateUserSettings()
     settingsUpdater.UpdateUserSettings(gAdjustedSettings, settingsDefaults.default_settings, gConfig);
 end
 
+-- Save the character file only when changed.
+local charSettingsSaved = nil;  -- { owner = config, copy = deep copy }
+local function CopyPlain(v)
+    if type(v) ~= 'table' then return v; end
+    local c = {};
+    for k, x in pairs(v) do c[k] = CopyPlain(x); end
+    return c;
+end
+local function SameData(a, b)
+    if a == b then return true; end
+    if type(a) ~= 'table' or type(b) ~= 'table' then return false; end
+    for k, v in pairs(a) do
+        if not SameData(v, b[k]) then return false; end
+    end
+    for k in pairs(b) do
+        if a[k] == nil then return false; end
+    end
+    return true;
+end
+-- Snapshot config as the file on disk now holds it.
+function SeedCharacterSettingsSnapshot()
+    charSettingsSaved = { owner = config, copy = CopyPlain(config) };
+end
+local function SaveCharacterSettingsIfChanged()
+    if charSettingsSaved and charSettingsSaved.owner == config and SameData(charSettingsSaved.copy, config) then
+        return;
+    end
+    bInternalSave = true;
+    settings.save();
+    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
+    charSettingsSaved = { owner = config, copy = CopyPlain(config) };
+end
+
 function SaveSettingsToDisk()
     if gConfig.colorCustomization == nil then
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
     profileManager.SaveProfileSettings(config.currentProfile, gConfig);
-    bInternalSave = true;
-    settings.save();
-    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
+    SaveCharacterSettingsIfChanged();
 end
 
 function SaveSettingsOnly()
@@ -865,9 +896,7 @@ function SaveSettingsOnly()
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
     profileManager.SaveProfileSettings(config.currentProfile, gConfig);
-    bInternalSave = true;
-    settings.save();
-    if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
+    SaveCharacterSettingsIfChanged();
     UpdateUserSettings();
 end
 
@@ -877,6 +906,7 @@ function SaveCharacterSettingsInternal()
     bInternalSave = true;
     settings.save();
     if bIsAshita43 then bPendingInternalSaveClear = true; else bInternalSave = false; end
+    SeedCharacterSettingsSnapshot();
 end
 
 -- New functions for profile management
@@ -1023,6 +1053,7 @@ settings.register('settings', 'settings_update', function (s)
     if bInternalSave then return; end
     if (s ~= nil) then
         config = s;
+        SeedCharacterSettingsSnapshot();  -- this is what the file now holds
 
         -- Validate profile existence
         local currentProfileName = config.currentProfile;
@@ -1104,6 +1135,7 @@ end
 
 ashita.events.register('d3d_present', 'present_cb', function ()
     if not bInitialized then return; end
+    gXiuiFrame = (gXiuiFrame or 0) + 1;  -- per-frame memos key on this
 
     local ok, err = pcall(function()
         -- Deferred satchel tooltip font loads (family/size Selectable). Must run
@@ -1227,6 +1259,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
 end);
 
 ashita.events.register('load', 'load_cb', function ()
+    SeedCharacterSettingsSnapshot();  -- config as settings.load() read it
     profileManager.SyncProfilesWithDisk();
     gConfig.appliedPositions = {};
     UpdateUserSettings();
@@ -1938,14 +1971,10 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
             end
         end
     elseif (e.id == 0x00B) then
-        -- Save any pending hotbar changes before zone (loading screen masks the delay)
-        if macropalette.IsHotbarDirty() then
+        -- Save pending hotbar and palette changes before zone (one save).
+        if macropalette.IsHotbarDirty() or palette.IsPaletteStateDirty() then
             SaveSettingsToDisk();
             macropalette.ClearHotbarDirty();
-        end
-        -- Save any pending palette selection changes before zone
-        if palette.IsPaletteStateDirty() then
-            SaveSettingsToDisk();
             palette.ClearPaletteStateDirty();
         end
         notifications.HandleZonePacket();

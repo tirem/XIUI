@@ -21,6 +21,33 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
+
+-- Reused draw arguments.
+local _p1, _p2 = {0, 0}, {0, 0};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
+local function _P2(x, y) _p2[1] = x; _p2[2] = y; return _p2; end
+
+-- Reused.
+local TAB_COLORS_SELECTED = {
+    normal = 0xDD4a6a8a,
+    hovered = 0xDD5a7a9a,
+    pressed = 0xDD3a5a7a,
+    border = 0xFF2a4a6a,
+};
+local TAB_COLORS_UNSELECTED = {
+    normal = 0xAA333333,
+    hovered = 0xCC4a4a4a,
+    pressed = 0xAA222222,
+    border = 0xFF1a1a1a,
+};
+local poolBgOptions = {};
+local itemBtnOptions = {};
+local function ItemBtnOpts(colors, tooltip, disabled)
+    itemBtnOptions.colors = colors;
+    itemBtnOptions.tooltip = tooltip;
+    itemBtnOptions.disabled = disabled;
+    return itemBtnOptions;
+end
 local windowBg = require('libs.windowbackground');
 local progressbar = require('libs.progressbar');
 local button = require('libs.button');
@@ -383,7 +410,7 @@ function M.DrawWindow(settings)
 
         imtext.SetConfigFromSettings(settings.font_settings);
 
-        imgui.Dummy({windowWidth, totalHeight});
+        imgui.Dummy(_P1(windowWidth, totalHeight));
 
         -- Handle scroll input when hovering over window
         if needsScroll and imgui.IsWindowHovered() then
@@ -414,15 +441,15 @@ function M.DrawWindow(settings)
             bgColor = 0xFF1A1A1A;
         end
 
-        windowBg.Draw(uiDrawList, startX + padding, startY + padding, contentWidth, contentHeightTotal, {
-            theme = bgTheme,
-            padding = padding,
-            bgScale = bgScale,
-            borderScale = borderScale,
-            bgOpacity = bgOpacity,
-            borderOpacity = borderOpacity,
-            bgColor = bgColor,
-        });
+        local bgOpts = poolBgOptions;
+        bgOpts.theme = bgTheme;
+        bgOpts.padding = padding;
+        bgOpts.bgScale = bgScale;
+        bgOpts.borderScale = borderScale;
+        bgOpts.bgOpacity = bgOpacity;
+        bgOpts.borderOpacity = borderOpacity;
+        bgOpts.bgColor = bgColor;
+        windowBg.Draw(uiDrawList, startX + padding, startY + padding, contentWidth, contentHeightTotal, bgOpts);
 
         local y = startY + padding;
 
@@ -435,20 +462,6 @@ function M.DrawWindow(settings)
             local tabBtnWidth = fontSize * 4;  -- Tab button width
             local textBtnWidth = fontSize * 4;  -- Wider for "Lot All" / "Pass All" text
             local toggleSize = btnHeight;  -- Square for arrow
-
-            -- Tab colors
-            local TAB_COLORS_SELECTED = {
-                normal = 0xDD4a6a8a,
-                hovered = 0xDD5a7a9a,
-                pressed = 0xDD3a5a7a,
-                border = 0xFF2a4a6a,
-            };
-            local TAB_COLORS_UNSELECTED = {
-                normal = 0xAA333333,
-                hovered = 0xCC4a4a4a,
-                pressed = 0xAA222222,
-                border = 0xFF1a1a1a,
-            };
 
             -- Draw Pool tab button
             local poolTabX = startX + padding;
@@ -463,7 +476,7 @@ function M.DrawWindow(settings)
             end
 
             -- Draw Pool tab label
-            local poolTextW, poolTextH = imtext.Measure('Pool', fontSize);
+            local poolTextW, poolTextH = imtext.MeasureCached('Pool', fontSize);
             poolTextW = poolTextW or (fontSize * 2);
             poolTextH = poolTextH or fontSize;
             local poolTextColor = (selectedTab == 1) and 0xFFFFFFFF or 0xFFAAAAAA;
@@ -482,7 +495,7 @@ function M.DrawWindow(settings)
             end
 
             -- Draw History tab label
-            local histTextW, histTextH = imtext.Measure('History', fontSize);
+            local histTextW, histTextH = imtext.MeasureCached('History', fontSize);
             histTextW = histTextW or (fontSize * 3);
             histTextH = histTextH or fontSize;
             local histTextColor = (selectedTab == 2) and 0xFFFFFFFF or 0xFFAAAAAA;
@@ -537,7 +550,7 @@ function M.DrawWindow(settings)
                     end
 
                     -- Draw Pass All label
-                    local passTextW, passTextH = imtext.Measure('Pass All', fontSize);
+                    local passTextW, passTextH = imtext.MeasureCached('Pass All', fontSize);
                     passTextW = passTextW or (fontSize * 2.5);
                     passTextH = passTextH or fontSize;
                     imtext.Draw(uiDrawList, 'Pass All', passAllX + (textBtnWidth - passTextW) / 2, btnY + (btnHeight - passTextH) / 2, 0xFFFFFFFF, fontSize);
@@ -554,7 +567,7 @@ function M.DrawWindow(settings)
                         end
 
                         -- Draw Lot All label
-                        local lotTextW, lotTextH = imtext.Measure('Lot All', fontSize);
+                        local lotTextW, lotTextH = imtext.MeasureCached('Lot All', fontSize);
                         lotTextW = lotTextW or (fontSize * 2);
                         lotTextH = lotTextH or fontSize;
                         imtext.Draw(uiDrawList, 'Lot All', lotAllX + (textBtnWidth - lotTextW) / 2, btnY + (btnHeight - lotTextH) / 2, 0xFFFFFFFF, fontSize);
@@ -708,7 +721,7 @@ function M.DrawWindow(settings)
                         local borderX2 = startX + windowWidth - padding;
                         local borderY2 = rowY + rowHeight;
                         local borderColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.2});
-                        drawList:AddRect({borderX1, borderY1}, {borderX2, borderY2}, borderColor, 4.0, ImDrawCornerFlags_All, 1.0);
+                        drawList:AddRect(_P1(borderX1, borderY1), _P2(borderX2, borderY2), borderColor, 4.0, ImDrawCornerFlags_All, 1.0);
                     end
 
                     -- 1. Draw item icon
@@ -718,7 +731,7 @@ function M.DrawWindow(settings)
                     local iconY = rowY + 2 + itemPadding;  -- Align to top of row with padding
 
                     if iconPtr then
-                        drawList:AddImage(iconPtr, {iconX, iconY}, {iconX + iconSize, iconY + iconSize});
+                        drawList:AddImage(iconPtr, _P1(iconX, iconY), _P2(iconX + iconSize, iconY + iconSize));
                     end
 
                     local textStartX = iconX + iconSize + iconTextGap;
@@ -740,7 +753,7 @@ function M.DrawWindow(settings)
 
                     -- Draw tooltip for item name area showing validation error
                     if hasValidationIssue and itemValidationError then
-                        local nameWidth, nameHeight = imtext.Measure(displayName, fontSize);
+                        local nameWidth, nameHeight = imtext.MeasureCached(displayName, fontSize);
                         nameWidth = nameWidth or 100;
                         nameHeight = nameHeight or fontSize;
                         -- Check if mouse is hovering over item name area
@@ -754,7 +767,7 @@ function M.DrawWindow(settings)
                     -- 3. Draw timer text
                     local timerText = data.FormatTime(remaining);
                     if showTimerText then
-                        local timerW, _ = imtext.Measure(timerText, fontSize);
+                        local timerW, _ = imtext.MeasureCached(timerText, fontSize);
                         timerW = timerW or 0;
                         local timerColor = getTimerColor(remaining);
                         imtext.Draw(uiDrawList, timerText, startX + windowWidth - padding - itemPadding - timerW, textY, timerColor, fontSize);
@@ -774,7 +787,7 @@ function M.DrawWindow(settings)
                         -- Position buttons to the left of the timer
                         local timerWidth = 0;
                         if showTimerText then
-                            timerWidth, _ = imtext.Measure(timerText, fontSize);
+                            timerWidth, _ = imtext.MeasureCached(timerText, fontSize);
                             timerWidth = timerWidth or (fontSize * 3);
                         end
 
@@ -807,17 +820,14 @@ function M.DrawWindow(settings)
 
                             -- Draw Lot button
                             local lotBtnId = string.format('tpLotItem%d', slot);
-                            local lotItemClicked = button.DrawPrim(lotBtnId, lotBtnX, itemBtnY, itemBtnWidth, itemBtnHeight, {
-                                colors = button.COLORS_POSITIVE,
-                                tooltip = lotTooltip,
-                                disabled = lotDisabled,
-                            });
+                            local lotItemClicked = button.DrawPrim(lotBtnId, lotBtnX, itemBtnY, itemBtnWidth, itemBtnHeight,
+                                ItemBtnOpts(button.COLORS_POSITIVE, lotTooltip, lotDisabled));
                             if lotItemClicked and not lotDisabled then
                                 actions.LotItem(slot);
                             end
 
                             -- Draw Lot label
-                            local lotTextW, lotTextH = imtext.Measure('Lot', fontSize - 1);
+                            local lotTextW, lotTextH = imtext.MeasureCached('Lot', fontSize - 1);
                             lotTextW = lotTextW or (fontSize * 1.5);
                             lotTextH = lotTextH or fontSize;
                             local lotTextColor = lotDisabled and COLOR_DISABLED_TEXT or COLOR_ENABLED_TEXT;
@@ -833,17 +843,14 @@ function M.DrawWindow(settings)
 
                             -- Draw Pass button
                             local passBtnId = string.format('tpPassItem%d', slot);
-                            local passItemClicked = button.DrawPrim(passBtnId, passBtnX, itemBtnY, itemBtnWidth, itemBtnHeight, {
-                                colors = button.COLORS_NEGATIVE,
-                                tooltip = passTooltip,
-                                disabled = passDisabled,
-                            });
+                            local passItemClicked = button.DrawPrim(passBtnId, passBtnX, itemBtnY, itemBtnWidth, itemBtnHeight,
+                                ItemBtnOpts(button.COLORS_NEGATIVE, passTooltip, passDisabled));
                             if passItemClicked and not passDisabled then
                                 actions.PassItem(slot);
                             end
 
                             -- Draw Pass label
-                            local passTextW, passTextH = imtext.Measure('Pass', fontSize - 1);
+                            local passTextW, passTextH = imtext.MeasureCached('Pass', fontSize - 1);
                             passTextW = passTextW or (fontSize * 2);
                             passTextH = passTextH or fontSize;
                             local passTextColor = passDisabled and COLOR_DISABLED_TEXT or COLOR_ENABLED_TEXT;
@@ -869,7 +876,7 @@ function M.DrawWindow(settings)
                             end
                             local lotText = string.format('%s: %d', lotterName, item.winningLot);
 
-                            local nameWidth, _ = imtext.Measure(displayName, fontSize);
+                            local nameWidth, _ = imtext.MeasureCached(displayName, fontSize);
                             nameWidth = nameWidth or 0;
                             local lotX = textStartX + nameWidth + math.floor(10 * scaleX);
                             imtext.Draw(uiDrawList, lotText, lotX, textY, 0xFF88FF88, fontSize - 1);
@@ -956,13 +963,9 @@ function M.DrawWindow(settings)
                         local timerGradient = getTimerGradient(remaining);
 
                         progressbar.ProgressBar(
-                            {{math.max(0, math.min(1, progress)), timerGradient}},
-                            {barWidth, barHeight},
-                            {
-                                decorate = false,
-                                absolutePosition = {barStartX, barY},
-                                drawList = drawList,
-                            }
+                            progressbar.Pct(math.max(0, math.min(1, progress)), timerGradient),
+                            progressbar.Dims(barWidth, barHeight),
+                            progressbar.Opts(false, drawList, barStartX, barY)
                         );
                     end
                 end  -- end hasAnyOverlap check
@@ -985,11 +988,11 @@ function M.DrawWindow(settings)
 
                 -- Draw scroll track (dark)
                 local trackColor = imgui.GetColorU32({0.2, 0.2, 0.2, 0.5});
-                drawList:AddRectFilled({scrollBarX, itemAreaTop}, {scrollBarX + scrollBarWidth, itemAreaBottom}, trackColor, 2.0);
+                drawList:AddRectFilled(_P1(scrollBarX, itemAreaTop), _P2(scrollBarX + scrollBarWidth, itemAreaBottom), trackColor, 2.0);
 
                 -- Draw scroll thumb (light)
                 local thumbColor = imgui.GetColorU32({0.6, 0.6, 0.6, 0.8});
-                drawList:AddRectFilled({scrollBarX, scrollThumbY}, {scrollBarX + scrollBarWidth, scrollThumbY + scrollThumbHeight}, thumbColor, 2.0);
+                drawList:AddRectFilled(_P1(scrollBarX, scrollThumbY), _P2(scrollBarX + scrollBarWidth, scrollThumbY + scrollThumbHeight), thumbColor, 2.0);
             end
 
             -- Hide buttons for unused slots
@@ -1085,7 +1088,7 @@ function M.DrawWindow(settings)
                         local iconY = rowY + (historyRowHeight - historyIconSize) / 2;
 
                         if iconPtr then
-                            drawList:AddImage(iconPtr, {iconX, iconY}, {iconX + historyIconSize, iconY + historyIconSize});
+                            drawList:AddImage(iconPtr, _P1(iconX, iconY), _P2(iconX + historyIconSize, iconY + historyIconSize));
                         end
 
                         -- Draw item name
@@ -1097,7 +1100,7 @@ function M.DrawWindow(settings)
 
                         -- Draw winner info (right-aligned, with scrollbar accommodation)
                         local winnerText = string.format('%s: %d', histItem.winnerName or '?', histItem.winnerLot or 0);
-                        local winnerW, _ = imtext.Measure(winnerText, fontSize);
+                        local winnerW, _ = imtext.MeasureCached(winnerText, fontSize);
                         winnerW = winnerW or (fontSize * 6);
                         -- Add extra padding when scrollbar is visible (scrollbar width + gap)
                         local scrollbarPadding = historyNeedsScroll and 10 or 0;
@@ -1125,11 +1128,11 @@ function M.DrawWindow(settings)
 
                     -- Draw scroll track (dark)
                     local trackColor = imgui.GetColorU32({0.2, 0.2, 0.2, 0.5});
-                    drawList:AddRectFilled({scrollBarX, historyAreaTop}, {scrollBarX + scrollBarWidth, historyAreaBottom}, trackColor, 2.0);
+                    drawList:AddRectFilled(_P1(scrollBarX, historyAreaTop), _P2(scrollBarX + scrollBarWidth, historyAreaBottom), trackColor, 2.0);
 
                     -- Draw scroll thumb (light)
                     local thumbColor = imgui.GetColorU32({0.6, 0.6, 0.6, 0.8});
-                    drawList:AddRectFilled({scrollBarX, scrollThumbY}, {scrollBarX + scrollBarWidth, scrollThumbY + scrollThumbHeight}, thumbColor, 2.0);
+                    drawList:AddRectFilled(_P1(scrollBarX, scrollThumbY), _P2(scrollBarX + scrollBarWidth, scrollThumbY + scrollThumbHeight), thumbColor, 2.0);
                 end
             end
         end

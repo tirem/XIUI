@@ -25,6 +25,8 @@ local SIZE_OFFSET = 2;
 local fontCache = {};
 local activeFont = nil;
 local activeFontKey = '';
+local measureW, measureH, measureCount = {}, {}, 0;  -- MeasureCached memo (declared before Reset)
+local MEASURE_MEMO_MAX = 2048;
 local outlineWidth = 2;
 
 local cachedLineHeight = 0;
@@ -187,6 +189,7 @@ end
 --- causes EXCEPTION_ACCESS_VIOLATION. The (family, isBold) cache key
 --- already routes new selections without needing a reload.
 function M.Reset()
+    measureW, measureH, measureCount = {}, {}, 0;
     cachedOutlineCol = nil;
     lineHeightFrame = -1;
     colorCache = {};
@@ -220,6 +223,42 @@ function M.Measure(text, fontSize)
         return imgui.CalcTextSize(text) * scale, fontSize;
     end
     return imgui.CalcTextSize(text), defaultHeight;
+end
+
+--- Cached Measure (not for font-scaled windows).
+function M.MeasureCached(text, fontSize)
+    if not text or text == '' then return 0, 0; end
+    -- No size or font: not cached.
+    if not fontSize or not activeFont then return M.Measure(text, fontSize); end
+    local fk = activeFontKey;
+    local bySizeW = measureW[fk];
+    if bySizeW == nil then
+        bySizeW = {};
+        measureW[fk] = bySizeW;
+        measureH[fk] = {};
+    end
+    local size = fontSize;
+    local w = bySizeW[size];
+    local h = measureH[fk][size];
+    if w == nil then
+        w = {};
+        h = {};
+        bySizeW[size] = w;
+        measureH[fk][size] = h;
+    end
+    local cw = w[text];
+    if cw ~= nil then
+        return cw, h[text];
+    end
+    local mw, mh = M.Measure(text, fontSize);
+    if measureCount >= MEASURE_MEMO_MAX then
+        measureW, measureH, measureCount = {}, {}, 0;
+        return mw, mh;
+    end
+    w[text] = mw;
+    h[text] = mh;
+    measureCount = measureCount + 1;
+    return mw, mh;
 end
 
 --- Draw outlined text on an ImGui draw list.

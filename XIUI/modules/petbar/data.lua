@@ -6,6 +6,7 @@
 require('common');
 require('handlers.helpers');
 local ffi = require('ffi');
+local TextureManager = require('libs.texturemanager');
 local imgui = require('imgui');
 local windowBg = require('libs.windowbackground');
 local packets = require('libs.packets');
@@ -543,6 +544,30 @@ data.petImageTextures = {};
 -- Pet image metadata: petKey -> { baseWidth, baseHeight, exists }
 data.petImageMeta = {};
 
+-- petKey -> image file.
+data.petImageFileByKey = {};
+
+-- Loads the pet image on first use.
+function data.GetPetImage(petKey)
+    local meta = data.petImageMeta[petKey];
+    if meta == nil then
+        local imageFile = data.petImageFileByKey[petKey];
+        if imageFile == nil then
+            return nil, nil;
+        end
+        local texture = TextureManager.getFileTexture(string.format('pets/%s', imageFile:gsub('%.png$', '')));
+        if texture and texture.image then
+            local baseWidth, baseHeight = GetTextureDimensions(texture, 256, 256);
+            data.petImageTextures[petKey] = texture;
+            meta = { baseWidth = baseWidth, baseHeight = baseHeight, exists = true };
+        else
+            meta = { baseWidth = 256, baseHeight = 256, exists = false };
+        end
+        data.petImageMeta[petKey] = meta;
+    end
+    return meta, data.petImageTextures[petKey];
+end
+
 -- Recast timer tracking
 data.recastMaxTimers = {};
 
@@ -756,6 +781,18 @@ end
 
 -- Get pet data - single entry point for both preview and real data
 -- This follows the partylist pattern where preview is handled inside the data function
+-- Built once per frame.
+local petDataFrame, petDataValue = nil, nil
+function data.GetPetDataThisFrame()
+    local frame = gXiuiFrame
+    if frame ~= nil and frame == petDataFrame then
+        return petDataValue
+    end
+    petDataValue = data.GetPetData()
+    petDataFrame = frame
+    return petDataValue
+end
+
 function data.GetPetData()
     -- Preview check inside data function (like partylist's GetMemberInformation)
     if showConfig[1] and gConfig.petBarPreview then
@@ -1282,6 +1319,7 @@ end
 -- Draw background, pet image (middle layer), and borders for the petbar window.
 -- Pet image rendering is interleaved: clipped pet images render between bg and borders;
 -- unclipped pet images render on top of borders (after).
+local petBgOptions = {};
 function data.UpdateBackground(drawList, x, y, width, height, settings)
     if drawList == nil then return; end
 
@@ -1301,19 +1339,19 @@ function data.UpdateBackground(drawList, x, y, width, height, settings)
     local bgScale = typeSettings.bgScale or 1.0;
     local borderScale = typeSettings.borderScale or 1.0;
 
-    local bgOptions = {
-        theme = bgTheme,
-        padding = settings.bgPadding or data.PADDING,
-        paddingY = settings.bgPaddingY or data.PADDING,
-        bgScale = bgScale,
-        borderScale = borderScale,
-        bgOpacity = bgOpacity,
-        bgColor = bgColor,
-        borderSize = settings.borderSize or 21,
-        bgOffset = settings.bgOffset or 1,
-        borderOpacity = borderOpacity,
-        borderColor = borderColor,
-    };
+    -- Reused; every field rewritten per call.
+    local bgOptions = petBgOptions;
+    bgOptions.theme = bgTheme;
+    bgOptions.padding = settings.bgPadding or data.PADDING;
+    bgOptions.paddingY = settings.bgPaddingY or data.PADDING;
+    bgOptions.bgScale = bgScale;
+    bgOptions.borderScale = borderScale;
+    bgOptions.bgOpacity = bgOpacity;
+    bgOptions.bgColor = bgColor;
+    bgOptions.borderSize = settings.borderSize or 21;
+    bgOptions.bgOffset = settings.bgOffset or 1;
+    bgOptions.borderOpacity = borderOpacity;
+    bgOptions.borderColor = borderColor;
 
     -- 1. Background (renders first, sits at bottom)
     windowBg.DrawBackground(drawList, x, y, width, height, bgOptions);
@@ -1321,8 +1359,10 @@ function data.UpdateBackground(drawList, x, y, width, height, settings)
     -- Compute pet image spec (if any)
     local imageSpec = ResolvePetImageSettings();
     local petKey = imageSpec and imageSpec.petKey;
-    local meta = petKey and data.petImageMeta[petKey];
-    local texture = petKey and data.petImageTextures[petKey];
+    local meta, texture;
+    if petKey then
+        meta, texture = data.GetPetImage(petKey);
+    end
     local canDrawImage = imageSpec and meta and meta.exists and texture and texture.image;
     local imageTint;
     local imgX, imgY, imgW, imgH;

@@ -377,6 +377,25 @@ local function PlayerKnowsAbility(player, ability)
     return false;
 end
 
+local petTypeAbilityIds = nil;
+local function GetPetTypeAbilityIds(resMgr)
+    if petTypeAbilityIds then return petTypeAbilityIds; end
+    local ids = {};
+    for index = ABILITY_SCAN_MIN, ABILITY_SCAN_MAX do
+        if not CATEGORY_STUB_IDS[index] then
+            local ability = resMgr:GetAbilityById(index);
+            if ability and PET_MENU_TYPES[ability.Type or 0] == true then
+                ids[#ids + 1] = index;
+            end
+        end
+    end
+    -- Keep the list only once resources answered.
+    if #ids > 0 then
+        petTypeAbilityIds = ids;
+    end
+    return ids;
+end
+
 --- Scan known abilities: resource ids 0x200..0x600 + HasAbility.
 ---@param includePetTypes boolean If true, only pet /pet types; if false, exclude them
 ---@return table Array of {id, name, type, source}
@@ -395,7 +414,15 @@ local function ScanKnownAbilities(includePetTypes)
     local results = {};
     local added = {};
 
-    for index = ABILITY_SCAN_MIN, ABILITY_SCAN_MAX do
+    -- Pet-menu ability ids, listed once.
+    local candidates = nil;
+    if includePetTypes then
+        candidates = GetPetTypeAbilityIds(resMgr);
+    end
+    local count = candidates and #candidates or (ABILITY_SCAN_MAX - ABILITY_SCAN_MIN + 1);
+
+    for n = 1, count do
+        local index = candidates and candidates[n] or (ABILITY_SCAN_MIN + n - 1);
         if not CATEGORY_STUB_IDS[index] then
             local ability = resMgr:GetAbilityById(index);
             if ability and ability.Name and ability.Name[1] and ability.Name[1] ~= ''

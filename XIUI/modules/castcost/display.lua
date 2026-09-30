@@ -385,13 +385,9 @@ function M.Render(itemInfo, itemType, settings, colors)
 
                 -- Reuse the UI draw list so the bar isn't hidden behind the window bg.
                 progressbar.ProgressBar(
-                    {{cooldownPercent, barGradient}},
-                    {barWidth, barHeight},
-                    {
-                        absolutePosition = {barStartX, yPos + barYOffset},
-                        decorate = false,
-                        drawList = drawList,
-                    }
+                    progressbar.Pct(cooldownPercent, barGradient),
+                    progressbar.Dims(barWidth, barHeight),
+                    progressbar.Opts(false, drawList, barStartX, yPos + barYOffset)
                 );
             elseif isWeaponSkill and not hasEnoughTp then
                 -- Weapon skill without enough TP

@@ -1,4 +1,10 @@
 local imgui = require('imgui')
+
+-- Reused draw arguments.
+local _p1, _p2, _UV0, _UV1 = {0, 0}, {0, 0}, {0, 0}, {1, 1};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
+local function _P2(x, y) _p2[1] = x; _p2[2] = y; return _p2; end
+local TRANSPARENT = { 0, 0, 0, 0 }  -- PushStyleColor copies it
 local bor = bit.bor
 local TextureManager = require('libs.texturemanager')
 local components = require('config.components')
@@ -162,9 +168,9 @@ function ui.render_drag_ghost(drag, tex_ptr, slot_size, scale)
     local x2 = mouse_x + half
     local y2 = mouse_y + half
 
-    draw_list:AddRectFilled({ x1, y1 }, { x2, y2 }, imgui.GetColorU32(COLOR_SLOT_BG), 0)
+    draw_list:AddRectFilled(_P1(x1, y1), _P2(x2, y2), imgui.GetColorU32(COLOR_SLOT_BG), 0)
     local border_color = drag.source_border_color or { 0.72, 0.60, 0.35, 0.95 }
-    draw_list:AddRect({ x1, y1 }, { x2, y2 }, imgui.GetColorU32(border_color), 0, 0, 2)
+    draw_list:AddRect(_P1(x1, y1), _P2(x2, y2), imgui.GetColorU32(border_color), 0, 0, 2)
 
     if drag.source_icon and tex_ptr then
         local ptr = tex_ptr(drag.source_icon)
@@ -172,10 +178,9 @@ function ui.render_drag_ghost(drag, tex_ptr, slot_size, scale)
             local padding = math.max(2, math.floor(slot_size * 0.08))
             draw_list:AddImage(
                 ptr,
-                { x1 + padding, y1 + padding },
-                { x2 - padding, y2 - padding },
-                { 0, 0 },
-                { 1, 1 },
+                _P1(x1 + padding, y1 + padding), _P2(x2 - padding, y2 - padding),
+                _UV0,
+                _UV1,
                 imgui.GetColorU32({ 1.0, 1.0, 1.0, 0.92 })
             )
         end
@@ -474,23 +479,25 @@ function ui.clear_pending_drag(scope)
     end
 end
 
+local OUTLINE_BLACK = { 0.0, 0.0, 0.0, 1.0 }
+local OUTLINE_OFFSETS = { { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }
 local function draw_outlined_text(draw_list, x, y, text, color, outline_px)
     if not draw_list or not text or text == '' then
         return
     end
 
     outline_px = outline_px or 1
-    local outline = imgui.GetColorU32({ 0.0, 0.0, 0.0, 1.0 })
+    local outline = imgui.GetColorU32(OUTLINE_BLACK)
     local fill = color_to_u32(color or COLOR_QTY)
 
-    for _, offset in ipairs({ { -1, 0 }, { 1, 0 }, { 0, -1 }, { 0, 1 } }) do
+    for _, offset in ipairs(OUTLINE_OFFSETS) do
         draw_list:AddText(
-            { x + (offset[1] * outline_px), y + (offset[2] * outline_px) },
+            _P1(x + (offset[1] * outline_px), y + (offset[2] * outline_px)),
             outline,
             text
         )
     end
-    draw_list:AddText({ x, y }, fill, text)
+    draw_list:AddText(_P1(x, y), fill, text)
 end
 
 local function get_layout_columns(settings)
@@ -739,7 +746,7 @@ local function draw_full_badge(max_x, min_y, max_y)
     local x2 = max_x - inset
     local x1 = x2 - width
 
-    draw_list:AddRectFilled({ x1, min_y + v_pad }, { x2, max_y - v_pad }, color, 1.5)
+    draw_list:AddRectFilled(_P1(x1, min_y + v_pad), _P2(x2, max_y - v_pad), color, 1.5)
 end
 
 function ui.render_left_tab_column(available_tabs, current_tab, format_tab_label, drag_ctx, scale, tab_width)
@@ -838,13 +845,13 @@ function ui.render_left_tab_column(available_tabs, current_tab, format_tab_label
             imgui.PushStyleColor(ImGuiCol_ButtonActive, COLOR_SELECTED)
             imgui.PushStyleColor(ImGuiCol_Text, COLOR_TEXT)
         else
-            imgui.PushStyleColor(ImGuiCol_Button, { 0, 0, 0, 0 })
+            imgui.PushStyleColor(ImGuiCol_Button, TRANSPARENT)
             imgui.PushStyleColor(ImGuiCol_ButtonHovered, COLOR_HOVER)
             imgui.PushStyleColor(ImGuiCol_ButtonActive, TAB_ACTIVE)
             imgui.PushStyleColor(ImGuiCol_Text, COLOR_TEXT)
         end
 
-        local clicked = imgui.Button(label .. ('##satchel_tab_%d'):format(container_id), { tab_width, tab_height })
+        local clicked = imgui.Button(label .. ('##satchel_tab_%d'):format(container_id), _P1(tab_width, tab_height))
         if clicked and not is_dragging then
             clicked_tab = container_id
         end
@@ -855,15 +862,13 @@ function ui.render_left_tab_column(available_tabs, current_tab, format_tab_label
 
         if draw_list and is_dragging and is_selected and not tab_drop_valid then
             draw_list:AddRectFilled(
-                { btn_pos_x, btn_pos_y + 4 },
-                { btn_pos_x + 3, btn_pos_y + tab_height - 4 },
+                _P1(btn_pos_x, btn_pos_y + 4), _P2(btn_pos_x + 3, btn_pos_y + tab_height - 4),
                 imgui.GetColorU32(get_invalid_tab_accent_color()),
                 1.5
             )
         elseif is_selected and draw_list then
             draw_list:AddRectFilled(
-                { btn_pos_x, btn_pos_y + 4 },
-                { btn_pos_x + 3, btn_pos_y + tab_height - 4 },
+                _P1(btn_pos_x, btn_pos_y + 4), _P2(btn_pos_x + 3, btn_pos_y + tab_height - 4),
                 imgui.GetColorU32(TAB_GOLD),
                 1.5
             )
@@ -1078,10 +1083,9 @@ local function draw_slot_icon(draw_list, tex_ptr, screen_x, screen_y, icon_size,
 
     draw_list:AddImage(
         tex_ptr,
-        { screen_x, screen_y },
-        { screen_x + icon_size, screen_y + icon_size },
-        { 0, 0 },
-        { 1, 1 },
+        _P1(screen_x, screen_y), _P2(screen_x + icon_size, screen_y + icon_size),
+        _UV0,
+        _UV1,
         tint_u32
     )
 end
@@ -1096,12 +1100,14 @@ local function draw_search_match_inner_dim(draw_list, x1, y1, x2, y2, band_px, d
         return
     end
 
-    draw_list:AddRectFilled({ x1, y1 }, { x2, y1 + band_px }, dim_u32)
-    draw_list:AddRectFilled({ x1, y2 - band_px }, { x2, y2 }, dim_u32)
-    draw_list:AddRectFilled({ x1, y1 }, { x1 + band_px, y2 }, dim_u32)
-    draw_list:AddRectFilled({ x2 - band_px, y1 }, { x2, y2 }, dim_u32)
+    draw_list:AddRectFilled(_P1(x1, y1), _P2(x2, y1 + band_px), dim_u32)
+    draw_list:AddRectFilled(_P1(x1, y2 - band_px), _P2(x2, y2), dim_u32)
+    draw_list:AddRectFilled(_P1(x1, y1), _P2(x1 + band_px, y2), dim_u32)
+    draw_list:AddRectFilled(_P1(x2 - band_px, y1), _P2(x2, y2), dim_u32)
 end
 
+local EMPTY_LAYOUT = {}
+local slotLayout = {}
 local function draw_slot(slot, index, key_prefix, ctx, layout)
     local slot_size = ctx.slot_size or ctx.settings.slot_size
     local icon_padding = ctx.icon_padding or math.max(1, math.floor(slot_size * 0.05))
@@ -1160,7 +1166,7 @@ local function draw_slot(slot, index, key_prefix, ctx, layout)
     local tex = nil
     local min_x, min_y, max_x, max_y
     local slot_hovered = false
-    layout = layout or {}
+    layout = layout or EMPTY_LAYOUT  -- read only here
 
     if layout.min_x ~= nil then
         min_x = layout.min_x
@@ -1241,11 +1247,11 @@ local function draw_slot(slot, index, key_prefix, ctx, layout)
 
     if draw_list and type(min_x) == 'number' and type(min_y) == 'number'
         and type(max_x) == 'number' and type(max_y) == 'number' then
-        draw_list:AddRectFilled({ min_x, min_y }, { max_x, max_y }, slot_bg_u32)
+        draw_list:AddRectFilled(_P1(min_x, min_y), _P2(max_x, max_y), slot_bg_u32)
 
         local use_match_border = search_match and not is_drag_source
         if not use_match_border and border_u32 then
-            draw_list:AddRect({ min_x, min_y }, { max_x, max_y }, border_u32, 0, 0, 1.0)
+            draw_list:AddRect(_P1(min_x, min_y), _P2(max_x, max_y), border_u32, 0, 0, 1.0)
         end
 
         if slot.id and slot.id > 0 then
@@ -1309,8 +1315,7 @@ local function draw_slot(slot, index, key_prefix, ctx, layout)
             local bw, bh = (max_x - min_x) - thickness, (max_y - min_y) - thickness
             if bw > 0 and bh > 0 then
                 draw_list:AddRect(
-                    { bx, by },
-                    { bx + bw, by + bh },
+                    _P1(bx, by), _P2(bx + bw, by + bh),
                     chrome.search_match_border_u32,
                     0,
                     0,
@@ -1528,14 +1533,14 @@ function ui.render_slot_grid(slots, key_prefix, stat, ctx)
                 metrics.slot_size,
                 metrics.cell_gap
             )
-            draw_slot(packed[i], i, key, ctx, {
-                min_x = min_x,
-                min_y = min_y,
-                max_x = max_x,
-                max_y = max_y,
-                is_hovered = grid_hovered and hovered_idx == i,
-                defer_interaction = true,
-            })
+            local sl = slotLayout  -- shared; every field rewritten per slot
+            sl.min_x = min_x
+            sl.min_y = min_y
+            sl.max_x = max_x
+            sl.max_y = max_y
+            sl.is_hovered = grid_hovered and hovered_idx == i
+            sl.defer_interaction = true
+            draw_slot(packed[i], i, key, ctx, sl)
         end
 
         if hovered_idx then
@@ -1564,7 +1569,7 @@ function ui.render_slot_grid(slots, key_prefix, stat, ctx)
         local used_h = imgui.GetCursorPosY()
         local target_h = metrics.content_height or used_h
         if used_h < target_h then
-            imgui.Dummy({ metrics.grid_width, target_h - used_h })
+            imgui.Dummy(_P1(metrics.grid_width, target_h - used_h))
         end
     end
 
@@ -1670,7 +1675,7 @@ local function render_centered_button_list(child_id, items, scale, opts)
         pad_y = math.max(0, (avail_h - total_h) * 0.5)
     end
     if pad_y > 0 then
-        imgui.Dummy({ 0, pad_y })
+        imgui.Dummy(_P1(0, pad_y))
     end
 
     if opts.use_tab_style then
@@ -1715,7 +1720,7 @@ local function render_centered_button_list(child_id, items, scale, opts)
             end
         end
         if index < #items then
-            imgui.Dummy({ 0, row_gap })
+            imgui.Dummy(_P1(0, row_gap))
         end
     end
 

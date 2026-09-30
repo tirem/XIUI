@@ -25,14 +25,16 @@ function icons.runtime_file_icons_allowed()
     return runtime_file_icons_allowed
 end
 
+local function cast_ptr(tex)
+    return tonumber(ffi.cast('uint32_t', tex))
+end
+
 function icons.tex_ptr(tex)
     if tex == nil or tex == false then
         return nil
     end
 
-    local ok, ptr = pcall(function()
-        return tonumber(ffi.cast('uint32_t', tex))
-    end)
+    local ok, ptr = pcall(cast_ptr, tex)
     if not ok or not ptr or ptr == 0 then
         return nil
     end

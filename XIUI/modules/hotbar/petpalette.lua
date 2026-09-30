@@ -9,6 +9,9 @@ local petregistry = require('modules.hotbar.petregistry');
 
 local M = {};
 
+-- Bumped when an override changes.
+M.overrideVersion = 0;
+
 -- ============================================
 -- State
 -- ============================================
@@ -148,17 +151,20 @@ end
 -- Set manual override for a bar
 function M.SetManualOverride(barIndex, petKey)
     state.manualOverrides[barIndex] = petKey;
+    M.overrideVersion = M.overrideVersion + 1;
 end
 
 -- Clear manual override for a bar (return to auto mode)
 function M.ClearManualOverride(barIndex)
     state.manualOverrides[barIndex] = nil;
     state.cycleIndices[barIndex] = nil;
+    M.overrideVersion = M.overrideVersion + 1;
 end
 
 -- Clear all manual overrides (including crossbar)
 function M.ClearAllManualOverrides()
     state.manualOverrides = {};
+    M.overrideVersion = M.overrideVersion + 1;
     state.cycleIndices = {};
     state.crossbarOverrides = {};
     state.crossbarCycleIndices = {};
@@ -203,6 +209,7 @@ function M.SetPalette(barIndex, petKey)
     else
         state.manualOverrides[barIndex] = petKey;
     end
+    M.overrideVersion = M.overrideVersion + 1;
     return true;
 end
 
@@ -247,6 +254,7 @@ function M.CyclePalette(barIndex, direction, jobId)
     -- Store cycle index and set override
     state.cycleIndices[barIndex] = newIndex;
     state.manualOverrides[barIndex] = palettes[newIndex].key;
+    M.overrideVersion = M.overrideVersion + 1;
 
     return palettes[newIndex];
 end
@@ -439,6 +447,7 @@ function M.Reset()
     state.currentPetKey = nil;
     state.lastKnownPetName = nil;
     state.manualOverrides = {};
+    M.overrideVersion = M.overrideVersion + 1;
     state.cycleIndices = {};
     state.crossbarOverrides = {};
     state.crossbarCycleIndices = {};

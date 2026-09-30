@@ -638,7 +638,7 @@ local function GetAllAbilities()
                 and not playerdata.IsGarbageSpellName(name) then
                 local stem = GetAbilityIconStem(ability);
                 local iconKey = stem and ('abilities' .. stem);
-                if iconKey and textures:Get(iconKey) then
+                if iconKey and textures:Has(iconKey) then
                     seenNames[name] = true;
                     table.insert(allAbilitiesCache, {
                         id = stem,  -- icon file stem (ability id), e.g. "00528"

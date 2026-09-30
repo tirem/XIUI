@@ -6,6 +6,10 @@
 require('common');
 require('handlers.helpers');
 local ffi = require('ffi');
+
+-- Reused draw arguments.
+local _p1 = {0, 0};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
 local imgui = require('imgui');
 local windowBg = require('libs.windowbackground');
 local drawing = require('libs.drawing');
@@ -278,45 +282,37 @@ local function GetBarDimensions(barIndex, inAnchoredStack)
     return width, height, slotSize, slotGap, rowGap, layout, padX, padY;
 end
 
+local anchoredMetrics, freeMetrics = {}, {};
 GetBarMetrics = function(barIndex, inAnchoredStack)
     local barSettings = data.GetBarSettings(barIndex);
     local contentW, contentH, buttonSize, buttonGap, rowGap, layout, padX, padY =
         GetBarDimensions(barIndex, inAnchoredStack);
     local gs = (gConfig and gConfig.globalScale) or 1.0;
 
-    if inAnchoredStack then
-        return {
-            contentW = contentW,
-            contentH = contentH,
-            windowW = contentW,
-            windowH = contentH,
-            bgPadX = 0,
-            bgPadY = 0,
-            buttonSize = buttonSize,
-            buttonGap = buttonGap,
-            rowGap = rowGap,
-            layout = layout,
-            slotPaddingX = padX,
-            slotPaddingY = padY,
-        };
+    -- Pooled per bar.
+    local pool = inAnchoredStack and anchoredMetrics or freeMetrics;
+    local m = pool[barIndex];
+    if not m then
+        m = {};
+        pool[barIndex] = m;
     end
-
-    local bgPadX, bgPadY = GetBackgroundPadding(barSettings);
-
-    return {
-        contentW = contentW,
-        contentH = contentH,
-        windowW = contentW + (bgPadX * 2),
-        windowH = contentH + (bgPadY * 2),
-        bgPadX = bgPadX,
-        bgPadY = bgPadY,
-        buttonSize = buttonSize,
-        buttonGap = buttonGap,
-        rowGap = rowGap,
-        layout = layout,
-        slotPaddingX = padX,
-        slotPaddingY = padY,
-    };
+    local bgPadX, bgPadY = 0, 0;
+    if not inAnchoredStack then
+        bgPadX, bgPadY = GetBackgroundPadding(barSettings);
+    end
+    m.contentW = contentW;
+    m.contentH = contentH;
+    m.windowW = contentW + (bgPadX * 2);
+    m.windowH = contentH + (bgPadY * 2);
+    m.bgPadX = bgPadX;
+    m.bgPadY = bgPadY;
+    m.buttonSize = buttonSize;
+    m.buttonGap = buttonGap;
+    m.rowGap = rowGap;
+    m.layout = layout;
+    m.slotPaddingX = padX;
+    m.slotPaddingY = padY;
+    return m;
 end
 
 ComputeAnchoredLayout = function(stack)
@@ -373,18 +369,20 @@ ComputeAnchoredLayout = function(stack)
     return layout;
 end
 
+-- Reused.
+local windowBgOptions = {};
 local function BuildWindowBgOptions(settings)
-    return {
-        theme = settings.backgroundTheme or '-None-',
-        padding = 0,
-        paddingY = 0,
-        bgScale = settings.bgScale or 1.0,
-        borderScale = settings.borderScale or 1.0,
-        bgOpacity = settings.backgroundOpacity or 0.87,
-        borderOpacity = settings.borderOpacity or 1.0,
-        bgColor = settings.bgColor or 0xFFFFFFFF,
-        borderColor = settings.borderColor or 0xFFFFFFFF,
-    };
+    local o = windowBgOptions;
+    o.theme = settings.backgroundTheme or '-None-';
+    o.padding = 0;
+    o.paddingY = 0;
+    o.bgScale = settings.bgScale or 1.0;
+    o.borderScale = settings.borderScale or 1.0;
+    o.bgOpacity = settings.backgroundOpacity or 0.87;
+    o.borderOpacity = settings.borderOpacity or 1.0;
+    o.bgColor = settings.bgColor or 0xFFFFFFFF;
+    o.borderColor = settings.borderColor or 0xFFFFFFFF;
+    return o;
 end
 
 DrawWindowBackground = function(x, y, width, height, settings)
@@ -536,6 +534,7 @@ local function DrawSlot(barIndex, slotIndex, x, y, buttonSize, bind, barSettings
 end
 
 -- Draw a single hotbar window
+local drawContexts = {};
 local function DrawBarWindow(barIndex, settings, drawContext)
     drawContext = drawContext or {};
 
@@ -571,14 +570,14 @@ local function DrawBarWindow(barIndex, settings, drawContext)
     if useAnchoredPosition then
         if isAnchorBar and (anchorDragging or forcePositionReset) then
             local targetX, targetY = GetBarSavedPosition(barIndex, defaultX, defaultY);
-            imgui.SetNextWindowPos({targetX, targetY}, ImGuiCond_Always);
+            imgui.SetNextWindowPos(_P1(targetX, targetY), ImGuiCond_Always);
         else
-            imgui.SetNextWindowPos({drawContext.resolvedPosition.x, drawContext.resolvedPosition.y}, ImGuiCond_Always);
+            imgui.SetNextWindowPos(_P1(drawContext.resolvedPosition.x, drawContext.resolvedPosition.y), ImGuiCond_Always);
         end
     elseif hasSaved then
         ApplyWindowPosition(windowName);
     else
-        imgui.SetNextWindowPos({defaultX, defaultY}, ImGuiCond_FirstUseEver);
+        imgui.SetNextWindowPos(_P1(defaultX, defaultY), ImGuiCond_FirstUseEver);
     end
 
     -- Window flags (dummy window for positioning)
@@ -586,10 +585,10 @@ local function DrawBarWindow(barIndex, settings, drawContext)
 
     if not useAnchoredPosition and (anchorDragging or forcePositionReset) then
         local targetX, targetY = GetBarSavedPosition(barIndex, defaultX, defaultY);
-        imgui.SetNextWindowPos({targetX, targetY}, ImGuiCond_Always);
+        imgui.SetNextWindowPos(_P1(targetX, targetY), ImGuiCond_Always);
     end
 
-    imgui.SetNextWindowSize({barWidth, barHeight}, ImGuiCond_Always);
+    imgui.SetNextWindowSize(_P1(barWidth, barHeight), ImGuiCond_Always);
 
     local windowPosX, windowPosY;
 
@@ -600,7 +599,7 @@ local function DrawBarWindow(barIndex, settings, drawContext)
         windowPosX, windowPosY = imgui.GetWindowPos();
 
         -- Reserve space
-        imgui.Dummy({barWidth, barHeight});
+        imgui.Dummy(_P1(barWidth, barHeight));
 
         if not skipBackground then
             DrawBarBackground(windowPosX, windowPosY, metrics, barSettings);
@@ -687,8 +686,8 @@ local function DrawBarWindow(barIndex, settings, drawContext)
 
         local indicatorColor = {1.0, 0.8, 0.2, 1.0};
 
-        fgDrawList:AddCircleFilled({dotX, dotY}, dotRadius, imgui.GetColorU32(indicatorColor), 12);
-        fgDrawList:AddCircle({dotX, dotY}, dotRadius, imgui.GetColorU32({0.0, 0.0, 0.0, 1.0}), 12, 1.0);
+        fgDrawList:AddCircleFilled(_P1(dotX, dotY), dotRadius, imgui.GetColorU32(indicatorColor), 12);
+        fgDrawList:AddCircle(_P1(dotX, dotY), dotRadius, imgui.GetColorU32({0.0, 0.0, 0.0, 1.0}), 12, 1.0);
 
         local mouseX, mouseY = imgui.GetMousePos();
         local dx = mouseX - dotX;
@@ -766,15 +765,29 @@ function M.DrawWindow(settings)
     end
 
     for barIndex = 1, data.NUM_BARS do
-        local drawContext = {};
+        -- One context per bar.
+        local drawContext = drawContexts[barIndex];
+        if not drawContext then
+            drawContext = { resolvedPositionTable = {} };
+            drawContexts[barIndex] = drawContext;
+        end
         local anchoredEntry = anchoredLayout[barIndex];
 
         if anchoredEntry then
-            drawContext.resolvedPosition = { x = anchoredEntry.x, y = anchoredEntry.y };
+            local pos = drawContext.resolvedPositionTable;
+            pos.x = anchoredEntry.x;
+            pos.y = anchoredEntry.y;
+            drawContext.resolvedPosition = pos;
             drawContext.metrics = anchoredEntry.metrics;
             drawContext.skipBackground = true;
             drawContext.isAnchorBar = (barIndex == anchorBar);
             drawContext.savePosition = (barIndex == anchorBar);
+        else
+            drawContext.resolvedPosition = nil;
+            drawContext.metrics = nil;
+            drawContext.skipBackground = nil;
+            drawContext.isAnchorBar = nil;
+            drawContext.savePosition = nil;
         end
 
         DrawBarWindow(barIndex, settings, drawContext);

@@ -32,6 +32,11 @@
 
 require('common');
 local imgui = require('imgui');
+
+-- Reused draw arguments.
+local _p1, _p2, _UV0, _UV1 = {0, 0}, {0, 0}, {0, 0}, {1, 1};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
+local function _P2(x, y) _p2[1] = x; _p2[2] = y; return _p2; end
 local ffi = require('ffi');
 
 local M = {};
@@ -141,17 +146,38 @@ M.ARROW_COLORS_NEGATIVE = {
 -- ============================================
 
 -- Convert ARGB hex to ImGui U32
+local u32Cache, u32CacheCount = {}, 0;
 local function ARGBToU32(argb)
     if type(argb) == 'table' then
         -- Already a table {r, g, b, a}
         return imgui.GetColorU32(argb);
+    end
+    -- Cached per colour and style alpha.
+    local alpha = imgui.GetStyle().Alpha;
+    local byAlpha = u32Cache[argb];
+    if byAlpha == nil then
+        byAlpha = {};
+        u32Cache[argb] = byAlpha;
+    end
+    local u32 = byAlpha[alpha];
+    if u32 ~= nil then
+        return u32;
+    end
+    -- Bounded: fades produce many alpha values.
+    u32CacheCount = u32CacheCount + 1;
+    if u32CacheCount > 4096 then
+        u32Cache, u32CacheCount = {}, 0;
+        byAlpha = {};
+        u32Cache[argb] = byAlpha;
     end
     -- ARGB hex to ABGR (ImGui format)
     local a = bit.rshift(bit.band(argb, 0xFF000000), 24);
     local r = bit.rshift(bit.band(argb, 0x00FF0000), 16);
     local g = bit.rshift(bit.band(argb, 0x0000FF00), 8);
     local b = bit.band(argb, 0x000000FF);
-    return imgui.GetColorU32({r / 255, g / 255, b / 255, a / 255});
+    u32 = imgui.GetColorU32({r / 255, g / 255, b / 255, a / 255});
+    byAlpha[alpha] = u32;
+    return u32;
 end
 
 -- Get texture pointer as number for ImGui
@@ -199,7 +225,7 @@ function DrawImpl(id, x, y, width, height, options)
     local drawList = options.drawList or GetUIDrawList();
 
     -- Set cursor position for invisible button
-    imgui.SetCursorScreenPos({x, y});
+    imgui.SetCursorScreenPos(_P1(x, y));
 
     -- Create invisible button for interaction
     local clicked = false;
@@ -207,13 +233,13 @@ function DrawImpl(id, x, y, width, height, options)
     local held = false;
 
     if not disabled then
-        imgui.InvisibleButton(id, {width, height});
+        imgui.InvisibleButton(id, _P1(width, height));
         clicked = imgui.IsItemClicked();
         hovered = imgui.IsItemHovered();
         held = imgui.IsItemActive();
     else
         -- Still need to reserve space even when disabled
-        imgui.Dummy({width, height});
+        imgui.Dummy(_P1(width, height));
     end
 
     -- Determine current color based on state
@@ -235,11 +261,11 @@ function DrawImpl(id, x, y, width, height, options)
     local borderColorU32 = ARGBToU32(borderColor);
 
     -- Draw button background
-    drawList:AddRectFilled({x, y}, {x + width, y + height}, bgColorU32, rounding);
+    drawList:AddRectFilled(_P1(x, y), _P2(x + width, y + height), bgColorU32, rounding);
 
     -- Draw border if thickness > 0
     if borderThickness > 0 then
-        drawList:AddRect({x, y}, {x + width, y + height}, borderColorU32, rounding, nil, borderThickness);
+        drawList:AddRect(_P1(x, y), _P2(x + width, y + height), borderColorU32, rounding, nil, borderThickness);
     end
 
     -- Draw image if provided
@@ -259,9 +285,8 @@ function DrawImpl(id, x, y, width, height, options)
 
         drawList:AddImage(
             imagePtr,
-            {imgX, imgY},
-            {imgX + imageSize[1], imgY + imageSize[2]},
-            {0, 0}, {1, 1},
+            _P1(imgX, imgY), _P2(imgX + imageSize[1], imgY + imageSize[2]),
+            _UV0, _UV1,
             imageColorU32
         );
     end
@@ -303,7 +328,7 @@ function DrawArrowImpl(id, x, y, size, direction, options)
     local drawList = options.drawList or GetUIDrawList();
 
     -- Set cursor position for invisible button
-    imgui.SetCursorScreenPos({x, y});
+    imgui.SetCursorScreenPos(_P1(x, y));
 
     -- Create invisible button for interaction
     local clicked = false;
@@ -311,12 +336,12 @@ function DrawArrowImpl(id, x, y, size, direction, options)
     local held = false;
 
     if not disabled then
-        imgui.InvisibleButton(id, {size, size});
+        imgui.InvisibleButton(id, _P1(size, size));
         clicked = imgui.IsItemClicked();
         hovered = imgui.IsItemHovered();
         held = imgui.IsItemActive();
     else
-        imgui.Dummy({size, size});
+        imgui.Dummy(_P1(size, size));
     end
 
     -- Determine current color based on state
@@ -338,11 +363,11 @@ function DrawArrowImpl(id, x, y, size, direction, options)
     local borderColorU32 = ARGBToU32(borderColor);
 
     -- Draw button background
-    drawList:AddRectFilled({x, y}, {x + size, y + size}, bgColorU32, rounding);
+    drawList:AddRectFilled(_P1(x, y), _P2(x + size, y + size), bgColorU32, rounding);
 
     -- Draw border
     if borderThickness > 0 then
-        drawList:AddRect({x, y}, {x + size, y + size}, borderColorU32, rounding, nil, borderThickness);
+        drawList:AddRect(_P1(x, y), _P2(x + size, y + size), borderColorU32, rounding, nil, borderThickness);
     end
 
     -- Draw arrow triangle
@@ -411,19 +436,19 @@ function M.DrawMinimize(id, x, y, size, isMinimized, options, drawList)
     local iconColor = options.iconColor or iconColors.normal or 0xFFCCCCCC;
     local iconHoverColor = options.iconHoverColor or iconColors.hovered or 0xFFFFFFFF;
 
-    imgui.SetCursorScreenPos({x, y});
+    imgui.SetCursorScreenPos(_P1(x, y));
 
     local clicked = false;
     local hovered = false;
     local held = false;
 
     if not disabled then
-        imgui.InvisibleButton(id, {size, size});
+        imgui.InvisibleButton(id, _P1(size, size));
         clicked = imgui.IsItemClicked();
         hovered = imgui.IsItemHovered();
         held = imgui.IsItemActive();
     else
-        imgui.Dummy({size, size});
+        imgui.Dummy(_P1(size, size));
     end
 
     local bgColor;
@@ -440,7 +465,7 @@ function M.DrawMinimize(id, x, y, size, isMinimized, options, drawList)
     drawList = drawList or GetUIDrawList();
 
     -- Background
-    drawList:AddRectFilled({x, y}, {x + size, y + size}, ARGBToU32(bgColor));
+    drawList:AddRectFilled(_P1(x, y), _P2(x + size, y + size), ARGBToU32(bgColor));
 
     -- Icon on top
     local currentIconColor = (hovered or held) and iconHoverColor or iconColor;
@@ -455,8 +480,7 @@ function M.DrawMinimize(id, x, y, size, isMinimized, options, drawList)
         -- Maximize icon: small square (□)
         local halfSize = iconSize * 0.5;
         drawList:AddRect(
-            {centerX - halfSize, centerY - halfSize},
-            {centerX + halfSize, centerY + halfSize},
+            _P1(centerX - halfSize, centerY - halfSize), _P2(centerX + halfSize, centerY + halfSize),
             iconColorU32, 0, nil, lineThickness
         );
     else
@@ -464,8 +488,7 @@ function M.DrawMinimize(id, x, y, size, isMinimized, options, drawList)
         local halfWidth = iconSize * 0.6;
         local lineY = centerY + iconSize * 0.3;
         drawList:AddLine(
-            {centerX - halfWidth, lineY},
-            {centerX + halfWidth, lineY},
+            _P1(centerX - halfWidth, lineY), _P2(centerX + halfWidth, lineY),
             iconColorU32, lineThickness
         );
     end

@@ -7,6 +7,11 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
+
+-- Reused draw arguments.
+local _p1, _p2, _UV0, _UV1 = {0, 0}, {0, 0}, {0, 0}, {1, 1};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
+local function _P2(x, y) _p2[1] = x; _p2[2] = y; return _p2; end
 local ffi = require('ffi');
 local windowBg = require('libs.windowbackground');
 -- Note: windowBg is now an immediate-mode renderer; call windowBg.Draw() per frame.
@@ -846,9 +851,8 @@ local function DrawDiamondCenterIconsImGui(diamondType, groupX, groupY, settings
                 local tintColor = bit.bor(bit.lshift(alpha, 24), 0x00FFFFFF);
                 drawList:AddImage(
                     iconPtr,
-                    {iconX, iconY},
-                    {iconX + iconSize, iconY + iconSize},
-                    {0, 0}, {1, 1},
+                    _P1(iconX, iconY), _P2(iconX + iconSize, iconY + iconSize),
+                    _UV0, _UV1,
                     tintColor
                 );
             end
@@ -896,9 +900,8 @@ local function DrawTriggerIcons(activeCombo, l2GroupX, r2GroupX, groupY, groupWi
             local tintColor = l2Active and 0xFFFFFFFF or 0x88FFFFFF;
             drawList:AddImage(
                 iconPtr,
-                {l2IconX, l2IconY},
-                {l2IconX + l2Width, l2IconY + l2Height},
-                {0, 0}, {1, 1},
+                _P1(l2IconX, l2IconY), _P2(l2IconX + l2Width, l2IconY + l2Height),
+                _UV0, _UV1,
                 tintColor
             );
         end
@@ -916,9 +919,8 @@ local function DrawTriggerIcons(activeCombo, l2GroupX, r2GroupX, groupY, groupWi
             local tintColor = r2Active and 0xFFFFFFFF or 0x88FFFFFF;
             drawList:AddImage(
                 iconPtr,
-                {r2IconX, r2IconY},
-                {r2IconX + r2Width, r2IconY + r2Height},
-                {0, 0}, {1, 1},
+                _P1(r2IconX, r2IconY), _P2(r2IconX + r2Width, r2IconY + r2Height),
+                _UV0, _UV1,
                 tintColor
             );
         end
@@ -969,7 +971,7 @@ local function DrawComboText(activeCombo, centerX, topY, settings)
     if drawList then
         -- Yellow warning color in edit mode, white otherwise
         local fontColor = settings.editMode and 0xFFFFFF00 or 0xFFFFFFFF;
-        local textW = imtext.Measure(comboText, fontSize);
+        local textW = imtext.MeasureCached(comboText, fontSize);
         local drawX = centerX + offsetX - (textW / 2);
         local drawY = topY + offsetY;
         imtext.Draw(drawList, comboText, drawX, drawY, fontColor, fontSize);
@@ -996,7 +998,7 @@ local function DrawPaletteName(centerX, bottomY, settings)
 
     local drawList = GetUIDrawList();
     if drawList then
-        local textW = imtext.Measure(displayText, fontSize);
+        local textW = imtext.MeasureCached(displayText, fontSize);
         local drawX = centerX + offsetX - (textW / 2);
         local drawY = bottomY + offsetY;
         imtext.Draw(drawList, displayText, drawX, drawY, 0xFFFFFFFF, fontSize);
@@ -1072,7 +1074,7 @@ local function DrawBarSet(leftMode, rightMode, leftGroupX, leftGroupY, rightGrou
 end
 
 -- Main draw function
-function M.DrawWindow(settings, moduleSettings)
+local function DrawWindowInner(settings, moduleSettings)
     if not state.initialized then return; end
 
     local gs = (gConfig and gConfig.globalScale) or 1.0;
@@ -1376,8 +1378,7 @@ function M.DrawWindow(settings, moduleSettings)
         local dividerY2 = state.windowY + height - 10;
 
         drawList:AddLine(
-            { dividerX, dividerY1 },
-            { dividerX, dividerY2 },
+            _P1(dividerX, dividerY1), _P2(dividerX, dividerY2),
             imgui.GetColorU32({ 1, 1, 1, 0.3 }),
             2
         );
@@ -1419,13 +1420,22 @@ function M.DrawWindow(settings, moduleSettings)
             if iconPtr then
                 fgDrawList:AddImage(
                     iconPtr,
-                    {iconX, iconY},
-                    {iconX + iconSize, iconY + iconSize},
-                    {0, 0}, {1, 1},
+                    _P1(iconX, iconY), _P2(iconX + iconSize, iconY + iconSize),
+                    _UV0, _UV1,
                     iconColor
                 );
             end
         end
+    end
+end
+
+
+function M.DrawWindow(settings, moduleSettings)
+    data.BeginCrossbarKeyMemo();
+    local ok, err = pcall(DrawWindowInner, settings, moduleSettings);
+    data.EndCrossbarKeyMemo();
+    if not ok then
+        error(err, 0);
     end
 end
 

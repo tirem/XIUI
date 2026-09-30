@@ -8,6 +8,11 @@
 
 require('common');
 local ffi = require('ffi');
+
+-- Reused draw arguments.
+local _p1, _p2, _UV0, _UV1 = {0, 0}, {0, 0}, {0, 0}, {1, 1};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
+local function _P2(x, y) _p2[1] = x; _p2[2] = y; return _p2; end
 local imgui = require('imgui');
 local recast = require('modules.hotbar.recast');
 local actions = require('modules.hotbar.actions');
@@ -66,12 +71,12 @@ end
 -- Truncate text to fit maxWidth (no ellipsis).
 local function TruncateLabelToWidth(text, fontSize, maxWidth)
     if not text or text == '' then return ''; end
-    local w = imtext.Measure(text, fontSize);
+    local w = imtext.MeasureCached(text, fontSize);
     if w <= maxWidth then return text; end
     local lo, hi = 0, #text;
     while lo < hi do
         local mid = math.floor((lo + hi + 1) / 2);
-        if imtext.Measure(text:sub(1, mid), fontSize) <= maxWidth then
+        if imtext.MeasureCached(text:sub(1, mid), fontSize) <= maxWidth then
             lo = mid;
         else
             hi = mid - 1;
@@ -96,13 +101,13 @@ local function WrapActionLabel(text, fontSize, maxWidth)
     for _, word in ipairs(words) do
         if #lines >= 2 then break; end
         local candidate = (current == '') and word or (current .. ' ' .. word);
-        if imtext.Measure(candidate, fontSize) <= maxWidth then
+        if imtext.MeasureCached(candidate, fontSize) <= maxWidth then
             current = candidate;
         elseif current ~= '' then
             lines[#lines + 1] = current;
             current = '';
             if #lines >= 2 then break; end
-            if imtext.Measure(word, fontSize) <= maxWidth then
+            if imtext.MeasureCached(word, fontSize) <= maxWidth then
                 current = word;
             else
                 local truncated = TruncateLabelToWidth(word, fontSize, maxWidth);
@@ -143,12 +148,12 @@ local function GetLabelLayout(text, fontSize, maxWidth, wordWrap)
     local lines = {};
     if wordWrap then
         for _, line in ipairs(WrapActionLabel(text, fontSize, maxWidth)) do
-            lines[#lines + 1] = { text = line, width = imtext.Measure(line, fontSize) };
+            lines[#lines + 1] = { text = line, width = imtext.MeasureCached(line, fontSize) };
         end
     else
         local truncated = TruncateLabelToWidth(text, fontSize, maxWidth);
         if truncated ~= '' then
-            lines[1] = { text = truncated, width = imtext.Measure(truncated, fontSize) };
+            lines[1] = { text = truncated, width = imtext.MeasureCached(truncated, fontSize) };
         end
     end
 
@@ -264,7 +269,7 @@ end
 -- Caller must have already configured imtext (font_settings) for this frame.
 function M.ComputeAbbreviation(bind)
     local abbr = GetActionAbbreviation(bind);
-    local w = imtext.Measure(abbr, 12);
+    local w = imtext.MeasureCached(abbr, 12);
     return abbr, w;
 end
 
@@ -707,7 +712,7 @@ local function DrawDashedLine(drawList, x1, y1, x2, y2, color, thickness, dashLe
             local sy = y1 + ny * dashStart;
             local ex = x1 + nx * dashEnd;
             local ey = y1 + ny * dashEnd;
-            drawList:AddLine({sx, sy}, {ex, ey}, color, thickness);
+            drawList:AddLine(_P1(sx, sy), _P2(ex, ey), color, thickness);
         end
 
         pos = pos + totalLen;
@@ -766,13 +771,15 @@ local function DrawSkillchainHighlight(drawList, x, y, size, scName, color, opac
         local iconTint = bit.bor(bit.lshift(iconAlpha, 24), 0x00FFFFFF);
         drawList:AddImage(
             iconPtr,
-            {iconX, iconY},
-            {iconX + iconSize, iconY + iconSize},
-            {0, 0}, {1, 1},
+            _P1(iconX, iconY), _P2(iconX + iconSize, iconY + iconSize),
+            _UV0, _UV1,
             iconTint
         );
     end
 end
+
+local dropZoneOptions = {};
+local DEFAULT_DROP_ACCEPTS = {'macro'};
 
 -- Helper: determine if movement/drag-drop is locked for this slot
 -- Shift key overrides the lock to allow dragging while locked
@@ -987,7 +994,7 @@ function M.DrawSlot(params)
         local abbrW = params.cachedAbbrW;
         if not abbr then
             abbr = GetActionAbbreviation(bind);
-            abbrW = imtext.Measure(abbr, 12);
+            abbrW = imtext.MeasureCached(abbr, 12);
         end
 
         local colorMult = select(1, GetSlotColorMult(isUnavailable, isOnCooldown, notEnoughCost));
@@ -1019,7 +1026,7 @@ function M.DrawSlot(params)
             local cb = bit.band(timerColor, 0x000000FF);
             timerColor = bit.bor(bit.lshift(alpha, 24), bit.lshift(cr, 16), bit.lshift(cg, 8), cb);
         end
-        local timerW = imtext.Measure(recastText, timerFontSize);
+        local timerW = imtext.MeasureCached(recastText, timerFontSize);
         local timerX = x + (size - timerW) / 2;
         local timerY = y + size / 2 - 6;
         imtext.DrawShadow(drawList, recastText, timerX, timerY, timerColor, timerFontSize);
@@ -1034,7 +1041,7 @@ function M.DrawSlot(params)
         local kbAnchor = params.keybindAnchor or 'topLeft';
         local kbX, kbY = GetAnchoredPosition(x, y, size, kbAnchor, params.keybindOffsetX, params.keybindOffsetY);
         if kbAnchor == 'topRight' or kbAnchor == 'bottomRight' then
-            local kbW = imtext.Measure(params.keybindText, kbFontSize);
+            local kbW = imtext.MeasureCached(params.keybindText, kbFontSize);
             kbX = kbX - kbW;
         end
         imtext.Draw(drawList, params.keybindText, kbX, kbY, kbColor, kbFontSize);
@@ -1091,7 +1098,7 @@ function M.DrawSlot(params)
                 local xText = "X";
                 local xColor = 0xFFFF4444;
                 if mpAnchor == 'topRight' or mpAnchor == 'bottomRight' then
-                    local w = imtext.Measure(xText, mpFontSize);
+                    local w = imtext.MeasureCached(xText, mpFontSize);
                     mpX = mpX - w;
                 end
                 imtext.Draw(drawList, xText, mpX, mpY, xColor, mpFontSize);
@@ -1101,7 +1108,7 @@ function M.DrawSlot(params)
                     mpCostColor = params.mpCostNoMpColor or 0xFFFF4444;
                 end
                 if mpAnchor == 'topRight' or mpAnchor == 'bottomRight' then
-                    local w = imtext.Measure(costLabel, mpFontSize);
+                    local w = imtext.MeasureCached(costLabel, mpFontSize);
                     mpX = mpX - w;
                 end
                 imtext.Draw(drawList, costLabel, mpX, mpY, mpCostColor, mpFontSize);
@@ -1151,7 +1158,7 @@ function M.DrawSlot(params)
             local isRight = (qtyAnchor == 'topRight' or qtyAnchor == 'bottomRight');
             local isTop = (qtyAnchor == 'topLeft' or qtyAnchor == 'topRight');
             local qtyX, qtyY = GetAnchoredPosition(x, y, size, qtyAnchor, params.quantityOffsetX, params.quantityOffsetY);
-            local qtyW = imtext.Measure(qtyText, qtyFontSize);
+            local qtyW = imtext.MeasureCached(qtyText, qtyFontSize);
             if isRight then qtyX = qtyX - qtyW; end
             imtext.Draw(drawList, qtyText, qtyX, qtyY, qtyColor, qtyFontSize);
 
@@ -1172,7 +1179,7 @@ function M.DrawSlot(params)
                         local stackText = '(' .. stacks .. ')';
                         local stackY = isTop and (qtyY + qtyFontSize + 1) or (qtyY - qtyFontSize - 1);
                         local stackX = isRight
-                            and (qtyX + qtyW - imtext.Measure(stackText, qtyFontSize))
+                            and (qtyX + qtyW - imtext.MeasureCached(stackText, qtyFontSize))
                             or qtyX;
                         imtext.Draw(drawList, stackText, stackX, stackY, qtyColor, qtyFontSize);
                     end
@@ -1226,14 +1233,14 @@ function M.DrawSlot(params)
                 pressedTintColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.25 * animOpacity});
                 pressedBorderColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.5 * animOpacity});
             end
-            drawList:AddRectFilled({x, y}, {x + size, y + size}, pressedTintColor, 4);
-            drawList:AddRect({x, y}, {x + size, y + size}, pressedBorderColor, 4, 0, 2);
+            drawList:AddRectFilled(_P1(x, y), _P2(x + size, y + size), pressedTintColor, 4);
+            drawList:AddRect(_P1(x, y), _P2(x + size, y + size), pressedBorderColor, 4, 0, 2);
         -- Hover effect (mouse)
         elseif isHovered and not dragdrop.IsDragging() then
             local hoverTintColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.15 * animOpacity});
             local hoverBorderColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.10 * animOpacity});
-            drawList:AddRectFilled({x, y}, {x + size, y + size}, hoverTintColor, 2);
-            drawList:AddRect({x, y}, {x + size, y + size}, hoverBorderColor, 2, 0, 1);
+            drawList:AddRectFilled(_P1(x, y), _P2(x + size, y + size), hoverTintColor, 2);
+            drawList:AddRect(_P1(x, y), _P2(x + size, y + size), hoverBorderColor, 2, 0, 1);
         end
 
         -- Skillchain highlight (animated dotted border + icon)
@@ -1247,19 +1254,24 @@ function M.DrawSlot(params)
     -- 14. Drop Zone Registration
     -- ========================================
     if params.dropZoneId and params.onDrop and not IsMovementLockedForDropZone(params.dropZoneId) then
-        dragdrop.DropZone(params.dropZoneId, x, y, size, size, {
-            accepts = params.dropAccepts or {'macro'},
-            highlightColor = params.dropHighlightColor or 0xA8FFFFFF,
-            onDrop = params.onDrop,
-        });
+        -- One options table per drop zone, refreshed in place.
+        local opts = dropZoneOptions[params.dropZoneId];
+        if not opts then
+            opts = {};
+            dropZoneOptions[params.dropZoneId] = opts;
+        end
+        opts.accepts = params.dropAccepts or DEFAULT_DROP_ACCEPTS;
+        opts.highlightColor = params.dropHighlightColor or 0xA8FFFFFF;
+        opts.onDrop = params.onDrop;
+        dragdrop.DropZone(params.dropZoneId, x, y, size, size, opts);
     end
 
     -- ========================================
     -- 15. Interaction Button
     -- ========================================
     if params.buttonId then
-        imgui.SetCursorScreenPos({x, y});
-        imgui.InvisibleButton(params.buttonId, {size, size});
+        imgui.SetCursorScreenPos(_P1(x, y));
+        imgui.InvisibleButton(params.buttonId, _P2(size, size));
 
         local isItemHovered = imgui.IsItemHovered();
         local isItemActive = imgui.IsItemActive();
@@ -1335,7 +1347,7 @@ local function WrapTooltipLine(text, maxWidth)
         return { { '', 0 } };
     end
 
-    if imtext.Measure(text, TOOLTIP_FONT_SIZE) <= maxWidth then
+    if imtext.MeasureCached(text, TOOLTIP_FONT_SIZE) <= maxWidth then
         return { { text, 0 } };
     end
 
@@ -1349,7 +1361,7 @@ local function WrapTooltipLine(text, maxWidth)
 
     for word in text:gmatch('%S+') do
         local candidate = line == '' and word or (line .. ' ' .. word);
-        if imtext.Measure(candidate, TOOLTIP_FONT_SIZE) <= currentMaxWidth() then
+        if imtext.MeasureCached(candidate, TOOLTIP_FONT_SIZE) <= currentMaxWidth() then
             line = candidate;
         else
             if line ~= '' then
@@ -1357,9 +1369,9 @@ local function WrapTooltipLine(text, maxWidth)
             end
             line = word;
 
-            while imtext.Measure(line, TOOLTIP_FONT_SIZE) > currentMaxWidth() and #line > 1 do
+            while imtext.MeasureCached(line, TOOLTIP_FONT_SIZE) > currentMaxWidth() and #line > 1 do
                 local cut = #line;
-                while cut > 1 and imtext.Measure(line:sub(1, cut), TOOLTIP_FONT_SIZE) > currentMaxWidth() do
+                while cut > 1 and imtext.MeasureCached(line:sub(1, cut), TOOLTIP_FONT_SIZE) > currentMaxWidth() do
                     cut = cut - 1;
                 end
                 wrapped[#wrapped + 1] = { line:sub(1, cut), #wrapped == 0 and 0 or TOOLTIP_WRAP_INDENT };
@@ -1457,11 +1469,11 @@ function M.DrawTooltip(bind)
     end
 
     local padX, padY = 8, 6;
-    local _, sampleH = imtext.Measure("Ag", TOOLTIP_FONT_SIZE);
+    local _, sampleH = imtext.MeasureCached("Ag", TOOLTIP_FONT_SIZE);
     local lineH = sampleH + 2;
     local maxW = 0;
     for _, line in ipairs(lines) do
-        local w = imtext.Measure(line[1], TOOLTIP_FONT_SIZE) + (line[3] or 0);
+        local w = imtext.MeasureCached(line[1], TOOLTIP_FONT_SIZE) + (line[3] or 0);
         if w > maxW then maxW = w; end
     end
     maxW = math.min(maxW, maxTextWidth);
@@ -1475,8 +1487,8 @@ function M.DrawTooltip(bind)
     tx, ty = ClampTooltipPosition(tx, ty, tooltipW, tooltipH, mx, my);
 
     local fgList = imgui.GetForegroundDrawList();
-    fgList:AddRectFilled({tx, ty}, {tx + tooltipW, ty + tooltipH}, TOOLTIP_COL_BG, 4);
-    fgList:AddRect({tx, ty}, {tx + tooltipW, ty + tooltipH}, TOOLTIP_COL_BORDER, 4, 0, 1);
+    fgList:AddRectFilled(_P1(tx, ty), _P2(tx + tooltipW, ty + tooltipH), TOOLTIP_COL_BG, 4);
+    fgList:AddRect(_P1(tx, ty), _P2(tx + tooltipW, ty + tooltipH), TOOLTIP_COL_BORDER, 4, 0, 1);
 
     local textY = ty + padY;
     for _, line in ipairs(lines) do
@@ -1545,7 +1557,7 @@ function M.FlushTooltip()
             end
 
             local abbr = GetActionAbbreviation(payload.data);
-            local abbrW = imtext.Measure(abbr, 12);
+            local abbrW = imtext.MeasureCached(abbr, 12);
             local abbrX = tileX + (DRAG_ABBR_TILE_SIZE - abbrW) / 2;
             local abbrY = tileY + DRAG_ABBR_TILE_SIZE / 2 - 6;
             -- Gold matches the in-slot abbreviation color (R=244, G=218, B=151)

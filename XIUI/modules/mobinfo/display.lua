@@ -747,52 +747,76 @@ mobinfo.DrawWindow = function(settings)
     end
 end
 
-    -- Load detection icons (HQ for NMs, NQ for normal mobs)
+-- Icon files per group; loaded on first draw.
+local TEXTURE_FILES = {
+    detection = {
+        aggroHQ = 'AggroHQ',
+        aggroNQ = 'AggroNQ',
+        passiveHQ = 'PassiveHQ',
+        passiveNQ = 'PassiveNQ',
+        link = 'Link',
+        sight = 'Sight',
+        truesight = 'TrueSight',
+        sound = 'Sound',
+        scent = 'Scent',
+        magic = 'Magic',
+        ja = 'JA',
+        blood = 'Blood',
+    },
+    elements = {
+        fire = 'Fire',
+        ice = 'Ice',
+        wind = 'Wind',
+        earth = 'Earth',
+        lightning = 'Lightning',
+        water = 'Water',
+        light = 'Light',
+        dark = 'Dark',
+    },
+    physical = {
+        slashing = 'Slashing',
+        piercing = 'Piercing',
+        h2h = 'H2H',
+        impact = 'Impact',
+    },
+    immunities = {
+        sleep = 'ImmuneSleep',
+        gravity = 'ImmuneGravity',
+        bind = 'ImmuneBind',
+        stun = 'ImmuneStun',
+        silence = 'ImmuneSilence',
+        paralyze = 'ImmuneParalyze',
+        blind = 'ImmuneBlind',
+        slow = 'ImmuneSlow',
+        poison = 'ImmunePoison',
+        elegy = 'ImmuneElegy',
+        requiem = 'ImmuneRequiem',
+        petrify = 'ImmunePetrify',
+        darksleep = 'ImmuneDarkSleep',
+        lightsleep = 'ImmuneLightSleep',
+    },
+};
+
+local function LazyTextureTable(files)
+    local tried = {};
+    return setmetatable({}, { __index = function(t, key)
+        local file = files[key];
+        if file == nil or tried[key] then
+            return nil;
+        end
+        tried[key] = true;
+        local texture = LoadMobInfoTexture(file);
+        if texture ~= nil then
+            rawset(t, key, texture);
+        end
+        return texture;
+    end });
+end
+
 mobinfo.Initialize = function(settings)
-    textures.detection.aggroHQ = LoadMobInfoTexture('AggroHQ');
-    textures.detection.aggroNQ = LoadMobInfoTexture('AggroNQ');
-    textures.detection.passiveHQ = LoadMobInfoTexture('PassiveHQ');
-    textures.detection.passiveNQ = LoadMobInfoTexture('PassiveNQ');
-    textures.detection.link = LoadMobInfoTexture('Link');
-    textures.detection.sight = LoadMobInfoTexture('Sight');
-    textures.detection.truesight = LoadMobInfoTexture('TrueSight');
-    textures.detection.sound = LoadMobInfoTexture('Sound');
-    textures.detection.scent = LoadMobInfoTexture('Scent');
-    textures.detection.magic = LoadMobInfoTexture('Magic');
-    textures.detection.ja = LoadMobInfoTexture('JA');
-    textures.detection.blood = LoadMobInfoTexture('Blood');
-    -- Load element icons
-
-    textures.elements.fire = LoadMobInfoTexture('Fire');
-    textures.elements.ice = LoadMobInfoTexture('Ice');
-    textures.elements.wind = LoadMobInfoTexture('Wind');
-    textures.elements.earth = LoadMobInfoTexture('Earth');
-    textures.elements.lightning = LoadMobInfoTexture('Lightning');
-    textures.elements.water = LoadMobInfoTexture('Water');
-    textures.elements.light = LoadMobInfoTexture('Light');
-    textures.elements.dark = LoadMobInfoTexture('Dark');
-    -- Load physical damage type icons
-
-    textures.physical.slashing = LoadMobInfoTexture('Slashing');
-    textures.physical.piercing = LoadMobInfoTexture('Piercing');
-    textures.physical.h2h = LoadMobInfoTexture('H2H');
-    textures.physical.impact = LoadMobInfoTexture('Impact');
-    -- Load immunity icons
-
-    textures.immunities.sleep = LoadMobInfoTexture('ImmuneSleep');
-    textures.immunities.gravity = LoadMobInfoTexture('ImmuneGravity');
-    textures.immunities.bind = LoadMobInfoTexture('ImmuneBind');
-    textures.immunities.stun = LoadMobInfoTexture('ImmuneStun');
-    textures.immunities.silence = LoadMobInfoTexture('ImmuneSilence');
-    textures.immunities.paralyze = LoadMobInfoTexture('ImmuneParalyze');
-    textures.immunities.blind = LoadMobInfoTexture('ImmuneBlind');
-    textures.immunities.slow = LoadMobInfoTexture('ImmuneSlow');
-    textures.immunities.poison = LoadMobInfoTexture('ImmunePoison');
-    textures.immunities.elegy = LoadMobInfoTexture('ImmuneElegy');
-    textures.immunities.requiem = LoadMobInfoTexture('ImmuneRequiem');
-    textures.immunities.petrify = LoadMobInfoTexture('ImmunePetrify');
-    textures.immunities.darksleep = LoadMobInfoTexture('ImmuneDarkSleep');
-    textures.immunities.lightsleep = LoadMobInfoTexture('ImmuneLightSleep');
+    for group, files in pairs(TEXTURE_FILES) do
+        textures[group] = LazyTextureTable(files);
+    end
 end
 
 mobinfo.UpdateVisuals = function(settings)
