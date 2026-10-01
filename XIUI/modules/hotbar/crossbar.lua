@@ -29,6 +29,7 @@ local animation = require('libs.animation');
 local skillchain = require('modules.hotbar.skillchain');
 local targetLib = require('libs.target');
 local palette = require('modules.hotbar.palette');
+local buttonnames = require('modules.hotbar.buttonnames');
 
 local M = {};
 
@@ -889,7 +890,7 @@ local function DrawTriggerIcons(activeCombo, l2GroupX, r2GroupX, groupY, groupWi
     end
 
     -- Draw L2 icon with press scale
-    local l2Texture = textures:GetControllerIcon('L2');
+    local l2Texture = textures:GetControllerIcon(buttonnames.GetIconName('L2'));
     if l2Texture and l2Texture.image then
         local iconPtr = tonumber(ffi.cast("uint32_t", l2Texture.image));
         if iconPtr then
@@ -908,7 +909,7 @@ local function DrawTriggerIcons(activeCombo, l2GroupX, r2GroupX, groupY, groupWi
     end
 
     -- Draw R2 icon with press scale
-    local r2Texture = textures:GetControllerIcon('R2');
+    local r2Texture = textures:GetControllerIcon(buttonnames.GetIconName('R2'));
     if r2Texture and r2Texture.image then
         local iconPtr = tonumber(ffi.cast("uint32_t", r2Texture.image));
         if iconPtr then
@@ -952,6 +953,8 @@ local function DrawComboText(activeCombo, centerX, topY, settings)
     elseif activeCombo == COMBO_MODES.R2 then
         comboText = 'R2';
     end
+
+    comboText = buttonnames.Format(comboText);
 
     -- In edit mode, always show with warning indicator
     if settings.editMode then
@@ -1403,7 +1406,7 @@ local function DrawWindowInner(settings, moduleSettings)
     end
 
     -- Draw palette modifier indicator (refresh icon when modifier key is held)
-    if state.windowX and actions.IsPaletteModifierHeld() then
+    if state.windowX and (actions.IsPaletteModifierHeld() or controller.IsPaletteCycleShoulderHeld()) then
         local refreshTexture = textures:Get('ui_refresh');
         if refreshTexture and refreshTexture.image then
             local iconSize = 18;

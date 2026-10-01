@@ -881,12 +881,34 @@ local function SaveCharacterSettingsIfChanged()
     charSettingsSaved = { owner = config, copy = CopyPlain(config) };
 end
 
+-- Window positions as last written to the profile file.
+local savedWindowPositions = nil;
+local wasMouseDown = false;
+
+local function SaveProfileFile()
+    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    savedWindowPositions = CopyPlain(gConfig.windowPositions);
+end
+
+-- Modules update gConfig.windowPositions in memory while dragging. Write the
+-- profile once when the mouse is released, only if a position actually changed.
+local function FlushWindowPositionsOnRelease()
+    local imgui = require('imgui');
+    local mouseDown = imgui.IsMouseDown(0) or imgui.IsMouseDown(1);
+    local released = wasMouseDown and not mouseDown;
+    wasMouseDown = mouseDown;
+    if not released or SameData(savedWindowPositions, gConfig.windowPositions) then
+        return;
+    end
+    SaveProfileFile();
+end
+
 function SaveSettingsToDisk()
     if gConfig.colorCustomization == nil then
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
-    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    SaveProfileFile();
     SaveCharacterSettingsIfChanged();
 end
 
@@ -895,7 +917,7 @@ function SaveSettingsOnly()
         gConfig.colorCustomization = deep_copy_table(defaultUserSettings.colorCustomization);
     end
     gConfigVersion = gConfigVersion + 1; -- Notify caches of settings change
-    profileManager.SaveProfileSettings(config.currentProfile, gConfig);
+    SaveProfileFile();
     SaveCharacterSettingsIfChanged();
     UpdateUserSettings();
 end
@@ -1188,7 +1210,7 @@ ashita.events.register('d3d_present', 'present_cb', function ()
             uiModules.UpdateVisualsAll(gAdjustedSettings);
         end
 
-        local eventSystemActive = gameState.GetEventSystemActive();
+        local eventSystemActive = gameState.GetEventSystemActive() and not gameState.IsGatheringPointTargeted();
         local menuOpen = gameState.IsMenuOpen();
 
         if not gameState.ShouldHideUI(gConfig.hideDuringEvents, bLoggedIn) then
@@ -1240,6 +1262,8 @@ ashita.events.register('d3d_present', 'present_cb', function ()
             uiModules.HideAll();
         end
 
+        FlushWindowPositionsOnRelease();
+
         -- XIUI DEV ONLY
         if _XIUI_DEV_HOT_RELOADING_ENABLED then
             local currentTime = os.time();
@@ -1260,6 +1284,7 @@ end);
 
 ashita.events.register('load', 'load_cb', function ()
     SeedCharacterSettingsSnapshot();  -- config as settings.load() read it
+    savedWindowPositions = CopyPlain(gConfig.windowPositions);
     profileManager.SyncProfilesWithDisk();
     gConfig.appliedPositions = {};
     UpdateUserSettings();
@@ -1884,6 +1909,10 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
     expBar.HandlePacket(e)
     debuffHandler.HandleIncomingPacket(e);
 
+    if e.id == 0x032 or e.id == 0x034 then
+        gameState.HandleEventPacket(e);
+    end
+
     -- Pet bar packet handling (0x0028 Action, 0x0068 Pet Sync)
     if gConfig.showPetBar then
         petBar.HandlePacket(e);
@@ -2116,6 +2145,15 @@ ashita.events.register('key', 'key_cb', function (event)
         satchelModule.HandleKey(event);
     end
     hotbar.HandleKey(event);
+end);
+
+-- Game menus and the party list read DirectInput keyboard state, not the WNDPROC key event.
+ashita.events.register('key_data', 'key_data_cb', function (e)
+    hotbar.HandleKeyData(e);
+end);
+
+ashita.events.register('key_state', 'key_state_cb', function (e)
+    hotbar.HandleKeyState(e);
 end);
 
 -- ============================================

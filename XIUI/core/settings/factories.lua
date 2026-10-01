@@ -287,7 +287,9 @@ function M.createHotbarGlobalDefaults()
         paletteCycleEnabled = true,       -- Enable keyboard palette cycling
         paletteCyclePrevKey = 38,         -- VK_UP (Up Arrow)
         paletteCycleNextKey = 40,         -- VK_DOWN (Down Arrow)
-        paletteCycleModifier = 'ctrl',    -- 'ctrl', 'alt', 'shift', or 'none'
+        -- Each listed modifier is its own shortcut, not a chord: 'ctrl', 'alt', 'shift',
+        -- 'ctrl/alt', 'ctrl/shift', 'alt/shift', 'ctrl/alt/shift'
+        paletteCycleModifier = 'ctrl',
 
         -- Palette cycling controller (RB + Dpad)
         paletteCycleControllerEnabled = true,  -- Enable controller palette cycling
@@ -531,6 +533,7 @@ function M.createCrossbarDefaults()
         buttonIconPosition = 'corner',      -- 'corner' or 'replace_keybind'
         controllerTheme = 'Xbox',           -- 'PlayStation', 'Xbox', or 'Nintendo' button icons
         controllerScheme = 'xbox',          -- Controller profile: 'xbox', 'dualsense', 'switchpro', 'dinput'
+        swapShoulderTriggers = false,       -- L1/R1 open the crossbar and L2/R2 cycle palettes
         triggerIconScale = 0.8,             -- Scale for L2/R2 trigger icons (base 49x28)
 
         -- Font settings

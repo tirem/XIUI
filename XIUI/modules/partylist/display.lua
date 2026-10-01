@@ -1405,6 +1405,15 @@ function display.DrawWindow(settings)
         return;
     end
 
+    -- Stay visible while config is open so the list can still be positioned and styled.
+    if gConfig.partyListOnlyWhenEngaged and not showConfig[1] then
+        local playerEnt = GetPlayerEntity();
+        if playerEnt == nil or playerEnt.Status ~= 1 then -- 1 = engaged
+            data.UpdateTextVisibility(false);
+            return;
+        end
+    end
+
     -- Cache target info
     if data.frameCache.playerTarget ~= nil then
         data.frameCache.mainTargetIndex, data.frameCache.secondaryTargetIndex = GetTargets();

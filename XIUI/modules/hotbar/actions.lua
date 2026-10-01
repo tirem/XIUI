@@ -178,26 +178,127 @@ function M.ResetModifierStates()
     -- Not needed - we query actual state directly
 end
 
---- Check if the palette cycling modifier key is currently held
---- Returns: true if the configured palette modifier is active
+-- DirectInput scan codes for the default arrow palette keys (VK 37-40).
+local VK_TO_DIK = {
+    [37] = 203, -- Left
+    [38] = 200, -- Up
+    [39] = 205, -- Right
+    [40] = 208, -- Down
+};
+
+local lastPaletteCycleAt = 0;
+
+--- True when exactly one modifier is down and the configured option includes it.
+--- 'ctrl/alt' means Ctrl+Up/Down and Alt+Up/Down both cycle; Ctrl+Alt+Up/Down does not.
+function M.PaletteModifierMatches(ctrl, alt, shift)
+    local gs = gConfig and gConfig.hotbarGlobal;
+    if not gs or gs.paletteCycleEnabled == false then return false; end
+    local held = (ctrl and 1 or 0) + (alt and 1 or 0) + (shift and 1 or 0);
+    if held ~= 1 then
+        return false;
+    end
+    local modifier = gs.paletteCycleModifier or 'ctrl';
+    local name = ctrl and 'ctrl' or (alt and 'alt' or 'shift');
+    for part in modifier:gmatch('[^/]+') do
+        if part == name then
+            return true;
+        end
+    end
+    return false;
+end
+
+--- Check if a keyboard palette-cycle shortcut is currently held
 function M.IsPaletteModifierHeld()
     local globalSettings = gConfig and gConfig.hotbarGlobal;
-    if not globalSettings or not globalSettings.paletteCycleEnabled then
+    if not globalSettings or globalSettings.paletteCycleEnabled == false then
         return false;
     end
 
-    local modifier = globalSettings.paletteCycleModifier or 'ctrl';
     local ctrl, alt, shift = GetModifierStates();
+    return M.PaletteModifierMatches(ctrl, alt, shift);
+end
 
-    if modifier == 'ctrl' and ctrl and not alt and not shift then
+local function GetPaletteDikKeys()
+    local gs = gConfig and gConfig.hotbarGlobal;
+    local prevKey = gs and gs.paletteCyclePrevKey or 38;
+    local nextKey = gs and gs.paletteCycleNextKey or 40;
+    return VK_TO_DIK[prevKey], VK_TO_DIK[nextKey];
+end
+
+--- Cycle hotbar and crossbar palettes one step. Duplicate events from the same
+--- press (gamepad + injected arrows) are ignored for a short window.
+function M.CycleAllPalettes(direction)
+    local now = os.clock();
+    if (now - lastPaletteCycleAt) < 0.08 then
         return true;
-    elseif modifier == 'alt' and alt and not ctrl and not shift then
-        return true;
-    elseif modifier == 'shift' and shift and not ctrl and not alt then
+    end
+    lastPaletteCycleAt = now;
+
+    local jobId = data.jobId or 1;
+    local subjobId = data.subjobId or 0;
+    local hotbarName = palette.CyclePalette(1, direction, jobId, subjobId);
+    palette.CyclePaletteForCombo(nil, direction, jobId, subjobId);
+
+    local logPaletteName = gConfig and gConfig.hotbarGlobal and gConfig.hotbarGlobal.logPaletteName;
+    if logPaletteName == nil then logPaletteName = true; end
+    if logPaletteName then
+        if hotbarName then
+            print('[XIUI] Palette: ' .. hotbarName);
+        else
+            print('[XIUI] Palettes cycled: ' .. (direction == 1 and 'next' or 'prev'));
+        end
+    end
+    return true;
+end
+
+--- True when this DirectInput key is an up/down palette key that must not reach the game.
+function M.ShouldBlockPaletteDik(dik)
+    local prevDik, nextDik = GetPaletteDikKeys();
+    if dik ~= prevDik and dik ~= nextDik then
+        return false;
+    end
+
+    local controller = require('modules.hotbar.controller');
+    if controller.IsPaletteCycleShoulderHeld and controller.IsPaletteCycleShoulderHeld() then
         return true;
     end
 
-    return false;
+    local gs = gConfig and gConfig.hotbarGlobal;
+    if not gs or gs.paletteCycleEnabled == false then
+        return false;
+    end
+    local ctrl, alt, shift = GetModifierStates();
+    return M.PaletteModifierMatches(ctrl, alt, shift);
+end
+
+local function CycleFromPaletteDik(dik)
+    local prevDik, nextDik = GetPaletteDikKeys();
+    if dik ~= prevDik and dik ~= nextDik then return; end
+    local direction = (dik == nextDik) and 1 or -1;
+    M.CycleAllPalettes(direction);
+end
+
+--- DirectInput GetDeviceData. This is the press the game uses for menus and the party list.
+function M.HandleKeyData(e)
+    if not e or e.key == nil then return; end
+    if not M.ShouldBlockPaletteDik(e.key) then return; end
+    if e.down then
+        CycleFromPaletteDik(e.key);
+    end
+    e.blocked = true;
+end
+
+--- DirectInput GetDeviceState. Clears held up/down so the game doesn't repeat menu movement.
+function M.HandleKeyState(e)
+    if not e or not e.data_raw then return; end
+    local prevDik, nextDik = GetPaletteDikKeys();
+    local ptr = ffi.cast('uint8_t*', e.data_raw);
+    if prevDik and M.ShouldBlockPaletteDik(prevDik) and ptr[prevDik] ~= 0 then
+        ptr[prevDik] = 0;
+    end
+    if nextDik and nextDik ~= prevDik and M.ShouldBlockPaletteDik(nextDik) and ptr[nextDik] ~= 0 then
+        ptr[nextDik] = 0;
+    end
 end
 
 -- Cache for custom icons loaded from disk
@@ -1879,14 +1980,10 @@ function M.HandleKey(event)
    if PALETTE_DEBUG_KEYS and (keyCode == 38 or keyCode == 40) and not isRelease then
        local gs = gConfig and gConfig.hotbarGlobal;
        local enabled = gs and gs.paletteCycleEnabled ~= false;
-       local mod = gs and gs.paletteCycleModifier or 'ctrl';
-       local modMatch = (mod == 'ctrl' and controlPressed and not altPressed and not shiftPressed)
-                     or (mod == 'alt' and altPressed and not controlPressed and not shiftPressed)
-                     or (mod == 'shift' and shiftPressed and not controlPressed and not altPressed)
-                     or (mod == 'none' and not controlPressed and not altPressed and not shiftPressed);
-       print(string.format('[XIUI Palette Debug] Key=%d Ctrl=%s Alt=%s Shift=%s | enabled=%s mod=%s modMatch=%s',
+       local modMatch = M.PaletteModifierMatches(controlPressed, altPressed, shiftPressed);
+       print(string.format('[XIUI Palette Debug] Key=%d Ctrl=%s Alt=%s Shift=%s | enabled=%s modMatch=%s',
            keyCode, tostring(controlPressed), tostring(altPressed), tostring(shiftPressed),
-           tostring(enabled), mod, tostring(modMatch)));
+           tostring(enabled), tostring(modMatch)));
    end
 
    -- Check if keybind editor is capturing input
@@ -1900,59 +1997,24 @@ function M.HandleKey(event)
        return;
    end
 
-   -- Check for palette cycling keybind (Ctrl+Up/Down or Alt+Up/Down by default)
+   -- Check for palette cycling keybind. Each enabled modifier is its own shortcut.
    local globalSettings = gConfig and gConfig.hotbarGlobal;
-   if globalSettings and globalSettings.paletteCycleEnabled ~= false and not isRelease then
-       local prevKey = globalSettings.paletteCyclePrevKey or 38;  -- VK_UP
-       local nextKey = globalSettings.paletteCycleNextKey or 40;  -- VK_DOWN
-       local modifier = globalSettings.paletteCycleModifier or 'ctrl';
+   if not isRelease then
+       local prevKey = (globalSettings and globalSettings.paletteCyclePrevKey) or 38;  -- VK_UP
+       local nextKey = (globalSettings and globalSettings.paletteCycleNextKey) or 40;  -- VK_DOWN
+       local isPaletteKey = keyCode == prevKey or keyCode == nextKey;
+       local controller = require('modules.hotbar.controller');
+       local shoulderHeld = controller.IsPaletteCycleShoulderHeld and controller.IsPaletteCycleShoulderHeld();
+       local keyboardEnabled = globalSettings and globalSettings.paletteCycleEnabled ~= false;
+       local modifierMatch = keyboardEnabled and M.PaletteModifierMatches(controlPressed, altPressed, shiftPressed);
 
-       -- Debug: Log when up/down arrow is pressed with any modifier
-       if keyCode == prevKey or keyCode == nextKey then
-           DebugLog(string.format('Arrow key detected: keyCode=%d modifier=%s ctrl=%s alt=%s shift=%s',
-               keyCode, modifier, tostring(controlPressed), tostring(altPressed), tostring(shiftPressed)));
-       end
-
-       -- Check if modifier matches
-       local modifierMatch = false;
-       if modifier == 'ctrl' and controlPressed and not altPressed and not shiftPressed then
-           modifierMatch = true;
-       elseif modifier == 'alt' and altPressed and not controlPressed and not shiftPressed then
-           modifierMatch = true;
-       elseif modifier == 'shift' and shiftPressed and not controlPressed and not altPressed then
-           modifierMatch = true;
-       elseif modifier == 'none' and not controlPressed and not altPressed and not shiftPressed then
-           modifierMatch = true;
-       end
-
-       if modifierMatch and (keyCode == prevKey or keyCode == nextKey) then
+       if isPaletteKey and (shoulderHeld or modifierMatch) then
            if PALETTE_DEBUG_KEYS then
                print('[XIUI Palette Debug] Cycling palettes...');
            end
            -- DOWN = next (+1), UP = previous (-1) to match in-game macro convention
            local direction = (keyCode == nextKey) and 1 or -1;
-           local jobId = data.jobId or 1;
-           local subjobId = data.subjobId or 0;
-
-           -- Cycle GLOBAL palette (affects all hotbars at once)
-           -- NOTE: palette.CyclePalette is now global - barIndex param is ignored
-           local result = palette.CyclePalette(1, direction, jobId, subjobId);
-           if PALETTE_DEBUG_KEYS then
-               print(string.format('[XIUI Palette Debug] Result=%s', tostring(result)));
-           end
-
-           if result then
-               local logPaletteName = gConfig.hotbarGlobal and gConfig.hotbarGlobal.logPaletteName;
-               if logPaletteName == nil then logPaletteName = true; end  -- Default to true
-               if logPaletteName then
-                   print('[XIUI] Palette: ' .. result);
-               end
-           else
-               if PALETTE_DEBUG_KEYS then
-                   print('[XIUI Palette Debug] No palettes to cycle');
-               end
-           end
-
+           M.CycleAllPalettes(direction);
            event.blocked = true;
            return;
        end

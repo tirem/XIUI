@@ -83,6 +83,75 @@ function M.GetMenuShortName()
     return menuName:match('^menu%s+(.+)') or menuName;
 end
 
+-- Gathering points run as events and open a menu, which made "hide" settings flicker the UI.
+local GATHERING_POINTS = {
+    ['Clamming Point']   = true,
+    ['Harvesting Point'] = true,
+    ['Excavation Point'] = true,
+    ['Logging Point']    = true,
+    ['Mining Point']     = true,
+};
+
+-- Covers the gap between chained events (e.g. the result message after a dig).
+local GATHERING_EVENT_GRACE = 1.5;
+
+local gatheringFrame, gatheringResult = nil, false;
+local gatheringEventActive = false;
+local gatheringEventLastSeen = 0;
+
+local function IsGatheringPointIndex(index)
+    if not index or index == 0 then return false; end
+    local name = AshitaCore:GetMemoryManager():GetEntity():GetName(index);
+    return name ~= nil and GATHERING_POINTS[name] == true;
+end
+
+-- Event start packets name the NPC running the event. The point stops being the
+-- player's target once the interaction begins, so this is the reliable signal.
+function M.HandleEventPacket(e)
+    local index;
+    if e.id == 0x032 then
+        index = struct.unpack('H', e.data, 0x08 + 1);
+    elseif e.id == 0x034 then
+        index = struct.unpack('H', e.data, 0x28 + 1);
+    else
+        return;
+    end
+    gatheringEventActive = IsGatheringPointIndex(index);
+    gatheringEventLastSeen = os.clock();
+    gatheringFrame = nil;
+end
+
+local function IsInGatheringEvent()
+    if not gatheringEventActive then return false; end
+    local now = os.clock();
+    if M.GetEventSystemActive() then
+        gatheringEventLastSeen = now;
+        return true;
+    end
+    if now - gatheringEventLastSeen <= GATHERING_EVENT_GRACE then
+        return true;
+    end
+    gatheringEventActive = false;
+    return false;
+end
+
+-- True while the player is using a gathering point: targeting it (e.g. the trade
+-- window for a pickaxe) or inside the event it started.
+function M.IsGatheringPointTargeted()
+    if gatheringFrame ~= nil and gatheringFrame == gXiuiFrame then
+        return gatheringResult;
+    end
+    gatheringFrame = gXiuiFrame;
+    gatheringResult = IsInGatheringEvent();
+    if gatheringResult then return true; end
+
+    local target = AshitaCore:GetMemoryManager():GetTarget();
+    if target then
+        gatheringResult = IsGatheringPointIndex(target:GetTargetIndex(0));
+    end
+    return gatheringResult;
+end
+
 function M.IsMacroPaletteOpen()
     return MACRO_PALETTE_MENUS[M.GetMenuShortName()] == true;
 end
@@ -98,7 +167,7 @@ function M.ShouldHideModuleOnMenuFocus(gConfig, hideOnMenuFocusKey, hideMacroPal
     if not hideOnMenuFocusKey or not gConfig[hideOnMenuFocusKey] then
         return false;
     end
-    if not M.IsMenuOpen() then
+    if not M.IsMenuOpen() or M.IsGatheringPointTargeted() then
         return false;
     end
     if hideMacroPaletteKey and gConfig[hideMacroPaletteKey] then
@@ -142,7 +211,7 @@ end
 -- @param hideDuringEvents: user setting for hiding during events
 -- @param isLoggedIn: current login state
 function M.ShouldHideUI(hideDuringEvents, isLoggedIn)
-    if (hideDuringEvents and M.GetEventSystemActive()) then
+    if (hideDuringEvents and M.GetEventSystemActive() and not M.IsGatheringPointTargeted()) then
         return true;
     end
     if M.IsMapOpen() then

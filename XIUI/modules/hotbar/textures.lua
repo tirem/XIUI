@@ -7,6 +7,7 @@ require('handlers.helpers');
 local ffi = require('ffi');
 local d3d8 = require('d3d8');
 local pngencoder = require('libs.pngencoder');
+local buttonnames = require('modules.hotbar.buttonnames');
 
 -- Item icon cache directory (initialized lazily)
 local itemCacheDir = nil;
@@ -148,11 +149,20 @@ textures.Initialize = function(self)
     -- Load controller button icons for crossbar (from subdirectories)
     local controllerDirectory = assetsDirectory .. 'controller\\';
 
-    -- D-pad and triggers are in Shared folder
-    local sharedIcons = { 'UP', 'DOWN', 'LEFT', 'RIGHT', 'L1', 'L2', 'R1', 'R2' };
+    -- D-pad icons are in Shared folder
+    local sharedIcons = { 'UP', 'DOWN', 'LEFT', 'RIGHT' };
     for _, iconName in ipairs(sharedIcons) do
         local fullPath = controllerDirectory .. 'Shared\\' .. iconName .. '.png';
         defer('controller_' .. iconName, fullPath);
+    end
+
+    -- Shoulder/trigger icons per brand, keyed '<folder>_<name>' (see buttonnames.GetIconName)
+    for _, brand in pairs(buttonnames.BRANDS) do
+        for _, button in ipairs({ 'L1', 'R1', 'L2', 'R2' }) do
+            local iconName = brand.folder .. '_' .. brand[button];
+            local fullPath = controllerDirectory .. brand.folder .. '\\' .. brand[button] .. '.png';
+            defer('controller_' .. iconName, fullPath);
+        end
     end
 
     -- PlayStation face buttons
@@ -383,7 +393,8 @@ textures.GetPath = function(self, key)
 end
 
 -- Get controller button icon by name
--- iconName: 'X', 'Square', 'Triangle', 'Circle', 'L1', 'L2', 'R1', 'R2', 'UP', 'DOWN', 'LEFT', 'RIGHT'
+-- iconName: 'X', 'Square', 'Triangle', 'Circle', 'UP', 'DOWN', 'LEFT', 'RIGHT',
+-- or a shoulder/trigger name from buttonnames.GetIconName (e.g. 'PlayStation_L2', 'Shared_LT')
 textures.GetControllerIcon = function(self, iconName)
     if not self.Cache then
         return nil;

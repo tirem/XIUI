@@ -312,6 +312,8 @@ function M.DrawSettings(state)
     imgui.Spacing();
 
     components.DrawCheckbox('Show When Solo', 'showPartyListWhenSolo');
+    components.DrawCheckbox('Show Only When Engaged', 'partyListOnlyWhenEngaged');
+    imgui.ShowHelp('Hide the party list (and alliance windows) unless you are engaged in combat.\nAlways shown while the config window is open.');
     components.DrawCheckbox('Hide During Events', 'partyListHideDuringEvents');
     components.DrawCheckbox('Alliance Windows', 'partyListAlliance');
     components.DrawCheckbox('Click to Target', 'enablePartyListClickTarget');

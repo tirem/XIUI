@@ -1065,6 +1065,11 @@ function M.DrawSlot(params)
         local labelY = y + size + 2 + (params.labelOffsetY or 0);
         local maxW = GetActionLabelMaxWidth(size, params.labelSlotSpacing or 0);
         local lines = GetLabelLayout(params.labelText, lblFontSize, maxW, params.labelWordWrap);
+        -- Word wrap reserves two lines. A label that fits on one line is centered in that space.
+        local singleLineOffset = 0;
+        if params.labelWordWrap and #lines == 1 then
+            singleLineOffset = lblFontSize / 2;
+        end
         for i = 1, #lines do
             local line = lines[i];
             pendingLabelCount = pendingLabelCount + 1;
@@ -1076,7 +1081,7 @@ function M.DrawSlot(params)
             entry.drawList = drawList;
             entry.text = line.text;
             entry.x = x + (size - line.width) / 2 + labelOffsetX;
-            entry.y = labelY + (i - 1) * lblFontSize;
+            entry.y = labelY + singleLineOffset + (i - 1) * lblFontSize;
             entry.color = labelColor;
             entry.fontSize = lblFontSize;
         end

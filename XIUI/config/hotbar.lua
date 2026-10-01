@@ -19,6 +19,10 @@ local macrosLib = require('libs.ffxi.macros');
 local palette = require('modules.hotbar.palette');
 local migrationWizard = require('config.migration');
 local paletteManager = require('config.palettemanager');
+local buttonnames = require('modules.hotbar.buttonnames');
+
+-- Shoulder/trigger names in text follow the controller profile and the swap option.
+local F = buttonnames.Format;
 
 local M = {};
 
@@ -1451,7 +1455,7 @@ end
 local function DrawCrossbarBarSettings(crossbarSettings, barType, comboMode)
     local modeSettings = GetCrossbarComboModeSettings(crossbarSettings, comboMode);
 
-    imgui.TextColored(components.TAB_STYLE.gold, 'Settings for ' .. (barType.label or comboMode));
+    imgui.TextColored(components.TAB_STYLE.gold, 'Settings for ' .. F(barType.label or comboMode));
     imgui.Spacing();
 
     -- Pet-Aware Palettes toggle (per-combo-mode)
@@ -1629,19 +1633,24 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
     imgui.Spacing();
 
     -- Controller Input settings (combo modes, double-tap) - directly under controller
-    components.DrawPartyCheckbox(crossbarSettings, 'Enable L2+R2 / R2+L2##crossbar', 'enableExpandedCrossbar');
-    imgui.ShowHelp('Enable L2+R2 and R2+L2 combo modes. Hold one trigger, then press the other to access expanded bars.');
+    components.DrawPartyCheckbox(crossbarSettings, 'Swap Palette Cycle and Trigger Buttons##crossbar', 'swapShoulderTriggers');
+    local brand = buttonnames.GetBrand();
+    imgui.ShowHelp(string.format('When enabled, %s/%s open the crossbar and %s/%s cycle palettes.\nAll crossbar names and options below update to match.',
+        brand.L1, brand.R1, brand.L2, brand.R2));
+
+    components.DrawPartyCheckbox(crossbarSettings, F('Enable L2+R2 / R2+L2##crossbar'), 'enableExpandedCrossbar');
+    imgui.ShowHelp(F('Enable L2+R2 and R2+L2 combo modes. Hold one button, then press the other to access expanded bars.'));
 
     -- Nested option: Use shared expanded bar (only visible when L2+R2/R2+L2 is enabled)
     if crossbarSettings.enableExpandedCrossbar then
         imgui.Indent(20);
         components.DrawPartyCheckbox(crossbarSettings, 'Use Shared Expanded Bar##crossbar', 'useSharedExpandedBar', DeferredUpdateVisuals);
-        imgui.ShowHelp('When enabled, L2+R2 and R2+L2 will access the same shared expanded bar instead of separate bars.\nThis shared bar is completely independent from the separate L2+R2 and R2+L2 bars.');
+        imgui.ShowHelp(F('When enabled, L2+R2 and R2+L2 will access the same shared expanded bar instead of separate bars.\nThis shared bar is completely independent from the separate L2+R2 and R2+L2 bars.'));
         imgui.Unindent(20);
     end
 
     components.DrawPartyCheckbox(crossbarSettings, 'Enable Double-Tap##crossbar', 'enableDoubleTap', DeferredUpdateVisuals);
-    imgui.ShowHelp('Enable L2x2 and R2x2 double-tap modes. Tap a trigger twice quickly (hold on second tap) to access double-tap bars.');
+    imgui.ShowHelp(F('Enable L2x2 and R2x2 double-tap modes. Tap L2 or R2 twice quickly (hold on second tap) to access double-tap bars.'));
 
     if crossbarSettings.enableDoubleTap then
         components.DrawPartySlider(crossbarSettings, 'Double-Tap Window##crossbar', 'doubleTapWindow', 0.1, 0.6, '%.2f sec', function()
@@ -1689,11 +1698,11 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
         end
         imgui.EndCombo();
     end
-    imgui.ShowHelp('Normal: Always show both sides (inactive side dimmed).\nActive Only: Show only when trigger is held, displaying only the active side.\nCombat Only: Show both sides while your character is engaged in combat.');
+    imgui.ShowHelp(F('Normal: Always show both sides (inactive side dimmed).\nActive Only: Show only when L2 or R2 is held, displaying only the active side.\nCombat Only: Show both sides while your character is engaged in combat.'));
 
     if crossbarSettings.displayMode == 'combatOnly' then
         components.DrawPartySlider(crossbarSettings, 'Trigger Release Delay##crossbarCombat', 'combatTriggerReleaseDelay', 0.0, 10.0, '%.1f sec', nil, 5.0);
-        imgui.ShowHelp('How long Combat Only keeps the crossbar visible after L2/R2 is released while out of combat.');
+        imgui.ShowHelp(F('How long Combat Only keeps the crossbar visible after L2/R2 is released while out of combat.'));
     end
 
     imgui.Spacing();
@@ -1704,7 +1713,7 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
         crossbarSettings.editMode = editModeEnabled[1];
         SaveSettingsOnly();
     end
-    imgui.ShowHelp('Enable Edit Mode to preview and set up crossbars without holding triggers.');
+    imgui.ShowHelp(F('Enable Edit Mode to preview and set up crossbars without holding L2/R2.'));
 
     if crossbarSettings.editMode then
         -- Preview bar dropdown on same line as checkbox
@@ -1749,6 +1758,10 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
             crossbarSettings.editModeBar = 'L2R2';
         end
 
+        for i, label in ipairs(previewBarOptions) do
+            previewBarOptions[i] = F(label);
+        end
+
         local currentPreviewLabel = currentPreviewBar;
         -- Convert key to label
         for i, key in ipairs(previewBarKeys) do
@@ -1788,7 +1801,7 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
 
     for i, crossbarType in ipairs(CROSSBAR_TYPES) do
         local clicked, _ = components.DrawStyledTab(
-            crossbarType.label,
+            F(crossbarType.label),
             'crossbarTab' .. crossbarType.key,
             selectedCrossbarTab == i,
             nil,
@@ -1829,10 +1842,10 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
                 imgui.ShowHelp('Horizontal space between D-pad and face button diamonds.');
 
                 components.DrawPartySliderInt(crossbarSettings, 'Group Spacing##crossbar', 'groupSpacing', 0, 128, '%d', nil, 40);
-                imgui.ShowHelp('Space between L2 and R2 groups.');
+                imgui.ShowHelp(F('Space between L2 and R2 groups.'));
 
                 components.DrawPartyCheckbox(crossbarSettings, 'Show Divider##crossbar', 'showDivider');
-                imgui.ShowHelp('Show a divider line between L2 and R2 groups.');
+                imgui.ShowHelp(F('Show a divider line between L2 and R2 groups.'));
 
                 -- Show MP Cost with X/Y offsets
                 components.DrawPartyCheckbox(crossbarSettings, 'Show MP Cost##crossbar', 'showMpCost');
@@ -1860,7 +1873,7 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
                     imgui.SameLine();
                     components.DrawInlineOffsets(crossbarSettings, 'crossbarcombo', 'comboTextOffsetX', 'comboTextOffsetY', 35);
                 end
-                imgui.ShowHelp('Show current combo mode text in center (L2+R2, R2+L2, L2x2, R2x2). X/Y offsets adjust position.');
+                imgui.ShowHelp(F('Show current combo mode text in center (L2+R2, R2+L2, L2x2, R2x2). X/Y offsets adjust position.'));
 
                 -- Show Palette Name with X/Y offsets
                 components.DrawPartyCheckbox(crossbarSettings, 'Show Palette Name##crossbar', 'showPaletteName');
@@ -1930,11 +1943,11 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
                 imgui.Separator();
 
                 components.DrawPartyCheckbox(crossbarSettings, 'Show Trigger Icons##crossbar', 'showTriggerLabels');
-                imgui.ShowHelp('Show L2/R2 trigger icons above the crossbar groups.');
+                imgui.ShowHelp(F('Show L2/R2 button icons above the crossbar groups.'));
 
                 if crossbarSettings.showTriggerLabels then
                     components.DrawPartySlider(crossbarSettings, 'Trigger Icon Scale##crossbar', 'triggerIconScale', 0.5, 2.0, '%.1f', nil, 1.0);
-                    imgui.ShowHelp('Scale for L2/R2 trigger icons above groups (base size 49x28).');
+                    imgui.ShowHelp(F('Scale for L2/R2 button icons above groups (base size 49x28).'));
                 end
             end
 
@@ -1956,7 +1969,7 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
                 imgui.ShowHelp('Display cooldown timers as Hh:MM (e.g., "1h:49") instead of "1h 49m" for shorter text.');
 
                 components.DrawPartySliderInt(crossbarSettings, 'Trigger Label Text Size##crossbar', 'triggerLabelFontSize', 6, 24, '%d', nil, 14);
-                imgui.ShowHelp('Text size for combo mode labels (L2, R2, etc.).');
+                imgui.ShowHelp(F('Text size for combo mode labels (L2, R2, etc.).'));
 
                 components.DrawPartySliderInt(crossbarSettings, 'MP Cost Text Size##crossbar', 'mpCostFontSize', 6, 24, '%d', nil, 10);
                 imgui.ShowHelp('Text size for MP cost display.');
@@ -1965,7 +1978,7 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
                 imgui.ShowHelp('Text size for item quantity display.');
 
                 components.DrawPartySliderInt(crossbarSettings, 'Combo Text Size##crossbar', 'comboTextFontSize', 8, 24, '%d', nil, 12);
-                imgui.ShowHelp('Font size for combo mode text (L2+R2, R2+L2, etc.).');
+                imgui.ShowHelp(F('Font size for combo mode text (L2+R2, R2+L2, etc.).'));
 
                 components.DrawPartySliderInt(crossbarSettings, 'Palette Name Text Size##crossbar', 'paletteNameFontSize', 8, 24, '%d', nil, 10);
                 imgui.ShowHelp('Font size for palette name display.');
@@ -1985,7 +1998,7 @@ local function DrawCrossbarSettings(selectedCrossbarTab)
                     crossbarSettings.enableTransitionAnimations = transAnimEnabled[1];
                     SaveSettingsOnly();
                 end
-                imgui.ShowHelp('Enable smooth animations when switching between crossbar modes (L2, R2, combos). Disable for instant transitions.');
+                imgui.ShowHelp(F('Enable smooth animations when switching between crossbar modes (L2, R2, combos). Disable for instant transitions.'));
 
                 -- Default to true if not set
                 if crossbarSettings.enablePressScale == nil then
@@ -2076,7 +2089,7 @@ local function DrawCrossbarColorSettings()
             crossbarSettings.triggerLabelColor = ImGuiToARGB(triggerLabelColorTable);
             SaveSettingsOnly();
         end
-        imgui.ShowHelp('Color for combo mode labels (L2, R2, etc.).');
+        imgui.ShowHelp(F('Color for combo mode labels (L2, R2, etc.).'));
 
         local mpCostColor = crossbarSettings.mpCostFontColor or 0xFFD4FF97;
         local mpCostColorTable = ARGBToImGui(mpCostColor);
@@ -2375,18 +2388,17 @@ function M.DrawSettings(state)
         end
         imgui.EndCombo();
     end
-    imgui.ShowHelp('Hotbar: Standard keyboard hotbars (Bars 1-10)\nCrossbar: Controller layout with L2/R2 triggers\nBoth: Show both hotbar and crossbar');
+    imgui.ShowHelp(F('Hotbar: Standard keyboard hotbars (Bars 1-10)\nCrossbar: Controller layout opened with L2/R2\nBoth: Show both hotbar and crossbar'));
 
     -- Conditional: KB Palette Cycle (show if mode is hotbar or both)
     if currentMode == 'hotbar' or currentMode == 'both' then
-        local kbOptions = { 'Disabled', 'Ctrl + Up/Down', 'Alt + Up/Down', 'Shift + Up/Down', 'Up/Down' };
-        local kbModifierValues = { nil, 'ctrl', 'alt', 'shift', 'none' };
-        local currentKbIndex = 1;  -- Default to Disabled
+        local kbOptions = { 'Disabled', 'Ctrl', 'Alt', 'Shift', 'Ctrl/Alt', 'Ctrl/Shift', 'Alt/Shift', 'Ctrl/Alt/Shift' };
+        local kbModifierValues = { nil, 'ctrl', 'alt', 'shift', 'ctrl/alt', 'ctrl/shift', 'alt/shift', 'ctrl/alt/shift' };
+        local currentKbIndex = 1;
         if gConfig.hotbarGlobal.paletteCycleEnabled ~= false then
             local currentMod = gConfig.hotbarGlobal.paletteCycleModifier or 'ctrl';
-            for i = 1, #kbModifierValues do
-                local v = kbModifierValues[i];
-                if v == currentMod then
+            for i = 2, #kbOptions do
+                if kbModifierValues[i] == currentMod then
                     currentKbIndex = i;
                     break;
                 end
@@ -2396,7 +2408,7 @@ function M.DrawSettings(state)
         imgui.AlignTextToFramePadding();
         imgui.Text('Keyboard Palette:');
         imgui.SameLine();
-        imgui.SetNextItemWidth(140);
+        imgui.SetNextItemWidth(120);
         if imgui.BeginCombo('##kbPaletteCycle', kbOptions[currentKbIndex]) then
             for i, label in ipairs(kbOptions) do
                 local isSelected = currentKbIndex == i;
@@ -2413,7 +2425,9 @@ function M.DrawSettings(state)
             end
             imgui.EndCombo();
         end
-        imgui.ShowHelp('Keyboard shortcut to cycle through palettes.');
+        imgui.SameLine();
+        imgui.Text('+ Up/Down');
+        imgui.ShowHelp('Keyboard shortcut to cycle through palettes.\nWith more than one modifier selected, each works on its own.\nFor example, Ctrl/Alt means Ctrl + Up/Down or Alt + Up/Down,\nnot Ctrl + Alt + Up/Down.');
     end
 
     -- Conditional: Controller Palette Cycle (show if mode is crossbar or both)
@@ -2444,6 +2458,7 @@ function M.DrawSettings(state)
             imgui.SameLine();
 
             local buttonOptions = { 'R1', 'L1' };
+            local buttonLabels = { R1 = buttonnames.GetName('R1'), L1 = buttonnames.GetName('L1') };
             local currentButton = gConfig.hotbarGlobal.hotbarPaletteCycleButton or 'R1';
             local currentButtonIndex = 1;
             for i, btn in ipairs(buttonOptions) do
@@ -2454,10 +2469,10 @@ function M.DrawSettings(state)
             end
 
             imgui.SetNextItemWidth(60);
-            if imgui.BeginCombo('##hotbarCycleBtn', currentButton) then
+            if imgui.BeginCombo('##hotbarCycleBtn', buttonLabels[currentButton] or buttonLabels.R1) then
                 for i, btn in ipairs(buttonOptions) do
                     local isSelected = (i == currentButtonIndex);
-                    if imgui.Selectable(btn .. '##hbCycleBtn' .. i, isSelected) then
+                    if imgui.Selectable(buttonLabels[btn] .. '##hbCycleBtn' .. i, isSelected) then
                         gConfig.hotbarGlobal.hotbarPaletteCycleButton = btn;
                         SaveSettingsOnly();
                     end

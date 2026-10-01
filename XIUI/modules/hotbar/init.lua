@@ -532,6 +532,20 @@ function M.HandleKey(event)
     return actions.HandleKey(event);
 end
 
+function M.HandleKeyData(e)
+    if gConfig and gConfig.hotbarEnabled == false then
+        return;
+    end
+    return actions.HandleKeyData(e);
+end
+
+function M.HandleKeyState(e)
+    if gConfig and gConfig.hotbarEnabled == false then
+        return;
+    end
+    return actions.HandleKeyState(e);
+end
+
 function M.HandleXInputState(e)
     if not crossbarInitialized then return; end
     if gConfig and gConfig.hotbarEnabled == false then return; end

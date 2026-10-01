@@ -238,6 +238,7 @@ function M.createUserSettingsDefaults()
         fontOutlineWidth = 1, -- Global outline width for all text (range: 0-5)
 
         showPartyListWhenSolo = false,
+        partyListOnlyWhenEngaged = false, -- hide party list unless the player is engaged
         maxEnemyListEntries = 8,  -- Legacy, now calculated from rows * columns
         enemyListRowsPerColumn = 8,
         enemyListMaxColumns = 1,
