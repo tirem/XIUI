@@ -576,8 +576,13 @@ function M.MigrateIndividualSettings(gConfig, defaults)
     if gConfig.mobInfoGroupModifiers == nil then
         gConfig.mobInfoGroupModifiers = defaults.mobInfoGroupModifiers;
     end
-    if gConfig.mobInfoUseHorizonData == nil then
-        gConfig.mobInfoUseHorizonData = defaults.mobInfoUseHorizonData;
+    -- Convert the former Horizon checkbox into a source selection.
+    if gConfig.mobInfoUseHorizonData ~= nil and gConfig.mobInfoDataSource ~= 'phoenix' then
+        gConfig.mobInfoDataSource = gConfig.mobInfoUseHorizonData and 'horizon' or 'lsb';
+    end
+    gConfig.mobInfoUseHorizonData = nil;
+    if gConfig.mobInfoDataSource ~= 'lsb' and gConfig.mobInfoDataSource ~= 'phoenix' and gConfig.mobInfoDataSource ~= 'horizon' then
+        gConfig.mobInfoDataSource = defaults.mobInfoDataSource;
     end
 
     -- Migrate party text position offsets (add to all parties if missing)

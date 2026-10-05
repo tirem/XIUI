@@ -18,3 +18,12 @@ XIUI/assets/hotbar/items/
 nul
 
 .github/copilot-instructions.md
+
+__pycache__/
+
+# Mob data is generated locally and during release packaging.
+XIUI/data/mobs/lsb/
+XIUI/data/mobs/phoenix/
+XIUI/data/mobs/horizon/*.lua
+XIUI/data/mobs/horizon/source.json
+XIUI/data/mobs/COPYING

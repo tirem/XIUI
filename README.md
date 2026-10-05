@@ -16,7 +16,7 @@ A modern UI replacement addon for Final Fantasy XI (Ashita v4). XIUI replaces th
 - **EXP Bar** — Experience and limit point progress
 - **Inventory** — Bag capacity across all storage types
 - **Gil Tracker** — Current gil display
-- **Mob Info** — Mob level, type, and aggro info
+- **Mob Info** — Mob level, type, and aggro info from LandSandBoat, Phoenix, or Horizon
 - **Treasure Pool** — Loot display with lot/pass support
 - **Notifications** — On-screen alerts for game events
 
@@ -35,3 +35,12 @@ To auto-load on startup, add `/addon load xiui` to your Ashita script or profile
 2. Extract the new release in its place
 
 Deleting first is recommended — asset paths may change between versions.
+
+Choose **LandSandBoat**, **Phoenix**, or **Horizon** under **Target Bar → Mob Info →
+Display Options → Mob Data Source**. Phoenix uses its `live` data; Horizon applies its
+overrides to LandSandBoat. All sources ship with XIUI and work offline. See [mob data documentation](XIUI/data/mobs/README.md)
+for sources and refresh commands.
+
+Release downloads include the mob datasets. When running from a Git checkout, generate
+them once with `python -m pip install -r tools/requirements-mob-data.txt` followed by
+`python tools/update_mob_data.py`. Generated datasets are excluded from Git.

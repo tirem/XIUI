@@ -8,6 +8,7 @@ require('handlers.helpers');
 local components = require('config.components');
 local imgui = require('imgui');
 local ffi = require('ffi');
+local mobdata = require('modules.mobinfo.data');
 
 local M = {};
 
@@ -187,7 +188,7 @@ local function DrawMobInfoSettingsContent(githubTexture)
     components.DrawCheckbox('Enabled', 'showMobInfo', CheckVisibility);
     components.DrawHideWhenMenuOpenOptions('mobInfoHideOnMenuFocus', 'mobInfoHideMacroPalette');
 
-    -- Attribution for Thorny's MobDB (on same line as Enabled)
+    -- Link to the selected mob data source.
     imgui.SameLine();
     imgui.SetCursorPosX(imgui.GetCursorPosX() + 20); -- Add some spacing
 
@@ -202,7 +203,8 @@ local function DrawMobInfoSettingsContent(githubTexture)
     local iconSize = 14;
     local iconPad = (boxHeight - iconSize) / 2;
     local textPad = 6;
-    local text = 'Powered by MobDB (Thorny)';
+    local provider = mobdata.GetProvider();
+    local text = 'Powered by ' .. provider.Name;
     local textWidth = imgui.CalcTextSize(text);
     local boxWidth = iconSize + textPad * 3 + textWidth;
 
@@ -246,13 +248,13 @@ local function DrawMobInfoSettingsContent(githubTexture)
     );
 
     -- Invisible button for interaction
-    imgui.InvisibleButton("mobdb_attribution_btn", { boxWidth, boxHeight });
+    imgui.InvisibleButton("mobinfo_attribution_btn", { boxWidth, boxHeight });
     if imgui.IsItemHovered() then
         imgui.SetMouseCursor(ImGuiMouseCursor_Hand);
-        imgui.SetTooltip('Visit MobDB repository on GitHub');
+        imgui.SetTooltip('Visit ' .. provider.Name .. ' on GitHub');
     end
     if imgui.IsItemClicked() then
-        ashita.misc.open_url('https://github.com/ThornyFFXI/mobdb');
+        ashita.misc.open_url(provider.Url);
     end
 
     components.DrawCheckbox('Snap to Target Bar', 'mobInfoSnapToTargetBar');
@@ -279,10 +281,10 @@ local function DrawMobInfoSettingsContent(githubTexture)
         end
 
         components.DrawCheckbox('Show Weaknesses', 'mobInfoShowWeaknesses');
-        imgui.ShowHelp('Show damage types the mob is weak to (takes extra damage).');
+        imgui.ShowHelp('Show damage weaknesses and negative elemental resistance ranks. Percentages apply to damage modifiers.');
 
         components.DrawCheckbox('Show Resistances', 'mobInfoShowResistances');
-        imgui.ShowHelp('Show damage types the mob resists (takes reduced damage).');
+        imgui.ShowHelp('Show damage resistances and positive elemental resistance ranks. Ranks appear in tooltips.');
 
         components.DrawCheckbox('Show Immunities', 'mobInfoShowImmunities');
         imgui.ShowHelp('Show status effects the mob is immune to.');
@@ -313,13 +315,9 @@ local function DrawMobInfoSettingsContent(githubTexture)
         components.DrawCheckbox('Hide When Engaged', 'mobInfoHideWhenEngaged');
         imgui.ShowHelp('Hide mob info when you are engaged in combat.');
 
-        components.DrawCheckbox('Horizon Mob Data', 'mobInfoUseHorizonData', function()
-            local mobdata = require('modules.mobinfo.data');
-            if mobdata.ReloadCurrentZone then
-                mobdata.ReloadCurrentZone();
-            end
-        end);
-        imgui.ShowHelp('Use HorizonXI Dynamis names and jobs from the Horizon mobdb overlay. On by default in the Horizon build.');
+        components.Combo('Mob Data Source', gConfig, 'mobInfoDataSource',
+            { 'LandSandBoat', 'Phoenix', 'Horizon' }, { 'lsb', 'phoenix', 'horizon' }, 'lsb', mobdata.ReloadCurrentZone);
+        imgui.ShowHelp('Choose LandSandBoat, Phoenix live, or Horizon data. Horizon applies its names, jobs and levels to LandSandBoat data.');
     end
 
     if components.CollapsingSection('Scale & Position##mobInfo') then

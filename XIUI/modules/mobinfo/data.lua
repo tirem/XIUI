@@ -1,36 +1,56 @@
---[[
-    Mob Database Module for XIUI
-    Loads zone-specific mob data from MobDB submodule (ThornyFFXI/mobdb)
-    Data format is compatible with MobDB addon
-    MobDB is licensed under MIT License
-    https://github.com/ThornyFFXI/mobdb
-]]
+-- Mob information from bundled LandSandBoat and Phoenix YAML snapshots.
 
 require('common');
 
 local mobdata = {};
+local providers = {
+    lsb = require('modules.mobinfo.providers.lsb'),
+    phoenix = require('modules.mobinfo.providers.phoenix'),
+    horizon = require('modules.mobinfo.providers.horizon'),
+};
+local files = require('modules.mobinfo.providers.files');
 
 -- Current zone data
 local currentZoneId = 0;
+local currentProvider;
 local zoneData = {
     Names = {},    -- Lookup by mob name
-    Indices = {}   -- Lookup by mob index (not used but kept for compatibility)
+    Indices = {}   -- Spawn-specific information by entity index
 };
 
--- Get the base path for mob data files
-local function GetMobDataPath()
-    local path = string.gsub(addon.path, '\\\\', '\\');
-    return path .. '/submodules/mobdb/data/';
+local function GetProviderKey()
+    local key = gConfig and gConfig.mobInfoDataSource or 'lsb';
+    return providers[key] and key or 'lsb';
 end
 
--- Horizon-specific mob data overrides (Dynamis zone name/job changes for the
--- HorizonXI rebase). Only a handful of zones exist here; any zone not present
--- falls back to the base MobDB data above.
--- Source: https://github.com/Mr-Sithel/HorizonXI-Dynamis-Mobdb (edits by Mr-Sithel,
--- original MobDB data by Thorny).
-local function GetHorizonMobDataPath()
-    local path = string.gsub(addon.path, '\\\\', '\\');
-    return path .. '/submodules/mobdb_horizon/mobdb/data/';
+mobdata.GetProvider = function()
+    return providers[GetProviderKey()];
+end
+
+local function MergeInfo(base, override)
+    if not base then return nil; end
+    local result = {};
+    for key, value in pairs(base) do result[key] = value; end
+    for key, value in pairs(override) do result[key] = value; end
+    return result;
+end
+
+local function ApplyHorizonOverlay(overlay)
+    if not overlay then return; end
+    local byName = {};
+    for index, info in pairs(overlay.Indices) do
+        local base = zoneData.Indices[index] or zoneData.Names[info.Name];
+        local merged = MergeInfo(base, info);
+        if merged then
+            zoneData.Indices[index] = merged;
+            byName[info.Name] = merged;
+        end
+    end
+    for name, info in pairs(overlay.Names) do
+        local base = zoneData.Names[name] or zoneData.Names[info.Name] or byName[info.Name];
+        local merged = MergeInfo(base, info);
+        if merged then zoneData.Names[name] = merged; end
+    end
 end
 
 --[[
@@ -39,8 +59,9 @@ end
     @return boolean: true if data was loaded successfully
 ]]
 mobdata.LoadZone = function(zoneId)
-    -- Skip if already loaded or invalid zone
-    if zoneId == currentZoneId then
+    zoneId = tonumber(zoneId) or 0;
+    local provider = GetProviderKey();
+    if zoneId == currentZoneId and provider == currentProvider then
         return zoneData.Names ~= nil and next(zoneData.Names) ~= nil;
     end
 
@@ -48,52 +69,17 @@ mobdata.LoadZone = function(zoneId)
     zoneData.Names = {};
     zoneData.Indices = {};
     currentZoneId = zoneId;
+    currentProvider = provider;
 
     -- Zone 0 is invalid
-    if zoneId == 0 then
+    if zoneId <= 0 then
         return false;
     end
 
-    -- Prefer the Horizon Dynamis overlay when the setting is on and that zone
-    -- file exists; otherwise use the base MobDB data.
-    local filePath = GetMobDataPath() .. tostring(zoneId) .. '.lua';
-    if gConfig and gConfig.mobInfoUseHorizonData then
-        local hzPath = GetHorizonMobDataPath() .. tostring(zoneId) .. '.lua';
-        local hzFile = io.open(hzPath, 'r');
-        if hzFile ~= nil then
-            hzFile:close();
-            filePath = hzPath;
-        end
-    end
-
-    -- Check if file exists
-    local file = io.open(filePath, 'r');
-    if file == nil then
-        -- No data file for this zone - this is normal for many zones
-        return false;
-    end
-    file:close();
-
-    -- Load the data file
-    local loadFunc, loadErr = loadfile(filePath);
-    if loadFunc == nil then
-        print('[XIUI] Error loading mob data for zone ' .. tostring(zoneId) .. ': ' .. tostring(loadErr));
-        return false;
-    end
-
-    -- Execute the loaded function to get the data
-    local success, result = pcall(loadFunc);
-    if not success then
-        print('[XIUI] Error executing mob data for zone ' .. tostring(zoneId) .. ': ' .. tostring(result));
-        return false;
-    end
-
-    -- Store the data
-    if result and result.Names then
-        zoneData.Names = result.Names;
-    end
-    if result and result.Indices then
-        zoneData.Indices = result.Indices;
+    local result = providers[provider].LoadZone(zoneId);
+    if result then
+        zoneData = result;
+        if provider == 'horizon' then ApplyHorizonOverlay(files.LoadZone('horizon', zoneId)); end
     end
 
     return zoneData.Names ~= nil and next(zoneData.Names) ~= nil;
@@ -112,21 +98,24 @@ end
     - Aggro: boolean - Whether mob is aggressive
     - Link: boolean - Whether mob links with others
     - Sight: boolean - Detects by sight
-    - TrueSight: boolean - Detects by true sight (ignores sneak/invis)
+    - TrueSight / TrueSound: boolean - Detects through Invisible / Sneak
     - Sound: boolean - Detects by sound
-    - Scent: boolean - Detects by scent (low HP aggro)
+    - Scent: boolean - Tracks targets by scent
     - Magic: boolean - Detects magic casting
     - JA: boolean - Detects job abilities
-    - Blood: boolean - Aggro based on blood (undead)
+    - Blood: boolean - Detects low HP targets
     - Immunities: number - Bitfield of status immunities
     - Modifiers: table - Damage type modifiers (multipliers)
         - Fire, Ice, Wind, Earth, Lightning, Water, Light, Dark
         - Slashing, Piercing, H2H, Impact
+    - ElementRanks: table - Elemental resistance ranks, separate from damage taken
 
     Note: Many mobs (like Om'aern) have different jobs depending on spawn point.
     The Indices table contains spawn-specific data, while Names has generic fallback data.
 ]]
 mobdata.GetMobInfo = function(mobName, entityIndex)
+    -- Profiles can change the provider without a zone packet.
+    mobdata.LoadZone(currentZoneId);
     if mobName == nil then
         return nil;
     end
@@ -143,7 +132,7 @@ mobdata.GetMobInfo = function(mobName, entityIndex)
     if zoneData.Names == nil then
         return nil;
     end
-    return zoneData.Names[mobName];
+    return zoneData.Names[mobName] or zoneData.Names[string.gsub(mobName, '_', ' ')];
 end
 
 --[[
@@ -185,9 +174,10 @@ mobdata.Cleanup = function()
     zoneData.Names = {};
     zoneData.Indices = {};
     currentZoneId = 0;
+    currentProvider = nil;
 end
 
--- Force-reload the current zone (used when Horizon overlay is toggled).
+-- Force-reload the current zone after a source setting changes.
 mobdata.ReloadCurrentZone = function()
     local zoneId = currentZoneId;
     if zoneId == 0 then
@@ -217,6 +207,7 @@ mobdata.GetDetectionMethods = function(mobInfo)
     if mobInfo.Sight then methods.sight = true; end
     if mobInfo.TrueSight then methods.truesight = true; end
     if mobInfo.Sound then methods.sound = true; end
+    if mobInfo.TrueSound then methods.truesound = true; end
     if mobInfo.Scent then methods.scent = true; end
     if mobInfo.Magic then methods.magic = true; end
     if mobInfo.JA then methods.ja = true; end
@@ -299,11 +290,8 @@ mobdata.GetWeaknesses = function(mobInfo)
     return weaknesses;
 end
 
---[[
-    Immunity bit flags (matching MobDB format)
-]]
+-- LSB data/enums/immunity.yaml flags. Sleep types have separate bits.
 mobdata.ImmunityFlags = {
-    Sleep = 0x01,
     Gravity = 0x02,
     Bind = 0x04,
     Stun = 0x08,
@@ -314,6 +302,9 @@ mobdata.ImmunityFlags = {
     Poison = 0x100,
     Elegy = 0x200,
     Requiem = 0x400,
+    LightSleep = 0x800,
+    DarkSleep = 0x1000,
+    Petrify = 0x10000,
 };
 
 --[[

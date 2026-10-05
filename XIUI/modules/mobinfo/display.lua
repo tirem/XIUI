@@ -3,8 +3,7 @@
     Displays mob detection methods, level, resistances, weaknesses, and immunities
     as icons with tooltips in a separate movable window.
 
-    Uses icons from MobDB (ThornyFFXI/mobdb) - MIT License
-    https://github.com/ThornyFFXI/mobdb
+    Icon attribution: assets/mobinfo/LICENSE (ThornyFFXI, MIT).
 ]]
 
 require('common');
@@ -34,10 +33,11 @@ local detectionMethods = {
     { key = 'sight', name = 'Sight', tooltip = 'Detects by sight (affected by Invisible)' },
     { key = 'truesight', name = 'True Sight', tooltip = 'Detects through Invisible' },
     { key = 'sound', name = 'Sound', tooltip = 'Detects by sound (affected by Sneak)' },
-    { key = 'scent', name = 'Scent', tooltip = 'Detects low HP targets' },
+    { key = 'truesound', name = 'True Sound', tooltip = 'Detects through Sneak' },
+    { key = 'scent', name = 'Scent', tooltip = 'Tracks targets by scent' },
     { key = 'magic', name = 'Magic', tooltip = 'Detects magic casting' },
     { key = 'ja', name = 'Job Abilities', tooltip = 'Detects job ability usage' },
-    { key = 'blood', name = 'Blood', tooltip = 'Detects by blood (undead)' },
+    { key = 'blood', name = 'Low HP', tooltip = 'Detects low HP targets' },
 };
 
 -- Element definitions with display info
@@ -86,7 +86,7 @@ local function LoadMobInfoTexture(name)
         return nil;
     end
 
-    local path = string.format('%s/submodules/mobdb/icons/%s.png', addon.path, name);
+    local path = string.format('%s/assets/mobinfo/%s.png', addon.path, name);
     local res = ffi.C.D3DXCreateTextureFromFileA(device, path, texture_ptr);
 
     if res ~= 0 then
@@ -183,6 +183,26 @@ local function BuildDetectionIcons(mobInfo)
     return detectionIcons;
 end
 
+local function AddRankIcons(icons, mobInfo, isResistance, damageModifiers)
+    for _, elem in ipairs(elements) do
+        local rank = mobInfo.ElementRanks and mobInfo.ElementRanks[elem.key] or 0;
+        if (isResistance and rank > 0) or (not isResistance and rank < 0) then
+            local detail = elem.name .. ' Resistance Rank: ' .. tostring(rank);
+            if damageModifiers[elem.key] then
+                for _, icon in ipairs(icons) do
+                    if icon.element == elem.key then icon.tooltip = icon.tooltip .. '\n' .. detail; end
+                end
+            else
+                table.insert(icons, {
+                    texture = textures.elements[string.lower(elem.key)],
+                    tooltip = detail,
+                    showPercent = false,
+                });
+            end
+        end
+    end
+end
+
 -- Build weakness icons array (sorted by percentage, grouped for display)
 local function BuildWeaknessIcons(mobInfo)
     local weaknessIcons = {};
@@ -198,6 +218,7 @@ local function BuildWeaknessIcons(mobInfo)
             table.insert(allWeaknesses, {
                 texture = textures.elements[string.lower(elem.key)],
                 name = elem.name,
+                element = elem.key,
                 modifier = modifier
             });
         end
@@ -214,7 +235,7 @@ local function BuildWeaknessIcons(mobInfo)
             });
         end
     end
-    -- Sort by modifier value (highest weakness first, like MobDB)
+    -- Sort by modifier value (highest weakness first).
 
     table.sort(allWeaknesses, function(a, b)
         return a.modifier > b.modifier;
@@ -235,12 +256,14 @@ local function BuildWeaknessIcons(mobInfo)
             -- Use %% to escape % for imgui.SetTooltip (printf-style function)
         table.insert(weaknessIcons, {
             texture = item.texture,
+            element = item.element,
             tooltip = item.name .. ' Weakness (+' .. tostring(percent) .. '%% damage)',
             modifierText = '+' .. percent .. '%',
             showPercent = showPercent
         });
     end
 
+    AddRankIcons(weaknessIcons, mobInfo, false, weaknesses);
     return weaknessIcons;
 end
 
@@ -259,6 +282,7 @@ local function BuildResistanceIcons(mobInfo)
             table.insert(allResistances, {
                 texture = textures.elements[string.lower(elem.key)],
                 name = elem.name,
+                element = elem.key,
                 modifier = modifier
             });
         end
@@ -275,7 +299,7 @@ local function BuildResistanceIcons(mobInfo)
             });
         end
     end
-    -- Sort by modifier value (lowest/strongest resistance first, like MobDB)
+    -- Sort by modifier value (strongest resistance first).
 
     table.sort(allResistances, function(a, b)
         return a.modifier < b.modifier;
@@ -296,12 +320,14 @@ local function BuildResistanceIcons(mobInfo)
             -- Use %% to escape % for imgui.SetTooltip (printf-style function)
         table.insert(resistanceIcons, {
             texture = item.texture,
+            element = item.element,
             tooltip = item.name .. ' Resistance (-' .. tostring(percent) .. '%% damage)',
             modifierText = '-' .. percent .. '%',
             showPercent = showPercent
         });
     end
 
+    AddRankIcons(resistanceIcons, mobInfo, true, resistances);
     return resistanceIcons;
 end
 
@@ -757,6 +783,7 @@ mobinfo.Initialize = function(settings)
     textures.detection.sight = LoadMobInfoTexture('Sight');
     textures.detection.truesight = LoadMobInfoTexture('TrueSight');
     textures.detection.sound = LoadMobInfoTexture('Sound');
+    textures.detection.truesound = textures.detection.sound;
     textures.detection.scent = LoadMobInfoTexture('Scent');
     textures.detection.magic = LoadMobInfoTexture('Magic');
     textures.detection.ja = LoadMobInfoTexture('JA');

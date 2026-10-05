@@ -492,8 +492,7 @@ function M.createUserSettingsDefaults()
         mobInfoSeparatorStyle = 'space', -- separator style: 'space', 'pipe', 'dot'
         mobInfoShowServerId = false, -- show target's server ID
         mobInfoServerIdHex = true, -- true = hex format (0x1C0), false = decimal
-        -- Horizon Dynamis overlay (Mr-Sithel). Default on for the Horizon build.
-        mobInfoUseHorizonData = HzLimitedMode == true,
+        mobInfoDataSource = HzLimitedMode == true and 'horizon' or 'lsb',
 
         -- Party List global settings (shared across all parties)
         partyListTitleFontSize = 12,

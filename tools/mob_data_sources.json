@@ -1,0 +1,21 @@
+{
+  "lsb": {
+    "repository": "LandSandBoat/server",
+    "branch": "base",
+    "commit": "c95bb99cc0ee8658cc6940fa73819027e8728cb8",
+    "modules": false
+  },
+  "phoenix": {
+    "repository": "phoenixffxi/Phoenix",
+    "branch": "live",
+    "commit": "465ac4c076aebd70170fe8fde032e5066ce0737e",
+    "modules": true
+  },
+  "horizon": {
+    "repository": "Mr-Sithel/HorizonXI-Dynamis-Mobdb",
+    "branch": "main",
+    "commit": "eb301032372ab28171378569e707c5bdeb5b9006",
+    "format": "horizon",
+    "license": "MIT"
+  }
+}

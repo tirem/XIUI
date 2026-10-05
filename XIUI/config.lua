@@ -985,7 +985,8 @@ config.DrawWindow = function(us)
 
                 imgui.TextColored({1.0, 0.84, 0.0, 1.0}, "Special Thanks");
                 imgui.BulletText("atom0s - Ashita framework, and additional support");
-                imgui.BulletText("Thorny - GdiFonts library & MobDB, and additional support");
+                imgui.BulletText("Thorny - GdiFonts library, mob info icons, and additional support");
+                imgui.BulletText("LandSandBoat & Phoenix teams - Mob data");
             end
             imgui.End();
 
