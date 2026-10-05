@@ -183,23 +183,41 @@ local function BuildDetectionIcons(mobInfo)
     return detectionIcons;
 end
 
+-- Elements without a damage modifier are labeled by their rank's magic evasion change.
 local function AddRankIcons(icons, mobInfo, isResistance, damageModifiers)
-    for _, elem in ipairs(elements) do
+    local ranked = {};
+    for i, elem in ipairs(elements) do
         local rank = mobInfo.ElementRanks and mobInfo.ElementRanks[elem.key] or 0;
         if (isResistance and rank > 0) or (not isResistance and rank < 0) then
-            local detail = elem.name .. ' Resistance Rank: ' .. tostring(rank);
+            local percent = mobdata.GetRankMagicEvasionPercent(rank);
+            -- Use %% to escape % for imgui.SetTooltip (printf-style function)
+            local detail = string.format('%s Resistance Rank: %d (%+d%%%% magic evasion)', elem.name, rank, percent);
             if damageModifiers[elem.key] then
                 for _, icon in ipairs(icons) do
                     if icon.element == elem.key then icon.tooltip = icon.tooltip .. '\n' .. detail; end
                 end
             else
-                table.insert(icons, {
-                    texture = textures.elements[string.lower(elem.key)],
-                    tooltip = detail,
-                    showPercent = false,
-                });
+                table.insert(ranked, { elem = elem, rank = rank, percent = percent, detail = detail, order = i });
             end
         end
+    end
+
+    -- Strongest rank first; ties keep element order.
+    table.sort(ranked, function(a, b)
+        if a.rank ~= b.rank then return math.abs(a.rank) > math.abs(b.rank); end
+        return a.order < b.order;
+    end);
+
+    local groupModifiers = gConfig.mobInfoGroupModifiers;
+    for i, item in ipairs(ranked) do
+        local nextItem = ranked[i + 1];
+        table.insert(icons, {
+            texture = textures.elements[string.lower(item.elem.key)],
+            element = item.elem.key,
+            tooltip = item.detail,
+            modifierText = string.format('%+d%%', item.percent),
+            showPercent = not groupModifiers or nextItem == nil or nextItem.percent ~= item.percent,
+        });
     end
 end
 

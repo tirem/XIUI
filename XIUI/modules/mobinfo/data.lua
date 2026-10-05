@@ -290,6 +290,19 @@ mobdata.GetWeaknesses = function(mobInfo)
     return weaknesses;
 end
 
+-- LSB scripts/combat/basic/magic_hit_rate.lua: resistance rank -> magic evasion multiplier.
+local rankMagicEvasion = {
+    [-3] = 0.95, [-2] = 0.96019, [-1] = 0.98, [0] = 1,
+    [1] = 1.023, [2] = 1.049, [3] = 1.0905, [4] = 1.126, [5] = 1.2075, [6] = 1.3475,
+    [7] = 1.70065, [8] = 2.141, [9] = 2.2, [10] = 2.275, [11] = 2.35,
+};
+
+-- Magic evasion change for an elemental resistance rank, as a rounded percent.
+mobdata.GetRankMagicEvasionPercent = function(rank)
+    local multiplier = rankMagicEvasion[math.max(-3, math.min(11, rank))];
+    return math.floor((multiplier - 1) * 100 + 0.5);
+end
+
 -- LSB data/enums/immunity.yaml flags. Sleep types have separate bits.
 mobdata.ImmunityFlags = {
     Gravity = 0x02,

@@ -13,6 +13,8 @@ local immunities = data.GetImmunities(amanita);
 assert(immunities.DarkSleep and immunities.LightSleep and not immunities.Sleep);
 assert(not data.GetImmunities({ Immunities = 1 }).Sleep);
 assert(data.GetImmunities({ Immunities = 0x10000 }).Petrify);
+assert(data.GetRankMagicEvasionPercent(-3) == -5 and data.GetRankMagicEvasionPercent(-2) == -4);
+assert(data.GetRankMagicEvasionPercent(4) == 13 and data.GetRankMagicEvasionPercent(20) == 135);
 local sheep = assert(data.GetMobInfo('Wild Sheep', 179));
 assert(sheep.Name == 'Wild Sheep');
 assert(sheep.Scent and not sheep.Blood);

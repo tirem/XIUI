@@ -23,7 +23,7 @@ including era, Dynamis, and Limbus changes. Lua scripts, runtime modifiers, and 
 server configuration are outside these snapshots.
 
 Physical and elemental damage adjustments become damage multipliers. Elemental resistance
-ranks stay separate and appear in tooltips without a damage percentage. Immunities use
+ranks stay separate; Mob Info labels them with the magic evasion change LSB applies per rank. Immunities use
 `data/enums/immunity.yaml`, including distinct light/dark sleep flags. Detection includes
 true sight, true hearing, low HP, and scent tracking.
 
