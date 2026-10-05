@@ -1204,6 +1204,14 @@ function Controller.HandleDInputState(e)
         end
 
         state.previousDPadAngle = povAngle;
+
+        -- Hide the POV from the game for the whole time a crossbar opener is held.
+        -- Slot activation is handled above; without this the menu cursor still moves.
+        if blockingEnabled and state.activeCombo ~= COMBO_MODES.NONE then
+            pcall(function()
+                e.pov = -1;
+            end);
+        end
     end
 end
 

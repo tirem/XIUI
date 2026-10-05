@@ -1298,10 +1298,12 @@ function M.DrawSlot(params)
             end
         end
 
-        -- Left click to execute (BuildCommand deferred to click time to avoid per-frame cost)
+        -- Left click: Ctrl opens Macro Manager; otherwise execute (unless a drag started)
         if isItemHovered and imgui.IsMouseReleased(0) then
             if not dragdrop.IsDragging() and not dragdrop.WasDragAttempted() then
-                if params.onClick then
+                if imgui.GetIO().KeyCtrl then
+                    require('modules.hotbar.macropalette').OpenPalette();
+                elseif params.onClick then
                     params.onClick();
                 elseif bind then
                     local cmd = actions.BuildCommand(bind);
@@ -1312,10 +1314,13 @@ function M.DrawSlot(params)
             end
         end
 
-        -- Right click (disabled when Lock Movement is enabled)
+        -- Right click clears the slot. With Lock Movement on, require Shift (same as drag override).
         if isItemHovered and imgui.IsMouseClicked(1) and bind then
-            if params.onRightClick and not gConfig.hotbarLockMovement then
-                params.onRightClick();
+            if params.onRightClick then
+                local locked = gConfig and gConfig.hotbarLockMovement;
+                if not locked or imgui.GetIO().KeyShift then
+                    params.onRightClick();
+                end
             end
         end
     end

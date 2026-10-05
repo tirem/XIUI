@@ -1427,7 +1427,44 @@ ashita.events.register('command', 'command_cb', function (e)
             return;
         end
 
+        --@cmd /xiui hotbar layout : Cycle layout (Hotbar, Crossbar, Both)
+        --@cmd /xiui hotbar layout [hotbar|crossbar|both] : Set a specific layout
         --@cmd /xiui hotbar <bar> <slot> : Execute hotbar slot (used by keybinds)
+        if (command_args[2] == 'hotbar' and command_args[3] == 'layout') then
+            if not gConfig.hotbarCrossbar then
+                print(chat.header(addon.name):append(chat.error('Hotbar settings are not available.')));
+                return;
+            end
+
+            local modes = { 'hotbar', 'crossbar', 'both' };
+            local labels = { hotbar = 'Hotbar', crossbar = 'Crossbar', both = 'Both' };
+            local requested = command_args[4] and command_args[4]:lower() or nil;
+            local newMode;
+
+            if requested == nil then
+                local current = gConfig.hotbarCrossbar.mode or 'hotbar';
+                local nextIndex = 1;
+                for i, mode in ipairs(modes) do
+                    if mode == current then
+                        nextIndex = (i % #modes) + 1;
+                        break;
+                    end
+                end
+                newMode = modes[nextIndex];
+            elseif labels[requested] then
+                newMode = requested;
+            else
+                print(chat.header(addon.name):append(chat.message('Usage: /xiui hotbar layout [hotbar|crossbar|both]')));
+                return;
+            end
+
+            gConfig.hotbarCrossbar.mode = newMode;
+            SaveSettingsOnly();
+            DeferredUpdateVisuals();
+            print(chat.header(addon.name):append(chat.message('Hotbar layout: ')):append(chat.success(labels[newMode])));
+            return;
+        end
+
         -- Called by Ashita /bind system to execute hotbar actions
         if (command_args[2] == 'hotbar' and #command_args >= 4) then
             local barIndex = tonumber(command_args[3]);

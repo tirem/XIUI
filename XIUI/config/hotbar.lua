@@ -2144,7 +2144,7 @@ function M.DrawSettings(state)
         end
         DeferredUpdateVisuals();
     end);
-    imgui.ShowHelp('When enabled, prevents dragging/dropping and swapping of hotbar and crossbar slots.');
+    imgui.ShowHelp('When enabled, prevents dragging/dropping and clearing hotbar and crossbar slots.\nHold Shift to drag a slot or Shift+Right-Click to clear it.');
     components.DrawHideWhenMenuOpenOptions('hotbarHideOnMenuFocus', 'hotbarHideMacroPalette');
 
     -- Disable XI macros checkbox (stored in hotbarGlobal)
