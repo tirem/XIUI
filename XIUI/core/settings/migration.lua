@@ -1037,6 +1037,7 @@ function M.MigrateSlotMacroRefs(gConfig)
         'equipSlot', 'macroText', 'itemId',
         'customIconType', 'customIconId', 'customIconPath',
         'recastSourceType', 'recastSourceAction', 'recastSourceItemId',
+        'alwaysAvailable',
     };
 
     local keysAdded = 0;

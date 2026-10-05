@@ -474,18 +474,6 @@ local imgP1 = {0, 0};
 local imgP2 = {0, 0};
 local UV0 = {0, 0};
 local UV1 = {1, 1};
-local triA = {0, 0};
-local triB = {0, 0};
-local triC = {0, 0};
-
--- Lower-right half of the icon (split top-left → bottom-right) while extra charges refill.
-local function DrawRechargingHalf(drawList, ix, iy, iw, ih, animOpacity)
-    triA[1] = ix + iw; triA[2] = iy;
-    triB[1] = ix;      triB[2] = iy + ih;
-    triC[1] = ix + iw; triC[2] = iy + ih;
-    local a = math.floor(128 * animOpacity);
-    drawList:AddTriangleFilled(triA, triB, triC, bit.bor(bit.lshift(a, 24), 0x000000));
-end
 
 -- Texture cache: keeps texture tables alive (prevents GC release of D3D textures)
 -- and stores the derived uint32 pointer for fast AddImage calls.
@@ -575,9 +563,12 @@ local function BuildAvailabilityCacheKey(bind, bindKey)
     -- Current levels change during level sync without changing either job ID.
     -- Include them so level-gated spell availability cannot remain cached after sync ends.
     -- Pet presence affects HasAbility for BPs, maneuvers, ready moves, etc.
+    -- SCH Light/Dark Arts (and Tabula Rasa) gate grimoire stratagems and addendum
+    -- spells; positive HasAbility results are cached, so arts must be part of the key.
     local petKey = petpalette.GetCurrentPetKey() or 'none';
+    local artsKey = actions.GetArtsAvailabilitySignature();
     return key .. ':' .. jobId .. ':' .. jobLevel .. ':' .. subjobId .. ':' .. subjobLevel
-        .. ':' .. petKey .. ':' .. playerdata.GetEquipmentSignature();
+        .. ':' .. petKey .. ':' .. artsKey .. ':' .. playerdata.GetEquipmentSignature();
 end
 
 local function GetAvailabilityState(bind, bindKey)
@@ -591,8 +582,13 @@ local function GetAvailabilityState(bind, bindKey)
         bindKey = (bind.actionType or '') .. ':' .. (bind.action or '');
     end
 
+    -- Arts swaps must bust the 1s memo immediately; otherwise opposing
+    -- stratagems stay lit for up to AVAIL_MEMO_TTL after a grimoire change.
+    local artsKey = actions.GetArtsAvailabilitySignature();
+    local memoKey = bindKey .. ':' .. artsKey;
+
     local now = os.clock();
-    local memo = availabilityStateMemo[bindKey];
+    local memo = availabilityStateMemo[memoKey];
     if memo and (now - memo.ts) < AVAIL_MEMO_TTL then
         return memo.isUnavailable, memo.reason;
     end
@@ -616,7 +612,7 @@ local function GetAvailabilityState(bind, bindKey)
     end
 
     local isUnavailable = not cached.isAvailable;
-    availabilityStateMemo[bindKey] = { ts = now, isUnavailable = isUnavailable, reason = cached.reason };
+    availabilityStateMemo[memoKey] = { ts = now, isUnavailable = isUnavailable, reason = cached.reason };
     return isUnavailable, cached.reason;
 end
 
@@ -883,7 +879,6 @@ function M.DrawSlot(params)
     local cooldown = recast.GetCooldownInfo(bind);
     local isOnCooldown = cooldown.isOnCooldown;
     local recastText = cooldown.recastText;
-    local rechargingExtra = cooldown.rechargingExtra == true;
 
     -- Resource cost (MP / TP / charges / finishing moves)
     local costKind, costLabel, costMet = 'none', nil, true;
@@ -948,14 +943,6 @@ function M.DrawSlot(params)
             imgP2[1] = iconX + renderedWidth; imgP2[2] = iconY + renderedHeight;
             drawList:AddImage(iconPtr, imgP1, imgP2, UV0, UV1, tintColor);
             iconRendered = true;
-        end
-    end
-
-    if rechargingExtra and not isUnavailable and not isOnCooldown and animOpacity > 0.01 and drawList then
-        if iconRendered then
-            DrawRechargingHalf(drawList, iconX, iconY, renderedWidth, renderedHeight, animOpacity);
-        else
-            DrawRechargingHalf(drawList, x + iconPadding, y + iconPadding, targetIconSize, targetIconSize, animOpacity);
         end
     end
 

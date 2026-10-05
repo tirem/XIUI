@@ -51,7 +51,6 @@ local cooldownResult = {
     spellId = nil,
     abilityId = nil,
     itemId = nil,
-    rechargingExtra = false,
 };
 
 -- Get spell recast by ID. Fetches from Ashita memory on cache miss / expiry,
@@ -338,7 +337,6 @@ function M.GetCooldownInfo(actionData)
         cooldownResult.spellId = nil;
         cooldownResult.abilityId = nil;
         cooldownResult.itemId = nil;
-        cooldownResult.rechargingExtra = false;
         return cooldownResult;
     end
 
@@ -360,7 +358,6 @@ function M.GetCooldownInfo(actionData)
     local itemId = nil;
     local remaining = 0;
     local recastText = nil;
-    local rechargingExtra = false;
 
     local onCooldown = false;
 
@@ -395,8 +392,8 @@ function M.GetCooldownInfo(actionData)
         if charge then
             remaining = charge.nextCharge;
             recastText = M.FormatRecast(remaining);
+            -- Usable while any charge remains; full dim only at 0.
             onCooldown = charge.charges < 1;
-            rechargingExtra = charge.charges >= 1 and remaining > 0;
         end
     end
 
@@ -407,7 +404,6 @@ function M.GetCooldownInfo(actionData)
     cooldownResult.spellId = spellId;
     cooldownResult.abilityId = abilityId;
     cooldownResult.itemId = itemId;
-    cooldownResult.rechargingExtra = rechargingExtra;
     return cooldownResult;
 end
 

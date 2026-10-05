@@ -995,6 +995,19 @@ local function GetBuffState()
     return buffState;
 end
 
+--- Compact signature of SCH arts buffs for availability cache keys.
+--- HasAbility for grimoire stratagems flips with Light/Dark/Tabula, but
+--- positive results are cached; without this, opposing abilities stay lit
+--- after an arts swap until job/zone clears the cache.
+---@return string
+function M.GetArtsAvailabilitySignature()
+    local buffs = GetBuffState();
+    if buffs.tabulaRasa then return 'T'; end
+    if buffs.lightArts then return 'L'; end
+    if buffs.darkArts then return 'D'; end
+    return '0';
+end
+
 local function GetPartyMp()
     local party = AshitaCore:GetMemoryManager():GetParty();
     return party and party:GetMemberMP(0) or 0;
@@ -1173,6 +1186,10 @@ end
 ---@return boolean
 function M.NeedsAvailabilityCheck(bind)
     if not bind then return false; end
+    -- Macro editor opt-out: keep icon lit and skip Action Not Available / red X
+    if bind.actionType == 'macro' and bind.alwaysAvailable then
+        return false;
+    end
     if AVAILABILITY_ACTION_TYPES[bind.actionType] then return true; end
     return bind.actionType == 'macro'
         and bind.recastSourceType ~= nil

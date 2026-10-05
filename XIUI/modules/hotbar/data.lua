@@ -841,6 +841,7 @@ function M.GetKeybindForSlot(barIndex, slotIndex)
                     and prev.recastSourceType == macroData.recastSourceType
                     and prev.recastSourceAction == macroData.recastSourceAction
                     and prev.recastSourceItemId == macroData.recastSourceItemId
+                    and prev.alwaysAvailable == macroData.alwaysAvailable
                 then
                     return prev;
                 end
@@ -864,6 +865,7 @@ function M.GetKeybindForSlot(barIndex, slotIndex)
                     recastSourceType = macroData.recastSourceType,
                     recastSourceAction = macroData.recastSourceAction,
                     recastSourceItemId = macroData.recastSourceItemId,
+                    alwaysAvailable = macroData.alwaysAvailable,
                 };
                 slotCache[slotIndex] = result;
                 return result;
@@ -989,6 +991,7 @@ function M.GetCrossbarSlotData(comboMode, slotIndex)
             recastSourceType = liveMacro.recastSourceType,
             recastSourceAction = liveMacro.recastSourceAction,
             recastSourceItemId = liveMacro.recastSourceItemId,
+            alwaysAvailable = liveMacro.alwaysAvailable,
         };
     end
 
@@ -1026,6 +1029,7 @@ function M.BuildSlotDataForWrite(slotData)
         recastSourceType = slotData.recastSourceType,
         recastSourceAction = slotData.recastSourceAction,
         recastSourceItemId = slotData.recastSourceItemId,
+        alwaysAvailable = slotData.alwaysAvailable,
     };
 end
 
