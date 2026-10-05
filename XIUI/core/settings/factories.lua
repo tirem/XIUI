@@ -276,6 +276,7 @@ function M.createHotbarGlobalDefaults()
         -- Game UI patches
         disableMacroBars = false,  -- Disable native XI macros (macro bar display + controller macro blocking)
         controllerHoldToShow = true,  -- Controller triggers use hold-to-show (like macrofix addon) instead of tap-to-toggle
+        zoneSettleSeconds = 3,  -- Extra seconds the hotbar stays idle after the client reports a zone loaded
 
         -- Blocked game keys - array of key definitions that should be blocked from reaching the game
         -- Each entry: { key = virtualKeyCode, ctrl = bool, alt = bool, shift = bool }

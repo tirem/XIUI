@@ -1904,6 +1904,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         bLoggedIn = true;
         -- Job from zone-in packet (login and zoning). Do not poll memory.
         if gConfig.hotbarEnabled then
+            hotbar.HandleZoneInPacket();
             local mainJob = struct.unpack('B', e.data, 0xB4 + 1);
             local subJob = struct.unpack('B', e.data, 0xB7 + 1);
             hotbar.ApplyJobAndRefresh(mainJob, subJob);
@@ -2050,7 +2051,12 @@ ashita.events.register('packet_out', 'packet_out_cb', function (e)
         satchelModule.HandlePacketOut(e);
     end
 
-    if (e.id == 0x0074) then
+    if (e.id == 0x0011) then
+        -- Client has finished loading the zone
+        if gConfig.hotbarEnabled then
+            hotbar.HandleZoneEnteredPacket();
+        end
+    elseif (e.id == 0x0074) then
         -- Party invite response (accept/decline)
         if gConfig.showNotifications then
             notifications.HandlePartyInviteResponse(e);
