@@ -588,12 +588,15 @@ local ACTION_REJECT_STD_MESSAGE_IDS = {
 };
 
 local pendingActionAccept = nil;
+-- After a timeout (no packet), the next line ignores generic refuse messages so a
+-- late cooldown message from the previous line cannot cancel the new wait.
+local ignoreGenericRejectForNext = false;
 
 local function clearPendingActionAccept()
     pendingActionAccept = nil;
 end
 
-local function finishPendingActionAccept(accepted)
+local function finishPendingActionAccept(accepted, reason)
     local pending = pendingActionAccept;
     if not pending then
         return;
@@ -605,19 +608,174 @@ local function finishPendingActionAccept(accepted)
     local cb = pending.onReady;
     clearPendingActionAccept();
     if cb then
-        cb(accepted);
+        cb(accepted, reason or (accepted and 'accept' or 'reject'));
     end
 end
 
---- After an action is queued, call onReady(accepted) when the game accepts it,
---- or onReady(false) if a reject message arrives or the short timeout elapses.
-local function waitForActionAccepted(onReady, cancelCheck)
+-- Resolve which spell/ability/item a macro line is trying to use.
+local SPELL_VERBS = { ma = true, magic = true, ninjutsu = true, na = true };
+local ABILITY_VERBS = { ja = true, jobability = true };
+local PET_VERBS = { pet = true };
+local WS_VERBS = { ws = true, weaponskill = true };
+local ITEM_VERBS = { item = true };
+local RANGED_VERBS = { ra = true, ranged = true };
+
+local function resolveExpectedAction(commandLine)
+    if not commandLine then
+        return nil;
+    end
+    local verb = commandLine:match('^/%s*(%S+)');
+    if not verb then
+        return nil;
+    end
+    verb = verb:lower();
+
+    local name = commandLine:match('"([^"]+)"');
+    if not name then
+        name = commandLine:match('^/%s*%S+%s+([^<]+)');
+        if name then
+            name = name:match('^%s*(.-)%s*$');
+            if name == '' then name = nil; end
+        end
+    end
+
+    if SPELL_VERBS[verb] then
+        return { kind = 'spell', id = name and actiondb.GetSpellId(name) or nil, name = name };
+    elseif ABILITY_VERBS[verb] then
+        return { kind = 'ability', id = name and actiondb.GetAbilityId(name) or nil, name = name };
+    elseif PET_VERBS[verb] then
+        return { kind = 'ability', id = name and actiondb.GetPetAbilityId(name) or nil, name = name };
+    elseif WS_VERBS[verb] then
+        return { kind = 'weaponskill', id = name and actiondb.GetAbilityId(name) or nil, name = name };
+    elseif ITEM_VERBS[verb] then
+        return { kind = 'item', id = name and actiondb.GetItemId(name) or nil, name = name };
+    elseif RANGED_VERBS[verb] then
+        return { kind = 'ranged' };
+    end
+    return { kind = 'action' };
+end
+
+-- Native macros: "access" means the job knows the action (HasSpell/HasAbility), not
+-- whether it is off cooldown. Unknown lines are tried and fail instantly; the first
+-- known action in a wait-segment runs, then the rest of that segment is skipped.
+local function playerHasAccessToCommand(commandLine)
+    local expected = resolveExpectedAction(commandLine);
+    if not expected or not expected.kind or expected.kind == 'action' or expected.kind == 'ranged' then
+        return true;
+    end
+
+    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    if not player then
+        return true;
+    end
+    -- During zoning job data can be empty; do not block the segment.
+    if (player:GetMainJob() or 0) == 0 or (player:GetMainJobLevel() or 0) == 0 then
+        return true;
+    end
+
+    if expected.kind == 'spell' then
+        if not expected.name and not expected.id then
+            return true;
+        end
+        local spellRes = expected.id and AshitaCore:GetResourceManager():GetSpellById(expected.id);
+        if spellRes then
+            local canCast = playerdata.EvaluateSpellAccess(spellRes, player);
+            return canCast == true;
+        end
+        if expected.id then
+            return player:HasSpell(expected.id) == true;
+        end
+        return false;
+    end
+
+    if expected.kind == 'ability' or expected.kind == 'weaponskill' then
+        if not expected.name and not expected.id then
+            return true;
+        end
+        local abilityId = expected.id;
+        if not abilityId and expected.name then
+            abilityId = actiondb.GetAbilityId(expected.name);
+        end
+        if abilityId and player:HasAbility(abilityId) then
+            return true;
+        end
+        if expected.kind == 'ability' and expected.name and playerdata.IsPetCommandAvailable
+            and playerdata.IsPetCommandAvailable(expected.name) then
+            return true;
+        end
+        if expected.kind == 'weaponskill' and expected.name and playerdata.IsWeaponskillInCache
+            and playerdata.IsWeaponskillInCache(expected.name) then
+            return true;
+        end
+        if expected.kind == 'ability' and expected.name and playerdata.IsAbilityInCache
+            and playerdata.IsAbilityInCache(expected.name) then
+            return true;
+        end
+        return false;
+    end
+
+    if expected.kind == 'item' then
+        if not expected.name and not expected.id then
+            return true;
+        end
+        return playerdata.IsItemInAccessibleInventory(expected.id, expected.name) == true;
+    end
+
+    return true;
+end
+
+local function getActionPacketActionId(actionPacket)
+    local actionType = actionPacket.Type;
+    if actionType == 8 or actionType == 9 then
+        local target = actionPacket.Targets and actionPacket.Targets[1];
+        local action = target and target.Actions and target.Actions[1];
+        return action and action.Param or nil;
+    end
+    -- JA / WS / finish packets carry the ability/spell/item id in Param.
+    if actionType == 3 or actionType == 4 or actionType == 5
+        or actionType == 6 or actionType == 7 or actionType == 14 or actionType == 15 then
+        return actionPacket.Param;
+    end
+    return nil;
+end
+
+local function pendingMatchesPacketAction(pending, actionPacket)
+    if not pending.expected or not pending.expected.id then
+        return true;
+    end
+    local packetId = getActionPacketActionId(actionPacket);
+    if not packetId then
+        return true;
+    end
+    return packetId == pending.expected.id;
+end
+
+local function pendingMatchesMessageAction(pending, messagePacket)
+    if not pending.expected or not pending.expected.id then
+        return true;
+    end
+    local param = messagePacket.param or 0;
+    local value = messagePacket.value or 0;
+    -- Generic refuse (cooldown, unable to cast, etc.) often has no action id.
+    if param == 0 and value == 0 then
+        return not pending.ignoreGenericReject;
+    end
+    return param == pending.expected.id or value == pending.expected.id;
+end
+
+--- After an action is queued, call onReady(accepted, reason) when that action is
+--- accepted/rejected, or on timeout. expected ties the wait to this macro line.
+local function waitForActionAccepted(onReady, cancelCheck, expected)
     clearPendingActionAccept();
     local token = {};
+    local ignoreGeneric = ignoreGenericRejectForNext;
+    ignoreGenericRejectForNext = false;
     pendingActionAccept = {
         token = token,
         onReady = onReady,
         cancelCheck = cancelCheck,
+        expected = expected,
+        ignoreGenericReject = ignoreGeneric,
         deadline = os.clock() + ACTION_ACCEPT_TIMEOUT_SEC,
     };
 
@@ -631,7 +789,7 @@ local function waitForActionAccepted(onReady, cancelCheck)
             return;
         end
         if os.clock() >= pending.deadline then
-            finishPendingActionAccept(false);
+            finishPendingActionAccept(false, 'timeout');
             return;
         end
         ashita.tasks.once(0.05, pollTimeout);
@@ -655,16 +813,26 @@ function M.HandleActionPacket(actionPacket)
         return;
     end
 
-    local actionType = actionPacket.Type;
-    if actionType == 8 or actionType == 9 then
-        if actionPacket.Param ~= 0x6163 then
-            return;
-        end
-    elseif not ACTION_ACCEPTED_TYPES[actionType] then
+    if not pendingMatchesPacketAction(pending, actionPacket) then
         return;
     end
 
-    finishPendingActionAccept(true);
+    local actionType = actionPacket.Type;
+    -- Type 8/9 with Param != cast/item start (0x6163) is an interrupt/fail for this action.
+    if actionType == 8 or actionType == 9 then
+        if actionPacket.Param == 0x6163 then
+            finishPendingActionAccept(true, 'accept');
+        else
+            finishPendingActionAccept(false, 'reject');
+        end
+        return;
+    end
+
+    if not ACTION_ACCEPTED_TYPES[actionType] then
+        return;
+    end
+
+    finishPendingActionAccept(true, 'accept');
 end
 
 --- 0x0029 battle message: server refused the pending action (CD, resting, range, etc.).
@@ -682,12 +850,20 @@ function M.HandleMessagePacket(messagePacket)
         return;
     end
     local me = party:GetMemberServerId(0);
-    -- UniqueNoCas is the acting entity for these refusals.
-    if not me or (messagePacket.sender ~= me and messagePacket.sender ~= 0) then
+    if not me then
+        return;
+    end
+    local sender = messagePacket.sender or 0;
+    local target = messagePacket.target or 0;
+    if sender ~= me and sender ~= 0 and target ~= me then
         return;
     end
 
-    finishPendingActionAccept(false);
+    if not pendingMatchesMessageAction(pending, messagePacket) then
+        return;
+    end
+
+    finishPendingActionAccept(false, 'reject');
 end
 
 --- 0x002A standard message: zone/system refusals (mog house, etc.).
@@ -705,11 +881,20 @@ function M.HandleMessageStandardPacket(messagePacket)
         return;
     end
     local me = party:GetMemberServerId(0);
-    if not me or (messagePacket.sender ~= me and messagePacket.sender ~= 0) then
+    if not me then
+        return;
+    end
+    local sender = messagePacket.sender or 0;
+    if sender ~= me and sender ~= 0 then
         return;
     end
 
-    finishPendingActionAccept(false);
+    -- Standard messages are not action-id specific; only the active line's wait sees them.
+    if pending.ignoreGenericReject then
+        return;
+    end
+
+    finishPendingActionAccept(false, 'reject');
 end
 
 -- Icon cache for items (keyed by item name since we look up by name)
@@ -1936,12 +2121,14 @@ local function waitForSubtargetComplete(commandLine, onComplete, onAbort, cancel
 end
 
 --- Execute a command string (handles multi-line macros with /wait support)
---- Splits by newlines and executes each non-empty line top-to-bottom.
---- Action lines wait for server accept (0x0028) or reject (0x0029/0x002A) before
---- the next line — matching native macros (e.g. stacked /ra fails individually).
---- With <wait N> after an accepted action, the N-second clock starts on accept;
---- on reject, remaining wait is honored from queue time.
---- ST lines pause until confirm or dismiss (Ashita command events + target memory).
+--- Native wait-segment rules (FFXI macro behavior):
+--- - Unknown actions are tried (error), with no delay, and scanning continues.
+--- - The first known action in a segment runs. Later known actions in that same
+---   segment (no wait yet) are skipped. Unknown actions after it are still tried
+---   so their errors still show.
+--- - <wait N> / /wait starts a new segment after that delay.
+--- Accept/reject gating applies to the known action that actually ran (wait timing).
+--- ST lines pause until confirm or dismiss.
 --- @param commandText string The command text (may contain newlines)
 --- @param isMacro boolean|nil If true, enforces single-macro-at-a-time execution
 --- @return boolean success Whether any command was executed
@@ -1989,13 +2176,15 @@ function M.ExecuteCommandString(commandText, isMacro)
         end
     end
 
-    -- Sequential path: one line at a time, accept/reject gated between action lines.
     local function isMacroCancelled()
         return myMacroId ~= nil and myMacroId ~= activeMacroId;
     end
 
     local executeNextLine;
-    local lastQueuedWasAction = false;
+    local NEXT_LINE_MIN_DELAY = 0.01;
+    -- True after a known action has already run in this wait-segment.
+    -- Further known actions are skipped; unknown actions are still tried for errors.
+    local segmentConsumed = false;
 
     local function scheduleNextLine(index, delay)
         if index > #lines then
@@ -2007,28 +2196,26 @@ function M.ExecuteCommandString(commandText, isMacro)
         end);
     end
 
-    -- After an action line: wait for accept/reject, then continue.
-    -- Accepted + wait N → full N from accept. Rejected → remaining N from queue (0 if none).
-    local function scheduleWaitThenNext(index, delay, waitForAccept)
+    -- After a known action runs: optionally wait (new segment), else keep scanning.
+    local function scheduleWaitThenContinue(nextIndex, delay, expectedAction)
         local waitDelay = delay or 0;
-
-        if not waitForAccept then
-            scheduleNextLine(index, waitDelay);
-            return;
-        end
-
         local queuedAt = os.clock();
-        waitForActionAccepted(function(accepted)
+        waitForActionAccepted(function(accepted, reason)
             if isMacroCancelled() then
                 return;
             end
-            if accepted then
-                scheduleNextLine(index, waitDelay);
+            ignoreGenericRejectForNext = (not accepted and reason == 'timeout');
+            if waitDelay > 0 then
+                -- Wait opens a new segment for the following lines.
+                segmentConsumed = false;
+                local delaySec = accepted and waitDelay or math.max(NEXT_LINE_MIN_DELAY, waitDelay - (os.clock() - queuedAt));
+                scheduleNextLine(nextIndex, delaySec);
                 return;
             end
-            local remaining = waitDelay - (os.clock() - queuedAt);
-            scheduleNextLine(index, math.max(0, remaining));
-        end, isMacroCancelled);
+            -- No wait: stay in this segment; skip later known actions, still try unknowns.
+            segmentConsumed = true;
+            scheduleNextLine(nextIndex, NEXT_LINE_MIN_DELAY);
+        end, isMacroCancelled, expectedAction);
     end
 
     executeNextLine = function(index)
@@ -2037,91 +2224,88 @@ function M.ExecuteCommandString(commandText, isMacro)
             return;
         end
 
-        -- If this is a macro flow, bail out when a newer macro has started
         if isMacroCancelled() then
             return;
         end
 
-        local line = lines[index]:match('^%s*(.-)%s*$');  -- Trim whitespace
+        local line = lines[index]:match('^%s*(.-)%s*$');
         if line == '' then
             scheduleNextLine(index + 1, 0);
             return;
         end
 
-        -- Check for wait/pause/sleep commands
+        -- Standalone /wait: always a segment boundary.
         local waitMatch = line:match('^/wait%s*(%d*%.?%d*)') or
                           line:match('^/pause%s*(%d*%.?%d*)') or
                           line:match('^/sleep%s*(%d*%.?%d*)');
 
         if waitMatch then
+            segmentConsumed = false;
             local delay = tonumber(waitMatch) or 1;
-            local waitForAccept = lastQueuedWasAction;
-            lastQueuedWasAction = false;
-            scheduleWaitThenNext(index + 1, delay, waitForAccept);
-        else
-            -- Parse inline <wait #> subcommand
-            local commandToExecute, inlineWait = parseInlineWait(line);
-            local requiresSubtargetPause = lineRequiresSubtargetPause(commandToExecute);
-            local actionVerb = commandToExecute:match('^/%s*(%S+)');
-            local isActionLine = actionVerb ~= nil and TARGETABLE_COMMANDS[actionVerb:lower()] == true;
-
-            -- Mode 2 (Macro) for action commands; mode -1 (AshitaParse) for /echo etc.
-            local cmdMode = isMacro and getMacroCommandQueueMode(commandToExecute) or -1;
-            local stTag = requiresSubtargetPause and extractSubtargetTag(commandToExecute) or nil;
-
-            local function continueAfterLine()
-                lastQueuedWasAction = isActionLine;
-                if requiresSubtargetPause then
-                    return;
-                end
-                -- Gate action lines on accept/reject before the next line (or release).
-                if isActionLine or index < #lines then
-                    scheduleWaitThenNext(index + 1, inlineWait or 0, isActionLine);
-                else
-                    releaseMyMacro();
-                end
-            end
-
-            local function queueActionLine()
-                if requiresSubtargetPause then
-                    -- ST confirm only means a target was chosen; server can still reject
-                    -- (range, MP, etc.) via 0x0029/0x002A or accept via 0x0028 afterward.
-                    waitForSubtargetComplete(commandToExecute, function()
-                        lastQueuedWasAction = isActionLine;
-                        scheduleWaitThenNext(index + 1, inlineWait or 0, isActionLine);
-                    end, function()
-                        -- Subtarget dismissed: end this macro and invalidate its id.
-                        releaseMyMacro();
-                        if myMacroId ~= nil then
-                            activeMacroId = activeMacroId + 1;
-                        end
-                    end, isMacroCancelled);
-                end
-
-                local ok, err = pcall(function()
-                    local chatManager = AshitaCore:GetChatManager();
-                    if chatManager then
-                        chatManager:QueueCommand(cmdMode, commandToExecute);
-                    end
-                end);
-
-                if not ok then
-                    print('[XIUI] Command execution error: ' .. tostring(err));
-                end
-
-                continueAfterLine();
-            end
-
-            local function executeCommandLine()
-                if stTag and shouldApplyStPreTarget(stTag) and queueStPreTarget(stTag) then
-                    runAfterStPreTarget(queueActionLine, isMacroCancelled);
-                    return;
-                end
-                queueActionLine();
-            end
-
-            executeCommandLine();
+            scheduleNextLine(index + 1, delay > 0 and delay or NEXT_LINE_MIN_DELAY);
+            return;
         end
+
+        local commandToExecute, inlineWait = parseInlineWait(line);
+        local requiresSubtargetPause = lineRequiresSubtargetPause(commandToExecute);
+        local actionVerb = commandToExecute:match('^/%s*(%S+)');
+        local isActionLine = actionVerb ~= nil and TARGETABLE_COMMANDS[actionVerb:lower()] == true;
+        local expectedAction = isActionLine and resolveExpectedAction(commandToExecute) or nil;
+        local cmdMode = isMacro and getMacroCommandQueueMode(commandToExecute) or -1;
+        local stTag = requiresSubtargetPause and extractSubtargetTag(commandToExecute) or nil;
+        local hasAccess = (not isActionLine) or playerHasAccessToCommand(commandToExecute);
+
+        -- Known action after one already ran this segment: skip (do not queue).
+        if isActionLine and hasAccess and segmentConsumed then
+            scheduleNextLine(index + 1, NEXT_LINE_MIN_DELAY);
+            return;
+        end
+
+        local runAccessible = isActionLine and hasAccess;
+
+        local function queueActionLine()
+            if requiresSubtargetPause then
+                waitForSubtargetComplete(commandToExecute, function()
+                    if runAccessible then
+                        scheduleWaitThenContinue(index + 1, inlineWait or 0, expectedAction);
+                    else
+                        scheduleNextLine(index + 1, NEXT_LINE_MIN_DELAY);
+                    end
+                end, function()
+                    releaseMyMacro();
+                    if myMacroId ~= nil then
+                        activeMacroId = activeMacroId + 1;
+                    end
+                end, isMacroCancelled);
+            elseif runAccessible then
+                scheduleWaitThenContinue(index + 1, inlineWait or 0, expectedAction);
+            end
+
+            local ok, err = pcall(function()
+                local chatManager = AshitaCore:GetChatManager();
+                if chatManager then
+                    chatManager:QueueCommand(cmdMode, commandToExecute);
+                end
+            end);
+
+            if not ok then
+                print('[XIUI] Command execution error: ' .. tostring(err));
+                if runAccessible and not requiresSubtargetPause then
+                    finishPendingActionAccept(false, 'reject');
+                elseif not requiresSubtargetPause then
+                    scheduleNextLine(index + 1, NEXT_LINE_MIN_DELAY);
+                end
+            elseif not requiresSubtargetPause and not runAccessible then
+                -- Unknown action or non-action: queue for errors / side effects, continue now.
+                scheduleNextLine(index + 1, NEXT_LINE_MIN_DELAY);
+            end
+        end
+
+        if stTag and shouldApplyStPreTarget(stTag) and queueStPreTarget(stTag) then
+            runAfterStPreTarget(queueActionLine, isMacroCancelled);
+            return;
+        end
+        queueActionLine();
     end
 
     -- Start executing from the first line
