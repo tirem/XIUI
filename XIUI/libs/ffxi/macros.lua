@@ -201,6 +201,18 @@ macrolib.is_running = function ()
     return ashita.memory.read_uint32(obj + ashita.memory.read_uint32(macrolib.ptrs.stop + 2)) ~= 0xFFFFFFFF;
 end
 
+-- While XIUI is driving QueueCommand(mode 2) macros, native stop() must not run or it
+-- will wipe the same macro stack mid-batch (first line skipped / waits cut short).
+local stopGuarded = false;
+
+macrolib.set_stop_guard = function (enabled)
+    stopGuarded = enabled == true;
+end
+
+macrolib.is_stop_guarded = function ()
+    return stopGuarded;
+end
+
 --[[
 * Runs a macro.
 *
@@ -301,6 +313,11 @@ end
 * @param source Optional string indicating what triggered the stop (e.g., 'controller', 'keyboard')
 --]]
 macrolib.stop = function (source)
+    if stopGuarded then
+        MacroBlockLog(string.format('stop: skipped (XIUI macro guard)%s', source and (' [' .. source .. ']') or ''));
+        return;
+    end
+
     local obj = macrolib.get_fsmacro();
     if (obj == nil or obj == 0) then
         MacroBlockLog('stop: fsmacro object not available');
@@ -326,6 +343,20 @@ macrolib.stop = function (source)
         local sourceInfo = source and (' [' .. source .. ']') or '';
         MacroBlockLog(string.format('stop: halted macro execution%s (was 0x%08X)', sourceInfo, currentValue));
     end
+end
+
+--[[
+* Stop only when the game reports a native macro is running and XIUI is not guarding.
+* Prefer this over stop() in per-frame paths so idle frames do not rewrite memory.
+--]]
+macrolib.stop_if_running = function (source)
+    if stopGuarded then
+        return;
+    end
+    if not macrolib.is_running() then
+        return;
+    end
+    macrolib.stop(source);
 end
 
 -- ============================================

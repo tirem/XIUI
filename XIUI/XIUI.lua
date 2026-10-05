@@ -1975,6 +1975,7 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
             if skillchainTrackingEnabled() then
                 skillchainModule.HandleActionPacket(actionPacket);
             end
+            hotbar.HandleActionPacket(actionPacket);
         end
     elseif (e.id == 0x063) then
         if gConfig.showPhantomRoll then phantomRoll.HandleBuffPacket(e); end
@@ -2014,6 +2015,9 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
             petBuffHandler.HandleMessagePacket(messagePacket);
             if enemyCastTrackingEnabled() then enemyCasts.HandleMessagePacket(messagePacket); end
             blueMagicLearned.HandleMessagePacket(messagePacket);
+            if gConfig.hotbarEnabled then
+                hotbar.HandleMessagePacket(messagePacket);
+            end
             if gConfig.showNotifications then
                 notifications.HandleMessagePacket(e, messagePacket, 0x0029);
             end
@@ -2032,6 +2036,9 @@ ashita.events.register('packet_in', 'packet_in_cb', function (e)
         -- Different structure than 0x0029 - use ParseMessageStandardPacket
         local messagePacket = ParseMessageStandardPacket(e.data);
         if messagePacket then
+            if gConfig.hotbarEnabled then
+                hotbar.HandleMessageStandardPacket(messagePacket);
+            end
             if gConfig.showNotifications then
                 notifications.HandleMessagePacket(e, messagePacket, 0x002A);
             end

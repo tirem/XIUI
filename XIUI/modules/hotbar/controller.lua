@@ -717,10 +717,12 @@ function Controller.HandleXInputState(e)
             MacroBlockLog(string.format('[XInput] BLOCKING started - combo=%s, %s', comboInfo, triggerInfo));
             DebugLog(string.format('Blocking triggers: blockingEnabled=%s, state_modified=%s, L2=%d, R2=%d',
                 tostring(blockingEnabled), tostring(e.state_modified ~= nil), leftTrigger, rightTrigger));
+            -- One edge stop when blocking begins; state_modified already hides triggers from the game.
+            macrosLib.stop_if_running('xinput_block_start');
+        else
+            -- Only touch memory if a native macro somehow started while we are blocking.
+            macrosLib.stop_if_running('xinput_state');
         end
-
-        -- Stop any native macro execution
-        macrosLib.stop('xinput_state');
 
         if e.state_modified then
             -- Wrap FFI modification in pcall for safety
@@ -932,7 +934,7 @@ function Controller.HandleDInputButton(e)
         if IsShoulderTriggerSwap() then
             RefreshComboState();
             if blockingEnabled then
-                macrosLib.stop('dinput_shoulder');
+                macrosLib.stop_if_running('dinput_shoulder');
                 return true;
             end
             return false;
@@ -1026,7 +1028,7 @@ function Controller.HandleDInputButton(e)
         if blockingEnabled and (state.activeCombo ~= COMBO_MODES.NONE or IsShoulderTriggerSwap()) then
             MacroBlockLog(string.format('[DInput] BLOCKING %s trigger (button %d) - combo=%s, stopping native macro',
                 triggerName, buttonId, state.activeCombo));
-            macrosLib.stop('dinput_trigger');  -- Stop any native macro execution
+            macrosLib.stop_if_running('dinput_trigger');
             return true;
         elseif isPressed and not blockingEnabled then
             MacroBlockLog(string.format('[DInput] %s trigger pressed but blocking DISABLED (button %d)',

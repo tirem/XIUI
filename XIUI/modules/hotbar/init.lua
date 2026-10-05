@@ -532,6 +532,18 @@ function M.HandleKey(event)
     return actions.HandleKey(event);
 end
 
+function M.HandleActionPacket(actionPacket)
+    return actions.HandleActionPacket(actionPacket);
+end
+
+function M.HandleMessagePacket(messagePacket)
+    return actions.HandleMessagePacket(messagePacket);
+end
+
+function M.HandleMessageStandardPacket(messagePacket)
+    return actions.HandleMessageStandardPacket(messagePacket);
+end
+
 function M.HandleKeyData(e)
     if gConfig and gConfig.hotbarEnabled == false then
         return;

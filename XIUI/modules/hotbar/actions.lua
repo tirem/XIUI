@@ -496,8 +496,221 @@ local otherAbilityToIconKey = {
 local currentPressedHotbar = nil;
 local currentPressedSlot = nil;
 
--- Only one macro flow runs at a time; starting a new one cancels the previous.
+-- Only one macro flow runs at a time; starting a different one cancels the previous.
+-- Re-pressing the same macro while it is still running is ignored.
 local activeMacroId = 0;
+local runningMacroFingerprint = nil;
+-- How long to wait for an action-accepted packet. Kept short so a failed action
+-- (cooldown, etc.) does not add a long hang before the next line / <wait N>.
+-- Reject messages (0x0029/0x002A) clear this earlier when the server refuses.
+local ACTION_ACCEPT_TIMEOUT_SEC = 0.1;
+
+-- Types that mean the player's action was accepted / started.
+-- 8/9 also require Param == 0x6163 (cast/item start), matching castbar.
+local ACTION_ACCEPTED_TYPES = {
+    [3] = true,   -- weaponskill finish
+    [4] = true,   -- magic finish (instant)
+    [5] = true,   -- item finish
+    [6] = true,   -- job ability
+    [7] = true,   -- weaponskill start
+    [8] = true,   -- magic start
+    [9] = true,   -- item start
+    [12] = true,  -- ranged start
+    [14] = true,  -- ability
+    [15] = true,  -- ability
+};
+
+-- 0x0029 BtlMess IDs that mean the local player's action was refused.
+-- IDs from retail BtlMess / LSB MsgBasic (XiPackets GP_SERV_COMMAND_BATTLE_MESSAGE).
+local ACTION_REJECT_MESSAGE_IDS = {
+    [4] = true,    -- out of range
+    [5] = true,    -- unable to see
+    [12] = true,   -- already claimed
+    [18] = true,   -- unable to cast spells at this time (resting, silenced, etc.)
+    [34] = true,   -- not enough MP
+    [35] = true,   -- lacks ninja tools
+    [40] = true,   -- cannot use in this area
+    [47] = true,   -- cannot cast
+    [49] = true,   -- unable to cast spells
+    [56] = true,   -- unable to use item
+    [62] = true,   -- fails to activate
+    [71] = true,   -- cannot perform that action on the specified target
+    [78] = true,   -- too far away
+    [87] = true,   -- unable to use job ability
+    [88] = true,   -- unable to use job ability
+    [89] = true,   -- unable to use weaponskill
+    [92] = true,   -- cannot use the item on
+    [94] = true,   -- must wait longer (recast / cooldown)
+    [155] = true,  -- cannot perform that action on the specified target
+    [190] = true,  -- cannot use that weapon ability
+    [191] = true,  -- unable to use weapon skills
+    [192] = true,  -- not enough TP
+    [199] = true,  -- requires a shield
+    [215] = true,  -- requires a pet
+    [216] = true,  -- no appropriate ranged weapon
+    [217] = true,  -- cannot see
+    [218] = true,  -- move and interrupt aim
+    [307] = true,  -- requires a two-handed weapon
+    [313] = true,  -- out of range unable to cast
+    [315] = true,  -- already has a pet
+    [316] = true,  -- cannot be used in this area
+    [328] = true,  -- too far away
+    [336] = true,  -- no effect on that pet
+    [337] = true,  -- no jug pet item
+    [339] = true,  -- mount refuses
+    [347] = true,  -- must have pet food equipped
+    [356] = true,  -- inventory full
+    [428] = true,  -- no rolls eligible / unable to use ability
+    [429] = true,  -- same roll already active
+    [445] = true,  -- cannot use items at this time
+    [446] = true,  -- cannot attack that target
+    [574] = true,  -- pet unable to perform that action
+    [575] = true,  -- pet not enough TP
+    [661] = true,  -- already placed a luopan
+    [662] = true,  -- requires a luopan
+    [665] = true,  -- has a pet / unable to use ability
+    [666] = true,  -- requires Rune Enchantment
+    [700] = true,  -- unable to use Trust magic at this time
+    [717] = true,  -- cannot call forth alter egos here
+};
+
+-- 0x002A MsgStd IDs that mean the action was refused (zone / system).
+local ACTION_REJECT_STD_MESSAGE_IDS = {
+    [32] = true,   -- unable to perform action in Mog House
+    [38] = true,   -- must wait longer
+    [142] = true,  -- cannot use that command at the moment
+    [172] = true,  -- cannot use while invisible
+    [209] = true,  -- cannot while holding a Petra
+    [210] = true,  -- cannot without a Petra
+    [216] = true,  -- cannot while participating in Conflict
+    [217] = true,  -- cannot while preparing for battle
+    [256] = true,  -- cannot use that command in this area
+};
+
+local pendingActionAccept = nil;
+
+local function clearPendingActionAccept()
+    pendingActionAccept = nil;
+end
+
+local function finishPendingActionAccept(accepted)
+    local pending = pendingActionAccept;
+    if not pending then
+        return;
+    end
+    if pending.cancelCheck and pending.cancelCheck() then
+        clearPendingActionAccept();
+        return;
+    end
+    local cb = pending.onReady;
+    clearPendingActionAccept();
+    if cb then
+        cb(accepted);
+    end
+end
+
+--- After an action is queued, call onReady(accepted) when the game accepts it,
+--- or onReady(false) if a reject message arrives or the short timeout elapses.
+local function waitForActionAccepted(onReady, cancelCheck)
+    clearPendingActionAccept();
+    local token = {};
+    pendingActionAccept = {
+        token = token,
+        onReady = onReady,
+        cancelCheck = cancelCheck,
+        deadline = os.clock() + ACTION_ACCEPT_TIMEOUT_SEC,
+    };
+
+    local function pollTimeout()
+        local pending = pendingActionAccept;
+        if not pending or pending.token ~= token then
+            return;
+        end
+        if pending.cancelCheck and pending.cancelCheck() then
+            clearPendingActionAccept();
+            return;
+        end
+        if os.clock() >= pending.deadline then
+            finishPendingActionAccept(false);
+            return;
+        end
+        ashita.tasks.once(0.05, pollTimeout);
+    end
+    ashita.tasks.once(0.05, pollTimeout);
+end
+
+--- Called from the 0x0028 action path when the local player starts/finishes an action.
+function M.HandleActionPacket(actionPacket)
+    local pending = pendingActionAccept;
+    if not pending or not actionPacket then
+        return;
+    end
+
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    if not party then
+        return;
+    end
+    local me = party:GetMemberServerId(0);
+    if not me or actionPacket.UserId ~= me then
+        return;
+    end
+
+    local actionType = actionPacket.Type;
+    if actionType == 8 or actionType == 9 then
+        if actionPacket.Param ~= 0x6163 then
+            return;
+        end
+    elseif not ACTION_ACCEPTED_TYPES[actionType] then
+        return;
+    end
+
+    finishPendingActionAccept(true);
+end
+
+--- 0x0029 battle message: server refused the pending action (CD, resting, range, etc.).
+function M.HandleMessagePacket(messagePacket)
+    local pending = pendingActionAccept;
+    if not pending or not messagePacket or not messagePacket.message then
+        return;
+    end
+    if not ACTION_REJECT_MESSAGE_IDS[messagePacket.message] then
+        return;
+    end
+
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    if not party then
+        return;
+    end
+    local me = party:GetMemberServerId(0);
+    -- UniqueNoCas is the acting entity for these refusals.
+    if not me or (messagePacket.sender ~= me and messagePacket.sender ~= 0) then
+        return;
+    end
+
+    finishPendingActionAccept(false);
+end
+
+--- 0x002A standard message: zone/system refusals (mog house, etc.).
+function M.HandleMessageStandardPacket(messagePacket)
+    local pending = pendingActionAccept;
+    if not pending or not messagePacket or not messagePacket.message then
+        return;
+    end
+    if not ACTION_REJECT_STD_MESSAGE_IDS[messagePacket.message] then
+        return;
+    end
+
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    if not party then
+        return;
+    end
+    local me = party:GetMemberServerId(0);
+    if not me or (messagePacket.sender ~= me and messagePacket.sender ~= 0) then
+        return;
+    end
+
+    finishPendingActionAccept(false);
+end
 
 -- Icon cache for items (keyed by item name since we look up by name)
 local itemIconCache = {};
@@ -1306,21 +1519,6 @@ local function parseInlineWait(line)
     return line, nil;
 end
 
---- Check if any line in a macro contains a wait directive
---- @param lines table Array of command line strings
---- @return boolean hasWait True if any line has /wait, /pause, /sleep, or <wait N>
-local function macroHasWait(lines)
-    for _, line in ipairs(lines) do
-        if line:match('^/wait%s') or line:match('^/wait$')
-            or line:match('^/pause%s') or line:match('^/pause$')
-            or line:match('^/sleep%s') or line:match('^/sleep$')
-            or line:match('<wait%s*%d') then
-            return true;
-        end
-    end
-    return false;
-end
-
 -- Slash commands that accept target arguments and can open subtarget selection UI
 local TARGETABLE_COMMANDS = {
     ma = true,
@@ -1339,7 +1537,7 @@ local TARGETABLE_COMMANDS = {
     ninjutsu = true,
 };
 
---- Macro mode (2) is only for action commands that need native fallthrough.
+--- Macro mode (2) for action commands so the game treats them as macro lines.
 --- Other lines (/echo, etc.) use AshitaParse so literal <stpc> text in messages
 --- is not re-processed by the macro subtarget subsystem.
 local function getMacroCommandQueueMode(commandLine)
@@ -1370,18 +1568,6 @@ local function lineRequiresSubtargetPause(line)
         return false;
     end
     return extractSubtargetTag(line) ~= nil;
-end
-
---- Check if any line in a macro opens subtarget selection
---- @param lines table Array of command line strings
---- @return boolean hasSubtarget True if any line requires a subtarget pause
-local function macroHasSubtarget(lines)
-    for _, line in ipairs(lines) do
-        if lineRequiresSubtargetPause(line) then
-            return true;
-        end
-    end
-    return false;
 end
 
 local SUBTARGET_POLL_INTERVAL = 0.05;
@@ -1750,12 +1936,12 @@ local function waitForSubtargetComplete(commandLine, onComplete, onAbort, cancel
 end
 
 --- Execute a command string (handles multi-line macros with /wait support)
---- Splits by newlines and executes each non-empty line in sequence
---- For macros WITHOUT waits or subtarget pauses: queues all lines synchronously using
---- Macro mode (2) so the game processes them as a native macro batch with fallthrough.
---- For macros WITH waits or subtarget lines: sequential execution via task scheduler.
+--- Splits by newlines and executes each non-empty line top-to-bottom.
+--- Action lines wait for server accept (0x0028) or reject (0x0029/0x002A) before
+--- the next line — matching native macros (e.g. stacked /ra fails individually).
+--- With <wait N> after an accepted action, the N-second clock starts on accept;
+--- on reject, remaining wait is honored from queue time.
 --- ST lines pause until confirm or dismiss (Ashita command events + target memory).
---- Also handles inline <wait #> subcommands at end of command lines.
 --- @param commandText string The command text (may contain newlines)
 --- @param isMacro boolean|nil If true, enforces single-macro-at-a-time execution
 --- @return boolean success Whether any command was executed
@@ -1785,45 +1971,35 @@ function M.ExecuteCommandString(commandText, isMacro)
             SubtargetDebugLog('Ignoring macro keypress while game subtarget mode is active');
             return false;
         end
+        -- Same macro still running: do not cancel or re-queue it.
+        if runningMacroFingerprint == commandText then
+            return false;
+        end
         activeMacroId = activeMacroId + 1;
         myMacroId = activeMacroId;
+        runningMacroFingerprint = commandText;
+        macrosLib.set_stop_guard(true);
     end
 
-    -- SYNCHRONOUS FAST PATH: For macros without wait or subtarget directives, queue all
-    -- lines in the same frame using mode 2 (Macro). This tells the game engine
-    -- these commands come from the macro subsystem, enabling native fallthrough
-    -- behavior where failed commands (e.g., wrong WS for equipped weapon) are
-    -- skipped and the next line is tried automatically.
-    -- NOTE: The game's macro command stack is LIFO, so we queue in reverse order.
-    if isMacro and not macroHasWait(lines) and not macroHasSubtarget(lines) then
-        local ok, err = pcall(function()
-            local chatManager = AshitaCore:GetChatManager();
-            if chatManager then
-                for i = #lines, 1, -1 do
-                    local trimmed = lines[i]:match('^%s*(.-)%s*$');
-                    if trimmed and trimmed ~= '' then
-                        chatManager:QueueCommand(2, trimmed);
-                    end
-                end
-            end
-        end);
-        if not ok then
-            print('[XIUI] Command execution error: ' .. tostring(err));
+    local function releaseMyMacro()
+        if myMacroId ~= nil and myMacroId == activeMacroId then
+            runningMacroFingerprint = nil;
+            macrosLib.set_stop_guard(false);
+            clearPendingActionAccept();
         end
-        return true;
     end
 
-    -- ASYNC PATH: For macros with wait/subtarget directives or non-macro commands.
-    -- Recursive function to execute lines with proper /wait and subtarget handling.
-    -- This chains tasks instead of scheduling them all at once.
+    -- Sequential path: one line at a time, accept/reject gated between action lines.
     local function isMacroCancelled()
         return myMacroId ~= nil and myMacroId ~= activeMacroId;
     end
 
     local executeNextLine;
+    local lastQueuedWasAction = false;
 
     local function scheduleNextLine(index, delay)
         if index > #lines then
+            releaseMyMacro();
             return;
         end
         ashita.tasks.once(delay or 0, function()
@@ -1831,8 +2007,33 @@ function M.ExecuteCommandString(commandText, isMacro)
         end);
     end
 
+    -- After an action line: wait for accept/reject, then continue.
+    -- Accepted + wait N → full N from accept. Rejected → remaining N from queue (0 if none).
+    local function scheduleWaitThenNext(index, delay, waitForAccept)
+        local waitDelay = delay or 0;
+
+        if not waitForAccept then
+            scheduleNextLine(index, waitDelay);
+            return;
+        end
+
+        local queuedAt = os.clock();
+        waitForActionAccepted(function(accepted)
+            if isMacroCancelled() then
+                return;
+            end
+            if accepted then
+                scheduleNextLine(index, waitDelay);
+                return;
+            end
+            local remaining = waitDelay - (os.clock() - queuedAt);
+            scheduleNextLine(index, math.max(0, remaining));
+        end, isMacroCancelled);
+    end
+
     executeNextLine = function(index)
         if index > #lines then
+            releaseMyMacro();
             return;
         end
 
@@ -1853,28 +2054,45 @@ function M.ExecuteCommandString(commandText, isMacro)
                           line:match('^/sleep%s*(%d*%.?%d*)');
 
         if waitMatch then
-            -- It's a wait command - schedule the next line after the delay
             local delay = tonumber(waitMatch) or 1;
-            scheduleNextLine(index + 1, delay);
+            local waitForAccept = lastQueuedWasAction;
+            lastQueuedWasAction = false;
+            scheduleWaitThenNext(index + 1, delay, waitForAccept);
         else
             -- Parse inline <wait #> subcommand
             local commandToExecute, inlineWait = parseInlineWait(line);
             local requiresSubtargetPause = lineRequiresSubtargetPause(commandToExecute);
+            local actionVerb = commandToExecute:match('^/%s*(%S+)');
+            local isActionLine = actionVerb ~= nil and TARGETABLE_COMMANDS[actionVerb:lower()] == true;
 
-            -- PROTECTED command execution
-            -- Use mode 2 (Macro) for macro action commands to get native fallthrough,
-            -- mode -1 (AshitaParse) for /echo and other non-action lines
+            -- Mode 2 (Macro) for action commands; mode -1 (AshitaParse) for /echo etc.
             local cmdMode = isMacro and getMacroCommandQueueMode(commandToExecute) or -1;
             local stTag = requiresSubtargetPause and extractSubtargetTag(commandToExecute) or nil;
 
+            local function continueAfterLine()
+                lastQueuedWasAction = isActionLine;
+                if requiresSubtargetPause then
+                    return;
+                end
+                -- Gate action lines on accept/reject before the next line (or release).
+                if isActionLine or index < #lines then
+                    scheduleWaitThenNext(index + 1, inlineWait or 0, isActionLine);
+                else
+                    releaseMyMacro();
+                end
+            end
+
             local function queueActionLine()
                 if requiresSubtargetPause then
+                    -- ST confirm only means a target was chosen; server can still reject
+                    -- (range, MP, etc.) via 0x0029/0x002A or accept via 0x0028 afterward.
                     waitForSubtargetComplete(commandToExecute, function()
-                        if index < #lines then
-                            scheduleNextLine(index + 1, inlineWait or 0);
-                        end
+                        lastQueuedWasAction = isActionLine;
+                        scheduleWaitThenNext(index + 1, inlineWait or 0, isActionLine);
                     end, function()
-                        if myMacroId == activeMacroId then
+                        -- Subtarget dismissed: end this macro and invalidate its id.
+                        releaseMyMacro();
+                        if myMacroId ~= nil then
                             activeMacroId = activeMacroId + 1;
                         end
                     end, isMacroCancelled);
@@ -1891,9 +2109,7 @@ function M.ExecuteCommandString(commandText, isMacro)
                     print('[XIUI] Command execution error: ' .. tostring(err));
                 end
 
-                if index < #lines and not requiresSubtargetPause then
-                    scheduleNextLine(index + 1, inlineWait or 0);
-                end
+                continueAfterLine();
             end
 
             local function executeCommandLine()
@@ -2035,19 +2251,12 @@ function M.HandleKey(event)
    -- Check if this is a native macro key combo (Ctrl/Alt + number or arrow)
    local isNativeMacroKeyPress = IsNativeMacroKey(keyCode, controlPressed, altPressed);
 
-   -- Stop macro execution when native macro key is pressed
-   -- Note: Macro bar UI hiding is handled via memory patch in macrosLib.hide_macro_bar()
+   -- Stop a native macro that Ctrl/Alt+number just started. Do not spray delayed
+   -- stops: those collide with XIUI's own mode-2 macro batch and skip the first line.
    if blockNativeMacros and isNativeMacroKeyPress and not isRelease then
        MacroBlockLog(string.format('Native macro key %d (0x%02X) Ctrl=%s Alt=%s - stopping macro',
            keyCode, keyCode, tostring(controlPressed), tostring(altPressed)));
-
-       -- Stop macro execution via direct memory write
-       macrosLib.stop();
-
-       -- Also schedule stops for next few frames to catch delayed execution
-       ashita.tasks.once(0, function() macrosLib.stop(); end);
-       ashita.tasks.once(0.01, function() macrosLib.stop(); end);
-       ashita.tasks.once(0.02, function() macrosLib.stop(); end);
+       macrosLib.stop_if_running('native_macro_key');
    end
 
    -- Check if this key is in the blocked game keys list
@@ -2070,11 +2279,16 @@ function M.HandleKey(event)
        end
    end
 
-   -- Find matching keybind from custom key assignments
+   -- Find matching keybind from custom key assignments.
+   -- Matching is exact on key + Ctrl/Alt/Shift: binding E alone does not claim
+   -- Alt+E / Ctrl+E / Shift+E, and binding Alt+E does not claim E alone.
    local hotbar, slot = FindMatchingKeybind(keyCode, controlPressed, altPressed, shiftPressed);
    DebugLog(string.format('FindMatchingKeybind result: hotbar=%s slot=%s', tostring(hotbar), tostring(slot)));
 
    if hotbar and slot then
+       -- Only this exact combo is swallowed by the game; other modifier variants pass through.
+       event.blocked = true;
+
        if isRelease then
            -- Clear pressed state on release (only if it matches what was pressed)
            if currentPressedHotbar == hotbar and currentPressedSlot == slot then
@@ -2085,7 +2299,7 @@ function M.HandleKey(event)
        else
            -- Check if this is a key repeat (same hotbar/slot already pressed)
            if currentPressedHotbar == hotbar and currentPressedSlot == slot then
-               return; -- Key repeat - don't re-execute
+               return; -- Key repeat - blocked above, don't re-execute
            end
 
            DebugLog('Key pressed: hotbar=' .. tostring(hotbar) .. ', slot=' .. tostring(slot));
