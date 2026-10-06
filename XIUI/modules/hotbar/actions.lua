@@ -655,9 +655,9 @@ local function resolveExpectedAction(commandLine)
     return { kind = 'action' };
 end
 
--- Native macros: "access" means the job knows the action (HasSpell/HasAbility), not
--- whether it is off cooldown. Unknown lines are tried and fail instantly; the first
--- known action in a wait-segment runs, then the rest of that segment is skipped.
+-- "Access" means the job knows the action (HasSpell/HasAbility), not cooldown.
+-- Known combat actions: first one in a wait-segment runs; later known ones are skipped.
+-- Unknown / non-combat lines are always tried (errors still show).
 local function playerHasAccessToCommand(commandLine)
     local expected = resolveExpectedAction(commandLine);
     if not expected or not expected.kind or expected.kind == 'action' or expected.kind == 'ranged' then
@@ -2138,14 +2138,14 @@ local function waitForSubtargetComplete(commandLine, onComplete, onAbort, cancel
 end
 
 --- Execute a command string (handles multi-line macros with /wait support)
---- Native wait-segment rules (FFXI macro behavior):
---- - Unknown actions are tried (error), with no delay, and scanning continues.
---- - The first known action in a segment runs. Later known actions in that same
----   segment (no wait yet) are skipped. Unknown actions after it are still tried
----   so their errors still show.
---- - <wait N> / /wait starts a new segment after that delay.
---- Accept/reject gating applies to the known action that actually ran (wait timing).
---- ST lines pause until confirm or dismiss.
+--- Macro line rules:
+--- - Each executed line waits for accept, reject, or a short timeout before continuing.
+--- - <wait N> / /wait (or inline <wait N>) always delays before the next line.
+--- - Known combat actions: first one in a wait-segment runs; later known ones in that
+---   same segment (no wait yet) are skipped. Unknown combat lines are still tried.
+--- - Non-combat lines (/lastsynth, /echo, etc.) are always tried; extras in the same
+---   stretch still fire with no wait and can error.
+--- ST lines pause until confirm or dismiss, then use the same accept/reject gating.
 --- @param commandText string The command text (may contain newlines)
 --- @param isMacro boolean|nil If true, enforces single-macro-at-a-time execution
 --- @return boolean success Whether any command was executed
@@ -2199,8 +2199,8 @@ function M.ExecuteCommandString(commandText, isMacro)
 
     local executeNextLine;
     local NEXT_LINE_MIN_DELAY = 0.01;
-    -- True after a known action has already run in this wait-segment.
-    -- Further known actions are skipped; unknown actions are still tried for errors.
+    -- True after a known combat action has run in this wait-segment.
+    -- Further known combat actions are skipped; non-combat / unknown still try.
     local segmentConsumed = false;
 
     local function scheduleNextLine(index, delay)
@@ -2213,8 +2213,9 @@ function M.ExecuteCommandString(commandText, isMacro)
         end);
     end
 
-    -- After a known action runs: optionally wait (new segment), else keep scanning.
-    local function scheduleWaitThenContinue(nextIndex, delay, expectedAction)
+    -- Gate on accept/reject/timeout, then apply <wait N> (any command type).
+    -- consumesSegment: known combat actions without a wait close the segment.
+    local function scheduleWaitThenContinue(nextIndex, delay, expectedAction, consumesSegment)
         local waitDelay = delay or 0;
         local queuedAt = os.clock();
         waitForActionAccepted(function(accepted, reason)
@@ -2223,14 +2224,14 @@ function M.ExecuteCommandString(commandText, isMacro)
             end
             ignoreGenericRejectForNext = (not accepted and reason == 'timeout');
             if waitDelay > 0 then
-                -- Wait opens a new segment for the following lines.
                 segmentConsumed = false;
                 local delaySec = accepted and waitDelay or math.max(NEXT_LINE_MIN_DELAY, waitDelay - (os.clock() - queuedAt));
                 scheduleNextLine(nextIndex, delaySec);
                 return;
             end
-            -- No wait: stay in this segment; skip later known actions, still try unknowns.
-            segmentConsumed = true;
+            if consumesSegment then
+                segmentConsumed = true;
+            end
             scheduleNextLine(nextIndex, NEXT_LINE_MIN_DELAY);
         end, isMacroCancelled, expectedAction);
     end
@@ -2251,7 +2252,7 @@ function M.ExecuteCommandString(commandText, isMacro)
             return;
         end
 
-        -- Standalone /wait: always a segment boundary.
+        -- Standalone /wait: new segment (delay only, no accept/reject).
         local waitMatch = line:match('^/wait%s*(%d*%.?%d*)') or
                           line:match('^/pause%s*(%d*%.?%d*)') or
                           line:match('^/sleep%s*(%d*%.?%d*)');
@@ -2271,31 +2272,26 @@ function M.ExecuteCommandString(commandText, isMacro)
         local cmdMode = isMacro and getMacroCommandQueueMode(commandToExecute) or -1;
         local stTag = requiresSubtargetPause and extractSubtargetTag(commandToExecute) or nil;
         local hasAccess = (not isActionLine) or playerHasAccessToCommand(commandToExecute);
+        local runAccessible = isActionLine and hasAccess;
 
-        -- Known action after one already ran this segment: skip (do not queue).
-        if isActionLine and hasAccess and segmentConsumed then
+        -- Known combat action after one already ran this segment: skip (do not queue).
+        if runAccessible and segmentConsumed then
             scheduleNextLine(index + 1, NEXT_LINE_MIN_DELAY);
             return;
         end
 
-        local runAccessible = isActionLine and hasAccess;
-
         local function queueActionLine()
             if requiresSubtargetPause then
                 waitForSubtargetComplete(commandToExecute, function()
-                    if runAccessible then
-                        scheduleWaitThenContinue(index + 1, inlineWait or 0, expectedAction);
-                    else
-                        scheduleNextLine(index + 1, NEXT_LINE_MIN_DELAY);
-                    end
+                    scheduleWaitThenContinue(index + 1, inlineWait or 0, expectedAction, runAccessible);
                 end, function()
                     releaseMyMacro();
                     if myMacroId ~= nil then
                         activeMacroId = activeMacroId + 1;
                     end
                 end, isMacroCancelled);
-            elseif runAccessible then
-                scheduleWaitThenContinue(index + 1, inlineWait or 0, expectedAction);
+            else
+                scheduleWaitThenContinue(index + 1, inlineWait or 0, expectedAction, runAccessible);
             end
 
             local ok, err = pcall(function()
@@ -2307,14 +2303,9 @@ function M.ExecuteCommandString(commandText, isMacro)
 
             if not ok then
                 print('[XIUI] Command execution error: ' .. tostring(err));
-                if runAccessible and not requiresSubtargetPause then
+                if not requiresSubtargetPause then
                     finishPendingActionAccept(false, 'reject');
-                elseif not requiresSubtargetPause then
-                    scheduleNextLine(index + 1, NEXT_LINE_MIN_DELAY);
                 end
-            elseif not requiresSubtargetPause and not runAccessible then
-                -- Unknown action or non-action: queue for errors / side effects, continue now.
-                scheduleNextLine(index + 1, NEXT_LINE_MIN_DELAY);
             end
         end
 
