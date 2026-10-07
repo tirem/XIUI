@@ -1739,17 +1739,6 @@ local TARGETABLE_COMMANDS = {
     ninjutsu = true,
 };
 
---- Macro mode (2) for action commands so the game treats them as macro lines.
---- Other lines (/echo, etc.) use AshitaParse so literal <stpc> text in messages
---- is not re-processed by the macro subtarget subsystem.
-local function getMacroCommandQueueMode(commandLine)
-    local cmd = commandLine:match('^/%s*(%S+)');
-    if cmd and TARGETABLE_COMMANDS[cmd:lower()] then
-        return 2;
-    end
-    return -1;
-end
-
 -- Subtarget tags that open the in-game selection UI (<lastst> excluded - reuses prior target)
 local SUBTARGET_TAGS = { 'stpc', 'stpt', 'stal', 'stnpc', 'st' };
 
@@ -1763,10 +1752,12 @@ local function extractSubtargetTag(line)
     return nil;
 end
 
---- Action command with an ST tag outside quotes (not /echo etc.).
+--- ST pause/pre-target for lines with an ST tag outside quotes.
+--- /echo is excluded so literal <stpc> text is not treated as a real ST select
+--- (macros still queue echo as mode 2 like native).
 local function lineRequiresSubtargetPause(line)
     local cmd = line:match('^/%s*(%S+)');
-    if not cmd or not TARGETABLE_COMMANDS[cmd:lower()] then
+    if not cmd or cmd:lower() == 'echo' then
         return false;
     end
     return extractSubtargetTag(line) ~= nil;
@@ -2269,7 +2260,8 @@ function M.ExecuteCommandString(commandText, isMacro)
         local actionVerb = commandToExecute:match('^/%s*(%S+)');
         local isActionLine = actionVerb ~= nil and TARGETABLE_COMMANDS[actionVerb:lower()] == true;
         local expectedAction = isActionLine and resolveExpectedAction(commandToExecute) or nil;
-        local cmdMode = isMacro and getMacroCommandQueueMode(commandToExecute) or -1;
+        -- Macros always use mode 2 (native macro input), including /echo.
+        local cmdMode = isMacro and 2 or -1;
         local stTag = requiresSubtargetPause and extractSubtargetTag(commandToExecute) or nil;
         local hasAccess = (not isActionLine) or playerHasAccessToCommand(commandToExecute);
         local runAccessible = isActionLine and hasAccess;
