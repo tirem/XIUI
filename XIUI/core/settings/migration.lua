@@ -493,6 +493,17 @@ end
 
 -- Migrate individual settings that may be missing for existing users
 function M.MigrateIndividualSettings(gConfig, defaults)
+    -- Per-wardrobe enable flags (default all on for existing users)
+    if type(gConfig.wardrobeEnabled) ~= 'table' then
+        gConfig.wardrobeEnabled = deep_copy_table(defaults.wardrobeEnabled);
+    else
+        for i = 1, 8 do
+            if gConfig.wardrobeEnabled[i] == nil then
+                gConfig.wardrobeEnabled[i] = true;
+            end
+        end
+    end
+
     -- Add bookend gradient if missing
     if gConfig.colorCustomization and gConfig.colorCustomization.shared then
         if not gConfig.colorCustomization.shared.bookendGradient then
@@ -536,6 +547,12 @@ function M.MigrateIndividualSettings(gConfig, defaults)
     if gConfig.showTargetName == nil then
         gConfig.showTargetName = true;
     end
+    if gConfig.targetBarNameOffsetX == nil then
+        gConfig.targetBarNameOffsetX = defaults.targetBarNameOffsetX;
+    end
+    if gConfig.targetBarNameOffsetY == nil then
+        gConfig.targetBarNameOffsetY = defaults.targetBarNameOffsetY;
+    end
 
     -- Remove deprecated setting
     if gConfig.alwaysShowHealthPercent ~= nil then
@@ -560,6 +577,9 @@ function M.MigrateIndividualSettings(gConfig, defaults)
     end
     if gConfig.mobInfoShowModifierText == nil then
         gConfig.mobInfoShowModifierText = defaults.mobInfoShowModifierText;
+    end
+    if gConfig.mobInfoReverseElementResistanceSigns == nil then
+        gConfig.mobInfoReverseElementResistanceSigns = defaults.mobInfoReverseElementResistanceSigns;
     end
     if gConfig.mobInfoShowServerId == nil then
         gConfig.mobInfoShowServerId = defaults.mobInfoShowServerId;

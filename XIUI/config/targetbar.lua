@@ -71,7 +71,13 @@ local function DrawTargetBarSettingsContent()
         imgui.ShowHelp('Display the lock icon and colored border when locked on to a target.');
         if (not HzLimitedMode) then
             components.DrawCheckbox('Show Cast Bar', 'showTargetBarCastBar');
-            imgui.ShowHelp('Display the enemy cast bar under the HP bar when the target is casting.');
+            imgui.ShowHelp('Display the enemy cast bar when the target is casting.');
+            if gConfig.showTargetBarCastBar then
+                imgui.Indent(20);
+                components.DrawCheckbox('Snap to Target Bar', 'targetBarCastBarSnapToTargetBar');
+                imgui.ShowHelp('When enabled, the cast bar stays attached under the target HP bar.\nWhen disabled, the cast bar becomes its own movable window (position is remembered).');
+                imgui.Unindent(20);
+            end
         end
         components.DrawCheckbox('Hide During Events', 'targetBarHideDuringEvents');
         components.DrawCheckbox('Show Enemy Id', 'showEnemyId');
@@ -99,6 +105,11 @@ local function DrawTargetBarSettingsContent()
     end
 
     if components.CollapsingSection('Text Offsets##targetBar', false) then
+        imgui.Text('Name Text');
+        components.DrawSlider('X Offset##nameText', 'targetBarNameOffsetX', -600, 600);
+        components.DrawSlider('Y Offset##nameText', 'targetBarNameOffsetY', -300, 300);
+
+        imgui.Spacing();
         imgui.Text('Distance Text');
         components.DrawSlider('X Offset##distanceText', 'targetBarDistanceOffsetX', -600, 600);
         components.DrawSlider('Y Offset##distanceText', 'targetBarDistanceOffsetY', -300, 300);
@@ -113,7 +124,7 @@ local function DrawTargetBarSettingsContent()
     if (gConfig.showTargetBarCastBar and (not HzLimitedMode)) then
         if components.CollapsingSection('Cast Bar##targetBar') then
             components.DrawSlider('Cast Bar Offset Y', 'targetBarCastBarOffsetY', 0, 50, '%.0f');
-            imgui.ShowHelp('Vertical distance below the HP bar (in pixels).');
+            imgui.ShowHelp('Vertical distance below the HP bar (in pixels).\nOnly applies when Snap to Target Bar is enabled.');
             components.DrawSlider('Cast Bar Scale X', 'targetBarCastBarScaleX', 0.1, 3.0, '%.1f');
             imgui.ShowHelp('Horizontal scale multiplier for cast bar width.');
             components.DrawSlider('Cast Bar Scale Y', 'targetBarCastBarScaleY', 0.1, 3.0, '%.1f');
@@ -298,6 +309,9 @@ local function DrawMobInfoSettingsContent(githubTexture)
             imgui.ShowHelp('Group icons with the same percentage together (Wind Earth Water -25%%) vs showing each individually (Wind -25%% Earth -25%%).');
             imgui.Unindent(20);
         end
+
+        components.DrawCheckbox('Reverse Element Signs', 'mobInfoReverseElementResistanceSigns');
+        imgui.ShowHelp('Flip + and - on elemental weakness and resistance percentages and tooltips (damage modifiers and ranks). Physical types and immunities are unchanged.');
 
         components.DrawCheckbox('Show Server ID', 'mobInfoShowServerId');
         imgui.ShowHelp('Display the target\'s server ID.');

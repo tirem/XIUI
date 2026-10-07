@@ -818,6 +818,10 @@ config.DrawWindow = function(us)
         tooltipfonts.on_satchel_config_hidden();
     end
     local configJustOpened = isConfigOpen and not wasConfigOpen;
+    if configJustOpened then
+        -- Runtime preview is cleared on close; re-apply saved preference when config opens
+        treasurePool.SetPreview(gConfig.treasurePoolPreview == true);
+    end
     wasConfigOpen = isConfigOpen;
 
     -- Early exit if config window isn't shown (atom0s recommendation)

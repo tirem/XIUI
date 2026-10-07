@@ -253,6 +253,7 @@ function BaseTracker.Create(config)
         local totalMax = 0;
         local anyUnlocked = false;
         local unlockedCount = 0;
+        local enabledFlags = config.enabledContainersKey and gConfig[config.enabledContainersKey] or nil;
 
         for i, containerId in ipairs(config.containers) do
             local used = inventory:GetContainerCount(containerId);
@@ -262,12 +263,16 @@ function BaseTracker.Create(config)
                 c = {};
                 containers[i] = c;
             end
-            c.used = used; c.max = max; c.unlocked = (max > 0); c.id = containerId;
-            totalUsed = totalUsed + used;
-            totalMax = totalMax + max;
-            if max > 0 then
-                anyUnlocked = true;
-                unlockedCount = unlockedCount + 1;
+            -- Optional per-container enable (nil/missing = enabled)
+            local isEnabled = not enabledFlags or enabledFlags[i] ~= false;
+            c.used = used; c.max = max; c.unlocked = (max > 0); c.id = containerId; c.enabled = isEnabled;
+            if isEnabled then
+                totalUsed = totalUsed + used;
+                totalMax = totalMax + max;
+                if max > 0 then
+                    anyUnlocked = true;
+                    unlockedCount = unlockedCount + 1;
+                end
             end
         end
 
@@ -287,10 +292,10 @@ function BaseTracker.Create(config)
         local fontSize = settings.font_settings.font_height;
         imtext.SetConfigFromSettings(settings.font_settings);
 
-        -- Per-container mode: each unlocked container gets its own window
+        -- Per-container mode: each unlocked+enabled container gets its own window
         if showPerContainer and #config.containers > 1 then
             for i, container in ipairs(containers) do
-                if container.unlocked then
+                if container.enabled ~= false and container.unlocked then
                     local windowName = config.windowName .. '_' .. i;
                     local label = (showLabels and config.containerLabels) and config.containerLabels[i] or nil;
                     DrawSingleContainerWindow(
@@ -311,9 +316,17 @@ function BaseTracker.Create(config)
                 end
             end
         else
-            -- Combined mode: single window with all containers combined
-            -- Use first label if showLabels is enabled (for single-container trackers or combined multi-container)
-            local label = (showLabels and config.containerLabels) and config.containerLabels[1] or nil;
+            -- Combined mode: single window with all enabled containers combined
+            -- Use first enabled label if showLabels is on
+            local label = nil;
+            if showLabels and config.containerLabels then
+                for i, container in ipairs(containers) do
+                    if container.enabled ~= false then
+                        label = config.containerLabels[i];
+                        break;
+                    end
+                end
+            end
             DrawSingleContainerWindow(
                 config.windowName,
                 totalUsed,

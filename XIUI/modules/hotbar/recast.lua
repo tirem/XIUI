@@ -7,11 +7,115 @@
 local abilityRecast = require('libs.abilityrecast');
 local itemRecast = require('libs.itemrecast');
 local actiondb = require('modules.hotbar.actiondb');
+local ffi = require('ffi');
 
 local M = {};
 
 -- Module-level setting for Hh:MM format (set once per frame, used by all functions)
 local useHHMMFormat = false;
+
+-- Blue Magic skill id (ISpell.Skill). Setting/unsetting spells applies a 60s
+-- magic recast on private servers (LSB); force the same timer in the UI when
+-- the client's recast memory does not reflect it.
+local BLUE_MAGIC_SKILL = 43;
+local BLU_SET_RECAST_SECONDS = 60;
+local bluSetCache = nil;
+local bluSetCacheTime = 0;
+local bluOffset = nil;
+local bluOffsetTried = false;
+local bluSetInitialized = false;
+local prevBluSetSig = nil;
+local bluForcedUntil = {}; -- spellId -> os.clock() expiry
+
+local function IsBlueMagicSpell(spellId)
+    if not spellId then return false; end
+    local resourceMgr = AshitaCore:GetResourceManager();
+    if not resourceMgr then return false; end
+    local spell = resourceMgr:GetSpellById(spellId);
+    return spell ~= nil and (spell.Skill or 0) == BLUE_MAGIC_SKILL;
+end
+
+local function GetBluSetIds()
+    local now = os.clock();
+    if bluSetCache and (now - bluSetCacheTime) < 0.25 then
+        return bluSetCache;
+    end
+
+    local set = {};
+    local ok = pcall(function()
+        if not bluOffsetTried then
+            bluOffsetTried = true;
+            local found = ashita.memory.find('FFXiMain.dll', 0, 'C1E1032BC8B0018D????????????B9????????F3A55F5E5B', 10, 0);
+            if found and found ~= 0 then
+                bluOffset = ffi.cast('uint32_t*', found);
+            end
+        end
+        if not bluOffset then return; end
+        local ptr = ashita.memory.read_uint32(AshitaCore:GetPointerManager():Get('inventory'));
+        if ptr == 0 then return; end
+        ptr = ashita.memory.read_uint32(ptr);
+        if ptr == 0 then return; end
+        local bytes = ashita.memory.read_array((ptr + bluOffset[0]) + 0x04, 0x14);
+        if not bytes then return; end
+        for i = 1, #bytes do
+            local v = bytes[i];
+            if v and v ~= 0 then
+                set[v + 512] = true;
+            end
+        end
+    end);
+    if not ok then
+        set = {};
+    end
+
+    bluSetCache = set;
+    bluSetCacheTime = now;
+    return set;
+end
+
+-- When the BLU set changes, LSB forces 60s recast on every currently-set spell.
+-- Seed without forcing so reload mid-set does not fake a fresh set cooldown.
+local function RefreshBluSetForcedRecasts()
+    local set = GetBluSetIds();
+    local ids = {};
+    for id in pairs(set) do
+        ids[#ids + 1] = id;
+    end
+    table.sort(ids);
+    local sig = table.concat(ids, ',');
+
+    if not bluSetInitialized then
+        bluSetInitialized = true;
+        prevBluSetSig = sig;
+        return;
+    end
+    if sig == prevBluSetSig then
+        return;
+    end
+    prevBluSetSig = sig;
+
+    local untilTime = os.clock() + BLU_SET_RECAST_SECONDS;
+    for id in pairs(set) do
+        bluForcedUntil[id] = untilTime;
+    end
+end
+
+local function GetForcedBluSetRecast(spellId)
+    if not spellId or not IsBlueMagicSpell(spellId) then
+        return 0;
+    end
+    RefreshBluSetForcedRecasts();
+    local untilTime = bluForcedUntil[spellId];
+    if not untilTime then
+        return 0;
+    end
+    local remaining = untilTime - os.clock();
+    if remaining <= 0 then
+        bluForcedUntil[spellId] = nil;
+        return 0;
+    end
+    return remaining;
+end
 
 -- Set the Hh:MM format preference (call once per frame before any recast queries)
 function M.SetHHMMFormat(enabled)
@@ -364,6 +468,13 @@ function M.GetCooldownInfo(actionData)
     if actionData.actionType == 'ma' then
         spellId = actiondb.GetSpellId(actionData.action);
         remaining, recastText = M.GetActionRecast(actionData.actionType, spellId, nil, nil);
+        -- Force the BLU set-to-usable timer (60s) for spell binds and macros whose
+        -- recast source is a Blue Magic spell. Availability gating is unchanged.
+        local forced = GetForcedBluSetRecast(spellId);
+        if forced > remaining then
+            remaining = forced;
+            recastText = M.FormatRecast(remaining);
+        end
         onCooldown = remaining > 0;
     elseif actionData.actionType == 'pet' then
         -- Prefer pet-typed resource so shared RecastTimerId pools match

@@ -163,6 +163,9 @@ local EXPANDED_MAX_VISIBLE_ITEMS = 3;    -- Max items visible before scrolling
 local scrollOffset = 0;
 local maxScrollOffset = 0;
 
+-- Align-bottom window state (keeps footer edge fixed when height changes)
+local alignBottomState = { x = nil, y = nil, height = nil };
+
 -- Helper to build a comma-separated list of names with lots
 local function formatLottersList(lotters, maxChars)
     if #lotters == 0 then return '(none)'; end
@@ -251,6 +254,9 @@ function M.DrawWindow(settings)
     local bgTheme = gConfig.treasurePoolBackgroundTheme or 'Plain';
     local isExpanded = gConfig.treasurePoolExpanded == true;
     local isMinimized = gConfig.treasurePoolMinimized == true;
+    -- Reverse Grow off = bottom-to-top (default fill); on = top-to-bottom
+    local stackFromBottom = gConfig.treasurePoolReverseGrow ~= true;
+    local alignBottom = gConfig.treasurePoolAlignBottom == true;
 
     -- Calculate dimensions (different for expanded vs collapsed). scaleX/scaleY already include gs.
     local iconSize = math.floor(ICON_SIZE * scaleY);
@@ -395,7 +401,39 @@ function M.DrawWindow(settings)
 
     imgui.SetNextWindowSize({-1, -1}, ImGuiCond_Always);
 
-    ApplyWindowPosition('TreasurePool');
+    -- Align Bottom: pin the footer before Begin so height changes don't draw one frame low
+    local preAdjusted = false;
+    local needsSavedPosApply = gConfig.windowPositions
+        and gConfig.windowPositions['TreasurePool']
+        and (not gConfig.appliedPositions or not gConfig.appliedPositions['TreasurePool']);
+
+    if alignBottom
+        and not needsSavedPosApply
+        and alignBottomState.y ~= nil
+        and alignBottomState.height ~= nil
+        and alignBottomState.height ~= totalHeight
+    then
+        local posX = alignBottomState.x;
+        if posX == nil and gConfig.windowPositions and gConfig.windowPositions['TreasurePool'] then
+            posX = gConfig.windowPositions['TreasurePool'].x;
+        end
+        if posX ~= nil then
+            local newPosY = alignBottomState.y + alignBottomState.height - totalHeight;
+            imgui.SetNextWindowPos({ posX, newPosY }, ImGuiCond_Always);
+            preAdjusted = true;
+            if not gConfig.appliedPositions then gConfig.appliedPositions = {}; end
+            gConfig.appliedPositions['TreasurePool'] = true;
+            if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+            gConfig.windowPositions['TreasurePool'] = { x = posX, y = newPosY };
+            alignBottomState.x = posX;
+            alignBottomState.y = newPosY;
+            alignBottomState.height = totalHeight;
+        end
+    end
+
+    if not preAdjusted then
+        ApplyWindowPosition('TreasurePool');
+    end
     if imgui.Begin('TreasurePool', true, windowFlags) then
         SaveWindowPosition('TreasurePool');
         local startX, startY = imgui.GetCursorScreenPos();
@@ -451,13 +489,25 @@ function M.DrawWindow(settings)
         bgOpts.bgColor = bgColor;
         windowBg.Draw(uiDrawList, startX + padding, startY + padding, contentWidth, contentHeightTotal, bgOpts);
 
-        local y = startY + padding;
+        -- Layout: Align Bottom puts the header bar under the list as a footer
+        local contentTop = startY + padding;
+        local headerY = contentTop;
+        local itemsY = contentTop;
+        if alignBottom and not isMinimized and showTitle then
+            itemsY = contentTop;
+            headerY = contentTop + visibleContentHeight + headerItemGap;
+        elseif showTitle then
+            headerY = contentTop;
+            itemsY = contentTop + headerHeight + headerItemGap;
+        end
+
+        local y = itemsY;
 
         -- Draw header with tabs and action buttons
         if showTitle then
             -- Button sizing (uses fontSize from config)
             local btnHeight = fontSize + 6;
-            local btnY = y - 1;
+            local btnY = headerY - 1;
             local btnSpacing = 4;
             local tabBtnWidth = fontSize * 4;  -- Tab button width
             local textBtnWidth = fontSize * 4;  -- Wider for "Lot All" / "Pass All" text
@@ -501,40 +551,39 @@ function M.DrawWindow(settings)
             local histTextColor = (selectedTab == 2) and 0xFFFFFFFF or 0xFFAAAAAA;
             imtext.Draw(uiDrawList, 'History', historyTabX + (tabBtnWidth - histTextW) / 2, btnY + (btnHeight - histTextH) / 2, histTextColor, fontSize);
 
-            -- Pool tab: show Lot All, Pass All, Minimize, Toggle buttons
+            -- Pool tab: show Lot All, Pass All, view toggle, window collapse/expand
             if selectedTab == 1 then
-                -- Position: [Pool] [History] [Lot All] [Pass All] ... [Minimize] [Toggle]
+                -- Position: [Pool] [History] [Lot All] [Pass All] ... [Detailed/Compact] [Collapse/Expand]
                 local afterTabsX = historyTabX + tabBtnWidth + btnSpacing;
                 local lotAllX = afterTabsX;
                 local passAllX = lotAllX + textBtnWidth + btnSpacing;
                 local toggleX = startX + windowWidth - padding - toggleSize;
                 local minimizeX = toggleX - toggleSize - btnSpacing;
 
-                -- Draw minimize/maximize button
-                local minimizeClicked = button.DrawMinimizePrim('tpMinimize', minimizeX, btnY, toggleSize, isMinimized, {
+                -- Detailed/Compact view toggle (□ / _ icons; same positions as before)
+                -- When compact: show maximize icon → Detailed View; when detailed: show minimize icon → Compact View
+                local viewClicked = button.DrawMinimizePrim('tpMinimize', minimizeX, btnY, toggleSize, not isExpanded, {
                     colors = button.COLORS_NEUTRAL,
-                    tooltip = isMinimized and 'Maximize window' or 'Minimize to header only',
+                    tooltip = isExpanded and 'Compact View' or 'Detailed View',
                 });
-                if minimizeClicked then
-                    gConfig.treasurePoolMinimized = not gConfig.treasurePoolMinimized;
-                    SaveSettingsToDisk();
-                end
-
-                -- Draw expand/collapse arrow button
-                local arrowDirection = isExpanded and 'up' or 'down';
-                local toggleClicked = button.DrawArrowPrim('tpToggle', toggleX, btnY, toggleSize, arrowDirection, {
-                    colors = button.COLORS_NEUTRAL,
-                    tooltip = isMinimized
-                        and (isExpanded and 'Maximize and collapse' or 'Maximize and expand')
-                        or (isExpanded and 'Collapse' or 'Expand'),
-                });
-                if toggleClicked then
-                    -- If minimized, maximize first then apply expand/collapse
+                if viewClicked then
                     if isMinimized then
                         gConfig.treasurePoolMinimized = false;
                     end
                     gConfig.treasurePoolExpanded = not gConfig.treasurePoolExpanded;
                     scrollOffset = 0;  -- Reset scroll when toggling
+                    SaveSettingsToDisk();
+                end
+
+                -- Window collapse/expand arrow (same positions as before)
+                -- Collapse: down normally, up when Align Bottom; Expand: triangle pointing left
+                local arrowDirection = isMinimized and 'left' or (alignBottom and 'up' or 'down');
+                local toggleClicked = button.DrawArrowPrim('tpToggle', toggleX, btnY, toggleSize, arrowDirection, {
+                    colors = button.COLORS_NEUTRAL,
+                    tooltip = isMinimized and 'Expand' or 'Collapse',
+                });
+                if toggleClicked then
+                    gConfig.treasurePoolMinimized = not gConfig.treasurePoolMinimized;
                     SaveSettingsToDisk();
                 end
 
@@ -590,35 +639,30 @@ function M.DrawWindow(settings)
                 local toggleX = startX + windowWidth - padding - toggleSize;
                 local minimizeX = toggleX - toggleSize - btnSpacing;
 
-                -- Draw minimize button on History tab
-                local minimizeClicked = button.DrawMinimizePrim('tpMinimize', minimizeX, btnY, toggleSize, isMinimized, {
+                -- Detailed/Compact view toggle on History tab
+                local viewClicked = button.DrawMinimizePrim('tpMinimize', minimizeX, btnY, toggleSize, not isExpanded, {
                     colors = button.COLORS_NEUTRAL,
-                    tooltip = isMinimized and 'Maximize window' or 'Minimize to header only',
+                    tooltip = isExpanded and 'Compact View' or 'Detailed View',
                 });
-                if minimizeClicked then
-                    gConfig.treasurePoolMinimized = not gConfig.treasurePoolMinimized;
-                    SaveSettingsToDisk();
-                end
-
-                -- Draw expand/collapse arrow button on History tab
-                local arrowDirection = isExpanded and 'up' or 'down';
-                local toggleClicked = button.DrawArrowPrim('tpToggle', toggleX, btnY, toggleSize, arrowDirection, {
-                    colors = button.COLORS_NEUTRAL,
-                    tooltip = isMinimized
-                        and (isExpanded and 'Maximize and collapse' or 'Maximize and expand')
-                        or (isExpanded and 'Collapse' or 'Expand'),
-                });
-                if toggleClicked then
-                    -- If minimized, maximize first then apply expand/collapse
+                if viewClicked then
                     if isMinimized then
                         gConfig.treasurePoolMinimized = false;
                     end
                     gConfig.treasurePoolExpanded = not gConfig.treasurePoolExpanded;
                     SaveSettingsToDisk();
                 end
-            end
 
-            y = y + headerHeight + 4;  -- Add padding between header and items
+                -- Window collapse/expand arrow on History tab
+                local arrowDirection = isMinimized and 'left' or (alignBottom and 'up' or 'down');
+                local toggleClicked = button.DrawArrowPrim('tpToggle', toggleX, btnY, toggleSize, arrowDirection, {
+                    colors = button.COLORS_NEUTRAL,
+                    tooltip = isMinimized and 'Expand' or 'Collapse',
+                });
+                if toggleClicked then
+                    gConfig.treasurePoolMinimized = not gConfig.treasurePoolMinimized;
+                    SaveSettingsToDisk();
+                end
+            end
         else
             button.HidePrim('tpTabPool');
             button.HidePrim('tpTabHistory');
@@ -653,9 +697,10 @@ function M.DrawWindow(settings)
 
             local usedSlots = {};
             local currentY = y;  -- Track cumulative Y position (before scroll)
+            local fromBottom = 0;  -- Used when stackFromBottom stacks from the bottom
 
             -- Calculate visible region for clipping (in expanded scroll mode)
-            -- clipTop starts exactly where items begin (after header)
+            -- clipTop starts exactly where items begin (after header, or above header when reverse)
             -- clipBottom is exactly the height of visible items below clipTop
             local itemAreaTop = y;
             local itemAreaBottom = y + visibleContentHeight;
@@ -688,10 +733,18 @@ function M.DrawWindow(settings)
 
                 local rowHeight = itemRowHeights[i];
 
-                -- Apply scroll offset in expanded mode
-                local rowY = currentY;
-                if needsScroll then
-                    rowY = currentY - scrollOffset;
+                -- Apply scroll offset; default fill stacks from the bottom of the item area
+                local rowY;
+                if stackFromBottom then
+                    -- +scrollOffset moves the stack down so higher items enter the visible area
+                    rowY = itemAreaBottom + scrollOffset - fromBottom - rowHeight;
+                    fromBottom = fromBottom + rowHeight + rowSpacing;
+                else
+                    rowY = currentY;
+                    if needsScroll then
+                        rowY = currentY - scrollOffset;
+                    end
+                    currentY = currentY + rowHeight + rowSpacing;
                 end
 
                 -- Check if item overlaps visible region at all
@@ -701,9 +754,6 @@ function M.DrawWindow(settings)
 
                 local remaining = data.GetTimeRemaining(slot);
                 local progress = remaining / data.POOL_TIMEOUT_SECONDS;
-
-                -- Update currentY for next item (before any visibility checks)
-                currentY = currentY + rowHeight + rowSpacing;
 
                 -- Skip rendering if item has no overlap with visible region at all
                 if not hasAnyOverlap then
@@ -1063,22 +1113,28 @@ function M.DrawWindow(settings)
 
                 -- Render each history item
                 local currentY = y;
+                local fromBottom = 0;
                 for i, histItem in ipairs(historyItems) do
                     if i > data.MAX_HISTORY_ITEMS then break; end
 
-                    -- Apply scroll offset
-                    local rowY = currentY;
-                    if historyNeedsScroll then
-                        rowY = currentY - historyScrollOffset;
+                    -- Apply scroll offset; default fill stacks from the bottom
+                    local rowY;
+                    if stackFromBottom then
+                        -- +scrollOffset moves the stack down so higher items enter the visible area
+                        rowY = historyAreaBottom + historyScrollOffset - fromBottom - historyRowHeight;
+                        fromBottom = fromBottom + historyRowHeight + rowSpacing;
+                    else
+                        rowY = currentY;
+                        if historyNeedsScroll then
+                            rowY = currentY - historyScrollOffset;
+                        end
+                        currentY = currentY + historyRowHeight + rowSpacing;
                     end
 
                     -- Check if item is visible
                     local itemTop = rowY;
                     local itemBottom = rowY + historyRowHeight;
                     local isVisible = not historyNeedsScroll or (itemBottom > historyAreaTop and itemTop < historyAreaBottom);
-
-                    -- Update currentY for next item
-                    currentY = currentY + historyRowHeight + rowSpacing;
 
                     if isVisible then
                         -- Draw item icon
@@ -1135,6 +1191,19 @@ function M.DrawWindow(settings)
                     drawList:AddRectFilled(_P1(scrollBarX, scrollThumbY), _P2(scrollBarX + scrollBarWidth, scrollThumbY + scrollThumbHeight), thumbColor, 2.0);
                 end
             end
+        end
+
+        -- Track window pos/height for Align Bottom (position corrections happen pre-Begin)
+        if alignBottom then
+            local winPosX, winPosY = imgui.GetWindowPos();
+            alignBottomState.x = winPosX;
+            alignBottomState.y = winPosY;
+            alignBottomState.height = totalHeight;
+            SaveWindowPosition('TreasurePool');
+        else
+            alignBottomState.x = nil;
+            alignBottomState.y = nil;
+            alignBottomState.height = nil;
         end
     end
     imgui.End();

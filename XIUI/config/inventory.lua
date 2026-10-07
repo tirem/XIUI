@@ -63,9 +63,45 @@ local function DrawTabButton(tab, selectedTab, uniqueSuffix)
     return clicked, tab.id;
 end
 
+local function DrawWardrobeEnabledToggles()
+    if not gConfig.showWardrobeTracker then
+        return;
+    end
+    if type(gConfig.wardrobeEnabled) ~= 'table' then
+        gConfig.wardrobeEnabled = { true, true, true, true, true, true, true, true };
+    end
+
+    imgui.Indent(20);
+    imgui.TextColored({ 0.75, 0.70, 0.55, 1.0 }, 'Wardrobes');
+    imgui.ShowHelp('Choose which wardrobes appear in the tracker. All are shown by default.');
+
+    imgui.Columns(2, '##wardrobeEnabledCols', false);
+    for i = 1, 4 do
+        local label = string.format('Wardrobe %d##wardrobeEnabled%d', i, i);
+        if imgui.Checkbox(label, { gConfig.wardrobeEnabled[i] ~= false }) then
+            gConfig.wardrobeEnabled[i] = not (gConfig.wardrobeEnabled[i] ~= false);
+            SaveSettingsOnly();
+        end
+    end
+    imgui.NextColumn();
+    for i = 5, 8 do
+        local label = string.format('Wardrobe %d##wardrobeEnabled%d', i, i);
+        if imgui.Checkbox(label, { gConfig.wardrobeEnabled[i] ~= false }) then
+            gConfig.wardrobeEnabled[i] = not (gConfig.wardrobeEnabled[i] ~= false);
+            SaveSettingsOnly();
+        end
+    end
+    imgui.Columns(1);
+    imgui.Unindent(20);
+    imgui.Spacing();
+end
+
 -- Helper function to draw settings for a tracker
 local function DrawTrackerSettings(tab)
     components.DrawCheckbox('Enabled', tab.configKey, CheckVisibility);
+    if tab.configKey == 'showWardrobeTracker' then
+        DrawWardrobeEnabledToggles();
+    end
     components.DrawHideWhenMenuOpenOptions('inventoryTrackerHideOnMenuFocus', 'inventoryTrackerHideMacroPalette');
 
     if components.CollapsingSection('Display Options##' .. tab.colorKey) then

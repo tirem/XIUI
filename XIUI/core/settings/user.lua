@@ -101,6 +101,8 @@ function M.createUserSettingsDefaults()
         treasurePoolBackgroundTheme = 'Plain', -- Background theme
         treasurePoolPreview = false,          -- Show preview with test data
         treasurePoolExpanded = false,         -- Expanded view (false = collapsed)
+        treasurePoolReverseGrow = false,      -- Off = bottom-to-top list; on = top-to-bottom
+        treasurePoolAlignBottom = false,      -- Header as footer; collapse keeps bottom edge fixed
 
         -- Hotbar settings (global)
         hotbarEnabled = true,                 -- Show hotbar module
@@ -244,6 +246,7 @@ function M.createUserSettingsDefaults()
         enemyListMaxColumns = 1,
         enemyListRowSpacing = 5,
         enemyListColumnSpacing = 10,
+        enemyListAlignBottom = false, -- Bottom-up column fill; window grows upward
         enemyListDebuffOffsetX = 5,
         enemyListDebuffOffsetY = 0,
         showEnemyListDebuffs = true,
@@ -282,6 +285,8 @@ function M.createUserSettingsDefaults()
         targetBarScaleX = 1,
         targetBarScaleY = 1,
         targetBarNameFontSize = 12,
+        targetBarNameOffsetX = 0,
+        targetBarNameOffsetY = 0,
         targetBarDistanceFontSize = 12,
         targetBarDistanceOffsetX = 0,
         targetBarDistanceOffsetY = 0,
@@ -312,6 +317,7 @@ function M.createUserSettingsDefaults()
         showTargetBarBookends = false,
         showTargetBarLockOnBorder = true,
         showTargetBarCastBar = true,
+        targetBarCastBarSnapToTargetBar = true,
         showEnemyId = false,
         showEnemyIdHex = true,
         targetBarHideDuringEvents = true,
@@ -444,6 +450,8 @@ function M.createUserSettingsDefaults()
         storageTextUseThresholdColor = false,
 
         showWardrobeTracker = false,
+        -- Per-wardrobe visibility (1-8); all on by default when the tracker is enabled
+        wardrobeEnabled = T{ true, true, true, true, true, true, true, true },
         wardrobeTrackerScale = 1,
         wardrobeTrackerFontSize = 12,
         wardrobeTrackerColumnCount = 10,
@@ -491,6 +499,7 @@ function M.createUserSettingsDefaults()
         mobInfoShowModifierText = false, -- show +25%/-50% next to icons
         mobInfoGroupModifiers = true, -- group icons by percentage (Wind Earth Water -25%) vs individual (Wind -25% Earth -25%)
         mobInfoSeparatorStyle = 'space', -- separator style: 'space', 'pipe', 'dot'
+        mobInfoReverseElementResistanceSigns = false, -- flip +/− on elemental weakness/resistance text/tooltips
         mobInfoShowServerId = false, -- show target's server ID
         mobInfoServerIdHex = true, -- true = hex format (0x1C0), false = decimal
         mobInfoDataSource = HzLimitedMode == true and 'horizon' or 'lsb',

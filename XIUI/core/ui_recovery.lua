@@ -15,7 +15,7 @@ local recoverCommandsEnabled = false;
 -- Modal-selectable modules (aligned with config.lua categories, excluding global).
 local MODULE_REGISTRY = {
     { key = 'playerBar', aliases = { 'playerbar' }, keys = { 'PlayerBar' } },
-    { key = 'targetBar', aliases = { 'targetbar' }, keys = { 'TargetBar' } },
+    { key = 'targetBar', aliases = { 'targetbar' }, keys = { 'TargetBar', 'TargetBarCastBar' } },
     { key = 'enemyList', aliases = { 'enemylist' }, keys = { 'EnemyList' } },
     {
         key = 'partyList',
