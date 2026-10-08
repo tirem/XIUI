@@ -25,7 +25,7 @@ local bluOffset = nil;
 local bluOffsetTried = false;
 local bluSetInitialized = false;
 local prevBluSetSig = nil;
-local bluForcedUntil = {}; -- spellId -> os.clock() expiry
+local bluForcedAllUntil = nil; -- os.clock() expiry applied to every Blue Magic spell
 
 local function IsBlueMagicSpell(spellId)
     if not spellId then return false; end
@@ -73,7 +73,7 @@ local function GetBluSetIds()
     return set;
 end
 
--- When the BLU set changes, LSB forces 60s recast on every currently-set spell.
+-- When the BLU set changes, apply 60s to every Blue Magic spell, set or not.
 -- Seed without forcing so reload mid-set does not fake a fresh set cooldown.
 local function RefreshBluSetForcedRecasts()
     local set = GetBluSetIds();
@@ -93,11 +93,7 @@ local function RefreshBluSetForcedRecasts()
         return;
     end
     prevBluSetSig = sig;
-
-    local untilTime = os.clock() + BLU_SET_RECAST_SECONDS;
-    for id in pairs(set) do
-        bluForcedUntil[id] = untilTime;
-    end
+    bluForcedAllUntil = os.clock() + BLU_SET_RECAST_SECONDS;
 end
 
 local function GetForcedBluSetRecast(spellId)
@@ -105,16 +101,28 @@ local function GetForcedBluSetRecast(spellId)
         return 0;
     end
     RefreshBluSetForcedRecasts();
-    local untilTime = bluForcedUntil[spellId];
-    if not untilTime then
+    if not bluForcedAllUntil then
         return 0;
     end
-    local remaining = untilTime - os.clock();
+    local remaining = bluForcedAllUntil - os.clock();
     if remaining <= 0 then
-        bluForcedUntil[spellId] = nil;
+        bluForcedAllUntil = nil;
         return 0;
     end
     return remaining;
+end
+
+--- True when this is Blue Magic and it is not in the current set.
+--- False when the set could not be read, so a failed scan does not dim every spell.
+function M.IsBlueSpellNotSet(spellId)
+    if not spellId or not IsBlueMagicSpell(spellId) then
+        return false;
+    end
+    GetBluSetIds();
+    if not bluOffset then
+        return false;
+    end
+    return bluSetCache[spellId] ~= true;
 end
 
 -- Set the Hh:MM format preference (call once per frame before any recast queries)
@@ -468,8 +476,8 @@ function M.GetCooldownInfo(actionData)
     if actionData.actionType == 'ma' then
         spellId = actiondb.GetSpellId(actionData.action);
         remaining, recastText = M.GetActionRecast(actionData.actionType, spellId, nil, nil);
-        -- Force the BLU set-to-usable timer (60s) for spell binds and macros whose
-        -- recast source is a Blue Magic spell. Availability gating is unchanged.
+        -- Any Blue Magic spell, including a macro recast source, takes the 60s
+        -- set-change timer. A longer game recast still wins.
         local forced = GetForcedBluSetRecast(spellId);
         if forced > remaining then
             remaining = forced;

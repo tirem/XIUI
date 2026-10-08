@@ -842,6 +842,8 @@ function M.GetKeybindForSlot(barIndex, slotIndex)
                     and prev.recastSourceAction == macroData.recastSourceAction
                     and prev.recastSourceItemId == macroData.recastSourceItemId
                     and prev.alwaysAvailable == macroData.alwaysAvailable
+                    and prev.macroRef == slotAction.macroRef
+                    and prev.macroPaletteKey == slotAction.macroPaletteKey
                 then
                     return prev;
                 end
@@ -851,6 +853,8 @@ function M.GetKeybindForSlot(barIndex, slotIndex)
                     context = 'battle',
                     hotbar = barIndex,
                     slot = slotIndex,
+                    macroRef = slotAction.macroRef,
+                    macroPaletteKey = slotAction.macroPaletteKey,
                     actionType = macroData.actionType,
                     action = macroData.action,
                     target = macroData.target,

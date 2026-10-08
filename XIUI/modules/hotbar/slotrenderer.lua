@@ -1293,10 +1293,7 @@ function M.DrawSlot(params)
                 elseif params.onClick then
                     params.onClick();
                 elseif bind then
-                    local cmd = actions.BuildCommand(bind);
-                    if cmd then
-                        actions.ExecuteCommandString(cmd, bind.actionType == 'macro');
-                    end
+                    actions.ExecuteBind(bind);
                 end
             end
         end

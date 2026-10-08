@@ -86,8 +86,10 @@ local allClaimedTargets = {};
 -- Insertion-ordered enemy indices so Align Bottom has a stable bottom-to-top fill order
 local claimedOrder = {};
 -- Bottom-anchor state when Align Bottom is enabled (window grows upward)
--- bottomY is the pinned screen-space bottom edge; lastY detects user drags
-local alignBottomWindowState = { x = nil, bottomY = nil, lastY = nil };
+-- bottomY is the pinned screen-space bottom edge; lastY detects user drags.
+-- layoutHeight is the calculated content height. Comparing that to the real
+-- window size stays unequal for some column layouts and would pin the window.
+local alignBottomWindowState = { x = nil, bottomY = nil, lastY = nil, layoutHeight = nil };
 local enemylist = {};
 
 local function ClaimEnemy(index)
@@ -364,15 +366,19 @@ enemylist.DrawWindow = function(settings)
 	local sizedHeight = (#orderedEntries > 0) and totalWindowHeight or -1;
 	imgui.SetNextWindowSize({ windowWidth, sizedHeight }, ImGuiCond_Always);
 
-	-- Align Bottom: pin the bottom edge before Begin so the list grows upward.
-	-- Prefer the live bottom anchor over re-applying a saved top-left (preview/config reopen).
+	-- Align Bottom keeps the bottom edge fixed as rows are added.
+	-- The position is forced only while the HUD is locked, or on the frame the
+	-- calculated height changes. An unlocked window stays where it was dragged.
+	local positionsLocked = gConfig.lockPositions == true;
+	local layoutHeightChanged = alignBottomWindowState.layoutHeight ~= nil
+		and math.abs(alignBottomWindowState.layoutHeight - totalWindowHeight) > 0.5;
 	local preAdjusted = false;
 	if alignBottom and alignBottomWindowState.bottomY ~= nil and #orderedEntries > 0 then
 		local posX = alignBottomWindowState.x;
 		if posX == nil and gConfig.windowPositions and gConfig.windowPositions['EnemyList'] then
 			posX = gConfig.windowPositions['EnemyList'].x;
 		end
-		if posX ~= nil then
+		if posX ~= nil and (positionsLocked or layoutHeightChanged) then
 			local newPosY = alignBottomWindowState.bottomY - totalWindowHeight;
 			imgui.SetNextWindowPos({ posX, newPosY }, ImGuiCond_Always);
 			preAdjusted = true;
@@ -544,13 +550,12 @@ enemylist.DrawWindow = function(settings)
 				-- ROW 2: HP Bar (full width)
 				local row2Y = nameY + nameHeight + nameToBarGap;
 				local barX = entryStartX + padding;
-				imgui.SetCursorScreenPos(_P1(barX, row2Y));
 
 				local enemyGradient = GetCustomGradient(gConfig.colorCustomization.enemyList, 'hpGradient') or {'#e16c6c', '#fb9494'};
 				progressbar.ProgressBar(
 					progressbar.Pct(ent.HPPercent / 100, enemyGradient),
 					progressbar.Dims(barWidth, settings.barHeight),
-					progressbar.Opts(gConfig.showEnemyListBookends)
+					progressbar.Opts(gConfig.showEnemyListBookends, nil, barX, row2Y)
 				);
 
 				-- ROW 3: Distance (left aligned) and HP% (right aligned)
@@ -579,12 +584,11 @@ enemylist.DrawWindow = function(settings)
 					end
 					local castBarY = contentBottomY + barToInfoGap;
 
-					imgui.SetCursorScreenPos(_P1(barX, castBarY));
 					local castGradient = GetCustomGradient(gConfig.colorCustomization.enemyList, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
 					progressbar.ProgressBar(
 						progressbar.Pct(castProgress, castGradient, castOverlay),
 						progressbar.Dims(barWidth, castBarHeight),
-						progressbar.Opts(gConfig.showEnemyListBookends)
+						progressbar.Opts(gConfig.showEnemyListBookends, nil, barX, castBarY)
 					);
 
 					-- "<spell> - <target>" centered below the bar; target in its own color.
@@ -758,13 +762,15 @@ enemylist.DrawWindow = function(settings)
 				winH = totalWindowHeight;
 			end
 
-			-- First frame or user drag: adopt the current bottom edge as the anchor
-			local dragged = alignBottomWindowState.lastY ~= nil
+			-- HUD lock is the only thing that holds the window. A drag updates the bottom anchor.
+			local dragged = not positionsLocked
+				and alignBottomWindowState.lastY ~= nil
 				and not preAdjusted
-				and math.abs(winPosY - alignBottomWindowState.lastY) > 1;
+				and (math.abs(winPosY - alignBottomWindowState.lastY) > 1
+					or (alignBottomWindowState.x ~= nil and math.abs(winPosX - alignBottomWindowState.x) > 1));
 			if alignBottomWindowState.bottomY == nil or dragged then
 				alignBottomWindowState.bottomY = winPosY + winH;
-			else
+			elseif positionsLocked or layoutHeightChanged then
 				-- Snap using the real window height so estimate error can't accumulate
 				local correctY = alignBottomWindowState.bottomY - winH;
 				if math.abs(winPosY - correctY) > 0.5 then
@@ -775,12 +781,14 @@ enemylist.DrawWindow = function(settings)
 
 			alignBottomWindowState.x = winPosX;
 			alignBottomWindowState.lastY = winPosY;
+			alignBottomWindowState.layoutHeight = totalWindowHeight;
 			if not gConfig.windowPositions then gConfig.windowPositions = {}; end
 			gConfig.windowPositions['EnemyList'] = { x = winPosX, y = winPosY };
 		else
 			alignBottomWindowState.x = nil;
 			alignBottomWindowState.bottomY = nil;
 			alignBottomWindowState.lastY = nil;
+			alignBottomWindowState.layoutHeight = nil;
 		end
 
 	end

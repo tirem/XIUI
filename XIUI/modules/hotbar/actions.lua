@@ -193,6 +193,7 @@ local lastPaletteCycleAt = 0;
 function M.PaletteModifierMatches(ctrl, alt, shift)
     local gs = gConfig and gConfig.hotbarGlobal;
     if not gs or gs.paletteCycleEnabled == false then return false; end
+    if not gs.paletteCycleModifier or gs.paletteCycleModifier == '' then return false; end
     local held = (ctrl and 1 or 0) + (alt and 1 or 0) + (shift and 1 or 0);
     if held ~= 1 then
         return false;
@@ -251,20 +252,19 @@ function M.CycleAllPalettes(direction)
     return true;
 end
 
---- True when this DirectInput key is an up/down palette key that must not reach the game.
-function M.ShouldBlockPaletteDik(dik)
+local function IsPaletteArrowDik(dik)
     local prevDik, nextDik = GetPaletteDikKeys();
-    if dik ~= prevDik and dik ~= nextDik then
+    return dik == prevDik or dik == nextDik;
+end
+
+--- Keyboard up/down is swallowed only for the Keyboard Palette dropdown,
+--- and only while Disable Native XI Macros is on.
+function M.ShouldBlockPaletteDik(dik)
+    local gs = gConfig and gConfig.hotbarGlobal;
+    if not gs or not gs.disableMacroBars then
         return false;
     end
-
-    local controller = require('modules.hotbar.controller');
-    if controller.IsPaletteCycleShoulderHeld and controller.IsPaletteCycleShoulderHeld() then
-        return true;
-    end
-
-    local gs = gConfig and gConfig.hotbarGlobal;
-    if not gs or gs.paletteCycleEnabled == false then
+    if not IsPaletteArrowDik(dik) then
         return false;
     end
     local ctrl, alt, shift = GetModifierStates();
@@ -281,11 +281,15 @@ end
 --- DirectInput GetDeviceData. This is the press the game uses for menus and the party list.
 function M.HandleKeyData(e)
     if not e or e.key == nil then return; end
-    if not M.ShouldBlockPaletteDik(e.key) then return; end
+    if not IsPaletteArrowDik(e.key) then return; end
+    local ctrl, alt, shift = GetModifierStates();
+    if not M.PaletteModifierMatches(ctrl, alt, shift) then return; end
     if e.down then
         CycleFromPaletteDik(e.key);
     end
-    e.blocked = true;
+    if M.ShouldBlockPaletteDik(e.key) then
+        e.blocked = true;
+    end
 end
 
 --- DirectInput GetDeviceState. Clears held up/down so the game doesn't repeat menu movement.
@@ -499,7 +503,14 @@ local currentPressedSlot = nil;
 -- Only one macro flow runs at a time; starting a different one cancels the previous.
 -- Re-pressing the same macro while it is still running is ignored.
 local activeMacroId = 0;
-local runningMacroFingerprint = nil;
+-- Identity of the macro whose lines are still running. Any other macro cancels it.
+local runningMacroKey = nil;
+-- Last hotbar command we actually queued, and a short block on the game
+-- resubmitting it when a different macro cancels the one in progress.
+local lastHotbarCommandKey = nil;
+local commandReplayBlock = nil; -- { key, expires }
+-- One press must produce one execution even if the client injects that command twice.
+local commandSendArm = nil; -- { key, expires, expected, seen }
 -- How long to wait for an action-accepted packet. Kept short so a failed action
 -- (cooldown, etc.) does not add a long hang before the next line / <wait N>.
 -- Reject messages (0x0029/0x002A) clear this earlier when the server refuses.
@@ -1293,6 +1304,10 @@ function M.IsActionAvailable(bind)
 
     if bind.actionType == 'ma' then
         local spellId = actiondb.GetSpellId(bind.action);
+        -- Learned Blue Magic cannot be cast unless it is currently set.
+        if spellId and recast.IsBlueSpellNotSet(spellId) then
+            return false, "N/A", false;
+        end
         local spellRes = spellId and AshitaCore:GetResourceManager():GetSpellById(spellId);
         if spellRes then
             local canCast, _, reqLevel = playerdata.EvaluateSpellAccess(spellRes, player);
@@ -1790,16 +1805,62 @@ local function shouldApplyStPreTarget(stTag)
         and not targetLib.HasMainTarget();
 end
 
+local function hotbarCommandKey(cmd)
+    cmd = tostring(cmd or ''):gsub('%s+', ' '):lower();
+    return cmd:match('^%s*(.-)%s*$') or '';
+end
+
+--- Queue one hotbar command. A second injection of that same command is blocked.
+local function queueHotbarCommand(mode, command)
+    local key = hotbarCommandKey(command);
+    local now = os.clock();
+    if commandSendArm and commandSendArm.key == key and now <= commandSendArm.expires then
+        commandSendArm.expected = commandSendArm.expected + 1;
+    else
+        commandSendArm = { key = key, expires = now + 0.2, expected = 1, seen = 0 };
+    end
+    lastHotbarCommandKey = key;
+    local chatManager = AshitaCore:GetChatManager();
+    if chatManager then
+        chatManager:QueueCommand(mode, command);
+    end
+end
+
+--- True when this command event is a duplicate or a replay of the macro we just cancelled.
+local function hotbarCommandShouldBlock(e)
+    if not e or not e.command then
+        return false;
+    end
+    local key = hotbarCommandKey(e.command);
+    if key == '' then
+        return false;
+    end
+    local now = os.clock();
+    local intentional = commandSendArm
+        and key == commandSendArm.key
+        and now <= commandSendArm.expires
+        and commandSendArm.seen < commandSendArm.expected;
+    if intentional then
+        commandSendArm.seen = commandSendArm.seen + 1;
+        return false;
+    end
+    if commandReplayBlock and key == commandReplayBlock.key and now <= commandReplayBlock.expires then
+        return true;
+    end
+    if commandSendArm and key == commandSendArm.key and now <= commandSendArm.expires
+        and commandSendArm.seen >= commandSendArm.expected then
+        return true;
+    end
+    return false;
+end
+
 local function queueStPreTarget(stTag)
     local preTarget = ST_PRETARGET_COMMANDS[stTag];
     if not preTarget then
         return false;
     end
     local ok, err = pcall(function()
-        local chatManager = AshitaCore:GetChatManager();
-        if chatManager then
-            chatManager:QueueCommand(-1, preTarget);
-        end
+        queueHotbarCommand(1, preTarget);
     end);
     if not ok then
         print('[XIUI] ST pre-target error: ' .. tostring(err));
@@ -2047,6 +2108,10 @@ local function onSubtargetCommandEvent(e, nType)
 end
 
 ashita.events.register('command', 'xiui_subtarget_cmd', function(e, nType)
+    if hotbarCommandShouldBlock(e) then
+        e.blocked = true;
+        return;
+    end
     onSubtargetCommandEvent(e, nType);
 end);
 
@@ -2128,6 +2193,40 @@ local function waitForSubtargetComplete(commandLine, onComplete, onAbort, cancel
     ashita.tasks.once(0, poll);
 end
 
+--- Stable id for one hotbar macro, whatever its action type is.
+--- Same macro pressed again shares this key. A different macro does not.
+local function macroActivationKey(bind, commandText)
+    if type(bind) == 'table' and bind.macroRef then
+        return 'id:' .. tostring(bind.macroPaletteKey or '') .. ':' .. tostring(bind.macroRef);
+    end
+    if type(bind) == 'table' and bind.hotbar and bind.slot then
+        return 'slot:' .. tostring(bind.hotbar) .. ':' .. tostring(bind.slot);
+    end
+    return 'cmd:' .. tostring(commandText or '');
+end
+
+--- Stop whichever macro is still stepping through lines.
+--- Does not call the game's macro stop. That resubmits the line already in
+--- progress, so a single press during /lastsynth produced two synth errors.
+local function cancelRunningMacro()
+    if runningMacroKey == nil then
+        return false;
+    end
+    -- Block the game from running that macro's last line again as it is cancelled.
+    if lastHotbarCommandKey then
+        commandReplayBlock = { key = lastHotbarCommandKey, expires = os.clock() + 0.35 };
+    end
+    activeMacroId = activeMacroId + 1;
+    runningMacroKey = nil;
+    macrosLib.set_stop_guard(false);
+    clearPendingActionAccept();
+    if pendingSubtargetWait then
+        pendingSubtargetWait.finished = true;
+        pendingSubtargetWait = nil;
+    end
+    return true;
+end
+
 --- Execute a command string (handles multi-line macros with /wait support)
 --- Macro line rules:
 --- - Each executed line waits for accept, reject, or a short timeout before continuing.
@@ -2138,9 +2237,10 @@ end
 ---   stretch still fire with no wait and can error.
 --- ST lines pause until confirm or dismiss, then use the same accept/reject gating.
 --- @param commandText string The command text (may contain newlines)
---- @param isMacro boolean|nil If true, enforces single-macro-at-a-time execution
+--- @param isMacro boolean|nil If true, lines run as a macro script (waits, one line at a time)
+--- @param macroKey string|nil Identity of the macro being pressed. Same key does not cancel itself.
 --- @return boolean success Whether any command was executed
-function M.ExecuteCommandString(commandText, isMacro)
+function M.ExecuteCommandString(commandText, isMacro, macroKey)
     if not commandText or commandText == '' then
         return false;
     end
@@ -2159,26 +2259,33 @@ function M.ExecuteCommandString(commandText, isMacro)
         return false;
     end
 
+    macroKey = macroKey or ('cmd:' .. commandText);
+
+    -- The macro that is already running does not cancel itself.
+    if runningMacroKey == macroKey then
+        return false;
+    end
+
+    -- Subtarget selection is already open, so don't start another multi-line script.
+    if isMacro and targetLib.GetSubTargetActive() then
+        SubtargetDebugLog('Ignoring macro keypress while game subtarget mode is active');
+        return false;
+    end
+
+    -- Every other macro cancels it, then runs. Action type does not matter.
+    cancelRunningMacro();
+
     local myMacroId = nil;
     if isMacro then
-        -- Block new macros only while the game reports subtarget mode is active.
-        if targetLib.GetSubTargetActive() then
-            SubtargetDebugLog('Ignoring macro keypress while game subtarget mode is active');
-            return false;
-        end
-        -- Same macro still running: do not cancel or re-queue it.
-        if runningMacroFingerprint == commandText then
-            return false;
-        end
         activeMacroId = activeMacroId + 1;
         myMacroId = activeMacroId;
-        runningMacroFingerprint = commandText;
+        runningMacroKey = macroKey;
         macrosLib.set_stop_guard(true);
     end
 
     local function releaseMyMacro()
         if myMacroId ~= nil and myMacroId == activeMacroId then
-            runningMacroFingerprint = nil;
+            runningMacroKey = nil;
             macrosLib.set_stop_guard(false);
             clearPendingActionAccept();
         end
@@ -2260,8 +2367,10 @@ function M.ExecuteCommandString(commandText, isMacro)
         local actionVerb = commandToExecute:match('^/%s*(%S+)');
         local isActionLine = actionVerb ~= nil and TARGETABLE_COMMANDS[actionVerb:lower()] == true;
         local expectedAction = isActionLine and resolveExpectedAction(commandToExecute) or nil;
-        -- Macros always use mode 2 (native macro input), including /echo.
-        local cmdMode = isMacro and 2 or -1;
+        -- Multi-line scripts use mode 2 (native macro input), including /echo.
+        -- Single actions use mode 1. Mode -1 is dispatched twice while a macro
+        -- is still marked running, which doubled the synth error on one press.
+        local cmdMode = isMacro and 2 or 1;
         local stTag = requiresSubtargetPause and extractSubtargetTag(commandToExecute) or nil;
         local hasAccess = (not isActionLine) or playerHasAccessToCommand(commandToExecute);
         local runAccessible = isActionLine and hasAccess;
@@ -2273,6 +2382,9 @@ function M.ExecuteCommandString(commandText, isMacro)
         end
 
         local function queueActionLine()
+            if isMacroCancelled() then
+                return;
+            end
             if requiresSubtargetPause then
                 waitForSubtargetComplete(commandToExecute, function()
                     scheduleWaitThenContinue(index + 1, inlineWait or 0, expectedAction, runAccessible);
@@ -2287,10 +2399,7 @@ function M.ExecuteCommandString(commandText, isMacro)
             end
 
             local ok, err = pcall(function()
-                local chatManager = AshitaCore:GetChatManager();
-                if chatManager then
-                    chatManager:QueueCommand(cmdMode, commandToExecute);
-                end
+                queueHotbarCommand(cmdMode, commandToExecute);
             end);
 
             if not ok then
@@ -2321,9 +2430,20 @@ function M.HandleKeybind(hotbar, slot)
         return false;
     end
 
-    -- Build and execute command
-    local command, _ = M.BuildCommand(bind);
-    return M.ExecuteCommandString(command, bind.actionType == 'macro');
+    return M.ExecuteBind(bind);
+end
+
+--- Run a hotbar macro. A different macro cancels the one in progress.
+--- Pressing the same macro again does not.
+function M.ExecuteBind(bind)
+    if not bind or not bind.actionType then
+        return false;
+    end
+    local command = M.BuildCommand(bind);
+    if not command or command == '' then
+        return false;
+    end
+    return M.ExecuteCommandString(command, bind.actionType == 'macro', macroActivationKey(bind, command));
 end
 
 -- Find hotbar and slot that matches the pressed key + modifiers
@@ -2403,20 +2523,21 @@ function M.HandleKey(event)
        local prevKey = (globalSettings and globalSettings.paletteCyclePrevKey) or 38;  -- VK_UP
        local nextKey = (globalSettings and globalSettings.paletteCycleNextKey) or 40;  -- VK_DOWN
        local isPaletteKey = keyCode == prevKey or keyCode == nextKey;
-       local controller = require('modules.hotbar.controller');
-       local shoulderHeld = controller.IsPaletteCycleShoulderHeld and controller.IsPaletteCycleShoulderHeld();
-       local keyboardEnabled = globalSettings and globalSettings.paletteCycleEnabled ~= false;
-       local modifierMatch = keyboardEnabled and M.PaletteModifierMatches(controlPressed, altPressed, shiftPressed);
+       local modifierMatch = M.PaletteModifierMatches(controlPressed, altPressed, shiftPressed);
 
-       if isPaletteKey and (shoulderHeld or modifierMatch) then
+       -- The Keyboard Palette shortcut still cycles when native macros are enabled.
+       -- It blocks Up/Down from the game only while Disable Native XI Macros is on.
+       if isPaletteKey and modifierMatch then
            if PALETTE_DEBUG_KEYS then
                print('[XIUI Palette Debug] Cycling palettes...');
            end
            -- DOWN = next (+1), UP = previous (-1) to match in-game macro convention
            local direction = (keyCode == nextKey) and 1 or -1;
            M.CycleAllPalettes(direction);
-           event.blocked = true;
-           return;
+           if globalSettings and globalSettings.disableMacroBars then
+               event.blocked = true;
+               return;
+           end
        end
    end
 
@@ -2518,9 +2639,7 @@ function M.ExecuteAction(slotAction)
     if not slotAction then return false; end
     if not slotAction.actionType or not slotAction.action then return false; end
 
-    -- Build and execute command (handles multi-line macros)
-    local command, _ = M.BuildCommand(slotAction);
-    return M.ExecuteCommandString(command, slotAction.actionType == 'macro');
+    return M.ExecuteBind(slotAction);
 end
 
 -- Clear the custom icon cache (call when icons may have changed)

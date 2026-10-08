@@ -448,6 +448,39 @@ function M.DrawWindow(settings)
 
         imtext.SetConfigFromSettings(settings.font_settings);
 
+        -- Header labels size their own buttons. Widen the window if that row
+        -- would otherwise run into the view and collapse buttons.
+        local textPadX = math.max(6, math.floor(fontSize * 0.45));
+        local function LabelWidth(label, fallbackChars)
+            local textW = imtext.MeasureCached(label, fontSize);
+            textW = textW or (fontSize * fallbackChars);
+            return math.ceil(textW + (textPadX * 2));
+        end
+        local poolBtnWidth = LabelWidth('Pool', 2);
+        local historyBtnWidth = LabelWidth('History', 4);
+        local lotAllBtnWidth = LabelWidth('Lot All', 4);
+        local passAllBtnWidth = LabelWidth('Pass All', 4);
+        local itemLabelFont = math.max(1, fontSize - 1);
+        local function ItemLabelWidth(label, fallbackChars)
+            local textW = imtext.MeasureCached(label, itemLabelFont);
+            textW = textW or (itemLabelFont * fallbackChars);
+            return math.ceil(textW);
+        end
+        local itemLotBtnWidth = ItemLabelWidth('Lot', 2);
+        local itemPassBtnWidth = ItemLabelWidth('Pass', 2);
+        local btnHeight = fontSize + 6;
+        local btnSpacing = 4;
+        local headerButtonsWidth = padding
+            + poolBtnWidth + btnSpacing
+            + historyBtnWidth + btnSpacing
+            + lotAllBtnWidth + btnSpacing
+            + passAllBtnWidth + btnSpacing
+            + btnHeight + btnSpacing
+            + btnHeight + padding;
+        if headerButtonsWidth > windowWidth then
+            windowWidth = headerButtonsWidth;
+        end
+
         imgui.Dummy(_P1(windowWidth, totalHeight));
 
         -- Handle scroll input when hovering over window
@@ -505,18 +538,13 @@ function M.DrawWindow(settings)
 
         -- Draw header with tabs and action buttons
         if showTitle then
-            -- Button sizing (uses fontSize from config)
-            local btnHeight = fontSize + 6;
             local btnY = headerY - 1;
-            local btnSpacing = 4;
-            local tabBtnWidth = fontSize * 4;  -- Tab button width
-            local textBtnWidth = fontSize * 4;  -- Wider for "Lot All" / "Pass All" text
             local toggleSize = btnHeight;  -- Square for arrow
 
             -- Draw Pool tab button
             local poolTabX = startX + padding;
             local poolTabColors = (selectedTab == 1) and TAB_COLORS_SELECTED or TAB_COLORS_UNSELECTED;
-            local poolTabClicked = button.DrawPrim('tpTabPool', poolTabX, btnY, tabBtnWidth, btnHeight, {
+            local poolTabClicked = button.DrawPrim('tpTabPool', poolTabX, btnY, poolBtnWidth, btnHeight, {
                 colors = poolTabColors,
                 tooltip = 'Treasure Pool',
             });
@@ -530,12 +558,12 @@ function M.DrawWindow(settings)
             poolTextW = poolTextW or (fontSize * 2);
             poolTextH = poolTextH or fontSize;
             local poolTextColor = (selectedTab == 1) and 0xFFFFFFFF or 0xFFAAAAAA;
-            imtext.Draw(uiDrawList, 'Pool', poolTabX + (tabBtnWidth - poolTextW) / 2, btnY + (btnHeight - poolTextH) / 2, poolTextColor, fontSize);
+            imtext.Draw(uiDrawList, 'Pool', poolTabX + (poolBtnWidth - poolTextW) / 2, btnY + (btnHeight - poolTextH) / 2, poolTextColor, fontSize);
 
             -- Draw History tab button
-            local historyTabX = poolTabX + tabBtnWidth + btnSpacing;
+            local historyTabX = poolTabX + poolBtnWidth + btnSpacing;
             local historyTabColors = (selectedTab == 2) and TAB_COLORS_SELECTED or TAB_COLORS_UNSELECTED;
-            local historyTabClicked = button.DrawPrim('tpTabHistory', historyTabX, btnY, tabBtnWidth, btnHeight, {
+            local historyTabClicked = button.DrawPrim('tpTabHistory', historyTabX, btnY, historyBtnWidth, btnHeight, {
                 colors = historyTabColors,
                 tooltip = 'Recent Winners',
             });
@@ -549,14 +577,14 @@ function M.DrawWindow(settings)
             histTextW = histTextW or (fontSize * 3);
             histTextH = histTextH or fontSize;
             local histTextColor = (selectedTab == 2) and 0xFFFFFFFF or 0xFFAAAAAA;
-            imtext.Draw(uiDrawList, 'History', historyTabX + (tabBtnWidth - histTextW) / 2, btnY + (btnHeight - histTextH) / 2, histTextColor, fontSize);
+            imtext.Draw(uiDrawList, 'History', historyTabX + (historyBtnWidth - histTextW) / 2, btnY + (btnHeight - histTextH) / 2, histTextColor, fontSize);
 
             -- Pool tab: show Lot All, Pass All, view toggle, window collapse/expand
             if selectedTab == 1 then
                 -- Position: [Pool] [History] [Lot All] [Pass All] ... [Detailed/Compact] [Collapse/Expand]
-                local afterTabsX = historyTabX + tabBtnWidth + btnSpacing;
+                local afterTabsX = historyTabX + historyBtnWidth + btnSpacing;
                 local lotAllX = afterTabsX;
-                local passAllX = lotAllX + textBtnWidth + btnSpacing;
+                local passAllX = lotAllX + lotAllBtnWidth + btnSpacing;
                 local toggleX = startX + windowWidth - padding - toggleSize;
                 local minimizeX = toggleX - toggleSize - btnSpacing;
 
@@ -590,7 +618,7 @@ function M.DrawWindow(settings)
                 -- Only show Lot All / Pass All buttons if there are pool items
                 if hasPoolItems then
                     -- Draw Pass All button
-                    local passAllClicked = button.DrawPrim('tpPassAll', passAllX, btnY, textBtnWidth, btnHeight, {
+                    local passAllClicked = button.DrawPrim('tpPassAll', passAllX, btnY, passAllBtnWidth, btnHeight, {
                         colors = button.COLORS_NEGATIVE,
                         tooltip = 'Pass on all items',
                     });
@@ -602,12 +630,12 @@ function M.DrawWindow(settings)
                     local passTextW, passTextH = imtext.MeasureCached('Pass All', fontSize);
                     passTextW = passTextW or (fontSize * 2.5);
                     passTextH = passTextH or fontSize;
-                    imtext.Draw(uiDrawList, 'Pass All', passAllX + (textBtnWidth - passTextW) / 2, btnY + (btnHeight - passTextH) / 2, 0xFFFFFFFF, fontSize);
+                    imtext.Draw(uiDrawList, 'Pass All', passAllX + (passAllBtnWidth - passTextW) / 2, btnY + (btnHeight - passTextH) / 2, 0xFFFFFFFF, fontSize);
 
                     -- Draw Lot All button (disabled in HzLimitedMode)
                     if (not HzLimitedMode) then
                         -- Draw Lot All button (positive/green)
-                        local lotAllClicked = button.DrawPrim('tpLotAll', lotAllX, btnY, textBtnWidth, btnHeight, {
+                        local lotAllClicked = button.DrawPrim('tpLotAll', lotAllX, btnY, lotAllBtnWidth, btnHeight, {
                             colors = button.COLORS_POSITIVE,
                             tooltip = 'Lot on all items',
                         });
@@ -619,7 +647,7 @@ function M.DrawWindow(settings)
                         local lotTextW, lotTextH = imtext.MeasureCached('Lot All', fontSize);
                         lotTextW = lotTextW or (fontSize * 2);
                         lotTextH = lotTextH or fontSize;
-                        imtext.Draw(uiDrawList, 'Lot All', lotAllX + (textBtnWidth - lotTextW) / 2, btnY + (btnHeight - lotTextH) / 2, 0xFFFFFFFF, fontSize);
+                        imtext.Draw(uiDrawList, 'Lot All', lotAllX + (lotAllBtnWidth - lotTextW) / 2, btnY + (btnHeight - lotTextH) / 2, 0xFFFFFFFF, fontSize);
                     else
                         -- Hide Lot All in HzLimitedMode
                         button.HidePrim('tpLotAll');
@@ -823,11 +851,26 @@ function M.DrawWindow(settings)
                         imtext.Draw(uiDrawList, timerText, startX + windowWidth - padding - itemPadding - timerW, textY, timerColor, fontSize);
                     end
 
-                    -- 4. Draw per-item Lot/Pass buttons (expanded view or explicitly enabled)
+                    -- 4. Draw current roll before the buttons so Lot/Pass cover it when they overlap
+                    if not isExpanded then
+                        if showLots and item.winningLot and item.winningLot > 0 then
+                            local lotterName = item.winningLotterName or '?';
+                            if #lotterName > 10 then
+                                lotterName = lotterName:sub(1, 8) .. '..';
+                            end
+                            local lotText = string.format('%s: %d', lotterName, item.winningLot);
+
+                            local nameWidth, _ = imtext.MeasureCached(displayName, fontSize);
+                            nameWidth = nameWidth or 0;
+                            local lotX = textStartX + nameWidth + math.floor(10 * scaleX);
+                            imtext.Draw(uiDrawList, lotText, lotX, textY, 0xFF88FF88, fontSize - 1);
+                        end
+                    end
+
+                    -- 5. Draw per-item Lot/Pass buttons (expanded view or explicitly enabled)
                     local showButtons = isExpanded or gConfig.treasurePoolShowButtonsInCollapsed;
                     if showButtons then
                         local itemBtnHeight = fontSize + 4;
-                        local itemBtnWidth = fontSize * 2.5;
                         local itemBtnSpacing = 4;
                         local itemBtnY = textY - 1;
 
@@ -841,8 +884,8 @@ function M.DrawWindow(settings)
                             timerWidth = timerWidth or (fontSize * 3);
                         end
 
-                        local passBtnX = startX + windowWidth - padding - itemPadding - timerWidth - itemBtnSpacing - itemBtnWidth;
-                        local lotBtnX = passBtnX - itemBtnSpacing - itemBtnWidth;
+                        local passBtnX = startX + windowWidth - padding - itemPadding - timerWidth - itemBtnSpacing - itemPassBtnWidth;
+                        local lotBtnX = passBtnX - itemBtnSpacing - itemLotBtnWidth;
 
                         -- Get player's lot status for this item
                         local playerStatus = data.GetPlayerLotStatus(slot);
@@ -870,7 +913,7 @@ function M.DrawWindow(settings)
 
                             -- Draw Lot button
                             local lotBtnId = string.format('tpLotItem%d', slot);
-                            local lotItemClicked = button.DrawPrim(lotBtnId, lotBtnX, itemBtnY, itemBtnWidth, itemBtnHeight,
+                            local lotItemClicked = button.DrawPrim(lotBtnId, lotBtnX, itemBtnY, itemLotBtnWidth, itemBtnHeight,
                                 ItemBtnOpts(button.COLORS_POSITIVE, lotTooltip, lotDisabled));
                             if lotItemClicked and not lotDisabled then
                                 actions.LotItem(slot);
@@ -881,7 +924,7 @@ function M.DrawWindow(settings)
                             lotTextW = lotTextW or (fontSize * 1.5);
                             lotTextH = lotTextH or fontSize;
                             local lotTextColor = lotDisabled and COLOR_DISABLED_TEXT or COLOR_ENABLED_TEXT;
-                            imtext.Draw(uiDrawList, 'Lot', lotBtnX + (itemBtnWidth - lotTextW) / 2, itemBtnY + (itemBtnHeight - lotTextH) / 2, lotTextColor, fontSize - 1);
+                            imtext.Draw(uiDrawList, 'Lot', lotBtnX + (itemLotBtnWidth - lotTextW) / 2, itemBtnY + (itemBtnHeight - lotTextH) / 2, lotTextColor, fontSize - 1);
 
                             -- Determine Pass button tooltip based on status
                             local passTooltip = 'Pass on this item';
@@ -893,7 +936,7 @@ function M.DrawWindow(settings)
 
                             -- Draw Pass button
                             local passBtnId = string.format('tpPassItem%d', slot);
-                            local passItemClicked = button.DrawPrim(passBtnId, passBtnX, itemBtnY, itemBtnWidth, itemBtnHeight,
+                            local passItemClicked = button.DrawPrim(passBtnId, passBtnX, itemBtnY, itemPassBtnWidth, itemBtnHeight,
                                 ItemBtnOpts(button.COLORS_NEGATIVE, passTooltip, passDisabled));
                             if passItemClicked and not passDisabled then
                                 actions.PassItem(slot);
@@ -904,7 +947,7 @@ function M.DrawWindow(settings)
                             passTextW = passTextW or (fontSize * 2);
                             passTextH = passTextH or fontSize;
                             local passTextColor = passDisabled and COLOR_DISABLED_TEXT or COLOR_ENABLED_TEXT;
-                            imtext.Draw(uiDrawList, 'Pass', passBtnX + (itemBtnWidth - passTextW) / 2, itemBtnY + (itemBtnHeight - passTextH) / 2, passTextColor, fontSize - 1);
+                            imtext.Draw(uiDrawList, 'Pass', passBtnX + (itemPassBtnWidth - passTextW) / 2, itemBtnY + (itemBtnHeight - passTextH) / 2, passTextColor, fontSize - 1);
                             -- Hide buttons when outside visible area
                         else
                             button.HidePrim(string.format('tpLotItem%d', slot));
@@ -916,22 +959,8 @@ function M.DrawWindow(settings)
                         button.HidePrim(string.format('tpPassItem%d', slot));
                     end
 
-                    -- 5. Draw lot info (collapsed: inline; expanded: member list)
-                    if not isExpanded then
-                        -- Collapsed view: show winning lot inline with name
-                        if showLots and item.winningLot and item.winningLot > 0 then
-                            local lotterName = item.winningLotterName or '?';
-                            if #lotterName > 10 then
-                                lotterName = lotterName:sub(1, 8) .. '..';
-                            end
-                            local lotText = string.format('%s: %d', lotterName, item.winningLot);
-
-                            local nameWidth, _ = imtext.MeasureCached(displayName, fontSize);
-                            nameWidth = nameWidth or 0;
-                            local lotX = textStartX + nameWidth + math.floor(10 * scaleX);
-                            imtext.Draw(uiDrawList, lotText, lotX, textY, 0xFF88FF88, fontSize - 1);
-                        end
-                    else
+                    -- 6. Expanded view: member list
+                    if isExpanded then
                         -- Expanded view: show member list with lot status
                         -- Use cached party data (organized by party A/B/C)
                         local partyData = itemMemberData[slot] or { partyA = {}, partyB = {}, partyC = {} };

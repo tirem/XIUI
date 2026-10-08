@@ -2149,7 +2149,7 @@ function M.DrawSettings(state)
 
     -- Disable XI macros checkbox (stored in hotbarGlobal)
     local disableMacroBars = { gConfig.hotbarGlobal.disableMacroBars or false };
-    if imgui.Checkbox('Disable XI Macros', disableMacroBars) then
+    if imgui.Checkbox('Disable Native XI Macros', disableMacroBars) then
         gConfig.hotbarGlobal.disableMacroBars = disableMacroBars[1];
         SaveSettingsOnly();
         DeferredUpdateVisuals();
@@ -2266,7 +2266,7 @@ function M.DrawSettings(state)
         imgui.TextColored({0.5, 0.5, 0.5, 1.0}, 'active = applied, ready = available');
         imgui.EndTooltip();
     end
-    imgui.ShowHelp('Toggle macro bar behavior:\n- OFF: Built-in macros work with speed fix (macrofix)\n- ON: Macro bar hidden, XIUI hotbar/crossbar only\n\nNote: When ON, also blocks native macro commands.');
+    imgui.ShowHelp('Disable Native XI Macros:\n- OFF: Built-in macros work with speed fix (macrofix)\n- ON: Macro bar hidden, XIUI hotbar/crossbar only\n\nNote: When ON, also blocks native macro commands.');
 
     -- Skillchain highlight checkbox (stored in hotbarGlobal)
     local skillchainHighlight = { gConfig.hotbarGlobal.skillchainHighlightEnabled ~= false };
@@ -2415,6 +2415,7 @@ function M.DrawSettings(state)
                 if imgui.Selectable(label, isSelected) then
                     if i == 1 then
                         gConfig.hotbarGlobal.paletteCycleEnabled = false;
+                        gConfig.hotbarGlobal.paletteCycleModifier = '';
                     else
                         gConfig.hotbarGlobal.paletteCycleEnabled = true;
                         gConfig.hotbarGlobal.paletteCycleModifier = kbModifierValues[i];

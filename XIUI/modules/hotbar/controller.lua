@@ -549,19 +549,29 @@ function Controller.IsPaletteCycleShoulderHeld()
     return IsConfiguredShoulderHeld();
 end
 
+--- Either button of the pair that opens the crossbar. Swap moves that pair to L1/R1.
+function Controller.IsCrossbarOpenerHeld()
+    if not state.initialized or not state.enabled then
+        return false;
+    end
+    if IsShoulderTriggerSwap() then
+        return state.leftShoulderHeld or state.rightShoulderHeld;
+    end
+    return state.rawL2Held or state.rawR2Held;
+end
+
+--- Crossbar openers block the whole d-pad and the face buttons.
+--- The selected palette-cycle button blocks the whole d-pad only.
+function Controller.ShouldBlockControllerDPad()
+    return Controller.IsCrossbarOpenerHeld() or Controller.IsPaletteCycleShoulderHeld();
+end
+
 local function IsVerticalDPadAngle(angle)
     return angle == DPAD_UP_ANGLE or angle == DPAD_DOWN_ANGLE;
 end
 
---- Remove d-pad up/down from the state the game reads, for the whole time the cycle button is held.
-local function StripVerticalDPadFromGame(e)
-    if not e or not e.state_modified then return; end
-    pcall(function()
-        local modifiedState = ffi.cast('XINPUT_STATE*', e.state_modified);
-        if not modifiedState then return; end
-        local mask = bit.bor(xboxDevice.ButtonMasks.DPAD_UP, xboxDevice.ButtonMasks.DPAD_DOWN);
-        modifiedState.Gamepad.wButtons = bit.band(modifiedState.Gamepad.wButtons, bit.bnot(mask));
-    end);
+local function IsDPadHatActive(angle)
+    return angle ~= nil and angle ~= -1 and angle ~= 65535;
 end
 
 local function CycleFromVerticalDPad(isDown)
@@ -725,7 +735,8 @@ function Controller.HandleXInputState(e)
         end
 
         if e.state_modified then
-            -- Wrap FFI modification in pcall for safety
+            -- Block d-pad and face buttons from the game while a crossbar opener is held.
+            -- XIUI still reads the raw state, so those presses still run their bindings.
             local modOk = pcall(function()
                 local modifiedState = ffi.cast('XINPUT_STATE*', e.state_modified);
                 if modifiedState then
@@ -759,7 +770,21 @@ function Controller.HandleXInputState(e)
             MacroBlockLog(string.format('[XInput] Trigger pressed but blocking DISABLED (L2=%d R2=%d)', leftTrigger, rightTrigger));
         end
 
-        -- Swapped: L2/R2 are XIUI palette buttons, so the game's native macro bar never sees them.
+        -- Selected palette button blocks every d-pad direction while Disable Native XI Macros is on.
+        if blockingEnabled and Controller.IsPaletteCycleShoulderHeld() and e.state_modified then
+            pcall(function()
+                local modifiedState = ffi.cast('XINPUT_STATE*', e.state_modified);
+                if modifiedState then
+                    local dpadMask = bit.bor(
+                        xboxDevice.ButtonMasks.DPAD_UP, xboxDevice.ButtonMasks.DPAD_DOWN,
+                        xboxDevice.ButtonMasks.DPAD_LEFT, xboxDevice.ButtonMasks.DPAD_RIGHT
+                    );
+                    modifiedState.Gamepad.wButtons = bit.band(modifiedState.Gamepad.wButtons, bit.bnot(dpadMask));
+                end
+            end);
+        end
+
+        -- Swapped: L2/R2 are the palette buttons, so the game's native macro bar never sees them.
         if swapped and blockingEnabled and (leftHeld or rightHeld) and e.state_modified then
             pcall(function()
                 local modifiedState = ffi.cast('XINPUT_STATE*', e.state_modified);
@@ -769,11 +794,6 @@ function Controller.HandleXInputState(e)
                 end
             end);
         end
-    end
-
-    -- Keep d-pad up/down out of the polled state for the whole time R1/L1 is held.
-    if Controller.IsPaletteCycleShoulderHeld() then
-        StripVerticalDPadFromGame(e);
     end
 end
 
@@ -803,11 +823,22 @@ function Controller.HandleXInputButton(e)
 
     local isDpadUp = e.button == xboxDevice.Buttons.DPAD_UP;
     local isDpadDown = e.button == xboxDevice.Buttons.DPAD_DOWN;
-    if (isDpadUp or isDpadDown) and Controller.IsPaletteCycleShoulderHeld() then
-        if isPressed then
+    local isDpad = isDpadUp or isDpadDown
+        or e.button == xboxDevice.Buttons.DPAD_LEFT
+        or e.button == xboxDevice.Buttons.DPAD_RIGHT;
+    -- Palette cycling still runs when native macros are enabled. The d-pad is
+    -- blocked from the game only while Disable Native XI Macros is on.
+    if isDpad and Controller.IsPaletteCycleShoulderHeld() then
+        if (isDpadUp or isDpadDown) and isPressed then
             CycleFromVerticalDPad(isDpadDown);
             DebugLog(string.format('DPAD %s blocked while palette modifier held', isDpadUp and 'UP' or 'DOWN'));
         end
+        if blockingEnabled then
+            return true;
+        end
+    end
+    -- Crossbar openers block the d-pad only while Disable XI Macros is on.
+    if isDpad and blockingEnabled and Controller.IsCrossbarOpenerHeld() and state.activeCombo == COMBO_MODES.NONE then
         return true;
     end
 
@@ -822,7 +853,6 @@ function Controller.HandleXInputButton(e)
     end
 
     if not blockingEnabled then
-        -- Log when button pressed but blocking disabled
         if e.state == 1 and state.activeCombo ~= COMBO_MODES.NONE then
             local slotIndex = xboxDevice.GetSlotFromButton(e.button);
             if slotIndex then
@@ -895,14 +925,21 @@ function Controller.HandleDInputButton(e)
         return true;  -- Block button during detection
     end
 
-    -- D-pad hat is button 32. Swallow up/down while R1/L1 is held even when the
-    -- selected profile is XInput, because some pads report the hat on DirectInput.
-    if e.button == DPAD_BUTTON_OFFSET and IsVerticalDPadAngle(e.state) and Controller.IsPaletteCycleShoulderHeld() then
-        if e.state ~= state.previousDPadAngle then
+    -- D-pad hat is button 32. Block every direction while a set modifier is held.
+    -- Only the selected palette button changes palettes.
+    if e.button == DPAD_BUTTON_OFFSET and IsDPadHatActive(e.state) and Controller.IsPaletteCycleShoulderHeld() then
+        if IsVerticalDPadAngle(e.state) and e.state ~= state.previousDPadAngle then
             CycleFromVerticalDPad(e.state == DPAD_DOWN_ANGLE);
             state.previousDPadAngle = e.state;
         end
-        return true;
+        if blockingEnabled then
+            return true;
+        end
+    end
+    if e.button == DPAD_BUTTON_OFFSET and IsDPadHatActive(e.state) and blockingEnabled and Controller.IsCrossbarOpenerHeld() then
+        if not Controller.UsesDirectInput() or state.activeCombo == COMBO_MODES.NONE then
+            return true;
+        end
     end
 
     -- Only process if using DirectInput device
@@ -939,7 +976,6 @@ function Controller.HandleDInputButton(e)
             end
             return false;
         end
-        -- Don't return - let the button be processed further if needed
     end
 
     -- Handle D-Pad via button offset 32 (angle-based values in e.state)
@@ -996,7 +1032,6 @@ function Controller.HandleDInputButton(e)
             state.previousDPadAngle = currentAngle;
         end
 
-        -- Block D-pad from native macro when crossbar active
         if blockingEnabled and state.activeCombo ~= COMBO_MODES.NONE then
             return true;
         end
@@ -1024,7 +1059,7 @@ function Controller.HandleDInputButton(e)
         end
         RefreshComboState();
 
-        -- Block trigger buttons from game when crossbar is active, or always when they are palette buttons
+        -- Block trigger buttons from the game when the crossbar is active, or when they are the palette buttons.
         if blockingEnabled and (state.activeCombo ~= COMBO_MODES.NONE or IsShoulderTriggerSwap()) then
             MacroBlockLog(string.format('[DInput] BLOCKING %s trigger (button %d) - combo=%s, stopping native macro',
                 triggerName, buttonId, state.activeCombo));
@@ -1067,7 +1102,7 @@ function Controller.HandleDInputButton(e)
         end
         RefreshComboState();
 
-        -- Block when crossbar active, or always when triggers are palette buttons
+        -- Block trigger buttons from the game when the crossbar is active, or when they are the palette buttons.
         if blockingEnabled and (state.activeCombo ~= COMBO_MODES.NONE or IsShoulderTriggerSwap()) then
             return true;
         end
@@ -1132,14 +1167,20 @@ function Controller.HandleDInputState(e)
         return;
     end
 
-    -- Hide vertical POV from the game while the palette modifier is held.
-    -- Runs for every profile: mobile pads often expose the hat here even when
-    -- R1/L1 arrives on XInput.
-    if e.pov ~= nil and IsVerticalDPadAngle(e.pov) and Controller.IsPaletteCycleShoulderHeld() then
-        if e.pov ~= state.previousDPadAngle then
-            CycleFromVerticalDPad(e.pov == DPAD_DOWN_ANGLE);
-            state.previousDPadAngle = e.pov;
-        end
+    -- Palette cycling runs either way. The hat is blocked only while Disable Native XI Macros is on.
+    local paletteHeld = IsDPadHatActive(e.pov) and Controller.IsPaletteCycleShoulderHeld();
+    local crossbarHidesPov = blockingEnabled and IsDPadHatActive(e.pov) and Controller.IsCrossbarOpenerHeld();
+    if paletteHeld and IsVerticalDPadAngle(e.pov) and e.pov ~= state.previousDPadAngle then
+        CycleFromVerticalDPad(e.pov == DPAD_DOWN_ANGLE);
+        state.previousDPadAngle = e.pov;
+    end
+    if blockingEnabled and paletteHeld then
+        pcall(function()
+            e.pov = -1;
+        end);
+        return;
+    end
+    if crossbarHidesPov and not Controller.UsesDirectInput() then
         pcall(function()
             e.pov = -1;
         end);
@@ -1207,9 +1248,8 @@ function Controller.HandleDInputState(e)
 
         state.previousDPadAngle = povAngle;
 
-        -- Hide the POV from the game for the whole time a crossbar opener is held.
-        -- Slot activation is handled above; without this the menu cursor still moves.
-        if blockingEnabled and state.activeCombo ~= COMBO_MODES.NONE then
+        -- Slot activation already read the angle. Then block the hat while native macros are disabled.
+        if crossbarHidesPov or (blockingEnabled and state.activeCombo ~= COMBO_MODES.NONE) then
             pcall(function()
                 e.pov = -1;
             end);
