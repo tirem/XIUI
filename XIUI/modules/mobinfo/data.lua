@@ -28,9 +28,10 @@ mobdata.GetProvider = function()
 end
 
 local function MergeInfo(base, override)
-    if not base then return nil; end
     local result = {};
-    for key, value in pairs(base) do result[key] = value; end
+    if base then
+        for key, value in pairs(base) do result[key] = value; end
+    end
     for key, value in pairs(override) do result[key] = value; end
     return result;
 end
@@ -41,15 +42,17 @@ local function ApplyHorizonOverlay(overlay)
     for index, info in pairs(overlay.Indices) do
         local base = zoneData.Indices[index] or zoneData.Names[info.Name];
         local merged = MergeInfo(base, info);
-        if merged then
-            zoneData.Indices[index] = merged;
-            byName[info.Name] = merged;
-        end
+        zoneData.Indices[index] = merged;
+        byName[info.Name] = merged;
     end
     for name, info in pairs(overlay.Names) do
         local base = zoneData.Names[name] or zoneData.Names[info.Name] or byName[info.Name];
         local merged = MergeInfo(base, info);
-        if merged then zoneData.Names[name] = merged; end
+        zoneData.Names[name] = merged;
+        -- Abbreviated keys ('D.Club') and full Name fields both need to resolve.
+        if info.Name and info.Name ~= name then
+            zoneData.Names[info.Name] = merged;
+        end
     end
 end
 
@@ -80,6 +83,10 @@ mobdata.LoadZone = function(zoneId)
     if result then
         zoneData = result;
         if provider == 'horizon' then ApplyHorizonOverlay(files.LoadZone('horizon', zoneId)); end
+    elseif provider == 'horizon' then
+        -- Custom Horizon-only zone: no LSB snapshot, overlay is the data.
+        local overlay = files.LoadZone('horizon', zoneId);
+        if overlay then zoneData = overlay; end
     end
 
     return zoneData.Names ~= nil and next(zoneData.Names) ~= nil;

@@ -2,6 +2,7 @@
 require('common');
 require('handlers.helpers');
 local buffTable = require('libs.bufftable');
+local encoding = require('libs.encoding');
 
 local debuffHandler =
 T{
@@ -364,6 +365,78 @@ local function JobAbilityId(id)
         return id - 512;
     end
     return id;
+end
+
+local TARGET_SELF = 1;
+local TARGET_ENEMY = 32;
+-- skillId -> status id, or false if this skill has no matching self-buff spell.
+local inferredMobSelfBuff = {};
+
+local function MonsterSkillName(skillId)
+    skillId = PacketParamId(skillId);
+    if skillId < 256 then
+        local ability = AshitaCore:GetResourceManager():GetAbilityById(skillId);
+        return ability and ability.Name and ability.Name[1] or nil;
+    end
+    return AshitaCore:GetResourceManager():GetString('monsters.abilities', skillId - 256);
+end
+
+local function ActorReceivedStatusOn(action, actorId)
+    for _, target in pairs(action.Targets) do
+        if target.Id == actorId then
+            for _, ability in pairs(target.Actions) do
+                if statusOnMes[ability.Message] then
+                    return true;
+                end
+            end
+        end
+    end
+    return false;
+end
+
+-- ISpell/IAbility have no Status; 0x028 param is damage. Match name to a self-buff spell.
+local function LookupSilentSelfBuff(skillId)
+    local cached = inferredMobSelfBuff[skillId];
+    if cached ~= nil then
+        return cached or nil;
+    end
+
+    local raw = MonsterSkillName(skillId);
+    if raw == nil or raw == '' then
+        inferredMobSelfBuff[skillId] = false;
+        return nil;
+    end
+
+    local name = (encoding:ShiftJIS_To_UTF8(raw, true) or raw):lower();
+    local status = false;
+    local spells = require('modules.hotbar.database.horizonspells');
+    for _, spell in pairs(spells) do
+        if type(spell) == 'table' and type(spell.status) == 'number' and spell.status > 0 then
+            local t = spell.targets or 0;
+            if bit.band(t, TARGET_SELF) ~= 0 and bit.band(t, TARGET_ENEMY) == 0 then
+                if (spell.en and spell.en:lower() == name) or (spell.ja and spell.ja:lower() == name) then
+                    status = spell.status;
+                    break;
+                end
+            end
+        end
+    end
+    inferredMobSelfBuff[skillId] = status;
+    return status or nil;
+end
+
+-- Last resort for type 11: packet already processed and caster never got a 186.
+local function InferMobSelfBuff(debuffs, action, actorId, now)
+    if ActorReceivedStatusOn(action, actorId) then return; end
+    if IsAllianceActor(actorId) then return; end
+
+    local buffId = LookupSilentSelfBuff(PacketParamId(action.Param));
+    if not buffId then return; end
+
+    if debuffs[actorId] == nil then
+        debuffs[actorId] = T{};
+    end
+    ApplyBuffExpiry(debuffs[actorId], buffId, now + UnknownStatusDuration(buffId), false);
 end
 
 local function ResolveActionBuffIds(actionType, spellId, abilityParam, isJobAbility)
@@ -773,6 +846,11 @@ local function ApplyMessage(debuffs, action)
             end
         end
         end
+    end
+
+    -- Last resort: type 11 with no status-on in the packet (Erratic Flutter).
+    if action.Type == 11 then
+        InferMobSelfBuff(debuffs, action, actorId, now);
     end
 end
 

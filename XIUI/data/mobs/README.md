@@ -68,8 +68,8 @@ python tools/update_mob_data.py --output /path/to/package/XIUI/data/mobs
 
 ## Horizon compatibility
 
-The generator extracts the Horizon name, job, and level overrides from
+The generator extracts name, job, and level overrides from
 [Mr-Sithel's overlay](https://github.com/Mr-Sithel/HorizonXI-Dynamis-Mobdb/tree/eb301032372ab28171378569e707c5bdeb5b9006).
-Its remaining fields come from LandSandBoat. Selecting **Horizon** applies this overlay;
-zones without overrides use LandSandBoat data. It has no submodule or dependency on the
-MobDB addon. See `horizon/NOTICE.md` for attribution.
+Its remaining fields come from LandSandBoat. Selecting **Horizon** applies a zone's overlay
+when that file exists; zones without an overlay use LandSandBoat data. It has no submodule
+or dependency on the MobDB addon. See `horizon/NOTICE.md` for attribution.
