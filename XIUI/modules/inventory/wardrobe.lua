@@ -28,6 +28,8 @@ return BaseTracker.Create({
         CONTAINER_WARDROBE8,
     },
     containerLabels = { 'W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8' },
+    -- gConfig.wardrobeEnabled[i] toggles each wardrobe (default all true)
+    enabledContainersKey = 'wardrobeEnabled',
     configPrefix = 'wardrobeTracker',
     colorKey = 'wardrobeTracker',
 });

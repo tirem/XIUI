@@ -638,7 +638,7 @@ local function GetAllAbilities()
                 and not playerdata.IsGarbageSpellName(name) then
                 local stem = GetAbilityIconStem(ability);
                 local iconKey = stem and ('abilities' .. stem);
-                if iconKey and textures:Get(iconKey) then
+                if iconKey and textures:Has(iconKey) then
                     seenNames[name] = true;
                     table.insert(allAbilitiesCache, {
                         id = stem,  -- icon file stem (ability id), e.g. "00528"
@@ -2663,6 +2663,7 @@ local editorFields = {
     macroText = { '' },
     recastSourceType = { 1 },    -- Index into RECAST_SOURCE_TYPES (1 = 'none')
     recastSourceAction = { '' }, -- Action name for recast lookup
+    alwaysAvailable = { false }, -- Skip Action Not Available dimming for this macro
 };
 
 local TARGET_OPTIONS = { 'me', 't', 'stpc', 'stnpc', 'st', 'bt', 'lastst', 'stal', 'stpt', 'p0', 'p1', 'p2', 'p3', 'p4', 'p5' };
@@ -3728,6 +3729,7 @@ function M.DrawMacroEditor()
     editorFields.macroText[1] = editingMacro.macroText or '';
     editorFields.recastSourceType[1] = FindIndex(RECAST_SOURCE_TYPES, editingMacro.recastSourceType or 'none');
     editorFields.recastSourceAction[1] = editingMacro.recastSourceAction or '';
+    editorFields.alwaysAvailable[1] = editingMacro.alwaysAvailable == true;
 
     local title = isCreatingNew and 'Create Macro###MacroEditor' or 'Edit Macro###MacroEditor';
     local isOpen = { true };
@@ -3789,8 +3791,10 @@ function M.DrawMacroEditor()
                         editingMacro.recastSourceType = nil;
                         editingMacro.recastSourceAction = nil;
                         editingMacro.recastSourceItemId = nil;
+                        editingMacro.alwaysAvailable = nil;
                         editorFields.recastSourceType[1] = 1;  -- Reset to 'none'
                         editorFields.recastSourceAction[1] = '';
+                        editorFields.alwaysAvailable[1] = false;
                     end
                 end
                 if isSelected then
@@ -4099,6 +4103,12 @@ function M.DrawMacroEditor()
                         editorFields.recastSourceAction[1] = cmd.name;
                     end, false, nil, 'pet', 'No pet commands available');
                 end
+
+                imgui.Spacing();
+                if imgui.Checkbox('Always Available##macroAlwaysAvailable', editorFields.alwaysAvailable) then
+                    editingMacro.alwaysAvailable = editorFields.alwaysAvailable[1] and true or nil;
+                end
+                imgui.ShowHelp('When enabled, this macro never shows Action Not Available (no dim, no red X). Recast and cost overlays still apply.');
 
                 imgui.TreePop();
             end

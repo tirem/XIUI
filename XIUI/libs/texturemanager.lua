@@ -145,6 +145,35 @@ local function evictIfNeeded(category)
 end
 
 -- Core get-or-create function
+-- Memoised key strings, so lookups don't concatenate.
+local keyMemo = {};
+local function memoKey(prefix, a, b)
+    local t1 = keyMemo[prefix];
+    if t1 == nil then t1 = {}; keyMemo[prefix] = t1; end
+    local t2 = t1[a];
+    if t2 == nil then t2 = {}; t1[a] = t2; end
+    local k = t2[b or false];
+    if k == nil then
+        k = prefix .. tostring(a) .. (b ~= nil and ('_' .. tostring(b)) or '');
+        t2[b or false] = k;
+    end
+    return k;
+end
+
+-- Cache check only.
+local function lookup(key, category)
+    local entry = texturesByKey[key];
+    if entry then
+        entry.lastUsed = os.clock();
+        stats.hits = stats.hits + 1;
+        if stats.byCategory[category] then
+            stats.byCategory[category].hits = stats.byCategory[category].hits + 1;
+        end
+        return entry.texture;
+    end
+    return nil;
+end
+
 local function getOrCreate(key, loader, category)
     category = category or 'assets';
 
@@ -351,7 +380,9 @@ function M.getItemIcon(itemId)
         return nil;
     end
 
-    local key = 'item_' .. tostring(itemId);
+    local key = memoKey('item_', itemId);
+    local hit = lookup(key, 'item_icons');
+    if hit then return hit; end
     return getOrCreate(key, function()
         return loadItemIconFromResource(itemId);
     end, 'item_icons');
@@ -367,7 +398,9 @@ function M.getStatusIcon(statusId, theme)
     end
 
     local themeKey = theme or 'default';
-    local key = 'status_' .. tostring(statusId) .. '_' .. themeKey;
+    local key = memoKey('status_', statusId, themeKey);
+    local hit = lookup(key, 'status_icons');
+    if hit then return hit; end
 
     return getOrCreate(key, function()
         if theme and theme ~= '-Default-' and theme ~= '' then
@@ -388,7 +421,10 @@ local JOB_ABBRS = {
 local badJobThemes = {};
 
 local function loadJobIcon(theme, jobStr)
-    return getOrCreate('job_' .. jobStr .. '_' .. theme, function()
+    local key = memoKey('job_', jobStr, theme);
+    local hit = lookup(key, 'job_icons');
+    if hit then return hit; end
+    return getOrCreate(key, function()
         return loadTextureFromFile(string.format('jobs/%s/%s', theme, jobStr));
     end, 'job_icons');
 end
@@ -430,7 +466,9 @@ function M.getFileTexture(path)
         return nil;
     end
 
-    local key = 'file_' .. path;
+    local key = memoKey('file_', path);
+    local hit = lookup(key, 'assets');
+    if hit then return hit; end
     return getOrCreate(key, function()
         return loadTextureFromFile(path);
     end, 'assets');
@@ -492,7 +530,13 @@ end
 -- @return number|nil - Pointer as number, or nil
 function M.getTexturePtr(texture)
     if texture and texture.image then
-        return tonumber(ffi.cast("uint32_t", texture.image));
+        -- Converted once.
+        local p = texture._ptr;
+        if p == nil then
+            p = tonumber(ffi.cast("uint32_t", texture.image));
+            texture._ptr = p;
+        end
+        return p;
     end
     return nil;
 end

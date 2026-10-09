@@ -38,6 +38,8 @@ function M.DrawSettings()
             components.DrawCheckbox('Click to Target', 'enableEnemyListClickTarget');
             imgui.ShowHelp('Click on an enemy entry to target it. Requires /shorthand to be enabled.');
         end
+        components.DrawCheckbox('Align Bottom', 'enemyListAlignBottom');
+        imgui.ShowHelp('Fill each column from the bottom up (oldest at the bottom, newer above).\nColumns still fill left to right. The window grows upward as enemies are added.');
     end
 
     if components.CollapsingSection('Scale & Position##enemyList') then

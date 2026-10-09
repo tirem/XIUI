@@ -7,11 +7,123 @@
 local abilityRecast = require('libs.abilityrecast');
 local itemRecast = require('libs.itemrecast');
 local actiondb = require('modules.hotbar.actiondb');
+local ffi = require('ffi');
 
 local M = {};
 
 -- Module-level setting for Hh:MM format (set once per frame, used by all functions)
 local useHHMMFormat = false;
+
+-- Blue Magic skill id (ISpell.Skill). Setting/unsetting spells applies a 60s
+-- magic recast on private servers (LSB); force the same timer in the UI when
+-- the client's recast memory does not reflect it.
+local BLUE_MAGIC_SKILL = 43;
+local BLU_SET_RECAST_SECONDS = 60;
+local bluSetCache = nil;
+local bluSetCacheTime = 0;
+local bluOffset = nil;
+local bluOffsetTried = false;
+local bluSetInitialized = false;
+local prevBluSetSig = nil;
+local bluForcedAllUntil = nil; -- os.clock() expiry applied to every Blue Magic spell
+
+local function IsBlueMagicSpell(spellId)
+    if not spellId then return false; end
+    local resourceMgr = AshitaCore:GetResourceManager();
+    if not resourceMgr then return false; end
+    local spell = resourceMgr:GetSpellById(spellId);
+    return spell ~= nil and (spell.Skill or 0) == BLUE_MAGIC_SKILL;
+end
+
+local function GetBluSetIds()
+    local now = os.clock();
+    if bluSetCache and (now - bluSetCacheTime) < 0.25 then
+        return bluSetCache;
+    end
+
+    local set = {};
+    local ok = pcall(function()
+        if not bluOffsetTried then
+            bluOffsetTried = true;
+            local found = ashita.memory.find('FFXiMain.dll', 0, 'C1E1032BC8B0018D????????????B9????????F3A55F5E5B', 10, 0);
+            if found and found ~= 0 then
+                bluOffset = ffi.cast('uint32_t*', found);
+            end
+        end
+        if not bluOffset then return; end
+        local ptr = ashita.memory.read_uint32(AshitaCore:GetPointerManager():Get('inventory'));
+        if ptr == 0 then return; end
+        ptr = ashita.memory.read_uint32(ptr);
+        if ptr == 0 then return; end
+        local bytes = ashita.memory.read_array((ptr + bluOffset[0]) + 0x04, 0x14);
+        if not bytes then return; end
+        for i = 1, #bytes do
+            local v = bytes[i];
+            if v and v ~= 0 then
+                set[v + 512] = true;
+            end
+        end
+    end);
+    if not ok then
+        set = {};
+    end
+
+    bluSetCache = set;
+    bluSetCacheTime = now;
+    return set;
+end
+
+-- When the BLU set changes, apply 60s to every Blue Magic spell, set or not.
+-- Seed without forcing so reload mid-set does not fake a fresh set cooldown.
+local function RefreshBluSetForcedRecasts()
+    local set = GetBluSetIds();
+    local ids = {};
+    for id in pairs(set) do
+        ids[#ids + 1] = id;
+    end
+    table.sort(ids);
+    local sig = table.concat(ids, ',');
+
+    if not bluSetInitialized then
+        bluSetInitialized = true;
+        prevBluSetSig = sig;
+        return;
+    end
+    if sig == prevBluSetSig then
+        return;
+    end
+    prevBluSetSig = sig;
+    bluForcedAllUntil = os.clock() + BLU_SET_RECAST_SECONDS;
+end
+
+local function GetForcedBluSetRecast(spellId)
+    if not spellId or not IsBlueMagicSpell(spellId) then
+        return 0;
+    end
+    RefreshBluSetForcedRecasts();
+    if not bluForcedAllUntil then
+        return 0;
+    end
+    local remaining = bluForcedAllUntil - os.clock();
+    if remaining <= 0 then
+        bluForcedAllUntil = nil;
+        return 0;
+    end
+    return remaining;
+end
+
+--- True when this is Blue Magic and it is not in the current set.
+--- False when the set could not be read, so a failed scan does not dim every spell.
+function M.IsBlueSpellNotSet(spellId)
+    if not spellId or not IsBlueMagicSpell(spellId) then
+        return false;
+    end
+    GetBluSetIds();
+    if not bluOffset then
+        return false;
+    end
+    return bluSetCache[spellId] ~= true;
+end
 
 -- Set the Hh:MM format preference (call once per frame before any recast queries)
 function M.SetHHMMFormat(enabled)
@@ -51,7 +163,6 @@ local cooldownResult = {
     spellId = nil,
     abilityId = nil,
     itemId = nil,
-    rechargingExtra = false,
 };
 
 -- Get spell recast by ID. Fetches from Ashita memory on cache miss / expiry,
@@ -237,6 +348,7 @@ end
 -- Get item/equipment recast by item ID
 -- Uses itemrecast.lua which reads from item.Extra data
 -- Returns: remaining seconds, or 0 if ready
+local batchIds, batchOut = {}, {};
 function M.GetItemRecast(itemId)
     if not itemId then return 0; end
     local now = os.clock();
@@ -244,9 +356,24 @@ function M.GetItemRecast(itemId)
     if exp and now < exp then
         return itemRecastCache[itemId] or 0;
     end
-    local recast = itemRecast.GetRecast(itemId);
-    itemRecastCache[itemId] = (recast and recast > 0) and recast or nil;
-    itemRecastExpiry[itemId] = now + ACTION_RECAST_TTL;
+    -- Refresh all expired items in one pass.
+    local n = 1;
+    batchIds[1] = itemId;
+    for id, e in pairs(itemRecastExpiry) do
+        if id ~= itemId and now >= e and now - e < 1.0 then  -- expired, but still being drawn
+            n = n + 1;
+            batchIds[n] = id;
+        end
+    end
+    for i = #batchIds, n + 1, -1 do batchIds[i] = nil; end
+    itemRecast.GetRecastMany(batchIds, batchOut);
+    for i = 1, n do
+        local id = batchIds[i];
+        local recast = batchOut[id];
+        itemRecastCache[id] = (recast and recast > 0) and recast or nil;
+        itemRecastExpiry[id] = now + ACTION_RECAST_TTL;
+        batchOut[id] = nil;
+    end
     return itemRecastCache[itemId] or 0;
 end
 
@@ -322,7 +449,6 @@ function M.GetCooldownInfo(actionData)
         cooldownResult.spellId = nil;
         cooldownResult.abilityId = nil;
         cooldownResult.itemId = nil;
-        cooldownResult.rechargingExtra = false;
         return cooldownResult;
     end
 
@@ -344,13 +470,19 @@ function M.GetCooldownInfo(actionData)
     local itemId = nil;
     local remaining = 0;
     local recastText = nil;
-    local rechargingExtra = false;
 
     local onCooldown = false;
 
     if actionData.actionType == 'ma' then
         spellId = actiondb.GetSpellId(actionData.action);
         remaining, recastText = M.GetActionRecast(actionData.actionType, spellId, nil, nil);
+        -- Any Blue Magic spell, including a macro recast source, takes the 60s
+        -- set-change timer. A longer game recast still wins.
+        local forced = GetForcedBluSetRecast(spellId);
+        if forced > remaining then
+            remaining = forced;
+            recastText = M.FormatRecast(remaining);
+        end
         onCooldown = remaining > 0;
     elseif actionData.actionType == 'pet' then
         -- Prefer pet-typed resource so shared RecastTimerId pools match
@@ -379,8 +511,8 @@ function M.GetCooldownInfo(actionData)
         if charge then
             remaining = charge.nextCharge;
             recastText = M.FormatRecast(remaining);
+            -- Usable while any charge remains; full dim only at 0.
             onCooldown = charge.charges < 1;
-            rechargingExtra = charge.charges >= 1 and remaining > 0;
         end
     end
 
@@ -391,7 +523,6 @@ function M.GetCooldownInfo(actionData)
     cooldownResult.spellId = spellId;
     cooldownResult.abilityId = abilityId;
     cooldownResult.itemId = itemId;
-    cooldownResult.rechargingExtra = rechargingExtra;
     return cooldownResult;
 end
 

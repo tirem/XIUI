@@ -1,6 +1,11 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
+
+-- Reused draw arguments.
+local _p1, _p2 = {0, 0}, {0, 0};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
+local function _P2(x, y) _p2[1] = x; _p2[2] = y; return _p2; end
 local imtext = require('libs.imtext');
 local debuffHandler = require('handlers.debuffhandler');
 local actionTracker = require('handlers.actiontracker');
@@ -78,7 +83,39 @@ end
 
 -- Enemy tracking
 local allClaimedTargets = {};
+-- Insertion-ordered enemy indices so Align Bottom has a stable bottom-to-top fill order
+local claimedOrder = {};
+-- Bottom-anchor state when Align Bottom is enabled (window grows upward)
+-- bottomY is the pinned screen-space bottom edge; lastY detects user drags.
+-- layoutHeight is the calculated content height. Comparing that to the real
+-- window size stays unequal for some column layouts and would pin the window.
+local alignBottomWindowState = { x = nil, bottomY = nil, lastY = nil, layoutHeight = nil };
 local enemylist = {};
+
+local function ClaimEnemy(index)
+	if allClaimedTargets[index] == nil then
+		claimedOrder[#claimedOrder + 1] = index;
+	end
+	allClaimedTargets[index] = 1;
+end
+
+local function UnclaimEnemy(index)
+	if allClaimedTargets[index] == nil then
+		return;
+	end
+	allClaimedTargets[index] = nil;
+	for i = #claimedOrder, 1, -1 do
+		if claimedOrder[i] == index then
+			table.remove(claimedOrder, i);
+			break;
+		end
+	end
+end
+
+local function ClearClaimedEnemies()
+	allClaimedTargets = {};
+	claimedOrder = {};
+end
 
 -- Preview mode mock data
 local previewEnemies = {
@@ -159,7 +196,7 @@ end
 -- Truncates text to fit within maxWidth using binary search for optimal performance
 local function TruncateTextToFit(text, maxWidth, fontSize)
 	-- First check if text fits without truncation
-	local width, _ = imtext.Measure(text, fontSize);
+	local width, _ = imtext.MeasureCached(text, fontSize);
 	if width <= maxWidth then return text; end
 	-- Text is too long, use binary search to find optimal truncation point
 	local ellipsis = "...";
@@ -169,7 +206,7 @@ local function TruncateTextToFit(text, maxWidth, fontSize)
 	while left <= right do
 		local mid = math.floor((left + right) / 2);
 		local truncated = text:sub(1, mid) .. ellipsis;
-		width, _ = imtext.Measure(truncated, fontSize);
+		width, _ = imtext.MeasureCached(truncated, fontSize);
 		if width <= maxWidth then
 			-- This length fits, try a longer one
 			bestLength = mid;
@@ -197,7 +234,125 @@ enemylist.DrawWindow = function(settings)
 	-- Width: left margin + (columns * barWidth) + ((columns-1) * columnSpacing) + right margin
 	local singleColumnWidth = settings.barWidth;
 	local windowWidth = (windowMargin * 2) + (singleColumnWidth * maxColumns) + (columnSpacing * (maxColumns - 1));
-	imgui.SetNextWindowSize({ windowWidth, -1, }, ImGuiCond_Always);
+	local alignBottom = gConfig.enemyListAlignBottom;
+
+	-- Cache entity manager / preview mode before Begin (needed for height + bottom-anchor)
+	local entityMgr = GetEntitySafe();
+	local isPreviewMode = showConfig[1] and gConfig.enemyListPreview;
+
+	-- Shared layout metrics (same for every entry at current settings)
+	local entryWidth = settings.barWidth;
+	local scaleX = entryWidth / 125;  -- 125 is the default barWidth
+	local scaleY = settings.barHeight / 10;  -- 10 is the default barHeight
+	local padding = math.max(10 * math.min(scaleX, scaleY), 2);  -- Minimum 2px padding
+	local borderThickness = 2;
+	local nameHeight = settings.name_font_settings.font_height;
+	local barHeight = settings.barHeight;
+	local nameToBarGap = math.max(10 * scaleY, 1);
+	local barToInfoGap = math.max(5 * scaleY, 1);
+	local castBarHeight = barHeight;
+	local castTextHeight = settings.distance_font_settings.font_height;
+	local infoRowHeight = 0;
+	if (gConfig.showEnemyDistance and gConfig.showEnemyHPPText) then
+		infoRowHeight = math.max(settings.distance_font_settings.font_height, settings.percent_font_settings.font_height);
+	elseif (gConfig.showEnemyDistance) then
+		infoRowHeight = settings.distance_font_settings.font_height;
+	elseif (gConfig.showEnemyHPPText) then
+		infoRowHeight = settings.percent_font_settings.font_height;
+	end
+
+	-- Collect valid entries in stable order (claim order / sorted preview keys)
+	local orderedEntries = {};
+	if isPreviewMode then
+		local previewKeys = {};
+		for k in pairs(previewEnemies) do
+			previewKeys[#previewKeys + 1] = k;
+		end
+		table.sort(previewKeys);
+		for i = 1, #previewKeys do
+			if #orderedEntries >= maxTotalEntries then break; end
+			local k = previewKeys[i];
+			orderedEntries[#orderedEntries + 1] = { k = k, ent = previewEnemies[k] };
+		end
+	else
+		local i = 1;
+		while i <= #claimedOrder do
+			local k = claimedOrder[i];
+			local ent = GetEntity(k);
+			local isValid = allClaimedTargets[k] ~= nil and ent ~= nil and GetIsValidMob(k, entityMgr) and ent.HPPercent > 0 and ent.Name ~= nil;
+			if isValid then
+				orderedEntries[#orderedEntries + 1] = { k = k, ent = ent };
+				if #orderedEntries >= maxTotalEntries then
+					break;
+				end
+				i = i + 1;
+			else
+				UnclaimEnemy(k);
+				-- claimedOrder shrank; stay on same index
+			end
+		end
+	end
+
+	-- Resolve cast state + entry height once per enemy (GetRenderState must not run twice)
+	for i = 1, #orderedEntries do
+		local entry = orderedEntries[i];
+		local k = entry.k;
+		local ent = entry.ent;
+		local hasCast, castProgress, castOverlay, castSpellName, castTargetId = false;
+		if (gConfig.showEnemyListCastBar and not HzLimitedMode) then
+			if isPreviewMode then
+				castSpellName = previewCasts[k];
+				hasCast = castSpellName ~= nil;
+				castProgress = (os.clock() % 5.0) / 5.0;
+			elseif ent.ServerId ~= nil then
+				hasCast, castProgress, castOverlay, castSpellName, castTargetId = enemyCasts.GetRenderState(ent.ServerId);
+			end
+		end
+		entry.hasCast = hasCast;
+		entry.castProgress = castProgress;
+		entry.castOverlay = castOverlay;
+		entry.castSpellName = castSpellName;
+		entry.castTargetId = castTargetId;
+
+		local totalContentHeight = nameHeight + nameToBarGap + barHeight;
+		if (infoRowHeight > 0) then
+			totalContentHeight = totalContentHeight + barToInfoGap + infoRowHeight;
+		end
+		if (hasCast) then
+			totalContentHeight = totalContentHeight + barToInfoGap + castBarHeight
+				+ math.max(2 * scaleY, 1) + castTextHeight;
+		end
+		entry.entryHeight = (padding * 2) + totalContentHeight;
+	end
+
+	-- Group into columns (left-to-right) and measure heights
+	local columns = {};
+	local maxColumnHeight = 0;
+	for i = 1, #orderedEntries do
+		local col = math.floor((i - 1) / rowsPerColumn);
+		if col >= maxColumns then break; end
+		local colIdx = col + 1;
+		if columns[colIdx] == nil then
+			columns[colIdx] = {};
+		end
+		columns[colIdx][#columns[colIdx] + 1] = orderedEntries[i];
+	end
+	for colIdx = 1, #columns do
+		local colEntries = columns[colIdx];
+		local colH = 0;
+		for rowIdx = 1, #colEntries do
+			colH = colH + colEntries[rowIdx].entryHeight;
+			if rowIdx > 1 then
+				colH = colH + rowSpacing;
+			end
+		end
+		columns[colIdx].height = colH;
+		if colH > maxColumnHeight then
+			maxColumnHeight = colH;
+		end
+	end
+
+	local totalWindowHeight = (windowMargin * 2) + maxColumnHeight;
 
 	-- Draw the main target window
 	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
@@ -207,11 +362,42 @@ enemylist.DrawWindow = function(settings)
 	imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {0, 0});
 	imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, {0, 0});
 
-    ApplyWindowPosition('EnemyList');
+	-- Use an explicit height so Align Bottom math matches the real window (avoids per-claim drift)
+	local sizedHeight = (#orderedEntries > 0) and totalWindowHeight or -1;
+	imgui.SetNextWindowSize({ windowWidth, sizedHeight }, ImGuiCond_Always);
+
+	-- Align Bottom keeps the bottom edge fixed as rows are added.
+	-- The position is forced only while the HUD is locked, or on the frame the
+	-- calculated height changes. An unlocked window stays where it was dragged.
+	local positionsLocked = gConfig.lockPositions == true;
+	local layoutHeightChanged = alignBottomWindowState.layoutHeight ~= nil
+		and math.abs(alignBottomWindowState.layoutHeight - totalWindowHeight) > 0.5;
+	local preAdjusted = false;
+	if alignBottom and alignBottomWindowState.bottomY ~= nil and #orderedEntries > 0 then
+		local posX = alignBottomWindowState.x;
+		if posX == nil and gConfig.windowPositions and gConfig.windowPositions['EnemyList'] then
+			posX = gConfig.windowPositions['EnemyList'].x;
+		end
+		if posX ~= nil and (positionsLocked or layoutHeightChanged) then
+			local newPosY = alignBottomWindowState.bottomY - totalWindowHeight;
+			imgui.SetNextWindowPos({ posX, newPosY }, ImGuiCond_Always);
+			preAdjusted = true;
+			if not gConfig.appliedPositions then gConfig.appliedPositions = {}; end
+			gConfig.appliedPositions['EnemyList'] = true;
+			if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+			gConfig.windowPositions['EnemyList'] = { x = posX, y = newPosY };
+			alignBottomWindowState.x = posX;
+			alignBottomWindowState.lastY = newPosY;
+		end
+	end
+
+	if not preAdjusted then
+		ApplyWindowPosition('EnemyList');
+	end
 	if (imgui.Begin('EnemyList', true, windowFlags)) then
 		SaveWindowPosition('EnemyList');
 		-- Add top margin
-		imgui.Dummy({0, windowMargin});
+		imgui.Dummy(_P1(0, windowMargin));
 		local winStartX, winStartY = imgui.GetWindowPos();
 		local playerTarget = GetTargetSafe();
 		local targetIndex;
@@ -228,122 +414,56 @@ enemylist.DrawWindow = function(settings)
 			end
 		end
 
-		-- Cache entity manager once per frame (avoid repeated GetEntitySafe() calls)
-		local entityMgr = GetEntitySafe();
-
 		-- Get draw list and configure imtext for this frame
 		local drawList = GetUIDrawList();
 		imtext.SetConfigFromSettings(settings.name_font_settings);
 
 		-- Multi-column layout tracking
 		local numTargets = 0;
-		local currentColumn = 0;
-		local currentRowInColumn = 0;
 		local columnBaseX = winStartX;  -- Base X position for first column
 		local columnBaseY = winStartY + windowMargin;  -- Base Y position (after top margin)
-		local maxColumnHeight = 0;  -- Track tallest column for window sizing
-		local currentColumnHeight = 0;
 
-		-- Determine which data source to use (preview mode vs real enemies)
-		local isPreviewMode = showConfig[1] and gConfig.enemyListPreview;
-		local enemySource = isPreviewMode and previewEnemies or allClaimedTargets;
-
-		for k,v in pairs(enemySource) do
-			local ent;
-			local isValid;
-			if isPreviewMode then
-				-- In preview mode, use mock entity data directly
-				ent = v;
-				isValid = true;
+		for colIdx = 1, #columns do
+			local colEntries = columns[colIdx];
+			local currentColumn = colIdx - 1;
+			local columnOffsetX = currentColumn * (singleColumnWidth + columnSpacing);
+			local entryStartX = columnBaseX + windowMargin + columnOffsetX;
+			-- Top-down: start at column top. Align Bottom: share the tallest column's
+			-- bottom edge so every column (including partial ones) sits on the same baseline.
+			local placeY;
+			if alignBottom then
+				placeY = columnBaseY + maxColumnHeight;
 			else
-				-- Normal mode: get real entity and validate
-				ent = GetEntity(k);
-				isValid = v ~= nil and ent ~= nil and GetIsValidMob(k, entityMgr) and ent.HPPercent > 0 and ent.Name ~= nil;
+				placeY = columnBaseY;
 			end
-			if isValid then
-				-- Check if we need to start a new column
-				if (currentRowInColumn >= rowsPerColumn and currentColumn < maxColumns - 1) then
-					-- Move to next column
-					currentColumn = currentColumn + 1;
-					currentRowInColumn = 0;
-					-- Track max height for window sizing
-					if (currentColumnHeight > maxColumnHeight) then
-						maxColumnHeight = currentColumnHeight;
+
+			for rowIdx = 1, #colEntries do
+				local entry = colEntries[rowIdx];
+				local k = entry.k;
+				local ent = entry.ent;
+				local entryHeight = entry.entryHeight;
+				local entryStartY;
+
+				if alignBottom then
+					placeY = placeY - entryHeight;
+					entryStartY = placeY;
+					placeY = placeY - rowSpacing;
+				else
+					if rowIdx > 1 then
+						placeY = placeY + rowSpacing;
 					end
-					currentColumnHeight = 0;
+					entryStartY = placeY;
+					placeY = placeY + entryHeight;
 				end
-
-				-- Add spacing between entries (but not before the first in each column)
-				local entrySpacingY = 0;
-				if (currentRowInColumn > 0) then
-					entrySpacingY = rowSpacing;
-				end
-
-				-- ===== LAYOUT CALCULATION =====
-				-- Calculate position based on current column and row
-				-- Each column offset: (column index) * (barWidth + columnSpacing)
-				local columnOffsetX = currentColumn * (singleColumnWidth + columnSpacing);
-				local entryStartX = columnBaseX + windowMargin + columnOffsetX;
-				local entryStartY = columnBaseY + currentColumnHeight + entrySpacingY;
 
 				-- Set ImGui cursor for this entry
-				imgui.SetCursorScreenPos({entryStartX - windowMargin, entryStartY});
+				imgui.SetCursorScreenPos(_P1(entryStartX - windowMargin, entryStartY));
 
-				-- Entry width is the content area (barWidth), not including window margins
-				local entryWidth = settings.barWidth;
-				-- Scale padding and gaps based on bar dimensions to prevent negative sizes at low scales
-				-- Base values at scale 1.0: padding=10, nameToBarGap=10, barToInfoGap=5
-				local scaleX = entryWidth / 125;  -- 125 is the default barWidth
-				local scaleY = settings.barHeight / 10;  -- 10 is the default barHeight
-				local padding = math.max(10 * math.min(scaleX, scaleY), 2);  -- Minimum 2px padding
-				local borderThickness = 2;
-
-				-- Calculate entry dimensions
-				-- Row 1: Name text (uses name_font_settings.font_height)
-				-- Row 2: HP bar (full width, uses barHeight)
-				-- Row 3: Distance (left) and HP% (right) - only if enabled
-				local nameHeight = settings.name_font_settings.font_height;
-				local barHeight = settings.barHeight;
-				local nameToBarGap = math.max(10 * scaleY, 1);  -- Vertical spacing between name and HP bar
-				local barToInfoGap = math.max(5 * scaleY, 1);  -- Vertical spacing between HP bar and info row
-
-				-- Calculate info row height based only on enabled features
-				local infoRowHeight = 0;
-				if (gConfig.showEnemyDistance and gConfig.showEnemyHPPText) then
-					-- Both enabled - use the max of both
-					infoRowHeight = math.max(settings.distance_font_settings.font_height, settings.percent_font_settings.font_height);
-				elseif (gConfig.showEnemyDistance) then
-					-- Only distance enabled
-					infoRowHeight = settings.distance_font_settings.font_height;
-				elseif (gConfig.showEnemyHPPText) then
-					-- Only HP% enabled
-					infoRowHeight = settings.percent_font_settings.font_height;
-				end
-
-				-- Cast bar: resolve render state once (also clears finished/interrupted casts).
-				local castBarHeight = barHeight;
-				local castTextHeight = settings.distance_font_settings.font_height;
-				local hasCast, castProgress, castOverlay, castSpellName, castTargetId = false;
-				if (gConfig.showEnemyListCastBar and not HzLimitedMode) then
-					if isPreviewMode then
-						castSpellName = previewCasts[k];
-						hasCast = castSpellName ~= nil;
-						castProgress = (os.clock() % 5.0) / 5.0;  -- looping demo fill
-					elseif ent.ServerId ~= nil then
-						hasCast, castProgress, castOverlay, castSpellName, castTargetId = enemyCasts.GetRenderState(ent.ServerId);
-					end
-				end
-
-				-- Calculate total height based on which rows are visible
-				local totalContentHeight = nameHeight + nameToBarGap + barHeight;
-				if (infoRowHeight > 0) then
-					totalContentHeight = totalContentHeight + barToInfoGap + infoRowHeight;
-				end
-				if (hasCast) then
-					totalContentHeight = totalContentHeight + barToInfoGap + castBarHeight
-						+ math.max(2 * scaleY, 1) + castTextHeight;
-				end
-				local entryHeight = (padding * 2) + totalContentHeight;
+				local hasCast = entry.hasCast;
+				local castProgress = entry.castProgress;
+				local castOverlay = entry.castOverlay;
+				local castSpellName = entry.castSpellName;
+				local castTargetId = entry.castTargetId;
 
 				-- Prepare distance and HP% text separately
 				local distanceText = '';
@@ -377,8 +497,7 @@ enemylist.DrawWindow = function(settings)
 					bgColor = ApplyOpacityToColor(bgColor, bgOpacity);
 				end
 				drawList:AddRectFilled(
-					{entryStartX, entryStartY},
-					{entryStartX + entryWidth, entryStartY + entryHeight},
+					_P1(entryStartX, entryStartY), _P2(entryStartX + entryWidth, entryStartY + entryHeight),
 					imgui.GetColorU32(ARGBToRGBA(bgColor)),
 					bgRadius,
 					ImDrawCornerFlags_All
@@ -399,8 +518,7 @@ enemylist.DrawWindow = function(settings)
 					end
 
 					drawList:AddRect(
-						{entryStartX, entryStartY},
-						{entryStartX + entryWidth, entryStartY + entryHeight},
+						_P1(entryStartX, entryStartY), _P2(entryStartX + entryWidth, entryStartY + entryHeight),
 						borderColor,
 						bgRadius,
 						ImDrawCornerFlags_All,
@@ -432,13 +550,12 @@ enemylist.DrawWindow = function(settings)
 				-- ROW 2: HP Bar (full width)
 				local row2Y = nameY + nameHeight + nameToBarGap;
 				local barX = entryStartX + padding;
-				imgui.SetCursorScreenPos({barX, row2Y});
 
 				local enemyGradient = GetCustomGradient(gConfig.colorCustomization.enemyList, 'hpGradient') or {'#e16c6c', '#fb9494'};
 				progressbar.ProgressBar(
-					{{ent.HPPercent / 100, enemyGradient}},
-					{barWidth, settings.barHeight},
-					{decorate = gConfig.showEnemyListBookends}
+					progressbar.Pct(ent.HPPercent / 100, enemyGradient),
+					progressbar.Dims(barWidth, settings.barHeight),
+					progressbar.Opts(gConfig.showEnemyListBookends, nil, barX, row2Y)
 				);
 
 				-- ROW 3: Distance (left aligned) and HP% (right aligned)
@@ -454,7 +571,7 @@ enemylist.DrawWindow = function(settings)
 					-- HP% text (right-aligned): measure width first, then position from right edge
 					if (gConfig.showEnemyHPPText) then
 						local hpColor = gConfig.colorCustomization.enemyList.percentTextColor;
-						local hpWidth, _ = imtext.Measure(hpText, settings.percent_font_settings.font_height);
+						local hpWidth, _ = imtext.MeasureCached(hpText, settings.percent_font_settings.font_height);
 						imtext.Draw(drawList, hpText, entryStartX + entryWidth - padding - hpWidth, row3Y, hpColor, settings.percent_font_settings.font_height);
 					end
 				end
@@ -467,12 +584,11 @@ enemylist.DrawWindow = function(settings)
 					end
 					local castBarY = contentBottomY + barToInfoGap;
 
-					imgui.SetCursorScreenPos({barX, castBarY});
 					local castGradient = GetCustomGradient(gConfig.colorCustomization.enemyList, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
 					progressbar.ProgressBar(
-						{{castProgress, castGradient, castOverlay}},
-						{barWidth, castBarHeight},
-						{decorate = gConfig.showEnemyListBookends}
+						progressbar.Pct(castProgress, castGradient, castOverlay),
+						progressbar.Dims(barWidth, castBarHeight),
+						progressbar.Opts(gConfig.showEnemyListBookends, nil, barX, castBarY)
 					);
 
 					-- "<spell> - <target>" centered below the bar; target in its own color.
@@ -491,8 +607,8 @@ enemylist.DrawWindow = function(settings)
 					end
 
 					local suffix = castTargetName and (' - ' .. castTargetName) or nil;
-					local spellWidth = imtext.Measure(castSpellName, castTextHeight);
-					local suffixWidth = suffix and imtext.Measure(suffix, castTextHeight) or 0;
+					local spellWidth = imtext.MeasureCached(castSpellName, castTextHeight);
+					local suffixWidth = suffix and imtext.MeasureCached(suffix, castTextHeight) or 0;
 					local castTextX = barX + (barWidth / 2) - ((spellWidth + suffixWidth) / 2);
 					local castTextY = castBarY + castBarHeight + math.max(2 * scaleY, 1);
 
@@ -588,8 +704,7 @@ enemylist.DrawWindow = function(settings)
 							targetBgColor = ApplyOpacityToColor(targetBgColor, targetBgOpacity);
 						end
 						drawList:AddRectFilled(
-							{targetContainerX, targetContainerY},
-							{targetContainerX + targetWidth, targetContainerY + targetTotalHeight},
+							_P1(targetContainerX, targetContainerY), _P2(targetContainerX + targetWidth, targetContainerY + targetTotalHeight),
 							imgui.GetColorU32(ARGBToRGBA(targetBgColor)),
 							bgRadius,
 							ImDrawCornerFlags_All
@@ -617,7 +732,7 @@ enemylist.DrawWindow = function(settings)
 
 				-- Add a click target over the entire entry to /target that mob (disabled in limited mode, preview mode, config open, or by config)
 				if (not HzLimitedMode and not isPreviewMode and not showConfig[1] and gConfig.enableEnemyListClickTarget) then
-					imgui.SetCursorScreenPos({entryStartX, entryStartY});
+					imgui.SetCursorScreenPos(_P1(entryStartX, entryStartY));
 					if imgui.InvisibleButton('EnemyEntry' .. k, {entryWidth, entryHeight}) then
 						local clickEntityMgr = AshitaCore:GetMemoryManager():GetEntity();
 						if clickEntityMgr ~= nil then
@@ -629,33 +744,51 @@ enemylist.DrawWindow = function(settings)
 					end
 				end
 
-				-- Update column height tracking (include spacing for next entry)
-				currentColumnHeight = currentColumnHeight + entryHeight + entrySpacingY;
-				currentRowInColumn = currentRowInColumn + 1;
 				numTargets = numTargets + 1;
-
-				-- Check if we've hit the max total entries
-				if (numTargets >= maxTotalEntries) then
-					break;
-				end
-			else
-				-- Only remove invalid entries in normal mode (not preview mode)
-				if not isPreviewMode then
-					allClaimedTargets[k] = nil;
-				end
 			end
-		end
-
-		-- Update max height from last column
-		if (currentColumnHeight > maxColumnHeight) then
-			maxColumnHeight = currentColumnHeight;
 		end
 
 		-- Set cursor to ensure window encompasses all content (prevents clipping)
 		-- Position at bottom-right of content area to force proper window sizing
 		if (numTargets > 0) then
-			imgui.SetCursorScreenPos({winStartX, columnBaseY + maxColumnHeight + windowMargin});
-			imgui.Dummy({windowWidth, 0});
+			imgui.SetCursorScreenPos(_P1(winStartX, columnBaseY + maxColumnHeight + windowMargin));
+			imgui.Dummy(_P1(windowWidth, 0));
+		end
+
+		if alignBottom then
+			local winPosX, winPosY = imgui.GetWindowPos();
+			local _, winH = imgui.GetWindowSize();
+			if winH == nil or winH < 1 then
+				winH = totalWindowHeight;
+			end
+
+			-- HUD lock is the only thing that holds the window. A drag updates the bottom anchor.
+			local dragged = not positionsLocked
+				and alignBottomWindowState.lastY ~= nil
+				and not preAdjusted
+				and (math.abs(winPosY - alignBottomWindowState.lastY) > 1
+					or (alignBottomWindowState.x ~= nil and math.abs(winPosX - alignBottomWindowState.x) > 1));
+			if alignBottomWindowState.bottomY == nil or dragged then
+				alignBottomWindowState.bottomY = winPosY + winH;
+			elseif positionsLocked or layoutHeightChanged then
+				-- Snap using the real window height so estimate error can't accumulate
+				local correctY = alignBottomWindowState.bottomY - winH;
+				if math.abs(winPosY - correctY) > 0.5 then
+					imgui.SetWindowPos('EnemyList', { winPosX, correctY });
+					winPosY = correctY;
+				end
+			end
+
+			alignBottomWindowState.x = winPosX;
+			alignBottomWindowState.lastY = winPosY;
+			alignBottomWindowState.layoutHeight = totalWindowHeight;
+			if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+			gConfig.windowPositions['EnemyList'] = { x = winPosX, y = winPosY };
+		else
+			alignBottomWindowState.x = nil;
+			alignBottomWindowState.bottomY = nil;
+			alignBottomWindowState.lastY = nil;
+			alignBottomWindowState.layoutHeight = nil;
 		end
 
 	end
@@ -674,7 +807,7 @@ enemylist.HandleActionPacket = function(e)
 		-- Use cached party lookup (O(1)) instead of rebuilding party list each packet
 		for i = 0, #e.Targets do
 			if (e.Targets[i] ~= nil and IsPartyMemberByServerId(e.Targets[i].Id)) then
-				allClaimedTargets[e.UserIndex] = 1;
+				ClaimEnemy(e.UserIndex);
 				break;  -- Found a party member target, no need to check more
 			end
 		end
@@ -689,14 +822,14 @@ enemylist.HandleMobUpdatePacket = function(e)
 	if (e.newClaimId ~= nil and GetIsValidMob(e.monsterIndex)) then
 		-- Use cached party lookup (O(1)) instead of rebuilding party list each packet
 		if IsPartyMemberByServerId(e.newClaimId) then
-			allClaimedTargets[e.monsterIndex] = 1;
+			ClaimEnemy(e.monsterIndex);
 		end
 	end
 end
 
 enemylist.HandleZonePacket = function(e)
 	-- Empty all our claimed targets on zone
-	allClaimedTargets = T{};
+	ClearClaimedEnemies();
 	truncatedNameCache = {};
 	truncatedTargetNameCache = {};
 end

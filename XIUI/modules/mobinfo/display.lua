@@ -185,19 +185,21 @@ end
 
 -- Elements without a damage modifier are labeled by their rank's magic evasion change.
 local function AddRankIcons(icons, mobInfo, isResistance, damageModifiers)
+    local reverseSigns = gConfig.mobInfoReverseElementResistanceSigns;
     local ranked = {};
     for i, elem in ipairs(elements) do
         local rank = mobInfo.ElementRanks and mobInfo.ElementRanks[elem.key] or 0;
         if (isResistance and rank > 0) or (not isResistance and rank < 0) then
             local percent = mobdata.GetRankMagicEvasionPercent(rank);
+            local displayPercent = reverseSigns and -percent or percent;
             -- Use %% to escape % for imgui.SetTooltip (printf-style function)
-            local detail = string.format('%s Resistance Rank: %d (%+d%%%% magic evasion)', elem.name, rank, percent);
+            local detail = string.format('%s Resistance Rank: %d (%+d%%%% magic evasion)', elem.name, rank, displayPercent);
             if damageModifiers[elem.key] then
                 for _, icon in ipairs(icons) do
                     if icon.element == elem.key then icon.tooltip = icon.tooltip .. '\n' .. detail; end
                 end
             else
-                table.insert(ranked, { elem = elem, rank = rank, percent = percent, detail = detail, order = i });
+                table.insert(ranked, { elem = elem, rank = rank, percent = percent, displayPercent = displayPercent, detail = detail, order = i });
             end
         end
     end
@@ -215,7 +217,7 @@ local function AddRankIcons(icons, mobInfo, isResistance, damageModifiers)
             texture = textures.elements[string.lower(item.elem.key)],
             element = item.elem.key,
             tooltip = item.detail,
-            modifierText = string.format('%+d%%', item.percent),
+            modifierText = string.format('%+d%%', item.displayPercent),
             showPercent = not groupModifiers or nextItem == nil or nextItem.percent ~= item.percent,
         });
     end
@@ -261,6 +263,7 @@ local function BuildWeaknessIcons(mobInfo)
     -- Build final icon list with showPercent flag
 
     local groupModifiers = gConfig.mobInfoGroupModifiers;
+    local reverseElementSigns = gConfig.mobInfoReverseElementResistanceSigns;
     for i, item in ipairs(allWeaknesses) do
         -- When grouping: show percent only if this is the last icon OR the next icon has a different percentage
         -- When not grouping: always show percent for each icon
@@ -271,12 +274,18 @@ local function BuildWeaknessIcons(mobInfo)
             showPercent = (nextItem == nil) or (math.floor((nextItem.modifier - 1) * 100) ~= percent);
         end
 
+        -- Element weaknesses can flip +/−; physical damage weaknesses keep the default sign.
+        local sign = '+';
+        if item.element and reverseElementSigns then
+            sign = '-';
+        end
+
             -- Use %% to escape % for imgui.SetTooltip (printf-style function)
         table.insert(weaknessIcons, {
             texture = item.texture,
             element = item.element,
-            tooltip = item.name .. ' Weakness (+' .. tostring(percent) .. '%% damage)',
-            modifierText = '+' .. percent .. '%',
+            tooltip = item.name .. ' Weakness (' .. sign .. tostring(percent) .. '%% damage)',
+            modifierText = sign .. percent .. '%',
             showPercent = showPercent
         });
     end
@@ -325,6 +334,7 @@ local function BuildResistanceIcons(mobInfo)
     -- Build final icon list with showPercent flag
 
     local groupModifiers = gConfig.mobInfoGroupModifiers;
+    local reverseElementSigns = gConfig.mobInfoReverseElementResistanceSigns;
     for i, item in ipairs(allResistances) do
         -- When grouping: show percent only if this is the last icon OR the next icon has a different percentage
         -- When not grouping: always show percent for each icon
@@ -335,12 +345,18 @@ local function BuildResistanceIcons(mobInfo)
             showPercent = (nextItem == nil) or (math.floor((1 - nextItem.modifier) * 100) ~= percent);
         end
 
+        -- Element resistances can flip +/−; physical damage resistances keep the default sign.
+        local sign = '-';
+        if item.element and reverseElementSigns then
+            sign = '+';
+        end
+
             -- Use %% to escape % for imgui.SetTooltip (printf-style function)
         table.insert(resistanceIcons, {
             texture = item.texture,
             element = item.element,
-            tooltip = item.name .. ' Resistance (-' .. tostring(percent) .. '%% damage)',
-            modifierText = '-' .. percent .. '%',
+            tooltip = item.name .. ' Resistance (' .. sign .. tostring(percent) .. '%% damage)',
+            modifierText = sign .. percent .. '%',
             showPercent = showPercent
         });
     end
@@ -404,7 +420,8 @@ local function DrawIconsWithModifiers(drawList, icons, iconSize, spacing, fontHe
         if iconData.modifierText and gConfig.mobInfoShowModifierText and iconData.showPercent then
             local textW, textH = imtext.Measure(iconData.modifierText, fontHeight);
             local textX = baseX + offsetX + 2;
-            local textY = baseY + (iconSize - textH) / 2;
+            -- Bottom-align percent text with icons
+            local textY = baseY + iconSize - textH;
 
             imgui.SameLine(0, 2);
             offsetX = offsetX + 2;
@@ -436,7 +453,8 @@ local function DrawSeparator(drawList, fontHeight, textColor, posX, posY, iconSi
     end
 
     local textW, textH = imtext.Measure(sepChar, fontHeight);
-    local textY = posY + (iconSize - textH) / 2;
+    -- Bottom-align separator with icons
+    local textY = posY + iconSize - textH;
 
     imtext.Draw(drawList, sepChar, posX + 4, textY, textColor, fontHeight);
 
@@ -534,10 +552,9 @@ mobinfo.DrawWindow = function(settings)
 
     -- If snapping to target bar, position the window at the target name end position
     if snapToTargetBar then
-        -- Calculate Y offset: mob info text is vertically centered within iconSize,
-        -- so we need to offset to align text baselines with target name
-        local textCenterOffset = (iconSize - fontHeight) / 2;
-        local snapY = targetbar.nameTextInfo.y - textCenterOffset;
+        -- Bottom-align the icon row with the bottom of the target name text
+        local nameHeight = targetbar.nameTextInfo.height or fontHeight;
+        local snapY = targetbar.nameTextInfo.y + nameHeight - iconSize;
         imgui.SetNextWindowPos({targetbar.nameTextInfo.x, snapY}, ImGuiCond_Always);
         -- Remove window padding to align precisely with target name
         imgui.PushStyleVar(ImGuiStyleVar_WindowPadding, {0, 0});
@@ -612,7 +629,7 @@ mobinfo.DrawWindow = function(settings)
                 -- Render header text if we have any
                 if headerText ~= '' then
                     local textW, textH = imtext.Measure(headerText, fontHeight);
-                    local textY = startY + (iconSize - textH) / 2;
+                    local textY = startY + iconSize - textH;
                     imtext.Draw(drawList, headerText, currentX, textY, textColor, fontHeight);
 
                     imgui.Dummy({textW, iconSize});
@@ -690,7 +707,7 @@ mobinfo.DrawWindow = function(settings)
                     end
 
                     local textW, textH = imtext.Measure(serverIdString, fontHeight);
-                    local textY = startY + (iconSize - textH) / 2;
+                    local textY = startY + iconSize - textH;
                     imtext.Draw(drawList, serverIdString, currentX, textY, textColor, fontHeight);
 
                     imgui.SameLine(0, 0);
@@ -791,53 +808,77 @@ mobinfo.DrawWindow = function(settings)
     end
 end
 
-    -- Load detection icons (HQ for NMs, NQ for normal mobs)
+-- Icon files per group; loaded on first draw.
+local TEXTURE_FILES = {
+    detection = {
+        aggroHQ = 'AggroHQ',
+        aggroNQ = 'AggroNQ',
+        passiveHQ = 'PassiveHQ',
+        passiveNQ = 'PassiveNQ',
+        link = 'Link',
+        sight = 'Sight',
+        truesight = 'TrueSight',
+        sound = 'Sound',
+        truesound = 'Sound',
+        scent = 'Scent',
+        magic = 'Magic',
+        ja = 'JA',
+        blood = 'Blood',
+    },
+    elements = {
+        fire = 'Fire',
+        ice = 'Ice',
+        wind = 'Wind',
+        earth = 'Earth',
+        lightning = 'Lightning',
+        water = 'Water',
+        light = 'Light',
+        dark = 'Dark',
+    },
+    physical = {
+        slashing = 'Slashing',
+        piercing = 'Piercing',
+        h2h = 'H2H',
+        impact = 'Impact',
+    },
+    immunities = {
+        sleep = 'ImmuneSleep',
+        gravity = 'ImmuneGravity',
+        bind = 'ImmuneBind',
+        stun = 'ImmuneStun',
+        silence = 'ImmuneSilence',
+        paralyze = 'ImmuneParalyze',
+        blind = 'ImmuneBlind',
+        slow = 'ImmuneSlow',
+        poison = 'ImmunePoison',
+        elegy = 'ImmuneElegy',
+        requiem = 'ImmuneRequiem',
+        petrify = 'ImmunePetrify',
+        darksleep = 'ImmuneDarkSleep',
+        lightsleep = 'ImmuneLightSleep',
+    },
+};
+
+local function LazyTextureTable(files)
+    local tried = {};
+    return setmetatable({}, { __index = function(t, key)
+        local file = files[key];
+        if file == nil or tried[key] then
+            return nil;
+        end
+        tried[key] = true;
+        local texture = LoadMobInfoTexture(file);
+        if texture ~= nil then
+            rawset(t, key, texture);
+        end
+        return texture;
+    end });
+end
+
 mobinfo.Initialize = function(settings)
-    textures.detection.aggroHQ = LoadMobInfoTexture('AggroHQ');
-    textures.detection.aggroNQ = LoadMobInfoTexture('AggroNQ');
-    textures.detection.passiveHQ = LoadMobInfoTexture('PassiveHQ');
-    textures.detection.passiveNQ = LoadMobInfoTexture('PassiveNQ');
-    textures.detection.link = LoadMobInfoTexture('Link');
-    textures.detection.sight = LoadMobInfoTexture('Sight');
-    textures.detection.truesight = LoadMobInfoTexture('TrueSight');
-    textures.detection.sound = LoadMobInfoTexture('Sound');
-    textures.detection.truesound = textures.detection.sound;
-    textures.detection.scent = LoadMobInfoTexture('Scent');
-    textures.detection.magic = LoadMobInfoTexture('Magic');
-    textures.detection.ja = LoadMobInfoTexture('JA');
-    textures.detection.blood = LoadMobInfoTexture('Blood');
-    -- Load element icons
-
-    textures.elements.fire = LoadMobInfoTexture('Fire');
-    textures.elements.ice = LoadMobInfoTexture('Ice');
-    textures.elements.wind = LoadMobInfoTexture('Wind');
-    textures.elements.earth = LoadMobInfoTexture('Earth');
-    textures.elements.lightning = LoadMobInfoTexture('Lightning');
-    textures.elements.water = LoadMobInfoTexture('Water');
-    textures.elements.light = LoadMobInfoTexture('Light');
-    textures.elements.dark = LoadMobInfoTexture('Dark');
-    -- Load physical damage type icons
-
-    textures.physical.slashing = LoadMobInfoTexture('Slashing');
-    textures.physical.piercing = LoadMobInfoTexture('Piercing');
-    textures.physical.h2h = LoadMobInfoTexture('H2H');
-    textures.physical.impact = LoadMobInfoTexture('Impact');
-    -- Load immunity icons
-
-    textures.immunities.sleep = LoadMobInfoTexture('ImmuneSleep');
-    textures.immunities.gravity = LoadMobInfoTexture('ImmuneGravity');
-    textures.immunities.bind = LoadMobInfoTexture('ImmuneBind');
-    textures.immunities.stun = LoadMobInfoTexture('ImmuneStun');
-    textures.immunities.silence = LoadMobInfoTexture('ImmuneSilence');
-    textures.immunities.paralyze = LoadMobInfoTexture('ImmuneParalyze');
-    textures.immunities.blind = LoadMobInfoTexture('ImmuneBlind');
-    textures.immunities.slow = LoadMobInfoTexture('ImmuneSlow');
-    textures.immunities.poison = LoadMobInfoTexture('ImmunePoison');
-    textures.immunities.elegy = LoadMobInfoTexture('ImmuneElegy');
-    textures.immunities.requiem = LoadMobInfoTexture('ImmuneRequiem');
-    textures.immunities.petrify = LoadMobInfoTexture('ImmunePetrify');
-    textures.immunities.darksleep = LoadMobInfoTexture('ImmuneDarkSleep');
-    textures.immunities.lightsleep = LoadMobInfoTexture('ImmuneLightSleep');
+    for group, files in pairs(TEXTURE_FILES) do
+        textures[group] = LazyTextureTable(files);
+    end
 end
 
 mobinfo.UpdateVisuals = function(settings)

@@ -82,6 +82,10 @@ function M.CalculateFastCast(mainJob, subJob, spellType, spellName, mainJobLevel
     elseif (mainJob == 10 and spellType == 40) then
         local singSpeed = gConfig.castBarFastCastBRDSingSpeed or 0;
         fastCast = 1 - ((1 - fastCast) * (1 - singSpeed));
+    -- SMN main job + Summoning Magic (skill 38) = Avatar Summoning Speed bonus
+    elseif (mainJob == 15 and spellType == 38) then
+        local avatarSpeed = gConfig.castBarFastCastSMNAvatarSpeed or 0;
+        fastCast = 1 - ((1 - fastCast) * (1 - avatarSpeed));
     end
 
     -- RDM sub-job fast cast bonus (level-based)

@@ -7,6 +7,7 @@ require('handlers.helpers');
 local ffi = require('ffi');
 local d3d8 = require('d3d8');
 local pngencoder = require('libs.pngencoder');
+local buttonnames = require('modules.hotbar.buttonnames');
 
 -- Item icon cache directory (initialized lazily)
 local itemCacheDir = nil;
@@ -58,76 +59,109 @@ textures.Initialize = function(self)
         return;
     end
 
-    self.Cache = {};
+    -- Icons load on first lookup; last file wins.
+    local candidates = {};
+    local loadedByPath = {};
+    local missing = {};      -- keys already found to have no icon
+    local derivePath;        -- spell/ability keys -> file path (set below)
+    local function defer(key, path)
+        local list = candidates[key];
+        if list == nil then
+            list = {};
+            candidates[key] = list;
+        end
+        list[#list + 1] = path;
+    end
+    self.Cache = setmetatable({}, { __index = function (cache, key)
+        local list = candidates[key];
+        if list == nil then
+            if missing[key] then return nil; end
+            local path = derivePath and derivePath(key);
+            if path == nil then
+                missing[key] = true;
+                return nil;
+            end
+            list = { path };
+        end
+        candidates[key] = nil;
+        for i = #list, 1, -1 do
+            local path = list[i];
+            local texture = loadedByPath[path];
+            if texture == nil then
+                texture = LoadTextureFromPath(path) or false;
+                loadedByPath[path] = texture;
+            end
+            if texture then
+                rawset(cache, key, texture);
+                return texture;
+            end
+        end
+        missing[key] = true;
+        return nil;
+    end });
     
     -- Load slot background and frame images from assets
     local assetsDirectory = string.format('%saddons\\XIUI\\assets\\hotbar\\', AshitaCore:GetInstallPath());
     
     -- Load slot background
-    local slotBg = LoadTextureFromPath(assetsDirectory .. 'slot.png');
-    if slotBg then
-        self.Cache['slot'] = slotBg;
-    end
+    defer('slot', assetsDirectory .. 'slot.png');
     
     -- Load frame overlay
-    local frame = LoadTextureFromPath(assetsDirectory .. 'frame.png');
-    if frame then
-        self.Cache['frame'] = frame;
-    end
+    defer('frame', assetsDirectory .. 'frame.png');
     
     -- Load spell icons - use proper path separator for Windows
     local spellDirectory = string.format(assetsDirectory .. '\\spells\\', AshitaCore:GetInstallPath());
 
-    local spellContents = ashita.fs.get_directory(spellDirectory, '.*\\.png$');
-    if spellContents then
-        for _, file in pairs(spellContents) do
-            local index = string.find(file, '%.');
-            if index then
-                local key = 'spells'.. string.sub(file, 1, index - 1);
-                local fullPath = spellDirectory .. file;
-                local texture = LoadTextureFromPath(fullPath);
-                if texture then
-                    self.Cache[file] = texture;  -- Store by full filename (e.g., "00086.png")
-                    self.Cache[key] = texture;   -- Also store by key (e.g., "00086")
-                    --print(string.format('[Hotbar] Loaded texture: %s (key: %s)', file, key));
-                else
-                    print(string.format('[Hotbar] Failed to load texture: %s', fullPath));
-                end
-            end
-        end
-    else
-        print('[Hotbar] No PNG files found or directory does not exist');
-    end
-
     -- Load native FFXI ability icons, named by IAbility.Id (00528.png = Mighty
     -- Strikes) and cached under 'abilities<id>' (e.g. 'abilities00528').
     local abilityDirectory = string.format('%saddons\\XIUI\\assets\\hotbar\\abilities\\', AshitaCore:GetInstallPath());
-    local abilityContents = ashita.fs.get_directory(abilityDirectory, '.*\\.png$');
-    if abilityContents then
-        for _, file in pairs(abilityContents) do
-            local base = file:match('^(.-)%.png$');  -- icon id stem, e.g. "00066"
-            if base then
-                local key = 'abilities' .. base;
-                if not self.Cache[key] then
-                    local texture = LoadTextureFromPath(abilityDirectory .. file);
-                    if texture then
-                        self.Cache[key] = texture;
-                    end
-                end
+
+    -- Spell/ability path built from the key (<id>.png).
+    derivePath = function (key)
+        local id = key:match('^spells(%d+)$') or key:match('^(%d+)%.png$');
+        if id then return spellDirectory .. id .. '.png'; end
+        id = key:match('^abilities(%d+)$');
+        if id then return abilityDirectory .. id .. '.png'; end
+        return nil;
+    end
+
+    -- Whether a key has an icon file, without loading it.
+    local listed = {};
+    self.HasFile = function (key)
+        if rawget(self.Cache, key) then return true; end
+        if missing[key] then return false; end
+        if candidates[key] then return self.Cache[key] ~= nil; end
+        local path = derivePath(key);
+        if not path then return false; end
+        local dir, file = path:match('^(.*\\)([^\\]+)$');
+        if not dir then return false; end
+        local set = listed[dir];
+        if not set then
+            set = {};
+            for _, f in ipairs(ashita.fs.get_directory(dir, '.*\\.png$') or {}) do
+                set[f] = true;
             end
+            listed[dir] = set;
         end
+        return set[file] == true;
     end
 
     -- Load controller button icons for crossbar (from subdirectories)
     local controllerDirectory = assetsDirectory .. 'controller\\';
 
-    -- D-pad and triggers are in Shared folder
-    local sharedIcons = { 'UP', 'DOWN', 'LEFT', 'RIGHT', 'L1', 'L2', 'R1', 'R2' };
+    -- D-pad icons are in Shared folder
+    local sharedIcons = { 'UP', 'DOWN', 'LEFT', 'RIGHT' };
     for _, iconName in ipairs(sharedIcons) do
         local fullPath = controllerDirectory .. 'Shared\\' .. iconName .. '.png';
-        local texture = LoadTextureFromPath(fullPath);
-        if texture then
-            self.Cache['controller_' .. iconName] = texture;
+        defer('controller_' .. iconName, fullPath);
+    end
+
+    -- Shoulder/trigger icons per brand, keyed '<folder>_<name>' (see buttonnames.GetIconName)
+    for _, brand in pairs(buttonnames.BRANDS) do
+        for _, button in ipairs({ 'L1', 'R1', 'L2', 'R2' }) do
+            local iconName = brand.folder .. '_' .. brand[button];
+            local fullPath = controllerDirectory .. brand.folder .. '\\' .. brand[button] .. '.png';
+            defer('controller_' .. iconName, fullPath);
         end
     end
 
@@ -135,42 +169,30 @@ textures.Initialize = function(self)
     local playstationIcons = { 'X', 'Square', 'Triangle', 'Circle' };
     for _, iconName in ipairs(playstationIcons) do
         local fullPath = controllerDirectory .. 'PlayStation\\' .. iconName .. '.png';
-        local texture = LoadTextureFromPath(fullPath);
-        if texture then
-            self.Cache['controller_' .. iconName] = texture;
-        end
+        defer('controller_' .. iconName, fullPath);
     end
 
     -- Xbox face buttons (alternative naming)
     local xboxIcons = { 'A', 'B', 'X', 'Y' };
     for _, iconName in ipairs(xboxIcons) do
         local fullPath = controllerDirectory .. 'Xbox\\' .. iconName .. '.png';
-        local texture = LoadTextureFromPath(fullPath);
-        if texture then
-            -- Store under generic controller_<name> keys (consistent with PlayStation/Nintendo/Stadia)
-            self.Cache['controller_' .. iconName] = texture;
-        end
+        -- Store under generic controller_<name> keys (consistent with PlayStation/Nintendo/Stadia)
+        defer('controller_' .. iconName, fullPath);
     end
 
     -- Nintendo / Pro controller face buttons (load into generic controller_<name> keys like PlayStation)
     local nintendoIcons = { 'A', 'B', 'X', 'Y' };
     for _, iconName in ipairs(nintendoIcons) do
         local fullPath = controllerDirectory .. 'Nintendo\\' .. iconName .. '.png';
-        local texture = LoadTextureFromPath(fullPath);
-        if texture then
-            -- Store under the same key pattern used for PlayStation (controller_X, controller_A, etc.)
-            self.Cache['controller_' .. iconName] = texture;
-        end
+        -- Store under the same key pattern used for PlayStation (controller_X, controller_A, etc.)
+        defer('controller_' .. iconName, fullPath);
     end
 
     -- Stadia face buttons (load into generic controller_<name> keys like PlayStation)
     local stadiaIcons = { 'A', 'B', 'X', 'Y' };
     for _, iconName in ipairs(stadiaIcons) do
         local fullPath = controllerDirectory .. 'Stadia\\' .. iconName .. '.png';
-        local texture = LoadTextureFromPath(fullPath);
-        if texture then
-            self.Cache['controller_' .. iconName] = texture;
-        end
+        defer('controller_' .. iconName, fullPath);
     end
 
     -- Load SMN icons (summons, abilities, pet commands) from hotbar/SMN directory
@@ -214,10 +236,7 @@ textures.Initialize = function(self)
     };
     for _, icon in ipairs(smnIcons) do
         local fullPath = smnDirectory .. icon.file .. '.png';
-        local texture = LoadTextureFromPath(fullPath);
-        if texture then
-            self.Cache[icon.key] = texture;
-        end
+        defer(icon.key, fullPath);
     end
 
     -- Load custom icons from hotbar/custom directory
@@ -236,10 +255,7 @@ textures.Initialize = function(self)
     };
     for _, name in ipairs(trustIcons) do
         local fullPath = customDirectory .. 'trusts\\trust-' .. name .. '.png';
-        local texture = LoadTextureFromPath(fullPath);
-        if texture then
-            self.Cache['trust_' .. name] = texture;
-        end
+        defer('trust_' .. name, fullPath);
     end
 
     -- Blue magic icons
@@ -251,10 +267,7 @@ textures.Initialize = function(self)
     };
     for _, name in ipairs(blueIcons) do
         local fullPath = customDirectory .. 'blue\\blue-' .. name .. '.png';
-        local texture = LoadTextureFromPath(fullPath);
-        if texture then
-            self.Cache['blue_' .. name:gsub('-', '_')] = texture;
-        end
+        defer('blue_' .. name:gsub('-', '_'), fullPath);
     end
 
     -- Mount icons
@@ -265,10 +278,7 @@ textures.Initialize = function(self)
     };
     for _, name in ipairs(mountIcons) do
         local fullPath = customDirectory .. 'mounts\\mount-' .. name .. '.png';
-        local texture = LoadTextureFromPath(fullPath);
-        if texture then
-            self.Cache['mount_' .. name:gsub('-', '_')] = texture;
-        end
+        defer('mount_' .. name:gsub('-', '_'), fullPath);
     end
 
     -- Rune Fencer rune icons (from custom root)
@@ -291,10 +301,7 @@ textures.Initialize = function(self)
     };
     for _, icon in ipairs(runeIcons) do
         local fullPath = customDirectory .. icon.file .. '.png';
-        local texture = LoadTextureFromPath(fullPath);
-        if texture then
-            self.Cache[icon.key] = texture;
-        end
+        defer(icon.key, fullPath);
     end
 
     -- Misc utility icons
@@ -325,10 +332,7 @@ textures.Initialize = function(self)
     };
     for _, icon in ipairs(utilityIcons) do
         local fullPath = customDirectory .. icon.file .. '.png';
-        local texture = LoadTextureFromPath(fullPath);
-        if texture then
-            self.Cache[icon.key] = texture;
-        end
+        defer(icon.key, fullPath);
     end
 
     -- UI indicator icons from assets/icons
@@ -338,10 +342,7 @@ textures.Initialize = function(self)
     };
     for _, icon in ipairs(uiIcons) do
         local fullPath = iconsDirectory .. icon.file .. '.png';
-        local texture = LoadTextureFromPath(fullPath);
-        if texture then
-            self.Cache[icon.key] = texture;
-        end
+        defer(icon.key, fullPath);
     end
 
     -- Skillchain icons for WS slot highlighting
@@ -354,10 +355,7 @@ textures.Initialize = function(self)
     };
     for _, name in ipairs(skillchainNames) do
         local fullPath = skillchainDirectory .. name .. '.png';
-        local texture = LoadTextureFromPath(fullPath);
-        if texture then
-            self.Cache['skillchain_' .. name] = texture;
-        end
+        defer('skillchain_' .. name, fullPath);
     end
 
 end
@@ -366,6 +364,14 @@ textures.Release = function(self)
     if self.Cache then
         self.Cache = nil;
     end
+end
+
+-- True if the key has an icon file; does not load it
+textures.Has = function(self, key)
+    if not self.Cache then
+        return false;
+    end
+    return self.HasFile(key);
 end
 
 -- Get texture by filename or key
@@ -387,7 +393,8 @@ textures.GetPath = function(self, key)
 end
 
 -- Get controller button icon by name
--- iconName: 'X', 'Square', 'Triangle', 'Circle', 'L1', 'L2', 'R1', 'R2', 'UP', 'DOWN', 'LEFT', 'RIGHT'
+-- iconName: 'X', 'Square', 'Triangle', 'Circle', 'UP', 'DOWN', 'LEFT', 'RIGHT',
+-- or a shoulder/trigger name from buttonnames.GetIconName (e.g. 'PlayStation_L2', 'Shared_LT')
 textures.GetControllerIcon = function(self, iconName)
     if not self.Cache then
         return nil;

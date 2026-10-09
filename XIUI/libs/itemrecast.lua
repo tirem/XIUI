@@ -141,6 +141,69 @@ function M.GetRecast(itemId)
     return M.GetItemRecast(itemId);
 end
 
+-- GetRecast for many items in one bag pass; fills out[id].
+function M.GetRecastMany(ids, out)
+    local want, n = {}, 0;
+    for _, id in ipairs(ids) do
+        if id and id ~= 0 and not want[id] then
+            want[id] = { count = 0, lowest = 0 };
+            n = n + 1;
+        end
+        out[id] = 0;
+    end
+    if n == 0 then return out; end
+
+    local inventory = AshitaCore:GetMemoryManager():GetInventory();
+    if not inventory then return out; end
+
+    -- Equipment pass (as GetEquipmentRecast).
+    local currentTime = GetCurrentTime();
+    if currentTime ~= 0 then
+        for _, containerId in ipairs(EQUIPMENT_CONTAINERS) do
+            local containerMax = inventory:GetContainerCountMax(containerId);
+            if containerMax and containerMax > 0 then
+                for slotIndex = 1, containerMax do
+                    local item = inventory:GetContainerItem(containerId, slotIndex);
+                    local w = item and want[item.Id];
+                    if w then
+                        w.count = w.count + (item.Count or 1);
+                        if item.Extra and #item.Extra >= 12 then
+                            local recast = 0;
+                            local useTime = ReadExtraUInt32(item.Extra, 5);
+                            if useTime > 0 then
+                                local useRecast = (useTime + VANA_OFFSET) - currentTime;
+                                if useRecast > 0 then
+                                    recast = math.max(recast, useRecast);
+                                end
+                            end
+                            if item.Flags == 5 then
+                                local equipTime = ReadExtraUInt32(item.Extra, 9);
+                                if equipTime > 0 then
+                                    local equipRecast = (equipTime + VANA_OFFSET) - currentTime;
+                                    if equipRecast > 0 then
+                                        recast = math.max(recast, equipRecast);
+                                    end
+                                end
+                            end
+                            if recast > 0 and (w.lowest == 0 or recast < w.lowest) then
+                                w.lowest = recast;
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Non-equipment items stay 0.
+    for id, w in pairs(want) do
+        if w.count > 0 then
+            out[id] = w.lowest;
+        end
+    end
+    return out;
+end
+
 -- Format recast time to readable string
 -- @param seconds: Remaining time in seconds
 -- @return: Formatted string (e.g., "1:30", "45s", "3")

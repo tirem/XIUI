@@ -90,7 +90,7 @@ castbar.DrawWindow = function(settings)
 
 			-- Create progress bar
 			local castGradient = GetCustomGradient(gConfig.colorCustomization.castBar, 'barGradient') or {'#3798ce', '#78c5ee'};
-			progressbar.ProgressBar({{showConfig[1] and 0.5 or percent, castGradient}}, {-1, settings.barHeight}, {decorate = gConfig.showCastBarBookends});
+			progressbar.ProgressBar(progressbar.Pct(showConfig[1] and 0.5 or percent, castGradient), progressbar.Dims(-1, settings.barHeight), progressbar.Opts(gConfig.showCastBarBookends));
 
 			-- Draw Spell/Item name
 			imgui.SameLine();
@@ -105,7 +105,7 @@ castbar.DrawWindow = function(settings)
 			local rightTextX = startX + progressBarWidth - bookendWidth - textPadding;
 			local percentTextStr = showConfig[1] and '50%' or math.floor(percent * 100) .. '%';
 			imtext.SetConfigFromSettings(settings.percent_font_settings);
-			local percentWidth = imtext.Measure(percentTextStr, settings.percent_font_settings.font_height);
+			local percentWidth = imtext.MeasureCached(percentTextStr, settings.percent_font_settings.font_height);
 			imtext.Draw(drawList, percentTextStr, rightTextX - percentWidth, startY + settings.barHeight + settings.percentOffsetY, gConfig.colorCustomization.castBar.percentTextColor, settings.percent_font_settings.font_height);
 
 			-- Save position if moved (with change detection to avoid spam)

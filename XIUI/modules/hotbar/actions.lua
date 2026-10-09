@@ -178,26 +178,131 @@ function M.ResetModifierStates()
     -- Not needed - we query actual state directly
 end
 
---- Check if the palette cycling modifier key is currently held
---- Returns: true if the configured palette modifier is active
+-- DirectInput scan codes for the default arrow palette keys (VK 37-40).
+local VK_TO_DIK = {
+    [37] = 203, -- Left
+    [38] = 200, -- Up
+    [39] = 205, -- Right
+    [40] = 208, -- Down
+};
+
+local lastPaletteCycleAt = 0;
+
+--- True when exactly one modifier is down and the configured option includes it.
+--- 'ctrl/alt' means Ctrl+Up/Down and Alt+Up/Down both cycle; Ctrl+Alt+Up/Down does not.
+function M.PaletteModifierMatches(ctrl, alt, shift)
+    local gs = gConfig and gConfig.hotbarGlobal;
+    if not gs or gs.paletteCycleEnabled == false then return false; end
+    if not gs.paletteCycleModifier or gs.paletteCycleModifier == '' then return false; end
+    local held = (ctrl and 1 or 0) + (alt and 1 or 0) + (shift and 1 or 0);
+    if held ~= 1 then
+        return false;
+    end
+    local modifier = gs.paletteCycleModifier or 'ctrl';
+    local name = ctrl and 'ctrl' or (alt and 'alt' or 'shift');
+    for part in modifier:gmatch('[^/]+') do
+        if part == name then
+            return true;
+        end
+    end
+    return false;
+end
+
+--- Check if a keyboard palette-cycle shortcut is currently held
 function M.IsPaletteModifierHeld()
     local globalSettings = gConfig and gConfig.hotbarGlobal;
-    if not globalSettings or not globalSettings.paletteCycleEnabled then
+    if not globalSettings or globalSettings.paletteCycleEnabled == false then
         return false;
     end
 
-    local modifier = globalSettings.paletteCycleModifier or 'ctrl';
     local ctrl, alt, shift = GetModifierStates();
+    return M.PaletteModifierMatches(ctrl, alt, shift);
+end
 
-    if modifier == 'ctrl' and ctrl and not alt and not shift then
-        return true;
-    elseif modifier == 'alt' and alt and not ctrl and not shift then
-        return true;
-    elseif modifier == 'shift' and shift and not ctrl and not alt then
+local function GetPaletteDikKeys()
+    local gs = gConfig and gConfig.hotbarGlobal;
+    local prevKey = gs and gs.paletteCyclePrevKey or 38;
+    local nextKey = gs and gs.paletteCycleNextKey or 40;
+    return VK_TO_DIK[prevKey], VK_TO_DIK[nextKey];
+end
+
+--- Cycle hotbar and crossbar palettes one step. Duplicate events from the same
+--- press (gamepad + injected arrows) are ignored for a short window.
+function M.CycleAllPalettes(direction)
+    local now = os.clock();
+    if (now - lastPaletteCycleAt) < 0.08 then
         return true;
     end
+    lastPaletteCycleAt = now;
 
-    return false;
+    local jobId = data.jobId or 1;
+    local subjobId = data.subjobId or 0;
+    local hotbarName = palette.CyclePalette(1, direction, jobId, subjobId);
+    palette.CyclePaletteForCombo(nil, direction, jobId, subjobId);
+
+    local logPaletteName = gConfig and gConfig.hotbarGlobal and gConfig.hotbarGlobal.logPaletteName;
+    if logPaletteName == nil then logPaletteName = true; end
+    if logPaletteName then
+        if hotbarName then
+            print('[XIUI] Palette: ' .. hotbarName);
+        else
+            print('[XIUI] Palettes cycled: ' .. (direction == 1 and 'next' or 'prev'));
+        end
+    end
+    return true;
+end
+
+local function IsPaletteArrowDik(dik)
+    local prevDik, nextDik = GetPaletteDikKeys();
+    return dik == prevDik or dik == nextDik;
+end
+
+--- Keyboard up/down is swallowed only for the Keyboard Palette dropdown,
+--- and only while Disable Native XI Macros is on.
+function M.ShouldBlockPaletteDik(dik)
+    local gs = gConfig and gConfig.hotbarGlobal;
+    if not gs or not gs.disableMacroBars then
+        return false;
+    end
+    if not IsPaletteArrowDik(dik) then
+        return false;
+    end
+    local ctrl, alt, shift = GetModifierStates();
+    return M.PaletteModifierMatches(ctrl, alt, shift);
+end
+
+local function CycleFromPaletteDik(dik)
+    local prevDik, nextDik = GetPaletteDikKeys();
+    if dik ~= prevDik and dik ~= nextDik then return; end
+    local direction = (dik == nextDik) and 1 or -1;
+    M.CycleAllPalettes(direction);
+end
+
+--- DirectInput GetDeviceData. This is the press the game uses for menus and the party list.
+function M.HandleKeyData(e)
+    if not e or e.key == nil then return; end
+    if not IsPaletteArrowDik(e.key) then return; end
+    local ctrl, alt, shift = GetModifierStates();
+    if not M.PaletteModifierMatches(ctrl, alt, shift) then return; end
+    if e.down then
+        CycleFromPaletteDik(e.key);
+    end
+    if M.ShouldBlockPaletteDik(e.key) then
+        e.blocked = true;
+    end
+end
+
+--- DirectInput GetDeviceState. Clears held up/down so the game doesn't repeat menu movement.
+function M.HandleKeyState(e)
+    if not e or not e.data_raw then return; end
+    local prevDik, nextDik = GetPaletteDikKeys();
+    local ptr = ffi.cast('uint8_t*', e.data_raw);
+    if prevDik and M.ShouldBlockPaletteDik(prevDik) and ptr[prevDik] ~= 0 then
+        ptr[prevDik] = 0;
+    end
+    if nextDik and nextDik ~= prevDik and M.ShouldBlockPaletteDik(nextDik) and ptr[nextDik] ~= 0 then
+        ptr[nextDik] = 0;
+    end
 end
 
 -- Cache for custom icons loaded from disk
@@ -395,8 +500,413 @@ local otherAbilityToIconKey = {
 local currentPressedHotbar = nil;
 local currentPressedSlot = nil;
 
--- Only one macro flow runs at a time; starting a new one cancels the previous.
+-- Only one macro flow runs at a time; starting a different one cancels the previous.
+-- Re-pressing the same macro while it is still running is ignored.
 local activeMacroId = 0;
+-- Identity of the macro whose lines are still running. Any other macro cancels it.
+local runningMacroKey = nil;
+-- Last hotbar command we actually queued, and a short block on the game
+-- resubmitting it when a different macro cancels the one in progress.
+local lastHotbarCommandKey = nil;
+local commandReplayBlock = nil; -- { key, expires }
+-- One press must produce one execution even if the client injects that command twice.
+local commandSendArm = nil; -- { key, expires, expected, seen }
+-- How long to wait for an action-accepted packet. Kept short so a failed action
+-- (cooldown, etc.) does not add a long hang before the next line / <wait N>.
+-- Reject messages (0x0029/0x002A) clear this earlier when the server refuses.
+local ACTION_ACCEPT_TIMEOUT_SEC = 0.1;
+
+-- Types that mean the player's action was accepted / started.
+-- 8/9 also require Param == 0x6163 (cast/item start), matching castbar.
+local ACTION_ACCEPTED_TYPES = {
+    [3] = true,   -- weaponskill finish
+    [4] = true,   -- magic finish (instant)
+    [5] = true,   -- item finish
+    [6] = true,   -- job ability
+    [7] = true,   -- weaponskill start
+    [8] = true,   -- magic start
+    [9] = true,   -- item start
+    [12] = true,  -- ranged start
+    [14] = true,  -- ability
+    [15] = true,  -- ability
+};
+
+-- 0x0029 BtlMess IDs that mean the local player's action was refused.
+-- IDs from retail BtlMess / LSB MsgBasic (XiPackets GP_SERV_COMMAND_BATTLE_MESSAGE).
+local ACTION_REJECT_MESSAGE_IDS = {
+    [4] = true,    -- out of range
+    [5] = true,    -- unable to see
+    [12] = true,   -- already claimed
+    [18] = true,   -- unable to cast spells at this time (resting, silenced, etc.)
+    [34] = true,   -- not enough MP
+    [35] = true,   -- lacks ninja tools
+    [40] = true,   -- cannot use in this area
+    [47] = true,   -- cannot cast
+    [49] = true,   -- unable to cast spells
+    [56] = true,   -- unable to use item
+    [62] = true,   -- fails to activate
+    [71] = true,   -- cannot perform that action on the specified target
+    [78] = true,   -- too far away
+    [87] = true,   -- unable to use job ability
+    [88] = true,   -- unable to use job ability
+    [89] = true,   -- unable to use weaponskill
+    [92] = true,   -- cannot use the item on
+    [94] = true,   -- must wait longer (recast / cooldown)
+    [155] = true,  -- cannot perform that action on the specified target
+    [190] = true,  -- cannot use that weapon ability
+    [191] = true,  -- unable to use weapon skills
+    [192] = true,  -- not enough TP
+    [199] = true,  -- requires a shield
+    [215] = true,  -- requires a pet
+    [216] = true,  -- no appropriate ranged weapon
+    [217] = true,  -- cannot see
+    [218] = true,  -- move and interrupt aim
+    [307] = true,  -- requires a two-handed weapon
+    [313] = true,  -- out of range unable to cast
+    [315] = true,  -- already has a pet
+    [316] = true,  -- cannot be used in this area
+    [328] = true,  -- too far away
+    [336] = true,  -- no effect on that pet
+    [337] = true,  -- no jug pet item
+    [339] = true,  -- mount refuses
+    [347] = true,  -- must have pet food equipped
+    [356] = true,  -- inventory full
+    [428] = true,  -- no rolls eligible / unable to use ability
+    [429] = true,  -- same roll already active
+    [445] = true,  -- cannot use items at this time
+    [446] = true,  -- cannot attack that target
+    [574] = true,  -- pet unable to perform that action
+    [575] = true,  -- pet not enough TP
+    [661] = true,  -- already placed a luopan
+    [662] = true,  -- requires a luopan
+    [665] = true,  -- has a pet / unable to use ability
+    [666] = true,  -- requires Rune Enchantment
+    [700] = true,  -- unable to use Trust magic at this time
+    [717] = true,  -- cannot call forth alter egos here
+};
+
+-- 0x002A MsgStd IDs that mean the action was refused (zone / system).
+local ACTION_REJECT_STD_MESSAGE_IDS = {
+    [32] = true,   -- unable to perform action in Mog House
+    [38] = true,   -- must wait longer
+    [142] = true,  -- cannot use that command at the moment
+    [172] = true,  -- cannot use while invisible
+    [209] = true,  -- cannot while holding a Petra
+    [210] = true,  -- cannot without a Petra
+    [216] = true,  -- cannot while participating in Conflict
+    [217] = true,  -- cannot while preparing for battle
+    [256] = true,  -- cannot use that command in this area
+};
+
+local pendingActionAccept = nil;
+-- After a timeout (no packet), the next line ignores generic refuse messages so a
+-- late cooldown message from the previous line cannot cancel the new wait.
+local ignoreGenericRejectForNext = false;
+
+local function clearPendingActionAccept()
+    pendingActionAccept = nil;
+end
+
+local function finishPendingActionAccept(accepted, reason)
+    local pending = pendingActionAccept;
+    if not pending then
+        return;
+    end
+    if pending.cancelCheck and pending.cancelCheck() then
+        clearPendingActionAccept();
+        return;
+    end
+    local cb = pending.onReady;
+    clearPendingActionAccept();
+    if cb then
+        cb(accepted, reason or (accepted and 'accept' or 'reject'));
+    end
+end
+
+-- Resolve which spell/ability/item a macro line is trying to use.
+local SPELL_VERBS = { ma = true, magic = true, ninjutsu = true, na = true };
+local ABILITY_VERBS = { ja = true, jobability = true };
+local PET_VERBS = { pet = true };
+local WS_VERBS = { ws = true, weaponskill = true };
+local ITEM_VERBS = { item = true };
+local RANGED_VERBS = { ra = true, ranged = true };
+
+local function resolveExpectedAction(commandLine)
+    if not commandLine then
+        return nil;
+    end
+    local verb = commandLine:match('^/%s*(%S+)');
+    if not verb then
+        return nil;
+    end
+    verb = verb:lower();
+
+    local name = commandLine:match('"([^"]+)"');
+    if not name then
+        name = commandLine:match('^/%s*%S+%s+([^<]+)');
+        if name then
+            name = name:match('^%s*(.-)%s*$');
+            if name == '' then name = nil; end
+        end
+    end
+
+    if SPELL_VERBS[verb] then
+        return { kind = 'spell', id = name and actiondb.GetSpellId(name) or nil, name = name };
+    elseif ABILITY_VERBS[verb] then
+        return { kind = 'ability', id = name and actiondb.GetAbilityId(name) or nil, name = name };
+    elseif PET_VERBS[verb] then
+        return { kind = 'ability', id = name and actiondb.GetPetAbilityId(name) or nil, name = name };
+    elseif WS_VERBS[verb] then
+        return { kind = 'weaponskill', id = name and actiondb.GetAbilityId(name) or nil, name = name };
+    elseif ITEM_VERBS[verb] then
+        return { kind = 'item', id = name and actiondb.GetItemId(name) or nil, name = name };
+    elseif RANGED_VERBS[verb] then
+        return { kind = 'ranged' };
+    end
+    return { kind = 'action' };
+end
+
+-- "Access" means the job knows the action (HasSpell/HasAbility), not cooldown.
+-- Known combat actions: first one in a wait-segment runs; later known ones are skipped.
+-- Unknown / non-combat lines are always tried (errors still show).
+local function playerHasAccessToCommand(commandLine)
+    local expected = resolveExpectedAction(commandLine);
+    if not expected or not expected.kind or expected.kind == 'action' or expected.kind == 'ranged' then
+        return true;
+    end
+
+    local player = AshitaCore:GetMemoryManager():GetPlayer();
+    if not player then
+        return true;
+    end
+    -- During zoning job data can be empty; do not block the segment.
+    if (player:GetMainJob() or 0) == 0 or (player:GetMainJobLevel() or 0) == 0 then
+        return true;
+    end
+
+    if expected.kind == 'spell' then
+        if not expected.name and not expected.id then
+            return true;
+        end
+        local spellRes = expected.id and AshitaCore:GetResourceManager():GetSpellById(expected.id);
+        if spellRes then
+            local canCast = playerdata.EvaluateSpellAccess(spellRes, player);
+            return canCast == true;
+        end
+        if expected.id then
+            return player:HasSpell(expected.id) == true;
+        end
+        return false;
+    end
+
+    if expected.kind == 'ability' or expected.kind == 'weaponskill' then
+        if not expected.name and not expected.id then
+            return true;
+        end
+        local abilityId = expected.id;
+        if not abilityId and expected.name then
+            abilityId = actiondb.GetAbilityId(expected.name);
+        end
+        if abilityId and player:HasAbility(abilityId) then
+            return true;
+        end
+        if expected.kind == 'ability' and expected.name and playerdata.IsPetCommandAvailable
+            and playerdata.IsPetCommandAvailable(expected.name) then
+            return true;
+        end
+        if expected.kind == 'weaponskill' and expected.name and playerdata.IsWeaponskillInCache
+            and playerdata.IsWeaponskillInCache(expected.name) then
+            return true;
+        end
+        if expected.kind == 'ability' and expected.name and playerdata.IsAbilityInCache
+            and playerdata.IsAbilityInCache(expected.name) then
+            return true;
+        end
+        return false;
+    end
+
+    if expected.kind == 'item' then
+        if not expected.name and not expected.id then
+            return true;
+        end
+        return playerdata.IsItemInAccessibleInventory(expected.id, expected.name) == true;
+    end
+
+    return true;
+end
+
+local function getActionPacketActionId(actionPacket)
+    local actionType = actionPacket.Type;
+    if actionType == 8 or actionType == 9 then
+        local target = actionPacket.Targets and actionPacket.Targets[1];
+        local action = target and target.Actions and target.Actions[1];
+        return action and action.Param or nil;
+    end
+    -- JA / WS / finish packets carry the ability/spell/item id in Param.
+    if actionType == 3 or actionType == 4 or actionType == 5
+        or actionType == 6 or actionType == 7 or actionType == 14 or actionType == 15 then
+        return actionPacket.Param;
+    end
+    return nil;
+end
+
+local function pendingMatchesPacketAction(pending, actionPacket)
+    if not pending.expected or not pending.expected.id then
+        return true;
+    end
+    local packetId = getActionPacketActionId(actionPacket);
+    if not packetId then
+        return true;
+    end
+    return packetId == pending.expected.id;
+end
+
+local function pendingMatchesMessageAction(pending, messagePacket)
+    if not pending.expected or not pending.expected.id then
+        return true;
+    end
+    local param = messagePacket.param or 0;
+    local value = messagePacket.value or 0;
+    -- Generic refuse (cooldown, unable to cast, etc.) often has no action id.
+    if param == 0 and value == 0 then
+        return not pending.ignoreGenericReject;
+    end
+    return param == pending.expected.id or value == pending.expected.id;
+end
+
+--- After an action is queued, call onReady(accepted, reason) when that action is
+--- accepted/rejected, or on timeout. expected ties the wait to this macro line.
+local function waitForActionAccepted(onReady, cancelCheck, expected)
+    clearPendingActionAccept();
+    local token = {};
+    local ignoreGeneric = ignoreGenericRejectForNext;
+    ignoreGenericRejectForNext = false;
+    pendingActionAccept = {
+        token = token,
+        onReady = onReady,
+        cancelCheck = cancelCheck,
+        expected = expected,
+        ignoreGenericReject = ignoreGeneric,
+        deadline = os.clock() + ACTION_ACCEPT_TIMEOUT_SEC,
+    };
+
+    local function pollTimeout()
+        local pending = pendingActionAccept;
+        if not pending or pending.token ~= token then
+            return;
+        end
+        if pending.cancelCheck and pending.cancelCheck() then
+            clearPendingActionAccept();
+            return;
+        end
+        if os.clock() >= pending.deadline then
+            finishPendingActionAccept(false, 'timeout');
+            return;
+        end
+        ashita.tasks.once(0.05, pollTimeout);
+    end
+    ashita.tasks.once(0.05, pollTimeout);
+end
+
+--- Called from the 0x0028 action path when the local player starts/finishes an action.
+function M.HandleActionPacket(actionPacket)
+    local pending = pendingActionAccept;
+    if not pending or not actionPacket then
+        return;
+    end
+
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    if not party then
+        return;
+    end
+    local me = party:GetMemberServerId(0);
+    if not me or actionPacket.UserId ~= me then
+        return;
+    end
+
+    if not pendingMatchesPacketAction(pending, actionPacket) then
+        return;
+    end
+
+    local actionType = actionPacket.Type;
+    -- Type 8/9 with Param != cast/item start (0x6163) is an interrupt/fail for this action.
+    if actionType == 8 or actionType == 9 then
+        if actionPacket.Param == 0x6163 then
+            finishPendingActionAccept(true, 'accept');
+        else
+            finishPendingActionAccept(false, 'reject');
+        end
+        return;
+    end
+
+    if not ACTION_ACCEPTED_TYPES[actionType] then
+        return;
+    end
+
+    finishPendingActionAccept(true, 'accept');
+end
+
+--- 0x0029 battle message: server refused the pending action (CD, resting, range, etc.).
+function M.HandleMessagePacket(messagePacket)
+    local pending = pendingActionAccept;
+    if not pending or not messagePacket or not messagePacket.message then
+        return;
+    end
+    if not ACTION_REJECT_MESSAGE_IDS[messagePacket.message] then
+        return;
+    end
+
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    if not party then
+        return;
+    end
+    local me = party:GetMemberServerId(0);
+    if not me then
+        return;
+    end
+    local sender = messagePacket.sender or 0;
+    local target = messagePacket.target or 0;
+    if sender ~= me and sender ~= 0 and target ~= me then
+        return;
+    end
+
+    if not pendingMatchesMessageAction(pending, messagePacket) then
+        return;
+    end
+
+    finishPendingActionAccept(false, 'reject');
+end
+
+--- 0x002A standard message: zone/system refusals (mog house, etc.).
+function M.HandleMessageStandardPacket(messagePacket)
+    local pending = pendingActionAccept;
+    if not pending or not messagePacket or not messagePacket.message then
+        return;
+    end
+    if not ACTION_REJECT_STD_MESSAGE_IDS[messagePacket.message] then
+        return;
+    end
+
+    local party = AshitaCore:GetMemoryManager():GetParty();
+    if not party then
+        return;
+    end
+    local me = party:GetMemberServerId(0);
+    if not me then
+        return;
+    end
+    local sender = messagePacket.sender or 0;
+    if sender ~= me and sender ~= 0 then
+        return;
+    end
+
+    -- Standard messages are not action-id specific; only the active line's wait sees them.
+    if pending.ignoreGenericReject then
+        return;
+    end
+
+    finishPendingActionAccept(false, 'reject');
+end
 
 -- Icon cache for items (keyed by item name since we look up by name)
 local itemIconCache = {};
@@ -494,6 +1004,19 @@ local function GetBuffState()
     end
 
     return buffState;
+end
+
+--- Compact signature of SCH arts buffs for availability cache keys.
+--- HasAbility for grimoire stratagems flips with Light/Dark/Tabula, but
+--- positive results are cached; without this, opposing abilities stay lit
+--- after an arts swap until job/zone clears the cache.
+---@return string
+function M.GetArtsAvailabilitySignature()
+    local buffs = GetBuffState();
+    if buffs.tabulaRasa then return 'T'; end
+    if buffs.lightArts then return 'L'; end
+    if buffs.darkArts then return 'D'; end
+    return '0';
 end
 
 local function GetPartyMp()
@@ -674,6 +1197,10 @@ end
 ---@return boolean
 function M.NeedsAvailabilityCheck(bind)
     if not bind then return false; end
+    -- Macro editor opt-out: keep icon lit and skip Action Not Available / red X
+    if bind.actionType == 'macro' and bind.alwaysAvailable then
+        return false;
+    end
     if AVAILABILITY_ACTION_TYPES[bind.actionType] then return true; end
     return bind.actionType == 'macro'
         and bind.recastSourceType ~= nil
@@ -777,6 +1304,10 @@ function M.IsActionAvailable(bind)
 
     if bind.actionType == 'ma' then
         local spellId = actiondb.GetSpellId(bind.action);
+        -- Learned Blue Magic cannot be cast unless it is currently set.
+        if spellId and recast.IsBlueSpellNotSet(spellId) then
+            return false, "N/A", false;
+        end
         local spellRes = spellId and AshitaCore:GetResourceManager():GetSpellById(spellId);
         if spellRes then
             local canCast, _, reqLevel = playerdata.EvaluateSpellAccess(spellRes, player);
@@ -1205,21 +1736,6 @@ local function parseInlineWait(line)
     return line, nil;
 end
 
---- Check if any line in a macro contains a wait directive
---- @param lines table Array of command line strings
---- @return boolean hasWait True if any line has /wait, /pause, /sleep, or <wait N>
-local function macroHasWait(lines)
-    for _, line in ipairs(lines) do
-        if line:match('^/wait%s') or line:match('^/wait$')
-            or line:match('^/pause%s') or line:match('^/pause$')
-            or line:match('^/sleep%s') or line:match('^/sleep$')
-            or line:match('<wait%s*%d') then
-            return true;
-        end
-    end
-    return false;
-end
-
 -- Slash commands that accept target arguments and can open subtarget selection UI
 local TARGETABLE_COMMANDS = {
     ma = true,
@@ -1238,17 +1754,6 @@ local TARGETABLE_COMMANDS = {
     ninjutsu = true,
 };
 
---- Macro mode (2) is only for action commands that need native fallthrough.
---- Other lines (/echo, etc.) use AshitaParse so literal <stpc> text in messages
---- is not re-processed by the macro subtarget subsystem.
-local function getMacroCommandQueueMode(commandLine)
-    local cmd = commandLine:match('^/%s*(%S+)');
-    if cmd and TARGETABLE_COMMANDS[cmd:lower()] then
-        return 2;
-    end
-    return -1;
-end
-
 -- Subtarget tags that open the in-game selection UI (<lastst> excluded - reuses prior target)
 local SUBTARGET_TAGS = { 'stpc', 'stpt', 'stal', 'stnpc', 'st' };
 
@@ -1262,25 +1767,15 @@ local function extractSubtargetTag(line)
     return nil;
 end
 
---- Action command with an ST tag outside quotes (not /echo etc.).
+--- ST pause/pre-target for lines with an ST tag outside quotes.
+--- /echo is excluded so literal <stpc> text is not treated as a real ST select
+--- (macros still queue echo as mode 2 like native).
 local function lineRequiresSubtargetPause(line)
     local cmd = line:match('^/%s*(%S+)');
-    if not cmd or not TARGETABLE_COMMANDS[cmd:lower()] then
+    if not cmd or cmd:lower() == 'echo' then
         return false;
     end
     return extractSubtargetTag(line) ~= nil;
-end
-
---- Check if any line in a macro opens subtarget selection
---- @param lines table Array of command line strings
---- @return boolean hasSubtarget True if any line requires a subtarget pause
-local function macroHasSubtarget(lines)
-    for _, line in ipairs(lines) do
-        if lineRequiresSubtargetPause(line) then
-            return true;
-        end
-    end
-    return false;
 end
 
 local SUBTARGET_POLL_INTERVAL = 0.05;
@@ -1310,16 +1805,62 @@ local function shouldApplyStPreTarget(stTag)
         and not targetLib.HasMainTarget();
 end
 
+local function hotbarCommandKey(cmd)
+    cmd = tostring(cmd or ''):gsub('%s+', ' '):lower();
+    return cmd:match('^%s*(.-)%s*$') or '';
+end
+
+--- Queue one hotbar command. A second injection of that same command is blocked.
+local function queueHotbarCommand(mode, command)
+    local key = hotbarCommandKey(command);
+    local now = os.clock();
+    if commandSendArm and commandSendArm.key == key and now <= commandSendArm.expires then
+        commandSendArm.expected = commandSendArm.expected + 1;
+    else
+        commandSendArm = { key = key, expires = now + 0.2, expected = 1, seen = 0 };
+    end
+    lastHotbarCommandKey = key;
+    local chatManager = AshitaCore:GetChatManager();
+    if chatManager then
+        chatManager:QueueCommand(mode, command);
+    end
+end
+
+--- True when this command event is a duplicate or a replay of the macro we just cancelled.
+local function hotbarCommandShouldBlock(e)
+    if not e or not e.command then
+        return false;
+    end
+    local key = hotbarCommandKey(e.command);
+    if key == '' then
+        return false;
+    end
+    local now = os.clock();
+    local intentional = commandSendArm
+        and key == commandSendArm.key
+        and now <= commandSendArm.expires
+        and commandSendArm.seen < commandSendArm.expected;
+    if intentional then
+        commandSendArm.seen = commandSendArm.seen + 1;
+        return false;
+    end
+    if commandReplayBlock and key == commandReplayBlock.key and now <= commandReplayBlock.expires then
+        return true;
+    end
+    if commandSendArm and key == commandSendArm.key and now <= commandSendArm.expires
+        and commandSendArm.seen >= commandSendArm.expected then
+        return true;
+    end
+    return false;
+end
+
 local function queueStPreTarget(stTag)
     local preTarget = ST_PRETARGET_COMMANDS[stTag];
     if not preTarget then
         return false;
     end
     local ok, err = pcall(function()
-        local chatManager = AshitaCore:GetChatManager();
-        if chatManager then
-            chatManager:QueueCommand(-1, preTarget);
-        end
+        queueHotbarCommand(1, preTarget);
     end);
     if not ok then
         print('[XIUI] ST pre-target error: ' .. tostring(err));
@@ -1567,6 +2108,10 @@ local function onSubtargetCommandEvent(e, nType)
 end
 
 ashita.events.register('command', 'xiui_subtarget_cmd', function(e, nType)
+    if hotbarCommandShouldBlock(e) then
+        e.blocked = true;
+        return;
+    end
     onSubtargetCommandEvent(e, nType);
 end);
 
@@ -1648,17 +2193,54 @@ local function waitForSubtargetComplete(commandLine, onComplete, onAbort, cancel
     ashita.tasks.once(0, poll);
 end
 
+--- Stable id for one hotbar macro, whatever its action type is.
+--- Same macro pressed again shares this key. A different macro does not.
+local function macroActivationKey(bind, commandText)
+    if type(bind) == 'table' and bind.macroRef then
+        return 'id:' .. tostring(bind.macroPaletteKey or '') .. ':' .. tostring(bind.macroRef);
+    end
+    if type(bind) == 'table' and bind.hotbar and bind.slot then
+        return 'slot:' .. tostring(bind.hotbar) .. ':' .. tostring(bind.slot);
+    end
+    return 'cmd:' .. tostring(commandText or '');
+end
+
+--- Stop whichever macro is still stepping through lines.
+--- Does not call the game's macro stop. That resubmits the line already in
+--- progress, so a single press during /lastsynth produced two synth errors.
+local function cancelRunningMacro()
+    if runningMacroKey == nil then
+        return false;
+    end
+    -- Block the game from running that macro's last line again as it is cancelled.
+    if lastHotbarCommandKey then
+        commandReplayBlock = { key = lastHotbarCommandKey, expires = os.clock() + 0.35 };
+    end
+    activeMacroId = activeMacroId + 1;
+    runningMacroKey = nil;
+    macrosLib.set_stop_guard(false);
+    clearPendingActionAccept();
+    if pendingSubtargetWait then
+        pendingSubtargetWait.finished = true;
+        pendingSubtargetWait = nil;
+    end
+    return true;
+end
+
 --- Execute a command string (handles multi-line macros with /wait support)
---- Splits by newlines and executes each non-empty line in sequence
---- For macros WITHOUT waits or subtarget pauses: queues all lines synchronously using
---- Macro mode (2) so the game processes them as a native macro batch with fallthrough.
---- For macros WITH waits or subtarget lines: sequential execution via task scheduler.
---- ST lines pause until confirm or dismiss (Ashita command events + target memory).
---- Also handles inline <wait #> subcommands at end of command lines.
+--- Macro line rules:
+--- - Each executed line waits for accept, reject, or a short timeout before continuing.
+--- - <wait N> / /wait (or inline <wait N>) always delays before the next line.
+--- - Known combat actions: first one in a wait-segment runs; later known ones in that
+---   same segment (no wait yet) are skipped. Unknown combat lines are still tried.
+--- - Non-combat lines (/lastsynth, /echo, etc.) are always tried; extras in the same
+---   stretch still fire with no wait and can error.
+--- ST lines pause until confirm or dismiss, then use the same accept/reject gating.
 --- @param commandText string The command text (may contain newlines)
---- @param isMacro boolean|nil If true, enforces single-macro-at-a-time execution
+--- @param isMacro boolean|nil If true, lines run as a macro script (waits, one line at a time)
+--- @param macroKey string|nil Identity of the macro being pressed. Same key does not cancel itself.
 --- @return boolean success Whether any command was executed
-function M.ExecuteCommandString(commandText, isMacro)
+function M.ExecuteCommandString(commandText, isMacro, macroKey)
     if not commandText or commandText == '' then
         return false;
     end
@@ -1677,52 +2259,51 @@ function M.ExecuteCommandString(commandText, isMacro)
         return false;
     end
 
+    macroKey = macroKey or ('cmd:' .. commandText);
+
+    -- The macro that is already running does not cancel itself.
+    if runningMacroKey == macroKey then
+        return false;
+    end
+
+    -- Subtarget selection is already open, so don't start another multi-line script.
+    if isMacro and targetLib.GetSubTargetActive() then
+        SubtargetDebugLog('Ignoring macro keypress while game subtarget mode is active');
+        return false;
+    end
+
+    -- Every other macro cancels it, then runs. Action type does not matter.
+    cancelRunningMacro();
+
     local myMacroId = nil;
     if isMacro then
-        -- Block new macros only while the game reports subtarget mode is active.
-        if targetLib.GetSubTargetActive() then
-            SubtargetDebugLog('Ignoring macro keypress while game subtarget mode is active');
-            return false;
-        end
         activeMacroId = activeMacroId + 1;
         myMacroId = activeMacroId;
+        runningMacroKey = macroKey;
+        macrosLib.set_stop_guard(true);
     end
 
-    -- SYNCHRONOUS FAST PATH: For macros without wait or subtarget directives, queue all
-    -- lines in the same frame using mode 2 (Macro). This tells the game engine
-    -- these commands come from the macro subsystem, enabling native fallthrough
-    -- behavior where failed commands (e.g., wrong WS for equipped weapon) are
-    -- skipped and the next line is tried automatically.
-    -- NOTE: The game's macro command stack is LIFO, so we queue in reverse order.
-    if isMacro and not macroHasWait(lines) and not macroHasSubtarget(lines) then
-        local ok, err = pcall(function()
-            local chatManager = AshitaCore:GetChatManager();
-            if chatManager then
-                for i = #lines, 1, -1 do
-                    local trimmed = lines[i]:match('^%s*(.-)%s*$');
-                    if trimmed and trimmed ~= '' then
-                        chatManager:QueueCommand(2, trimmed);
-                    end
-                end
-            end
-        end);
-        if not ok then
-            print('[XIUI] Command execution error: ' .. tostring(err));
+    local function releaseMyMacro()
+        if myMacroId ~= nil and myMacroId == activeMacroId then
+            runningMacroKey = nil;
+            macrosLib.set_stop_guard(false);
+            clearPendingActionAccept();
         end
-        return true;
     end
 
-    -- ASYNC PATH: For macros with wait/subtarget directives or non-macro commands.
-    -- Recursive function to execute lines with proper /wait and subtarget handling.
-    -- This chains tasks instead of scheduling them all at once.
     local function isMacroCancelled()
         return myMacroId ~= nil and myMacroId ~= activeMacroId;
     end
 
     local executeNextLine;
+    local NEXT_LINE_MIN_DELAY = 0.01;
+    -- True after a known combat action has run in this wait-segment.
+    -- Further known combat actions are skipped; non-combat / unknown still try.
+    local segmentConsumed = false;
 
     local function scheduleNextLine(index, delay)
         if index > #lines then
+            releaseMyMacro();
             return;
         end
         ashita.tasks.once(delay or 0, function()
@@ -1730,81 +2311,110 @@ function M.ExecuteCommandString(commandText, isMacro)
         end);
     end
 
+    -- Gate on accept/reject/timeout, then apply <wait N> (any command type).
+    -- consumesSegment: known combat actions without a wait close the segment.
+    local function scheduleWaitThenContinue(nextIndex, delay, expectedAction, consumesSegment)
+        local waitDelay = delay or 0;
+        local queuedAt = os.clock();
+        waitForActionAccepted(function(accepted, reason)
+            if isMacroCancelled() then
+                return;
+            end
+            ignoreGenericRejectForNext = (not accepted and reason == 'timeout');
+            if waitDelay > 0 then
+                segmentConsumed = false;
+                local delaySec = accepted and waitDelay or math.max(NEXT_LINE_MIN_DELAY, waitDelay - (os.clock() - queuedAt));
+                scheduleNextLine(nextIndex, delaySec);
+                return;
+            end
+            if consumesSegment then
+                segmentConsumed = true;
+            end
+            scheduleNextLine(nextIndex, NEXT_LINE_MIN_DELAY);
+        end, isMacroCancelled, expectedAction);
+    end
+
     executeNextLine = function(index)
         if index > #lines then
+            releaseMyMacro();
             return;
         end
 
-        -- If this is a macro flow, bail out when a newer macro has started
         if isMacroCancelled() then
             return;
         end
 
-        local line = lines[index]:match('^%s*(.-)%s*$');  -- Trim whitespace
+        local line = lines[index]:match('^%s*(.-)%s*$');
         if line == '' then
             scheduleNextLine(index + 1, 0);
             return;
         end
 
-        -- Check for wait/pause/sleep commands
+        -- Standalone /wait: new segment (delay only, no accept/reject).
         local waitMatch = line:match('^/wait%s*(%d*%.?%d*)') or
                           line:match('^/pause%s*(%d*%.?%d*)') or
                           line:match('^/sleep%s*(%d*%.?%d*)');
 
         if waitMatch then
-            -- It's a wait command - schedule the next line after the delay
+            segmentConsumed = false;
             local delay = tonumber(waitMatch) or 1;
-            scheduleNextLine(index + 1, delay);
-        else
-            -- Parse inline <wait #> subcommand
-            local commandToExecute, inlineWait = parseInlineWait(line);
-            local requiresSubtargetPause = lineRequiresSubtargetPause(commandToExecute);
-
-            -- PROTECTED command execution
-            -- Use mode 2 (Macro) for macro action commands to get native fallthrough,
-            -- mode -1 (AshitaParse) for /echo and other non-action lines
-            local cmdMode = isMacro and getMacroCommandQueueMode(commandToExecute) or -1;
-            local stTag = requiresSubtargetPause and extractSubtargetTag(commandToExecute) or nil;
-
-            local function queueActionLine()
-                if requiresSubtargetPause then
-                    waitForSubtargetComplete(commandToExecute, function()
-                        if index < #lines then
-                            scheduleNextLine(index + 1, inlineWait or 0);
-                        end
-                    end, function()
-                        if myMacroId == activeMacroId then
-                            activeMacroId = activeMacroId + 1;
-                        end
-                    end, isMacroCancelled);
-                end
-
-                local ok, err = pcall(function()
-                    local chatManager = AshitaCore:GetChatManager();
-                    if chatManager then
-                        chatManager:QueueCommand(cmdMode, commandToExecute);
-                    end
-                end);
-
-                if not ok then
-                    print('[XIUI] Command execution error: ' .. tostring(err));
-                end
-
-                if index < #lines and not requiresSubtargetPause then
-                    scheduleNextLine(index + 1, inlineWait or 0);
-                end
-            end
-
-            local function executeCommandLine()
-                if stTag and shouldApplyStPreTarget(stTag) and queueStPreTarget(stTag) then
-                    runAfterStPreTarget(queueActionLine, isMacroCancelled);
-                    return;
-                end
-                queueActionLine();
-            end
-
-            executeCommandLine();
+            scheduleNextLine(index + 1, delay > 0 and delay or NEXT_LINE_MIN_DELAY);
+            return;
         end
+
+        local commandToExecute, inlineWait = parseInlineWait(line);
+        local requiresSubtargetPause = lineRequiresSubtargetPause(commandToExecute);
+        local actionVerb = commandToExecute:match('^/%s*(%S+)');
+        local isActionLine = actionVerb ~= nil and TARGETABLE_COMMANDS[actionVerb:lower()] == true;
+        local expectedAction = isActionLine and resolveExpectedAction(commandToExecute) or nil;
+        -- Multi-line scripts use mode 2 (native macro input), including /echo.
+        -- Single actions use mode 1. Mode -1 is dispatched twice while a macro
+        -- is still marked running, which doubled the synth error on one press.
+        local cmdMode = isMacro and 2 or 1;
+        local stTag = requiresSubtargetPause and extractSubtargetTag(commandToExecute) or nil;
+        local hasAccess = (not isActionLine) or playerHasAccessToCommand(commandToExecute);
+        local runAccessible = isActionLine and hasAccess;
+
+        -- Known combat action after one already ran this segment: skip (do not queue).
+        if runAccessible and segmentConsumed then
+            scheduleNextLine(index + 1, NEXT_LINE_MIN_DELAY);
+            return;
+        end
+
+        local function queueActionLine()
+            if isMacroCancelled() then
+                return;
+            end
+            if requiresSubtargetPause then
+                waitForSubtargetComplete(commandToExecute, function()
+                    scheduleWaitThenContinue(index + 1, inlineWait or 0, expectedAction, runAccessible);
+                end, function()
+                    releaseMyMacro();
+                    if myMacroId ~= nil then
+                        activeMacroId = activeMacroId + 1;
+                    end
+                end, isMacroCancelled);
+            else
+                scheduleWaitThenContinue(index + 1, inlineWait or 0, expectedAction, runAccessible);
+            end
+
+            local ok, err = pcall(function()
+                queueHotbarCommand(cmdMode, commandToExecute);
+            end);
+
+            if not ok then
+                print('[XIUI] Command execution error: ' .. tostring(err));
+                if not requiresSubtargetPause then
+                    finishPendingActionAccept(false, 'reject');
+                end
+            end
+        end
+
+        if stTag and shouldApplyStPreTarget(stTag) and queueStPreTarget(stTag) then
+            runAfterStPreTarget(queueActionLine, isMacroCancelled);
+            return;
+        end
+        queueActionLine();
     end
 
     -- Start executing from the first line
@@ -1820,9 +2430,20 @@ function M.HandleKeybind(hotbar, slot)
         return false;
     end
 
-    -- Build and execute command
-    local command, _ = M.BuildCommand(bind);
-    return M.ExecuteCommandString(command, bind.actionType == 'macro');
+    return M.ExecuteBind(bind);
+end
+
+--- Run a hotbar macro. A different macro cancels the one in progress.
+--- Pressing the same macro again does not.
+function M.ExecuteBind(bind)
+    if not bind or not bind.actionType then
+        return false;
+    end
+    local command = M.BuildCommand(bind);
+    if not command or command == '' then
+        return false;
+    end
+    return M.ExecuteCommandString(command, bind.actionType == 'macro', macroActivationKey(bind, command));
 end
 
 -- Find hotbar and slot that matches the pressed key + modifiers
@@ -1879,14 +2500,10 @@ function M.HandleKey(event)
    if PALETTE_DEBUG_KEYS and (keyCode == 38 or keyCode == 40) and not isRelease then
        local gs = gConfig and gConfig.hotbarGlobal;
        local enabled = gs and gs.paletteCycleEnabled ~= false;
-       local mod = gs and gs.paletteCycleModifier or 'ctrl';
-       local modMatch = (mod == 'ctrl' and controlPressed and not altPressed and not shiftPressed)
-                     or (mod == 'alt' and altPressed and not controlPressed and not shiftPressed)
-                     or (mod == 'shift' and shiftPressed and not controlPressed and not altPressed)
-                     or (mod == 'none' and not controlPressed and not altPressed and not shiftPressed);
-       print(string.format('[XIUI Palette Debug] Key=%d Ctrl=%s Alt=%s Shift=%s | enabled=%s mod=%s modMatch=%s',
+       local modMatch = M.PaletteModifierMatches(controlPressed, altPressed, shiftPressed);
+       print(string.format('[XIUI Palette Debug] Key=%d Ctrl=%s Alt=%s Shift=%s | enabled=%s modMatch=%s',
            keyCode, tostring(controlPressed), tostring(altPressed), tostring(shiftPressed),
-           tostring(enabled), mod, tostring(modMatch)));
+           tostring(enabled), tostring(modMatch)));
    end
 
    -- Check if keybind editor is capturing input
@@ -1900,61 +2517,27 @@ function M.HandleKey(event)
        return;
    end
 
-   -- Check for palette cycling keybind (Ctrl+Up/Down or Alt+Up/Down by default)
+   -- Check for palette cycling keybind. Each enabled modifier is its own shortcut.
    local globalSettings = gConfig and gConfig.hotbarGlobal;
-   if globalSettings and globalSettings.paletteCycleEnabled ~= false and not isRelease then
-       local prevKey = globalSettings.paletteCyclePrevKey or 38;  -- VK_UP
-       local nextKey = globalSettings.paletteCycleNextKey or 40;  -- VK_DOWN
-       local modifier = globalSettings.paletteCycleModifier or 'ctrl';
+   if not isRelease then
+       local prevKey = (globalSettings and globalSettings.paletteCyclePrevKey) or 38;  -- VK_UP
+       local nextKey = (globalSettings and globalSettings.paletteCycleNextKey) or 40;  -- VK_DOWN
+       local isPaletteKey = keyCode == prevKey or keyCode == nextKey;
+       local modifierMatch = M.PaletteModifierMatches(controlPressed, altPressed, shiftPressed);
 
-       -- Debug: Log when up/down arrow is pressed with any modifier
-       if keyCode == prevKey or keyCode == nextKey then
-           DebugLog(string.format('Arrow key detected: keyCode=%d modifier=%s ctrl=%s alt=%s shift=%s',
-               keyCode, modifier, tostring(controlPressed), tostring(altPressed), tostring(shiftPressed)));
-       end
-
-       -- Check if modifier matches
-       local modifierMatch = false;
-       if modifier == 'ctrl' and controlPressed and not altPressed and not shiftPressed then
-           modifierMatch = true;
-       elseif modifier == 'alt' and altPressed and not controlPressed and not shiftPressed then
-           modifierMatch = true;
-       elseif modifier == 'shift' and shiftPressed and not controlPressed and not altPressed then
-           modifierMatch = true;
-       elseif modifier == 'none' and not controlPressed and not altPressed and not shiftPressed then
-           modifierMatch = true;
-       end
-
-       if modifierMatch and (keyCode == prevKey or keyCode == nextKey) then
+       -- The Keyboard Palette shortcut still cycles when native macros are enabled.
+       -- It blocks Up/Down from the game only while Disable Native XI Macros is on.
+       if isPaletteKey and modifierMatch then
            if PALETTE_DEBUG_KEYS then
                print('[XIUI Palette Debug] Cycling palettes...');
            end
            -- DOWN = next (+1), UP = previous (-1) to match in-game macro convention
            local direction = (keyCode == nextKey) and 1 or -1;
-           local jobId = data.jobId or 1;
-           local subjobId = data.subjobId or 0;
-
-           -- Cycle GLOBAL palette (affects all hotbars at once)
-           -- NOTE: palette.CyclePalette is now global - barIndex param is ignored
-           local result = palette.CyclePalette(1, direction, jobId, subjobId);
-           if PALETTE_DEBUG_KEYS then
-               print(string.format('[XIUI Palette Debug] Result=%s', tostring(result)));
+           M.CycleAllPalettes(direction);
+           if globalSettings and globalSettings.disableMacroBars then
+               event.blocked = true;
+               return;
            end
-
-           if result then
-               local logPaletteName = gConfig.hotbarGlobal and gConfig.hotbarGlobal.logPaletteName;
-               if logPaletteName == nil then logPaletteName = true; end  -- Default to true
-               if logPaletteName then
-                   print('[XIUI] Palette: ' .. result);
-               end
-           else
-               if PALETTE_DEBUG_KEYS then
-                   print('[XIUI Palette Debug] No palettes to cycle');
-               end
-           end
-
-           event.blocked = true;
-           return;
        end
    end
 
@@ -1973,19 +2556,12 @@ function M.HandleKey(event)
    -- Check if this is a native macro key combo (Ctrl/Alt + number or arrow)
    local isNativeMacroKeyPress = IsNativeMacroKey(keyCode, controlPressed, altPressed);
 
-   -- Stop macro execution when native macro key is pressed
-   -- Note: Macro bar UI hiding is handled via memory patch in macrosLib.hide_macro_bar()
+   -- Stop a native macro that Ctrl/Alt+number just started. Do not spray delayed
+   -- stops: those collide with XIUI's own mode-2 macro batch and skip the first line.
    if blockNativeMacros and isNativeMacroKeyPress and not isRelease then
        MacroBlockLog(string.format('Native macro key %d (0x%02X) Ctrl=%s Alt=%s - stopping macro',
            keyCode, keyCode, tostring(controlPressed), tostring(altPressed)));
-
-       -- Stop macro execution via direct memory write
-       macrosLib.stop();
-
-       -- Also schedule stops for next few frames to catch delayed execution
-       ashita.tasks.once(0, function() macrosLib.stop(); end);
-       ashita.tasks.once(0.01, function() macrosLib.stop(); end);
-       ashita.tasks.once(0.02, function() macrosLib.stop(); end);
+       macrosLib.stop_if_running('native_macro_key');
    end
 
    -- Check if this key is in the blocked game keys list
@@ -2008,11 +2584,16 @@ function M.HandleKey(event)
        end
    end
 
-   -- Find matching keybind from custom key assignments
+   -- Find matching keybind from custom key assignments.
+   -- Matching is exact on key + Ctrl/Alt/Shift: binding E alone does not claim
+   -- Alt+E / Ctrl+E / Shift+E, and binding Alt+E does not claim E alone.
    local hotbar, slot = FindMatchingKeybind(keyCode, controlPressed, altPressed, shiftPressed);
    DebugLog(string.format('FindMatchingKeybind result: hotbar=%s slot=%s', tostring(hotbar), tostring(slot)));
 
    if hotbar and slot then
+       -- Only this exact combo is swallowed by the game; other modifier variants pass through.
+       event.blocked = true;
+
        if isRelease then
            -- Clear pressed state on release (only if it matches what was pressed)
            if currentPressedHotbar == hotbar and currentPressedSlot == slot then
@@ -2023,7 +2604,7 @@ function M.HandleKey(event)
        else
            -- Check if this is a key repeat (same hotbar/slot already pressed)
            if currentPressedHotbar == hotbar and currentPressedSlot == slot then
-               return; -- Key repeat - don't re-execute
+               return; -- Key repeat - blocked above, don't re-execute
            end
 
            DebugLog('Key pressed: hotbar=' .. tostring(hotbar) .. ', slot=' .. tostring(slot));
@@ -2058,9 +2639,7 @@ function M.ExecuteAction(slotAction)
     if not slotAction then return false; end
     if not slotAction.actionType or not slotAction.action then return false; end
 
-    -- Build and execute command (handles multi-line macros)
-    local command, _ = M.BuildCommand(slotAction);
-    return M.ExecuteCommandString(command, slotAction.actionType == 'macro');
+    return M.ExecuteBind(slotAction);
 end
 
 -- Clear the custom icon cache (call when icons may have changed)

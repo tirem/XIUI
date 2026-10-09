@@ -92,6 +92,7 @@ local GRACE_FRAMES = 3;    -- Number of frames item must be missing before remov
 -- Read treasure pool state from memory API
 -- Call this every frame in DrawWindow
 -- Returns true if pool has items, false otherwise
+local activeSlotsScratch = {};
 function M.ReadFromMemory()
     local memMgr = AshitaCore:GetMemoryManager();
     if not memMgr then return false; end
@@ -101,7 +102,8 @@ function M.ReadFromMemory()
 
     local now = os.time();
     local hasItems = false;
-    local activeSlots = {};
+    local activeSlots = activeSlotsScratch;
+    for k in pairs(activeSlots) do activeSlots[k] = nil; end
 
     -- Read all 10 pool slots from memory
     for slot = 0, M.MAX_POOL_SLOTS - 1 do
@@ -117,24 +119,36 @@ function M.ReadFromMemory()
                 M.timestampCache[item.DropTime] = now + M.POOL_TIMEOUT_SECONDS;
             end
 
-            -- Build pool item data
-            M.poolItems[slot] = {
-                slot = slot,
-                itemId = item.ItemId,
-                itemName = getItemName(item.ItemId),
-                count = 1,
-                expiresAt = M.timestampCache[item.DropTime],
-                dropTime = item.DropTime,
-                -- Lot info from memory
-                playerLot = item.Lot,
-                winningLot = item.WinningLot,
-                winningLotterName = item.WinningEntityName or '',
-            };
-
             -- Note: Notifications are handled by notificationhandler.lua via 0x00D2 packet
             -- to properly handle auto-award vs staying-in-pool scenarios
+            -- Rebuild only when something changed.
+            local prev = M.poolItems[slot];
+            local expiresAt = M.timestampCache[item.DropTime];
+            local lotterName = item.WinningEntityName or '';
+            if prev == nil
+                or prev.itemId ~= item.ItemId
+                or prev.expiresAt ~= expiresAt
+                or prev.dropTime ~= item.DropTime
+                or prev.playerLot ~= item.Lot
+                or prev.winningLot ~= item.WinningLot
+                or prev.winningLotterName ~= lotterName
+            then
+                M.poolItems[slot] = {
+                    slot = slot,
+                    itemId = item.ItemId,
+                    itemName = getItemName(item.ItemId),
+                    count = 1,
+                    expiresAt = expiresAt,
+                    dropTime = item.DropTime,
+                    -- Lot info from memory
+                    playerLot = item.Lot,
+                    winningLot = item.WinningLot,
+                    winningLotterName = lotterName,
+                };
 
-            markCacheDirty();
+
+                markCacheDirty();
+            end
         end
     end
 

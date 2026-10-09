@@ -295,6 +295,43 @@ function layoutstate.build_display_slots(container_id, raw_slots, runtime_maps)
     return layoutstate.build_slots_from_display_map(display_map, raw_slots)
 end
 
+-- Cached build_display_slots.
+local displaySlotsMemo = setmetatable({}, { __mode = 'k' })
+function layoutstate.build_display_slots_cached(container_id, raw_slots, runtime_maps)
+    local display_map = layoutstate.get_display_map(container_id, raw_slots, runtime_maps)
+    if not display_map or not raw_slots then
+        return layoutstate.build_display_slots(container_id, raw_slots, runtime_maps)
+    end
+
+    local n = #display_map
+    local m = displaySlotsMemo[raw_slots]
+    if m and m.map == display_map and m.n == n then
+        local snap = m.snap
+        local same = true
+        for i = 1, n do
+            if snap[i] ~= display_map[i] then
+                same = false
+                break
+            end
+        end
+        if same then
+            return m.result
+        end
+    end
+
+    local result = layoutstate.build_slots_from_display_map(display_map, raw_slots)
+    if not m then
+        m = { snap = {} }
+        displaySlotsMemo[raw_slots] = m
+    end
+    m.map = display_map
+    m.n = n
+    for i = 1, n do m.snap[i] = display_map[i] end
+    for i = n + 1, #m.snap do m.snap[i] = nil end
+    m.result = result
+    return result
+end
+
 function layoutstate.reset_container_layout(container_id, raw_slots, runtime_maps)
     container_id = tonumber(container_id)
     if container_id == nil then

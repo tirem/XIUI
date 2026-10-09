@@ -46,6 +46,8 @@ local function ensureDefaults()
     if gConfig.treasurePoolExpanded == nil then gConfig.treasurePoolExpanded = false; end
     if gConfig.treasurePoolShowButtonsInCollapsed == nil then gConfig.treasurePoolShowButtonsInCollapsed = true; end
     if gConfig.treasurePoolAutoHideWhenEmpty == nil then gConfig.treasurePoolAutoHideWhenEmpty = true; end
+    if gConfig.treasurePoolReverseGrow == nil then gConfig.treasurePoolReverseGrow = false; end
+    if gConfig.treasurePoolAlignBottom == nil then gConfig.treasurePoolAlignBottom = false; end
     if gConfig.treasurePoolLootColors == nil then gConfig.treasurePoolLootColors = false; end
 end
 
@@ -86,6 +88,12 @@ function M.DrawSettings()
 
             components.DrawCheckbox('Auto-Hide When Empty', 'treasurePoolAutoHideWhenEmpty');
             imgui.ShowHelp('Hide the treasure pool window when there are no items in the pool');
+
+            components.DrawCheckbox('Reverse Grow Direction', 'treasurePoolReverseGrow');
+            imgui.ShowHelp('Flip list fill direction. Off = bottom-to-top; on = top-to-bottom.\nDoes not move the header bar.');
+
+            components.DrawCheckbox('Align Bottom', 'treasurePoolAlignBottom');
+            imgui.ShowHelp('Place the header bar at the bottom as a footer, point Collapse upward,\nand keep the footer anchored when the list collapses or grows.');
 
             components.DrawCheckbox('Enable Loot Colors', 'treasurePoolLootColors');
             imgui.ShowHelp('Color item names by category. Set the colors under the Colors tab');

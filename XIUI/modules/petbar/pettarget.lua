@@ -7,6 +7,10 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
+
+-- Reused draw arguments.
+local _p1 = {0, 0};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
 local imtext = require('libs.imtext');
 local windowBg = require('libs.windowbackground');
 local progressbar = require('libs.progressbar');
@@ -59,7 +63,7 @@ function pettarget.DrawWindow(settings)
     local gs = gConfig.globalScale or 1.0;
 
     -- Only show if we have a valid pet (prevents showing when "Always Visible" is on but no pet)
-    if data.GetPetData() == nil then
+    if data.GetPetDataThisFrame() == nil then
         return;
     end
 
@@ -185,13 +189,13 @@ function pettarget.DrawWindow(settings)
             imtext.Draw(drawList, hpStr, hpDrawX, hpDrawY, hpColor, targetHpFontSize);
 
             if not nameAbsolute or not hpAbsolute then
-                imgui.Dummy({barWidth, targetNameFontSize + 4});
+                imgui.Dummy(_P1(barWidth, targetNameFontSize + 4));
             end
 
             local currentTime = os.clock();
             local hpGradient = GetCustomGradient(colorConfig, 'hpGradient') or {'#e26c6c', '#fb9494'};
             local hpPercentData = HpInterpolation.update('pettarget', targetHp, targetIndex, settings, currentTime, hpGradient);
-            progressbar.ProgressBar(hpPercentData, {barWidth, barHeight}, {decorate = gConfig.petTargetShowBookends or gConfig.petBarShowBookends});
+            progressbar.ProgressBar(hpPercentData, progressbar.Dims(barWidth, barHeight), progressbar.Opts(gConfig.petTargetShowBookends or gConfig.petBarShowBookends));
 
             local distanceColor = colorConfig.distanceTextColor or petBarColorConfig.distanceTextColor or 0xFFFFFFFF;
             local distStr = string.format('%.1f', targetDistance);
@@ -205,7 +209,7 @@ function pettarget.DrawWindow(settings)
                 local distanceY = targetStartY + targetNameFontSize + 4 + barHeight + barBorderExtent + 2;
                 distDrawX = targetStartX + distanceOffsetX;
                 distDrawY = distanceY + distanceOffsetY;
-                imgui.Dummy({totalRowWidth, targetDistanceFontSize + 2});
+                imgui.Dummy(_P1(totalRowWidth, targetDistanceFontSize + 2));
             end
             imtext.Draw(drawList, distStr, distDrawX, distDrawY, distanceColor, targetDistanceFontSize);
 

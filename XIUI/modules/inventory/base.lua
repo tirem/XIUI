@@ -40,19 +40,30 @@ local function GetTextColor(usedSlots, colorConfig, threshold1, threshold2, useT
     end
 end
 
+-- Shared by every dot; only read during the call.
+local dotCenter = {0, 0};
+
+local emptyColorScratch, usedColorScratch = {0, 0, 0, 0}, {0, 0, 0, 0};
+
 -- Draw slot dots clipped to the viewport so partially off-screen trackers stay draggable.
 local function DrawContainerDots(locX, locY, framePaddingX, usedSlots, maxSlots, settings, colorConfig, threshold1, threshold2, drawList)
     local emptyColor = colorConfig.emptySlotColor;
     local usedColor = GetUsedSlotColor(usedSlots, colorConfig, threshold1, threshold2);
 
-    local emptyColorArray = {emptyColor.r, emptyColor.g, emptyColor.b, emptyColor.a};
-    local usedColorArray = {usedColor.r, usedColor.g, usedColor.b, usedColor.a};
+    local emptyColorArray = emptyColorScratch;
+    emptyColorArray[1], emptyColorArray[2], emptyColorArray[3], emptyColorArray[4] = emptyColor.r, emptyColor.g, emptyColor.b, emptyColor.a;
+    local usedColorArray = usedColorScratch;
+    usedColorArray[1], usedColorArray[2], usedColorArray[3], usedColorArray[4] = usedColor.r, usedColor.g, usedColor.b, usedColor.a;
 
     local groupOffsetX, _ = GetDotOffset(settings.rowCount, settings.columnCount, settings);
     groupOffsetX = groupOffsetX + settings.groupSpacing;
     local numPerGroup = settings.rowCount * settings.columnCount;
 
-    drawing.ClipDrawListToViewport(drawList, function()
+    if drawList == nil then return; end
+    drawing.PushViewportClip(drawList);
+    do
+        local emptyU32 = imgui.GetColorU32(emptyColorArray);
+        local usedU32 = imgui.GetColorU32(usedColorArray);
         for i = 1, maxSlots do
             local groupNum = math.ceil(i / numPerGroup);
             local offsetFromGroup = i - ((groupNum - 1) * numPerGroup);
@@ -62,16 +73,17 @@ local function DrawContainerDots(locX, locY, framePaddingX, usedSlots, maxSlots,
             local x, y = GetDotOffset(rowNum, columnNum, settings);
             x = x + ((groupNum - 1) * groupOffsetX);
 
-            local centerX = x + locX + framePaddingX;
-            local centerY = y + locY;
+            dotCenter[1] = x + locX + framePaddingX;
+            dotCenter[2] = y + locY;
             if (i > usedSlots) then
-                draw_circle({centerX, centerY}, settings.dotRadius, emptyColorArray, settings.dotRadius * 3, true, nil, drawList);
+                draw_circle(dotCenter, settings.dotRadius, emptyColorArray, settings.dotRadius * 3, true, nil, drawList, emptyU32);
             else
-                draw_circle({centerX, centerY}, settings.dotRadius, usedColorArray, settings.dotRadius * 3, true, nil, drawList);
-                draw_circle({centerX, centerY}, settings.dotRadius, emptyColorArray, settings.dotRadius * 3, false, nil, drawList);
+                draw_circle(dotCenter, settings.dotRadius, usedColorArray, settings.dotRadius * 3, true, nil, drawList, usedU32);
+                draw_circle(dotCenter, settings.dotRadius, emptyColorArray, settings.dotRadius * 3, false, nil, drawList, emptyU32);
             end
         end
-    end);
+    end
+    drawing.PopViewportClip(drawList);
 end
 
 -- Calculate window size for dots display
@@ -107,7 +119,7 @@ local function EstimateContainerWindowSize(maxSlots, settings, showDots, showTex
     if showText then
         local displayText = (label and (label .. ' ') or '') .. usedSlots .. '/' .. maxSlots;
         local textWidth;
-        textWidth, textHeight = imtext.Measure(displayText, fontSize);
+        textWidth, textHeight = imtext.MeasureCached(displayText, fontSize);
         if not showDots then
             winSizeX = textWidth;
             winSizeY = textHeight;
@@ -174,7 +186,7 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
             local displayText;
             if showText then
                 displayText = (label and (label .. ' ') or '') .. usedSlots .. '/' .. maxSlots;
-                textWidth = imtext.Measure(displayText, fontSize);
+                textWidth = imtext.MeasureCached(displayText, fontSize);
             end
 
             local totalHeight = winSizeY + (showText and textHeight or 0);
@@ -196,7 +208,7 @@ local function DrawSingleContainerWindow(windowName, usedSlots, maxSlots, settin
             end
         elseif showText then
             local displayText = (label and (label .. ' ') or '') .. usedSlots .. '/' .. maxSlots;
-            local textWidth, textHeightOnly = imtext.Measure(displayText, fontSize);
+            local textWidth, textHeightOnly = imtext.MeasureCached(displayText, fontSize);
 
             local cursorX, cursorY = imgui.GetCursorScreenPos();
 
@@ -223,6 +235,7 @@ end
 -- config: { windowName, containers (array of container IDs), configPrefix, colorKey, containerNames (optional) }
 function BaseTracker.Create(config)
     local tracker = {};
+    local trackerContainers = {};  -- reused; refreshed every frame
 
     tracker.DrawWindow = function(settings)
         local player = GetPlayerSafe();
@@ -235,21 +248,31 @@ function BaseTracker.Create(config)
         if (inventory == nil) then return; end
 
         -- Gather container data
-        local containers = {};
+        local containers = trackerContainers;
         local totalUsed = 0;
         local totalMax = 0;
         local anyUnlocked = false;
         local unlockedCount = 0;
+        local enabledFlags = config.enabledContainersKey and gConfig[config.enabledContainersKey] or nil;
 
         for i, containerId in ipairs(config.containers) do
             local used = inventory:GetContainerCount(containerId);
             local max = inventory:GetContainerCountMax(containerId);
-            containers[i] = { used = used, max = max, unlocked = (max > 0), id = containerId };
-            totalUsed = totalUsed + used;
-            totalMax = totalMax + max;
-            if max > 0 then
-                anyUnlocked = true;
-                unlockedCount = unlockedCount + 1;
+            local c = containers[i];
+            if not c then
+                c = {};
+                containers[i] = c;
+            end
+            -- Optional per-container enable (nil/missing = enabled)
+            local isEnabled = not enabledFlags or enabledFlags[i] ~= false;
+            c.used = used; c.max = max; c.unlocked = (max > 0); c.id = containerId; c.enabled = isEnabled;
+            if isEnabled then
+                totalUsed = totalUsed + used;
+                totalMax = totalMax + max;
+                if max > 0 then
+                    anyUnlocked = true;
+                    unlockedCount = unlockedCount + 1;
+                end
             end
         end
 
@@ -269,10 +292,10 @@ function BaseTracker.Create(config)
         local fontSize = settings.font_settings.font_height;
         imtext.SetConfigFromSettings(settings.font_settings);
 
-        -- Per-container mode: each unlocked container gets its own window
+        -- Per-container mode: each unlocked+enabled container gets its own window
         if showPerContainer and #config.containers > 1 then
             for i, container in ipairs(containers) do
-                if container.unlocked then
+                if container.enabled ~= false and container.unlocked then
                     local windowName = config.windowName .. '_' .. i;
                     local label = (showLabels and config.containerLabels) and config.containerLabels[i] or nil;
                     DrawSingleContainerWindow(
@@ -293,9 +316,17 @@ function BaseTracker.Create(config)
                 end
             end
         else
-            -- Combined mode: single window with all containers combined
-            -- Use first label if showLabels is enabled (for single-container trackers or combined multi-container)
-            local label = (showLabels and config.containerLabels) and config.containerLabels[1] or nil;
+            -- Combined mode: single window with all enabled containers combined
+            -- Use first enabled label if showLabels is on
+            local label = nil;
+            if showLabels and config.containerLabels then
+                for i, container in ipairs(containers) do
+                    if container.enabled ~= false then
+                        label = config.containerLabels[i];
+                        break;
+                    end
+                end
+            end
             DrawSingleContainerWindow(
                 config.windowName,
                 totalUsed,

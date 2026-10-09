@@ -46,8 +46,8 @@ function M.Initialize(settings)
 
     -- Ensure treasure pool settings have defaults
     if gConfig then
-        -- Clear any stale preview state
-        gConfig.treasurePoolPreview = false;
+        -- Clear runtime preview only; keep gConfig.treasurePoolPreview as the user preference
+        data.ClearPreview();
 
         -- Set defaults for new settings
         if gConfig.treasurePoolEnabled == nil then gConfig.treasurePoolEnabled = true; end
@@ -85,6 +85,8 @@ function M.Initialize(settings)
         if gConfig.treasurePoolMinimized == nil then gConfig.treasurePoolMinimized = false; end
         if gConfig.treasurePoolShowButtonsInCollapsed == nil then gConfig.treasurePoolShowButtonsInCollapsed = true; end
         if gConfig.treasurePoolAutoHideWhenEmpty == nil then gConfig.treasurePoolAutoHideWhenEmpty = true; end
+        if gConfig.treasurePoolReverseGrow == nil then gConfig.treasurePoolReverseGrow = false; end
+        if gConfig.treasurePoolAlignBottom == nil then gConfig.treasurePoolAlignBottom = false; end
         if gConfig.treasurePoolLootColors == nil then gConfig.treasurePoolLootColors = false; end
     end
 

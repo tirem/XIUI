@@ -104,8 +104,8 @@ end
 
 
 -- Serialize table to legacy format (flat assignments)
-local function SerializeLegacy(tbl, prefix, lines)
-    lines = lines or {}
+-- Appends only; SerializeLegacy joins once at the end.
+local function SerializeInto(tbl, prefix, lines)
     
     -- Sort keys for deterministic output
     local keys = {}
@@ -133,7 +133,7 @@ local function SerializeLegacy(tbl, prefix, lines)
             local currentPath = prefix .. keyStr
             if type(v) == "table" then
                 table.insert(lines, currentPath .. " = {};")
-                SerializeLegacy(v, currentPath, lines)
+                SerializeInto(v, currentPath, lines)
             elseif type(v) == "string" then
                 table.insert(lines, currentPath .. " = " .. string.format("%q", v) .. ";")
             elseif type(v) == "number" or type(v) == "boolean" then
@@ -141,7 +141,11 @@ local function SerializeLegacy(tbl, prefix, lines)
             end
         end
     end
-    
+end
+
+local function SerializeLegacy(tbl, prefix, lines)
+    lines = lines or {}
+    SerializeInto(tbl, prefix, lines)
     return table.concat(lines, "\n")
 end
 

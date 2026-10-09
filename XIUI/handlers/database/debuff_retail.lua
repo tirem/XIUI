@@ -387,9 +387,8 @@ durations.additionalEffect = {
     [805] = {duration = 30}, -- Tomahawk
 };
 
--- Mob self-buffs applied by mob skills, keyed by the landed status id (packet
--- Param). Any mob skill that grants status X shows this duration, so we don't
--- need to map every skill id. Durations are the max seen across LSB mobskills.
+-- Status-on self-buffs keyed by landed status id, not skill id.
+-- Duration is the max seen across LSB mobskills for that effect.
 durations.mobBuff = {
     [33] = 180,   -- Haste
     [34] = 180,   -- Blaze Spikes

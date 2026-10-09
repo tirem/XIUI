@@ -1,6 +1,10 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
+
+-- Reused draw arguments.
+local _p1, _UV0, _UV1 = {0, 0}, {0, 0}, {1, 1};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
 local statusHandler = require('handlers.statushandler');
 local debuffHandler = require('handlers.debuffhandler');
 local actionTracker = require('handlers.actiontracker');
@@ -26,7 +30,8 @@ local targetbar = {
 	-- Exported name text position for mob info snap feature
 	nameTextInfo = {
 		x = 0,        -- X position after name text ends
-		y = 0,        -- Y position of name text
+		y = 0,        -- Y position of name text (top)
+		height = 0,   -- Name text height (for bottom-aligning mob info)
 		visible = false, -- Whether target bar is currently visible
 	},
 };
@@ -277,6 +282,9 @@ targetbar.DrawWindow = function(settings)
 	local color = GetColorOfTarget(targetEntity, targetIndex);
 	local isMonster = GetIsMob(targetEntity);
 
+	-- Detached cast bar state (drawn after TargetBar window closes)
+	local detachedCast = nil;
+
 	-- Draw the main target window
 	local windowFlags = GetBaseWindowFlags(gConfig.lockPositions);
     ApplyWindowPosition('TargetBar');
@@ -373,7 +381,7 @@ targetbar.DrawWindow = function(settings)
 		-- This prevents clipping when drawing above the progress bar
 		local lockIconSize = (lockTexture ~= nil) and lockTexture.height or 16;
 		local topReserveHeight = settings.topTextYOffset + settings.name_font_settings.font_height + lockIconSize;
-		imgui.Dummy({0, topReserveHeight});
+		imgui.Dummy(_P1(0, topReserveHeight));
 		imgui.SetCursorPosY(imgui.GetCursorPosY() - topReserveHeight);
 
 		local startX, startY = imgui.GetCursorScreenPos();
@@ -383,12 +391,12 @@ targetbar.DrawWindow = function(settings)
 		local textPadding = 8;
 
 		-- Build progress bar options with optional enhanced border for lock-on
-		local progressBarOptions = {decorate = gConfig.showTargetBarBookends};
+		local progressBarOptions = progressbar.Opts(gConfig.showTargetBarBookends);
 		if (isLockedOn and gConfig.showTargetBarLockOnBorder) then
 			progressBarOptions.enhancedBorder = color; -- Pass target color for enhanced border
 		end
 
-		progressbar.ProgressBar(hpPercentData, {settings.barWidth, settings.barHeight}, progressBarOptions);
+		progressbar.ProgressBar(hpPercentData, progressbar.Dims(settings.barWidth, settings.barHeight), progressBarOptions);
 
 		-- Draw lock icon if locked on (using draw list to avoid affecting cursor position)
 		local lockIconOffset = 0;
@@ -403,7 +411,7 @@ targetbar.DrawWindow = function(settings)
 				tonumber(ffi.cast("uint32_t", lockTexture.image)),
 				{lockX, lockY},
 				{lockX + lockWidth, lockY + lockHeight},
-				{0, 0}, {1, 1},
+				_UV0, _UV1,
 				IM_COL32_WHITE
 			);
 			lockIconOffset = lockWidth + 4;  -- Icon width + 4px spacing
@@ -427,22 +435,24 @@ targetbar.DrawWindow = function(settings)
 
 		-- === POSITION NAME TEXT ===
 		local nameFontSize = settings.name_font_settings.font_height;
-		local nameWidth, nameHeight = imtext.Measure(targetNameText, nameFontSize);
+		local nameWidth, nameHeight = imtext.MeasureCached(targetNameText, nameFontSize);
+		local nameOffsetX = settings.nameOffsetX or 0;
+		local nameOffsetY = settings.nameOffsetY or 0;
 
 		local nameX, nameY;
 		if namePos == POS_ABOVE then
-			nameX = leftTextX;
-			nameY = topTextY - nameFontSize;
+			nameX = leftTextX + nameOffsetX;
+			nameY = topTextY - nameFontSize + nameOffsetY;
 		elseif namePos == POS_BELOW then
-			nameX = leftTextX;
-			nameY = bottomTextY;
+			nameX = leftTextX + nameOffsetX;
+			nameY = bottomTextY + nameOffsetY;
 		elseif namePos == POS_LEFT then
 			-- Right-align: position is right edge minus text width so text grows left
-			nameX = startX - textPadding - nameWidth;
-			nameY = sideTextY - (nameHeight / 2);
+			nameX = startX - textPadding - nameWidth + nameOffsetX;
+			nameY = sideTextY - (nameHeight / 2) + nameOffsetY;
 		else -- POS_RIGHT
-			nameX = startX + settings.barWidth + textPadding + lockIconOffset;
-			nameY = sideTextY - (nameHeight / 2);
+			nameX = startX + settings.barWidth + textPadding + lockIconOffset + nameOffsetX;
+			nameY = sideTextY - (nameHeight / 2) + nameOffsetY;
 		end
 
 		if gConfig.showTargetName then
@@ -452,13 +462,14 @@ targetbar.DrawWindow = function(settings)
 		-- Export name text position for mob info snap feature
 		targetbar.nameTextInfo.x = nameX + nameWidth + 8;
 		targetbar.nameTextInfo.y = nameY;
+		targetbar.nameTextInfo.height = nameHeight;
 		targetbar.nameTextInfo.visible = true;
 
 		-- === POSITION HP% TEXT ===
 		if (showHpPercent) then
 			imtext.SetConfigFromSettings(settings.percent_font_settings);
 			local percentFontSize = settings.percent_font_settings.font_height;
-			local percentWidth, percentHeight = imtext.Measure(targetHpPercent, percentFontSize);
+			local percentWidth, percentHeight = imtext.MeasureCached(targetHpPercent, percentFontSize);
 			local percentOffsetX = settings.percentOffsetX or 0;
 			local percentOffsetY = settings.percentOffsetY or 0;
 
@@ -487,7 +498,7 @@ targetbar.DrawWindow = function(settings)
 			imtext.SetConfigFromSettings(settings.distance_font_settings);
 			local distFontSize = settings.distance_font_settings.font_height;
 			local distString = tostring(dist);
-			local distWidth, distHeight = imtext.Measure(distString, distFontSize);
+			local distWidth, distHeight = imtext.MeasureCached(distString, distFontSize);
 			local distanceOffsetX = settings.distanceOffsetX or 0;
 			local distanceOffsetY = settings.distanceOffsetY or 0;
 
@@ -497,7 +508,7 @@ targetbar.DrawWindow = function(settings)
 				local stackOffset = 0;
 				if showHpPercent and hpPos == POS_ABOVE then
 					imtext.SetConfigFromSettings(settings.percent_font_settings);
-					local percentWidth, _ = imtext.Measure(targetHpPercent, settings.percent_font_settings.font_height);
+					local percentWidth, _ = imtext.MeasureCached(targetHpPercent, settings.percent_font_settings.font_height);
 					stackOffset = percentWidth + 8;
 				end
 				distX = rightTextX - stackOffset + distanceOffsetX - distWidth;
@@ -507,7 +518,7 @@ targetbar.DrawWindow = function(settings)
 				local stackOffset = 0;
 				if showHpPercent and hpPos == POS_BELOW then
 					imtext.SetConfigFromSettings(settings.percent_font_settings);
-					local percentWidth, _ = imtext.Measure(targetHpPercent, settings.percent_font_settings.font_height);
+					local percentWidth, _ = imtext.MeasureCached(targetHpPercent, settings.percent_font_settings.font_height);
 					stackOffset = percentWidth + 8;
 				end
 				distX = rightTextX - stackOffset + distanceOffsetX - distWidth;
@@ -518,7 +529,7 @@ targetbar.DrawWindow = function(settings)
 				local stackOffset = 0;
 				if showHpPercent and hpPos == POS_LEFT then
 					imtext.SetConfigFromSettings(settings.percent_font_settings);
-					local _, percentHeight = imtext.Measure(targetHpPercent, settings.percent_font_settings.font_height);
+					local _, percentHeight = imtext.MeasureCached(targetHpPercent, settings.percent_font_settings.font_height);
 					stackOffset = percentHeight + 2;
 				end
 				distX = startX - textPadding - distWidth + distanceOffsetX;
@@ -528,7 +539,7 @@ targetbar.DrawWindow = function(settings)
 				local stackOffset = 0;
 				if showHpPercent and hpPos == POS_RIGHT then
 					imtext.SetConfigFromSettings(settings.percent_font_settings);
-					local _, percentHeight = imtext.Measure(targetHpPercent, settings.percent_font_settings.font_height);
+					local _, percentHeight = imtext.MeasureCached(targetHpPercent, settings.percent_font_settings.font_height);
 					stackOffset = percentHeight + 2;
 				end
 				distX = startX + settings.barWidth + textPadding + distanceOffsetX;
@@ -541,11 +552,11 @@ targetbar.DrawWindow = function(settings)
 		end
 
 		-- Draw enemy cast bar and text if casting (or in config mode) and if enabled.
-		-- Remembered so we can reserve matching layout space below.
+		-- Remembered so we can reserve matching layout space below (snapped mode only).
 		local castBarDrawn = false;
 		if (gConfig.showTargetBarCastBar and not HzLimitedMode) then
 			local drawCast, progress, castOverlay, castDisplayText;
-			if (inConfigMode and enemyCasts.GetCast(targetEntity.ServerId) == nil) then
+			if (showConfig[1] and enemyCasts.GetCast(targetEntity.ServerId) == nil) then
 				-- Demo cast that loops every 5s for config preview.
 				drawCast, progress, castDisplayText = true, (os.clock() % 5.0) / 5.0, "Fire III (Demo)";
 			else
@@ -553,34 +564,39 @@ targetbar.DrawWindow = function(settings)
 			end
 
 			if (drawCast) then
-				castBarDrawn = true;
-				-- Draw cast bar under HP bar using user-configurable offsets and scaling
-				local castBarY = startY + settings.barHeight + settings.castBarOffsetY;
-				-- Right-align the cast bar with the HP bar (accounting for bookends and 12px padding)
-				local castBarX = startX + settings.barWidth - bookendWidth - settings.castBarWidth - 12 + settings.castBarOffsetX;
+				if gConfig.targetBarCastBarSnapToTargetBar then
+					castBarDrawn = true;
+					-- Draw cast bar under HP bar using user-configurable offsets and scaling
+					local castBarY = startY + settings.barHeight + settings.castBarOffsetY;
+					-- Right-align the cast bar with the HP bar (accounting for bookends and 12px padding)
+					local castBarX = startX + settings.barWidth - bookendWidth - settings.castBarWidth - 12 + settings.castBarOffsetX;
 
-				-- Cast bar settings (using adjusted settings)
-				local castBarHeight = settings.castBarHeight;
-				local castBarWidth = settings.castBarWidth;
-				local castGradient = GetCustomGradient(gConfig.colorCustomization.targetBar, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
+					-- Cast bar settings (using adjusted settings)
+					local castBarHeight = settings.castBarHeight;
+					local castBarWidth = settings.castBarWidth;
+					local castGradient = GetCustomGradient(gConfig.colorCustomization.targetBar, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
 
-				-- Draw cast bar with absolute positioning (doesn't affect ImGui layout)
-				progressbar.ProgressBar(
-					{{progress, castGradient, castOverlay}},
-					{castBarWidth, castBarHeight},
-					{
-						decorate = gConfig.showTargetBarBookends,
-						absolutePosition = {castBarX, castBarY}
-					}
-				);
+					-- Draw cast bar with absolute positioning (doesn't affect ImGui layout)
+					progressbar.ProgressBar(
+						progressbar.Pct(progress, castGradient, castOverlay),
+						progressbar.Dims(castBarWidth, castBarHeight),
+						progressbar.Opts(gConfig.showTargetBarBookends, nil, castBarX, castBarY)
+					);
 
-				-- Draw cast text below the cast bar (centered on cast bar)
-				imtext.SetConfigFromSettings(settings.cast_font_settings);
-				local castFontSize = settings.cast_font_settings.font_height;
-				local castWidth, _ = imtext.Measure(castDisplayText, castFontSize);
-				local centerX = castBarX + (castBarWidth / 2);
-				local castColor = gConfig.colorCustomization.targetBar.castTextColor;
-				imtext.Draw(drawList, castDisplayText, centerX - castWidth / 2, castBarY + castBarHeight + 2, castColor, castFontSize);
+					-- Draw cast text below the cast bar (centered on cast bar)
+					imtext.SetConfigFromSettings(settings.cast_font_settings);
+					local castFontSize = settings.cast_font_settings.font_height;
+					local castWidth, _ = imtext.MeasureCached(castDisplayText, castFontSize);
+					local centerX = castBarX + (castBarWidth / 2);
+					local castColor = gConfig.colorCustomization.targetBar.castTextColor;
+					imtext.Draw(drawList, castDisplayText, centerX - castWidth / 2, castBarY + castBarHeight + 2, castColor, castFontSize);
+				else
+					detachedCast = {
+						progress = progress,
+						overlay = castOverlay,
+						text = castDisplayText,
+					};
+				end
 			end
 		end
 
@@ -648,14 +664,14 @@ targetbar.DrawWindow = function(settings)
 
 				-- Draw arrow vertically centered with HP bar
 				local arrowY = hpBarCenterY - (settings.arrowSize / 2);
-				imgui.SetCursorScreenPos({preBuffX, arrowY});
+				imgui.SetCursorScreenPos(_P1(preBuffX, arrowY));
 				imgui.Image(tonumber(ffi.cast("uint32_t", arrowTexture.image)), { settings.arrowSize, settings.arrowSize });
 				imgui.SameLine();
 
 				-- Draw ToT bar vertically centered with HP bar
 				local totX, _ = imgui.GetCursorScreenPos();
 				local totBarY = hpBarCenterY - (settings.totBarHeight / 2) + settings.totBarOffset;
-				imgui.SetCursorScreenPos({totX, totBarY});
+				imgui.SetCursorScreenPos(_P1(totX, totBarY));
 
 				local totStartX, totStartY = imgui.GetCursorScreenPos();
 
@@ -670,9 +686,9 @@ targetbar.DrawWindow = function(settings)
 				end
 				local totGradient = GetCustomGradient(gConfig.colorCustomization.totBar, totGradientKey) or {'#e16c6c', '#fb9494'};
 				local totHpPercentData = HpInterpolation.update('tot', totEntity.HPPercent, totIndex, settings, currentTime, totGradient);
-				progressbar.ProgressBar(totHpPercentData, {settings.barWidth / 3, settings.totBarHeight}, {decorate = gConfig.showTargetBarBookends});
+				progressbar.ProgressBar(totHpPercentData, progressbar.Dims(settings.barWidth / 3, settings.totBarHeight), progressbar.Opts(gConfig.showTargetBarBookends));
 				-- Submit a dummy item to properly extend window bounds after SetCursorScreenPos
-				imgui.Dummy({1, 1});
+				imgui.Dummy(_P1(1, 1));
 
 				-- Left-aligned text position (ToT name) - 8px from left edge (after bookend)
 				local totLeftTextX = totStartX + totBookendWidth + totTextPadding;
@@ -688,15 +704,48 @@ targetbar.DrawWindow = function(settings)
 		if (castBarDrawn) then
 			local castTextHeight = settings.cast_font_settings.font_height;
 			local totalCastBarSpace = settings.castBarOffsetY + settings.castBarHeight + 2 + castTextHeight;
-			imgui.Dummy({0, totalCastBarSpace});
+			imgui.Dummy(_P1(0, totalCastBarSpace));
 		end
 
 		-- ImGui 1.91+: SetCursorPos/SetCursorScreenPos no longer auto-extends window
 		-- content boundaries. Submit a zero-sized Dummy to commit any pending extensions
 		-- from SetCursorPosY (buffsOffsetY) or SetCursorScreenPos (arrow/ToT positioning).
-		imgui.Dummy({0, 0});
+		imgui.Dummy(_P1(0, 0));
     end
     imgui.End();
+
+	-- Draw detached target cast bar as its own movable window
+	if (detachedCast ~= nil) then
+		local castBarHeight = settings.castBarHeight;
+		local castBarWidth = settings.castBarWidth;
+		local castFontSize = settings.cast_font_settings.font_height;
+		local castWindowFlags = GetBaseWindowFlags(gConfig.lockPositions);
+
+		imgui.SetNextWindowSize({ castBarWidth, -1 }, ImGuiCond_Always);
+		ApplyWindowPosition('TargetBarCastBar');
+		if (imgui.Begin('TargetBarCastBar', true, castWindowFlags)) then
+			SaveWindowPosition('TargetBarCastBar');
+			local castDrawList = GetUIDrawList();
+			local castBarX, castBarY = imgui.GetCursorScreenPos();
+			local castGradient = GetCustomGradient(gConfig.colorCustomization.targetBar, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
+
+			progressbar.ProgressBar(
+				progressbar.Pct(detachedCast.progress, castGradient, detachedCast.overlay),
+				progressbar.Dims(castBarWidth, castBarHeight),
+				progressbar.Opts(gConfig.showTargetBarBookends)
+			);
+
+			imtext.SetConfigFromSettings(settings.cast_font_settings);
+			local castWidth, _ = imtext.MeasureCached(detachedCast.text, castFontSize);
+			local centerX = castBarX + (castBarWidth / 2);
+			local castColor = gConfig.colorCustomization.targetBar.castTextColor;
+			imtext.Draw(castDrawList, detachedCast.text, centerX - castWidth / 2, castBarY + castBarHeight + 2, castColor, castFontSize);
+
+			-- Reserve space for the cast name under the bar (bar height already reserved by ProgressBar)
+			imgui.Dummy(_P1(0, 2 + castFontSize));
+		end
+		imgui.End();
+	end
 
 	-- Draw Subtarget Bar (shows subtarget cursor selection while subtargeting)
 	if (gConfig.showSubtargetBar) then
@@ -713,7 +762,7 @@ targetbar.DrawWindow = function(settings)
 				if (imgui.Begin('SubtargetBar', true, subtargetWindowFlags)) then
 					-- Reserve space above bar for text
 					local topReserveHeight = settings.topTextYOffset + settings.subtargetName_font_settings.font_height;
-					imgui.Dummy({0, topReserveHeight});
+					imgui.Dummy(_P1(0, topReserveHeight));
 					imgui.SetCursorPosY(imgui.GetCursorPosY() - topReserveHeight);
 
 					local stStartX, stStartY = imgui.GetCursorScreenPos();
@@ -727,10 +776,10 @@ targetbar.DrawWindow = function(settings)
 
 					-- Get HP gradient for subtarget bar
 					local stHpGradient = GetCustomGradient(gConfig.colorCustomization.subtargetBar, 'hpGradient') or {'#e26c6c', '#fb9494'};
-					local stHpPercentData = {{subtargetEntity.HPPercent / 100, stHpGradient}};
+					local stHpPercentData = progressbar.Pct(subtargetEntity.HPPercent / 100, stHpGradient);
 
 					-- Draw progress bar
-					progressbar.ProgressBar(stHpPercentData, {settings.subtargetBarWidth, settings.subtargetBarHeight}, {decorate = stShowBookends});
+					progressbar.ProgressBar(stHpPercentData, progressbar.Dims(settings.subtargetBarWidth, settings.subtargetBarHeight), progressbar.Opts(stShowBookends));
 
 					-- Build name text with mob level if applicable
 					local stNameDisplay = subtargetEntity.Name;
@@ -760,7 +809,7 @@ targetbar.DrawWindow = function(settings)
 					local stPercentWidth = 0;
 					if (stShowHpPercent) then
 						local stHpText = subtargetEntity.HPPercent .. '%';
-						stPercentWidth, _ = imtext.Measure(stHpText, stPercentFontSize);
+						stPercentWidth, _ = imtext.MeasureCached(stHpText, stPercentFontSize);
 						local stPercentColor, _ = GetHpColors(subtargetEntity.HPPercent / 100);
 						-- Right-align: position is right edge minus text width
 						imtext.Draw(drawList, stHpText, stRightEdge - stPercentWidth, stTextY, stPercentColor, stPercentFontSize);
@@ -769,7 +818,7 @@ targetbar.DrawWindow = function(settings)
 					-- Draw distance text if enabled (to the left of HP%)
 					if (gConfig.subtargetBarShowDistance) then
 						local stDist = ('%.1f'):fmt(math.sqrt(subtargetEntity.Distance));
-						local stDistWidth, _ = imtext.Measure(stDist, stPercentFontSize);
+						local stDistWidth, _ = imtext.MeasureCached(stDist, stPercentFontSize);
 						local stDistX;
 						if stShowHpPercent then
 							-- Position to the left of HP% with 8px gap
@@ -844,7 +893,7 @@ targetbar.DrawWindow = function(settings)
 				end
 				local totGradientSplit = GetCustomGradient(gConfig.colorCustomization.totBar, totGradientKeySplit) or {'#e16c6c', '#fb9494'};
 				local totHpPercentDataSplit = HpInterpolation.update('tot', totEntity.HPPercent, totIndex, settings, currentTime, totGradientSplit);
-				progressbar.ProgressBar(totHpPercentDataSplit, {settings.totBarWidth, settings.totBarHeightSplit}, {decorate = gConfig.showTargetBarBookends});
+				progressbar.ProgressBar(totHpPercentDataSplit, progressbar.Dims(settings.totBarWidth, settings.totBarHeightSplit), progressbar.Opts(gConfig.showTargetBarBookends));
 
 				-- Left-aligned text position (ToT name) - 8px from left edge (after bookend)
 				local totLeftTextXSplit = totStartX + totBookendWidthSplit + totTextPaddingSplit;

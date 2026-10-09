@@ -1,6 +1,10 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
+
+-- Reused draw arguments.
+local _p1 = {0, 0};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
 local imtext = require('libs.imtext');
 local progressbar = require('libs.progressbar');
 local buffTable = require('libs.bufftable');
@@ -330,14 +334,14 @@ playerbar.DrawWindow = function(settings)
 		end
 
 		if (bShowMp == false) then
-			imgui.Dummy({(barSize + settings.barSpacing) / 2, 0});
+			imgui.Dummy(_P1((barSize + settings.barSpacing) / 2, 0));
 
 			imgui.SameLine();
 		end
 
 		-- Capture HP bar start position
 		local hpBarStartX, hpBarStartY = imgui.GetCursorScreenPos();
-		progressbar.ProgressBar(hpPercentData, {barSize, settings.barHeight}, {decorate = gConfig.showPlayerBarBookends, drawList = drawList});
+		progressbar.ProgressBar(hpPercentData, progressbar.Dims(barSize, settings.barHeight), progressbar.Opts(gConfig.showPlayerBarBookends, drawList));
 
 		-- Draw resting ticker shimmer if enabled and player is resting
 		if gConfig.playerBarRestingTicker and playerEnt.Status == 33 then
@@ -447,7 +451,7 @@ playerbar.DrawWindow = function(settings)
 				mpPercentData = {{SelfMPPercent / 100, mpGradient}};
 			end
 
-			progressbar.ProgressBar(mpPercentData, {barSize, settings.barHeight}, {decorate = gConfig.showPlayerBarBookends, drawList = drawList});
+			progressbar.ProgressBar(mpPercentData, progressbar.Dims(barSize, settings.barHeight), progressbar.Opts(gConfig.showPlayerBarBookends, drawList));
 			imgui.SameLine();
 		end
 
@@ -500,7 +504,7 @@ playerbar.DrawWindow = function(settings)
 			mainPercent = SelfTP / 1000;
 		end
 
-		progressbar.ProgressBar({{mainPercent, tpGradient}}, {barSize, settings.barHeight}, {overlayBar=tpOverlay, decorate = gConfig.showPlayerBarBookends, drawList = drawList});
+		progressbar.ProgressBar(progressbar.Pct(mainPercent, tpGradient), progressbar.Dims(barSize, settings.barHeight), progressbar.Opts(gConfig.showPlayerBarBookends, drawList, nil, nil, tpOverlay));
 
 		imgui.SameLine();
 
@@ -527,7 +531,7 @@ playerbar.DrawWindow = function(settings)
 		else
 			hpDisplayText = tostring(SelfHP);
 		end
-		local hpTextW, _ = imtext.Measure(hpDisplayText, fontSize);
+		local hpTextW, _ = imtext.MeasureCached(hpDisplayText, fontSize);
 		-- Calculate position based on alignment
 		local hpTextX;
 		local hpAlignment = gConfig.playerBarHpTextAlignment or 'right';
@@ -561,7 +565,7 @@ playerbar.DrawWindow = function(settings)
 			else
 				mpDisplayText = tostring(SelfMP);
 			end
-			local mpTextW, _ = imtext.Measure(mpDisplayText, fontSize);
+			local mpTextW, _ = imtext.MeasureCached(mpDisplayText, fontSize);
 			-- Calculate position based on alignment
 			local mpTextX;
 			local mpAlignment = gConfig.playerBarMpTextAlignment or 'right';
@@ -580,7 +584,7 @@ playerbar.DrawWindow = function(settings)
 
 		-- Draw TP text
 		local tpDisplayText = tostring(SelfTP);
-		local tpTextW, _ = imtext.Measure(tpDisplayText, fontSize);
+		local tpTextW, _ = imtext.MeasureCached(tpDisplayText, fontSize);
 		-- Calculate position based on alignment
 		local tpTextX;
 		local tpAlignment = gConfig.playerBarTpTextAlignment or 'right';

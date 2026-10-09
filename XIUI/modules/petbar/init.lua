@@ -27,21 +27,14 @@ petbar.Initialize = function(settings)
     -- Load jug icon texture (via TextureManager)
     data.jugIconTexture = TextureManager.getFileTexture('pets/jug');
 
-    -- Load pet image textures + base dimensions (rendered via drawList:AddImage in data.UpdateBackground)
+    -- Pet images load on first draw (data.GetPetImage).
     data.petImageTextures = {};
     data.petImageMeta = {};
+    data.petImageFileByKey = {};
     for _, petName in ipairs(data.allPetsWithImages) do
-        local key = data.GetPetSettingsKey(petName);
         local imageFile = data.petImageMap[petName];
         if imageFile then
-            local texture = TextureManager.getFileTexture(string.format('pets/%s', imageFile:gsub('%.png$', '')));
-            if texture and texture.image then
-                local baseWidth, baseHeight = GetTextureDimensions(texture, 256, 256);
-                data.petImageTextures[key] = texture;
-                data.petImageMeta[key] = { baseWidth = baseWidth, baseHeight = baseHeight, exists = true };
-            else
-                data.petImageMeta[key] = { baseWidth = 256, baseHeight = 256, exists = false };
-            end
+            data.petImageFileByKey[data.GetPetSettingsKey(petName)] = imageFile;
         end
     end
 

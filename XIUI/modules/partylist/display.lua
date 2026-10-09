@@ -6,6 +6,12 @@
 require('common');
 require('handlers.helpers');
 local ffi = require('ffi');
+
+-- Reused draw arguments.
+local _p1, _p2, _UV0, _UV1 = {0, 0}, {0, 0}, {0, 0}, {1, 1};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
+local function _P2(x, y) _p2[1] = x; _p2[2] = y; return _p2; end
+local SYNC_DOT_COLOR = {.5, .5, 1, 1};
 local imgui = require('imgui');
 local statusHandler = require('handlers.statushandler');
 local buffTable = require('libs.bufftable');
@@ -36,6 +42,30 @@ end
 -- ============================================
 -- DrawMember - Render a single party member
 -- ============================================
+
+-- Reused ProgressBar arguments.
+local pbDims, pbOpts, pbPct = {0, 0}, {}, {{0, nil}};
+local function PBDims(w, h) pbDims[1] = w; pbDims[2] = h; return pbDims; end
+local function PBOpts(decorate, bgOverride, borderOverride)
+    pbOpts.decorate = decorate; pbOpts.backgroundGradientOverride = bgOverride;
+    pbOpts.borderColorOverride = borderOverride; pbOpts.absolutePosition = nil; pbOpts.drawList = nil;
+    pbOpts.enhancedBorder = nil; pbOpts.overlayBar = nil;
+    return pbOpts;
+end
+-- The HP bar appends to this; trim it.
+local function PBPct(p, gradient)
+    for i = #pbPct, 2, -1 do pbPct[i] = nil; end
+    pbPct[1][1] = p; pbPct[1][2] = gradient; pbPct[1][3] = nil;
+    return pbPct;
+end
+-- Reused.
+local TP_OVERLAY_GRADIENT = {'#0078CC', '#0078CC'};
+local TP_OVERLAY_FLASH = {{1, TP_OVERLAY_GRADIENT}, 0, 0, {'', 1}};
+local TP_OVERLAY_PLAIN = {{1, TP_OVERLAY_GRADIENT}, 0, 1};
+local partyBgOptions = {};
+local titleUVs = {{0, 0}, {0, 0}};
+local function _TUV(n, u, v) local t = titleUVs[n]; t[1] = u; t[2] = v; return t; end
+
 function display.DrawMember(memIdx, settings, isLastVisibleMember)
     local textDrawList = GetUIDrawList();
     -- Bar borders draw outside the requested barHeight; shift text below to clear them.
@@ -109,7 +139,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Calculate text sizes (use cached text to avoid texture regeneration)
     local nameText = tostring(memInfo.name);
-    local nameWidth, nameHeight = imtext.Measure(nameText, fontSizes.name);
+    local nameWidth, nameHeight = imtext.MeasureCached(nameText, fontSizes.name);
 
     -- Format HP text based on display mode
     local hpDisplayText;
@@ -128,7 +158,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
     else
         hpDisplayText = tostring(memInfo.hp);
     end
-    local hpTextWidth, hpHeight = imtext.Measure(hpDisplayText, fontSizes.hp);
+    local hpTextWidth, hpHeight = imtext.MeasureCached(hpDisplayText, fontSizes.hp);
 
     -- Format MP text based on display mode
     local mpDisplayText;
@@ -148,17 +178,17 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         mpDisplayText = tostring(memInfo.mp);
     end
     local mpColor = cache.colors.mpTextColor;
-    local mpTextWidth, mpHeight = imtext.Measure(mpDisplayText, fontSizes.mp);
+    local mpTextWidth, mpHeight = imtext.MeasureCached(mpDisplayText, fontSizes.mp);
 
     local tpText = tostring(memInfo.tp);
     local tpColor = (memInfo.tp >= 1000) and cache.colors.tpFullTextColor or cache.colors.tpEmptyTextColor;
-    local tpTextWidth, tpHeight = imtext.Measure(tpText, fontSizes.tp);
+    local tpTextWidth, tpHeight = imtext.MeasureCached(tpText, fontSizes.tp);
 
     -- Calculate max TP text width for Layout 1 (cached per party to avoid per-frame texture regen)
     local maxTpTextWidth = tpTextWidth;
     if layout == 1 then
         if not data.maxTpTextWidthCache[partyIndex] then
-            data.maxTpTextWidthCache[partyIndex], _ = imtext.Measure("3000", fontSizes.tp);
+            data.maxTpTextWidthCache[partyIndex], _ = imtext.MeasureCached("3000", fontSizes.tp);
         end
         maxTpTextWidth = data.maxTpTextWidthCache[partyIndex];
     end
@@ -172,9 +202,10 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         allBarsLengths = math.max(row1Width, row2Width);
     else
         -- Always include HP + MP + TP space for consistent width across all members
-        allBarsLengths = hpBarWidth + mpBarWidth + imgui.GetStyle().FramePadding.x + imgui.GetStyle().ItemSpacing.x;
+        local style = imgui.GetStyle();
+        allBarsLengths = hpBarWidth + mpBarWidth + style.FramePadding.x + style.ItemSpacing.x;
         if (showTP) then
-            allBarsLengths = allBarsLengths + tpBarWidth + imgui.GetStyle().FramePadding.x + imgui.GetStyle().ItemSpacing.x;
+            allBarsLengths = allBarsLengths + tpBarWidth + style.FramePadding.x + style.ItemSpacing.x;
         end
     end
 
@@ -238,11 +269,11 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 local stepBR_y = stepTL_y + stepHeight;
 
                 if i == 1 then
-                    drawList:AddRectFilled({selX1, stepTL_y}, {selX2, stepBR_y}, stepColor, 6, 3);
+                    drawList:AddRectFilled(_P1(selX1, stepTL_y), _P2(selX2, stepBR_y), stepColor, 6, 3);
                 elseif i == gradientSteps then
-                    drawList:AddRectFilled({selX1, stepTL_y}, {selX2, stepBR_y}, stepColor, 6, 12);
+                    drawList:AddRectFilled(_P1(selX1, stepTL_y), _P2(selX2, stepBR_y), stepColor, 6, 12);
                 else
-                    drawList:AddRectFilled({selX1, stepTL_y}, {selX2, stepBR_y}, stepColor, 0);
+                    drawList:AddRectFilled(_P1(selX1, stepTL_y), _P2(selX2, stepBR_y), stepColor, 0);
                 end
             end
 
@@ -261,7 +292,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 end
                 borderColor = data.cachedBorderColorU32;
             end
-            drawList:AddRect({selectionTL[1], selectionTL[2]}, {selectionBR[1], selectionBR[2]}, borderColor, 6, 15, 2);
+            drawList:AddRect(_P1(selectionTL[1], selectionTL[2]), _P2(selectionBR[1], selectionBR[2]), borderColor, 6, 15, 2);
         end
 
         -- Draw cursor arrow
@@ -283,9 +314,8 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
             local draw_list = GetUIDrawList();
             draw_list:AddImage(
                 cursorImage,
-                {cursorX, cursorY},
-                {cursorX + cursorWidth, cursorY + cursorHeight},
-                {0, 0}, {1, 1},
+                _P1(cursorX, cursorY), _P2(cursorX + cursorWidth, cursorY + cursorHeight),
+                _UV0, _UV1,
                 tintColor
             );
 
@@ -304,13 +334,12 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         if (jobIcon ~= nil) then
             namePosX = namePosX + jobIconSize + settings.nameTextOffsetX;
             distanceBaseX = distanceBaseX + jobIconSize; -- Only add job icon width, not name offset
-            local jobIconPtr = tonumber(ffi.cast("uint32_t", jobIcon));
+            local jobIconPtr = jobIcon;  -- already a pointer number
             local draw_list = textDrawList;
             draw_list:AddImage(
                 jobIconPtr,
-                {hpStartX, offsetStartY},
-                {hpStartX + jobIconSize, offsetStartY + jobIconSize},
-                {0, 0}, {1, 1},
+                _P1(hpStartX, offsetStartY), _P2(hpStartX + jobIconSize, offsetStartY + jobIconSize),
+                _UV0, _UV1,
                 IM_COL32_WHITE
             );
         end
@@ -445,7 +474,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         baseHpp = hppInPercent / 100;
     end
 
-    local hpPercentData = {{baseHpp, hpGradient}};
+    local hpPercentData = PBPct(baseHpp, hpGradient);
     local interpColors = GetHpInterpolationColors();
 
     if interp.interpolationDamagePercent and interp.interpolationDamagePercent > 0 then
@@ -480,7 +509,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Draw HP bar
     if (memInfo.inzone) then
-        progressbar.ProgressBar(hpPercentData, {hpBarWidth, hpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+        progressbar.ProgressBar(hpPercentData, PBDims(hpBarWidth, hpBarHeight), PBOpts(cache.showBookends, data.getBarBackgroundOverride(partyIndex), data.getBarBorderOverride(partyIndex)));
     elseif (memInfo.zone == '' or memInfo.zone == nil) then
         local zoneBarWidth = allBarsLengths;
         local zoneBarHeight;
@@ -489,7 +518,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         else
             zoneBarHeight = hpBarHeight + barBorderExtent;
         end
-        imgui.Dummy({zoneBarWidth, zoneBarHeight});
+        imgui.Dummy(_P1(zoneBarWidth, zoneBarHeight));
     else
         local zoneBarWidth = allBarsLengths;
         local zoneBarHeight;
@@ -500,18 +529,17 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         end
 
         local zoneBarStartX, zoneBarStartY = imgui.GetCursorScreenPos();
-        imgui.Dummy({zoneBarWidth, zoneBarHeight});
+        imgui.Dummy(_P1(zoneBarWidth, zoneBarHeight));
 
         local drawList = textDrawList;
         drawList:AddRect(
-            {zoneBarStartX, zoneBarStartY},
-            {zoneBarStartX + zoneBarWidth, zoneBarStartY + zoneBarHeight},
+            _P1(zoneBarStartX, zoneBarStartY), _P2(zoneBarStartX + zoneBarWidth, zoneBarStartY + zoneBarHeight),
             imgui.GetColorU32({0.5, 0.5, 0.5, 1.0}),
             0, ImDrawCornerFlags_None, 1
         );
 
         local zoneName = encoding:ShiftJIS_To_UTF8(AshitaCore:GetResourceManager():GetString("zones.names", memInfo.zone), true);
-        local zoneTextWidth, zoneTextHeight = imtext.Measure(zoneName, fontSizes.zone);
+        local zoneTextWidth, zoneTextHeight = imtext.MeasureCached(zoneName, fontSizes.zone);
         local zoneTextX = zoneBarStartX + (zoneBarWidth - zoneTextWidth) / 2;
         local zoneTextY = zoneBarStartY + (zoneBarHeight - zoneTextHeight) / 2;
         imtext.Draw(textDrawList, zoneName, zoneTextX, zoneTextY, cache.colors.nameTextColor, fontSizes.zone);
@@ -541,7 +569,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
             dotColorARGB = cache.colors.partyLeaderDotColor or 0xFFFFFF80;
         end
         local dotColor = ARGBToImGui(dotColorARGB);
-        draw_circle({hpStartX + settings.dotRadius/2, hpStartY + settings.dotRadius/2}, settings.dotRadius, dotColor, settings.dotRadius * 3, true, nil, GetUIDrawList());
+        draw_circle(_P1(hpStartX + settings.dotRadius/2, hpStartY + settings.dotRadius/2), settings.dotRadius, dotColor, settings.dotRadius * 3, true, nil, GetUIDrawList());
     end
 
     -- Position name text
@@ -598,7 +626,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
             if isCasting and castBarStyle == 'name' then
                 local castTextColor = cache.colors.castTextColor or 0xFFFFCC44;
                 imtext.Draw(textDrawList, castData.spellName, nameTextX, nameTextY, castTextColor, fontSizes.name);
-                local spellNameWidth, _ = imtext.Measure(castData.spellName, fontSizes.name);
+                local spellNameWidth, _ = imtext.MeasureCached(castData.spellName, fontSizes.name);
 
                 local castBarWidth = hpBarWidth * 0.6 * cache.castBarScaleX;
                 local castBarHeight = math.max(2, nameRefHeight * 0.8 * cache.castBarScaleY);
@@ -618,7 +646,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 local castBarY = hpStartY - nameRefHeight - settings.nameTextOffsetY + textOffsets.nameY + (nameRefHeight - castBarHeight) / 2 + castBarOffsetY;
                 local castGradient = GetCustomGradient(cache.colors, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
                 progressbar.ProgressBar(
-                    {{castProgress, castGradient}},
+                    PBPct(castProgress, castGradient),
                     {castBarWidth, castBarHeight},
                     {
                         decorate = false,
@@ -689,7 +717,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
             end
         end
         if jobStr ~= '' then
-            local jobTextWidth, jobTextHeight = imtext.Measure(jobStr, fontSizes.job);
+            local jobTextWidth, jobTextHeight = imtext.MeasureCached(jobStr, fontSizes.job);
             local jobPosX = hpStartX + allBarsLengths - jobTextWidth;
             local jobTextX = jobPosX + textOffsets.jobX;
             local jobTextY = hpStartY - nameRefHeight - settings.nameTextOffsetY + nameBaselineOffset + textOffsets.jobY;
@@ -700,7 +728,8 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- MP/TP bars
     -- Calculate where MP bar would be positioned (after HP bar) for consistent status icon placement
-    local mpStartX = hpStartX + hpBarWidth + imgui.GetStyle().FramePadding.x + imgui.GetStyle().ItemSpacing.x;
+    local layoutStyle = imgui.GetStyle();
+    local mpStartX = hpStartX + hpBarWidth + layoutStyle.FramePadding.x + layoutStyle.ItemSpacing.x;
     local mpStartY = hpStartY;
     local tpStartX, tpStartY; -- Track TP bar position
 
@@ -715,7 +744,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
     if (memInfo.inzone) then
         if layout == 1 then
             -- Layout 2: Vertical layout
-            imgui.Dummy({0, 1});
+            imgui.Dummy(_P1(0, 1));
             local rowStartX, rowStartY = imgui.GetCursorScreenPos();
 
             -- TP text (or spell name if casting with 'tp' style). Hidden when
@@ -769,13 +798,13 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
             local mpBarStartX = rowStartX + 4 + effectiveTpTextWidth + 4;
             mpStartX = mpBarStartX;
             mpStartY = rowStartY;
-            imgui.SetCursorScreenPos({mpStartX, mpStartY});
+            imgui.SetCursorScreenPos(_P1(mpStartX, mpStartY));
 
             -- Render cast bar or MP bar based on style and job type
             if showMpBar then
                 if showingCastInMpSlot then
                     local castGradient = GetCustomGradient(cache.colors, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
-                    progressbar.ProgressBar({{castProgress, castGradient}}, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+                    progressbar.ProgressBar(PBPct(castProgress, castGradient), PBDims(mpBarWidth, mpBarHeight), PBOpts(cache.showBookends, data.getBarBackgroundOverride(partyIndex), data.getBarBorderOverride(partyIndex)));
                     -- Set MP text to spell name with cast text color
                     mpDisplayText = castData.spellName;
                     mpColor = cache.colors.castTextColor or 0xFFFFCC44;
@@ -826,13 +855,13 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                                 {costPercent, costGradient, costOverlay},
                             };
                         else
-                            mpPercentData = {{memInfo.mpp, mpGradient}};
+                            mpPercentData = PBPct(memInfo.mpp, mpGradient);
                         end
                     else
-                        mpPercentData = {{memInfo.mpp, mpGradient}};
+                        mpPercentData = PBPct(memInfo.mpp, mpGradient);
                     end
 
-                    progressbar.ProgressBar(mpPercentData, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+                    progressbar.ProgressBar(mpPercentData, PBDims(mpBarWidth, mpBarHeight), PBOpts(cache.showBookends, data.getBarBackgroundOverride(partyIndex), data.getBarBorderOverride(partyIndex)));
                     mpColor = cache.colors.mpTextColor;
                 end
 
@@ -854,7 +883,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 -- Render cast bar or MP bar based on style and job type
                 if showingCastInMpSlot then
                     local castGradient = GetCustomGradient(cache.colors, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
-                    progressbar.ProgressBar({{castProgress, castGradient}}, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+                    progressbar.ProgressBar(PBPct(castProgress, castGradient), PBDims(mpBarWidth, mpBarHeight), PBOpts(cache.showBookends, data.getBarBackgroundOverride(partyIndex), data.getBarBorderOverride(partyIndex)));
                     -- Set MP text to spell name with cast text color
                     mpDisplayText = castData.spellName;
                     mpColor = cache.colors.castTextColor or 0xFFFFCC44;
@@ -905,18 +934,18 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                                 {costPercent, costGradient, costOverlay},
                             };
                         else
-                            mpPercentData = {{memInfo.mpp, mpGradient}};
+                            mpPercentData = PBPct(memInfo.mpp, mpGradient);
                         end
                     else
-                        mpPercentData = {{memInfo.mpp, mpGradient}};
+                        mpPercentData = PBPct(memInfo.mpp, mpGradient);
                     end
 
-                    progressbar.ProgressBar(mpPercentData, {mpBarWidth, mpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+                    progressbar.ProgressBar(mpPercentData, PBDims(mpBarWidth, mpBarHeight), PBOpts(cache.showBookends, data.getBarBackgroundOverride(partyIndex), data.getBarBorderOverride(partyIndex)));
                     mpColor = cache.colors.mpTextColor;
                 end
 
                 -- Recalculate mp text width in case it changed to spell name
-                local currentMpTextWidth = showingCastInMpSlot and imtext.Measure(mpDisplayText, fontSizes.mp) or mpTextWidth;
+                local currentMpTextWidth = showingCastInMpSlot and imtext.MeasureCached(mpDisplayText, fontSizes.mp) or mpTextWidth;
                 local mpBaselineOffset = mpRefHeight - mpHeight;
                 local mpTextX = mpStartX + mpBarWidth - currentMpTextWidth + textOffsets.mpX;
                 local mpTextY = mpStartY + mpBarHeight + barBorderExtent + settings.mpTextOffsetY + mpBaselineOffset + textOffsets.mpY;
@@ -934,7 +963,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 if showingCastInTpSlot then
                     -- Render cast bar in TP slot
                     local castGradient = GetCustomGradient(cache.colors, 'castBarGradient') or {'#ffaa00', '#ffcc44'};
-                    progressbar.ProgressBar({{castProgress, castGradient}}, {tpBarWidth, tpBarHeight}, {decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+                    progressbar.ProgressBar(PBPct(castProgress, castGradient), PBDims(tpBarWidth, tpBarHeight), PBOpts(cache.showBookends, data.getBarBackgroundOverride(partyIndex), data.getBarBorderOverride(partyIndex)));
                     -- Set TP text to spell name with cast text color
                     local castTextColor = cache.colors.castTextColor or 0xFFFFCC44;
                     tpText = castData.spellName;
@@ -942,7 +971,6 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 else
                     -- Render normal TP bar
                     local tpGradient = GetCustomGradient(cache.colors, 'tpGradient') or {'#3898ce', '#78c4ee'};
-                    local tpOverlayGradient = {'#0078CC', '#0078CC'};
                     local mainPercent;
                     local tpOverlay;
 
@@ -951,22 +979,27 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                         if (cache.flashTP) then
                             local flashARGB = cache.colors.tpFlashColor or 0xFF3ECE00;
                             local flashHex = string.format('#%06X', bit.band(flashARGB, 0xFFFFFF));
-                            tpOverlay = {{1, tpOverlayGradient}, math.ceil(tpBarHeight * 5/7), 0, { flashHex, 1 }};
+                            tpOverlay = TP_OVERLAY_FLASH;
+                            tpOverlay[2] = math.ceil(tpBarHeight * 5/7);
+                            tpOverlay[4][1] = flashHex;
                         else
-                            tpOverlay = {{1, tpOverlayGradient}, math.ceil(tpBarHeight * 2/7), 1};
+                            tpOverlay = TP_OVERLAY_PLAIN;
+                            tpOverlay[2] = math.ceil(tpBarHeight * 2/7);
                         end
                     else
                         mainPercent = memInfo.tp / 1000;
                     end
 
-                    progressbar.ProgressBar({{mainPercent, tpGradient}}, {tpBarWidth, tpBarHeight}, {overlayBar=tpOverlay, decorate = cache.showBookends, backgroundGradientOverride = data.getBarBackgroundOverride(partyIndex), borderColorOverride = data.getBarBorderOverride(partyIndex)});
+                    local tpOpts = PBOpts(cache.showBookends, data.getBarBackgroundOverride(partyIndex), data.getBarBorderOverride(partyIndex));
+                    tpOpts.overlayBar = tpOverlay;
+                    progressbar.ProgressBar(PBPct(mainPercent, tpGradient), PBDims(tpBarWidth, tpBarHeight), tpOpts);
 
                     local desiredTpColor = (memInfo.tp >= 1000) and cache.colors.tpFullTextColor or cache.colors.tpEmptyTextColor;
                     tpColor = desiredTpColor;
                 end
 
                 -- Recalculate tp text width in case it changed to spell name
-                local currentTpTextWidth = showingCastInTpSlot and imtext.Measure(tpText, fontSizes.tp) or tpTextWidth;
+                local currentTpTextWidth = showingCastInTpSlot and imtext.MeasureCached(tpText, fontSizes.tp) or tpTextWidth;
                 local tpBaselineOffset = tpRefHeight - tpHeight;
                 local tpTextX = tpStartX + tpBarWidth - currentTpTextWidth + textOffsets.tpX;
                 local tpTextY = tpStartY + tpBarHeight + barBorderExtent + settings.tpTextOffsetY + tpBaselineOffset + textOffsets.tpY;
@@ -1052,7 +1085,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
                 end
                 imgui.PopStyleVar(1);
                 imgui.End();
-                imgui.SetCursorScreenPos({resetX, resetY});
+                imgui.SetCursorScreenPos(_P1(resetX, resetY));
             elseif (cache.statusTheme == 3) then
                 local statusOffsetX = cache.statusOffsetX or 0;
                 local statusOffsetY = cache.statusOffsetY or 0;
@@ -1080,7 +1113,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
 
     -- Sync indicator
     if (memInfo.sync) then
-        draw_circle({hpStartX + settings.dotRadius/2, hpStartY + barHeight}, settings.dotRadius, {.5, .5, 1, 1}, settings.dotRadius * 3, true, nil, GetUIDrawList());
+        draw_circle(_P1(hpStartX + settings.dotRadius/2, hpStartY + barHeight), settings.dotRadius, SYNC_DOT_COLOR, settings.dotRadius * 3, true, nil, GetUIDrawList());
     end
 
 
@@ -1090,7 +1123,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         local row1Width = hpBarWidth;
         local row2Width = 4 + maxTpTextWidth + 4 + mpBarWidth + 4 + mpTextWidth;
         local fullWidth = math.max(row1Width, row2Width);
-        imgui.Dummy({fullWidth, 0});
+        imgui.Dummy(_P1(fullWidth, 0));
     end
 
     local bottomSpacing;
@@ -1099,11 +1132,11 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
     else
         bottomSpacing = settings.hpTextOffsetY + hpRefHeight;
     end
-    imgui.Dummy({0, bottomSpacing});
+    imgui.Dummy(_P1(0, bottomSpacing));
 
     if (not isLastVisibleMember) then
         local BASE_MEMBER_SPACING = 6;
-        imgui.Dummy({0, BASE_MEMBER_SPACING + settings.entrySpacing[partyIndex]});
+        imgui.Dummy(_P1(0, BASE_MEMBER_SPACING + settings.entrySpacing[partyIndex]));
     end
 
     -- Add a click target over party member entry if in zone and enabled
@@ -1115,7 +1148,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         local entryStartX = hpStartX;
         local entryStartY = hpStartY - nameRefHeight - settings.nameTextOffsetY;
 
-        imgui.SetCursorScreenPos({entryStartX, entryStartY});
+        imgui.SetCursorScreenPos(_P1(entryStartX, entryStartY));
         if imgui.InvisibleButton('PartyMemberEntry' .. memIdx, {allBarsLengths, entryHeight}) then
             AshitaCore:GetChatManager():QueueCommand(-1, '/target ' .. memInfo.serverid);
         end
@@ -1130,7 +1163,7 @@ function display.DrawMember(memIdx, settings, isLastVisibleMember)
         --);
 
         --Return cursor position to previously saved location
-        imgui.SetCursorScreenPos({currentCursorPositionX, currentCursorPositionY});
+        imgui.SetCursorScreenPos(_P1(currentCursorPositionX, currentCursorPositionY));
     end
 
 end
@@ -1179,8 +1212,8 @@ function display.DrawPartyWindow(settings, party, partyIndex)
     local scale = data.getScale(partyIndex);
     local iconSize = 0;
 
-    imgui.PushStyleVar(ImGuiStyleVar_FramePadding, {0,0});
-    imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, { settings.barSpacing * scale.x, 0 });
+    imgui.PushStyleVar(ImGuiStyleVar_FramePadding, _UV0);
+    imgui.PushStyleVar(ImGuiStyleVar_ItemSpacing, _P1(settings.barSpacing * scale.x, 0));
     
     local positionJustApplied = ApplyWindowPosition(windowName);
     
@@ -1194,24 +1227,24 @@ function display.DrawPartyWindow(settings, party, partyIndex)
         local cachedW = data.fullMenuWidth[partyIndex];
         local cachedH = data.fullMenuHeight[partyIndex];
         if cachedW and cachedH and cachedW > 0 and cachedH > 0 then
-            windowBg.Draw(GetUIDrawList(), imguiPosX, imguiPosY, cachedW, cachedH, {
-                theme = cache.backgroundName,
-                padding = settings.bgPadding,
-                paddingY = settings.bgPaddingY,
-                bgScale = cache.bgScale,
-                borderScale = cache.borderScale,
-                bgOpacity = cache.backgroundOpacity,
-                bgColor = cache.colors.bgColor,
-                borderSize = settings.borderSize,
-                bgOffset = settings.bgOffset,
-                borderOpacity = cache.borderOpacity,
-                borderColor = cache.colors.borderColor,
-            });
+            -- Reused; every field rewritten per call.
+            partyBgOptions.theme = cache.backgroundName;
+            partyBgOptions.padding = settings.bgPadding;
+            partyBgOptions.paddingY = settings.bgPaddingY;
+            partyBgOptions.bgScale = cache.bgScale;
+            partyBgOptions.borderScale = cache.borderScale;
+            partyBgOptions.bgOpacity = cache.backgroundOpacity;
+            partyBgOptions.bgColor = cache.colors.bgColor;
+            partyBgOptions.borderSize = settings.borderSize;
+            partyBgOptions.bgOffset = settings.bgOffset;
+            partyBgOptions.borderOpacity = cache.borderOpacity;
+            partyBgOptions.borderColor = cache.colors.borderColor;
+            windowBg.Draw(GetUIDrawList(), imguiPosX, imguiPosY, cachedW, cachedH, partyBgOptions);
         end
 
         local nameRefHeight = cache.fontSizes.name;
         local offsetSize = nameRefHeight > iconSize and nameRefHeight or iconSize;
-        imgui.Dummy({0, settings.nameTextOffsetY + offsetSize});
+        imgui.Dummy(_P1(0, settings.nameTextOffsetY + offsetSize));
 
         data.UpdateTextVisibility(true, partyIndex);
 
@@ -1280,9 +1313,8 @@ function display.DrawPartyWindow(settings, party, partyIndex)
         local draw_list = GetUIDrawList();
         draw_list:AddImage(
             titleImage,
-            {titlePosX, titlePosY},
-            {titlePosX + titleWidth, titlePosY + titleHeight},
-            {titleUV[1], titleUV[2]}, {titleUV[3], titleUV[4]},
+            _P1(titlePosX, titlePosY), _P2(titlePosX + titleWidth, titlePosY + titleHeight),
+            _TUV(1, titleUV[1], titleUV[2]), _TUV(2, titleUV[3], titleUV[4]),
             IM_COL32_WHITE
         );
     end
@@ -1373,6 +1405,15 @@ function display.DrawWindow(settings)
         return;
     end
 
+    -- Stay visible while config is open so the list can still be positioned and styled.
+    if gConfig.partyListOnlyWhenEngaged and not showConfig[1] then
+        local playerEnt = GetPlayerEntity();
+        if playerEnt == nil or playerEnt.Status ~= 1 then -- 1 = engaged
+            data.UpdateTextVisibility(false);
+            return;
+        end
+    end
+
     -- Cache target info
     if data.frameCache.playerTarget ~= nil then
         data.frameCache.mainTargetIndex, data.frameCache.secondaryTargetIndex = GetTargets();
@@ -1389,7 +1430,14 @@ function display.DrawWindow(settings)
     for partyIndex = 1, 3 do
         local firstIdx = (partyIndex - 1) * data.partyMaxSize;
         local count = 0;
-        data.frameCache.activeMemberList[partyIndex] = {};
+        -- Emptied in place; nothing else reads it.
+        local memberList = data.frameCache.activeMemberList[partyIndex];
+        if memberList == nil then
+            memberList = {};
+            data.frameCache.activeMemberList[partyIndex] = memberList;
+        else
+            for k in pairs(memberList) do memberList[k] = nil; end
+        end
 
         if showConfig[1] and gConfig.partyListPreview then
             count = data.partyMaxSize;

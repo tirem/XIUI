@@ -195,17 +195,23 @@ end
 ---@param options table Zone configuration
 ---@return boolean True if drop occurred this frame
 ---@return boolean True if currently hovered and valid
+local zonePool = {};
+
 function dragdrop.DropZone(id, x, y, width, height, options)
     options = options or {};
 
-    -- Store zone info
-    state.zones[id] = {
-        x = x,
-        y = y,
-        width = width,
-        height = height,
-        options = options,
-    };
+    -- Store zone info (records pooled per id)
+    local zone = zonePool[id];
+    if not zone then
+        zone = {};
+        zonePool[id] = zone;
+    end
+    zone.x = x;
+    zone.y = y;
+    zone.width = width;
+    zone.height = height;
+    zone.options = options;
+    state.zones[id] = zone;
 
     -- Not dragging or not activated yet
     if not state.isDragging or not state.dragActivated then
@@ -370,8 +376,10 @@ function dragdrop.Update()
     state.dropHandledThisFrame = false;
     state.lastPayload = nil;
 
-    -- Clear zones from previous frame
-    state.zones = {};
+    -- Clear zones from previous frame (in place)
+    for k in pairs(state.zones) do
+        state.zones[k] = nil;
+    end
 
     if not state.isDragging then
         return;

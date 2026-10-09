@@ -21,6 +21,33 @@
 require('common');
 require('handlers.helpers');
 local imgui = require('imgui');
+
+-- Reused draw arguments.
+local _p1, _p2 = {0, 0}, {0, 0};
+local function _P1(x, y) _p1[1] = x; _p1[2] = y; return _p1; end
+local function _P2(x, y) _p2[1] = x; _p2[2] = y; return _p2; end
+
+-- Reused.
+local TAB_COLORS_SELECTED = {
+    normal = 0xDD4a6a8a,
+    hovered = 0xDD5a7a9a,
+    pressed = 0xDD3a5a7a,
+    border = 0xFF2a4a6a,
+};
+local TAB_COLORS_UNSELECTED = {
+    normal = 0xAA333333,
+    hovered = 0xCC4a4a4a,
+    pressed = 0xAA222222,
+    border = 0xFF1a1a1a,
+};
+local poolBgOptions = {};
+local itemBtnOptions = {};
+local function ItemBtnOpts(colors, tooltip, disabled)
+    itemBtnOptions.colors = colors;
+    itemBtnOptions.tooltip = tooltip;
+    itemBtnOptions.disabled = disabled;
+    return itemBtnOptions;
+end
 local windowBg = require('libs.windowbackground');
 local progressbar = require('libs.progressbar');
 local button = require('libs.button');
@@ -136,6 +163,9 @@ local EXPANDED_MAX_VISIBLE_ITEMS = 3;    -- Max items visible before scrolling
 local scrollOffset = 0;
 local maxScrollOffset = 0;
 
+-- Align-bottom window state (keeps footer edge fixed when height changes)
+local alignBottomState = { x = nil, y = nil, height = nil };
+
 -- Helper to build a comma-separated list of names with lots
 local function formatLottersList(lotters, maxChars)
     if #lotters == 0 then return '(none)'; end
@@ -224,6 +254,9 @@ function M.DrawWindow(settings)
     local bgTheme = gConfig.treasurePoolBackgroundTheme or 'Plain';
     local isExpanded = gConfig.treasurePoolExpanded == true;
     local isMinimized = gConfig.treasurePoolMinimized == true;
+    -- Reverse Grow off = bottom-to-top (default fill); on = top-to-bottom
+    local stackFromBottom = gConfig.treasurePoolReverseGrow ~= true;
+    local alignBottom = gConfig.treasurePoolAlignBottom == true;
 
     -- Calculate dimensions (different for expanded vs collapsed). scaleX/scaleY already include gs.
     local iconSize = math.floor(ICON_SIZE * scaleY);
@@ -368,7 +401,39 @@ function M.DrawWindow(settings)
 
     imgui.SetNextWindowSize({-1, -1}, ImGuiCond_Always);
 
-    ApplyWindowPosition('TreasurePool');
+    -- Align Bottom: pin the footer before Begin so height changes don't draw one frame low
+    local preAdjusted = false;
+    local needsSavedPosApply = gConfig.windowPositions
+        and gConfig.windowPositions['TreasurePool']
+        and (not gConfig.appliedPositions or not gConfig.appliedPositions['TreasurePool']);
+
+    if alignBottom
+        and not needsSavedPosApply
+        and alignBottomState.y ~= nil
+        and alignBottomState.height ~= nil
+        and alignBottomState.height ~= totalHeight
+    then
+        local posX = alignBottomState.x;
+        if posX == nil and gConfig.windowPositions and gConfig.windowPositions['TreasurePool'] then
+            posX = gConfig.windowPositions['TreasurePool'].x;
+        end
+        if posX ~= nil then
+            local newPosY = alignBottomState.y + alignBottomState.height - totalHeight;
+            imgui.SetNextWindowPos({ posX, newPosY }, ImGuiCond_Always);
+            preAdjusted = true;
+            if not gConfig.appliedPositions then gConfig.appliedPositions = {}; end
+            gConfig.appliedPositions['TreasurePool'] = true;
+            if not gConfig.windowPositions then gConfig.windowPositions = {}; end
+            gConfig.windowPositions['TreasurePool'] = { x = posX, y = newPosY };
+            alignBottomState.x = posX;
+            alignBottomState.y = newPosY;
+            alignBottomState.height = totalHeight;
+        end
+    end
+
+    if not preAdjusted then
+        ApplyWindowPosition('TreasurePool');
+    end
     if imgui.Begin('TreasurePool', true, windowFlags) then
         SaveWindowPosition('TreasurePool');
         local startX, startY = imgui.GetCursorScreenPos();
@@ -383,7 +448,40 @@ function M.DrawWindow(settings)
 
         imtext.SetConfigFromSettings(settings.font_settings);
 
-        imgui.Dummy({windowWidth, totalHeight});
+        -- Header labels size their own buttons. Widen the window if that row
+        -- would otherwise run into the view and collapse buttons.
+        local textPadX = math.max(6, math.floor(fontSize * 0.45));
+        local function LabelWidth(label, fallbackChars)
+            local textW = imtext.MeasureCached(label, fontSize);
+            textW = textW or (fontSize * fallbackChars);
+            return math.ceil(textW + (textPadX * 2));
+        end
+        local poolBtnWidth = LabelWidth('Pool', 2);
+        local historyBtnWidth = LabelWidth('History', 4);
+        local lotAllBtnWidth = LabelWidth('Lot All', 4);
+        local passAllBtnWidth = LabelWidth('Pass All', 4);
+        local itemLabelFont = math.max(1, fontSize - 1);
+        local function ItemLabelWidth(label, fallbackChars)
+            local textW = imtext.MeasureCached(label, itemLabelFont);
+            textW = textW or (itemLabelFont * fallbackChars);
+            return math.ceil(textW);
+        end
+        local itemLotBtnWidth = ItemLabelWidth('Lot', 2);
+        local itemPassBtnWidth = ItemLabelWidth('Pass', 2);
+        local btnHeight = fontSize + 6;
+        local btnSpacing = 4;
+        local headerButtonsWidth = padding
+            + poolBtnWidth + btnSpacing
+            + historyBtnWidth + btnSpacing
+            + lotAllBtnWidth + btnSpacing
+            + passAllBtnWidth + btnSpacing
+            + btnHeight + btnSpacing
+            + btnHeight + padding;
+        if headerButtonsWidth > windowWidth then
+            windowWidth = headerButtonsWidth;
+        end
+
+        imgui.Dummy(_P1(windowWidth, totalHeight));
 
         -- Handle scroll input when hovering over window
         if needsScroll and imgui.IsWindowHovered() then
@@ -414,46 +512,39 @@ function M.DrawWindow(settings)
             bgColor = 0xFF1A1A1A;
         end
 
-        windowBg.Draw(uiDrawList, startX + padding, startY + padding, contentWidth, contentHeightTotal, {
-            theme = bgTheme,
-            padding = padding,
-            bgScale = bgScale,
-            borderScale = borderScale,
-            bgOpacity = bgOpacity,
-            borderOpacity = borderOpacity,
-            bgColor = bgColor,
-        });
+        local bgOpts = poolBgOptions;
+        bgOpts.theme = bgTheme;
+        bgOpts.padding = padding;
+        bgOpts.bgScale = bgScale;
+        bgOpts.borderScale = borderScale;
+        bgOpts.bgOpacity = bgOpacity;
+        bgOpts.borderOpacity = borderOpacity;
+        bgOpts.bgColor = bgColor;
+        windowBg.Draw(uiDrawList, startX + padding, startY + padding, contentWidth, contentHeightTotal, bgOpts);
 
-        local y = startY + padding;
+        -- Layout: Align Bottom puts the header bar under the list as a footer
+        local contentTop = startY + padding;
+        local headerY = contentTop;
+        local itemsY = contentTop;
+        if alignBottom and not isMinimized and showTitle then
+            itemsY = contentTop;
+            headerY = contentTop + visibleContentHeight + headerItemGap;
+        elseif showTitle then
+            headerY = contentTop;
+            itemsY = contentTop + headerHeight + headerItemGap;
+        end
+
+        local y = itemsY;
 
         -- Draw header with tabs and action buttons
         if showTitle then
-            -- Button sizing (uses fontSize from config)
-            local btnHeight = fontSize + 6;
-            local btnY = y - 1;
-            local btnSpacing = 4;
-            local tabBtnWidth = fontSize * 4;  -- Tab button width
-            local textBtnWidth = fontSize * 4;  -- Wider for "Lot All" / "Pass All" text
+            local btnY = headerY - 1;
             local toggleSize = btnHeight;  -- Square for arrow
-
-            -- Tab colors
-            local TAB_COLORS_SELECTED = {
-                normal = 0xDD4a6a8a,
-                hovered = 0xDD5a7a9a,
-                pressed = 0xDD3a5a7a,
-                border = 0xFF2a4a6a,
-            };
-            local TAB_COLORS_UNSELECTED = {
-                normal = 0xAA333333,
-                hovered = 0xCC4a4a4a,
-                pressed = 0xAA222222,
-                border = 0xFF1a1a1a,
-            };
 
             -- Draw Pool tab button
             local poolTabX = startX + padding;
             local poolTabColors = (selectedTab == 1) and TAB_COLORS_SELECTED or TAB_COLORS_UNSELECTED;
-            local poolTabClicked = button.DrawPrim('tpTabPool', poolTabX, btnY, tabBtnWidth, btnHeight, {
+            local poolTabClicked = button.DrawPrim('tpTabPool', poolTabX, btnY, poolBtnWidth, btnHeight, {
                 colors = poolTabColors,
                 tooltip = 'Treasure Pool',
             });
@@ -463,16 +554,16 @@ function M.DrawWindow(settings)
             end
 
             -- Draw Pool tab label
-            local poolTextW, poolTextH = imtext.Measure('Pool', fontSize);
+            local poolTextW, poolTextH = imtext.MeasureCached('Pool', fontSize);
             poolTextW = poolTextW or (fontSize * 2);
             poolTextH = poolTextH or fontSize;
             local poolTextColor = (selectedTab == 1) and 0xFFFFFFFF or 0xFFAAAAAA;
-            imtext.Draw(uiDrawList, 'Pool', poolTabX + (tabBtnWidth - poolTextW) / 2, btnY + (btnHeight - poolTextH) / 2, poolTextColor, fontSize);
+            imtext.Draw(uiDrawList, 'Pool', poolTabX + (poolBtnWidth - poolTextW) / 2, btnY + (btnHeight - poolTextH) / 2, poolTextColor, fontSize);
 
             -- Draw History tab button
-            local historyTabX = poolTabX + tabBtnWidth + btnSpacing;
+            local historyTabX = poolTabX + poolBtnWidth + btnSpacing;
             local historyTabColors = (selectedTab == 2) and TAB_COLORS_SELECTED or TAB_COLORS_UNSELECTED;
-            local historyTabClicked = button.DrawPrim('tpTabHistory', historyTabX, btnY, tabBtnWidth, btnHeight, {
+            local historyTabClicked = button.DrawPrim('tpTabHistory', historyTabX, btnY, historyBtnWidth, btnHeight, {
                 colors = historyTabColors,
                 tooltip = 'Recent Winners',
             });
@@ -482,41 +573,28 @@ function M.DrawWindow(settings)
             end
 
             -- Draw History tab label
-            local histTextW, histTextH = imtext.Measure('History', fontSize);
+            local histTextW, histTextH = imtext.MeasureCached('History', fontSize);
             histTextW = histTextW or (fontSize * 3);
             histTextH = histTextH or fontSize;
             local histTextColor = (selectedTab == 2) and 0xFFFFFFFF or 0xFFAAAAAA;
-            imtext.Draw(uiDrawList, 'History', historyTabX + (tabBtnWidth - histTextW) / 2, btnY + (btnHeight - histTextH) / 2, histTextColor, fontSize);
+            imtext.Draw(uiDrawList, 'History', historyTabX + (historyBtnWidth - histTextW) / 2, btnY + (btnHeight - histTextH) / 2, histTextColor, fontSize);
 
-            -- Pool tab: show Lot All, Pass All, Minimize, Toggle buttons
+            -- Pool tab: show Lot All, Pass All, view toggle, window collapse/expand
             if selectedTab == 1 then
-                -- Position: [Pool] [History] [Lot All] [Pass All] ... [Minimize] [Toggle]
-                local afterTabsX = historyTabX + tabBtnWidth + btnSpacing;
+                -- Position: [Pool] [History] [Lot All] [Pass All] ... [Detailed/Compact] [Collapse/Expand]
+                local afterTabsX = historyTabX + historyBtnWidth + btnSpacing;
                 local lotAllX = afterTabsX;
-                local passAllX = lotAllX + textBtnWidth + btnSpacing;
+                local passAllX = lotAllX + lotAllBtnWidth + btnSpacing;
                 local toggleX = startX + windowWidth - padding - toggleSize;
                 local minimizeX = toggleX - toggleSize - btnSpacing;
 
-                -- Draw minimize/maximize button
-                local minimizeClicked = button.DrawMinimizePrim('tpMinimize', minimizeX, btnY, toggleSize, isMinimized, {
+                -- Detailed/Compact view toggle (□ / _ icons; same positions as before)
+                -- When compact: show maximize icon → Detailed View; when detailed: show minimize icon → Compact View
+                local viewClicked = button.DrawMinimizePrim('tpMinimize', minimizeX, btnY, toggleSize, not isExpanded, {
                     colors = button.COLORS_NEUTRAL,
-                    tooltip = isMinimized and 'Maximize window' or 'Minimize to header only',
+                    tooltip = isExpanded and 'Compact View' or 'Detailed View',
                 });
-                if minimizeClicked then
-                    gConfig.treasurePoolMinimized = not gConfig.treasurePoolMinimized;
-                    SaveSettingsToDisk();
-                end
-
-                -- Draw expand/collapse arrow button
-                local arrowDirection = isExpanded and 'up' or 'down';
-                local toggleClicked = button.DrawArrowPrim('tpToggle', toggleX, btnY, toggleSize, arrowDirection, {
-                    colors = button.COLORS_NEUTRAL,
-                    tooltip = isMinimized
-                        and (isExpanded and 'Maximize and collapse' or 'Maximize and expand')
-                        or (isExpanded and 'Collapse' or 'Expand'),
-                });
-                if toggleClicked then
-                    -- If minimized, maximize first then apply expand/collapse
+                if viewClicked then
                     if isMinimized then
                         gConfig.treasurePoolMinimized = false;
                     end
@@ -525,10 +603,22 @@ function M.DrawWindow(settings)
                     SaveSettingsToDisk();
                 end
 
+                -- Window collapse/expand arrow (same positions as before)
+                -- Collapse: down normally, up when Align Bottom; Expand: triangle pointing left
+                local arrowDirection = isMinimized and 'left' or (alignBottom and 'up' or 'down');
+                local toggleClicked = button.DrawArrowPrim('tpToggle', toggleX, btnY, toggleSize, arrowDirection, {
+                    colors = button.COLORS_NEUTRAL,
+                    tooltip = isMinimized and 'Expand' or 'Collapse',
+                });
+                if toggleClicked then
+                    gConfig.treasurePoolMinimized = not gConfig.treasurePoolMinimized;
+                    SaveSettingsToDisk();
+                end
+
                 -- Only show Lot All / Pass All buttons if there are pool items
                 if hasPoolItems then
                     -- Draw Pass All button
-                    local passAllClicked = button.DrawPrim('tpPassAll', passAllX, btnY, textBtnWidth, btnHeight, {
+                    local passAllClicked = button.DrawPrim('tpPassAll', passAllX, btnY, passAllBtnWidth, btnHeight, {
                         colors = button.COLORS_NEGATIVE,
                         tooltip = 'Pass on all items',
                     });
@@ -537,15 +627,15 @@ function M.DrawWindow(settings)
                     end
 
                     -- Draw Pass All label
-                    local passTextW, passTextH = imtext.Measure('Pass All', fontSize);
+                    local passTextW, passTextH = imtext.MeasureCached('Pass All', fontSize);
                     passTextW = passTextW or (fontSize * 2.5);
                     passTextH = passTextH or fontSize;
-                    imtext.Draw(uiDrawList, 'Pass All', passAllX + (textBtnWidth - passTextW) / 2, btnY + (btnHeight - passTextH) / 2, 0xFFFFFFFF, fontSize);
+                    imtext.Draw(uiDrawList, 'Pass All', passAllX + (passAllBtnWidth - passTextW) / 2, btnY + (btnHeight - passTextH) / 2, 0xFFFFFFFF, fontSize);
 
                     -- Draw Lot All button (disabled in HzLimitedMode)
                     if (not HzLimitedMode) then
                         -- Draw Lot All button (positive/green)
-                        local lotAllClicked = button.DrawPrim('tpLotAll', lotAllX, btnY, textBtnWidth, btnHeight, {
+                        local lotAllClicked = button.DrawPrim('tpLotAll', lotAllX, btnY, lotAllBtnWidth, btnHeight, {
                             colors = button.COLORS_POSITIVE,
                             tooltip = 'Lot on all items',
                         });
@@ -554,10 +644,10 @@ function M.DrawWindow(settings)
                         end
 
                         -- Draw Lot All label
-                        local lotTextW, lotTextH = imtext.Measure('Lot All', fontSize);
+                        local lotTextW, lotTextH = imtext.MeasureCached('Lot All', fontSize);
                         lotTextW = lotTextW or (fontSize * 2);
                         lotTextH = lotTextH or fontSize;
-                        imtext.Draw(uiDrawList, 'Lot All', lotAllX + (textBtnWidth - lotTextW) / 2, btnY + (btnHeight - lotTextH) / 2, 0xFFFFFFFF, fontSize);
+                        imtext.Draw(uiDrawList, 'Lot All', lotAllX + (lotAllBtnWidth - lotTextW) / 2, btnY + (btnHeight - lotTextH) / 2, 0xFFFFFFFF, fontSize);
                     else
                         -- Hide Lot All in HzLimitedMode
                         button.HidePrim('tpLotAll');
@@ -577,35 +667,30 @@ function M.DrawWindow(settings)
                 local toggleX = startX + windowWidth - padding - toggleSize;
                 local minimizeX = toggleX - toggleSize - btnSpacing;
 
-                -- Draw minimize button on History tab
-                local minimizeClicked = button.DrawMinimizePrim('tpMinimize', minimizeX, btnY, toggleSize, isMinimized, {
+                -- Detailed/Compact view toggle on History tab
+                local viewClicked = button.DrawMinimizePrim('tpMinimize', minimizeX, btnY, toggleSize, not isExpanded, {
                     colors = button.COLORS_NEUTRAL,
-                    tooltip = isMinimized and 'Maximize window' or 'Minimize to header only',
+                    tooltip = isExpanded and 'Compact View' or 'Detailed View',
                 });
-                if minimizeClicked then
-                    gConfig.treasurePoolMinimized = not gConfig.treasurePoolMinimized;
-                    SaveSettingsToDisk();
-                end
-
-                -- Draw expand/collapse arrow button on History tab
-                local arrowDirection = isExpanded and 'up' or 'down';
-                local toggleClicked = button.DrawArrowPrim('tpToggle', toggleX, btnY, toggleSize, arrowDirection, {
-                    colors = button.COLORS_NEUTRAL,
-                    tooltip = isMinimized
-                        and (isExpanded and 'Maximize and collapse' or 'Maximize and expand')
-                        or (isExpanded and 'Collapse' or 'Expand'),
-                });
-                if toggleClicked then
-                    -- If minimized, maximize first then apply expand/collapse
+                if viewClicked then
                     if isMinimized then
                         gConfig.treasurePoolMinimized = false;
                     end
                     gConfig.treasurePoolExpanded = not gConfig.treasurePoolExpanded;
                     SaveSettingsToDisk();
                 end
-            end
 
-            y = y + headerHeight + 4;  -- Add padding between header and items
+                -- Window collapse/expand arrow on History tab
+                local arrowDirection = isMinimized and 'left' or (alignBottom and 'up' or 'down');
+                local toggleClicked = button.DrawArrowPrim('tpToggle', toggleX, btnY, toggleSize, arrowDirection, {
+                    colors = button.COLORS_NEUTRAL,
+                    tooltip = isMinimized and 'Expand' or 'Collapse',
+                });
+                if toggleClicked then
+                    gConfig.treasurePoolMinimized = not gConfig.treasurePoolMinimized;
+                    SaveSettingsToDisk();
+                end
+            end
         else
             button.HidePrim('tpTabPool');
             button.HidePrim('tpTabHistory');
@@ -640,9 +725,10 @@ function M.DrawWindow(settings)
 
             local usedSlots = {};
             local currentY = y;  -- Track cumulative Y position (before scroll)
+            local fromBottom = 0;  -- Used when stackFromBottom stacks from the bottom
 
             -- Calculate visible region for clipping (in expanded scroll mode)
-            -- clipTop starts exactly where items begin (after header)
+            -- clipTop starts exactly where items begin (after header, or above header when reverse)
             -- clipBottom is exactly the height of visible items below clipTop
             local itemAreaTop = y;
             local itemAreaBottom = y + visibleContentHeight;
@@ -675,10 +761,18 @@ function M.DrawWindow(settings)
 
                 local rowHeight = itemRowHeights[i];
 
-                -- Apply scroll offset in expanded mode
-                local rowY = currentY;
-                if needsScroll then
-                    rowY = currentY - scrollOffset;
+                -- Apply scroll offset; default fill stacks from the bottom of the item area
+                local rowY;
+                if stackFromBottom then
+                    -- +scrollOffset moves the stack down so higher items enter the visible area
+                    rowY = itemAreaBottom + scrollOffset - fromBottom - rowHeight;
+                    fromBottom = fromBottom + rowHeight + rowSpacing;
+                else
+                    rowY = currentY;
+                    if needsScroll then
+                        rowY = currentY - scrollOffset;
+                    end
+                    currentY = currentY + rowHeight + rowSpacing;
                 end
 
                 -- Check if item overlaps visible region at all
@@ -688,9 +782,6 @@ function M.DrawWindow(settings)
 
                 local remaining = data.GetTimeRemaining(slot);
                 local progress = remaining / data.POOL_TIMEOUT_SECONDS;
-
-                -- Update currentY for next item (before any visibility checks)
-                currentY = currentY + rowHeight + rowSpacing;
 
                 -- Skip rendering if item has no overlap with visible region at all
                 if not hasAnyOverlap then
@@ -708,7 +799,7 @@ function M.DrawWindow(settings)
                         local borderX2 = startX + windowWidth - padding;
                         local borderY2 = rowY + rowHeight;
                         local borderColor = imgui.GetColorU32({1.0, 1.0, 1.0, 0.2});
-                        drawList:AddRect({borderX1, borderY1}, {borderX2, borderY2}, borderColor, 4.0, ImDrawCornerFlags_All, 1.0);
+                        drawList:AddRect(_P1(borderX1, borderY1), _P2(borderX2, borderY2), borderColor, 4.0, ImDrawCornerFlags_All, 1.0);
                     end
 
                     -- 1. Draw item icon
@@ -718,7 +809,7 @@ function M.DrawWindow(settings)
                     local iconY = rowY + 2 + itemPadding;  -- Align to top of row with padding
 
                     if iconPtr then
-                        drawList:AddImage(iconPtr, {iconX, iconY}, {iconX + iconSize, iconY + iconSize});
+                        drawList:AddImage(iconPtr, _P1(iconX, iconY), _P2(iconX + iconSize, iconY + iconSize));
                     end
 
                     local textStartX = iconX + iconSize + iconTextGap;
@@ -740,7 +831,7 @@ function M.DrawWindow(settings)
 
                     -- Draw tooltip for item name area showing validation error
                     if hasValidationIssue and itemValidationError then
-                        local nameWidth, nameHeight = imtext.Measure(displayName, fontSize);
+                        local nameWidth, nameHeight = imtext.MeasureCached(displayName, fontSize);
                         nameWidth = nameWidth or 100;
                         nameHeight = nameHeight or fontSize;
                         -- Check if mouse is hovering over item name area
@@ -754,17 +845,32 @@ function M.DrawWindow(settings)
                     -- 3. Draw timer text
                     local timerText = data.FormatTime(remaining);
                     if showTimerText then
-                        local timerW, _ = imtext.Measure(timerText, fontSize);
+                        local timerW, _ = imtext.MeasureCached(timerText, fontSize);
                         timerW = timerW or 0;
                         local timerColor = getTimerColor(remaining);
                         imtext.Draw(uiDrawList, timerText, startX + windowWidth - padding - itemPadding - timerW, textY, timerColor, fontSize);
                     end
 
-                    -- 4. Draw per-item Lot/Pass buttons (expanded view or explicitly enabled)
+                    -- 4. Draw current roll before the buttons so Lot/Pass cover it when they overlap
+                    if not isExpanded then
+                        if showLots and item.winningLot and item.winningLot > 0 then
+                            local lotterName = item.winningLotterName or '?';
+                            if #lotterName > 10 then
+                                lotterName = lotterName:sub(1, 8) .. '..';
+                            end
+                            local lotText = string.format('%s: %d', lotterName, item.winningLot);
+
+                            local nameWidth, _ = imtext.MeasureCached(displayName, fontSize);
+                            nameWidth = nameWidth or 0;
+                            local lotX = textStartX + nameWidth + math.floor(10 * scaleX);
+                            imtext.Draw(uiDrawList, lotText, lotX, textY, 0xFF88FF88, fontSize - 1);
+                        end
+                    end
+
+                    -- 5. Draw per-item Lot/Pass buttons (expanded view or explicitly enabled)
                     local showButtons = isExpanded or gConfig.treasurePoolShowButtonsInCollapsed;
                     if showButtons then
                         local itemBtnHeight = fontSize + 4;
-                        local itemBtnWidth = fontSize * 2.5;
                         local itemBtnSpacing = 4;
                         local itemBtnY = textY - 1;
 
@@ -774,12 +880,12 @@ function M.DrawWindow(settings)
                         -- Position buttons to the left of the timer
                         local timerWidth = 0;
                         if showTimerText then
-                            timerWidth, _ = imtext.Measure(timerText, fontSize);
+                            timerWidth, _ = imtext.MeasureCached(timerText, fontSize);
                             timerWidth = timerWidth or (fontSize * 3);
                         end
 
-                        local passBtnX = startX + windowWidth - padding - itemPadding - timerWidth - itemBtnSpacing - itemBtnWidth;
-                        local lotBtnX = passBtnX - itemBtnSpacing - itemBtnWidth;
+                        local passBtnX = startX + windowWidth - padding - itemPadding - timerWidth - itemBtnSpacing - itemPassBtnWidth;
+                        local lotBtnX = passBtnX - itemBtnSpacing - itemLotBtnWidth;
 
                         -- Get player's lot status for this item
                         local playerStatus = data.GetPlayerLotStatus(slot);
@@ -807,21 +913,18 @@ function M.DrawWindow(settings)
 
                             -- Draw Lot button
                             local lotBtnId = string.format('tpLotItem%d', slot);
-                            local lotItemClicked = button.DrawPrim(lotBtnId, lotBtnX, itemBtnY, itemBtnWidth, itemBtnHeight, {
-                                colors = button.COLORS_POSITIVE,
-                                tooltip = lotTooltip,
-                                disabled = lotDisabled,
-                            });
+                            local lotItemClicked = button.DrawPrim(lotBtnId, lotBtnX, itemBtnY, itemLotBtnWidth, itemBtnHeight,
+                                ItemBtnOpts(button.COLORS_POSITIVE, lotTooltip, lotDisabled));
                             if lotItemClicked and not lotDisabled then
                                 actions.LotItem(slot);
                             end
 
                             -- Draw Lot label
-                            local lotTextW, lotTextH = imtext.Measure('Lot', fontSize - 1);
+                            local lotTextW, lotTextH = imtext.MeasureCached('Lot', fontSize - 1);
                             lotTextW = lotTextW or (fontSize * 1.5);
                             lotTextH = lotTextH or fontSize;
                             local lotTextColor = lotDisabled and COLOR_DISABLED_TEXT or COLOR_ENABLED_TEXT;
-                            imtext.Draw(uiDrawList, 'Lot', lotBtnX + (itemBtnWidth - lotTextW) / 2, itemBtnY + (itemBtnHeight - lotTextH) / 2, lotTextColor, fontSize - 1);
+                            imtext.Draw(uiDrawList, 'Lot', lotBtnX + (itemLotBtnWidth - lotTextW) / 2, itemBtnY + (itemBtnHeight - lotTextH) / 2, lotTextColor, fontSize - 1);
 
                             -- Determine Pass button tooltip based on status
                             local passTooltip = 'Pass on this item';
@@ -833,21 +936,18 @@ function M.DrawWindow(settings)
 
                             -- Draw Pass button
                             local passBtnId = string.format('tpPassItem%d', slot);
-                            local passItemClicked = button.DrawPrim(passBtnId, passBtnX, itemBtnY, itemBtnWidth, itemBtnHeight, {
-                                colors = button.COLORS_NEGATIVE,
-                                tooltip = passTooltip,
-                                disabled = passDisabled,
-                            });
+                            local passItemClicked = button.DrawPrim(passBtnId, passBtnX, itemBtnY, itemPassBtnWidth, itemBtnHeight,
+                                ItemBtnOpts(button.COLORS_NEGATIVE, passTooltip, passDisabled));
                             if passItemClicked and not passDisabled then
                                 actions.PassItem(slot);
                             end
 
                             -- Draw Pass label
-                            local passTextW, passTextH = imtext.Measure('Pass', fontSize - 1);
+                            local passTextW, passTextH = imtext.MeasureCached('Pass', fontSize - 1);
                             passTextW = passTextW or (fontSize * 2);
                             passTextH = passTextH or fontSize;
                             local passTextColor = passDisabled and COLOR_DISABLED_TEXT or COLOR_ENABLED_TEXT;
-                            imtext.Draw(uiDrawList, 'Pass', passBtnX + (itemBtnWidth - passTextW) / 2, itemBtnY + (itemBtnHeight - passTextH) / 2, passTextColor, fontSize - 1);
+                            imtext.Draw(uiDrawList, 'Pass', passBtnX + (itemPassBtnWidth - passTextW) / 2, itemBtnY + (itemBtnHeight - passTextH) / 2, passTextColor, fontSize - 1);
                             -- Hide buttons when outside visible area
                         else
                             button.HidePrim(string.format('tpLotItem%d', slot));
@@ -859,22 +959,8 @@ function M.DrawWindow(settings)
                         button.HidePrim(string.format('tpPassItem%d', slot));
                     end
 
-                    -- 5. Draw lot info (collapsed: inline; expanded: member list)
-                    if not isExpanded then
-                        -- Collapsed view: show winning lot inline with name
-                        if showLots and item.winningLot and item.winningLot > 0 then
-                            local lotterName = item.winningLotterName or '?';
-                            if #lotterName > 10 then
-                                lotterName = lotterName:sub(1, 8) .. '..';
-                            end
-                            local lotText = string.format('%s: %d', lotterName, item.winningLot);
-
-                            local nameWidth, _ = imtext.Measure(displayName, fontSize);
-                            nameWidth = nameWidth or 0;
-                            local lotX = textStartX + nameWidth + math.floor(10 * scaleX);
-                            imtext.Draw(uiDrawList, lotText, lotX, textY, 0xFF88FF88, fontSize - 1);
-                        end
-                    else
+                    -- 6. Expanded view: member list
+                    if isExpanded then
                         -- Expanded view: show member list with lot status
                         -- Use cached party data (organized by party A/B/C)
                         local partyData = itemMemberData[slot] or { partyA = {}, partyB = {}, partyC = {} };
@@ -956,13 +1042,9 @@ function M.DrawWindow(settings)
                         local timerGradient = getTimerGradient(remaining);
 
                         progressbar.ProgressBar(
-                            {{math.max(0, math.min(1, progress)), timerGradient}},
-                            {barWidth, barHeight},
-                            {
-                                decorate = false,
-                                absolutePosition = {barStartX, barY},
-                                drawList = drawList,
-                            }
+                            progressbar.Pct(math.max(0, math.min(1, progress)), timerGradient),
+                            progressbar.Dims(barWidth, barHeight),
+                            progressbar.Opts(false, drawList, barStartX, barY)
                         );
                     end
                 end  -- end hasAnyOverlap check
@@ -985,11 +1067,11 @@ function M.DrawWindow(settings)
 
                 -- Draw scroll track (dark)
                 local trackColor = imgui.GetColorU32({0.2, 0.2, 0.2, 0.5});
-                drawList:AddRectFilled({scrollBarX, itemAreaTop}, {scrollBarX + scrollBarWidth, itemAreaBottom}, trackColor, 2.0);
+                drawList:AddRectFilled(_P1(scrollBarX, itemAreaTop), _P2(scrollBarX + scrollBarWidth, itemAreaBottom), trackColor, 2.0);
 
                 -- Draw scroll thumb (light)
                 local thumbColor = imgui.GetColorU32({0.6, 0.6, 0.6, 0.8});
-                drawList:AddRectFilled({scrollBarX, scrollThumbY}, {scrollBarX + scrollBarWidth, scrollThumbY + scrollThumbHeight}, thumbColor, 2.0);
+                drawList:AddRectFilled(_P1(scrollBarX, scrollThumbY), _P2(scrollBarX + scrollBarWidth, scrollThumbY + scrollThumbHeight), thumbColor, 2.0);
             end
 
             -- Hide buttons for unused slots
@@ -1060,22 +1142,28 @@ function M.DrawWindow(settings)
 
                 -- Render each history item
                 local currentY = y;
+                local fromBottom = 0;
                 for i, histItem in ipairs(historyItems) do
                     if i > data.MAX_HISTORY_ITEMS then break; end
 
-                    -- Apply scroll offset
-                    local rowY = currentY;
-                    if historyNeedsScroll then
-                        rowY = currentY - historyScrollOffset;
+                    -- Apply scroll offset; default fill stacks from the bottom
+                    local rowY;
+                    if stackFromBottom then
+                        -- +scrollOffset moves the stack down so higher items enter the visible area
+                        rowY = historyAreaBottom + historyScrollOffset - fromBottom - historyRowHeight;
+                        fromBottom = fromBottom + historyRowHeight + rowSpacing;
+                    else
+                        rowY = currentY;
+                        if historyNeedsScroll then
+                            rowY = currentY - historyScrollOffset;
+                        end
+                        currentY = currentY + historyRowHeight + rowSpacing;
                     end
 
                     -- Check if item is visible
                     local itemTop = rowY;
                     local itemBottom = rowY + historyRowHeight;
                     local isVisible = not historyNeedsScroll or (itemBottom > historyAreaTop and itemTop < historyAreaBottom);
-
-                    -- Update currentY for next item
-                    currentY = currentY + historyRowHeight + rowSpacing;
 
                     if isVisible then
                         -- Draw item icon
@@ -1085,7 +1173,7 @@ function M.DrawWindow(settings)
                         local iconY = rowY + (historyRowHeight - historyIconSize) / 2;
 
                         if iconPtr then
-                            drawList:AddImage(iconPtr, {iconX, iconY}, {iconX + historyIconSize, iconY + historyIconSize});
+                            drawList:AddImage(iconPtr, _P1(iconX, iconY), _P2(iconX + historyIconSize, iconY + historyIconSize));
                         end
 
                         -- Draw item name
@@ -1097,7 +1185,7 @@ function M.DrawWindow(settings)
 
                         -- Draw winner info (right-aligned, with scrollbar accommodation)
                         local winnerText = string.format('%s: %d', histItem.winnerName or '?', histItem.winnerLot or 0);
-                        local winnerW, _ = imtext.Measure(winnerText, fontSize);
+                        local winnerW, _ = imtext.MeasureCached(winnerText, fontSize);
                         winnerW = winnerW or (fontSize * 6);
                         -- Add extra padding when scrollbar is visible (scrollbar width + gap)
                         local scrollbarPadding = historyNeedsScroll and 10 or 0;
@@ -1125,13 +1213,26 @@ function M.DrawWindow(settings)
 
                     -- Draw scroll track (dark)
                     local trackColor = imgui.GetColorU32({0.2, 0.2, 0.2, 0.5});
-                    drawList:AddRectFilled({scrollBarX, historyAreaTop}, {scrollBarX + scrollBarWidth, historyAreaBottom}, trackColor, 2.0);
+                    drawList:AddRectFilled(_P1(scrollBarX, historyAreaTop), _P2(scrollBarX + scrollBarWidth, historyAreaBottom), trackColor, 2.0);
 
                     -- Draw scroll thumb (light)
                     local thumbColor = imgui.GetColorU32({0.6, 0.6, 0.6, 0.8});
-                    drawList:AddRectFilled({scrollBarX, scrollThumbY}, {scrollBarX + scrollBarWidth, scrollThumbY + scrollThumbHeight}, thumbColor, 2.0);
+                    drawList:AddRectFilled(_P1(scrollBarX, scrollThumbY), _P2(scrollBarX + scrollBarWidth, scrollThumbY + scrollThumbHeight), thumbColor, 2.0);
                 end
             end
+        end
+
+        -- Track window pos/height for Align Bottom (position corrections happen pre-Begin)
+        if alignBottom then
+            local winPosX, winPosY = imgui.GetWindowPos();
+            alignBottomState.x = winPosX;
+            alignBottomState.y = winPosY;
+            alignBottomState.height = totalHeight;
+            SaveWindowPosition('TreasurePool');
+        else
+            alignBottomState.x = nil;
+            alignBottomState.y = nil;
+            alignBottomState.height = nil;
         end
     end
     imgui.End();
